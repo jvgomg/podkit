@@ -12,11 +12,30 @@
 import { spawn } from 'node:child_process';
 
 /**
+ * Build an FFmpeg `-vf` filter string for artwork scaling.
+ *
+ * Downscales to fit within `maxDim`×`maxDim`, preserves aspect ratio, never
+ * upscales, and forces even pixel dimensions for codec compatibility. Forces
+ * `yuvj420p` (4:2:0) chroma so output is decodable on devices that don't
+ * support 4:4:4 (e.g. Echo Mini).
+ *
+ * Shared by the buffer-based {@link resizeArtwork} (taglib embed path) and the
+ * transcode-time embed filter in `transcode/ffmpeg.ts`. Keeping one definition
+ * here avoids the kind of silent drift where one path forces yuvj420p and the
+ * other doesn't — exactly the bug that surfaced when the embed and post-resize
+ * paths went out of sync.
+ */
+export function buildArtworkScaleFilter(maxDim: number): string {
+  return `scale='min(${maxDim},iw)':'min(${maxDim},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=yuvj420p`;
+}
+
+/**
  * Resize an image buffer to fit within maxDim×maxDim using FFmpeg.
  *
  * - Preserves aspect ratio (never distorts)
  * - Never upscales (images smaller than maxDim pass through)
  * - Forces even pixel dimensions for codec compatibility
+ * - Forces yuvj420p (4:2:0) chroma — see {@link buildArtworkScaleFilter}
  * - Outputs JPEG regardless of input format
  *
  * @param imageData - Source image buffer (JPEG, PNG, etc.)
@@ -36,7 +55,7 @@ export async function resizeArtwork(
         '-i',
         'pipe:0',
         '-vf',
-        `scale='min(${maxDim},iw)':'min(${maxDim},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2`,
+        buildArtworkScaleFilter(maxDim),
         '-f',
         'image2',
         '-c:v',

@@ -296,15 +296,38 @@ function resolveDeviceVideo(
 
 /**
  * Artwork resolution:
- *   1. Check capability (unsupported/unknown)
- *   2. device.artwork → global.artwork
+ *   1. Explicit `false` from device or global → honored regardless of
+ *      capability state (user intent to disable beats "we don't know yet").
+ *   2. Check capability (unsupported/unknown).
+ *   3. device.artwork → global.artwork.
+ *
+ * The explicit-false bypass exists because settings are derived BEFORE
+ * device capabilities are loaded in some call paths (see
+ * `sync.ts:deriveSettings`). Without the bypass, an explicit `artwork =
+ * false` in config would silently resolve to `null` → `unknown` → callsite
+ * `?? true` fallback, re-enabling artwork against the user's wishes.
+ *
+ * No matching bypass for explicit `true` is needed: with null capabilities,
+ * the resolver returns `{ value: null, source: 'unknown' }` and the
+ * callsite `?? true` falls through to `true` — the same value the user
+ * configured. Only the `false` case degrades incorrectly under the default
+ * fallback, so only that direction needs the carve-out.
  */
 function resolveDeviceArtwork(
   config: PodkitConfig,
   deviceConfig: DeviceConfig,
   capabilities: DeviceCapabilities | null
 ): ResolvedValue<boolean | null> {
-  // Check device capability first
+  // Honor explicit disable regardless of capability state — "user said off"
+  // beats "we don't know what the device supports."
+  if (deviceConfig.artwork === false) {
+    return { value: false, source: 'device' };
+  }
+  if (config.artwork === false) {
+    return { value: false, source: 'global' };
+  }
+
+  // Check device capability
   if (capabilities === null) {
     return { value: null, source: 'unknown' };
   }

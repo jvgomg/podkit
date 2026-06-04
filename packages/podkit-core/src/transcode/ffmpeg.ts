@@ -25,6 +25,7 @@ import { AAC_PRESETS } from './types.js';
 import type { TranscodeTargetCodec } from './codecs.js';
 import { getCodecMetadata } from './codecs.js';
 import { parseFFmpegProgressLine } from './progress.js';
+import { buildArtworkScaleFilter } from '../artwork/resize.js';
 
 /**
  * Error thrown when FFmpeg is not available
@@ -64,17 +65,6 @@ const DEFAULT_FFMPEG = 'ffmpeg';
  * Default FFprobe binary name
  */
 const DEFAULT_FFPROBE = 'ffprobe';
-
-/**
- * Build an FFmpeg scale filter for artwork resize.
- * Downscales to fit within maxDim×maxDim, preserves aspect ratio, never upscales.
- * Forces even pixel dimensions for codec compatibility.
- */
-function buildArtworkScaleFilter(maxDim: number): string {
-  // Force yuvj420p (4:2:0) pixel format — some devices (e.g., Echo Mini) cannot
-  // decode JPEG with 4:4:4 chroma subsampling (yuvj444p).
-  return `scale='min(${maxDim},iw)':'min(${maxDim},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=yuvj420p`;
-}
 
 /**
  * FFmpeg transcoder configuration

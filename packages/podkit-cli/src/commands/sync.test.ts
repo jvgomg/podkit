@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'bun:test';
-import { formatDuration, renderProgressBar, syncCommand } from './sync.js';
+import {
+  formatDuration,
+  renderProgressBar,
+  stripDefaultOptionValues,
+  syncCommand,
+} from './sync.js';
 import { formatBytes } from './display-utils.js';
 
 describe('sync command', () => {
@@ -38,6 +43,48 @@ describe('sync command', () => {
       // boolean flag: no argument expected
       expect(skipUpgradesOption?.required).toBe(false);
       expect(skipUpgradesOption?.optional).toBe(false);
+    });
+  });
+
+  describe('stripDefaultOptionValues', () => {
+    // commander synthesises a value for `--no-X` options regardless of
+    // whether the user typed `--no-X`. Without this strip pass, the synthetic
+    // default leaks into the config layer and silently overrides config-file
+    // settings — exactly the regression that re-enabled artwork sync when
+    // the user had set `artwork = false` in their TOML.
+    function makeCommand(sources: Record<string, string | undefined>) {
+      return {
+        getOptionValueSource: (name: string) => sources[name],
+      };
+    }
+
+    it('drops keys whose source is "default"', () => {
+      const cleaned = stripDefaultOptionValues(
+        { artwork: true, dryRun: false },
+        makeCommand({ artwork: 'default', dryRun: 'cli' })
+      );
+      expect(cleaned).toEqual({ dryRun: false });
+    });
+
+    it('keeps keys whose source is "cli"', () => {
+      // user passed `--no-artwork` → source is 'cli' → keep
+      const cleaned = stripDefaultOptionValues({ artwork: false }, makeCommand({ artwork: 'cli' }));
+      expect(cleaned).toEqual({ artwork: false });
+    });
+
+    it('drops the synthetic `--no-X` default that commander injects for an unpassed flag', () => {
+      // user did NOT pass `--no-artwork`; commander still reports `artwork: true`
+      // with source 'default' — must NOT leak into the merged config.
+      const cleaned = stripDefaultOptionValues(
+        { artwork: true },
+        makeCommand({ artwork: 'default' })
+      );
+      expect(cleaned.artwork).toBeUndefined();
+    });
+
+    it('passes through when getOptionValueSource is missing (no source info)', () => {
+      const cleaned = stripDefaultOptionValues({ artwork: true, dryRun: true }, {});
+      expect(cleaned).toEqual({ artwork: true, dryRun: true });
     });
   });
 });

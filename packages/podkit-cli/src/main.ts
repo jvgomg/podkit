@@ -77,11 +77,27 @@ program.hook('preAction', (thisCommand, actionCommand) => {
     });
   }
 
-  // Get command-specific options that affect config
-  const commandOpts = actionCommand.opts() as {
-    quality?: string;
-    artwork?: boolean;
-    skipUpgrades?: boolean;
+  // Get command-specific options that affect config.
+  //
+  // Commander synthesises a default `true` for negated boolean flags
+  // (`--no-X` populates `opts.X === true` even when the user didn't pass
+  // `--no-X`). Forwarding that synthetic default into the config merge would
+  // silently override an `artwork = false` line in the user's config file
+  // every time the sync command runs. Filter to options whose value source
+  // is the actual CLI invocation; defaults stay out.
+  const rawOpts = actionCommand.opts() as Record<string, unknown>;
+  const cliBoolean = (name: string): boolean | undefined => {
+    if (actionCommand.getOptionValueSource?.(name) !== 'cli') return undefined;
+    return rawOpts[name] as boolean;
+  };
+  const cliString = (name: string): string | undefined => {
+    if (actionCommand.getOptionValueSource?.(name) !== 'cli') return undefined;
+    return rawOpts[name] as string;
+  };
+  const commandOpts = {
+    quality: cliString('quality'),
+    artwork: cliBoolean('artwork'),
+    skipUpgrades: cliBoolean('skipUpgrades'),
   };
 
   // Load and merge config from all sources

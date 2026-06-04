@@ -749,6 +749,16 @@ export class MusicPipeline implements SyncExecutor {
   /** Audio normalization mode for the target device (set during execute()) */
   private audioNormalization?: string;
   /**
+   * Whether artwork sync is enabled for the current execution.
+   *
+   * Resolved from `MusicSyncConfig.artwork` (default `true`) and snapshotted
+   * at `execute()` start. {@link transferArtwork} short-circuits to
+   * `undefined` when this is `false`, so the per-track-sink dispatch is the
+   * only artwork gate downstream — no positional boolean is threaded
+   * through the transfer methods.
+   */
+  private artworkEnabled = true;
+  /**
    * True while an `execute()` iterator is in-flight. Used by the defensive
    * guard in `execute()` to throw a {@link PipelineBusyError} on overlap,
    * since per-execute state on `this` is not safe for concurrent calls.
@@ -892,6 +902,7 @@ export class MusicPipeline implements SyncExecutor {
     this.sidecarResize = sidecarResize;
     this.audioNormalization = audioNormalization;
     this.adapter = adapter;
+    this.artworkEnabled = artwork;
 
     // Clear state from previous execution
     this.clearWarnings();
@@ -944,7 +955,6 @@ export class MusicPipeline implements SyncExecutor {
         transcodeDir,
         mergedRetryConfig,
         continueOnError,
-        artwork,
         adapter,
         signal,
         saveInterval
@@ -1031,7 +1041,6 @@ export class MusicPipeline implements SyncExecutor {
     transcodeDir: string,
     retryConfig: Required<RetryConfig>,
     continueOnError: boolean,
-    artworkEnabled: boolean,
     adapter?: CollectionAdapter,
     signal?: AbortSignal,
     saveInterval = 50
@@ -1217,7 +1226,7 @@ export class MusicPipeline implements SyncExecutor {
       }
 
       try {
-        const result = await this.transferWithRetry(prepared, artworkEnabled, retryConfig);
+        const result = await this.transferWithRetry(prepared, retryConfig);
 
         if (result.value) {
           bytesProcessed += result.value.bytesTransferred;
@@ -1422,7 +1431,6 @@ export class MusicPipeline implements SyncExecutor {
    */
   private async transferWithRetry(
     prepared: PreparedFile,
-    artworkEnabled: boolean,
     retryConfig: Required<RetryConfig>
   ): Promise<
     | { value: { bytesTransferred: number }; error?: undefined; attempts?: number }
@@ -1433,7 +1441,7 @@ export class MusicPipeline implements SyncExecutor {
 
     while (true) {
       try {
-        const result = await this.transferToIpod(prepared, artworkEnabled);
+        const result = await this.transferToIpod(prepared);
         return { value: result, attempts: attempt };
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
@@ -1500,10 +1508,9 @@ export class MusicPipeline implements SyncExecutor {
    *     `updateTrack({ embeddedPictureData })`. This path handles ALL
    *     containers (mp3, flac, ogg, opus, m4a, …) because the underlying
    *     {@link MassStorageTagWriter.writePicture} routes through
-   *     node-taglib-sharp which is container-agnostic — TASK-372 closes
-   *     the pre-existing OGG-only carve-out.
+   *     node-taglib-sharp, which is container-agnostic.
    *   - `'sidecar'`  → peer `cover.jpg` written next to the audio file by
-   *     `adapter.writeSidecar()` (TASK-370). The bytes are resized to
+   *     `adapter.writeSidecar()`. The bytes are resized to
    *     `artworkMaxResolution` first via the album-level resize cache, so
    *     siblings on one album share a single resize spawn and one
    *     deduplicated cover write. Defensive guard: if the adapter doesn't
@@ -1526,6 +1533,19 @@ export class MusicPipeline implements SyncExecutor {
     sourceFilePath: string,
     sourceTrack: CollectionTrack
   ): Promise<string | undefined> {
+    // Defense-in-depth gate for global artwork disable. Callers are
+    // expected to gate the whole artwork block at their level (the
+    // surrounding `if (this.artworkEnabled && ...)` is the load-bearing
+    // check — without it, the stale-cleanup `removeTrackArtwork` branch
+    // would wipe existing device artwork on `artwork=false` syncs). This
+    // inner short-circuit is the belt to that suspenders: any future write
+    // path that lands in transferArtwork without going through the outer
+    // gate still returns `undefined` here, suppressing both the bytes and
+    // the syncTag.artworkHash claim.
+    if (!this.artworkEnabled) {
+      return undefined;
+    }
+
     try {
       const albumKey = getAlbumKey({ artist: track.artist ?? '', album: track.album ?? '' });
       const candidates = this.albumCandidates.get(albumKey);
@@ -2151,8 +2171,7 @@ export class MusicPipeline implements SyncExecutor {
    * the database entry (play counts, ratings, playlists).
    */
   private async transferToIpod(
-    prepared: PreparedFile,
-    artworkEnabled: boolean
+    prepared: PreparedFile
   ): Promise<{ bytesTransferred: number; track: DeviceTrack }> {
     const { operation, sourcePath, size, bitrate, filetype, artworkSourcePath } = prepared;
 
@@ -2163,7 +2182,7 @@ export class MusicPipeline implements SyncExecutor {
       operation.type === 'upgrade-optimized-copy' ||
       operation.type === 'upgrade-artwork'
     ) {
-      return this.transferUpgradeToIpod(prepared, artworkEnabled);
+      return this.transferUpgradeToIpod(prepared);
     }
 
     const source = operation.source;
@@ -2221,16 +2240,20 @@ export class MusicPipeline implements SyncExecutor {
     // Skip when the source explicitly has no artwork (hasArtwork === false) — the album-level
     // artwork cache could otherwise serve a sibling track's artwork for this no-artwork track,
     // falsely setting hasArtwork=true on the iPod and triggering artwork-removed on the next sync.
-    if (artworkEnabled && source.hasArtwork !== false) {
+    //
+    // The outer `this.artworkEnabled` check matters even though `transferArtwork` short-
+    // circuits on the same flag — the `!artHash && track.hasArtwork` stale-cleanup branch
+    // below would otherwise fire on `artwork-disabled` syncs and wipe existing device
+    // artwork the user wanted to keep.
+    if (this.artworkEnabled && source.hasArtwork !== false) {
       const extractedHash = await this.transferArtwork(track, artworkSourcePath, source);
       // Resolve the hash for the syncTag claim. Two-stage:
       //   1. transferArtwork returns undefined when no bytes landed on the
-      //      device — sink === 'noop' or 'sidecar' (until TASK-370 wires
-      //      the writer). In that case we MUST NOT write syncTag.artworkHash
-      //      regardless of source.artworkHash: a hash on the syncTag implies
-      //      the device has art, but no bytes landed, so the next sync's
-      //      detectUpgrades would fire artwork-added forever (doc-041 §3.6
-      //      churn loop).
+      //      device — global artwork disabled, or sink === 'noop'. In that
+      //      case we MUST NOT write syncTag.artworkHash regardless of
+      //      source.artworkHash: a hash on the syncTag implies the device has
+      //      art, but no bytes landed, so the next sync's detectUpgrades
+      //      would fire artwork-added forever (doc-041 §3.6 churn loop).
       //   2. When bytes DID land, prefer source.artworkHash over extractedHash.
       //      For Subsonic, getCoverArt returns processed bytes that differ
       //      from the raw embedded bytes in the audio file; using the
@@ -2273,8 +2296,7 @@ export class MusicPipeline implements SyncExecutor {
    * artwork is re-extracted from the source and transferred to the iPod.
    */
   private async transferUpgradeToIpod(
-    prepared: PreparedFile,
-    artworkEnabled: boolean
+    prepared: PreparedFile
   ): Promise<{ bytesTransferred: number; track: DeviceTrack }> {
     const { sourcePath, size, bitrate, filetype, artworkSourcePath } = prepared;
     const operation = prepared.operation as Extract<
@@ -2312,7 +2334,7 @@ export class MusicPipeline implements SyncExecutor {
 
     // artwork-updated: skip audio file transfer, only re-extract and update artwork + sync tag
     if (operation.reason === 'artwork-updated') {
-      if (!artworkEnabled) {
+      if (!this.artworkEnabled) {
         // artwork-updated with artwork disabled is a no-op — skip silently
         return { bytesTransferred: 0, track: foundTrack };
       }
@@ -2392,8 +2414,10 @@ export class MusicPipeline implements SyncExecutor {
 
     // Extract and transfer artwork if enabled.
     // Skip when the source explicitly has no artwork (hasArtwork === false) — see transferToIpod
-    // for a full explanation of why this guard is necessary.
-    if (artworkEnabled && source.hasArtwork !== false) {
+    // for a full explanation of why this guard is necessary, and why the `artworkEnabled`
+    // check has to be at the call site (the stale-cleanup branch below has the same wipe
+    // hazard as the add-track path).
+    if (this.artworkEnabled && source.hasArtwork !== false) {
       const extractedHash = await this.transferArtwork(foundTrack, artworkSourcePath, source);
       // Suppress the syncTag.artworkHash claim when transferArtwork returned
       // undefined — see transferToIpod for the full rationale (doc-041 §3.6

@@ -280,6 +280,44 @@ describe('resolveDeviceSettings', () => {
 
       expect(result.artwork).toEqual({ value: false, source: 'global' });
     });
+
+    it('honors explicit device artwork=false even when capabilities are null', () => {
+      // Settings are resolved before device capabilities load in some call
+      // paths; without this carve-out the user's explicit disable would
+      // resolve to `unknown` and the call-site fallback `?? true` would
+      // re-enable artwork against the user's wishes.
+      const config = makeConfig();
+      const device: DeviceConfig = { artwork: false };
+
+      const result = resolveDeviceSettings(config, 'test', device, null, false, false);
+
+      expect(result.artwork).toEqual({ value: false, source: 'device' });
+    });
+
+    it('honors explicit global artwork=false even when capabilities are null', () => {
+      const config = makeConfig({ artwork: false });
+      const device: DeviceConfig = {};
+
+      const result = resolveDeviceSettings(config, 'test', device, null, false, false);
+
+      expect(result.artwork).toEqual({ value: false, source: 'global' });
+    });
+
+    it('honors explicit device artwork=false even when device has no artwork sources', () => {
+      const config = makeConfig();
+      const device: DeviceConfig = { artwork: false };
+
+      const result = resolveDeviceSettings(
+        config,
+        'test',
+        device,
+        NO_ARTWORK_CAPABILITIES,
+        false,
+        false
+      );
+
+      expect(result.artwork).toEqual({ value: false, source: 'device' });
+    });
   });
 
   // ===========================================================================
