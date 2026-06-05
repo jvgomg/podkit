@@ -12,7 +12,8 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    }
+    },
+    "./preflight": "./scripts/preflight-vm.ts"
   },
   "files": [
     "dist"
@@ -22,7 +23,7 @@
     "build:types": "tsc -p tsconfig.build.json --emitDeclarationOnly --outDir dist",
     "test": "true",
     "test:unit": "bun test --pass-with-no-tests",
-    "test:vm": "bun run scripts/preflight-vm.ts && bun test src/vm --path-ignore-patterns= --pass-with-no-tests",
+    "test:vm": "bun test src/vm --path-ignore-patterns= --pass-with-no-tests",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist",
     "build:linux-prebuild": "bash scripts/build-linux-prebuild.sh",

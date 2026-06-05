@@ -1,8 +1,11 @@
 # @podkit/device-testing-daemon
 
-FunctionFS userspace daemon that synthesises iPod-shaped USB devices on
-Linux `dummy_hcd` for VM tests. See [ADR-016](../../adr/adr-016-linux-vm-test-harness.md)
-for the full architecture.
+Userspace daemon that synthesises iPod-shaped USB devices on Linux
+`dummy_hcd` for VM tests. Assembles both FunctionFS-bearing gadgets (for
+SysInfoExtended-driven inquiry personas) and pure mass-storage gadgets
+(for FAT-32-only personas like Echo Mini). See
+[ADR-016](../../adr/adr-016-linux-vm-test-harness.md) for the full
+architecture.
 
 The daemon runs inside the `podkit-device-harness` Lima VM
 (`test-packages/device-testing/lima/podkit-device-harness.yaml`). It is delivered as a single

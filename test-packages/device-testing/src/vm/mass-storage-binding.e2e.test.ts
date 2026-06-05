@@ -58,7 +58,8 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 
-import { limaTestVmRunner, VM_COLD_TIMEOUT_MS, VM_WARM_TIMEOUT_MS } from '@podkit/device-testing';
+import { limaTestVmRunner } from '../runners/lima-test-vm.js';
+import { VM_COLD_TIMEOUT_MS, VM_WARM_TIMEOUT_MS } from './vm-runtime-setup.js';
 
 // ---------------------------------------------------------------------------
 // Smoke-test constants (deterministic so cleanup is targetable)

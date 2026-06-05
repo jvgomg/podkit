@@ -50,12 +50,10 @@ import {
   limaTestVmRunner,
   startDaemonForPersona,
   stopDaemon,
-  healthy,
-  echoMini,
-  ipodVideo5gIflash1tb,
-  VM_COLD_TIMEOUT_MS,
-  VM_WARM_TIMEOUT_MS,
-} from '@podkit/device-testing';
+} from '../runners/lima-test-vm.js';
+import { healthy } from '../system-states/index.js';
+import { echoMini, ipodVideo5gIflash1tb } from '../personas/index.js';
+import { VM_COLD_TIMEOUT_MS, VM_WARM_TIMEOUT_MS } from './vm-runtime-setup.js';
 
 // ---------------------------------------------------------------------------
 // Persona pair — see module header for the rationale.

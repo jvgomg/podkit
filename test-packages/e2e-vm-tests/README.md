@@ -11,7 +11,7 @@ See [ADR-016](../../adr/adr-016-linux-vm-test-harness.md) for the architecture.
 - **Harness self-tests** — "does the daemon synthesise the persona correctly? does backing-file synthesis stay byte-deterministic?". These stay with the harness in `test-packages/device-testing/src/vm/`.
 - **podkit feature tests** — "does `podkit device scan` discover the synthesised iPod? does `doctor` render the right output? does the discovery cache reconcile sanely across daemon restarts?". These live here.
 
-Splitting the two keeps the harness package import graph clean: nothing in `@podkit/device-testing` depends on `podkit` (it shouldn't — the harness predates and tests podkit). This package is where the dependency goes the other way: it imports `@podkit/device-testing` (and exercises `/usr/local/bin/podkit` inside the VM).
+Splitting the two keeps each test's concerns clear: the harness self-tests live next to the code they cover, and this package is purely the "podkit-as-consumer" test surface. Both packages depend on `@podkit/core` (the harness reuses `defaultSubprocessRunner` and the `EnumeratedUsbDevice` type); the asymmetry is that only this package exercises `/usr/local/bin/podkit` inside the VM.
 
 ## Running
 

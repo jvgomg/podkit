@@ -279,8 +279,8 @@ The build scripts (`build-linux-binary.sh`, `build-linux-prebuild.sh`) auto-crea
 
 VM tests live in two packages:
 
-- **`test-packages/device-testing/src/vm/`** — harness self-tests (e.g. `personas-baseline.e2e.test.ts`, `backing-file-content.e2e.test.ts`). Anything that pins the harness's own correctness (persona grouping, backing-file byte-determinism, daemon lifecycle smoke). These tests use relative imports into the harness because they ARE the harness's tests.
-- **`test-packages/e2e-vm-tests/src/`** — podkit feature tests (e.g. `discovery.e2e.test.ts`, `doctor-output-contract.e2e.test.ts`, `mass-storage-binding.e2e.test.ts`). Anything that exercises the podkit binary against a synthesised persona. These tests import everything from `@podkit/device-testing` — never reach into the harness's relative file layout.
+- **`test-packages/device-testing/src/vm/`** — harness self-tests (e.g. `personas-baseline.e2e.test.ts`, `backing-file-content.e2e.test.ts`, `dual-daemon-lifecycle.e2e.test.ts`, `mass-storage-binding.e2e.test.ts`). Anything that pins the harness's own correctness (persona grouping, backing-file byte-determinism, daemon lifecycle smoke, mass-storage gadget binding). These tests use relative imports into the harness because they ARE the harness's tests.
+- **`test-packages/e2e-vm-tests/src/`** — podkit feature tests (e.g. `discovery.e2e.test.ts`, `doctor-output-contract.e2e.test.ts`, `unsupported-cascade.e2e.test.ts`). Anything that exercises the podkit binary against a synthesised persona. These tests import everything from `@podkit/device-testing` — never reach into the harness's relative file layout.
 
 Reference implementation for harness self-tests: `test-packages/device-testing/src/vm/personas-baseline.e2e.test.ts`. Reference for podkit feature tests: `test-packages/e2e-vm-tests/src/discovery.e2e.test.ts`.
 
@@ -330,7 +330,7 @@ VM tests are excluded from the default `bun test` run via `bunfig.toml`
 `pathIgnorePatterns`. The `test:vm` script passes `src/vm` explicitly,
 which overrides the ignore pattern.
 
-**Preflight contract:** `bun run test:vm` runs `podkit-vm-preflight` before the test suite. If the Lima VM is not reachable, the preflight exits 1 with a remediation message pointing at `bun run harness:setup` / `harness:start` / `harness:status`. No tests run and nothing is silently skipped. To run non-VM tests instead, use `bun run test:unit` or `bun run test:integration`.
+**Preflight contract:** the preflight script is wired into each VM-test package's `bunfig.toml` as a `[test].preload`, so it runs once before any test files load. The script self-gates on `process.argv` / `npm_lifecycle_event` — it only contacts Lima when the invocation targets VM tests (a `vm/` path segment, an `.e2e.` filename, or the `test:vm` lifecycle event); other `bun test` runs are no-ops. If the Lima VM is not reachable when VM tests are targeted, the preflight exits 1 with a remediation message pointing at `bun run harness:setup` / `harness:start` / `harness:status`. No tests run and nothing is silently skipped. To run non-VM tests instead, use `bun run test:unit` or `bun run test:integration`.
 
 **Do NOT add skipped tests for assertions blocked on a dep task** — pause
 that stream of work in code and document the dependency in the backlog
@@ -351,7 +351,7 @@ infrastructure pieces back this:
   already claimed. Caller (VM test / runner) must serialise
   `systemctl start` invocations — the read-then-write is not atomic.
 
-Reference test: `test-packages/e2e-vm-tests/src/dual-daemon-lifecycle.e2e.test.ts`. Boots
+Reference test: `test-packages/device-testing/src/vm/dual-daemon-lifecycle.e2e.test.ts`. Boots
 two personas concurrently, asserts both configfs trees + extra `/dev/sg*`
 nodes, verifies clean teardown.
 

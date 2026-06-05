@@ -5,3 +5,8 @@
 # the repo doesn't try to spin up VM personas.
 pathIgnorePatterns = ["**/*.integration.test.ts", "**/*.e2e.test.ts"]
 retry = 1
+# Shared with @podkit/device-testing — self-gates on argv / npm_lifecycle_event
+# so non-VM runs do not require the Lima VM to be online. Resolved through
+# the workspace's `@podkit/device-testing` package export rather than a
+# cross-package relative path.
+preload = ["@podkit/device-testing/preflight"]

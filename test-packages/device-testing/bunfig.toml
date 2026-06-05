@@ -4,3 +4,6 @@
 # (`bun test src/vm --path-ignore-patterns=`).
 pathIgnorePatterns = ["**/*.e2e.test.ts"]
 retry = 2
+# Self-gates on argv / npm_lifecycle_event — no-ops for non-VM runs so unit
+# tests do not require the Lima VM to be online. See the script's header.
+preload = ["./scripts/preflight-vm.ts"]
