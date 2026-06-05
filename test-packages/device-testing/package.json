@@ -5,9 +5,6 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "bin": {
-    "podkit-vm-preflight": "./scripts/preflight-vm.ts"
-  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

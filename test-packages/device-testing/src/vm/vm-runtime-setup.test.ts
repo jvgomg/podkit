@@ -10,8 +10,9 @@
  * state grouping. It runs unconditionally on every host because it doesn't
  * touch a real VM.
  *
- * VM availability is enforced by the `podkit-vm-preflight` script (run before
- * `bun test` in the `test:vm` package script). There is no silent skip.
+ * VM availability is enforced by the preflight script wired into each VM-test
+ * package's `bunfig.toml` as a `[test].preload` (self-gates on argv so non-VM
+ * runs no-op). There is no silent skip when VM tests are targeted.
  *
  * Test grouping convention (standard for all VM tests):
  *   personas are grouped by `SystemState`, `applyState()` runs once per group

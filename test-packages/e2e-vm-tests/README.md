@@ -1,6 +1,6 @@
 # @podkit/e2e-vm-tests
 
-End-to-end tests that exercise **podkit features** against the synthesised devices produced by `@podkit/device-testing`. The harness itself (persona registry, system-state registry, the `lima-test-vm` runner, the FunctionFS daemon, the `withPersona` fixture, the `resolveVmAvailability` gate) lives in `@podkit/device-testing`; this package is a pure consumer.
+End-to-end tests that exercise **podkit features** against the synthesised devices produced by `@podkit/device-testing`. The harness itself (persona registry, system-state registry, the `lima-test-vm` runner, the FunctionFS daemon, the `withPersona` fixture, the bunfig-wired preflight gate) lives in `@podkit/device-testing`; this package is a pure consumer.
 
 See [ADR-016](../../adr/adr-016-linux-vm-test-harness.md) for the architecture.
 
@@ -23,16 +23,16 @@ bun run test:vm
 bun run --cwd test-packages/e2e-vm-tests test:vm
 ```
 
-VM tests are excluded from the default `bun test` run via `bunfig.toml`. They opt in via the `test:vm` script, which passes `src/` explicitly. When Lima is not installed or the `podkit-device-harness` VM instance is missing, `resolveVmAvailability()` returns `false` and every suite skips with a single stderr warning — so this `test:vm` step is safe to leave in default CI.
+VM tests are excluded from the default `bun test` run via `bunfig.toml`. They opt in via the `test:vm` script, which passes `src/` explicitly. The same `bunfig.toml` preloads the shared `@podkit/device-testing/preflight` script, which probes the `podkit-device-harness` Lima VM and exits 1 with a remediation message if Lima is missing or the VM isn't answering — fail-fast, no silent skip. The preflight self-gates on `process.argv` / `npm_lifecycle_event` so a non-VM `bun test` invocation in this package no-ops cleanly.
 
 ## Test layout
 
 One `*.e2e.test.ts` file per podkit-feature surface under VM coverage. Each file follows the suite shape documented in [agents/device-testing.md](../../agents/device-testing.md):
 
-1. Call `resolveVmAvailability()` at module top level and stash the boolean.
-2. Wrap every `describe` with `describe.skipIf(!vmAvailable)`.
-3. Group `it()` blocks under one `describe` per `SystemState` (the runner's `applyState` is the cold-path step — run it once per group, not once per test).
-4. Use `withPersona({ persona }, async () => { … })` to manage daemon lifecycle for a persona inside a test.
+1. Group `it()` blocks under one `describe` per `SystemState` (the runner's `applyState` is the cold-path step — run it once per group, not once per test).
+2. Use `withPersona({ persona }, async () => { … })` to manage daemon lifecycle for a persona inside a test.
+
+There is no in-file VM-availability gate — the bunfig preload handles that. If the VM is offline when `test:vm` runs, the preload exits before any suite loads.
 
 ## Imports
 
@@ -40,8 +40,7 @@ All harness symbols come from `@podkit/device-testing`. Never use relative paths
 
 ```ts
 import {
-  // VM availability + grouping
-  resolveVmAvailability,
+  // persona grouping
   groupPersonasByState,
   resolveStarterPersonas,
   // wall-time budgets

@@ -22,9 +22,11 @@
  *     once; per-test cost should be sub-second.
  *   - Use the {@link STARTER_PERSONA_IDS} constant — never inline raw persona ids.
  *
- * VM tests are gated by the `podkit-vm-preflight` script (run before `bun test`
- * in the `test:vm` package script). If the VM is not reachable, the preflight
- * exits 1 with a remediation message and no tests run. There is no silent skip.
+ * VM tests are gated by the preflight script wired into each VM-test package's
+ * `bunfig.toml` as a `[test].preload`. The preflight self-gates on argv and
+ * `npm_lifecycle_event` (no-ops for non-VM `bun test` runs); when VM tests are
+ * targeted and the VM is not reachable it exits 1 with a remediation message
+ * and no tests run. There is no silent skip.
  *
  * # Assertion families wired in `personas-baseline.e2e.test.ts`
  *
