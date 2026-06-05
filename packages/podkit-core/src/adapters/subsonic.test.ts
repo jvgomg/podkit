@@ -996,9 +996,31 @@ describe('SubsonicAdapter getArtwork', () => {
       getCoverArt: mock404,
       checkArtwork: true,
     });
-    // With checkArtwork on, mapSongToTrack pre-classifies the coverArt as null
-    // (404). getArtwork must respect that without re-fetching.
+    // With checkArtwork on, mapSongToTrack pre-classifies the coverArt as
+    // 'missing' (404). getArtwork must respect that without re-fetching.
     const track = await mapSong({ id: 'song-x', coverArt: 'al-missing' });
+
+    let postMapFetchCount = 0;
+    (adapter as any).api.getCoverArt = async () => {
+      postMapFetchCount++;
+      return mockRealArtwork();
+    };
+    expect(await adapter.getArtwork(track)).toBeNull();
+    expect(postMapFetchCount).toBe(0);
+  });
+
+  it("short-circuits to null when an earlier check-artwork pass marked the cover as 'placeholder'", async () => {
+    // Sister to the 'missing' short-circuit above: classify == 'placeholder'
+    // must also skip the fetch. Pins the readers-treat-placeholder-and-missing-
+    // identically contract that the discriminated-union rewrite was trying to
+    // encode.
+    const placeholderHash = hashArtwork(placeholderImage);
+    const { adapter, mapSong } = createMockedAdapter({
+      getCoverArt: mockPlaceholder,
+      placeholderHash,
+      checkArtwork: true,
+    });
+    const track = await mapSong({ id: 'song-x', coverArt: 'al-placeholder' });
 
     let postMapFetchCount = 0;
     (adapter as any).api.getCoverArt = async () => {
@@ -1035,12 +1057,11 @@ describe('SubsonicAdapter getArtwork', () => {
     });
 
     // Manually populate the per-track map to avoid the per-mapSong fetch.
-    const bytes = adapter as unknown as {
+    const internals = adapter as unknown as {
       coverArtByTrack: Map<string, string>;
-      artworkBytes: Map<string, Buffer>;
     };
     for (let i = 0; i < 101; i++) {
-      bytes.coverArtByTrack.set(`t-${i}`, `cover-${i}`);
+      internals.coverArtByTrack.set(`t-${i}`, `cover-${i}`);
     }
 
     // First eviction: fetch cover-0 then cover-1..100 (101 albums); cap is 100
@@ -1063,5 +1084,41 @@ describe('SubsonicAdapter getArtwork', () => {
     const fresh = { id: 't-100' } as unknown as CollectionTrack;
     await adapter.getArtwork(fresh);
     expect(fetchCount).toBe(0);
+  });
+
+  it('classification survives bytes eviction — structural invariant of the cache split', async () => {
+    // The whole point of separating ArtworkClassificationMemo from
+    // ArtworkBytesCache: bytes evict under memory pressure, but the
+    // 'real/placeholder/missing' decision persists so a daemon never has to
+    // re-decide. Drive past the bytes cap and verify the evicted entry's
+    // classification is still cached.
+    const { adapter } = createMockedAdapter({
+      getCoverArt: async () =>
+        new Response(realArtwork, {
+          status: 200,
+          headers: { 'content-type': 'image/jpeg' },
+        }),
+    });
+
+    const internals = adapter as unknown as {
+      coverArtByTrack: Map<string, string>;
+      classify: { get(id: string): 'real' | 'placeholder' | 'missing' | undefined; size(): number };
+      bytes: { has(id: string): boolean; size(): number };
+    };
+    for (let i = 0; i < 101; i++) {
+      internals.coverArtByTrack.set(`t-${i}`, `cover-${i}`);
+    }
+
+    for (let i = 0; i < 101; i++) {
+      const track = { id: `t-${i}` } as unknown as CollectionTrack;
+      await adapter.getArtwork(track);
+    }
+
+    // Bytes cache holds the cap; cover-0 has evicted from bytes...
+    expect(internals.bytes.has('cover-0')).toBe(false);
+    // ...but its classification is still memoised.
+    expect(internals.classify.get('cover-0')).toBe('real');
+    // And the memo has grown beyond the bytes cap — proving it's unbounded.
+    expect(internals.classify.size()).toBe(101);
   });
 });

@@ -1,10 +1,10 @@
 ---
 id: TASK-384
 title: 'Subsonic adapter: split artwork cache into single-responsibility classes'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-06-04 08:05'
-updated_date: '2026-06-05 18:03'
+updated_date: '2026-06-05 18:55'
 labels:
   - enhancement
   - refactor
@@ -116,3 +116,66 @@ async getArtwork(track): Promise<Buffer | null> {
 - Original task spec had a discriminated union; superseded 2026-06-05 by single-responsibility composition.
 - `packages/podkit-core/src/adapters/subsonic.ts` (current dual-map implementation).
 <!-- SECTION:DESCRIPTION:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+## Module layout
+
+- New: `packages/podkit-core/src/adapters/subsonic/cache.ts` — exports `ArtworkClassificationMemo`, `ArtworkBytesCache`, `ARTWORK_BYTES_CACHE_MAX`, and the `ArtworkClassification` type.
+- New: `packages/podkit-core/src/adapters/subsonic/cache.test.ts` — 13 isolated unit tests.
+- Modified: `packages/podkit-core/src/adapters/subsonic.ts` — drops `artworkCache`/`artworkBytes`/`cacheArtworkBytes`/inline `ARTWORK_BYTES_CACHE_MAX`; composes `private classify` + `private bytes`.
+
+## Class APIs as landed (matches brief)
+
+```ts
+export type ArtworkClassification = 'real' | 'placeholder' | 'missing';
+
+class ArtworkClassificationMemo {
+  get(id: string): ArtworkClassification | undefined;
+  set(id: string, classification: ArtworkClassification): void;
+  clear(): void;
+  size(): number;
+}
+
+class ArtworkBytesCache {
+  get(id: string): Buffer | undefined;
+  has(id: string): boolean;       // kept for symmetry; used internally
+  put(id: string, bytes: Buffer): void;
+  clear(): void;
+  size(): number;
+}
+```
+
+Cap: `ARTWORK_BYTES_CACHE_MAX = 100` (hoisted to `cache.ts`, same value as before).
+
+## FIFO semantics preserved
+
+`ArtworkBytesCache.put` mirrors pre-refactor `cacheArtworkBytes` exactly: re-put on an existing key updates the value but does NOT refresh its insertion-order slot. Pinned by `re-inserting an existing key does NOT refresh its eviction order` in `cache.test.ts`.
+
+## Classification semantics translation
+
+Old: `Map<coverArtId, string | null>` where `null` meant "no artwork (missing OR placeholder)" and a `string` was the hash. New: `Map<coverArtId, 'real' | 'placeholder' | 'missing'>` (no hash). All `=== null` readers translated to "classification ∈ {placeholder, missing}". The hash-on-cache-hit return in `fetchArtworkInfo` was rebuilt by re-hashing from the bytes cache when `classify === 'real'` AND bytes still cached; if bytes evicted, fall through to refetch (rare since same-album tracks process sequentially and bytes-cap >> typical per-album track count). SHA-256 of ~200 KB is microseconds, so the rehash cost is negligible.
+
+## Tests
+
+- `subsonic/cache.test.ts` (new, 13 tests): isolated coverage of both classes — get/set/clear/size, unbounded memo (10k entries), FIFO eviction at exact cap, re-insert non-refresh semantics, eviction past cap+N.
+- `subsonic.test.ts` (modified): old "bytes cache is bounded — FIFO" test updated for new field names. NEW test: `classification survives bytes eviction — structural invariant of the cache split` — inserts 101 entries, asserts `bytes.has('cover-0') === false` AND `classify.get('cover-0') === 'real'` AND `classify.size() === 101`. NEW test: placeholder short-circuit (sister to existing missing short-circuit) pins both classifications skip the fetch.
+
+Counts: 2896 → 2911 in `@podkit/core` unit suite (+15 new). 0 failures.
+
+## Quality gates
+
+- `bun run test:unit --filter @podkit/core` — 2911 pass, 5 skip, 0 fail.
+- `bun run typecheck` — 34 tasks, all successful (clean).
+- `grep -n "artworkCache|artworkBytes|cacheArtworkBytes" subsonic.ts` — zero matches.
+
+## Surprises / decisions
+
+- The brief said the memo holds only `'real' | 'placeholder' | 'missing'`, but `fetchArtworkInfo` historically returned the artwork hash on cache hit (for `track.artworkHash` change detection in `--check-artwork` mode). Resolution: on a memo 'real' hit, re-hash from the bytes cache (cheap, ~µs). If bytes evicted, fall through to refetch — functionally identical, preserves the no-third-cache constraint. Documented inline.
+- Did NOT introduce a discriminated union for memo entries — kept the simple enum per task brief.
+- Did NOT introduce a `BoundedBufferCache` generic — deferred per task brief until a second consumer appears.
+- `ArtworkBytesCache.has` retained: used by the class's own `put` for the "existing key skip eviction" check; not strictly required externally but cheap to expose.
+
+Post-Sonnet-review (2026-06-05): 0 blockers; 1 SUGGESTION rejected with rationale (add refetch test in the invariant test) — the refetch branch is already pinned by the existing FIFO eviction test at subsonic.test.ts:1076-1080, which together with the structural invariant test (classify survives) implicitly exercises the `'real'` + bytes-evicted → refetch branch. Splitting the narratives keeps each test single-purpose. 1 NIT noted but pre-existing (network errors on getArtwork aren't memoised; out of scope).
+<!-- SECTION:NOTES:END -->
