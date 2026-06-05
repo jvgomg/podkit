@@ -1596,7 +1596,7 @@ describe('MusicHandler', () => {
 // Artwork-flag forwarding — pins the handler → pipeline boundary
 // =============================================================================
 //
-// Pipeline's `this.artworkEnabled` gate is covered exhaustively in
+// Pipeline's `ctx.artworkEnabled` gate is covered exhaustively in
 // pipeline.test.ts. What's tested here is the boundary between
 // `handler.config.raw.artwork` and the options bag handed to
 // `MusicPipeline.execute(...)`. The boundary regressed once at the CLI

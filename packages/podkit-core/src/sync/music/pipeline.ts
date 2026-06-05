@@ -686,23 +686,74 @@ function sleep(ms: number): Promise<void> {
 // =============================================================================
 
 /**
+ * Per-execute state for a single `MusicPipeline.execute()` call.
+ *
+ * Built once at the top of `execute()` from the caller's `ExtendedExecuteOptions`
+ * and threaded through every private method that needs any of these fields.
+ *
+ * Previously each field lived on `this` and was set/cleared by `execute()` —
+ * which meant two overlapping `execute()` calls on the same instance would
+ * silently clobber each other's state (see doc-041 §3.6). With the context
+ * threaded as a parameter the pipeline is structurally safe for concurrent
+ * execution; the {@link PipelineBusyError} guard is now a defensive net
+ * rather than the load-bearing safety mechanism.
+ *
+ * All fields are `readonly` to make accidental mutation a type error — the
+ * context is created once and treated as immutable for the duration of the
+ * execute() call.
+ */
+interface ExecutionContext {
+  /**
+   * Source adapter for the current execution.
+   *
+   * Held so {@link MusicPipeline.transferArtwork} can ask the adapter for
+   * non-embedded artwork bytes (directory sidecars, Subsonic getCoverArt)
+   * when extraction from the audio body returns null.
+   */
+  readonly adapter?: CollectionAdapter;
+  /** Transfer mode optimization strategy (`fast` | `optimized` | `portable`). */
+  readonly transferMode?: TransferMode;
+  /** Resize embedded artwork to this maximum dimension (pixels, square). */
+  readonly artworkResize?: number;
+  /** Resize sidecar artwork (peer `cover.jpg`) to this maximum dimension. */
+  readonly sidecarResize?: number;
+  /** Audio normalization mode for the target device (`replaygain` | `soundcheck` | `none`). */
+  readonly audioNormalization?: string;
+  /** Sync tag config for writing transcode metadata to device tracks. */
+  readonly syncTagConfig?: SyncTagConfig;
+  /**
+   * Whether artwork sync is enabled for the current execution.
+   *
+   * Resolved from `MusicSyncConfig.artwork` (default `true`) and snapshotted
+   * at `execute()` start. Not optional — has a true default.
+   */
+  readonly artworkEnabled: boolean;
+}
+
+/**
  * Thrown when {@link MusicPipeline.execute} is invoked while another
  * `execute()` is in-flight on the same instance.
  *
- * `MusicPipeline` stores per-execute state on `this` (`adapter`,
- * `transferMode`, etc.). Two overlapping calls would silently clobber each
- * other's state — this error catches the misuse loudly. Allocate one
- * pipeline per sync (the internal pattern in `sync/music/handler.ts`).
+ * Historical context: the pipeline used to store per-execute state on `this`,
+ * so overlapping calls would silently clobber each other. After the
+ * ExecutionContext refactor (TASK-382) all per-execute state lives in a
+ * parameter, and the pipeline is structurally safe for concurrent execution.
+ *
+ * This guard is now a **defensive net** rather than a correctness requirement
+ * — it still rejects overlapping calls to surface misuse early (and because
+ * the album / resized-artwork caches are still per-instance and would be
+ * cleared by the second `execute()` mid-flight). Sequential reuse on the
+ * same instance is fully supported.
  */
 export class PipelineBusyError extends Error {
   constructor() {
     super(
       'MusicPipeline.execute() invoked while another execute() is in-flight on the same instance. ' +
-        'MusicPipeline is not safe for concurrent execute() calls because per-call state ' +
-        '(adapter, transferMode, artworkResize, audioNormalization, syncTagConfig) is stored on ' +
-        '`this`. Allocate one MusicPipeline per sync (see packages/podkit-core/src/sync/music/handler.ts ' +
-        'for the internal pattern). Sequential reuse (`await pipeline.execute(...); pipeline.execute(...);`) ' +
-        'is fine — only overlapping calls trigger this error.'
+        'Although per-call state is now passed via an ExecutionContext parameter (so concurrent ' +
+        'execute() would not corrupt that state), the album-artwork and resized-artwork caches ' +
+        'are still per-instance and would be cleared mid-flight by the second call. Allocate one ' +
+        'MusicPipeline per concurrent sync, or sequence calls (`await pipeline.execute(...); ' +
+        'pipeline.execute(...);`).'
     );
     this.name = 'PipelineBusyError';
   }
@@ -714,22 +765,21 @@ export class PipelineBusyError extends Error {
  * Handles execution of sync operations including transcoding, copying,
  * removing, updating metadata, and upgrading tracks on the device.
  *
- * ## Concurrency contract — IMPORTANT FOR LIBRARY CONSUMERS
+ * ## Concurrency contract
  *
- * A `MusicPipeline` instance stores per-execute state on `this` (`adapter`,
- * `transferMode`, `artworkResize`, ...). It is **NOT safe** for two
- * `execute()` calls to overlap on the same instance — the second call's
- * options would clobber the first's, silently corrupting both syncs.
+ * Per-execute state (adapter, transferMode, artworkResize, ...) lives in an
+ * {@link ExecutionContext} object built at the top of `execute()` and threaded
+ * through every private method. Concurrent `execute()` calls on the same
+ * instance cannot corrupt each other's option state.
  *
- * The internal CLI/handler pattern (`sync/music/handler.ts`) sidesteps this
- * by allocating a fresh `MusicPipeline` for every `executeOperations()` call.
- * Library consumers should do the same — one instance per sync, sequential
- * execution.
+ * However, the album-artwork cache and resized-artwork cache are still
+ * per-instance — `execute()` clears them at entry. Two overlapping calls
+ * would have the second `execute()` wipe the first's caches mid-flight,
+ * causing redundant extraction work. The {@link PipelineBusyError} guard
+ * keeps rejecting overlapping calls for that reason.
  *
- * For defensive use the class throws {@link PipelineBusyError} when an
- * `execute()` is invoked while another is in-flight on the same instance.
- * Sequential reuse (`await execute(); execute();`) is fine — the in-flight
- * flag clears when the previous async iterator finishes.
+ * Sequential reuse on the same instance (`await execute(); execute();`) is
+ * fully supported — the second call gets a fresh context and fresh caches.
  *
  * @see doc-041 §3.6 + §5.7 for the rough-edge documentation.
  */
@@ -738,30 +788,11 @@ export class MusicPipeline implements SyncExecutor {
   private transcoder: FFmpegTranscoder;
   /** Warnings collected during execution */
   private warnings: ExecutionWarning[] = [];
-  /** Sync tag config for the current execution (set during execute()) */
-  private syncTagConfig?: SyncTagConfig;
-  /** Transfer mode for the current execution (set during execute()) */
-  private transferMode?: TransferMode;
-  /** Artwork resize dimension for embedded artwork devices (set during execute()) */
-  private artworkResize?: number;
-  /** Sidecar resize dimension for sidecar-primary devices (set during execute()) */
-  private sidecarResize?: number;
-  /** Audio normalization mode for the target device (set during execute()) */
-  private audioNormalization?: string;
-  /**
-   * Whether artwork sync is enabled for the current execution.
-   *
-   * Resolved from `MusicSyncConfig.artwork` (default `true`) and snapshotted
-   * at `execute()` start. {@link transferArtwork} short-circuits to
-   * `undefined` when this is `false`, so the per-track-sink dispatch is the
-   * only artwork gate downstream — no positional boolean is threaded
-   * through the transfer methods.
-   */
-  private artworkEnabled = true;
   /**
    * True while an `execute()` iterator is in-flight. Used by the defensive
    * guard in `execute()` to throw a {@link PipelineBusyError} on overlap,
-   * since per-execute state on `this` is not safe for concurrent calls.
+   * since the per-instance artwork caches would be cleared by the second
+   * `execute()` mid-flight.
    */
   private executing = false;
   /** Album-level artwork cache — deduplicates extraction across tracks on the same album */
@@ -779,15 +810,6 @@ export class MusicPipeline implements SyncExecutor {
   private albumCandidates = new Map<string, readonly string[]>();
   /** Album-level cache for resized artwork — avoids redundant FFmpeg spawns for tracks on the same album */
   private resizedArtworkCache = new Map<string, Buffer>();
-  /**
-   * Source adapter for the current execution (set during `execute()`).
-   *
-   * Held so {@link transferArtwork} can ask the adapter for non-embedded
-   * artwork bytes (directory sidecars, Subsonic getCoverArt) when extraction
-   * from the audio body returns null. Cleared via the per-execution flow,
-   * since the same pipeline instance may serve multiple plans.
-   */
-  private adapter?: CollectionAdapter;
 
   constructor(deps: ExecutorDependencies) {
     this.device = deps.device;
@@ -824,9 +846,10 @@ export class MusicPipeline implements SyncExecutor {
    * from the soundcheck integer (sub-0.01 dB rounding difference).
    */
   private buildReplayGainOption(
-    source: CollectionTrack
+    source: CollectionTrack,
+    ctx: ExecutionContext
   ): { trackGain: number; trackPeak?: number; albumGain?: number; albumPeak?: number } | undefined {
-    if (this.audioNormalization !== 'replaygain') return undefined;
+    if (ctx.audioNormalization !== 'replaygain') return undefined;
     if (!source.normalization) return undefined;
 
     if (source.normalization.trackGain !== undefined) {
@@ -869,12 +892,12 @@ export class MusicPipeline implements SyncExecutor {
     plan: SyncPlan,
     options: ExtendedExecuteOptions = {}
   ): AsyncIterable<ExecutorProgress> {
-    // Defensive guard: per-execute state lives on `this`, so a second
-    // concurrent execute() would silently clobber the first. Throw early
-    // with an actionable message instead of corrupting both syncs. The
-    // flag is flipped to true only AFTER any code that could throw —
-    // it's the first thing inside the try/finally below — so a setup
-    // failure can't strand the instance in a permanently-busy state.
+    // Defensive guard: the per-instance album-artwork and resized-artwork
+    // caches would be cleared by a second `execute()` mid-flight. Throw
+    // early with an actionable message instead. The flag is flipped to true
+    // only AFTER any code that could throw — it's the first thing inside
+    // the try/finally below — so a setup failure can't strand the instance
+    // in a permanently-busy state.
     if (this.executing) {
       throw new PipelineBusyError();
     }
@@ -895,16 +918,22 @@ export class MusicPipeline implements SyncExecutor {
       saveInterval = 50,
     } = options;
 
-    // Store sync tag config for use during transfer
-    this.syncTagConfig = syncTagConfig;
-    this.transferMode = transferMode;
-    this.artworkResize = artworkResize;
-    this.sidecarResize = sidecarResize;
-    this.audioNormalization = audioNormalization;
-    this.adapter = adapter;
-    this.artworkEnabled = artwork;
+    // Build the per-execute context. All option-derived state lives here
+    // (rather than on `this`) so concurrent execute() calls cannot corrupt
+    // each other's state via shared instance fields.
+    const ctx: ExecutionContext = {
+      adapter,
+      transferMode,
+      artworkResize,
+      sidecarResize,
+      audioNormalization,
+      syncTagConfig,
+      artworkEnabled: artwork,
+    };
 
-    // Clear state from previous execution
+    // Clear per-instance cache state from previous execution.
+    // These caches are NOT per-execute state — they're instance-scoped
+    // performance caches that get reset at the start of each run.
     this.clearWarnings();
     this.artworkCache.clear();
     this.albumCandidates.clear();
@@ -914,7 +943,7 @@ export class MusicPipeline implements SyncExecutor {
     // resolve "album art" deterministically regardless of which track is
     // processed first. See `albumCandidates` field comment for the gating
     // rule (directory adapter only).
-    this.buildAlbumCandidates(plan, adapter);
+    this.buildAlbumCandidates(plan, ctx);
 
     // Merge retry config with defaults
     const mergedRetryConfig: Required<RetryConfig> = {
@@ -955,9 +984,9 @@ export class MusicPipeline implements SyncExecutor {
         transcodeDir,
         mergedRetryConfig,
         continueOnError,
-        adapter,
         signal,
-        saveInterval
+        saveInterval,
+        ctx
       );
     } finally {
       // Cleanup temp directory
@@ -1041,13 +1070,14 @@ export class MusicPipeline implements SyncExecutor {
     transcodeDir: string,
     retryConfig: Required<RetryConfig>,
     continueOnError: boolean,
-    adapter?: CollectionAdapter,
-    signal?: AbortSignal,
-    saveInterval = 50
+    signal: AbortSignal | undefined,
+    saveInterval: number,
+    ctx: ExecutionContext
   ): AsyncIterable<ExecutorProgress> {
     const total = plan.operations.length;
     const prefetchQueue = new AsyncQueue<PrefetchedFile>(PREFETCH_BUFFER_SIZE);
     const transferQueue = new AsyncQueue<PreparedFile>(PIPELINE_BUFFER_SIZE);
+    const { adapter } = ctx;
 
     // Shared state across all stages
     let bytesProcessed = 0;
@@ -1096,7 +1126,7 @@ export class MusicPipeline implements SyncExecutor {
             inlineCompletions.push(operation);
             inlineCompleted++;
           } else if (operation.type === 'update-metadata') {
-            await this.executeUpdateMetadata(operation);
+            await this.executeUpdateMetadata(operation, ctx);
             inlineCompletions.push(operation);
             inlineCompleted++;
           } else if (operation.type === 'update-sync-tag') {
@@ -1104,7 +1134,7 @@ export class MusicPipeline implements SyncExecutor {
             inlineCompletions.push(operation);
             inlineCompleted++;
           } else if (operation.type === 'relocate') {
-            await this.executeRelocate(operation);
+            await this.executeRelocate(operation, ctx);
             inlineCompletions.push(operation);
             inlineCompleted++;
           }
@@ -1142,26 +1172,26 @@ export class MusicPipeline implements SyncExecutor {
 
           if (operation.type === 'add-transcode') {
             result = await this.prepareWithRetry(
-              () => this.prepareTranscode(operation, transcodeDir, adapter, signal, fileAccess),
+              () => this.prepareTranscode(operation, transcodeDir, ctx, signal, fileAccess),
               operation,
               retryConfig
             );
           } else if (operation.type === 'add-direct-copy') {
             result = await this.prepareWithRetry(
-              () => this.prepareCopy(operation, adapter, fileAccess),
+              () => this.prepareCopy(operation, ctx, fileAccess),
               operation,
               retryConfig
             );
           } else if (operation.type === 'add-optimized-copy') {
             result = await this.prepareWithRetry(
-              () => this.prepareOptimizedCopy(operation, transcodeDir, adapter, signal, fileAccess),
+              () => this.prepareOptimizedCopy(operation, transcodeDir, ctx, signal, fileAccess),
               operation,
               retryConfig
             );
           } else {
             // upgrade-transcode, upgrade-direct-copy, upgrade-optimized-copy, upgrade-artwork
             result = await this.prepareWithRetry(
-              () => this.prepareUpgrade(operation, transcodeDir, adapter, signal, fileAccess),
+              () => this.prepareUpgrade(operation, transcodeDir, ctx, signal, fileAccess),
               operation,
               retryConfig
             );
@@ -1226,7 +1256,7 @@ export class MusicPipeline implements SyncExecutor {
       }
 
       try {
-        const result = await this.transferWithRetry(prepared, retryConfig);
+        const result = await this.transferWithRetry(prepared, retryConfig, ctx);
 
         if (result.value) {
           bytesProcessed += result.value.bytesTransferred;
@@ -1431,7 +1461,8 @@ export class MusicPipeline implements SyncExecutor {
    */
   private async transferWithRetry(
     prepared: PreparedFile,
-    retryConfig: Required<RetryConfig>
+    retryConfig: Required<RetryConfig>,
+    ctx: ExecutionContext
   ): Promise<
     | { value: { bytesTransferred: number }; error?: undefined; attempts?: number }
     | { value: null; error: Error; attempts: number }
@@ -1441,7 +1472,7 @@ export class MusicPipeline implements SyncExecutor {
 
     while (true) {
       try {
-        const result = await this.transferToIpod(prepared);
+        const result = await this.transferToIpod(prepared, ctx);
         return { value: result, attempts: attempt };
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
@@ -1477,8 +1508,8 @@ export class MusicPipeline implements SyncExecutor {
    * whose extension is known to support embedded art reliably come first,
    * so the cache stops at the first sibling that actually carries a cover.
    */
-  private buildAlbumCandidates(plan: SyncPlan, adapter?: CollectionAdapter): void {
-    if (adapter?.adapterType !== 'directory') return;
+  private buildAlbumCandidates(plan: SyncPlan, ctx: ExecutionContext): void {
+    if (ctx.adapter?.adapterType !== 'directory') return;
 
     const groups = new Map<string, string[]>();
     for (const op of plan.operations) {
@@ -1531,25 +1562,26 @@ export class MusicPipeline implements SyncExecutor {
   private async transferArtwork(
     track: DeviceTrack,
     sourceFilePath: string,
-    sourceTrack: CollectionTrack
+    sourceTrack: CollectionTrack,
+    ctx: ExecutionContext
   ): Promise<string | undefined> {
     // Defense-in-depth gate for global artwork disable. Callers are
     // expected to gate the whole artwork block at their level (the
-    // surrounding `if (this.artworkEnabled && ...)` is the load-bearing
+    // surrounding `if (ctx.artworkEnabled && ...)` is the load-bearing
     // check — without it, the stale-cleanup `removeTrackArtwork` branch
     // would wipe existing device artwork on `artwork=false` syncs). This
     // inner short-circuit is the belt to that suspenders: any future write
     // path that lands in transferArtwork without going through the outer
     // gate still returns `undefined` here, suppressing both the bytes and
     // the syncTag.artworkHash claim.
-    if (!this.artworkEnabled) {
+    if (!ctx.artworkEnabled) {
       return undefined;
     }
 
     try {
       const albumKey = getAlbumKey({ artist: track.artist ?? '', album: track.album ?? '' });
       const candidates = this.albumCandidates.get(albumKey);
-      const adapterFallback = this.buildAdapterFallback(sourceTrack);
+      const adapterFallback = this.buildAdapterFallback(sourceTrack, ctx);
       const cached = await this.artworkCache.get(
         { artist: track.artist ?? '', album: track.album ?? '' },
         sourceFilePath,
@@ -1571,7 +1603,7 @@ export class MusicPipeline implements SyncExecutor {
           // FFmpeg couldn't embed in OGG; node-taglib-sharp handles every
           // container, so the gate is gone. Resize the cover to the device's
           // artworkMaxResolution before embedding (taglib doesn't resize).
-          const imageData = await this.getResizedArtwork(track, cached.data);
+          const imageData = await this.getResizedArtwork(track, cached.data, ctx);
           this.device.updateTrack(track, { embeddedPictureData: imageData });
           return cached.hash;
         }
@@ -1591,7 +1623,7 @@ export class MusicPipeline implements SyncExecutor {
           if (typeof this.device.writeSidecar !== 'function') {
             return undefined;
           }
-          const imageData = await this.getResizedArtwork(track, cached.data);
+          const imageData = await this.getResizedArtwork(track, cached.data, ctx);
           this.device.writeSidecar(track, imageData);
           return cached.hash;
         }
@@ -1631,9 +1663,10 @@ export class MusicPipeline implements SyncExecutor {
    * its embed-only behaviour.
    */
   private buildAdapterFallback(
-    sourceTrack: CollectionTrack
+    sourceTrack: CollectionTrack,
+    ctx: ExecutionContext
   ): (() => Promise<Buffer | null>) | undefined {
-    const adapter = this.adapter;
+    const adapter = ctx.adapter;
     if (!adapter?.getArtwork) return undefined;
     return () => adapter.getArtwork!(sourceTrack);
   }
@@ -1642,19 +1675,23 @@ export class MusicPipeline implements SyncExecutor {
    * Get resized artwork for embed / sidecar writes, using an album-level cache.
    *
    * Picks the right resize dimension based on the track's sink:
-   *   - `'embedded'` → `this.artworkResize`
-   *   - `'sidecar'`  → `this.sidecarResize`
+   *   - `'embedded'` → `ctx.artworkResize`
+   *   - `'sidecar'`  → `ctx.sidecarResize`
    *   - any other    → no resize (caller doesn't reach this path today)
    *
    * Both dimensions key off `capabilities.artworkMaxResolution`; they stay
-   * separate config fields so the FFmpeg embed path only fires on embedded-
+   * separate context fields so the FFmpeg embed path only fires on embedded-
    * primary devices (sidecar-primary wants the file body art-free).
    *
    * Avoids redundant resize spawns for tracks on the same album. Falls back
    * to original data when the relevant resize value is 0 or unset.
    */
-  private async getResizedArtwork(track: DeviceTrack, originalData: Buffer): Promise<Buffer> {
-    const resize = track.artworkSink === 'sidecar' ? this.sidecarResize : this.artworkResize;
+  private async getResizedArtwork(
+    track: DeviceTrack,
+    originalData: Buffer,
+    ctx: ExecutionContext
+  ): Promise<Buffer> {
+    const resize = track.artworkSink === 'sidecar' ? ctx.sidecarResize : ctx.artworkResize;
     if (!resize || resize <= 0) {
       return originalData;
     }
@@ -1721,7 +1758,8 @@ export class MusicPipeline implements SyncExecutor {
    * Preserves play statistics (play count, rating, skip count).
    */
   private async executeUpdateMetadata(
-    operation: Extract<SyncOperation, { type: 'update-metadata' }>
+    operation: Extract<SyncOperation, { type: 'update-metadata' }>,
+    ctx: ExecutionContext
   ): Promise<{ bytesTransferred: number }> {
     const { track: targetTrack, metadata } = operation;
 
@@ -1781,8 +1819,8 @@ export class MusicPipeline implements SyncExecutor {
     }
     // Tell the adapter which transfer mode is in effect so device-specific
     // tag-write policies (iPod portable, etc.) can fire.
-    if (this.transferMode) {
-      updateFields.transferMode = this.transferMode;
+    if (ctx.transferMode) {
+      updateFields.transferMode = ctx.transferMode;
     }
     // Update the track metadata (preserves play stats automatically)
     this.device.updateTrack(foundTrack, updateFields);
@@ -1839,7 +1877,8 @@ export class MusicPipeline implements SyncExecutor {
    * metadata updates if the operation carries them.
    */
   private async executeRelocate(
-    operation: Extract<SyncOperation, { type: 'relocate' }>
+    operation: Extract<SyncOperation, { type: 'relocate' }>,
+    ctx: ExecutionContext
   ): Promise<{ bytesTransferred: number }> {
     const { track: targetTrack, newPath, metadata } = operation;
 
@@ -1870,8 +1909,8 @@ export class MusicPipeline implements SyncExecutor {
 
     // Apply metadata updates if any
     if (metadata && Object.keys(metadata).length > 0) {
-      const withMode: DeviceTrackMetadata = this.transferMode
-        ? { ...metadata, transferMode: this.transferMode }
+      const withMode: DeviceTrackMetadata = ctx.transferMode
+        ? { ...metadata, transferMode: ctx.transferMode }
         : { ...metadata };
       this.device.updateTrack(trackAfterRelocate, withMode);
     }
@@ -1896,14 +1935,14 @@ export class MusicPipeline implements SyncExecutor {
   private async prepareTranscode(
     operation: Extract<SyncOperation, { type: 'add-transcode' }>,
     transcodeDir: string,
-    adapter?: CollectionAdapter,
+    ctx: ExecutionContext,
     signal?: AbortSignal,
     prefetchedAccess?: ResolvedFileAccess
   ): Promise<PreparedFile> {
     const { source, preset: presetRef } = operation;
 
     // Use pre-resolved file access from prefetch, or resolve now (legacy/fallback)
-    const fileAccess = prefetchedAccess ?? (await getTrackFilePath(source, adapter));
+    const fileAccess = prefetchedAccess ?? (await getTrackFilePath(source, ctx.adapter));
     const inputPath = fileAccess.path;
 
     // Generate output path in temp directory — derive extension from target codec.
@@ -1917,17 +1956,13 @@ export class MusicPipeline implements SyncExecutor {
     // Transcode the file — use EncoderConfig when targetCodec is set
     const transcodePreset = buildTranscodePreset(
       presetRef,
-      this.syncTagConfig?.encodingMode as
-        | import('../../transcode/types.js').EncodingMode
-        | undefined
+      ctx.syncTagConfig?.encodingMode as import('../../transcode/types.js').EncodingMode | undefined
     );
     const result = await this.transcoder.transcode(inputPath, tmpOutputPath, transcodePreset, {
       signal,
-      transferMode: this.transferMode as
-        | import('../../transcode/types.js').TransferMode
-        | undefined,
-      artworkResize: this.artworkResize,
-      replayGain: this.buildReplayGainOption(operation.source),
+      transferMode: ctx.transferMode as import('../../transcode/types.js').TransferMode | undefined,
+      artworkResize: ctx.artworkResize,
+      replayGain: this.buildReplayGainOption(operation.source, ctx),
     });
     await rename(tmpOutputPath, outputPath);
 
@@ -1953,13 +1988,13 @@ export class MusicPipeline implements SyncExecutor {
    */
   private async prepareCopy(
     operation: Extract<SyncOperation, { type: 'add-direct-copy' }>,
-    adapter?: CollectionAdapter,
+    ctx: ExecutionContext,
     prefetchedAccess?: ResolvedFileAccess
   ): Promise<PreparedFile> {
     const { source } = operation;
 
     // Use pre-resolved file access from prefetch, or resolve now (legacy/fallback)
-    const fileAccess = prefetchedAccess ?? (await getTrackFilePath(source, adapter));
+    const fileAccess = prefetchedAccess ?? (await getTrackFilePath(source, ctx.adapter));
     const sourcePath = fileAccess.path;
 
     // Get actual file size
@@ -2003,14 +2038,14 @@ export class MusicPipeline implements SyncExecutor {
   private async prepareOptimizedCopy(
     operation: Extract<SyncOperation, { type: 'add-optimized-copy' }>,
     transcodeDir: string,
-    adapter?: CollectionAdapter,
+    ctx: ExecutionContext,
     signal?: AbortSignal,
     prefetchedAccess?: ResolvedFileAccess
   ): Promise<PreparedFile> {
     const { source } = operation;
 
     // Resolve file access
-    const fileAccess = prefetchedAccess ?? (await getTrackFilePath(source, adapter));
+    const fileAccess = prefetchedAccess ?? (await getTrackFilePath(source, ctx.adapter));
     const inputPath = fileAccess.path;
 
     // Determine format for FFmpeg args
@@ -2025,8 +2060,8 @@ export class MusicPipeline implements SyncExecutor {
 
     // Build FFmpeg args and run
     const args = buildOptimizedCopyArgs(inputPath, tmpOutputPath, format, {
-      artworkResize: this.artworkResize,
-      replayGain: this.buildReplayGainOption(source),
+      artworkResize: ctx.artworkResize,
+      replayGain: this.buildReplayGainOption(source, ctx),
     });
     await this.runFFmpeg(args, signal);
     await rename(tmpOutputPath, outputPath);
@@ -2109,7 +2144,7 @@ export class MusicPipeline implements SyncExecutor {
   private async prepareUpgrade(
     operation: Extract<SyncOperation, { type: MusicUpgradeOperationType }>,
     transcodeDir: string,
-    adapter?: CollectionAdapter,
+    ctx: ExecutionContext,
     signal?: AbortSignal,
     prefetchedAccess?: ResolvedFileAccess
   ): Promise<PreparedFile> {
@@ -2123,7 +2158,7 @@ export class MusicPipeline implements SyncExecutor {
       const prepared = await this.prepareTranscode(
         transcodeOp,
         transcodeDir,
-        adapter,
+        ctx,
         signal,
         prefetchedAccess
       );
@@ -2134,7 +2169,7 @@ export class MusicPipeline implements SyncExecutor {
         type: 'add-direct-copy',
         source: operation.source,
       };
-      const prepared = await this.prepareCopy(copyOp, adapter, prefetchedAccess);
+      const prepared = await this.prepareCopy(copyOp, ctx, prefetchedAccess);
       return { ...prepared, operation };
     } else if (operation.type === 'upgrade-optimized-copy') {
       // Optimized copy upgrade — route through FFmpeg for artwork stripping
@@ -2145,7 +2180,7 @@ export class MusicPipeline implements SyncExecutor {
       const prepared = await this.prepareOptimizedCopy(
         optimizedOp,
         transcodeDir,
-        adapter,
+        ctx,
         signal,
         prefetchedAccess
       );
@@ -2156,7 +2191,7 @@ export class MusicPipeline implements SyncExecutor {
         type: 'add-direct-copy',
         source: operation.source,
       };
-      const prepared = await this.prepareCopy(copyOp, adapter, prefetchedAccess);
+      const prepared = await this.prepareCopy(copyOp, ctx, prefetchedAccess);
       return { ...prepared, operation };
     }
   }
@@ -2171,7 +2206,8 @@ export class MusicPipeline implements SyncExecutor {
    * the database entry (play counts, ratings, playlists).
    */
   private async transferToIpod(
-    prepared: PreparedFile
+    prepared: PreparedFile,
+    ctx: ExecutionContext
   ): Promise<{ bytesTransferred: number; track: DeviceTrack }> {
     const { operation, sourcePath, size, bitrate, filetype, artworkSourcePath } = prepared;
 
@@ -2182,7 +2218,7 @@ export class MusicPipeline implements SyncExecutor {
       operation.type === 'upgrade-optimized-copy' ||
       operation.type === 'upgrade-artwork'
     ) {
-      return this.transferUpgradeToIpod(prepared);
+      return this.transferUpgradeToIpod(prepared, ctx);
     }
 
     const source = operation.source;
@@ -2192,14 +2228,15 @@ export class MusicPipeline implements SyncExecutor {
       ...toDeviceTrackInput(source),
       filetype,
       ...(bitrate !== undefined && { bitrate }),
-      transferMode: this.transferMode,
+      transferMode: ctx.transferMode,
     };
 
     // Write sync tag for transcode operations
     if (operation.type === 'add-transcode' && operation.preset) {
       const syncTag = this.buildSyncTagForPreset(
         operation.preset.name,
-        operation.preset.targetCodec
+        operation.preset.targetCodec,
+        ctx
       );
       if (syncTag) {
         trackInput.syncTag = syncTag;
@@ -2209,10 +2246,10 @@ export class MusicPipeline implements SyncExecutor {
     // Write sync tag for copy operations (direct-copy and optimized-copy)
     if (
       (operation.type === 'add-direct-copy' || operation.type === 'add-optimized-copy') &&
-      this.syncTagConfig
+      ctx.syncTagConfig
     ) {
       const sourceCodec = fileTypeToAudioCodec(operation.source.fileType, operation.source.codec);
-      const copySyncTag = buildCopySyncTag(this.transferMode ?? 'fast', undefined, sourceCodec);
+      const copySyncTag = buildCopySyncTag(ctx.transferMode ?? 'fast', undefined, sourceCodec);
       trackInput.syncTag = copySyncTag;
     }
 
@@ -2226,7 +2263,7 @@ export class MusicPipeline implements SyncExecutor {
     // FFmpeg handles MP3/FLAC/OGG during transcode, but M4A needs the tag writer.
     if (
       operation.type !== 'add-direct-copy' &&
-      this.audioNormalization === 'replaygain' &&
+      ctx.audioNormalization === 'replaygain' &&
       source.normalization !== undefined
     ) {
       this.device.updateTrack(track, {
@@ -2241,12 +2278,12 @@ export class MusicPipeline implements SyncExecutor {
     // artwork cache could otherwise serve a sibling track's artwork for this no-artwork track,
     // falsely setting hasArtwork=true on the iPod and triggering artwork-removed on the next sync.
     //
-    // The outer `this.artworkEnabled` check matters even though `transferArtwork` short-
+    // The outer `ctx.artworkEnabled` check matters even though `transferArtwork` short-
     // circuits on the same flag — the `!artHash && track.hasArtwork` stale-cleanup branch
     // below would otherwise fire on `artwork-disabled` syncs and wipe existing device
     // artwork the user wanted to keep.
-    if (this.artworkEnabled && source.hasArtwork !== false) {
-      const extractedHash = await this.transferArtwork(track, artworkSourcePath, source);
+    if (ctx.artworkEnabled && source.hasArtwork !== false) {
+      const extractedHash = await this.transferArtwork(track, artworkSourcePath, source, ctx);
       // Resolve the hash for the syncTag claim. Two-stage:
       //   1. transferArtwork returns undefined when no bytes landed on the
       //      device — global artwork disabled, or sink === 'noop'. In that
@@ -2265,7 +2302,7 @@ export class MusicPipeline implements SyncExecutor {
       // For transcode operations, the sync tag already exists — append the artwork hash.
       // For copy operations, no sync tag was written above, so create a minimal one
       // containing just the artwork hash so --check-artwork can detect future changes.
-      if (artHash && this.syncTagConfig) {
+      if (artHash && ctx.syncTagConfig) {
         if (track.syncTag) {
           this.device.writeSyncTag(track, { artworkHash: artHash });
         } else if (
@@ -2296,7 +2333,8 @@ export class MusicPipeline implements SyncExecutor {
    * artwork is re-extracted from the source and transferred to the iPod.
    */
   private async transferUpgradeToIpod(
-    prepared: PreparedFile
+    prepared: PreparedFile,
+    ctx: ExecutionContext
   ): Promise<{ bytesTransferred: number; track: DeviceTrack }> {
     const { sourcePath, size, bitrate, filetype, artworkSourcePath } = prepared;
     const operation = prepared.operation as Extract<
@@ -2326,7 +2364,7 @@ export class MusicPipeline implements SyncExecutor {
     if (operation.reason === 'artwork-removed') {
       foundTrack = this.device.removeTrackArtwork(foundTrack);
       // Clear artworkHash from sync tag if present
-      if (this.syncTagConfig && foundTrack.syncTag?.artworkHash) {
+      if (ctx.syncTagConfig && foundTrack.syncTag?.artworkHash) {
         foundTrack = this.device.writeSyncTag(foundTrack, { artworkHash: undefined });
       }
       return { bytesTransferred: 0, track: foundTrack };
@@ -2334,18 +2372,18 @@ export class MusicPipeline implements SyncExecutor {
 
     // artwork-updated: skip audio file transfer, only re-extract and update artwork + sync tag
     if (operation.reason === 'artwork-updated') {
-      if (!this.artworkEnabled) {
+      if (!ctx.artworkEnabled) {
         // artwork-updated with artwork disabled is a no-op — skip silently
         return { bytesTransferred: 0, track: foundTrack };
       }
-      const extractedHash = await this.transferArtwork(foundTrack, artworkSourcePath, source);
+      const extractedHash = await this.transferArtwork(foundTrack, artworkSourcePath, source, ctx);
       // Suppress the syncTag.artworkHash claim when transferArtwork returned
       // undefined — no bytes landed on the device (sink === 'noop' / 'sidecar').
       // Writing a hash anyway would recreate the churn loop documented in
       // doc-041 §3.6. See transferToIpod for the full rationale.
       const artHash =
         extractedHash !== undefined ? (source.artworkHash ?? extractedHash) : undefined;
-      if (artHash && this.syncTagConfig) {
+      if (artHash && ctx.syncTagConfig) {
         if (foundTrack.syncTag) {
           foundTrack = this.device.writeSyncTag(foundTrack, { artworkHash: artHash });
         } else {
@@ -2382,7 +2420,7 @@ export class MusicPipeline implements SyncExecutor {
     // Direct-copy upgrades preserve source file tags — no write needed.
     if (
       operation.type !== 'upgrade-direct-copy' &&
-      this.audioNormalization === 'replaygain' &&
+      ctx.audioNormalization === 'replaygain' &&
       source.normalization !== undefined
     ) {
       updateFields.writeReplayGainTags = true;
@@ -2395,7 +2433,8 @@ export class MusicPipeline implements SyncExecutor {
     if (operation.type === 'upgrade-transcode') {
       const syncTag = this.buildSyncTagForPreset(
         operation.preset.name,
-        operation.preset.targetCodec
+        operation.preset.targetCodec,
+        ctx
       );
       if (syncTag) {
         foundTrack = this.device.writeSyncTag(foundTrack, syncTag);
@@ -2405,10 +2444,10 @@ export class MusicPipeline implements SyncExecutor {
     // Write sync tag for upgrade-direct-copy and upgrade-optimized-copy operations
     if (
       (operation.type === 'upgrade-direct-copy' || operation.type === 'upgrade-optimized-copy') &&
-      this.syncTagConfig
+      ctx.syncTagConfig
     ) {
       const sourceCodec = fileTypeToAudioCodec(operation.source.fileType, operation.source.codec);
-      const copySyncTag = buildCopySyncTag(this.transferMode ?? 'fast', undefined, sourceCodec);
+      const copySyncTag = buildCopySyncTag(ctx.transferMode ?? 'fast', undefined, sourceCodec);
       foundTrack = this.device.writeSyncTag(foundTrack, copySyncTag);
     }
 
@@ -2417,14 +2456,14 @@ export class MusicPipeline implements SyncExecutor {
     // for a full explanation of why this guard is necessary, and why the `artworkEnabled`
     // check has to be at the call site (the stale-cleanup branch below has the same wipe
     // hazard as the add-track path).
-    if (this.artworkEnabled && source.hasArtwork !== false) {
-      const extractedHash = await this.transferArtwork(foundTrack, artworkSourcePath, source);
+    if (ctx.artworkEnabled && source.hasArtwork !== false) {
+      const extractedHash = await this.transferArtwork(foundTrack, artworkSourcePath, source, ctx);
       // Suppress the syncTag.artworkHash claim when transferArtwork returned
       // undefined — see transferToIpod for the full rationale (doc-041 §3.6
       // churn loop).
       const artHash =
         extractedHash !== undefined ? (source.artworkHash ?? extractedHash) : undefined;
-      if (artHash && this.syncTagConfig) {
+      if (artHash && ctx.syncTagConfig) {
         // Progressive hash write: include artwork hash in sync tag for future change detection
         if (foundTrack.syncTag) {
           foundTrack = this.device.writeSyncTag(foundTrack, { artworkHash: artHash });
@@ -2440,7 +2479,7 @@ export class MusicPipeline implements SyncExecutor {
         // On 'noop'/'sidecar' sinks foundTrack.hasArtwork is false so this guard is inert.
         foundTrack = this.device.removeTrackArtwork(foundTrack);
         // Clear artworkHash from sync tag if present
-        if (this.syncTagConfig && foundTrack.syncTag?.artworkHash) {
+        if (ctx.syncTagConfig && foundTrack.syncTag?.artworkHash) {
           foundTrack = this.device.writeSyncTag(foundTrack, { artworkHash: undefined });
         }
       }
@@ -2454,16 +2493,20 @@ export class MusicPipeline implements SyncExecutor {
    *
    * Returns undefined if no sync tag config is set (sync tags disabled).
    */
-  private buildSyncTagForPreset(presetName: string, targetCodec?: string): SyncTagData | undefined {
-    if (!this.syncTagConfig) {
+  private buildSyncTagForPreset(
+    presetName: string,
+    targetCodec: string | undefined,
+    ctx: ExecutionContext
+  ): SyncTagData | undefined {
+    if (!ctx.syncTagConfig) {
       return undefined;
     }
 
     return buildAudioSyncTag(
       presetName,
-      this.syncTagConfig.encodingMode,
-      this.syncTagConfig.customBitrate,
-      this.transferMode,
+      ctx.syncTagConfig.encodingMode,
+      ctx.syncTagConfig.customBitrate,
+      ctx.transferMode,
       targetCodec
     );
   }

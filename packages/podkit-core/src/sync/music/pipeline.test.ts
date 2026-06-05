@@ -13,7 +13,7 @@
  * 6. Database saving after operations
  */
 
-import { describe, expect, it, mock, beforeEach } from 'bun:test';
+import { describe, expect, it, mock, beforeEach, spyOn } from 'bun:test';
 import {
   MusicPipeline,
   PipelineBusyError,
@@ -3816,7 +3816,7 @@ describe('PipelineBusyError concurrent-execute guard', () => {
       thrown = err;
     }
     expect(thrown).toBeInstanceOf(PipelineBusyError);
-    expect((thrown as Error).message).toContain('one MusicPipeline per sync');
+    expect((thrown as Error).message).toContain('one MusicPipeline per concurrent sync');
 
     // Drain the first iterator so executing flips back to false.
     await firstStep;
@@ -3885,6 +3885,131 @@ describe('PipelineBusyError concurrent-execute guard', () => {
       // consume
     }
     expect(true).toBe(true);
+  });
+});
+
+// =============================================================================
+// ExecutionContext — per-execute state is parameter-scoped, not instance-scoped
+// =============================================================================
+//
+// The pre-refactor pipeline stored adapter / transferMode / artworkResize /
+// audioNormalization / syncTagConfig / artworkEnabled on `this`, setting them
+// at execute() entry. Two sequential execute() calls with divergent options
+// could leak the first call's options into the second if anything went wrong
+// with the assignment / clearing dance.
+//
+// After TASK-382 these fields live in an ExecutionContext built once at the
+// top of execute() and threaded as a parameter through every private method.
+// This test proves the structural property: the second execute()'s behaviour
+// is purely a function of ITS options, with no residue from the first.
+//
+// Concurrent execute() on the same instance is still rejected by the busy
+// guard (the per-instance artwork caches would race), so sequential reuse
+// with divergent options is the cheapest, most readable form of the same
+// invariant — if any per-execute field still lived on `this` and wasn't
+// cleared cleanly, the second run would mis-behave.
+
+describe('ExecutionContext — sequential reuse with divergent options', () => {
+  let db: MockDeviceAdapter;
+  let transcoder: MockTranscoder;
+
+  beforeEach(() => {
+    db = createMockDeviceAdapter();
+    transcoder = createMockTranscoder();
+  });
+
+  it('two sequential execute() calls with divergent transferMode see only their own options', async () => {
+    // Track every transferMode value the device adapter receives across both runs.
+    const transferModes: Array<string | undefined> = [];
+    db.addTrack = mock((input: { transferMode?: string; title: string }) => {
+      transferModes.push(input.transferMode);
+      const filePath = `Music/${input.title}.m4a`;
+      const track = createMockDeviceTrack('A', input.title, 'Album', filePath);
+      return track;
+    });
+
+    const plan: SyncPlan = {
+      ...createEmptyPlan(),
+      operations: [
+        { type: 'add-direct-copy', source: createCollectionTrack('A', 'T1', 'Album', 'mp3') },
+      ] as SyncOperation[],
+    };
+
+    const executor = new MusicPipeline(createDependencies(db, transcoder));
+
+    // First execute with transferMode: 'portable'
+    for await (const _p of executor.execute(plan, { transferMode: 'portable' })) {
+      // consume
+    }
+
+    // Second execute with transferMode: 'optimized' — must NOT see 'portable' bleed in
+    for await (const _p of executor.execute(plan, { transferMode: 'optimized' })) {
+      // consume
+    }
+
+    // Each run produces exactly one addTrack call. The first must carry
+    // 'portable', the second 'optimized'. If per-execute state had leaked on
+    // `this`, the second run could mis-attribute mode (e.g., still 'portable'
+    // if the assignment was missed).
+    expect(transferModes).toEqual(['portable', 'optimized']);
+  });
+
+  it('two sequential execute() calls with divergent artwork flag see only their own gate', async () => {
+    // Pin: ctx.artworkEnabled is parameter-scoped, not instance-scoped.
+    // Run 1 (artwork=true) MUST reach transferArtwork; run 2 (artwork=false)
+    // MUST NOT — even though the same MusicPipeline instance just ran with
+    // the gate open. Spying on the dispatch method itself is the cleanest
+    // observable for the outer `if (ctx.artworkEnabled && ...)` gate.
+    db.addTrack = mock((input: { title: string }) => {
+      const filePath = `Music/${input.title}.m4a`;
+      return createMockDeviceTrack('A', input.title, 'Album', filePath);
+    });
+
+    const collectionTrack = createCollectionTrack('A', 'T1', 'Album', 'mp3', {
+      hasArtwork: true,
+    });
+    const plan: SyncPlan = {
+      ...createEmptyPlan(),
+      operations: [{ type: 'add-direct-copy', source: collectionTrack }] as SyncOperation[],
+    };
+
+    const executor = new MusicPipeline(createDependencies(db, transcoder));
+    const transferArtworkSpy = spyOn(
+      executor as unknown as { transferArtwork: (...args: unknown[]) => unknown },
+      'transferArtwork'
+    );
+
+    // Run 1: artwork=true (default) — must enter transferArtwork.
+    for await (const _p of executor.execute(plan, { artwork: true })) {
+      // consume
+    }
+    expect(transferArtworkSpy.mock.calls.length).toBeGreaterThan(0);
+
+    // Run 2: artwork=false — must NOT enter transferArtwork. If the
+    // pre-refactor `this.artworkEnabled = true` had stuck on the instance,
+    // the outer gate would still admit the call here.
+    transferArtworkSpy.mockClear();
+    for await (const _p of executor.execute(plan, { artwork: false })) {
+      // consume
+    }
+    expect(transferArtworkSpy.mock.calls.length).toBe(0);
+
+    transferArtworkSpy.mockRestore();
+  });
+
+  it('no per-execute fields remain on the MusicPipeline instance', () => {
+    // Structural pin: the seven per-execute fields that used to live on
+    // `this` must NOT be present as instance properties. If a future refactor
+    // re-introduces any of them as instance state, this test fails loudly.
+    const executor = new MusicPipeline(createDependencies(db, transcoder));
+    const instanceKeys = Object.keys(executor);
+    expect(instanceKeys).not.toContain('adapter');
+    expect(instanceKeys).not.toContain('transferMode');
+    expect(instanceKeys).not.toContain('artworkResize');
+    expect(instanceKeys).not.toContain('sidecarResize');
+    expect(instanceKeys).not.toContain('audioNormalization');
+    expect(instanceKeys).not.toContain('syncTagConfig');
+    expect(instanceKeys).not.toContain('artworkEnabled');
   });
 });
 
