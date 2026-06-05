@@ -1,5 +1,6 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
 import { MusicHandler, createMusicHandler } from './handler.js';
+import { MusicPipeline } from './pipeline.js';
 import type { MusicSyncConfig } from './config.js';
 import type { CollectionTrack, MusicAdapter } from '../../adapters/interface.js';
 import type { DeviceTrack } from '../../device/adapter.js';
@@ -1588,5 +1589,78 @@ describe('MusicHandler', () => {
       };
       expect(handler.getOperationPriority(op)).toBe(4);
     });
+  });
+});
+
+// =============================================================================
+// Artwork-flag forwarding — pins the handler → pipeline boundary
+// =============================================================================
+//
+// Pipeline's `this.artworkEnabled` gate is covered exhaustively in
+// pipeline.test.ts. What's tested here is the boundary between
+// `handler.config.raw.artwork` and the options bag handed to
+// `MusicPipeline.execute(...)`. The boundary regressed once at the CLI
+// layer; a silent fallback to the pipeline's `artwork = true` default
+// makes `artwork = false` in TOML / `--no-artwork` at CLI observable as
+// "sidecar cover.jpg written despite the user disabling artwork".
+
+describe('MusicHandler.executeBatch — artwork forwarding', () => {
+  async function captureExecuteOptions(config: MusicSyncConfig): Promise<Record<string, unknown>> {
+    const captured: Record<string, unknown>[] = [];
+
+    const spy = spyOn(MusicPipeline.prototype, 'execute').mockImplementation(
+      // Mock replaces the real generator; yielding nothing is enough since
+      // the test only inspects the options bag. Cast required — bun:test's
+      // spy typing doesn't accept an async-generator return shape directly.
+      async function* (_plan: unknown, options: Record<string, unknown>) {
+        captured.push(options);
+      } as unknown as MusicPipeline['execute']
+    );
+
+    try {
+      const handler = createMusicHandler(config);
+      const ctx = {
+        device: {} as never,
+        signal: undefined,
+        dryRun: false,
+        tempDir: undefined,
+        continueOnError: false,
+      };
+      const operations: MusicOperation[] = [
+        {
+          type: 'add-transcode',
+          source: makeCollectionTrack({ fileType: 'flac' }),
+          preset: { name: 'high' },
+        },
+      ];
+
+      for await (const _ of handler.executeBatch(operations, ctx)) {
+        // consume — the mocked pipeline yields nothing, so the loop exits immediately
+      }
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(captured).toHaveLength(1);
+    return captured[0]!;
+  }
+
+  test('forwards artwork=false from config to pipeline.execute options', async () => {
+    const options = await captureExecuteOptions(makeConfig({ artwork: false }));
+    expect(options.artwork).toBe(false);
+  });
+
+  test('forwards artwork=true from config to pipeline.execute options', async () => {
+    const options = await captureExecuteOptions(makeConfig({ artwork: true }));
+    expect(options.artwork).toBe(true);
+  });
+
+  test('omitted artwork in config maps to undefined (pipeline default kicks in)', async () => {
+    // Pins the narrower invariant: the handler does NOT substitute a default
+    // of its own. The pipeline owns the default. If the handler ever started
+    // coalescing to `true` on its behalf, the user's TOML/CLI intent could
+    // never reach the pipeline as `undefined` for a future feature to detect.
+    const options = await captureExecuteOptions(makeConfig());
+    expect(options.artwork).toBeUndefined();
   });
 });
