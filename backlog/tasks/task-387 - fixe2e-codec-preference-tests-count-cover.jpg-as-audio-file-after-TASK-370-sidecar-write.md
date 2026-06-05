@@ -3,9 +3,10 @@ id: TASK-387
 title: >-
   fix(e2e): codec-preference tests count cover.jpg as audio file after TASK-370
   sidecar write
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-06-04 08:12'
+updated_date: '2026-06-05 18:18'
 labels:
   - e2e
   - regression
@@ -16,6 +17,8 @@ references:
   - test-packages/e2e-tests/src/features/codec-preference.test.ts
   - packages/podkit-core/src/device/mass-storage-adapter.ts
   - packages/podkit-cli/src/commands/music-presenter.ts
+modified_files:
+  - test-packages/e2e-tests/src/features/codec-preference.test.ts
 priority: high
 ordinal: 113000
 ---
@@ -64,7 +67,29 @@ Commit `9465faf9` (feat(core): sidecar device-write for sidecar-primary devices,
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Both codec-preference e2e tests pass: 'syncs FLAC to Opus when codec preference is opus-first' and 're-syncs with new codec when codec preference changes from AAC to Opus'
-- [ ] #2 findMusicFiles (or its replacement) counts only audio files, not device-side metadata files like cover.jpg
-- [ ] #3 No other e2e tests regress
+- [x] #1 Both codec-preference e2e tests pass: 'syncs FLAC to Opus when codec preference is opus-first' and 're-syncs with new codec when codec preference changes from AAC to Opus'
+- [x] #2 findMusicFiles (or its replacement) counts only audio files, not device-side metadata files like cover.jpg
+- [x] #3 No other e2e tests regress
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+**Option A applied.** `findMusicFiles` in `codec-preference.test.ts` now filters by audio extension (`AUDIO_EXTENSIONS` set: .flac, .m4a, .mp3, .opus, .ogg, .wav, .aiff, .aac). Walker uses `entry.name.lastIndexOf('.')` + case-insensitive `.toLowerCase()` — handles multi-dot names, hidden files, and no-extension files cleanly.
+
+Decision: Option C (forward `artwork = false` through to executor) tracked separately as TASK-388 and is the next task.
+
+Sonnet review pass — no blockers. One suggestion (add comment naming TASK-388) rejected: code must not reference task IDs, and the new JSDoc already explains why the filter exists ("device-side sidecars (cover.jpg) and tmp remnants don't get counted as audio output").
+
+E2e gate: full `bun run test:e2e` → **33 passed, 0 failed** (8m45s). Both target tests green. No regressions.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Filtered `findMusicFiles` in `codec-preference.test.ts` to audio extensions only. The TASK-370 sidecar write (`cover.jpg` next to audio files) was being counted by a recursive walker that took all files in `Music/`. Now: walker drops anything that isn't `.flac`, `.m4a`, `.mp3`, `.opus`, `.ogg`, `.wav`, `.aiff`, `.aac` (case-insensitive). Robust against future device-side writes (sidecar, `.podkit-tmp.*`).
+
+Two failing tests pass: `syncs FLAC to Opus when codec preference is opus-first`, `re-syncs with new codec when codec preference changes from AAC to Opus`. Full e2e suite green (33/33). No prod code touched.
+
+Option C from the task description (forward `artwork = false` to executor so sidecar write doesn't fire in the first place) follows in TASK-388.
+<!-- SECTION:FINAL_SUMMARY:END -->

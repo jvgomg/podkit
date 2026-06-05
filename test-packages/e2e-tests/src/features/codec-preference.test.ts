@@ -40,8 +40,23 @@ async function createTempDevice(): Promise<string> {
   return mkdtemp(join(tmpdir(), 'podkit-codec-device-'));
 }
 
+const AUDIO_EXTENSIONS = new Set([
+  '.flac',
+  '.m4a',
+  '.mp3',
+  '.opus',
+  '.ogg',
+  '.wav',
+  '.aiff',
+  '.aac',
+]);
+
 /**
- * Recursively find all audio files in the device's Music/ directory.
+ * Recursively find audio files in the device's Music/ directory.
+ *
+ * Filters by extension so device-side sidecars (cover.jpg) and tmp remnants
+ * (.podkit-tmp.*) don't get counted as audio output.
+ *
  * Returns absolute paths.
  */
 async function findMusicFiles(devicePath: string): Promise<string[]> {
@@ -57,7 +72,9 @@ async function findMusicFiles(devicePath: string): Promise<string[]> {
       if (entry.isDirectory()) {
         await walk(fullPath);
       } else if (entry.isFile()) {
-        files.push(fullPath);
+        const dot = entry.name.lastIndexOf('.');
+        const ext = dot === -1 ? '' : entry.name.slice(dot).toLowerCase();
+        if (AUDIO_EXTENSIONS.has(ext)) files.push(fullPath);
       }
     }
   }
