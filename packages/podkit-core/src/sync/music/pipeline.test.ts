@@ -3946,10 +3946,9 @@ describe('ExecutionContext — sequential reuse with divergent options', () => {
     };
 
     const executor = new MusicPipeline(createDependencies(db, transcoder));
-    const transferArtworkSpy = spyOn(
-      executor as unknown as { transferArtwork: (...args: unknown[]) => unknown },
-      'transferArtwork'
-    );
+    // After TASK-383 the dispatch lives on the MusicArtworkManager owned by the
+    // pipeline. Spy on the manager's method directly — same observable, new home.
+    const transferArtworkSpy = spyOn(executor.artwork, 'transferArtwork');
 
     // Run 1: artwork=true (default) — must enter transferArtwork.
     for await (const _p of executor.execute(plan, { artwork: true })) {
