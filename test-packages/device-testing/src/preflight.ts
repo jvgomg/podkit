@@ -30,9 +30,9 @@
  * @module
  */
 
-import { instanceStatus, LIMA_DEVICE_HARNESS_VM_NAME } from '../src/runners/lima-test-vm.js';
-import { runLimactl } from '../src/runners/lima-limactl.js';
-import { defaultSubprocessRunner } from '../src/subprocess.js';
+import { instanceStatus, LIMA_DEVICE_HARNESS_VM_NAME } from './runners/lima-test-vm.js';
+import { runLimactl } from './runners/lima-limactl.js';
+import { defaultSubprocessRunner } from './subprocess.js';
 
 function vmTestsTargeted(): boolean {
   if (process.env.npm_lifecycle_event === 'test:vm') return true;

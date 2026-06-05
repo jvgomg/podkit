@@ -203,16 +203,16 @@ Each state carries `expectedDoctorSystemOutput` (the full `checks[]` array and `
 3. Add a named re-export to `src/index.ts`.
 4. Run `bun run test --filter @podkit/device-testing` to confirm the golden file passes.
 
-For VM tests: once TASK-322 lands, also run the matching VM-mutation script and snapshot the VM as `base-<id>`.
+For VM tests: also add the matching mutation branch to `scripts/apply-state.sh` so `runtime.applyState(state)` can install the new state inside the VM.
 
 ## `TestRuntime` + runner selection
 
 `TestRuntime` abstracts where a VM test executes. Two implementations:
 
-- **`local-linux`** — runs the FunctionFS daemon as a subprocess on the current Linux host. Auto-registered when `@podkit/device-testing` is imported on Linux. Use on Linux dev hosts directly.
-- **`lima-test-vm`** — wraps `local-linux` execution inside the Lima test VM at `test-packages/device-testing/lima/podkit-device-harness.yaml`. Use on macOS dev hosts. Forthcoming in TASK-322.04.
+- **`local-linux`** — runs the FunctionFS daemon as a subprocess on the current Linux host. Use on Linux dev hosts directly.
+- **`lima-test-vm`** — wraps `local-linux` execution inside the Lima test VM at `test-packages/device-testing/lima/podkit-device-harness.yaml`. Use on macOS dev hosts.
 
-Auto-register pattern: importing `@podkit/device-testing` registers `local-linux` via `src/index.ts`. The `lima-test-vm` runner registers itself when its module loads. Tests call `getRunner(id)` and receive whichever backend is available.
+Auto-register pattern: importing `@podkit/device-testing` registers both `local-linux` and `lima-test-vm` via a side-effect at the bottom of `src/index.ts` (no platform guard). Tests call `getRunner(id)` and receive whichever backend is available.
 
 ## Test-file tagging convention
 
@@ -327,8 +327,9 @@ bun run test:vm                            # from repo root (or: bun run --cwd t
 `bun run harness:setup` is the first-time superset (creates the VM, starts it, then runs `harness:install`). See §"Quick start" above. For build-only invocations (no transfer), use `bunx turbo run @podkit/device-testing#build:linux-binary @podkit/device-testing-daemon#build` — `harness:install` invokes the same turbo task internally.
 
 VM tests are excluded from the default `bun test` run via `bunfig.toml`
-`pathIgnorePatterns`. The `test:vm` script passes `src/vm` explicitly,
-which overrides the ignore pattern.
+`pathIgnorePatterns`. The `test:vm` script passes the test directory
+explicitly to override the ignore pattern — `src/vm` in `@podkit/device-testing`,
+`src/` in `@podkit/e2e-vm-tests`.
 
 **Preflight contract:** the preflight script is wired into each VM-test package's `bunfig.toml` as a `[test].preload`, so it runs once before any test files load. The script self-gates on `process.argv` / `npm_lifecycle_event` — it only contacts Lima when the invocation targets VM tests (a `vm/` path segment, an `.e2e.` filename, or the `test:vm` lifecycle event); other `bun test` runs are no-ops. If the Lima VM is not reachable when VM tests are targeted, the preflight exits 1 with a remediation message pointing at `bun run harness:setup` / `harness:start` / `harness:status`. No tests run and nothing is silently skipped. To run non-VM tests instead, use `bun run test:unit` or `bun run test:integration`.
 

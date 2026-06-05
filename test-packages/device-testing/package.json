@@ -10,7 +10,7 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
-    "./preflight": "./scripts/preflight-vm.ts"
+    "./preflight": "./src/preflight.ts"
   },
   "files": [
     "dist"
