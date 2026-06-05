@@ -34,7 +34,7 @@ Collections can be configured via environment variables (e.g., `PODKIT_MUSIC_PAT
 ## Impact on CLI Changes
 
 - New CLI commands need to be added to the `PODKIT_COMMANDS` list in `packages/podkit-docker/entrypoint.sh`
-- The entrypoint passes `PODKIT_CONFIG=/config/config.toml` by default
+- The Dockerfile sets `PODKIT_CONFIG=/config/config.toml` as an `ENV` variable, so every podkit invocation inside the container picks it up automatically
 - `PODKIT_TIPS=false` is set in the Dockerfile (tips aren't useful in Docker context)
 
 ## Daemon Mode

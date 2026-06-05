@@ -1,4 +1,3 @@
-#!/usr/bin/env bun
 /**
  * Preflight probe for the Lima VM test harness. Wired into bunfig.toml as a
  * `[test].preload` so it runs once per `bun test` invocation in any package

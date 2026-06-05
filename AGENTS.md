@@ -307,4 +307,3 @@ Key files to understand:
 | iPod sysinfo I/O | `packages/ipod-firmware/src/sysinfo/` |
 | Plist parser | `packages/ipod-firmware/src/plist/parser.ts` |
 | Capability resolver | `packages/podkit-core/src/device/resolve-capabilities.ts` |
-| libgpod bridge | `packages/podkit-core/src/device/libgpod-bridge.ts` (transitional; deletes at m-8) |

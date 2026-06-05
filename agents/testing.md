@@ -343,7 +343,10 @@ The second form is what `gpod-tests-parallel` does under the hood; you only need
 
 ### What happens to preload?
 
-`bunfig.toml` no longer sets `preload`. Each integration / perf / e2e test file declares its own requirements at the top of the module via [Module-load preflight](#module-load-preflight) helpers — that's the single layer that catches missing system deps. There is no smart-preload, no argv-sniff, no `test/preload.ts`. (Exception: `@podkit/e2e-tests` preloads docker signal handlers for graceful container cleanup. That's a process-level concern, not per-test.)
+Most packages' `bunfig.toml` does not set `preload`. Each integration / perf / e2e test file declares its own requirements at the top of the module via [Module-load preflight](#module-load-preflight) helpers — that's the single layer that catches missing system deps. Two intentional exceptions:
+
+- `@podkit/e2e-tests` preloads docker signal handlers for graceful container cleanup (a process-level concern, not per-test).
+- `@podkit/device-testing` and `@podkit/e2e-vm-tests` preload `@podkit/device-testing/preflight`, which self-gates on `process.argv` and `npm_lifecycle_event` so it only contacts Lima when VM tests are actually targeted. Non-VM `bun test` runs no-op the preload. See [agents/device-testing.md §"Preflight contract"](device-testing.md) for the full contract.
 
 ## Prerequisites for Integration Tests
 
@@ -577,23 +580,18 @@ For mocking individual function calls — *not* whole modules — `bun:test`'s
 its `Deps`. That keeps the mock scoped to the call rather than the module
 graph.
 
-### Existing offenders
+### Migration complete
 
-Tracked in TASK-343 item 3. Five files still call `mock.module()` and are
-being migrated:
+The `mock.module()` → DI migration tracked under TASK-343 has landed. The
+five files that previously used `mock.module()` (provider, sysinfo-extended,
+sysinfo-consistency-repair, video/handler-execute, adapters/directory) have
+all been converted to constructor- or function-parameter seams and now only
+mention `mock.module()` in their headers to explain why they don't use it.
 
-| File | What it mocks |
-|---|---|
-| `packages/devices-ipod/src/provider.test.ts` | `@podkit/ipod-firmware` |
-| `packages/podkit-core/src/diagnostics/checks/sysinfo-extended.test.ts` | `usb-path-resolution.js` + `@podkit/ipod-firmware` (5 calls) |
-| `packages/podkit-core/src/diagnostics/checks/sysinfo-consistency-repair.test.ts` | same two |
-| `packages/podkit-core/src/sync/video/handler-execute.test.ts` | `video/transcode.js`, `video/probe.js`, `executor-fs.js`, `ipod/video.js` |
-| `packages/podkit-core/src/adapters/directory.test.ts` | `glob`, `music-metadata` |
-
-When migrating one of these, follow the seam pattern: add an optional
-constructor or function parameter on the production code with a sensible
-default, then have the test pass a stub through that parameter rather than
-patching the module.
+When adding a new test that's tempted to reach for `mock.module()`, follow
+the seam pattern instead: add an optional constructor or function parameter
+on the production code with a sensible default, then have the test pass a
+stub through that parameter rather than patching the module.
 
 ## Assertion style
 

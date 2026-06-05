@@ -44,6 +44,6 @@ If you encounter any remaining libusb references in `packages/libgpod-node/nativ
 When encountering libgpod CRITICAL assertions or unexpected behavior:
 
 1. **Reproduce with a test** - Create an integration test that triggers the issue
-2. **Check libgpod source** - Look at `tools/libgpod-macos/build/libgpod-0.8.3/src/`
+2. **Check libgpod source** - Look at `tools/libgpod-macos/build/libgpod-0.8.3/src/` (the `build/` subdirectory is produced by the build script in `tools/libgpod-macos/` — on a fresh checkout, run that script first)
 3. **Understand the expectation** - What does libgpod expect vs. what we're providing?
 4. **Fix and document** - Apply the fix and document the deviation

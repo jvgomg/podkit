@@ -8,12 +8,12 @@ Read these documents based on what you're working on:
 
 | Topic | Document |
 |-------|----------|
-| First time in repo | [docs/index.md](../docs/index.md) |
+| First time in repo | [docs/index.mdx](../docs/index.mdx) |
 | User install and first sync | [docs/getting-started/](../docs/getting-started/) |
 | Configuration concepts | [docs/user-guide/configuration.md](../docs/user-guide/configuration.md) |
 | Config file reference | [docs/reference/config-file.md](../docs/reference/config-file.md) |
 | Environment variables | [docs/reference/environment-variables.md](../docs/reference/environment-variables.md) |
-| iPod model compatibility | [docs/devices/supported-devices.md](../docs/devices/supported-devices.md) |
+| iPod model compatibility | [docs/devices/supported-devices.mdx](../docs/devices/supported-devices.mdx) |
 | Architecture and design | [docs/developers/architecture.md](../docs/developers/architecture.md) |
 | Development environment | [docs/developers/development.md](../docs/developers/development.md) |
 | Testing strategy | [docs/developers/testing.md](../docs/developers/testing.md) |
@@ -24,8 +24,8 @@ Read these documents based on what you're working on:
 | Transcoding (audio) | [docs/user-guide/transcoding/audio.md](../docs/user-guide/transcoding/audio.md) |
 | Codec preferences | [docs/user-guide/transcoding/codec-preferences.md](../docs/user-guide/transcoding/codec-preferences.md) |
 | Transcoding (video) | [docs/user-guide/transcoding/video.md](../docs/user-guide/transcoding/video.md) |
-| Directory source | [docs/user-guide/directory-source.md](../docs/user-guide/directory-source.md) |
-| Subsonic source | [docs/user-guide/subsonic-source.md](../docs/user-guide/subsonic-source.md) |
+| Directory source | [docs/user-guide/collections/directory.md](../docs/user-guide/collections/directory.md) |
+| Subsonic source | [docs/user-guide/collections/subsonic.md](../docs/user-guide/collections/subsonic.md) |
 | iPod internals | [docs/devices/ipod-internals.md](../docs/devices/ipod-internals.md) |
 | Troubleshooting | [docs/troubleshooting/](../docs/troubleshooting/) |
 | iPod health checks (doctor) | [docs/user-guide/devices/doctor.md](../docs/user-guide/devices/doctor.md) |
@@ -49,7 +49,6 @@ Read these documents based on what you're working on:
 | Feedback & feature requests (user-facing) | [docs/project/feedback.md](../docs/project/feedback.md) |
 | Docker | [docs/getting-started/docker.md](../docs/getting-started/docker.md) |
 | Docker daemon mode | [docs/getting-started/docker-daemon.md](../docs/getting-started/docker-daemon.md) |
-| Config migrations | [docs/developers/config-migrations.md](../docs/developers/config-migrations.md) |
 | Config migration examples | `packages/podkit-cli/src/config/migrations/examples/` |
 | LLM documentation system | [docs/developers/llm-documentation.md](../docs/developers/llm-documentation.md) |
 

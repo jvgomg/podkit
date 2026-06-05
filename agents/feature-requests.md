@@ -149,14 +149,14 @@ Keep this table updated when creating or closing discussions.
 | 16 | Sync selection and filtering | Sync | Next |
 | 17 | Roadmap (pinned, Announcements) | Meta | — |
 | 22 | Beta Testers Wanted (Announcements) | Meta | — |
-| 19 | Homebrew distribution | Distribution | Next |
+| 19 | Homebrew distribution | Distribution | Shipped |
 | 20 | npm distribution | Distribution | Next |
 | 21 | Configuration wizard | Onboarding | Later |
 | 23 | Playlist sync | Library Sync | Later |
 | 24 | Star rating sync | Library Sync | Later |
 | 25 | Play count and scrobble sync | Library Sync | Later |
-| 32 | Sound Check (volume normalization) support | Library Sync | Later |
-| 34 | Rockbox and non-iTunesDB device support | Device Support | Later |
+| 32 | Sound Check (volume normalization) support | Library Sync | Shipped |
+| 34 | Rockbox and non-iTunesDB device support | Device Support | Shipped |
 | 35 | iTunes / Apple Music library source | Collection Sources | Later |
 | 53 | Lyrion Music Server collection source | Collection Sources | Later |
 
@@ -174,10 +174,8 @@ These files contain callouts or links to specific discussions. When a feature's 
 | `docs/user-guide/syncing/video.md` | #4 Music Videos, #5 Video Podcasts | Callout at line ~42 |
 | `docs/user-guide/collections/additional-sources.md` | #35 iTunes/Apple Music, #6 Plex, #7 Jellyfin | Inline links + "Request a Source" section |
 | `docs/user-guide/collections/subsonic.md` | #11 Keychain/secret manager | Callout at line ~50 |
-| `docs/user-guide/devices/mounting-ejecting.md` | #9 Linux mount/eject | Callout at line ~61 |
 | `docs/user-guide/devices/formatting.md` | #10 Device formatting | Caution block at line ~8 |
 | `docs/devices/rockbox.md` | #34 Rockbox/non-iTunesDB support | Callout near top of page |
-| `docs/devices/other-devices.md` | #34 Rockbox/non-iTunesDB support | Inline link in Rockbox section |
 | `docs/getting-started/installation.mdx` | #8 Windows support | Callout at line ~51 |
 
 ### Updating the roadmap doc
@@ -262,17 +260,16 @@ Features in **Later** generally don't need backlog tasks — the discussion is s
 
 ## Sidebar Configuration
 
-The roadmap and feedback pages are in the Astro sidebar config at `packages/docs-site/config/sidebar.ts`:
+The roadmap and feedback pages live under `docs/project/` and surface in the Astro sidebar via an autogenerate entry in `packages/docs-site/config/sidebar.ts`:
 
 ```javascript
 {
-  label: 'Roadmap & Feedback',
-  items: [
-    { slug: 'roadmap' },
-    { slug: 'feedback' },
-  ],
+  label: 'The Project',
+  autogenerate: { directory: 'project' },
 },
 ```
+
+Any new `.md`/`.mdx` file dropped into `docs/project/` is picked up automatically — no sidebar edit needed.
 
 ## Common Scenarios
 

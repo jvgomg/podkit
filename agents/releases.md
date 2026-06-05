@@ -6,10 +6,12 @@ This project uses [changesets](https://github.com/changesets/changesets) for ver
 
 ## When to Add a Changeset
 
-**Required** for any user-facing change to a published package:
+**Required** for any user-facing change to a published / distributed package:
 - `podkit` (CLI)
 - `@podkit/core`
 - `@podkit/libgpod-node`
+- `@podkit/daemon` (ships with the podkit distribution)
+- `@podkit/docker` (releases as the official Docker image)
 
 **Not required** for:
 - Test-only changes

@@ -46,7 +46,6 @@ These features are on the roadmap but not yet scheduled. Votes and comments help
 | **Playlist sync** | Sync playlists from local files (M3U) or media servers to iPod | [#23](https://github.com/jvgomg/podkit/discussions/23) |
 | **Star rating sync** | Sync star ratings between your collection and iPod | [#24](https://github.com/jvgomg/podkit/discussions/24) |
 | **Play count and scrobble sync** | Sync play counts back from iPod, scrobble to Last.fm or ListenBrainz | [#25](https://github.com/jvgomg/podkit/discussions/25) |
-| **Sound Check (volume normalization)** | Read ReplayGain tags from source files and set iPod Sound Check values during sync | [#32](https://github.com/jvgomg/podkit/discussions/32) |
 
 ### Collection Sources
 
@@ -99,6 +98,7 @@ Features that have been completed and released.
 | **Linux mount/eject** | Native mount and eject commands for Linux (Debian, Ubuntu, Alpine, and more) | [#9](https://github.com/jvgomg/podkit/discussions/9) |
 | **Homebrew distribution** | Install podkit via `brew install jvgomg/podkit/podkit` with automatic dependency management | [#19](https://github.com/jvgomg/podkit/discussions/19) |
 | **Mass-storage device support** | Folder-based sync for Rockbox firmware, standalone DAPs (Snowsky Echo Mini), and generic mass-storage players | [#34](https://github.com/jvgomg/podkit/discussions/34) |
+| **Sound Check (volume normalization)** | Read ReplayGain tags from source files and set iPod Sound Check values during sync | [#32](https://github.com/jvgomg/podkit/discussions/32) |
 
 ## Help Shape podkit
 
