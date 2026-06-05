@@ -70,9 +70,6 @@ function createDeviceTrack(artist: string, title: string, album: string): Device
     update: () => track,
     remove: () => {},
     copyFile: () => track,
-    setArtwork: () => track,
-    setArtworkFromData: () => track,
-    removeArtwork: () => track,
   };
   return track;
 }

@@ -136,7 +136,7 @@ export interface AlbumArtworkGetOptions {
  *   candidates: ['/music/03-flac.flac', '/music/04-alac.m4a', '/music/01-wav.wav'],
  * });
  * if (entry) {
- *   ipodTrack.setArtworkFromData(entry.data);
+ *   await deviceAdapter.setTrackArtwork(ipodTrack, entry.data);
  * }
  * ```
  */

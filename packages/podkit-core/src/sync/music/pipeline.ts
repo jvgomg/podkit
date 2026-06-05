@@ -211,11 +211,12 @@ export interface ExtendedExecuteOptions extends ExecuteOptions {
    * Resize sidecar artwork (peer `cover.jpg`) to this maximum dimension
    * (pixels, square).
    *
-   * When set, bytes destined for `adapter.writeSidecar()` are downscaled to
-   * this dimension via the album-level resize cache so siblings on one album
-   * share a single FFmpeg/sharp spawn. Used for sidecar-primary devices
-   * (rockbox). Distinct from `artworkResize` to keep the FFmpeg embed path
-   * inert — on sidecar-primary devices the file body should stay art-free.
+   * When set, bytes destined for `adapter.setTrackArtwork()` on sidecar-sink
+   * tracks are downscaled to this dimension via the album-level resize cache
+   * so siblings on one album share a single FFmpeg/sharp spawn. Used for
+   * sidecar-primary devices (rockbox). Distinct from `artworkResize` to keep
+   * the FFmpeg embed path inert — on sidecar-primary devices the file body
+   * should stay art-free.
    */
   sidecarResize?: number;
   /**
@@ -1533,25 +1534,18 @@ export class MusicPipeline implements SyncExecutor {
   /**
    * Extract and transfer artwork for a track.
    *
-   * Dispatches on `track.artworkSink` to pick the correct write path:
-   *   - `'database'` → iPod ArtworkDB via `setArtworkFromData`.
-   *   - `'embedded'` → mass-storage taglib write via
-   *     `updateTrack({ embeddedPictureData })`. This path handles ALL
-   *     containers (mp3, flac, ogg, opus, m4a, …) because the underlying
-   *     {@link MassStorageTagWriter.writePicture} routes through
-   *     node-taglib-sharp, which is container-agnostic.
-   *   - `'sidecar'`  → peer `cover.jpg` written next to the audio file by
-   *     `adapter.writeSidecar()`. The bytes are resized to
-   *     `artworkMaxResolution` first via the album-level resize cache, so
-   *     siblings on one album share a single resize spawn and one
-   *     deduplicated cover write. Defensive guard: if the adapter doesn't
-   *     expose `writeSidecar` (theoretical — every sidecar-sink adapter
-   *     should), fall through to undefined so the syncTag.artworkHash
-   *     claim is suppressed rather than silently lying.
-   *   - `'noop'`     → device has no artwork support; skip the write AND
-   *     suppress the syncTag.artworkHash claim. This is what breaks the
-   *     churn loop documented in doc-041 §3.6 — claiming success when no
-   *     bytes landed makes the next sync re-fire `artwork-added` forever.
+   * Delegates the actual write to `adapter.setTrackArtwork`, which knows how
+   * the device stores artwork (iPod ArtworkDB, mass-storage embedded tag,
+   * sidecar `cover.jpg`, or no-op). The pipeline only decides:
+   *
+   *   1. whether to skip the byte extraction entirely (`artworkSink === 'noop'`
+   *      — no destination on the device, so even the FFmpeg work is wasted);
+   *   2. whether to resize bytes before handing them to the adapter
+   *      (`'embedded'` / `'sidecar'` paths key off the album-level resize
+   *      cache so siblings share a single resize spawn);
+   *   3. whether to honestly claim success on the sync tag — `'noop'` MUST
+   *      return undefined so the next sync doesn't re-fire `artwork-added`
+   *      on every track (the churn loop documented in doc-041 §3.6).
    *
    * Errors are caught and collected as warnings, but don't fail the sync.
    *
@@ -1578,6 +1572,14 @@ export class MusicPipeline implements SyncExecutor {
       return undefined;
     }
 
+    // Early-skip the noop sink BEFORE extracting bytes. The adapter would
+    // drop them anyway; doing the FFmpeg/network work first is wasted I/O.
+    // The doc-041 §3.6 churn-loop pin still holds: returning undefined here
+    // suppresses the syncTag.artworkHash claim.
+    if (track.artworkSink === 'noop') {
+      return undefined;
+    }
+
     try {
       const albumKey = getAlbumKey({ artist: track.artist ?? '', album: track.album ?? '' });
       const candidates = this.albumCandidates.get(albumKey);
@@ -1591,49 +1593,17 @@ export class MusicPipeline implements SyncExecutor {
         return undefined;
       }
 
-      switch (track.artworkSink) {
-        case 'database':
-          // iPod: setArtworkFromData writes the ArtworkDB. The bytes always
-          // land — claim success via the returned hash.
-          track.setArtworkFromData(cached.data);
-          return cached.hash;
-        case 'embedded': {
-          // Mass-storage with embedded-art primary: route through the tag
-          // writer. The pipeline used to gate this on isOggExtension because
-          // FFmpeg couldn't embed in OGG; node-taglib-sharp handles every
-          // container, so the gate is gone. Resize the cover to the device's
-          // artworkMaxResolution before embedding (taglib doesn't resize).
-          const imageData = await this.getResizedArtwork(track, cached.data, ctx);
-          this.device.updateTrack(track, { embeddedPictureData: imageData });
-          return cached.hash;
-        }
-        case 'sidecar': {
-          // Sidecar-primary devices (rockbox) read art from a peer image
-          // next to the audio file. Resize first via the album-level cache
-          // so two tracks on one album share a single FFmpeg spawn AND queue
-          // the same bytes for the same album dir. The adapter dedupes by
-          // album dir, so N siblings collapse to one cover write.
-          //
-          // Defensive: writeSidecar is optional on DeviceAdapter (every
-          // adapter whose tracks emit `artworkSink === 'sidecar'` should
-          // implement it). If the method is absent we fall through to
-          // undefined so the syncTag.artworkHash claim is suppressed — the
-          // alternative (claiming success when no bytes landed) recreates
-          // the churn loop documented in doc-041 §3.6.
-          if (typeof this.device.writeSidecar !== 'function') {
-            return undefined;
-          }
-          const imageData = await this.getResizedArtwork(track, cached.data, ctx);
-          this.device.writeSidecar(track, imageData);
-          return cached.hash;
-        }
-        case 'noop':
-          // Device has no artwork support (empty `artworkSources`). Caller
-          // sees `undefined` and skips the syncTag.artworkHash write — no
-          // hash on the next sync means no source/device mismatch to
-          // trigger artwork-added (doc-041 §3.6).
-          return undefined;
-      }
+      // Resize before the adapter writes:
+      //   - `'embedded'` keys off `ctx.artworkResize`
+      //   - `'sidecar'` keys off `ctx.sidecarResize`
+      //   - `'database'` (iPod) doesn't resize here — libgpod owns the iPod's
+      //     thumbnail rescale, so the original bytes go straight through.
+      const imageData =
+        track.artworkSink === 'database'
+          ? cached.data
+          : await this.getResizedArtwork(track, cached.data, ctx);
+      await this.device.setTrackArtwork(track, imageData);
+      return cached.hash;
     } catch (error) {
       // Collect warning but don't fail the sync - artwork is optional
       this.addWarning({
@@ -2316,7 +2286,7 @@ export class MusicPipeline implements SyncExecutor {
         // Defensive: artwork extraction returned null but track somehow has artwork — clean up.
         // Note we hit this branch for sink === 'noop'/'sidecar' too — but on those sinks
         // track.hasArtwork is false (no bytes ever landed), so the guard is inert.
-        this.device.removeTrackArtwork(track);
+        await this.device.removeTrackArtwork(track);
       }
     }
 
@@ -2362,8 +2332,11 @@ export class MusicPipeline implements SyncExecutor {
 
     // artwork-removed: remove artwork from iPod track and clear artworkHash from sync tag
     if (operation.reason === 'artwork-removed') {
-      foundTrack = this.device.removeTrackArtwork(foundTrack);
-      // Clear artworkHash from sync tag if present
+      await this.device.removeTrackArtwork(foundTrack);
+      // The adapter mutates the underlying handle's state in place; the
+      // foundTrack snapshot still carries the pre-removal `hasArtwork: true`
+      // but its `syncTag` is parsed from the comment (unchanged), so we can
+      // continue using it as the writeSyncTag target.
       if (ctx.syncTagConfig && foundTrack.syncTag?.artworkHash) {
         foundTrack = this.device.writeSyncTag(foundTrack, { artworkHash: undefined });
       }
@@ -2477,8 +2450,9 @@ export class MusicPipeline implements SyncExecutor {
       } else if (!artHash && foundTrack.hasArtwork) {
         // Artwork extraction returned null but iPod track has artwork — clean up stale artwork.
         // On 'noop'/'sidecar' sinks foundTrack.hasArtwork is false so this guard is inert.
-        foundTrack = this.device.removeTrackArtwork(foundTrack);
-        // Clear artworkHash from sync tag if present
+        await this.device.removeTrackArtwork(foundTrack);
+        // Clear artworkHash from sync tag if present (foundTrack.syncTag is
+        // parsed from the unchanged comment field, so it survives the remove).
         if (ctx.syncTagConfig && foundTrack.syncTag?.artworkHash) {
           foundTrack = this.device.writeSyncTag(foundTrack, { artworkHash: undefined });
         }

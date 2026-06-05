@@ -36,9 +36,6 @@ function makeIpodTrack(overrides: {
     update: mock(() => ({}) as IpodTrack),
     remove: mock(() => {}),
     copyFile: mock(() => ({}) as IpodTrack),
-    setArtwork: mock(() => ({}) as IpodTrack),
-    setArtworkFromData: mock(() => ({}) as IpodTrack),
-    removeArtwork: mock(() => ({}) as IpodTrack),
   });
 }
 

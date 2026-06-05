@@ -46,6 +46,7 @@ interface MockDeviceAdapter {
   copyTrackFile: ReturnType<typeof mock>;
   save: ReturnType<typeof mock>;
   replaceTrackFile: ReturnType<typeof mock>;
+  setTrackArtwork: ReturnType<typeof mock>;
   removeTrackArtwork: ReturnType<typeof mock>;
   writeSyncTag: ReturnType<typeof mock>;
   /** Optional — set on the mock for sidecar-primary adapters (rockbox). */
@@ -74,10 +75,8 @@ function createMockDeviceTrack(
     remove: () => void;
     copyFile: (path: string) => DeviceTrack;
     update: (fields: Record<string, unknown>) => DeviceTrack;
-    setArtwork: (path: string) => DeviceTrack;
-    setArtworkFromData: (data: Buffer) => DeviceTrack;
-    removeArtwork: () => DeviceTrack;
     artworkSink: DeviceTrack['artworkSink'];
+    hasArtwork: boolean;
   }> = {}
 ): DeviceTrack {
   const track: DeviceTrack = {
@@ -90,7 +89,7 @@ function createMockDeviceTrack(
     size: 5000000,
     mediaType: 1,
     filePath,
-    hasArtwork: false,
+    hasArtwork: options.hasArtwork ?? false,
     hasFile: true,
     compilation: false,
     syncTag: null,
@@ -101,9 +100,6 @@ function createMockDeviceTrack(
     remove: options.remove ?? (() => {}),
     copyFile: options.copyFile ?? (() => track),
     update: options.update ?? (() => track),
-    setArtwork: options.setArtwork ?? (() => track),
-    setArtworkFromData: options.setArtworkFromData ?? (() => track),
-    removeArtwork: options.removeArtwork ?? (() => track),
   };
   return track;
 }
@@ -147,7 +143,8 @@ function createMockDeviceAdapter(initialTracks: DeviceTrack[] = []): MockDeviceA
     }),
     save: mock(async () => ({ warnings: [] })),
     replaceTrackFile: mock((track: DeviceTrack, _newFilePath: string) => track),
-    removeTrackArtwork: mock((track: DeviceTrack) => track.removeArtwork()),
+    setTrackArtwork: mock(async (_track: DeviceTrack, _imageData: Buffer) => {}),
+    removeTrackArtwork: mock(async (_track: DeviceTrack) => {}),
     writeSyncTag: mock((track: DeviceTrack, _update: Record<string, unknown>) => track),
   };
 }
@@ -3178,25 +3175,17 @@ describe('artwork during upgrade operations', () => {
       ],
     };
 
-    // Mock addTrack to return a track that records setArtworkFromData calls
+    // Track setArtwork calls on the adapter (post-Option-Z artwork lives there).
+    db.setTrackArtwork = mock(async (_track: DeviceTrack, _data: Buffer) => {
+      artworkSet = true;
+    });
     db.addTrack = mock((input: Record<string, unknown>) => {
       const filePath = `Music/MOCK_ART.m4a`;
       return createMockDeviceTrack(
         String(input.artist ?? ''),
         String(input.title ?? ''),
         String(input.album ?? ''),
-        filePath,
-        {
-          setArtworkFromData: (_data: Buffer) => {
-            artworkSet = true;
-            return createMockDeviceTrack(
-              String(input.artist ?? ''),
-              String(input.title ?? ''),
-              String(input.album ?? ''),
-              filePath
-            );
-          },
-        }
+        filePath
       );
     });
 
@@ -3211,7 +3200,7 @@ describe('artwork during upgrade operations', () => {
     }
 
     // The test verifies the artwork code path ran. With non-existent test files,
-    // extractArtwork returns null (no embedded artwork), so setArtworkFromData
+    // extractArtwork returns null (no embedded artwork), so setTrackArtwork
     // is not called. The critical thing is the operation completed without error.
     expect(db.addTrack).toHaveBeenCalledTimes(1);
     // Artwork was not set (no artwork in test fixture), but no errors either
@@ -3225,12 +3214,11 @@ describe('artwork during upgrade operations', () => {
       filePath: 'Music/EXISTING.m4a',
       hasArtwork: false,
       update: (_fields: Record<string, unknown>) => existingTrack,
-      setArtworkFromData: (_data: Buffer) => {
-        artworkSet = true;
-        return existingTrack;
-      },
     });
 
+    db.setTrackArtwork = mock(async (_track: DeviceTrack, _data: Buffer) => {
+      artworkSet = true;
+    });
     const replaceTrackFile = mock(() => existingTrack);
     (db as any).replaceTrackFile = replaceTrackFile;
     db.getTracks.mockReturnValue([existingTrack]);
@@ -3645,24 +3633,16 @@ describe('adapter artwork fallback', () => {
     let artworkBytes: Buffer | null = null;
     const adapterBytes = Buffer.from('adapter-cover-bytes-for-pipeline-test');
 
+    db.setTrackArtwork = mock(async (_track: DeviceTrack, data: Buffer) => {
+      artworkBytes = data;
+    });
     db.addTrack = mock((input: Record<string, unknown>) => {
       const filePath = `Music/MOCK.m4a`;
       return createMockDeviceTrack(
         String(input.artist ?? ''),
         String(input.title ?? ''),
         String(input.album ?? ''),
-        filePath,
-        {
-          setArtworkFromData: (data: Buffer) => {
-            artworkBytes = data;
-            return createMockDeviceTrack(
-              String(input.artist ?? ''),
-              String(input.title ?? ''),
-              String(input.album ?? ''),
-              filePath
-            );
-          },
-        }
+        filePath
       );
     });
 
@@ -3733,22 +3713,14 @@ describe('adapter artwork fallback', () => {
   });
 
   it('shares one adapter fetch across siblings on the same album', async () => {
+    // setTrackArtwork mock is the default no-op from createMockDeviceAdapter;
+    // the test pins the fallback-cache contract, not the write path.
     db.addTrack = mock((input: Record<string, unknown>) => {
       return createMockDeviceTrack(
         String(input.artist ?? ''),
         String(input.title ?? ''),
         String(input.album ?? ''),
-        `Music/${input.title}.m4a`,
-        {
-          setArtworkFromData: (_data: Buffer) => {
-            return createMockDeviceTrack(
-              String(input.artist ?? ''),
-              String(input.title ?? ''),
-              String(input.album ?? ''),
-              `Music/${input.title}.m4a`
-            );
-          },
-        }
+        `Music/${input.title}.m4a`
       );
     });
 
@@ -4014,23 +3986,24 @@ describe('ExecutionContext — sequential reuse with divergent options', () => {
 });
 
 // =============================================================================
-// DeviceTrack.artworkSink dispatch — pipeline picks the write path per sink
+// DeviceTrack.artworkSink dispatch — pipeline hands bytes to the adapter
 // =============================================================================
 //
-// These tests pin the dispatch in `transferArtwork`. Every track on a real
-// adapter carries an `artworkSink` that names where its art lives:
-//   - 'database' → iPod ArtworkDB via setArtworkFromData
-//   - 'embedded' → mass-storage tag-writer via updateTrack({embeddedPictureData})
-//   - 'sidecar'  → peer image (writer deferred to TASK-370)
-//   - 'noop'     → device has no artwork support
+// Post-Option-Z the pipeline no longer branches on `artworkSink` to pick a
+// write path — the adapter owns that dispatch. The pipeline now:
+//   1. Early-skips bytes extraction when `artworkSink === 'noop'` (no point
+//      pulling FFmpeg bytes a noop adapter will drop).
+//   2. Resizes bytes for embedded/sidecar sinks before handing them off
+//      (database sink → libgpod owns the rescale).
+//   3. Calls `adapter.setTrackArtwork(track, bytes)` once.
+//   4. Suppresses the `syncTag.artworkHash` claim when transferArtwork
+//      returns undefined (the doc-041 §3.6 churn-loop pin).
 //
-// The bytes are fed via `adapter.getArtwork` fallback (not embedded extraction
-// from a real file) so each cell is hermetic. The critical regression-pin is
-// the 'noop' case: it MUST NOT call writeSyncTag with an artworkHash, because
-// claiming success when no bytes landed recreates the churn loop documented
-// in doc-041 §3.6 — every next sync would re-fire `artwork-added`.
+// Adapter-level dispatch (embedded → updateTrack picture-write, sidecar →
+// peer cover.jpg, noop → drop) is exercised by the MassStorageAdapter unit
+// suite. These tests pin the pipeline-side contract.
 
-describe('DeviceTrack.artworkSink dispatch (TASK-372)', () => {
+describe('artworkSink: pipeline hands bytes to adapter.setTrackArtwork', () => {
   let transcoder: MockTranscoder;
 
   beforeEach(() => {
@@ -4056,9 +4029,9 @@ describe('DeviceTrack.artworkSink dispatch (TASK-372)', () => {
   }
 
   /**
-   * Spin up a fresh adapter that hands back tracks pinned to the requested
-   * sink. The setArtworkFromData and updateTrack mocks record their calls
-   * so the test can assert which write path the pipeline picked.
+   * Spin up a fresh adapter mock that hands back tracks pinned to the
+   * requested sink. The default `setTrackArtwork` mock records its calls so
+   * the test can assert the pipeline routed bytes there.
    */
   function makeDbForSink(sink: DeviceTrack['artworkSink']): MockDeviceAdapter {
     const db = createMockDeviceAdapter();
@@ -4086,31 +4059,13 @@ describe('DeviceTrack.artworkSink dispatch (TASK-372)', () => {
     };
   }
 
-  it("sink='database' → setArtworkFromData lands the bytes, writeSyncTag records artworkHash", async () => {
+  it("sink='database' → setTrackArtwork receives the bytes, writeSyncTag records artworkHash", async () => {
     const bytes = Buffer.from('database-cover-bytes');
     const db = makeDbForSink('database');
 
     let captured: Buffer | null = null;
-    db.addTrack = mock((input: Record<string, unknown>) => {
-      return createMockDeviceTrack(
-        String(input.artist ?? ''),
-        String(input.title ?? ''),
-        String(input.album ?? ''),
-        `Music/MOCK.m4a`,
-        {
-          artworkSink: 'database',
-          setArtworkFromData: (data: Buffer) => {
-            captured = data;
-            return createMockDeviceTrack(
-              String(input.artist ?? ''),
-              String(input.title ?? ''),
-              String(input.album ?? ''),
-              `Music/MOCK.m4a`,
-              { artworkSink: 'database' }
-            );
-          },
-        }
-      );
+    db.setTrackArtwork = mock(async (_track: DeviceTrack, data: Buffer) => {
+      captured = data;
     });
 
     const adapter = makeAdapterWithBytes(bytes);
@@ -4124,10 +4079,11 @@ describe('DeviceTrack.artworkSink dispatch (TASK-372)', () => {
       // consume
     }
 
-    // The bytes flowed through the database path.
+    // The pipeline routed the bytes to the adapter (database sink → no resize).
     expect(captured).not.toBeNull();
     expect((captured as unknown as Buffer).equals(bytes)).toBe(true);
-    // updateTrack with embeddedPictureData must NOT fire for database sinks.
+    // updateTrack with embeddedPictureData must NOT fire for database sinks —
+    // the pipeline doesn't double-dispatch.
     const embedCall = db.updateTrack.mock.calls.find(
       ([, fields]) => (fields as Record<string, unknown>).embeddedPictureData !== undefined
     );
@@ -4139,40 +4095,13 @@ describe('DeviceTrack.artworkSink dispatch (TASK-372)', () => {
     expect(syncTagWithHash).toBeDefined();
   });
 
-  it("sink='embedded' → updateTrack({embeddedPictureData}) lands the bytes (no setArtworkFromData)", async () => {
+  it("sink='embedded' → setTrackArtwork receives the bytes, writeSyncTag records artworkHash", async () => {
     const bytes = Buffer.from('embedded-cover-bytes');
     const db = makeDbForSink('embedded');
 
-    let setArtworkCalled = false;
-    let embeddedBytes: Buffer | null = null;
-    db.addTrack = mock((input: Record<string, unknown>) => {
-      return createMockDeviceTrack(
-        String(input.artist ?? ''),
-        String(input.title ?? ''),
-        String(input.album ?? ''),
-        `Music/MOCK.m4a`,
-        {
-          artworkSink: 'embedded',
-          setArtworkFromData: () => {
-            setArtworkCalled = true;
-            return createMockDeviceTrack(
-              String(input.artist ?? ''),
-              String(input.title ?? ''),
-              String(input.album ?? ''),
-              `Music/MOCK.m4a`,
-              { artworkSink: 'embedded' }
-            );
-          },
-        }
-      );
-    });
-    // Capture embeddedPictureData via updateTrack.
-    db.updateTrack = mock((track: DeviceTrack, fields: Record<string, unknown>) => {
-      const pic = fields.embeddedPictureData;
-      if (pic instanceof Buffer) {
-        embeddedBytes = pic;
-      }
-      return track;
+    let captured: Buffer | null = null;
+    db.setTrackArtwork = mock(async (_track: DeviceTrack, data: Buffer) => {
+      captured = data;
     });
 
     const adapter = makeAdapterWithBytes(bytes);
@@ -4186,9 +4115,8 @@ describe('DeviceTrack.artworkSink dispatch (TASK-372)', () => {
       // consume
     }
 
-    expect(setArtworkCalled).toBe(false);
-    expect(embeddedBytes).not.toBeNull();
-    expect((embeddedBytes as unknown as Buffer).equals(bytes)).toBe(true);
+    expect(captured).not.toBeNull();
+    expect((captured as unknown as Buffer).equals(bytes)).toBe(true);
     // writeSyncTag fires with an artworkHash — embedded sink delivered bytes.
     const syncTagWithHash = db.writeSyncTag.mock.calls.find(
       ([, update]) => (update as Record<string, unknown>).artworkHash !== undefined
@@ -4196,47 +4124,13 @@ describe('DeviceTrack.artworkSink dispatch (TASK-372)', () => {
     expect(syncTagWithHash).toBeDefined();
   });
 
-  it("sink='sidecar' → writeSidecar lands the bytes and writeSyncTag records artworkHash (TASK-370)", async () => {
-    // TASK-370 wired the sidecar write path. Pre-370 this branch returned
-    // undefined (no writer); now `adapter.writeSidecar` runs and the
-    // syncTag.artworkHash claim IS honest — bytes landed at
-    // `<albumDir>/cover.jpg`. The next sync's detectUpgrades sees the
-    // matching hash and stays quiet.
+  it("sink='sidecar' → setTrackArtwork receives the bytes and writeSyncTag records artworkHash", async () => {
     const bytes = Buffer.from('sidecar-cover-bytes');
     const db = makeDbForSink('sidecar');
 
-    let setArtworkCalled = false;
-    let embedCalled = false;
-    db.addTrack = mock((input: Record<string, unknown>) => {
-      return createMockDeviceTrack(
-        String(input.artist ?? ''),
-        String(input.title ?? ''),
-        String(input.album ?? ''),
-        `Music/MOCK.m4a`,
-        {
-          artworkSink: 'sidecar',
-          setArtworkFromData: () => {
-            setArtworkCalled = true;
-            return createMockDeviceTrack(
-              String(input.artist ?? ''),
-              String(input.title ?? ''),
-              String(input.album ?? ''),
-              `Music/MOCK.m4a`,
-              { artworkSink: 'sidecar' }
-            );
-          },
-        }
-      );
-    });
-    db.updateTrack = mock((track: DeviceTrack, fields: Record<string, unknown>) => {
-      if (fields.embeddedPictureData !== undefined) embedCalled = true;
-      return track;
-    });
-    // Wire the sidecar writer so the pipeline's `typeof === 'function'`
-    // guard sees it and the dispatch lands.
-    const sidecarCalls: Array<{ track: DeviceTrack; imageData: Buffer }> = [];
-    db.writeSidecar = mock((track: DeviceTrack, imageData: Buffer) => {
-      sidecarCalls.push({ track, imageData });
+    let captured: Buffer | null = null;
+    db.setTrackArtwork = mock(async (_track: DeviceTrack, data: Buffer) => {
+      captured = data;
     });
 
     const adapter = makeAdapterWithBytes(bytes);
@@ -4250,100 +4144,33 @@ describe('DeviceTrack.artworkSink dispatch (TASK-372)', () => {
       // consume
     }
 
-    // Sink-correct dispatch: setArtworkFromData (database sink) and
-    // updateTrack({embeddedPictureData}) (embedded sink) must NOT fire.
-    expect(setArtworkCalled).toBe(false);
-    expect(embedCalled).toBe(false);
-    // writeSidecar fired exactly once with the adapter-fallback bytes.
     // Resize is a no-op here (no sidecarResize set in execute() options),
-    // so the writer receives the original bytes — matches what
-    // getResizedArtwork returns when the resize dim is undefined.
-    expect(sidecarCalls).toHaveLength(1);
-    expect(sidecarCalls[0]!.imageData.equals(bytes)).toBe(true);
-
-    // syncTag.artworkHash IS recorded now that bytes really landed.
-    // Suppressing the claim like the pre-TASK-370 placeholder did would
-    // pin a stale "no art" view that the next --check-artwork sync would
-    // try to repair (artwork-added every time) — exactly the churn that
-    // both 372 and this task close.
+    // so the adapter receives the original bytes.
+    expect(captured).not.toBeNull();
+    expect((captured as unknown as Buffer).equals(bytes)).toBe(true);
+    // syncTag.artworkHash IS recorded — bytes flowed through the adapter.
     const syncTagWithHash = db.writeSyncTag.mock.calls.find(
       ([, update]) => (update as Record<string, unknown>).artworkHash !== undefined
     );
     expect(syncTagWithHash).toBeDefined();
   });
 
-  it("sink='sidecar' but adapter omits writeSidecar → defensive fallback suppresses syncTag.artworkHash", async () => {
-    // The DeviceAdapter interface marks writeSidecar as optional so the iPod
-    // adapter doesn't need a stub. Theoretically a track could report
-    // `artworkSink === 'sidecar'` against an adapter that omits the method;
-    // the pipeline must NOT silently lie about success in that case. The
-    // suppression guard keeps the churn loop closed even on a misconfigured
-    // adapter — same shape as the noop sink.
-    const bytes = Buffer.from('orphan-bytes');
-    const db = makeDbForSink('sidecar');
-    // Explicitly null out writeSidecar — the makeDbForSink default doesn't
-    // wire it, so this is mostly belt-and-braces.
-    db.writeSidecar = undefined;
-
-    const adapter = makeAdapterWithBytes(bytes);
-    const executor = new MusicPipeline(createDependencies(db, transcoder));
-    for await (const _p of executor.execute(makeCopyPlan(), {
-      artwork: true,
-      adapter,
-      syncTagConfig: {},
-      transferMode: 'fast',
-    })) {
-      // consume
-    }
-
-    // No path on the adapter to land bytes → MUST NOT claim success on the
-    // sync tag. This is the doc-041 §3.6 churn-loop pin for sidecar.
-    const syncTagWithHash = db.writeSyncTag.mock.calls.find(
-      ([, update]) => (update as Record<string, unknown>).artworkHash !== undefined
-    );
-    expect(syncTagWithHash).toBeUndefined();
-  });
-
-  it("sink='noop' → no write path AND syncTag.artworkHash suppressed (the churn-loop pin)", async () => {
+  it("sink='noop' → setTrackArtwork is NEVER called AND syncTag.artworkHash suppressed (churn-loop pin)", async () => {
     // Doc-041 §3.6 regression pin. The pipeline used to call
     // setArtworkFromData on every DeviceTrack and write syncTag.artworkHash
     // off `source.artworkHash ?? extractedHash`. For mass-storage non-OGG
     // outputs the bytes were silently dropped (setArtworkFromData no-op)
     // but the hash was written anyway — so detectUpgrades saw
     // source.artworkHash != device-file-art-state on every subsequent
-    // sync and fired artwork-added forever. TASK-372 closes this by
-    // returning undefined from transferArtwork for the noop sink AND by
-    // having transferToIpod's hash-resolution skip the claim when the
-    // return value is undefined, even if source.artworkHash is defined.
+    // sync and fired artwork-added forever. The pipeline now early-skips
+    // bytes extraction for noop sinks AND suppresses the hash claim, so
+    // setTrackArtwork is never reached.
     const bytes = Buffer.from('noop-cover-bytes-that-have-nowhere-to-go');
     const db = makeDbForSink('noop');
 
-    let setArtworkCalled = false;
-    let embedCalled = false;
-    db.addTrack = mock((input: Record<string, unknown>) => {
-      return createMockDeviceTrack(
-        String(input.artist ?? ''),
-        String(input.title ?? ''),
-        String(input.album ?? ''),
-        `Music/MOCK.m4a`,
-        {
-          artworkSink: 'noop',
-          setArtworkFromData: () => {
-            setArtworkCalled = true;
-            return createMockDeviceTrack(
-              String(input.artist ?? ''),
-              String(input.title ?? ''),
-              String(input.album ?? ''),
-              `Music/MOCK.m4a`,
-              { artworkSink: 'noop' }
-            );
-          },
-        }
-      );
-    });
-    db.updateTrack = mock((track: DeviceTrack, fields: Record<string, unknown>) => {
-      if (fields.embeddedPictureData !== undefined) embedCalled = true;
-      return track;
+    let setCalled = false;
+    db.setTrackArtwork = mock(async (_track: DeviceTrack, _data: Buffer) => {
+      setCalled = true;
     });
 
     // Source carries an artworkHash — pre-TASK-372 this would have been
@@ -4369,8 +4196,7 @@ describe('DeviceTrack.artworkSink dispatch (TASK-372)', () => {
       // consume
     }
 
-    expect(setArtworkCalled).toBe(false);
-    expect(embedCalled).toBe(false);
+    expect(setCalled).toBe(false);
     // The pin: writeSyncTag must NEVER be called with an artworkHash on a
     // noop sink, even though source.artworkHash was supplied. The pipeline
     // still writes the minimal copy sync tag for the addTrack input

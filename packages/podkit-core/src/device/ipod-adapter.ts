@@ -166,8 +166,17 @@ export class IpodDeviceAdapter implements DeviceAdapter<IpodTrack> {
     return this.ipod.replaceTrackFile(track, newFilePath);
   }
 
-  removeTrackArtwork(track: IpodTrack): IpodTrack {
-    return track.removeArtwork();
+  /**
+   * Write artwork bytes for an iPod track. The bytes are persisted to the
+   * ArtworkDB in memory; `save()` writes them to disk along with the rest of
+   * the iTunesDB.
+   */
+  async setTrackArtwork(track: IpodTrack, imageData: Buffer): Promise<void> {
+    this.ipod.setTrackArtworkFromData(track, imageData);
+  }
+
+  async removeTrackArtwork(track: IpodTrack): Promise<void> {
+    this.ipod.removeTrackArtwork(track);
   }
 
   // Sync tags

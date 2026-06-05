@@ -68,9 +68,6 @@ function createMockTrack(): IpodTrack {
     update: mock(),
     remove: mock(),
     copyFile: mock(),
-    setArtwork: mock(),
-    setArtworkFromData: mock(),
-    removeArtwork: mock(),
   };
 }
 

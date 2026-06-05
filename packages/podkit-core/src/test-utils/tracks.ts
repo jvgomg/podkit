@@ -15,13 +15,13 @@
  * what they care about. When a future interface change adds a required field,
  * update the default here; all callers pick it up for free.
  *
- * Method stubs (update, remove, copyFile, …) use plain arrow functions, NOT
+ * Method stubs (update, remove, copyFile) use plain arrow functions, NOT
  * bun:test `mock()`. Tests that need call-counting can wrap with `mock()` in
  * the override, e.g.:
  *
  *   ```ts
  *   import { mock } from 'bun:test';
- *   const t = makeMockIpodTrack({ setArtworkFromData: mock(() => ({}) as IpodTrack) });
+ *   const t = makeMockIpodTrack({ update: mock(() => ({}) as IpodTrack) });
  *   ```
  *
  * This keeps the factories importable outside of bun:test contexts (e.g. from
@@ -78,9 +78,6 @@ export function makeMockIpodTrack(overrides: Partial<IpodTrack> = {}): IpodTrack
     update: () => ({}) as IpodTrack,
     remove: () => {},
     copyFile: () => ({}) as IpodTrack,
-    setArtwork: () => ({}) as IpodTrack,
-    setArtworkFromData: () => ({}) as IpodTrack,
-    removeArtwork: () => ({}) as IpodTrack,
     ...overrides,
   } as IpodTrack;
 }
@@ -115,9 +112,6 @@ export function makeMockDeviceTrack(overrides: Partial<DeviceTrack> = {}): Devic
     update: () => ({}) as DeviceTrack,
     remove: () => {},
     copyFile: () => ({}) as DeviceTrack,
-    setArtwork: () => ({}) as DeviceTrack,
-    setArtworkFromData: () => ({}) as DeviceTrack,
-    removeArtwork: () => ({}) as DeviceTrack,
     ...overrides,
   } as DeviceTrack;
 }

@@ -47,32 +47,6 @@ export interface IpodDatabaseInternal {
    * @returns A new IpodTrack snapshot with hasFile: true
    */
   copyFileToTrack(track: IpodTrack, sourcePath: string): IpodTrack;
-
-  /**
-   * Sets artwork for a track from an image file.
-   *
-   * @param track - The track to set artwork for
-   * @param imagePath - Path to the image file
-   * @returns A new IpodTrack snapshot with hasArtwork: true
-   */
-  setTrackArtwork(track: IpodTrack, imagePath: string): IpodTrack;
-
-  /**
-   * Sets artwork for a track from image data.
-   *
-   * @param track - The track to set artwork for
-   * @param imageData - Buffer containing image data
-   * @returns A new IpodTrack snapshot with hasArtwork: true
-   */
-  setTrackArtworkFromData(track: IpodTrack, imageData: Buffer): IpodTrack;
-
-  /**
-   * Removes artwork from a track.
-   *
-   * @param track - The track to remove artwork from
-   * @returns A new IpodTrack snapshot with hasArtwork: false
-   */
-  removeTrackArtwork(track: IpodTrack): IpodTrack;
 }
 
 /**
@@ -92,8 +66,8 @@ export interface IpodDatabaseInternal {
  * console.log(`${track.artist} - ${track.title}`);
  *
  * // Chain operations (each returns a new snapshot)
- * track.copyFile('/path/to/song.mp3')
- *      .setArtwork('/path/to/cover.jpg');
+ * const copied = track.copyFile('/path/to/song.mp3');
+ * await adapter.setTrackArtwork(copied, jpegBuffer);
  *
  * // Remove track
  * track.remove();
@@ -153,10 +127,10 @@ export class IpodTrackImpl implements IpodTrack {
   readonly syncTag: SyncTagData | null;
 
   /**
-   * iPod always stores artwork in the iTunesDB ArtworkDB — `setArtworkFromData`
-   * is the canonical write path. Hardcoded here because the iPod adapter has
-   * no notion of artwork capability variation (every supported model writes
-   * the same database).
+   * iPod always stores artwork in the iTunesDB ArtworkDB; the adapter's
+   * `setTrackArtwork` is the canonical write path. Hardcoded here because the
+   * iPod adapter has no notion of artwork capability variation (every
+   * supported model writes the same database).
    */
   readonly artworkSink = 'database' as const;
 
@@ -307,43 +281,5 @@ export class IpodTrackImpl implements IpodTrack {
   copyFile(sourcePath: string): IpodTrack {
     this.assertNotRemoved();
     return this._db.copyFileToTrack(this, sourcePath);
-  }
-
-  /**
-   * Sets artwork for the track from an image file.
-   *
-   * @param imagePath - Path to the image file (JPEG or PNG)
-   * @returns A new IpodTrack snapshot with hasArtwork: true
-   * @throws {IpodError} If the track has been removed (code: TRACK_REMOVED)
-   * @throws {IpodError} If artwork operation fails (code: ARTWORK_FAILED)
-   */
-  setArtwork(imagePath: string): IpodTrack {
-    this.assertNotRemoved();
-    return this._db.setTrackArtwork(this, imagePath);
-  }
-
-  /**
-   * Sets artwork for the track from image data.
-   *
-   * @param imageData - Buffer containing image data (JPEG or PNG)
-   * @returns A new IpodTrack snapshot with hasArtwork: true
-   * @throws {IpodError} If the track has been removed (code: TRACK_REMOVED)
-   * @throws {IpodError} If artwork operation fails (code: ARTWORK_FAILED)
-   */
-  setArtworkFromData(imageData: Buffer): IpodTrack {
-    this.assertNotRemoved();
-    return this._db.setTrackArtworkFromData(this, imageData);
-  }
-
-  /**
-   * Removes artwork from the track.
-   *
-   * @returns A new IpodTrack snapshot with hasArtwork: false
-   * @throws {IpodError} If the track has been removed (code: TRACK_REMOVED)
-   * @throws {IpodError} If artwork operation fails (code: ARTWORK_FAILED)
-   */
-  removeArtwork(): IpodTrack {
-    this.assertNotRemoved();
-    return this._db.removeTrackArtwork(this);
   }
 }

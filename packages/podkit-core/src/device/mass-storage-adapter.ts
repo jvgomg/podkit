@@ -431,40 +431,6 @@ export class MassStorageTrack implements DeviceTrack {
       artworkSink: this.artworkSink,
     });
   }
-
-  /**
-   * Set artwork on the track.
-   *
-   * No-op for mass-storage devices — artwork embedding is handled by the
-   * FFmpeg pipeline for most formats, and by the tag writer (via
-   * embeddedPictureData in updateTrack) for OGG containers where FFmpeg
-   * can't embed. Unlike iPod, which stores artwork in a separate database,
-   * mass-storage devices read artwork directly from embedded tags.
-   */
-  setArtwork(_imagePath: string): MassStorageTrack {
-    return this;
-  }
-
-  /**
-   * Set artwork from raw image data.
-   *
-   * No-op — see setArtwork() for rationale.
-   */
-  setArtworkFromData(_imageData: Buffer): MassStorageTrack {
-    return this;
-  }
-
-  /**
-   * Remove artwork from the track.
-   *
-   * No-op — mass-storage devices with embedded artwork as their primary
-   * source should never have artwork stripped, since the device needs it.
-   * For devices that could benefit from stripping (e.g., sidecar-artwork
-   * devices in optimized mode), this would require tag rewriting.
-   */
-  removeArtwork(): MassStorageTrack {
-    return this;
-  }
 }
 
 /**
@@ -1075,10 +1041,43 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
     this.allocatedPaths.delete(track.filePath);
   }
 
-  removeTrackArtwork(track: MassStorageTrack): MassStorageTrack {
-    // No-op — mass-storage devices with embedded artwork need it kept.
-    // Delegates to the track's removeArtwork() which is also a no-op.
-    return track.removeArtwork();
+  /**
+   * Write artwork bytes for a track. Dispatches on `track.artworkSink`:
+   *
+   *   - `'embedded'` → queue a tag-writer picture write (taglib handles every
+   *     container; flushed by {@link save}).
+   *   - `'sidecar'`  → queue a peer `cover.jpg` write via {@link writeSidecar}.
+   *   - `'noop'`     → device has no artwork support; silently drop.
+   *
+   * The bytes arrive already resized to the device's `artworkMaxResolution`
+   * by the pipeline's album-level resize cache.
+   */
+  async setTrackArtwork(track: MassStorageTrack, imageData: Buffer): Promise<void> {
+    switch (track.artworkSink) {
+      case 'embedded':
+        // Route through the tag writer. Reuses updateTrack's
+        // pendingPictureWrites bookkeeping so taglib touches each file once
+        // even when textual + picture updates collide.
+        this.updateTrack(track, { embeddedPictureData: imageData });
+        return;
+      case 'sidecar':
+        this.writeSidecar(track, imageData);
+        return;
+      case 'noop':
+        // Device has no artwork support — the pipeline still gates the
+        // syncTag.artworkHash claim on the sink, so dropping bytes here is
+        // safe (no churn loop). Returning early matches the pre-refactor
+        // MassStorageTrack.setArtworkFromData no-op behaviour.
+        return;
+    }
+  }
+
+  async removeTrackArtwork(_track: MassStorageTrack): Promise<void> {
+    // No-op — mass-storage devices with embedded artwork as their primary
+    // source should never have artwork stripped, since the device needs it.
+    // Sidecar-primary devices could in principle delete `cover.jpg` here, but
+    // the orphan-cleanup path in the doctor handles that case; keeping this
+    // method symmetrically inert preserves today's behaviour.
   }
 
   /**

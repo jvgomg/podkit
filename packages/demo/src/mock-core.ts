@@ -379,15 +379,6 @@ function createMockIpodTrack(data: Record<string, unknown>): any {
     copyFile(_path: string) {
       return createMockIpodTrack({ ...data, hasFile: true });
     },
-    setArtwork(_path: string) {
-      return createMockIpodTrack({ ...data, hasArtwork: true });
-    },
-    setArtworkFromData(_buf: Buffer) {
-      return createMockIpodTrack({ ...data, hasArtwork: true });
-    },
-    removeArtwork() {
-      return createMockIpodTrack({ ...data, hasArtwork: false });
-    },
   };
 }
 

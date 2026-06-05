@@ -175,22 +175,21 @@ export interface DeviceTrack {
 
   /**
    * Where this device stores artwork for this track. The pipeline uses this
-   * to pick the correct write path AND to decide whether claiming success
-   * via `syncTag.artworkHash` is honest:
+   * to decide whether claiming success via `syncTag.artworkHash` is honest,
+   * and for progress reporting (slow file-rewrite vs. fast in-memory). The
+   * adapter's `setTrackArtwork` does the actual dispatch — pipeline callers
+   * should not branch on this value to pick a write path.
    *
-   *   - `'database'` → `setArtworkFromData` writes the bytes into a device-
-   *     side database (e.g. iPod iTunesDB / ArtworkDB).
-   *   - `'embedded'` → `updateTrack({ embeddedPictureData })` routes through
-   *     the mass-storage tag writer (node-taglib-sharp) and embeds the
-   *     picture in the file body.
-   *   - `'sidecar'`  → a peer image (e.g. `cover.jpg`) is the device's
-   *     artwork. The write path is not yet implemented; the pipeline treats
-   *     this as a noop until a follow-up adds `writeSidecar()`.
+   *   - `'database'` → bytes land in a device-side database (iPod ArtworkDB).
+   *   - `'embedded'` → bytes embed in the file body via the tag writer
+   *     (mass-storage / node-taglib-sharp).
+   *   - `'sidecar'`  → bytes land in a peer image (e.g. `cover.jpg`) next to
+   *     the audio file.
    *   - `'noop'`     → device has no artwork support (empty
-   *     `artworkSources`). The pipeline must skip BOTH the write AND the
-   *     `syncTag.artworkHash` write — claiming success when no bytes landed
-   *     causes the next sync to re-fire `artwork-added` on every track (the
-   *     churn loop documented in doc-041 §3.6).
+   *     `artworkSources`). The pipeline must skip the `syncTag.artworkHash`
+   *     write — claiming success when no bytes landed causes the next sync
+   *     to re-fire `artwork-added` on every track (the churn loop documented
+   *     in doc-041 §3.6).
    *
    * Derived from device capabilities at track-construction time. Per-device,
    * not per-track: every track from the same adapter instance carries the
@@ -209,9 +208,6 @@ export interface DeviceTrack {
   update(fields: DeviceTrackMetadata): DeviceTrack;
   remove(options?: { keepFile?: boolean }): void;
   copyFile(sourcePath: string): DeviceTrack;
-  setArtwork(imagePath: string): DeviceTrack;
-  setArtworkFromData(imageData: Buffer): DeviceTrack;
-  removeArtwork(): DeviceTrack;
 }
 
 // =============================================================================
@@ -255,27 +251,39 @@ export interface DeviceAdapter<T extends DeviceTrack = DeviceTrack> {
   /** Replace the audio file of an existing track (for upgrades/re-transcodes) */
   replaceTrackFile(track: T, newFilePath: string): T;
 
-  /** Remove artwork from a track */
-  removeTrackArtwork(track: T): T;
-
   /**
-   * Queue a peer image (e.g. `cover.jpg`) to be written next to the track's
-   * audio file at save() time. Only meaningful for adapters whose tracks
-   * report `artworkSink === 'sidecar'` (rockbox today); other adapters either
-   * omit this method or no-op it.
+   * Write artwork bytes for a track to wherever the device stores artwork.
    *
-   * Per-album, not per-track: every track on the same album dir contributes
-   * the same bytes (the album cache makes this true), so the adapter
-   * deduplicates by album dir before save.
+   * The adapter dispatches internally on `track.artworkSink`:
+   *   - iPod (`'database'`) → bytes go into the ArtworkDB (in-memory; flushed
+   *     by `save()`).
+   *   - Mass-storage (`'embedded'`) → bytes queued for the tag writer; the
+   *     file rewrite happens at `save()` time so taglib touches each file once
+   *     even when textual + picture updates collide.
+   *   - Mass-storage (`'sidecar'`) → bytes queued for a peer `cover.jpg` write;
+   *     the file lands at `save()` time.
+   *   - `'noop'` → adapter has no artwork storage; the call is a no-op.
+   *
+   * Pipeline callers MUST NOT branch on the sink to pick a write path — this
+   * method owns the dispatch. They may still inspect `track.artworkSink` for
+   * progress reporting and to suppress the `syncTag.artworkHash` claim on
+   * `'noop'` adapters (churn loop guard, doc-041 §3.6).
    *
    * Resize is the pipeline's responsibility — bytes arrive already scaled to
-   * `artworkMaxResolution`. The adapter just persists them atomically.
-   *
-   * Throws (via `save()`) with a typed `SidecarWriteError` when one or more
-   * album sidecars fail to land; failure is meaningful because the device
-   * reads art from this file and there's no embedded fallback to fall back to.
+   * the device's `artworkMaxResolution`.
    */
-  writeSidecar?(track: T, imageData: Buffer): void;
+  setTrackArtwork(track: T, imageData: Buffer): Promise<void>;
+
+  /**
+   * Remove artwork from a track.
+   *
+   * Used by the artwork-removed upgrade branch when the source no longer
+   * carries artwork and the device's previous bytes need clearing. On
+   * mass-storage devices that don't actively strip artwork (embedded-primary
+   * devices need the bytes to stay so the device can render them), this is a
+   * no-op.
+   */
+  removeTrackArtwork(track: T): Promise<void>;
 
   // Sync tags
 

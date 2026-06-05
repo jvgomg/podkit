@@ -213,9 +213,12 @@ export interface TrackFields {
  * const updated = track.update({ rating: 100 });
  *
  * // Chain operations
- * ipod.addTrack({ title: 'Song', artist: 'Artist' })
- *     .copyFile('/path/to/song.mp3')
- *     .setArtwork('/path/to/cover.jpg');
+ * const newTrack = ipod
+ *   .addTrack({ title: 'Song', artist: 'Artist' })
+ *   .copyFile('/path/to/song.mp3');
+ *
+ * // Artwork lives on the adapter, not the track
+ * await adapter.setTrackArtwork(newTrack, jpegBuffer);
  * ```
  */
 export interface IpodTrack extends DeviceTrack {
@@ -347,32 +350,6 @@ export interface IpodTrack extends DeviceTrack {
    * @throws {IpodError} If the copy operation fails (code: COPY_FAILED)
    */
   copyFile(sourcePath: string): IpodTrack;
-
-  /**
-   * Sets artwork for the track from an image file.
-   *
-   * @param imagePath - Path to the image file (JPEG or PNG)
-   * @returns A new IpodTrack snapshot with hasArtwork: true
-   * @throws {IpodError} If artwork operation fails (code: ARTWORK_FAILED)
-   */
-  setArtwork(imagePath: string): IpodTrack;
-
-  /**
-   * Sets artwork for the track from image data.
-   *
-   * @param imageData - Buffer containing image data (JPEG or PNG)
-   * @returns A new IpodTrack snapshot with hasArtwork: true
-   * @throws {IpodError} If artwork operation fails (code: ARTWORK_FAILED)
-   */
-  setArtworkFromData(imageData: Buffer): IpodTrack;
-
-  /**
-   * Removes artwork from the track.
-   *
-   * @returns A new IpodTrack snapshot with hasArtwork: false
-   * @throws {IpodError} If artwork operation fails (code: ARTWORK_FAILED)
-   */
-  removeArtwork(): IpodTrack;
 }
 
 /**

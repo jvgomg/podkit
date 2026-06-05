@@ -594,23 +594,9 @@ describe('MassStorageTrack', () => {
     removeTempDevice(sourceDir);
   });
 
-  test('setArtwork() is a no-op', () => {
-    const track = createTestTrack();
-    const result = track.setArtwork('/some/image.jpg');
-    expect(result).toBe(track);
-  });
-
-  test('setArtworkFromData() is a no-op', () => {
-    const track = createTestTrack();
-    const result = track.setArtworkFromData(Buffer.from('image'));
-    expect(result).toBe(track);
-  });
-
-  test('removeArtwork() is a no-op', () => {
-    const track = createTestTrack();
-    const result = track.removeArtwork();
-    expect(result).toBe(track);
-  });
+  // Artwork operations live on the adapter (see MassStorageAdapter.setTrackArtwork /
+  // removeTrackArtwork). The behavioural coverage lives in the adapter suite —
+  // MassStorageTrack itself no longer carries those methods.
 });
 
 // =============================================================================

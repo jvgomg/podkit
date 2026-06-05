@@ -73,30 +73,18 @@ function createMockDatabase(): IpodDatabaseInternal & {
   updateTrackMock: ReturnType<typeof mock>;
   removeTrackMock: ReturnType<typeof mock>;
   copyFileToTrackMock: ReturnType<typeof mock>;
-  setTrackArtworkMock: ReturnType<typeof mock>;
-  setTrackArtworkFromDataMock: ReturnType<typeof mock>;
-  removeTrackArtworkMock: ReturnType<typeof mock>;
 } {
   const updateTrackMock = mock(() => ({}) as IpodTrack);
   const removeTrackMock = mock(() => ({ removed: true }));
   const copyFileToTrackMock = mock(() => ({}) as IpodTrack);
-  const setTrackArtworkMock = mock(() => ({}) as IpodTrack);
-  const setTrackArtworkFromDataMock = mock(() => ({}) as IpodTrack);
-  const removeTrackArtworkMock = mock(() => ({}) as IpodTrack);
 
   return {
     updateTrack: updateTrackMock,
     removeTrack: removeTrackMock,
     copyFileToTrack: copyFileToTrackMock,
-    setTrackArtwork: setTrackArtworkMock,
-    setTrackArtworkFromData: setTrackArtworkFromDataMock,
-    removeTrackArtwork: removeTrackArtworkMock,
     updateTrackMock,
     removeTrackMock,
     copyFileToTrackMock,
-    setTrackArtworkMock,
-    setTrackArtworkFromDataMock,
-    removeTrackArtworkMock,
   };
 }
 
@@ -299,109 +287,10 @@ describe('IpodTrackImpl', () => {
     });
   });
 
-  describe('setArtwork()', () => {
-    it('delegates to database and returns result', () => {
-      const db = createMockDatabase();
-      const handle = createMockHandle();
-      const trackData = createMockTrack({ hasArtwork: false });
-      const track = new IpodTrackImpl(db, handle, trackData);
-
-      const updatedTrackData = createMockTrack({ hasArtwork: true });
-      const updatedTrack = new IpodTrackImpl(db, handle, updatedTrackData);
-      db.setTrackArtworkMock.mockReturnValue(updatedTrack);
-
-      const result = track.setArtwork('/path/to/cover.jpg');
-
-      expect(db.setTrackArtworkMock).toHaveBeenCalledTimes(1);
-      expect(db.setTrackArtworkMock).toHaveBeenCalledWith(track, '/path/to/cover.jpg');
-      expect(result).toBe(updatedTrack);
-    });
-
-    it('returns a new instance (not the same track)', () => {
-      const db = createMockDatabase();
-      const handle = createMockHandle();
-      const trackData = createMockTrack({ hasArtwork: false });
-      const track = new IpodTrackImpl(db, handle, trackData);
-
-      const updatedTrackData = createMockTrack({ hasArtwork: true });
-      const updatedTrack = new IpodTrackImpl(db, handle, updatedTrackData);
-      db.setTrackArtworkMock.mockReturnValue(updatedTrack);
-
-      const result = track.setArtwork('/path/to/cover.jpg');
-
-      expect(result).not.toBe(track);
-    });
-  });
-
-  describe('setArtworkFromData()', () => {
-    it('delegates to database and returns result', () => {
-      const db = createMockDatabase();
-      const handle = createMockHandle();
-      const trackData = createMockTrack({ hasArtwork: false });
-      const track = new IpodTrackImpl(db, handle, trackData);
-
-      const updatedTrackData = createMockTrack({ hasArtwork: true });
-      const updatedTrack = new IpodTrackImpl(db, handle, updatedTrackData);
-      db.setTrackArtworkFromDataMock.mockReturnValue(updatedTrack);
-
-      const imageData = Buffer.from([0x89, 0x50, 0x4e, 0x47]); // PNG header
-      const result = track.setArtworkFromData(imageData);
-
-      expect(db.setTrackArtworkFromDataMock).toHaveBeenCalledTimes(1);
-      expect(db.setTrackArtworkFromDataMock).toHaveBeenCalledWith(track, imageData);
-      expect(result).toBe(updatedTrack);
-    });
-
-    it('returns a new instance (not the same track)', () => {
-      const db = createMockDatabase();
-      const handle = createMockHandle();
-      const trackData = createMockTrack({ hasArtwork: false });
-      const track = new IpodTrackImpl(db, handle, trackData);
-
-      const updatedTrackData = createMockTrack({ hasArtwork: true });
-      const updatedTrack = new IpodTrackImpl(db, handle, updatedTrackData);
-      db.setTrackArtworkFromDataMock.mockReturnValue(updatedTrack);
-
-      const imageData = Buffer.from([0x89, 0x50, 0x4e, 0x47]); // PNG header
-      const result = track.setArtworkFromData(imageData);
-
-      expect(result).not.toBe(track);
-    });
-  });
-
-  describe('removeArtwork()', () => {
-    it('delegates to database and returns result', () => {
-      const db = createMockDatabase();
-      const handle = createMockHandle();
-      const trackData = createMockTrack({ hasArtwork: true });
-      const track = new IpodTrackImpl(db, handle, trackData);
-
-      const updatedTrackData = createMockTrack({ hasArtwork: false });
-      const updatedTrack = new IpodTrackImpl(db, handle, updatedTrackData);
-      db.removeTrackArtworkMock.mockReturnValue(updatedTrack);
-
-      const result = track.removeArtwork();
-
-      expect(db.removeTrackArtworkMock).toHaveBeenCalledTimes(1);
-      expect(db.removeTrackArtworkMock).toHaveBeenCalledWith(track);
-      expect(result).toBe(updatedTrack);
-    });
-
-    it('returns a new instance (not the same track)', () => {
-      const db = createMockDatabase();
-      const handle = createMockHandle();
-      const trackData = createMockTrack({ hasArtwork: true });
-      const track = new IpodTrackImpl(db, handle, trackData);
-
-      const updatedTrackData = createMockTrack({ hasArtwork: false });
-      const updatedTrack = new IpodTrackImpl(db, handle, updatedTrackData);
-      db.removeTrackArtworkMock.mockReturnValue(updatedTrack);
-
-      const result = track.removeArtwork();
-
-      expect(result).not.toBe(track);
-    });
-  });
+  // Artwork operations moved off DeviceTrack onto DeviceAdapter (see
+  // device/adapter.ts setTrackArtwork/removeTrackArtwork). The behavioural
+  // tests live with the iPod adapter / IpodDatabase libgpod wrappers — track
+  // instances no longer carry artwork methods to assert on.
 
   describe('removed track behavior', () => {
     let db: ReturnType<typeof createMockDatabase>;
@@ -448,37 +337,6 @@ describe('IpodTrackImpl', () => {
       }
     });
 
-    it('setArtwork() throws IpodError with TRACK_REMOVED code', () => {
-      expect(() => track.setArtwork('/path/to/cover.jpg')).toThrow(IpodError);
-      try {
-        track.setArtwork('/path/to/cover.jpg');
-      } catch (error) {
-        expect(error).toBeInstanceOf(IpodError);
-        expect((error as IpodError).code).toBe('TRACK_REMOVED');
-      }
-    });
-
-    it('setArtworkFromData() throws IpodError with TRACK_REMOVED code', () => {
-      const imageData = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
-      expect(() => track.setArtworkFromData(imageData)).toThrow(IpodError);
-      try {
-        track.setArtworkFromData(imageData);
-      } catch (error) {
-        expect(error).toBeInstanceOf(IpodError);
-        expect((error as IpodError).code).toBe('TRACK_REMOVED');
-      }
-    });
-
-    it('removeArtwork() throws IpodError with TRACK_REMOVED code', () => {
-      expect(() => track.removeArtwork()).toThrow(IpodError);
-      try {
-        track.removeArtwork();
-      } catch (error) {
-        expect(error).toBeInstanceOf(IpodError);
-        expect((error as IpodError).code).toBe('TRACK_REMOVED');
-      }
-    });
-
     it('methods check removed status before delegating', () => {
       // Verify that the database methods are NOT called when track is removed
       try {
@@ -501,27 +359,6 @@ describe('IpodTrackImpl', () => {
         // Expected to throw
       }
       expect(db.copyFileToTrackMock).not.toHaveBeenCalled();
-
-      try {
-        track.setArtwork('/path/to/cover.jpg');
-      } catch {
-        // Expected to throw
-      }
-      expect(db.setTrackArtworkMock).not.toHaveBeenCalled();
-
-      try {
-        track.setArtworkFromData(Buffer.from([0x89]));
-      } catch {
-        // Expected to throw
-      }
-      expect(db.setTrackArtworkFromDataMock).not.toHaveBeenCalled();
-
-      try {
-        track.removeArtwork();
-      } catch {
-        // Expected to throw
-      }
-      expect(db.removeTrackArtworkMock).not.toHaveBeenCalled();
     });
   });
 

@@ -46,9 +46,9 @@ import * as fs from 'node:fs';
  *   artist: 'Artist Name',
  * });
  *
- * // Copy audio file and set artwork
- * track.copyFile('/path/to/song.mp3')
- *      .setArtwork('/path/to/cover.jpg');
+ * // Copy audio file and set artwork (via the device adapter)
+ * const copied = track.copyFile('/path/to/song.mp3');
+ * await adapter.setTrackArtwork(copied, jpegBuffer);
  *
  * // Save changes
  * await ipod.save();
@@ -592,29 +592,6 @@ export class IpodDatabase implements IpodDatabaseInternal, PlaylistDatabaseInter
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new IpodError(`Failed to replace track file: ${message}`, 'COPY_FAILED');
-    }
-  }
-
-  /**
-   * Sets artwork for a track from an image file.
-   *
-   * @param track - The track to set artwork for
-   * @param imagePath - Path to the image file (JPEG or PNG)
-   * @returns A new IpodTrack snapshot with hasArtwork: true
-   * @throws {IpodError} If artwork operation fails (code: ARTWORK_FAILED)
-   * @throws {IpodError} If the track is unknown (code: TRACK_REMOVED)
-   * @throws {IpodError} If the database is closed (code: DATABASE_CLOSED)
-   */
-  setTrackArtwork(track: IpodTrack, imagePath: string): IpodTrack {
-    this.assertOpen();
-    const handle = this.getTrackHandle(track);
-
-    try {
-      this.db.setTrackArtwork(handle, imagePath);
-      return this.createTrackFromHandle(handle);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      throw new IpodError(`Failed to set artwork: ${message}`, 'ARTWORK_FAILED');
     }
   }
 

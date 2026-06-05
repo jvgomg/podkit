@@ -88,9 +88,6 @@ function createDeviceTrack(
     update: () => track,
     remove: () => {},
     copyFile: () => track,
-    setArtwork: () => track,
-    setArtworkFromData: () => track,
-    removeArtwork: () => track,
   };
   return track;
 }
