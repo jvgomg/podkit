@@ -17,8 +17,8 @@
  *     precompute the sibling candidate map.
  *   - `clearCaches()` — called at `execute()` entry to reset all three caches.
  *
- * Warnings collected during extraction (artwork is non-fatal) are pushed to
- * the pipeline via the `addWarning` callback passed at construction time, so
+ * Warnings collected during extraction (artwork is non-fatal) are emitted
+ * via the `WarningSink` passed at construction time, so
  * `pipeline.getWarnings()` sees them in the order they fired.
  *
  * @module
@@ -30,7 +30,7 @@ import { AlbumArtworkCache, getAlbumKey } from '../../artwork/album-cache.js';
 import { resizeArtwork } from '../../artwork/resize.js';
 import type { CollectionTrack } from '../../adapters/interface.js';
 import type { DeviceAdapter, DeviceTrack } from '../../device/adapter.js';
-import type { ExecutionWarning, SyncPlan } from '../engine/types.js';
+import type { SyncPlan, WarningSink } from '../engine/types.js';
 import type { ExecutionContext } from './execution-context.js';
 
 /**
@@ -94,7 +94,7 @@ export class MusicArtworkManager {
 
   constructor(
     private readonly device: DeviceAdapter,
-    private readonly addWarning: (warning: ExecutionWarning) => void
+    private readonly warnings: WarningSink
   ) {}
 
   /**
@@ -221,13 +221,16 @@ export class MusicArtworkManager {
       return cached.hash;
     } catch (error) {
       // Collect warning but don't fail the sync - artwork is optional
-      this.addWarning({
+      this.warnings.emit({
+        phase: 'execute',
         type: 'artwork',
-        track: {
-          artist: track.artist ?? 'Unknown Artist',
-          title: track.title ?? 'Unknown Title',
-          album: track.album,
-        },
+        tracks: [
+          {
+            artist: track.artist ?? 'Unknown Artist',
+            title: track.title ?? 'Unknown Title',
+            album: track.album,
+          },
+        ],
         message: `Failed to extract/transfer artwork: ${
           error instanceof Error ? error.message : String(error)
         }`,

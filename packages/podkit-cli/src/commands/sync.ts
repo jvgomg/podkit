@@ -146,22 +146,19 @@ export interface ErrorInfo {
 }
 
 /**
- * Warning info for JSON output (plan warnings like lossy-to-lossy)
+ * Warning info for JSON output (plan + execute phases unified).
+ *
+ * Replaces the prior PlanWarningInfo + ExecutionWarningInfo split. Consumers
+ * pick by `phase`. Track refs are structured; consumers format as they wish.
+ *
+ * See documents/architecture/error-handling.md for the responsibility model.
  */
-export interface PlanWarningInfo {
+export interface WarningInfo {
+  phase: 'plan' | 'execute';
   type: string;
   message: string;
   trackCount: number;
-  tracks?: string[];
-}
-
-/**
- * Execution warning info for JSON output (artwork, metadata issues during sync)
- */
-export interface ExecutionWarningInfo {
-  type: string;
-  track: string;
-  message: string;
+  tracks?: Array<{ artist: string; title: string; album?: string }>;
 }
 
 /**
@@ -331,9 +328,13 @@ export interface SyncOutput {
     success: boolean;
     error?: string;
   };
-  planWarnings?: PlanWarningInfo[];
+  /**
+   * Sync engine warnings — plan-phase and execute-phase, unified. Filter by
+   * `warning.phase` to recover the prior split. Always populated when the
+   * engine emitted at least one warning; omitted when empty.
+   */
+  warnings?: WarningInfo[];
   scanWarnings?: ScanWarningInfo[];
-  executionWarnings?: ExecutionWarningInfo[];
   errors?: ErrorInfo[];
   error?: string;
 }
@@ -958,6 +959,7 @@ export async function runSync(
   let anyError = false;
   let totalArtworkMissingBaseline = 0;
   let totalTransferModeMismatch = 0;
+  const allWarnings: import('@podkit/core').Warning[] = [];
   // Captured per-collection inside the music loop so the non-dry-run
   // aggregate JSON can surface decision provenance. Decisions are device-wide,
   // so the last collection's value is equivalent to any other's.
@@ -1168,6 +1170,9 @@ export async function runSync(
         totalFailed += result.failed;
         totalArtworkMissingBaseline += result.artworkMissingBaseline ?? 0;
         totalTransferModeMismatch += result.transferModeMismatch ?? 0;
+        if (result.warnings && result.warnings.length > 0) {
+          allWarnings.push(...result.warnings);
+        }
         if (!result.success) {
           anyError = true;
         }
@@ -1230,6 +1235,9 @@ export async function runSync(
 
           totalCompleted += result.completed;
           totalFailed += result.failed;
+          if (result.warnings && result.warnings.length > 0) {
+            allWarnings.push(...result.warnings);
+          }
           if (!result.success) {
             anyError = true;
           }
@@ -1286,6 +1294,41 @@ export async function runSync(
           out.print('Everything already in sync!');
         }
         out.print(`Duration: ${formatDuration(duration)}`);
+
+        // Surface execute-phase warnings — soft signals accumulated during
+        // the run (artwork extraction failures, iPod portable tag-write
+        // misses, mass-storage vanished relocate sources, etc.). JSON
+        // consumers see them as a structured array; text-mode users see a
+        // grouped summary here, then per-type counts with -vv detail.
+        const executeWarnings = allWarnings.filter((w) => w.phase === 'execute');
+        if (executeWarnings.length > 0) {
+          out.newline();
+          out.print(`Warnings: ${formatNumber(executeWarnings.length)}`);
+          // Group by warning type so the user sees "3 artwork, 2 tag-write"
+          // rather than 5 raw lines.
+          const byType = new Map<string, number>();
+          for (const w of executeWarnings) {
+            byType.set(w.type, (byType.get(w.type) ?? 0) + 1);
+          }
+          for (const [type, count] of byType) {
+            out.print(`  ${type}: ${formatNumber(count)}`);
+          }
+          if (out.isVerbose) {
+            // -v and higher: expand to per-warning messages.
+            out.newline();
+            for (const w of executeWarnings) {
+              const trackHint =
+                w.tracks.length === 1
+                  ? ` (${w.tracks[0]!.artist} — ${w.tracks[0]!.title})`
+                  : w.tracks.length > 1
+                    ? ` (${w.tracks.length} tracks)`
+                    : '';
+              out.print(`  [${w.type}]${trackHint}: ${w.message}`);
+            }
+          } else if (executeWarnings.length > 0) {
+            out.print('  (re-run with -v for details)');
+          }
+        }
       }
 
       // Discover sibling volumes for dual-LUN devices before ejecting
@@ -1313,6 +1356,16 @@ export async function runSync(
         }
 
         const cleanRun = totalFailed === 0 && !anyError;
+        const warningInfos =
+          allWarnings.length > 0
+            ? allWarnings.map((w) => ({
+                phase: w.phase,
+                type: w.type,
+                message: w.message,
+                trackCount: w.tracks.length,
+                tracks: out.isVerbose && w.tracks.length > 0 ? w.tracks : undefined,
+              }))
+            : undefined;
         out.json({
           success: true,
           status: cleanRun ? 'ok' : 'partial-failure',
@@ -1326,6 +1379,7 @@ export async function runSync(
             duration,
           },
           eject: ejectInfo,
+          warnings: warningInfos,
         });
       }
 

@@ -24,7 +24,7 @@
  */
 
 import type { ErrorCategory, CategorizedError } from './types.js';
-import { SidecarWriteError, TagWriteError } from '../../device/mass-storage-tag-writer.js';
+import { CategorizedSyncError } from './errors.js';
 
 // =============================================================================
 // Retry Configuration
@@ -80,86 +80,52 @@ export const VIDEO_RETRY_CONFIG: Required<RetryConfig> = {
 // =============================================================================
 
 /**
- * Categorize an error based on its message and operation type
+ * Recover the category for a thrown sync error.
  *
- * Priority order:
- * 1. Check error message for specific keywords (most reliable)
- * 2. Fall back to operation type as a hint
+ * Convention: every error thrown out of an adapter, content-type handler, or
+ * sync stage MUST extend {@link CategorizedSyncError} and declare its
+ * category on the class. The categorizer then reads `error.category`
+ * directly — no inspecting the message body.
+ *
+ * Untyped errors (third-party libraries that throw `Error` directly, e.g.
+ * libgpod failures or raw FFmpeg subprocess errors that aren't yet wrapped
+ * by their handler) fall back to a small operation-type table: the call site
+ * intentionally chose the operation type, so it's the next best signal.
+ * Anything left over is `unknown`.
+ *
+ * See `documents/architecture/error-handling.md` for the responsibility
+ * model. See `./errors.ts` for `CategorizedSyncError` and its subclasses.
  */
 export function categorizeError(error: Error, operationType: string): ErrorCategory {
-  // Aggregated tag-write failures are typed — check before string heuristics.
-  // The per-file message body may embed paths containing keywords ("iPod",
-  // "iTunes", "ffmpeg"), so a substring match below would risk
-  // mis-classification. SidecarWriteError gets the same treatment: it's
-  // file-I/O on a peer cover.jpg, so 'copy' is the right category.
-  if (error instanceof TagWriteError || error instanceof SidecarWriteError) {
-    return 'copy';
+  if (error instanceof CategorizedSyncError) {
+    return error.category;
   }
+  return categoryForOperationType(operationType);
+}
 
-  const message = error.message.toLowerCase();
-
-  // Check for database errors FIRST (most specific, no retry)
-  if (
-    message.includes('database') ||
-    message.includes('itunes') ||
-    message.includes('libgpod') ||
-    message.includes('ipod')
-  ) {
-    return 'database';
+/**
+ * Operation-type fallback for untyped errors. Each branch matches the
+ * operation's nature (transcode/copy/update) rather than any keyword in the
+ * error message.
+ */
+function categoryForOperationType(operationType: string): ErrorCategory {
+  switch (operationType) {
+    case 'add-transcode':
+    case 'upgrade-transcode':
+    case 'video-transcode':
+      return 'transcode';
+    case 'add-direct-copy':
+    case 'add-optimized-copy':
+    case 'upgrade-direct-copy':
+    case 'upgrade-optimized-copy':
+    case 'upgrade-artwork':
+    case 'video-copy':
+    case 'video-upgrade':
+    case 'relocate':
+      return 'copy';
+    default:
+      return 'unknown';
   }
-
-  // Check for artwork errors (no retry, but continue sync)
-  if (message.includes('artwork') || message.includes('image')) {
-    return 'artwork';
-  }
-
-  // Check for file I/O errors (retry once)
-  if (
-    message.includes('enoent') ||
-    message.includes('eacces') ||
-    message.includes('enospc') ||
-    message.includes('file not found') ||
-    message.includes('permission denied') ||
-    message.includes('no space')
-  ) {
-    return 'copy';
-  }
-
-  // Check for FFmpeg/transcode related errors (retry once)
-  if (
-    message.includes('ffmpeg') ||
-    message.includes('transcode') ||
-    message.includes('encoder') ||
-    message.includes('codec')
-  ) {
-    return 'transcode';
-  }
-
-  // Fall back to operation type as a hint for generic errors
-  if (
-    operationType === 'add-transcode' ||
-    operationType === 'upgrade-transcode' ||
-    operationType === 'video-transcode'
-  ) {
-    return 'transcode';
-  }
-  if (
-    operationType === 'add-direct-copy' ||
-    operationType === 'add-optimized-copy' ||
-    operationType === 'video-copy'
-  ) {
-    return 'copy';
-  }
-  if (
-    operationType === 'upgrade-direct-copy' ||
-    operationType === 'upgrade-optimized-copy' ||
-    operationType === 'upgrade-artwork' ||
-    operationType === 'video-upgrade'
-  ) {
-    return 'copy'; // Upgrade errors are treated like copy errors for retry purposes
-  }
-
-  return 'unknown';
 }
 
 // =============================================================================

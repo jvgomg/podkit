@@ -143,45 +143,52 @@ libgpod writes a tmp iTunesDB then renames over the real one.
 ```
 entries = [...merged.entries()]   // deduped by absolute path
 results = runWithConcurrency(entries.map(writeTags), DEFAULT_TAG_WRITE_CONCURRENCY)
-if failures.length > 0: console.warn('...failed to write file tags for N track(s)...')
+if failures.length > 0: warningSink.emit({phase:'execute', type:'tag-write', tracks, message})
 ```
 
-**Failure shape: warn-only.** iTunesDB has authoritative metadata; the file
-tag write is for "portable" mode where the user pulls files off the device and
-expects them tag-complete. Failures degrade portability but not playback.
-
-**Asymmetry vs mass-storage:** iPod warns on tag-write failure, mass-storage
-throws. The asymmetry is principled — iPod's iTunesDB IS the playback truth,
-mass-storage's file tags ARE — but it's not surfaced anywhere a developer
-would discover when adding a new adapter.
+**Failure shape: warn-only via `WarningSink`.** iTunesDB has authoritative
+metadata; the file tag write is for "portable" mode where the user pulls files
+off the device and expects them tag-complete. Failures degrade portability but
+not playback. Warnings flow through the pipeline's accumulator and surface in
+`SyncOutput.warnings` (closes §3.2 below; see
+`documents/architecture/sync/error-handling.md` for the model).
 
 ---
 
 ## 3. Rough edges (the catalogue)
 
-### 3.1 Three inconsistent failure shapes within one `MassStorageAdapter.save()`
+### 3.1 ~~Three inconsistent failure shapes within one `MassStorageAdapter.save()`~~ — CLOSED (TASK-381)
 
 | Stage | Shape | Concurrency | Aggregation | Map clear timing |
 |---|---|---|---|---|
-| Moves | for-loop, throw on first non-ENOENT | serial | none | only on success |
+| Moves | for-loop, typed `MoveError` on first non-ENOENT; ENOENT skip emits warning via sink | serial | wrapped in `MoveError` | only on success |
 | Tag writes | `runWithConcurrency` + `TagWriteError` | 16-capped | per-file aggregated | before throw |
-| Picture writes | `Promise.all` | unbounded | none (raw rejection) | only on success |
+| Picture writes | `runWithConcurrency` + `PictureWriteError` | 16-capped | per-file aggregated | before throw |
+| Sidecar writes | `Promise.allSettled` + `SidecarWriteError` | unbounded (TODO) | per-album aggregated | before throw |
 
-Three flushes, three different stories for what happens when one entry fails.
+Picture-write stage normalized to match tag-write (TASK-381). Sidecar still
+uses bare `Promise.allSettled` with no concurrency cap — open follow-up to
+normalize to `runWithConcurrency` for EMFILE safety, but the typed-error and
+clear-before-throw conventions are met.
 
-### 3.2 Asymmetry between IpodAdapter and MassStorageAdapter
+### 3.2 ~~Asymmetry between IpodAdapter and MassStorageAdapter~~ — CLOSED (TASK-381)
 
-Tag-write failure → mass-storage **throws** (`TagWriteError`), iPod **warns**.
-The asymmetry IS justified (different sources of truth) but isn't typed at the
-adapter contract: any future adapter must read both implementations to know
-which convention to follow.
+Settled by the architecture sweep. Both adapters now follow the same shape at
+the contract level: hard failures throw a `CategorizedSyncError` subclass
+(`TagWriteError`, `SidecarWriteError`, `PictureWriteError`, `MoveError`,
+`DatabaseWriteError`) carrying its own category; soft failures emit a
+structured `Warning` through the injected `WarningSink`. Whether a particular
+failure mode is hard or soft is still adapter-specific (mass-storage's
+file-tag failure is hard because file tags ARE the source of truth there;
+iPod's portable file-tag failure is soft because iTunesDB is the source of
+truth), but the *shape* is now uniform. See
+`documents/architecture/sync/error-handling.md`.
 
-### 3.3 Picture writes have no typed error
+### 3.3 ~~Picture writes have no typed error~~ — CLOSED (TASK-381)
 
-Failures surface as the raw `Promise.all` rejection — usually carries a file
-path, which the error categorizer pattern-matches to classify as `copy`. A
-taglib failure mode that produced a different error message would mis-classify
-as a `database` error and follow the wrong retry policy.
+`PictureWriteError` (extends `CategorizedSyncError`, category `'copy'`) wraps
+per-file failures. Categorization is now `instanceof`-based; the substring
+matcher is gone.
 
 ### 3.4 No atomic writes for on-file mutations
 
@@ -193,14 +200,13 @@ the source.
 
 The manifest IS atomic (tmp + rename). On-file mutations are not.
 
-### 3.5 Cleared-then-thrown vs thrown-then-cleared
+### 3.5 ~~Cleared-then-thrown vs thrown-then-cleared~~ — CLOSED (TASK-381)
 
-Tag writes clear the map BEFORE throwing. Moves and picture writes throw
-BEFORE clearing (or don't clear at all). This means:
-
-- Tag-write failure: next `save()` does NOT retry. Rescan-driven re-queue.
-- Move/picture failure: next `save()` DOES retry the entire batch. Idempotency
-  saves us from corruption but wastes I/O.
+All save() flush stages now clear their pending map BEFORE throw — matches
+the tag-write convention. Self-healing via rescan is the retry path; no
+in-adapter retry. The move stage retains its for-loop semantics (one throw
+on first non-ENOENT) since each move is atomic and re-queueing isn't useful
+when the source has gone missing.
 
 ### 3.6 No `executeOnce` guard
 
@@ -420,11 +426,11 @@ re-detects. The other shape (throw-then-clear) lets the same `save()` instance
 retry on the next call without rescan. Cleaner for daemon mode? Worse for the
 one-shot CLI case (next process re-walks the FS anyway).
 
-**Q4: Should `IpodAdapter.save()` throw on tag-write failures instead of warning?**
-Today it warns to stderr. iPod portable tags are a real feature — silent
-failure isn't great. But throwing would fail the sync even when iTunesDB
-playback is fine. A typed `IpodPortableTagWriteWarning` returned as a save
-result (rather than via console) would let callers decide.
+**Q4: Should `IpodAdapter.save()` throw on tag-write failures instead of warning?** — RESOLVED (TASK-381, as data not flow).
+`save()` keeps `Promise<void>`. Failures emit a structured `Warning`
+through the injected `WarningSink` — pipeline accumulates, JSON output
+surfaces. iTunesDB write success is preserved (playback unaffected); user
+sees a `tag-write` warning in `SyncOutput.warnings` and the CLI summary.
 
 **Q5: How does daemon mode change the contract?**
 Daemon mode runs continuous sync cycles. If `save()` fails mid-cycle, does
@@ -457,13 +463,20 @@ Useful for diagnostics + the doctor flow.
 ### Future task candidates (not yet filed)
 
 - Atomic on-file writes (helper + retrofit). Reference §3.4 + §7.2.
-- Picture-write `Promise.all` → `runWithConcurrency` normalization +
-  typed `PictureWriteError`. Reference §3.1 + §7.1.
 - Pre-save free-space probe. Reference §5.3.
 - Device lockfile + concurrent-sync detection. Reference §5.5 + Q2.
-- IpodAdapter `IpodPortableTagWriteResult` typed return. Reference §3.2 + Q4.
 - `MusicPipeline.execute()` concurrent-call defensive guard for library users.
   Reference §3.6.
+- Sidecar-write `Promise.allSettled` → `runWithConcurrency` normalization for
+  EMFILE safety. Reference §3.1.
+
+### Recently closed
+
+- ~~Picture-write `Promise.all` → `runWithConcurrency` normalization + typed
+  `PictureWriteError`~~ — closed by TASK-381.
+- ~~IpodAdapter `IpodPortableTagWriteResult` typed return~~ — closed by
+  TASK-381 (resolved as a `WarningSink` channel rather than a typed return,
+  keeping the result `Promise<void>`).
 
 ### Tests to add (not yet filed as tasks)
 

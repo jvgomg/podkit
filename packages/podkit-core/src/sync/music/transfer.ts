@@ -13,8 +13,8 @@
  *
  * Construction takes the device adapter and the artwork manager. No warnings
  * are produced here today; sync-tag failures throw rather than surface as
- * warnings. If that changes (e.g., partial-success sync-tag writes), an
- * `addWarning` callback can be added symmetric with `MusicArtworkManager`.
+ * warnings. If that changes (e.g., partial-success sync-tag writes), a
+ * `WarningSink` can be threaded through symmetric with `MusicArtworkManager`.
  *
  * @module
  */

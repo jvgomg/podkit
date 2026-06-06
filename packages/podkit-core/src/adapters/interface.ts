@@ -164,7 +164,7 @@ export interface CollectionAdapter<TItem = CollectionTrack, TFilter = TrackFilte
    * warning when `checkArtwork` is off, since it cannot honestly populate
    * `hasArtwork` and any artwork-added/-removed change is silently missed.
    */
-  getPlanWarnings?(): import('../sync/engine/types.js').SyncWarning[];
+  getPlanWarnings?(): import('../sync/engine/types.js').Warning[];
 
   /**
    * Fetch artwork bytes for an item from a non-embedded source.

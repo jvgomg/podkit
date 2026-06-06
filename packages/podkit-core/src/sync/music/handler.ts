@@ -39,7 +39,7 @@ import type { SyncTagData } from '../../metadata/sync-tags.js';
 import type {
   MetadataChange,
   SyncPlan,
-  SyncWarning,
+  Warning,
   ExecutorProgress,
   UpdateReason,
   UpgradeReason,
@@ -850,8 +850,8 @@ export class MusicHandler implements ContentTypeHandler<
     return estimateTransferTime(size);
   }
 
-  collectPlanWarnings(operations: MusicOperation[]): SyncWarning[] {
-    const warnings: SyncWarning[] = [];
+  collectPlanWarnings(operations: MusicOperation[]): Warning[] {
+    const warnings: Warning[] = [];
     const lossyToLossyTracks: CollectionTrack[] = [];
 
     for (const op of operations) {
@@ -865,9 +865,14 @@ export class MusicHandler implements ContentTypeHandler<
 
     if (lossyToLossyTracks.length > 0) {
       warnings.push({
+        phase: 'plan',
         type: 'lossy-to-lossy',
         message: `${lossyToLossyTracks.length} track${lossyToLossyTracks.length === 1 ? '' : 's'} require lossy-to-lossy conversion (OGG, Opus). This is unavoidable but results in quality loss.`,
-        tracks: lossyToLossyTracks,
+        tracks: lossyToLossyTracks.map((t) => ({
+          artist: t.artist ?? 'Unknown Artist',
+          title: t.title ?? 'Unknown Title',
+          album: t.album,
+        })),
       });
     }
 
@@ -879,6 +884,7 @@ export class MusicHandler implements ContentTypeHandler<
       operations.length > 0
     ) {
       warnings.push({
+        phase: 'plan',
         type: 'embedded-artwork-resize',
         message: `Artwork resized to device maximum (${this.config.artworkResize}px) — this device reads artwork from embedded file data and cannot use full-resolution images. Portable mode preserves audio quality but artwork is optimized for the device.`,
         tracks: [],

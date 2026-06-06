@@ -25,6 +25,7 @@ import type {
   DeviceTrackInput,
   DeviceTrackMetadata,
 } from './adapter.js';
+import type { WarningSink } from '../sync/engine/types.js';
 import type { DeviceCapabilities } from '@podkit/device-types';
 import type { SyncTagData, SyncTagUpdate } from '../metadata/sync-tags.js';
 import { parseSyncTag, writeSyncTag } from '../metadata/sync-tags.js';
@@ -51,6 +52,8 @@ import { isVideoMediaType } from '../ipod/video.js';
 import { CODEC_METADATA } from '../transcode/codecs.js';
 import {
   DEFAULT_TAG_WRITE_CONCURRENCY,
+  MoveError,
+  PictureWriteError,
   SidecarWriteError,
   TagLibTagWriter,
   TagWriteError,
@@ -575,6 +578,15 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
    * Accumulated by relocateTrack() and flushed by save() via fs.rename().
    */
   private pendingMoves = new Map<string, string>();
+
+  /**
+   * Receiver for execute-phase warnings. Set by the pipeline at execute
+   * start via {@link setWarningSink}. Defaults to a no-op so the adapter
+   * is safe to use outside an execute() loop (e.g. doctor surfaces or
+   * tests that don't pass a sink) — warnings get dropped on the floor in
+   * that case rather than blowing up.
+   */
+  private warningSink: WarningSink = { emit: () => {} };
 
   private constructor(
     mountPoint: string,
@@ -1146,8 +1158,26 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
     if (targetRelativePath !== track.filePath) {
       try {
         fs.unlinkSync(absolutePath);
-      } catch {
-        /* old file may not exist */
+      } catch (err: any) {
+        // ENOENT is expected: the old file may not exist if the previous
+        // sync left it under a different path. Anything else (EACCES,
+        // EBUSY, EROFS) leaves an orphan we can't clean up — surface as a
+        // warning so the user knows the file lingers, and a future doctor
+        // pass can pick it up.
+        if (err?.code !== 'ENOENT') {
+          this.warningSink.emit({
+            phase: 'execute',
+            type: 'metadata',
+            tracks: [
+              {
+                artist: track.artist ?? 'Unknown Artist',
+                title: track.title ?? 'Unknown Title',
+                album: track.album,
+              },
+            ],
+            message: `replaceTrackFile: failed to remove old file ${track.filePath}: ${err?.message ?? String(err)} (file remains as orphan)`,
+          });
+        }
       }
 
       // Update allocatedPaths
@@ -1273,6 +1303,10 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
     // Flush pending file moves (relocations) — must happen before tag writes
     // so that tag writes target the new file paths
     if (this.pendingMoves.size > 0) {
+      // Accumulate ENOENT-skipped relocates so a single warning lands at the
+      // end of the batch rather than N small ones (or worse, N stderr lines).
+      const vanished: Array<{ artist: string; title: string; album?: string }> = [];
+
       for (const [oldPath, newPath] of this.pendingMoves) {
         const absOld = path.join(this.mountPoint, oldPath);
         const absNew = path.join(this.mountPoint, newPath);
@@ -1286,8 +1320,16 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
         try {
           fs.renameSync(absOld, absNew);
         } catch (err: any) {
-          if (err?.code === 'ENOENT') continue;
-          throw err;
+          if (err?.code === 'ENOENT') {
+            const ref = this.lookupTrackRef(newPath);
+            vanished.push(ref);
+            continue;
+          }
+          // Wrap raw fs errors so the categorizer doesn't have to substring-
+          // match ENOSPC/EACCES out of the message. Single-cause aggregate.
+          throw new MoveError([
+            `${oldPath} → ${newPath}: ${(err as Error)?.message ?? String(err)}`,
+          ]);
         }
 
         // Clean up empty parent directories of the old path
@@ -1315,6 +1357,20 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
         }
       }
       this.pendingMoves.clear();
+
+      // Surface the batch of vanished sources as a single warning. Each
+      // entry is a track the user planned to relocate; the on-disk file
+      // disappeared between plan and save. Sync still proceeds — the next
+      // run's rescan will treat the missing file as orphaned and re-queue
+      // whatever's appropriate.
+      if (vanished.length > 0) {
+        this.warningSink.emit({
+          phase: 'execute',
+          type: 'metadata',
+          tracks: vanished,
+          message: `${vanished.length} track(s) skipped relocate: source file disappeared between plan and save (external delete?)`,
+        });
+      }
     }
 
     // Flush pending tag writes to audio files. Concurrency is capped to
@@ -1349,13 +1405,35 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
       }
     }
 
-    // Flush pending picture writes (OGG/Opus artwork embedding)
+    // Flush pending picture writes (OGG/Opus artwork embedding).
+    //
+    // Collect-and-aggregate, mirroring the tag-write stage above (closes
+    // doc-041 §3.1 / §7.1). Concurrency-capped to avoid EMFILE on large
+    // libraries, settles all writes before checking failures so one failed
+    // write doesn't black-hole the rest of the batch. Per-file context lives
+    // on `err.causes` for diagnostics.
     if (this.pendingPictureWrites.size > 0) {
-      const writes = [...this.pendingPictureWrites.entries()].map(([filePath, imageData]) =>
-        this.tagWriter.writePicture(path.join(this.mountPoint, filePath), imageData)
+      const entries = [...this.pendingPictureWrites.entries()];
+      const settled = await runWithConcurrency(
+        entries.map(
+          ([filePath, imageData]) =>
+            () =>
+              this.tagWriter.writePicture(path.join(this.mountPoint, filePath), imageData)
+        ),
+        DEFAULT_TAG_WRITE_CONCURRENCY
       );
-      await Promise.all(writes);
       this.pendingPictureWrites.clear();
+      const failures: string[] = [];
+      for (let i = 0; i < settled.length; i++) {
+        const outcome = settled[i]!;
+        if (outcome.status === 'rejected') {
+          const [filePath] = entries[i]!;
+          failures.push(`${filePath}: ${(outcome.reason as Error).message ?? outcome.reason}`);
+        }
+      }
+      if (failures.length > 0) {
+        throw new PictureWriteError(failures);
+      }
     }
 
     // Flush pending sidecar writes (peer cover.jpg for sidecar-primary devices).
@@ -1367,12 +1445,12 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
     // render as garbage. This is the only save() stage with atomic-write
     // semantics today; picture writes get the same treatment under TASK-376.
     //
-    // **Collect-and-aggregate** (`Promise.allSettled` + `SidecarWriteError`).
-    // Deliberately different from the picture-write stage above, which is
-    // `Promise.all` fail-fast: sidecars are per-album (one failed album
-    // shouldn't black-hole the rest of the library), while picture writes
-    // today predate the typed-error pattern. TASK-377 normalises both stages
-    // to this shape.
+    // **Collect-and-aggregate** mirroring the tag-write and picture-write
+    // stages above (`runWithConcurrency` + settled-all + typed aggregate +
+    // clear-before-throw). The remaining `Promise.allSettled` here is
+    // pre-existing and has no concurrency cap — a follow-up will normalize
+    // it to `runWithConcurrency` for symmetry and EMFILE safety on large
+    // libraries.
     if (this.pendingSidecarWrites.size > 0) {
       const entries = [...this.pendingSidecarWrites.entries()];
       const settled = await Promise.allSettled(
@@ -1417,6 +1495,27 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
 
   close(): void {
     // No resources to release for filesystem-based devices
+  }
+
+  setWarningSink(sink: WarningSink): void {
+    this.warningSink = sink;
+  }
+
+  /**
+   * Look up the artist/title/album for a relocated track at save-time. The
+   * pending-move queue is keyed by paths; the track ref is recovered by
+   * matching the new path in the current track list.
+   *
+   * Returns a placeholder ref when the track can't be found — better to emit
+   * a warning with `'Unknown Track'` than to drop the warning entirely.
+   */
+  private lookupTrackRef(filePath: string): { artist: string; title: string; album?: string } {
+    const track = this.tracks.find((t) => t.filePath === filePath);
+    return {
+      artist: track?.artist ?? 'Unknown Artist',
+      title: track?.title ?? 'Unknown Track',
+      album: track?.album,
+    };
   }
 
   // ---------------------------------------------------------------------------

@@ -9,7 +9,7 @@ import SubsonicAPI from 'subsonic-api';
 import type { Child, AlbumWithSongsID3 } from 'subsonic-api';
 import type { CollectionAdapter, CollectionTrack, FileAccess } from './interface.js';
 import type { TrackFilter, AudioFileType } from '../types.js';
-import type { SyncWarning } from '../sync/engine/types.js';
+import type { Warning } from '../sync/engine/types.js';
 import type { AudioNormalization } from '../metadata/normalization.js';
 import { replayGainToSoundcheck } from '../metadata/normalization.js';
 import { hashArtwork } from '../artwork/hash.js';
@@ -549,10 +549,11 @@ export class SubsonicAdapter implements CollectionAdapter<CollectionTrack, Track
    * that silently miss real artwork changes; this warning makes the trade-off
    * visible on every plan.
    */
-  getPlanWarnings(): SyncWarning[] {
+  getPlanWarnings(): Warning[] {
     if (this.checkArtwork) return [];
     return [
       {
+        phase: 'plan',
         type: 'artwork-detection-disabled',
         message:
           'Subsonic source running in fast mode: artwork-change detection is disabled. ' +

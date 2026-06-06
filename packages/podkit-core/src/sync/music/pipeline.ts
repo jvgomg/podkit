@@ -64,8 +64,8 @@ import type {
   SyncProgress,
   ErrorCategory as ErrorCategoryFromTypes,
   CategorizedError as CategorizedErrorFromTypes,
-  ExecutionWarningType as ExecutionWarningTypeFromTypes,
-  ExecutionWarning as ExecutionWarningFromTypes,
+  Warning as WarningFromTypes,
+  WarningSink,
   ExecutorProgress as ExecutorProgressFromTypes,
   ExecuteResult as ExecuteResultFromTypes,
 } from '../engine/types.js';
@@ -95,10 +95,7 @@ export type ErrorCategory = ErrorCategoryFromTypes;
 export type CategorizedError = CategorizedErrorFromTypes;
 
 /** @see types.ts for canonical definition */
-export type ExecutionWarningType = ExecutionWarningTypeFromTypes;
-
-/** @see types.ts for canonical definition */
-export type ExecutionWarning = ExecutionWarningFromTypes;
+export type Warning = WarningFromTypes;
 
 /** @see types.ts for canonical definition */
 export type ExecutorProgress = ExecutorProgressFromTypes;
@@ -623,7 +620,11 @@ export class MusicPipeline implements SyncExecutor {
   private device: DeviceAdapter;
   private transcoder: FFmpegTranscoder;
   /** Warnings collected during execution */
-  private warnings: ExecutionWarning[] = [];
+  private warnings: Warning[] = [];
+  /** Sink passed to sub-managers; appends to {@link warnings}. */
+  private readonly warningSink: WarningSink = {
+    emit: (w) => this.addWarning(w),
+  };
   /**
    * True while an `execute()` iterator is in-flight. Used by the defensive
    * guard in `execute()` to throw a {@link PipelineBusyError} on overlap,
@@ -660,14 +661,14 @@ export class MusicPipeline implements SyncExecutor {
   constructor(deps: ExecutorDependencies) {
     this.device = deps.device;
     this.transcoder = deps.transcoder;
-    this.artwork = new MusicArtworkManager(this.device, (w) => this.addWarning(w));
+    this.artwork = new MusicArtworkManager(this.device, this.warningSink);
     this.transfer = new MusicTransferOps(this.device, this.artwork);
   }
 
   /**
    * Get warnings collected during the most recent execution
    */
-  getWarnings(): ExecutionWarning[] {
+  getWarnings(): Warning[] {
     return [...this.warnings];
   }
 
@@ -681,7 +682,7 @@ export class MusicPipeline implements SyncExecutor {
   /**
    * Add a warning to the collection
    */
-  private addWarning(warning: ExecutionWarning): void {
+  private addWarning(warning: Warning): void {
     this.warnings.push(warning);
   }
 
@@ -812,6 +813,12 @@ export class MusicPipeline implements SyncExecutor {
       // Flip the busy flag now — paired with `this.executing = false` in the
       // finally below. Setting it INSIDE try guarantees the finally runs.
       this.executing = true;
+
+      // Wire the adapter into the warning sink for the duration of this run,
+      // so execute-phase warnings (e.g. iPod portable tag-write failures) land
+      // in the pipeline's accumulator instead of being dropped on the floor.
+      // Optional method — adapters that never emit warnings can omit it.
+      this.device.setWarningSink?.(this.warningSink);
 
       if (needsTempDir && !dryRun) {
         await mkdir(transcodeDir, { recursive: true });

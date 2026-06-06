@@ -20,7 +20,7 @@
 
 import type { ContentTypeHandler } from './content-type.js';
 import type { UnifiedSyncDiff } from './content-type.js';
-import type { BaseOperation, SyncPlan, SyncOperation, SyncWarning } from './types.js';
+import type { BaseOperation, SyncPlan, SyncOperation, Warning } from './types.js';
 
 // =============================================================================
 // Types
@@ -96,7 +96,7 @@ export class SyncPlanner<TSource, TDevice, TOp extends BaseOperation = SyncOpera
     const { removeOrphans = true, maxSize, artworkEnabled = true } = options ?? {};
 
     const allOperations: TOp[] = [];
-    const warnings: SyncWarning[] = [];
+    const warnings: Warning[] = [];
 
     // Step 1: Create remove operations
     if (removeOrphans) {
@@ -154,6 +154,7 @@ export class SyncPlanner<TSource, TDevice, TOp extends BaseOperation = SyncOpera
       const overBy = estimatedSize - maxSize;
       const overByMB = (overBy / (1024 * 1024)).toFixed(1);
       warnings.push({
+        phase: 'plan',
         type: 'space-constraint',
         message: `Estimated size (${(estimatedSize / (1024 * 1024)).toFixed(1)} MB) exceeds available space by ${overByMB} MB.`,
         tracks: [],

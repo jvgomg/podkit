@@ -31,7 +31,7 @@ import {
 import { createMusicAdapter } from '../utils/source-adapter.js';
 import type {
   SyncOutput,
-  PlanWarningInfo,
+  WarningInfo,
   ScanWarningInfo,
   TransformInfo,
   UpdateBreakdown,
@@ -642,13 +642,12 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
       return base;
     });
 
-    const planWarningInfos: PlanWarningInfo[] = plan.warnings.map((warning: any) => ({
+    const planWarningInfos: WarningInfo[] = plan.warnings.map((warning) => ({
+      phase: warning.phase,
       type: warning.type,
       message: warning.message,
       trackCount: warning.tracks.length,
-      tracks: out.isVerbose
-        ? warning.tracks.map((t: any) => `${t.artist} - ${t.title}`)
-        : undefined,
+      tracks: out.isVerbose && warning.tracks.length > 0 ? warning.tracks : undefined,
     }));
 
     const scanWarningInfos: ScanWarningInfo[] = scanWarnings.map((warning) => ({
@@ -730,7 +729,7 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
         artistCount,
       },
       operations,
-      planWarnings: planWarningInfos.length > 0 ? planWarningInfos : undefined,
+      warnings: planWarningInfos.length > 0 ? planWarningInfos : undefined,
       scanWarnings: scanWarningInfos.length > 0 ? scanWarningInfos : undefined,
     };
   }
@@ -762,10 +761,17 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
     signal?: AbortSignal
   ) {
     const collectedErrors: CollectedError[] = [];
+    const warnings: import('@podkit/core').Warning[] = [];
     let completed = 0;
     let failed = 0;
 
     const executor = core.createSyncExecutor(this.handler!);
+    // Some executors (MusicPipeline) accumulate warnings during run and expose
+    // them via getWarnings(). The generic SyncExecutor interface omits this
+    // surface, so we duck-type rather than couple the CLI to the pipeline class.
+    const warningProducer = executor as unknown as {
+      getWarnings?(): import('@podkit/core').Warning[];
+    };
     const musicDisplay = new DualProgressDisplay((content) => out.raw(content));
 
     try {
@@ -814,21 +820,27 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
     } catch (err) {
       if (signal?.aborted) {
         musicDisplay.finish();
-        return { completed, failed, interrupted: true, collectedErrors };
+        if (warningProducer.getWarnings) warnings.push(...warningProducer.getWarnings());
+        return { completed, failed, interrupted: true, collectedErrors, warnings };
       }
       throw err;
     }
 
     musicDisplay.finish();
 
+    // Drain execute-phase warnings (artwork failures, tag-write soft signals
+    // once a sink emits them in later refactors). The executor accumulates
+    // them across the run; we surface them once at the end.
+    if (warningProducer.getWarnings) warnings.push(...warningProducer.getWarnings());
+
     // Check if aborted after normal generator completion
     if (signal?.aborted) {
-      return { completed, failed, interrupted: true, collectedErrors };
+      return { completed, failed, interrupted: true, collectedErrors, warnings };
     }
 
     out.print('Music sync complete!');
 
-    return { completed, failed, collectedErrors };
+    return { completed, failed, collectedErrors, warnings };
   }
 
   getCollisionCheckInputs(plan: SyncPlan<MusicOperation>) {

@@ -55,8 +55,11 @@ export type {
   PlanOptions,
   TranscodePresetRef,
   SourceCategory,
-  SyncWarning,
-  SyncWarningType,
+  Warning,
+  WarningPhase,
+  WarningType,
+  WarningTrackRef,
+  WarningSink,
   UpdateReason,
   UpgradeReason,
   MetadataChange,
@@ -73,8 +76,6 @@ export type {
   CategorizedError,
   RetryConfig,
   SyncTagConfig,
-  ExecutionWarning,
-  ExecutionWarningType,
 } from '@podkit/core';
 
 // Shared error handling types
@@ -326,6 +327,58 @@ export class IpodError extends Error {
     super(message);
     this.name = 'IpodError';
     this.code = code;
+  }
+}
+
+// =============================================================================
+// Categorized sync errors
+// =============================================================================
+
+export abstract class CategorizedSyncError extends Error {
+  abstract readonly category: string;
+  readonly causes: readonly string[];
+  constructor(message: string, causes: readonly string[] = []) {
+    super(message);
+    this.name = new.target.name;
+    this.causes = causes;
+  }
+}
+
+export class TagWriteError extends CategorizedSyncError {
+  readonly category = 'copy' as const;
+  constructor(causes: readonly string[]) {
+    super(`tag write failed for ${causes.length} file(s): ${causes.join('; ')}`, causes);
+  }
+}
+
+export class SidecarWriteError extends CategorizedSyncError {
+  readonly category = 'copy' as const;
+  constructor(causes: readonly string[]) {
+    super(`sidecar write failed for ${causes.length} album(s): ${causes.join('; ')}`, causes);
+  }
+}
+
+export class PictureWriteError extends CategorizedSyncError {
+  readonly category = 'copy' as const;
+  constructor(causes: readonly string[]) {
+    super(`picture write failed for ${causes.length} file(s): ${causes.join('; ')}`, causes);
+  }
+}
+
+export class MoveError extends CategorizedSyncError {
+  readonly category = 'copy' as const;
+  constructor(causes: readonly string[]) {
+    super(`file move failed for ${causes.length} file(s): ${causes.join('; ')}`, causes);
+  }
+}
+
+export class DatabaseWriteError extends CategorizedSyncError {
+  readonly category = 'database' as const;
+  constructor(
+    cause: string,
+    public readonly underlying?: unknown
+  ) {
+    super(`device database write failed: ${cause}`, [cause]);
   }
 }
 

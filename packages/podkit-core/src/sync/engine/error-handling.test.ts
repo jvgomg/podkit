@@ -1,13 +1,20 @@
 /**
- * Unit tests for the shared error handling module
+ * Unit tests for the shared error handling module.
  *
- * ## Test Coverage
+ * ## Contract
  *
- * 1. Error categorization (message-based and operation-type-based)
- * 2. Retry configuration (DEFAULT_RETRY_CONFIG and VIDEO_RETRY_CONFIG)
- * 3. getRetriesForCategory with different configs
- * 4. createCategorizedError helper
- * 5. withRetry generic retry function
+ * `categorizeError` follows two rules in order:
+ *
+ * 1. If the error extends {@link CategorizedSyncError}, read its `category`
+ *    directly. The throw site declared the category on the class.
+ * 2. Else, fall back to a small operation-type table. The call site
+ *    intentionally chose the operation type, so it's the next-best signal.
+ *
+ * There is NO message-keyword inspection. Tests that previously pinned
+ * substring matching (e.g. "ENOSPC → copy", "ffmpeg → transcode") have been
+ * removed — those errors now categorize via op-type fallback, OR via a
+ * typed error class wrapping the raw cause. Untyped, unknown-op-type errors
+ * are `unknown`.
  */
 
 import { describe, expect, it } from 'bun:test';
@@ -19,102 +26,102 @@ import {
   DEFAULT_RETRY_CONFIG,
   VIDEO_RETRY_CONFIG,
 } from './error-handling.js';
+import { CategorizedSyncError, DatabaseWriteError } from './errors.js';
+import {
+  MoveError,
+  PictureWriteError,
+  SidecarWriteError,
+  TagWriteError,
+} from '../../device/mass-storage-tag-writer.js';
 
 // =============================================================================
 // Error Categorization Tests
 // =============================================================================
 
 describe('categorizeError', () => {
-  describe('message-based categorization', () => {
-    it('categorizes database errors', () => {
-      expect(categorizeError(new Error('database error'), 'add-direct-copy')).toBe('database');
-      expect(categorizeError(new Error('itunes db corrupt'), 'add-direct-copy')).toBe('database');
-      expect(categorizeError(new Error('libgpod failed'), 'add-direct-copy')).toBe('database');
-      expect(categorizeError(new Error('ipod not found'), 'add-direct-copy')).toBe('database');
-    });
-
-    it('categorizes artwork errors', () => {
-      expect(categorizeError(new Error('artwork extraction failed'), 'add-direct-copy')).toBe(
-        'artwork'
-      );
-      expect(categorizeError(new Error('image format unsupported'), 'add-direct-copy')).toBe(
-        'artwork'
-      );
-    });
-
-    it('categorizes file I/O errors as copy', () => {
-      expect(categorizeError(new Error('ENOENT: no such file'), 'add-transcode')).toBe('copy');
-      expect(categorizeError(new Error('EACCES: permission denied'), 'add-transcode')).toBe('copy');
-      expect(categorizeError(new Error('ENOSPC: no space left'), 'add-transcode')).toBe('copy');
-      expect(categorizeError(new Error('file not found'), 'add-transcode')).toBe('copy');
-    });
-
-    it('categorizes transcode errors', () => {
-      expect(categorizeError(new Error('ffmpeg exited with code 1'), 'add-direct-copy')).toBe(
-        'transcode'
-      );
-      expect(categorizeError(new Error('transcode failed'), 'add-direct-copy')).toBe('transcode');
-      expect(categorizeError(new Error('encoder not found'), 'add-direct-copy')).toBe('transcode');
-      expect(categorizeError(new Error('codec not supported'), 'add-direct-copy')).toBe(
-        'transcode'
-      );
-    });
-
-    it('categorizes TagWriteError as copy, regardless of per-file paths embedded in the message', async () => {
-      // TagWriteError is a typed error from mass-storage-adapter.save() when
-      // one or more queued tag writes reject. Categorization must classify
-      // via instanceof rather than message-keyword heuristics so paths
-      // containing "iPod", "iTunes", "ffmpeg" don't mis-classify.
-      const { TagWriteError } = await import('../../device/mass-storage-tag-writer.js');
+  describe('typed errors (CategorizedSyncError subclasses)', () => {
+    it('reads category from TagWriteError, regardless of paths embedded in the message', () => {
+      // A path like "/mnt/iPod/foo.flac" used to trip the substring matcher
+      // and mis-classify this as a database error. The typed class closes
+      // that hole — the category is on the type.
       const err = new TagWriteError([
         '/mnt/iPod/foo.flac: ENOENT',
-        '/mnt/somewhere/itunes-style/x.flac: permission denied',
+        '/mnt/itunes-style/x.flac: permission denied',
       ]);
       expect(categorizeError(err, 'update-metadata')).toBe('copy');
     });
+
+    it('reads category from SidecarWriteError', () => {
+      const err = new SidecarWriteError(['/album/foo: rename failed']);
+      expect(categorizeError(err, 'upgrade-artwork')).toBe('copy');
+    });
+
+    it('reads category from PictureWriteError', () => {
+      const err = new PictureWriteError(['/x.ogg: write failed']);
+      expect(categorizeError(err, 'add-direct-copy')).toBe('copy');
+    });
+
+    it('reads category from MoveError', () => {
+      const err = new MoveError(['/old → /new: EACCES']);
+      expect(categorizeError(err, 'relocate')).toBe('copy');
+    });
+
+    it('reads category from DatabaseWriteError', () => {
+      const err = new DatabaseWriteError('itunesdb corrupt');
+      // Op-type would normally route 'add-direct-copy' to 'copy'; the typed
+      // error wins so the executor does NOT retry an iTunesDB failure.
+      expect(categorizeError(err, 'add-direct-copy')).toBe('database');
+      expect(categorizeError(err, 'update-metadata')).toBe('database');
+    });
+
+    it('ignores operation type when the error is typed', () => {
+      // Even with op-type='video-transcode' (which would fall back to
+      // 'transcode'), the typed error's category wins.
+      const err = new TagWriteError(['x.flac: failed']);
+      expect(categorizeError(err, 'video-transcode')).toBe('copy');
+    });
+
+    it('honours category on a caller-defined subclass', () => {
+      class CustomTranscodeError extends CategorizedSyncError {
+        readonly category = 'transcode' as const;
+      }
+      const err = new CustomTranscodeError('encoder died');
+      expect(categorizeError(err, 'remove')).toBe('transcode');
+    });
   });
 
-  describe('operation-type fallback', () => {
-    it('falls back to transcode for transcode operations', () => {
-      expect(categorizeError(new Error('unknown error'), 'add-transcode')).toBe('transcode');
+  describe('operation-type fallback (untyped errors)', () => {
+    it('falls back to transcode for add-transcode / upgrade-transcode / video-transcode', () => {
+      expect(categorizeError(new Error('boom'), 'add-transcode')).toBe('transcode');
+      expect(categorizeError(new Error('boom'), 'upgrade-transcode')).toBe('transcode');
+      expect(categorizeError(new Error('boom'), 'video-transcode')).toBe('transcode');
     });
 
-    it('falls back to transcode for video-transcode operations', () => {
-      expect(categorizeError(new Error('unknown error'), 'video-transcode')).toBe('transcode');
+    it('falls back to copy for the copy / upgrade / artwork / relocate ops', () => {
+      expect(categorizeError(new Error('boom'), 'add-direct-copy')).toBe('copy');
+      expect(categorizeError(new Error('boom'), 'add-optimized-copy')).toBe('copy');
+      expect(categorizeError(new Error('boom'), 'upgrade-direct-copy')).toBe('copy');
+      expect(categorizeError(new Error('boom'), 'upgrade-optimized-copy')).toBe('copy');
+      expect(categorizeError(new Error('boom'), 'upgrade-artwork')).toBe('copy');
+      expect(categorizeError(new Error('boom'), 'video-copy')).toBe('copy');
+      expect(categorizeError(new Error('boom'), 'video-upgrade')).toBe('copy');
+      expect(categorizeError(new Error('boom'), 'relocate')).toBe('copy');
     });
 
-    it('falls back to copy for copy operations', () => {
-      expect(categorizeError(new Error('unknown error'), 'add-direct-copy')).toBe('copy');
+    it('returns unknown for ops with no natural category mapping', () => {
+      expect(categorizeError(new Error('boom'), 'remove')).toBe('unknown');
+      expect(categorizeError(new Error('boom'), 'update-metadata')).toBe('unknown');
+      expect(categorizeError(new Error('boom'), 'update-sync-tag')).toBe('unknown');
+      expect(categorizeError(new Error('boom'), '')).toBe('unknown');
     });
 
-    it('falls back to copy for video-copy operations', () => {
-      expect(categorizeError(new Error('unknown error'), 'video-copy')).toBe('copy');
-    });
-
-    it('falls back to copy for upgrade operations', () => {
-      expect(categorizeError(new Error('unknown error'), 'upgrade-direct-copy')).toBe('copy');
-    });
-
-    it('falls back to copy for video-upgrade operations', () => {
-      expect(categorizeError(new Error('unknown error'), 'video-upgrade')).toBe('copy');
-    });
-
-    it('returns unknown for other operation types', () => {
-      expect(categorizeError(new Error('unknown error'), 'remove')).toBe('unknown');
-      expect(categorizeError(new Error('unknown error'), 'update-metadata')).toBe('unknown');
-    });
-  });
-
-  describe('priority order', () => {
-    it('database takes priority over copy keywords', () => {
-      // "ipod" matches database, but also looks like a file I/O error
-      expect(categorizeError(new Error('ipod ENOENT'), 'add-direct-copy')).toBe('database');
-    });
-
-    it('database takes priority over transcode keywords', () => {
-      expect(categorizeError(new Error('database ffmpeg error'), 'add-direct-copy')).toBe(
-        'database'
-      );
+    it('does NOT substring-match the message', () => {
+      // The historical categorizer would have called this `database`. The new
+      // contract requires a typed error if you want that classification — the
+      // op-type fallback is the only inference path for untyped errors.
+      expect(categorizeError(new Error('database is corrupt'), 'add-direct-copy')).toBe('copy');
+      expect(categorizeError(new Error('ffmpeg crashed'), 'add-direct-copy')).toBe('copy');
+      expect(categorizeError(new Error('ENOSPC: no space'), 'remove')).toBe('unknown');
     });
   });
 });
@@ -239,13 +246,13 @@ describe('withRetry', () => {
     }
   });
 
-  it('retries on transient failure and succeeds', async () => {
+  it('retries on transient transcode failure (op-type fallback) and succeeds', async () => {
     let callCount = 0;
     const result = await withRetry(
       async () => {
         callCount++;
         if (callCount === 1) {
-          throw new Error('ffmpeg transient failure');
+          throw new Error('encoder died');
         }
         return 'success';
       },
@@ -264,7 +271,7 @@ describe('withRetry', () => {
   it('returns error after exhausting retries', async () => {
     const result = await withRetry(
       async () => {
-        throw new Error('ffmpeg persistent failure');
+        throw new Error('persistent failure');
       },
       { ...DEFAULT_RETRY_CONFIG, retryDelayMs: 0 },
       'add-transcode',
@@ -276,28 +283,29 @@ describe('withRetry', () => {
       expect(result.error.category).toBe('transcode');
       expect(result.error.trackName).toBe('Test Track');
       expect(result.error.wasRetried).toBe(true);
-      expect(result.error.retryAttempts).toBe(1); // 1 retry = 2 total attempts
+      expect(result.error.retryAttempts).toBe(1);
       expect(result.attempts).toBe(2);
     }
   });
 
-  it('does not retry database errors', async () => {
+  it('does not retry typed copy errors beyond the copy-category budget', async () => {
+    // TagWriteError is `copy` → 1 retry under DEFAULT_RETRY_CONFIG. Verifies
+    // typed errors flow through retry policy correctly.
     let callCount = 0;
     const result = await withRetry(
       async () => {
         callCount++;
-        throw new Error('database error');
+        throw new TagWriteError(['x.flac: failed']);
       },
       { ...DEFAULT_RETRY_CONFIG, retryDelayMs: 0 },
-      'add-direct-copy',
+      'update-metadata',
       'Test Track'
     );
 
-    expect(callCount).toBe(1); // No retry
+    expect(callCount).toBe(2); // first try + 1 retry
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error.category).toBe('database');
-      expect(result.error.wasRetried).toBe(false);
+      expect(result.error.category).toBe('copy');
     }
   });
 
@@ -306,14 +314,14 @@ describe('withRetry', () => {
     const result = await withRetry(
       async () => {
         callCount++;
-        throw new Error('ffmpeg error');
+        throw new Error('encoder died');
       },
       { ...VIDEO_RETRY_CONFIG, retryDelayMs: 0 },
       'video-transcode',
       'Test Video'
     );
 
-    expect(callCount).toBe(1); // No retry (VIDEO_RETRY_CONFIG.transcode = 0)
+    expect(callCount).toBe(1);
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.category).toBe('transcode');
@@ -327,7 +335,7 @@ describe('withRetry', () => {
       async () => {
         callCount++;
         if (callCount === 1) {
-          throw new Error('ENOENT: file not found');
+          throw new Error('file not found');
         }
         return 'success';
       },
@@ -336,7 +344,7 @@ describe('withRetry', () => {
       'Test Video'
     );
 
-    expect(callCount).toBe(2); // 1 retry
+    expect(callCount).toBe(2);
     expect(result.ok).toBe(true);
   });
 });

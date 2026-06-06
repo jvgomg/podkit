@@ -10,23 +10,21 @@
 
 import { ByteVector, File as TagFile, Picture, PictureType } from 'node-taglib-sharp';
 
+import { CategorizedSyncError } from '../sync/engine/errors.js';
+
 /**
  * Aggregated tag-write failure, thrown by `MassStorageAdapter.save()` when
- * one or more queued `writeTags` calls reject. The sync executor's error
- * categorizer uses an `instanceof` check to classify these as file-I/O
- * (`copy`) errors regardless of the per-file paths embedded in the message,
- * so paths containing keywords like "iPod" don't mis-classify as database
- * errors.
+ * one or more queued `writeTags` calls reject.
  *
- * Per-file failure messages are also preserved in `causes` for diagnostics.
+ * Categorized as `copy` (file-I/O) via the class declaration so the executor's
+ * categorizer reads it off the type without inspecting `message`. Per-file
+ * failure descriptions live on `causes` for diagnostics.
  */
-export class TagWriteError extends Error {
-  readonly causes: readonly string[];
+export class TagWriteError extends CategorizedSyncError {
+  readonly category = 'copy' as const;
 
   constructor(causes: readonly string[]) {
-    super(`tag write failed for ${causes.length} file(s): ${causes.join('; ')}`);
-    this.name = 'TagWriteError';
-    this.causes = causes;
+    super(`tag write failed for ${causes.length} file(s): ${causes.join('; ')}`, causes);
   }
 }
 
@@ -35,18 +33,43 @@ export class TagWriteError extends Error {
  * when one or more queued peer-image (`cover.jpg`) writes fail. Sidecar art
  * is the device's *primary* artwork source on sidecar-primary devices
  * (rockbox), so a failure is surfaced rather than swallowed — the audio file
- * landed, but the device has no cover to render. Mirrors `TagWriteError`'s
- * shape so the executor's error categorizer can classify it the same way
- * (file-I/O `copy` failure) and so per-album context is preserved in
- * `causes` for diagnostics.
+ * landed, but the device has no cover to render.
  */
-export class SidecarWriteError extends Error {
-  readonly causes: readonly string[];
+export class SidecarWriteError extends CategorizedSyncError {
+  readonly category = 'copy' as const;
 
   constructor(causes: readonly string[]) {
-    super(`sidecar write failed for ${causes.length} album(s): ${causes.join('; ')}`);
-    this.name = 'SidecarWriteError';
-    this.causes = causes;
+    super(`sidecar write failed for ${causes.length} album(s): ${causes.join('; ')}`, causes);
+  }
+}
+
+/**
+ * Aggregated picture-write failure, thrown by `MassStorageAdapter.save()`
+ * when one or more queued embedded-picture writes (OGG/Opus container picture
+ * frames) fail. Closes doc-041 §3.1 's "untyped picture-write rejection" —
+ * before this type existed, raw rejections fell through to substring-based
+ * categorization and could mis-classify when a path embedded "iPod" or
+ * "ffmpeg".
+ */
+export class PictureWriteError extends CategorizedSyncError {
+  readonly category = 'copy' as const;
+
+  constructor(causes: readonly string[]) {
+    super(`picture write failed for ${causes.length} file(s): ${causes.join('; ')}`, causes);
+  }
+}
+
+/**
+ * Move (`renameSync`) failure during the move stage of
+ * `MassStorageAdapter.save()`. Wraps the raw fs error so the categorizer
+ * doesn't have to substring-match `ENOENT` / `EACCES` / `ENOSPC` out of the
+ * message — the category is on the type.
+ */
+export class MoveError extends CategorizedSyncError {
+  readonly category = 'copy' as const;
+
+  constructor(causes: readonly string[]) {
+    super(`file move failed for ${causes.length} file(s): ${causes.join('; ')}`, causes);
   }
 }
 

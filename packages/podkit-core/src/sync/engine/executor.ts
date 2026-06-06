@@ -19,7 +19,7 @@ import type {
   ExecutorProgress,
   ExecuteResult,
   CategorizedError,
-  ExecutionWarning,
+  Warning,
 } from './types.js';
 import type { TranscodeProgress } from '../../transcode/types.js';
 import type { ContentTypeHandler, ExecutionContext, OperationProgress } from './content-type.js';
@@ -145,7 +145,7 @@ export class SyncExecutor<TSource, TDevice, TOp extends BaseOperation = SyncOper
     let skipped = 0;
     const errors: Array<{ operation: TOp; error: Error }> = [];
     const categorizedErrors: CategorizedError[] = [];
-    const warnings: ExecutionWarning[] = [];
+    const warnings: Warning[] = [];
     let aborted = false;
 
     const ctx: ExecutionContext = {
@@ -271,7 +271,7 @@ export class SyncExecutor<TSource, TDevice, TOp extends BaseOperation = SyncOper
     const skipped = 0;
     const errors: Array<{ operation: TOp; error: Error }> = [];
     const categorizedErrors: CategorizedError[] = [];
-    const warnings: ExecutionWarning[] = [];
+    const warnings: Warning[] = [];
     let aborted = false;
     let operationIndex = 0;
 

@@ -300,4 +300,21 @@ export interface DeviceAdapter<T extends DeviceTrack = DeviceTrack> {
 
   /** Close the database and release resources */
   close(): void;
+
+  // Warnings
+
+  /**
+   * Inject a {@link WarningSink} for the adapter to emit non-fatal warnings
+   * through. Optional — adapters that don't emit any (mass-storage today) can
+   * omit it. Adapters that do emit (iPod's portable tag-write warnings) MUST
+   * implement it; otherwise their warnings are silently dropped.
+   *
+   * Sinks are injected at execute start by the pipeline so the warnings are
+   * accumulated alongside the rest of the execution warnings into
+   * `ExecuteResult.warnings`. Adapters must never write to stderr directly.
+   *
+   * See `documents/architecture/error-handling.md` for the responsibility
+   * model.
+   */
+  setWarningSink?(sink: import('../sync/engine/types.js').WarningSink): void;
 }

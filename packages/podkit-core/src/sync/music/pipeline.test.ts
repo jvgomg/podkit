@@ -1077,12 +1077,16 @@ describe('executeMusicPlan', () => {
     const mockAdapter = createMockDeviceAdapter();
     const mockTranscoder = createMockTranscoder();
 
-    // Make first copy fail permanently with a database error (no retry)
+    // Make first copy fail permanently with a typed database error (no retry).
+    // Raw `new Error('database ...')` would now categorize as `copy` via the
+    // op-type fallback and retry — the no-retry guarantee belongs to the
+    // typed error.
+    const { DatabaseWriteError } = await import('../engine/errors.js');
     let callCount = 0;
     mockAdapter.addTrack = mock((input: { title: string }) => {
       callCount++;
       if (callCount === 1) {
-        throw new Error('database error: add failed');
+        throw new DatabaseWriteError('add failed');
       }
       return createMockDeviceTrack('', input.title, '', `Music/MOCK${callCount}.m4a`);
     });
@@ -1107,7 +1111,7 @@ describe('executeMusicPlan', () => {
     expect(result.failed).toBe(1);
     expect(result.completed).toBe(1);
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]!.error.message).toBe('database error: add failed');
+    expect(result.errors[0]!.error.message).toBe('device database write failed: add failed');
   });
 });
 
@@ -1478,42 +1482,32 @@ describe('transcode with targetCodec', () => {
 // =============================================================================
 
 describe('categorizeError', () => {
-  it('categorizes FFmpeg errors as transcode', () => {
-    expect(categorizeError(new Error('FFmpeg failed'), 'add-transcode')).toBe('transcode');
-    expect(categorizeError(new Error('encoder not found'), 'add-transcode')).toBe('transcode');
-    expect(categorizeError(new Error('codec error'), 'add-direct-copy')).toBe('transcode');
+  // The canonical categorizeError test suite lives in
+  // `sync/engine/error-handling.test.ts`. These tests pin the re-exported
+  // surface from `pipeline.ts`, which delegates to the canonical
+  // implementation. The contract is: typed CategorizedSyncError → class
+  // category; untyped → operation-type fallback; no message-keyword matching.
+
+  it('falls back to operation-type table for untyped errors', () => {
+    expect(categorizeError(new Error('boom'), 'add-transcode')).toBe('transcode');
+    expect(categorizeError(new Error('boom'), 'add-direct-copy')).toBe('copy');
+    expect(categorizeError(new Error('boom'), 'video-transcode')).toBe('transcode');
+    expect(categorizeError(new Error('boom'), 'video-copy')).toBe('copy');
+    expect(categorizeError(new Error('boom'), 'upgrade-artwork')).toBe('copy');
   });
 
-  it('categorizes file errors as copy', () => {
-    expect(categorizeError(new Error('ENOENT: file not found'), 'add-direct-copy')).toBe('copy');
-    expect(categorizeError(new Error('EACCES: permission denied'), 'add-direct-copy')).toBe('copy');
-    // File I/O errors take precedence over operation type
-    expect(categorizeError(new Error('ENOSPC: no space left'), 'add-transcode')).toBe('copy');
-    expect(categorizeError(new Error('permission denied'), 'add-transcode')).toBe('copy');
+  it('returns unknown for ops with no natural category', () => {
+    expect(categorizeError(new Error('boom'), 'remove')).toBe('unknown');
+    expect(categorizeError(new Error('boom'), 'update-metadata')).toBe('unknown');
   });
 
-  it('categorizes database errors correctly', () => {
-    expect(categorizeError(new Error('database error'), 'add-direct-copy')).toBe('database');
-    expect(categorizeError(new Error('libgpod failed'), 'add-direct-copy')).toBe('database');
-    expect(categorizeError(new Error('iTunes error'), 'add-direct-copy')).toBe('database');
-  });
-
-  it('categorizes artwork errors correctly', () => {
-    expect(categorizeError(new Error('artwork failed'), 'add-direct-copy')).toBe('artwork');
-    expect(categorizeError(new Error('image processing error'), 'add-direct-copy')).toBe('artwork');
-  });
-
-  it('returns unknown for unrecognized errors', () => {
-    expect(categorizeError(new Error('something went wrong'), 'remove')).toBe('unknown');
-  });
-
-  it('uses operation type as hint for generic errors', () => {
-    // When error message doesn't match any specific category, fall back to operation type
-    expect(categorizeError(new Error('something failed'), 'add-transcode')).toBe('transcode');
-    expect(categorizeError(new Error('something failed'), 'add-direct-copy')).toBe('copy');
-    // But specific error messages take precedence over operation type
-    expect(categorizeError(new Error('database corruption'), 'add-transcode')).toBe('database');
-    expect(categorizeError(new Error('ENOENT'), 'add-transcode')).toBe('copy');
+  it('does not substring-match keywords like "database" / "ffmpeg" / "ENOSPC"', () => {
+    // Untyped errors categorize by op-type only; keyword strings in the
+    // message are ignored. Throw a CategorizedSyncError subclass if you
+    // need a specific category.
+    expect(categorizeError(new Error('database corruption'), 'add-direct-copy')).toBe('copy');
+    expect(categorizeError(new Error('ffmpeg crashed'), 'add-direct-copy')).toBe('copy');
+    expect(categorizeError(new Error('ENOENT'), 'remove')).toBe('unknown');
   });
 });
 
@@ -1696,8 +1690,14 @@ describe('MusicPipeline - retry logic', () => {
   });
 
   it('does not retry database errors', async () => {
+    // Typed error: categorizer reads category off the class, retry policy
+    // says 0 retries for `database`. Throwing a raw Error('database ...')
+    // would now categorize as `copy` (op-type fallback) and retry —
+    // adapters that surface a real database failure must wrap in
+    // DatabaseWriteError for the no-retry policy to apply.
+    const { DatabaseWriteError } = await import('../engine/errors.js');
     mockAdapter.addTrack = mock(() => {
-      throw new Error('database corruption');
+      throw new DatabaseWriteError('itunesdb corruption');
     });
     deps = createDependencies(mockAdapter, mockTranscoder);
 

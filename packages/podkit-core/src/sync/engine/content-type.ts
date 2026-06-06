@@ -204,7 +204,7 @@ export interface ContentTypeHandler<TSource, TDevice, TOp extends BaseOperation 
    * Called by SyncPlanner with all planned operations to generate
    * content-type-specific warnings (e.g., lossy-to-lossy conversion).
    */
-  collectPlanWarnings?(operations: TOp[]): import('./types.js').SyncWarning[];
+  collectPlanWarnings?(operations: TOp[]): import('./types.js').Warning[];
 
   // ---- Execution ----
 

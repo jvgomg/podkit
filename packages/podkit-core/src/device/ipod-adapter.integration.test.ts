@@ -836,12 +836,15 @@ describe('IpodDeviceAdapter normalization round-trip', () => {
     }
   });
 
-  it('iPod portable: tag-write failure is surfaced as a warning, not a save() rejection', async () => {
+  it('iPod portable: tag-write failure surfaces via WarningSink, not a save() rejection or stderr', async () => {
     const testIpod = await createTestIpod();
+
+    // Capture any accidental stderr writes — the adapter must NOT touch
+    // console.warn for this; warnings flow through the injected sink.
     const originalWarn = console.warn;
-    const warnings: string[] = [];
+    const stderrCalls: string[] = [];
     console.warn = (msg: string) => {
-      warnings.push(msg);
+      stderrCalls.push(msg);
     };
 
     try {
@@ -857,6 +860,15 @@ describe('IpodDeviceAdapter normalization round-trip', () => {
         const adapter = new IpodDeviceAdapter(db, capsForGeneration('classic_7g'), {
           tagWriter: failingWriter,
         });
+
+        // Inject sink — this is what the pipeline does at execute start.
+        const emitted: import('../sync/engine/types.js').Warning[] = [];
+        adapter.setWarningSink({
+          emit: (w) => {
+            emitted.push(w);
+          },
+        });
+
         const track = adapter.addTrack({
           title: 'Best Effort',
           artist: 'Artist',
@@ -871,15 +883,58 @@ describe('IpodDeviceAdapter normalization round-trip', () => {
 
         // The iPod's view is consistent.
         expect(adapter.getTracks()).toHaveLength(1);
-        // The user saw a warning.
-        expect(warnings.length).toBe(1);
-        expect(warnings[0]).toContain('iPod portable');
-        expect(warnings[0]).toContain('synthetic taglib failure');
+
+        // Warning landed in the sink as a structured Warning, not stderr.
+        expect(emitted).toHaveLength(1);
+        const w = emitted[0]!;
+        expect(w.phase).toBe('execute');
+        expect(w.type).toBe('tag-write');
+        expect(w.message).toContain('synthetic taglib failure');
+        expect(w.tracks).toHaveLength(1);
+        expect(w.tracks[0]!.title).toBe('Best Effort');
+        expect(w.tracks[0]!.artist).toBe('Artist');
+        expect(w.tracks[0]!.album).toBe('Album');
+
+        // No stderr writes.
+        expect(stderrCalls).toHaveLength(0);
       } finally {
         db.close();
       }
     } finally {
       console.warn = originalWarn;
+      await testIpod.cleanup();
+    }
+  });
+
+  it('iPod portable: default no-op sink — adapter is usable without setWarningSink', async () => {
+    // The pipeline injects a sink at execute start; doctor/manual callers
+    // outside execute() may not. The default no-op sink must not crash and
+    // must not regress save() success.
+    const testIpod = await createTestIpod();
+    try {
+      const db = await IpodDatabase.open(testIpod.path);
+      try {
+        const failingWriter: import('./mass-storage-tag-writer.js').TagWriter = {
+          async writeTags() {
+            throw new Error('synthetic taglib failure');
+          },
+          async writePicture() {},
+        };
+        const adapter = new IpodDeviceAdapter(db, capsForGeneration('classic_7g'), {
+          tagWriter: failingWriter,
+        });
+        const track = adapter.addTrack({
+          title: 'Best Effort',
+          artist: 'Artist',
+          album: 'Album',
+          transferMode: 'portable',
+        });
+        track.copyFile(mp3Path);
+        await expect(adapter.save()).resolves.toBeUndefined();
+      } finally {
+        db.close();
+      }
+    } finally {
       await testIpod.cleanup();
     }
   });

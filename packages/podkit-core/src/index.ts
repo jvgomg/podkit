@@ -53,8 +53,13 @@ export type {
   PlanOptions,
   TranscodePresetRef,
   SourceCategory,
-  SyncWarning,
-  SyncWarningType,
+  // Unified warning types — see documents/architecture/error-handling.md.
+  // Replaces the prior SyncWarning + ExecutionWarning split.
+  Warning,
+  WarningPhase,
+  WarningType,
+  WarningTrackRef,
+  WarningSink,
   // Transform-related update types
   UpdateReason,
   UpgradeReason,
@@ -63,8 +68,6 @@ export type {
   // Unified executor types (canonical definitions)
   ErrorCategory,
   CategorizedError,
-  ExecutionWarningType,
-  ExecutionWarning,
   ExecutorProgress,
   ExecuteResult,
 } from './sync/engine/types.js';
@@ -137,6 +140,15 @@ export {
   DEFAULT_RETRY_CONFIG as SHARED_DEFAULT_RETRY_CONFIG,
   VIDEO_RETRY_CONFIG,
 } from './sync/engine/error-handling.js';
+
+// Typed sync errors — see documents/architecture/error-handling.md
+export { CategorizedSyncError, DatabaseWriteError } from './sync/engine/errors.js';
+export {
+  TagWriteError,
+  SidecarWriteError,
+  PictureWriteError,
+  MoveError,
+} from './device/mass-storage-tag-writer.js';
 
 // Audio container helpers
 export { isOggExtension } from './audio/containers.js';

@@ -165,7 +165,7 @@ describe('formatDryRunFromPlan', () => {
     ],
     estimatedSize: 1000,
     estimatedTime: 60,
-    warnings: [{ type: 'lossy-to-lossy', message: 'warn1', tracks: [] }],
+    warnings: [{ phase: 'plan', type: 'lossy-to-lossy', message: 'warn1', tracks: [] }],
   };
 
   const classify = (type: string) => {

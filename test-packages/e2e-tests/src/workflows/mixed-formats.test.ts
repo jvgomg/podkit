@@ -89,10 +89,12 @@ describe('mixed format collection sync', () => {
         ]);
 
         expect(result.exitCode).toBe(0);
-        expect(json?.planWarnings).toBeDefined();
+        expect(json?.warnings).toBeDefined();
 
         // Should have a lossy-to-lossy warning
-        const lossyWarning = json?.planWarnings?.find((w) => w.type === 'lossy-to-lossy');
+        const lossyWarning = json?.warnings?.find(
+          (w) => w.phase === 'plan' && w.type === 'lossy-to-lossy'
+        );
         expect(lossyWarning).toBeDefined();
         expect(lossyWarning?.trackCount).toBe(2); // OGG and Opus
       });

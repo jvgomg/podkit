@@ -1041,7 +1041,8 @@ export async function observeStaticArtwork(opts: {
   // TASK-366's `artwork-detection-disabled` plan warning is also sync-wide
   // (one warning per dry-run). Same one-shot read.
   const artworkDetectionDisabledWarning =
-    dryJson.planWarnings?.some((w) => w.type === 'artwork-detection-disabled') ?? false;
+    dryJson.warnings?.some((w) => w.phase === 'plan' && w.type === 'artwork-detection-disabled') ??
+    false;
 
   const byKey = new Map<string, StaticArtObserved>();
   for (const cell of scenarioFormatCells()) {
@@ -1105,7 +1106,8 @@ export async function observeCompilation(opts: {
   const checkArtworkSource = (dryJson.decisions?.checkArtwork.source ??
     null) as DecisionSource | null;
   const artworkDetectionDisabledWarning =
-    dryJson.planWarnings?.some((w) => w.type === 'artwork-detection-disabled') ?? false;
+    dryJson.warnings?.some((w) => w.phase === 'plan' && w.type === 'artwork-detection-disabled') ??
+    false;
 
   const byKey = new Map<string, CompilationObserved>();
   for (const format of FORMATS) {

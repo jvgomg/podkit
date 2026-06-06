@@ -5,7 +5,6 @@
  * and executing sync plans.
  */
 
-import type { CollectionTrack } from '../../adapters/interface.js';
 import type { DeviceTrack } from '../../device/adapter.js';
 import type {
   EncodingMode,
@@ -129,27 +128,83 @@ export interface TranscodePresetRef {
 export type SourceCategory = 'lossless' | 'compatible-lossy' | 'incompatible-lossy';
 
 // =============================================================================
-// Sync Warnings
+// Warnings
 // =============================================================================
 
 /**
- * Warning types that can occur during sync planning
+ * Compact track reference attached to warnings.
+ *
+ * Decoupled from CollectionTrack so warnings don't carry source-side fields
+ * irrelevant to the consumer; structured (not pre-formatted) so JSON
+ * consumers can format as they wish.
  */
-export type SyncWarningType =
+export interface WarningTrackRef {
+  artist: string;
+  title: string;
+  album?: string;
+}
+
+/**
+ * Phase of sync at which a warning was generated.
+ *
+ * - `plan`: emitted during diff/plan construction (lossy-to-lossy, space,
+ *   adapter-scoped degraded modes).
+ * - `execute`: emitted during execution (artwork extraction failures,
+ *   on-file tag-write failures, etc).
+ */
+export type WarningPhase = 'plan' | 'execute';
+
+/**
+ * All warning types across both phases.
+ *
+ * Plan-phase: 'lossy-to-lossy', 'space-constraint', 'embedded-artwork-resize',
+ *   'artwork-detection-disabled'.
+ * Execute-phase: 'artwork', 'metadata'.
+ *
+ * Additional execute-phase types (e.g. 'tag-write') are added by later
+ * refactors when a sink begins emitting them.
+ */
+export type WarningType =
+  // plan
   | 'lossy-to-lossy'
   | 'space-constraint'
   | 'embedded-artwork-resize'
-  | 'artwork-detection-disabled';
+  | 'artwork-detection-disabled'
+  // execute
+  | 'artwork'
+  | 'metadata'
+  | 'tag-write';
 
 /**
- * A warning generated during sync planning
+ * A non-fatal warning generated during sync planning or execution.
+ *
+ * Warnings represent issues that don't prevent the sync from completing
+ * but should be reported to the user. Hard failures throw a typed error
+ * (see CategorizedSyncError) — never a warning.
  */
-export interface SyncWarning {
-  type: SyncWarningType;
-  /** Human-readable description of the warning */
+export interface Warning {
+  /** Phase the warning was generated in. */
+  phase: WarningPhase;
+  /** Discriminant for the warning shape and message family. */
+  type: WarningType;
+  /** Human-readable description. */
   message: string;
-  /** Tracks affected by this warning */
-  tracks: CollectionTrack[];
+  /** Tracks affected. Planning warnings may have many; execute-phase usually 1. */
+  tracks: WarningTrackRef[];
+}
+
+/**
+ * Receiver for execute-phase warnings. Adapters, transfer managers and
+ * artwork managers emit through a sink rather than throwing or touching
+ * stderr; the pipeline owns the sink that accumulates into the final
+ * ExecuteResult.warnings array.
+ *
+ * Plan-phase warnings flow as return values (`getPlanWarnings()` /
+ * `collectPlanWarnings()`); they don't go through a sink because the
+ * caller is the planner and there's no fan-in.
+ */
+export interface WarningSink {
+  emit(warning: Warning): void;
 }
 
 // =============================================================================
@@ -194,8 +249,8 @@ export interface SyncPlan<TOp extends BaseOperation = SyncOperation> {
   estimatedTime: number;
   /** Estimated total size in bytes */
   estimatedSize: number;
-  /** Warnings generated during planning (e.g., lossy-to-lossy conversions) */
-  warnings: SyncWarning[];
+  /** Warnings generated during planning (e.g., lossy-to-lossy conversions). Always `phase: 'plan'`. */
+  warnings: Warning[];
 }
 
 /**
@@ -459,26 +514,6 @@ export interface CategorizedError {
 }
 
 /**
- * Warning type for non-fatal issues during sync execution
- */
-export type ExecutionWarningType = 'artwork' | 'metadata';
-
-/**
- * A non-fatal warning generated during sync execution
- *
- * Warnings represent issues that don't prevent the sync from completing
- * (e.g., artwork extraction failures) but should be reported to the user.
- */
-export interface ExecutionWarning {
-  /** Type of warning */
-  type: ExecutionWarningType;
-  /** Track that triggered the warning */
-  track: { artist: string; title: string; album?: string };
-  /** Human-readable description of the issue */
-  message: string;
-}
-
-/**
  * Extended progress information for sync operations.
  *
  * Generic over operation type. Defaults to `SyncOperation` (all content types)
@@ -524,8 +559,8 @@ export interface ExecuteResult<TOp extends BaseOperation = SyncOperation> {
   errors: Array<{ operation: TOp; error: Error }>;
   /** Categorized errors with full context */
   categorizedErrors: CategorizedError[];
-  /** Non-fatal warnings (e.g., artwork extraction failures) */
-  warnings: ExecutionWarning[];
+  /** Non-fatal warnings (e.g., artwork extraction failures). Always `phase: 'execute'`. */
+  warnings: Warning[];
   /** Total bytes transferred */
   bytesTransferred: number;
   /** Whether execution was aborted */

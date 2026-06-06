@@ -44,6 +44,8 @@ import {
   type TagFields,
   type TagWriter,
 } from './mass-storage-tag-writer.js';
+import { DatabaseWriteError } from '../sync/engine/errors.js';
+import type { WarningSink } from '../sync/engine/types.js';
 
 /** Options for `new IpodDeviceAdapter(ipod, capabilities, options?)` */
 export interface IpodDeviceAdapterOptions {
@@ -76,6 +78,14 @@ export class IpodDeviceAdapter implements DeviceAdapter<IpodTrack> {
    */
   private pendingTagWrites = new Map<IpodTrack, TagFields>();
 
+  /**
+   * Receiver for execute-phase warnings. Set by the pipeline at execute
+   * start via {@link setWarningSink}. Defaults to a no-op sink so the
+   * adapter is safe to use outside an execute() loop (eg the `podkit doctor`
+   * surfaces) — warnings just get dropped on the floor.
+   */
+  private warningSink: WarningSink = { emit: () => {} };
+
   constructor(
     ipod: IpodDatabase,
     capabilities: DeviceCapabilities,
@@ -84,6 +94,10 @@ export class IpodDeviceAdapter implements DeviceAdapter<IpodTrack> {
     this.ipod = ipod;
     this.capabilities = capabilities;
     this.tagWriter = options?.tagWriter ?? new TagLibTagWriter();
+  }
+
+  setWarningSink(sink: WarningSink): void {
+    this.warningSink = sink;
   }
 
   get mountPoint(): string {
@@ -118,7 +132,9 @@ export class IpodDeviceAdapter implements DeviceAdapter<IpodTrack> {
     }
     // Convert normalization → soundcheck for iPod's iTunesDB storage
     applyNormalizationAsSoundcheck(trackInput, normalization);
-    const track = this.ipod.addTrack(trackInput);
+    // Wrap raw libgpod failures so the executor's retry policy reads them as
+    // database errors (no retry) instead of the op-type fallback's `'copy'`.
+    const track = wrapDatabaseError(() => this.ipod.addTrack(trackInput));
 
     // Portable mode: mirror the input metadata into the on-disk file tags so
     // a pulled-off file carries canonical metadata. Source-vs-input may
@@ -140,7 +156,7 @@ export class IpodDeviceAdapter implements DeviceAdapter<IpodTrack> {
     const trackFields = rest as TrackFields;
     // Convert normalization → soundcheck for iPod's iTunesDB storage
     applyNormalizationAsSoundcheck(trackFields, normalization);
-    const updated = this.ipod.updateTrack(track, trackFields);
+    const updated = wrapDatabaseError(() => this.ipod.updateTrack(track, trackFields));
 
     // Portable mode: any metadata change that lives in iTunesDB also gets
     // mirrored into the file tags so the file remains self-describing.
@@ -152,7 +168,7 @@ export class IpodDeviceAdapter implements DeviceAdapter<IpodTrack> {
   }
 
   removeTrack(track: IpodTrack, options?: { deleteFile?: boolean }): void {
-    this.ipod.removeTrack(track, options);
+    wrapDatabaseError(() => this.ipod.removeTrack(track, options));
     // Discard any queued tag writes for the removed track.
     this.pendingTagWrites.delete(track);
   }
@@ -208,7 +224,17 @@ export class IpodDeviceAdapter implements DeviceAdapter<IpodTrack> {
   async save(): Promise<void> {
     // Persist the iTunesDB first — it's the authoritative source for iPod
     // playback. On-disk tag writes are best-effort and follow.
-    await this.ipod.save();
+    //
+    // Wrap the native libgpod error in DatabaseWriteError so the executor's
+    // categorizer reads it as 'database' (no retry) without inspecting the
+    // message body. Without wrapping, an iTunesDB failure would categorize
+    // by operation-type fallback — usually 'copy' — and retry incorrectly.
+    try {
+      await this.ipod.save();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new DatabaseWriteError(message, err);
+    }
 
     if (this.pendingTagWrites.size > 0) {
       // Resolve file paths now — libgpod has assigned ipodPath via copyFile.
@@ -224,27 +250,37 @@ export class IpodDeviceAdapter implements DeviceAdapter<IpodTrack> {
       }
 
       const merged = new Map<string, TagFields>();
-      const dropped: string[] = [];
+      const entryRefs = new Map<string, { artist: string; title: string; album?: string }>();
+      const dropped: Array<{ artist: string; title: string; album?: string }> = [];
       for (const [track, fields] of this.pendingTagWrites) {
         const live = currentByIndex.get(indexOf(track)) ?? track;
         const abs = absolutePathFor(this.mountPoint, live.filePath);
+        const ref = {
+          artist: live.artist ?? 'Unknown Artist',
+          title: live.title ?? 'Unknown Title',
+          album: live.album,
+        };
         if (!abs) {
-          dropped.push(track.title);
+          dropped.push(ref);
           continue;
         }
         const existing = merged.get(abs);
         merged.set(abs, existing ? { ...existing, ...fields } : { ...fields });
+        if (!entryRefs.has(abs)) entryRefs.set(abs, ref);
       }
       this.pendingTagWrites.clear();
 
+      // iPod portable tags are best-effort: iTunesDB is authoritative for
+      // playback, so a failed file-tag write doesn't break the device. Emit
+      // via the WarningSink so it lands in `--json` and the CLI summary
+      // instead of stderr.
       if (dropped.length > 0) {
-        // Non-fatal warning surfaced to stderr — iTunesDB write already
-        // succeeded; tag write is best-effort. No logger plumbed into
-        // IpodAdapter today.
-        // eslint-disable-next-line no-console
-        console.warn(
-          `[podkit] iPod portable: ${dropped.length} track(s) had no file path at save time; tag write skipped: ${dropped.join(', ')}`
-        );
+        this.warningSink.emit({
+          phase: 'execute',
+          type: 'tag-write',
+          tracks: dropped,
+          message: `iPod portable: ${dropped.length} track(s) had no file path at save time; tag write skipped`,
+        });
       }
 
       const entries = [...merged.entries()];
@@ -256,23 +292,30 @@ export class IpodDeviceAdapter implements DeviceAdapter<IpodTrack> {
         ),
         DEFAULT_TAG_WRITE_CONCURRENCY
       );
-      const failures: string[] = [];
+      const failures: Array<{
+        ref: { artist: string; title: string; album?: string };
+        reason: string;
+      }> = [];
       for (let i = 0; i < results.length; i++) {
         const outcome = results[i]!;
         if (outcome.status === 'rejected') {
           const [abs] = entries[i]!;
-          failures.push(`${abs}: ${(outcome.reason as Error).message ?? outcome.reason}`);
+          const ref = entryRefs.get(abs)!;
+          failures.push({
+            ref,
+            reason: `${abs}: ${(outcome.reason as Error).message ?? outcome.reason}`,
+          });
         }
       }
       if (failures.length > 0) {
-        // Surface as a non-fatal warning on stderr — iPod portable file tags
-        // are best-effort. The iTunesDB write already succeeded so playback
-        // is unaffected; only recovery (pulling files off the device) is
-        // degraded for these tracks.
-        // eslint-disable-next-line no-console
-        console.warn(
-          `[podkit] iPod portable: failed to write file tags for ${failures.length} track(s): ${failures.join('; ')}`
-        );
+        this.warningSink.emit({
+          phase: 'execute',
+          type: 'tag-write',
+          tracks: failures.map((f) => f.ref),
+          message: `iPod portable: failed to write file tags for ${failures.length} track(s): ${failures
+            .map((f) => f.reason)
+            .join('; ')}`,
+        });
       }
     }
   }
@@ -289,6 +332,28 @@ export class IpodDeviceAdapter implements DeviceAdapter<IpodTrack> {
     if (Object.keys(fields).length === 0) return;
     const existing = this.pendingTagWrites.get(track);
     this.pendingTagWrites.set(track, existing ? { ...existing, ...fields } : { ...fields });
+  }
+}
+
+/**
+ * Wrap raw libgpod errors thrown from `IpodDatabase` mutators
+ * (`addTrack`, `updateTrack`, `removeTrack`) in {@link DatabaseWriteError}
+ * so the executor categorizes them as `database` (no retry) regardless of
+ * the surrounding operation's type. Without this wrap, `add-*` ops would
+ * fall through to the `copy` category and the executor would retry an
+ * iTunesDB failure once — pointless and potentially harmful for true
+ * database corruption.
+ *
+ * Already-typed errors (CategorizedSyncError subclasses) pass through
+ * unwrapped — wrapping a typed error would lose its category.
+ */
+function wrapDatabaseError<T>(fn: () => T): T {
+  try {
+    return fn();
+  } catch (err) {
+    if (err instanceof DatabaseWriteError) throw err;
+    const message = err instanceof Error ? err.message : String(err);
+    throw new DatabaseWriteError(message, err);
   }
 }
 

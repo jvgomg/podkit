@@ -110,6 +110,16 @@ See [docs/developers/development.md](docs/developers/development.md) for full se
 
 The `docs/` directory is organized for web publication (Starlight-compatible). Read [agents/documentation.md](agents/documentation.md) for the full documentation map, file conventions, and maintenance guidelines.
 
+## Architecture Docs
+
+`documents/architecture/` holds the slow-moving, settled descriptions of how podkit is put together — what each subsystem owns, the primitives it exposes, the responsibility boundaries between layers, and the conventions a new contributor (or agent) must follow. **Read [documents/architecture/README.md](documents/architecture/README.md) before working on a subsystem you don't know.**
+
+Cross-cutting rules (typed errors, no `console.warn` in core, sink-not-stderr, test-pins-contract) live in [documents/architecture/conventions.md](documents/architecture/conventions.md) — these apply to every package and every PR.
+
+Per-subsystem docs (currently only [sync/error-handling.md](documents/architecture/sync/error-handling.md); more pending — see the README's migration plan) follow a consistent eight-section template described in the README. When a refactor changes a convention, update the relevant architecture doc in the same PR. When you settle a new convention not yet documented, file a new doc or extend an existing one.
+
+The architecture docs are distinct from the rough-edges journals in `backlog/docs/doc-NNN-*.md` (working catalogue of *what's still smelly*) and from ADRs in `adr/` (decision log frozen at decision time). Don't duplicate content across them — link.
+
 ## Feature Requests & GitHub Discussions
 
 Feature requests are managed through GitHub Discussions (Ideas category), with links in the documentation and backlog tasks. **See [agents/feature-requests.md](agents/feature-requests.md) for the complete guide** covering:

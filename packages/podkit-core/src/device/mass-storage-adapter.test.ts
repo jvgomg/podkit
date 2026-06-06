@@ -1303,6 +1303,119 @@ describe('MassStorageAdapter', () => {
     });
   });
 
+  describe('save() — WarningSink emit sites', () => {
+    test('emits a warning when a relocate hits ENOENT (source file vanished between plan and save)', async () => {
+      const relPath = 'Music/Old Artist/Album/01 - Song.flac';
+      createFakeAudioFile(mountPoint, relPath);
+
+      const reader = createMockMetadataReader({
+        '01 - Song.flac': {
+          title: 'Song',
+          artist: 'Old Artist',
+          album: 'Album',
+          trackNumber: 1,
+          duration: 180000,
+          bitrate: 320,
+          sampleRate: 44100,
+        },
+      });
+
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: reader,
+      });
+
+      const emitted: import('../sync/engine/types.js').Warning[] = [];
+      adapter.setWarningSink({
+        emit: (w) => {
+          emitted.push(w);
+        },
+      });
+
+      const track = adapter.getTracks()[0]!;
+      const newPath = 'Music/New Artist/Album/01 - Song.flac';
+      adapter.relocateTrack(track, newPath);
+
+      // Simulate external deletion between plan and save.
+      fs.unlinkSync(path.join(mountPoint, relPath));
+
+      // save() must not reject — vanished source is a soft signal.
+      await expect(adapter.save()).resolves.toBeUndefined();
+
+      expect(emitted).toHaveLength(1);
+      const w = emitted[0]!;
+      expect(w.phase).toBe('execute');
+      expect(w.type).toBe('metadata');
+      expect(w.message).toContain('source file disappeared');
+      expect(w.tracks).toHaveLength(1);
+      expect(w.tracks[0]!.artist).toBe('Old Artist');
+      expect(w.tracks[0]!.title).toBe('Song');
+      expect(w.tracks[0]!.album).toBe('Album');
+    });
+
+    test('does not emit when relocate succeeds normally', async () => {
+      const relPath = 'Music/Old Artist/Album/01 - Song.flac';
+      createFakeAudioFile(mountPoint, relPath);
+
+      const reader = createMockMetadataReader({
+        '01 - Song.flac': {
+          title: 'Song',
+          artist: 'Old Artist',
+          album: 'Album',
+          trackNumber: 1,
+          duration: 180000,
+          bitrate: 320,
+          sampleRate: 44100,
+        },
+      });
+
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: reader,
+      });
+
+      const emitted: import('../sync/engine/types.js').Warning[] = [];
+      adapter.setWarningSink({
+        emit: (w) => {
+          emitted.push(w);
+        },
+      });
+
+      const track = adapter.getTracks()[0]!;
+      adapter.relocateTrack(track, 'Music/New Artist/Album/01 - Song.flac');
+      await adapter.save();
+
+      expect(emitted).toHaveLength(0);
+    });
+
+    test('default no-op sink is safe — adapter saves without setWarningSink', async () => {
+      // The pipeline injects a sink at execute start; doctor/manual callers
+      // may not. The default no-op sink must not crash and must not
+      // regress save() success.
+      const relPath = 'Music/Old Artist/Album/01 - Song.flac';
+      createFakeAudioFile(mountPoint, relPath);
+
+      const reader = createMockMetadataReader({
+        '01 - Song.flac': {
+          title: 'Song',
+          artist: 'Old Artist',
+          album: 'Album',
+          trackNumber: 1,
+          duration: 180000,
+          bitrate: 320,
+          sampleRate: 44100,
+        },
+      });
+
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: reader,
+      });
+
+      const track = adapter.getTracks()[0]!;
+      adapter.relocateTrack(track, 'Music/New Artist/Album/01 - Song.flac');
+      fs.unlinkSync(path.join(mountPoint, relPath));
+      await expect(adapter.save()).resolves.toBeUndefined();
+    });
+  });
+
   describe('close()', () => {
     test('does not throw', async () => {
       const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
@@ -2121,20 +2234,20 @@ describe('MassStorageAdapter', () => {
     // ---------------------------------------------------------------------
     // Save-failure behaviour pinning (doc-041 §4.2)
     //
-    // These tests lock the CURRENT picture-write failure semantics so any
-    // future refactor (TASK-371, the picture-write normalization work) has
-    // to intentionally change them rather than slip the semantics silently.
+    // Picture-write stage is collect-and-aggregate (mirrors the tag-write
+    // stage). Closes doc-041 §3.1 / §3.5 picture-write inconsistencies.
     //
-    // Current behaviour (doc-041 §2.1 Stage 3 / §3.1 / §3.5):
-    //   - Promise.all over all pending writes (fail-fast on first rejection)
-    //   - pendingPictureWrites map NOT cleared on throw
-    //   - All writes have started by the time the throw surfaces (the
-    //     promises are constructed synchronously in `.map()`)
-    //   - Next save() re-issues every entry — byte-idempotent on the
-    //     writer side so the succeeded ones are harmless re-writes
+    // Current behaviour:
+    //   - runWithConcurrency over all pending writes (no fail-fast)
+    //   - all writes settle before failure check
+    //   - pendingPictureWrites map IS cleared before throw
+    //   - aggregate failure surfaces as `PictureWriteError`; per-file
+    //     causes preserved on `err.causes`
+    //   - next save() does NOT retry: rescan-driven re-queue is the
+    //     retry path (matches the documented convention for tag writes)
     // ---------------------------------------------------------------------
 
-    test('save() rejects when a picture write fails (fail-fast on first error)', async () => {
+    test('save() aggregates per-file picture-write failures into PictureWriteError', async () => {
       createFakeAudioFile(mountPoint, 'Music/Artist/Album/01.opus');
       createFakeAudioFile(mountPoint, 'Music/Artist/Album/02.opus');
 
@@ -2159,26 +2272,30 @@ describe('MassStorageAdapter', () => {
       adapter.updateTrack(t1!, { embeddedPictureData: Buffer.from('one-bytes') });
       adapter.updateTrack(t2!, { embeddedPictureData: Buffer.from('two-bytes') });
 
-      // Pin: save() rejects with the underlying error (no typed wrapper yet,
-      // doc-041 §3.3). The error categorizer relies on the path-in-message
-      // heuristic to classify as `copy`.
-      await expect(adapter.save()).rejects.toThrow(/simulated picture-write failure/);
+      const { PictureWriteError } = await import('./mass-storage-tag-writer.js');
+      let thrown: unknown;
+      try {
+        await adapter.save();
+      } catch (err) {
+        thrown = err;
+      }
+      expect(thrown).toBeInstanceOf(PictureWriteError);
+      const causes = (thrown as InstanceType<typeof PictureWriteError>).causes;
+      expect(causes).toHaveLength(1);
+      expect(causes[0]).toContain('01.opus');
+      expect(causes[0]).toContain('simulated picture-write failure');
     });
 
-    test('save() leaves pendingPictureWrites populated on failure (next save retries)', async () => {
+    test('save() clears pendingPictureWrites before throw — rescan drives retry, not in-adapter', async () => {
       createFakeAudioFile(mountPoint, 'Music/Artist/Album/01.opus');
       createFakeAudioFile(mountPoint, 'Music/Artist/Album/02.opus');
 
-      let firstCallSeen = false;
       const tagWriter: TagWriter & { pictureCalls: string[] } = {
         pictureCalls: [],
         async writeTags() {},
         async writePicture(filePath: string) {
           this.pictureCalls.push(filePath);
-          if (!firstCallSeen) {
-            firstCallSeen = true;
-            // Only the first save() throws — second save() succeeds, so we
-            // can observe the retry.
+          if (filePath.endsWith('01.opus')) {
             throw new Error(`first attempt fails: ${filePath}`);
           }
         },
@@ -2196,15 +2313,15 @@ describe('MassStorageAdapter', () => {
       adapter.updateTrack(t1!, { embeddedPictureData: Buffer.from('one-bytes') });
       adapter.updateTrack(t2!, { embeddedPictureData: Buffer.from('two-bytes') });
 
-      // First save() throws — but ALL writes were issued (Promise.all races).
-      await expect(adapter.save()).rejects.toThrow(/first attempt fails/);
+      await expect(adapter.save()).rejects.toThrow(/picture write failed/);
+      // All writes were attempted before the failure was reported.
+      expect(tagWriter.pictureCalls.length).toBe(2);
       const callsAfterFirst = tagWriter.pictureCalls.length;
-      expect(callsAfterFirst).toBeGreaterThanOrEqual(1);
 
-      // Pin: map NOT cleared on throw → second save() re-issues every entry.
-      // (Today's behaviour: BOTH entries re-fire because the map survived.)
+      // Second save(): map was cleared, so no entries re-fire. The next sync's
+      // rescan would re-detect the gap and re-queue — that's the retry path.
       await adapter.save();
-      expect(tagWriter.pictureCalls.length).toBeGreaterThan(callsAfterFirst);
+      expect(tagWriter.pictureCalls.length).toBe(callsAfterFirst);
     });
   });
 

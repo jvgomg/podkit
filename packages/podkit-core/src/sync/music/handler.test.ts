@@ -459,6 +459,7 @@ describe('MusicHandler', () => {
       // Adapters opt in by implementing getPlanWarnings — the handler must
       // splice them into the plan so the CLI/JSON surface shows them.
       const adapterWarning = {
+        phase: 'plan' as const,
         type: 'artwork-detection-disabled' as const,
         message: 'fast mode: artwork-change detection is disabled',
         tracks: [],
@@ -941,7 +942,12 @@ describe('MusicHandler', () => {
         estimatedSize: 0,
         estimatedTime: 0,
         warnings: [
-          { type: 'lossy-to-lossy', message: '2 tracks require lossy conversion', tracks: [] },
+          {
+            phase: 'plan',
+            type: 'lossy-to-lossy',
+            message: '2 tracks require lossy conversion',
+            tracks: [],
+          },
         ],
       };
 

@@ -98,6 +98,11 @@ export interface GenericSyncResult {
   jsonOutput?: SyncOutput;
   artworkMissingBaseline?: number;
   transferModeMismatch?: number;
+  /**
+   * Execute-phase warnings drained from the pipeline. Sync.ts aggregates
+   * these across collections before constructing the final JSON output.
+   */
+  warnings?: import('@podkit/core').Warning[];
 }
 
 // =============================================================================
@@ -304,6 +309,8 @@ export interface ContentTypePresenter<TSource, TDevice> {
     failed: number;
     interrupted?: boolean;
     collectedErrors: CollectedError[];
+    /** Execute-phase warnings drained from the pipeline (optional per presenter). */
+    warnings?: import('@podkit/core').Warning[];
   }>;
 
   /** Render completion (errors, etc.) */
@@ -609,6 +616,7 @@ export async function genericSyncCollection<TSource, TDevice>(
     completed: execResult.completed,
     failed: execResult.failed,
     interrupted: execResult.interrupted,
+    warnings: execResult.warnings,
     ...(postDiffData.artworkMissingBaseline !== undefined
       ? { artworkMissingBaseline: postDiffData.artworkMissingBaseline as number }
       : {}),

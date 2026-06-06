@@ -1,0 +1,204 @@
+---
+title: Architecture Docs
+description: The map of podkit's architecture documentation — what's settled, what's pending, and the eventual shape of the docs library.
+sidebar:
+  order: 0
+---
+
+The architecture documentation series. Describes podkit's design at a
+level of abstraction that a contributor needs to make a change without
+re-reading the codebase end-to-end.
+
+Audience: contributors and AI agents working in the repository. Not
+end-users (those are served by [`docs/`](../../docs/), the Starlight site).
+
+These docs evolve slowly, are written once a convention is settled, and
+should not require updating on every PR. If you find yourself rewriting
+an architecture doc to match a change you're shipping, ask whether the
+*convention* changed — if not, the doc is fine and the code drifted.
+
+---
+
+## What's here today
+
+- **[conventions](./conventions.md)** — Cross-cutting rules that apply to
+  every subsystem (typed errors, no `console.warn` in core, sink-not-stderr,
+  test-pins-contract).
+- **[sync/error-handling](./sync/error-handling.md)** — How errors and
+  warnings flow through the sync engine. The first per-subsystem doc.
+
+That's it for now. The rest of the library is pending — see
+[Goals and migration plan](#goals-and-migration-plan) below.
+
+---
+
+## The eventual shape
+
+The architecture series mirrors the mental model of the codebase. The
+folders match the major subsystems; each subsystem's docs cover its
+primitives, responsibility boundaries, conventions for new contributors,
+and the open work still asymmetric.
+
+```text
+documents/architecture/
+├── README.md                         # this file
+├── conventions.md                    # cross-cutting rules
+├── sync/                             # sync engine
+│   ├── error-handling.md             # ✅ landed
+│   ├── planning.md                   # ⏳ pending
+│   ├── execution-pipeline.md         # ⏳ pending
+│   ├── save-transactions.md          # ⏳ pending (settled version of doc-041)
+│   ├── content-type-handlers.md      # ⏳ pending
+│   └── transfer-modes.md             # ⏳ pending (settled version of doc-012)
+├── device/                           # device adapter pattern
+│   ├── adapter-contract.md           # ⏳ pending
+│   ├── capabilities.md               # ⏳ pending
+│   ├── ipod-adapter.md               # ⏳ pending
+│   └── mass-storage-adapter.md       # ⏳ pending
+├── collection-adapters/              # source adapters
+│   ├── adapter-contract.md           # ⏳ pending
+│   ├── subsonic.md                   # ⏳ pending
+│   └── directory.md                  # ⏳ pending
+├── transcode/                        # FFmpeg integration
+│   ├── codec-resolution.md           # ⏳ pending
+│   └── ffmpeg-runtime.md             # ⏳ pending
+├── artwork/                          # artwork pipeline
+│   ├── album-cache.md                # ⏳ pending
+│   └── artwork-sinks.md              # ⏳ pending (embedded / sidecar / database)
+├── ipod/                             # libgpod binding + iTunesDB
+│   ├── libgpod-binding.md            # ⏳ pending
+│   ├── itunes-db.md                  # ⏳ pending
+│   └── artwork-db.md                 # ⏳ pending
+└── cli/                              # CLI structure
+    ├── output-context.md             # ⏳ pending
+    ├── decisions-and-provenance.md   # ⏳ pending
+    └── shell-completions.md          # ⏳ pending
+```
+
+This list is **a planning artefact, not a contract.** Folders are added
+when content is written; section names are renamed as understanding
+evolves. The list exists so future maintainers (and agents) can see
+where new work plugs in.
+
+### Per-doc shape (the template)
+
+Each architecture doc follows roughly the same eight-section shape so
+readers can navigate them with one mental model:
+
+1. **Map** — what the subsystem owns, what it doesn't, two paragraphs max.
+2. **Primitives** — the core types with their signatures and the *why*,
+   not the *what*. (`new Foo({...})` belongs in JSDoc, not here.)
+3. **Responsibility boundaries** — who knows what (adapter / handler /
+   pipeline / CLI).
+4. **Conventions for new contributors** — checklist.
+5. **Scope boundaries** — what's NOT covered, with pointers elsewhere.
+6. **Open work** — named asymmetries, planned cleanup, follow-ups from
+   the most recent refactor.
+7. **References** — file paths + companion docs (especially
+   `backlog/docs/doc-NNN` journals if one is still active for the
+   subsystem).
+
+`sync/error-handling.md` is the canonical example. When in doubt, copy
+its skeleton.
+
+---
+
+## Goals and migration plan
+
+These are tracked here so a future contributor can pick one up as part of
+a refactor in the relevant area, rather than as standalone documentation
+work. Each item should be done **alongside** a code change in the same
+subsystem — the architecture doc should reflect the settled shape of the
+code that just landed.
+
+### Migrate from `backlog/docs/`
+
+The `backlog/docs/doc-NNN` files are *living rough-edges journals*. The
+parts that have settled belong in architecture docs; the parts still in
+flux stay in the journal. Migration is **not** "move and delete" —
+extract the settled portion, leave the journal as a working log.
+
+- [ ] **doc-041 — Save-Transaction Design and State of Play.** Extract §1
+  (definitions), §2 (per-adapter flows), §7 (principles) into
+  `sync/save-transactions.md`. Keep §3 (rough-edges catalogue), §4 (test
+  gaps), §5 (failure modes) in the journal — those evolve as new edges
+  surface.
+- [ ] **doc-012 — Transfer Mode Behavior Matrix.** Extract the
+  fundamentals (what each mode means, what it controls) into
+  `sync/transfer-modes.md`. The full matrix probably stays in the
+  journal — it's reference data, not architecture.
+- [ ] **doc-039 — E2E Sync Matrix Testing Strategy.** May not need
+  migration; it's testing-strategy doc, not architecture. If lifted,
+  belongs in a new `testing/` folder, not in `sync/`.
+
+### New docs to extract from code
+
+Each of these should ideally happen as part of a refactor in the area —
+the architecture doc captures the convention the refactor pinned, just
+like `sync/error-handling.md` did for TASK-381.
+
+- [ ] **`sync/planning.md`** — Source → diff → plan. `SyncDiffer` and
+  `SyncPlanner`. Triggered by: any planning refactor (e.g. a new diff
+  reason type).
+- [ ] **`sync/execution-pipeline.md`** — `MusicPipeline` three-stage
+  (download / prepare / transfer), the executor's per-op state, save
+  checkpoints. ADR-011 captures the original design decision; the
+  architecture doc would capture the current settled shape. Triggered
+  by: pipeline tuning work or video-pipeline parity.
+- [ ] **`sync/content-type-handlers.md`** — `ContentTypeHandler` pattern.
+  How music and video share the engine while keeping content-specific
+  logic isolated. Triggered by: any new content type, or a video-pipeline
+  refactor.
+- [ ] **`device/adapter-contract.md`** — `DeviceAdapter` interface. The
+  contract a new device must implement. Triggered by: any new device
+  adapter (e.g. a third mass-storage variant, or a new native target).
+- [ ] **`device/capabilities.md`** — `DeviceCapabilities` model. How
+  capabilities flow from device → resolver → planner → adapter. Triggered
+  by: any capability-resolution work.
+- [ ] **`collection-adapters/adapter-contract.md`** — `CollectionAdapter`
+  interface. Triggered by: any new source adapter.
+- [ ] **`transcode/codec-resolution.md`** — How the planner picks a
+  codec given source + device + user preferences. Triggered by: any
+  codec resolution work or a new encoder.
+- [ ] **`artwork/artwork-sinks.md`** — Embedded / sidecar / database
+  artwork sinks. Triggered by: any artwork pipeline work.
+- [ ] **`ipod/libgpod-binding.md`** — N-API surface, why we own the
+  binding instead of consuming an existing one. ADR-002 has the
+  decision; the architecture doc would have the settled shape.
+  Triggered by: any libgpod-node refactor.
+- [ ] **`cli/output-context.md`** — `OutputContext` pattern, text vs
+  JSON. Triggered by: any CLI output shape change.
+
+### Series-level
+
+- [ ] **Frontmatter linting.** Once published to Starlight, frontmatter
+  consistency matters (title, description, sidebar.order). Add a tiny
+  validator script (probably in `tools/`) to keep them honest.
+- [ ] **Publish to the Starlight site.** Today the architecture docs
+  live in `documents/architecture/`. Eventually they'll mount in the
+  Starlight site under `/architecture/`. Astro frontmatter is already
+  Starlight-compatible; the publish step is mostly a config change in
+  `packages/docs-site/`.
+- [ ] **Cross-link with ADRs.** Every architecture doc should mention
+  the ADRs that decided the relevant trade-offs (where applicable), so
+  the *why* sits next to the *what*.
+
+---
+
+## Companion systems
+
+The architecture docs are one of three persistent docs systems in the
+repository:
+
+| System                 | Lives in                       | Lifecycle                                                  |
+|------------------------|--------------------------------|------------------------------------------------------------|
+| **Architecture docs**  | `documents/architecture/`      | Slow-moving settled conventions. Updated when a refactor changes the convention. |
+| **Doc-NNN journals**   | `backlog/docs/`                | Living rough-edges + open question logs. Refreshed often.  |
+| **ADRs**               | `adr/`                         | Frozen-at-decision-time, status evolves (Accepted/Superseded). |
+
+Each has its own role. Don't duplicate content across them — link
+instead. See [conventions §7](./conventions.md#7-documentation-lives-in-three-places-not-one).
+
+User-facing documentation (the Starlight site under `docs/`) is a
+separate audience — install guides, troubleshooting, config reference.
+Don't mix architecture (for contributors) with user-facing (for users).
