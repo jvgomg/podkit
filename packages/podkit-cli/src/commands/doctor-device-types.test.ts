@@ -255,6 +255,15 @@ function makeFakeCore(opts: {
     IpodDatabase: { open: async () => fakeIpod },
     getDiagnosticCheck: (id: string) => registry.find((c) => c.id === id),
     getDiagnosticCheckIds: () => registry.map((c) => c.id),
+    // Unified --repair ID dispatch surface. The fake core treats every
+    // registered check as 1:1 — tests that exercise unified IDs do so
+    // through the real core (e.g. doctor-flag-matrix.test.ts shapes its
+    // own fixtures); here we just mirror the function shape so the CLI
+    // doesn't NPE on the imports.
+    PUBLIC_REPAIR_IDS: registry.map((c) => c.id),
+    resolvePublicRepairId: (publicId: string) => publicId,
+    getRepairCheck: (id: string) => registry.find((c) => c.id === id),
+    getRepairCheckForValidation: (id: string) => registry.find((c) => c.id === id),
     runDiagnostics: async (input: {
       scopes?: ReadonlyArray<'system' | 'device-readiness' | 'database-health'>;
       mountPoint: string;
