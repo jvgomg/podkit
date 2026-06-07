@@ -466,7 +466,17 @@ export async function genericSyncCollection<TSource, TDevice>(
   }
 
   const storage = getStorageInfo(devicePath, statfsSync);
-  const hasEnoughSpace = storage ? presenter.willFit(plan, storage.free, core) : true;
+  // Free-space accounting (TASK-398 §5): expand the available envelope by
+  // the bytes the pre-sync sweep estimates it will free. We add to the
+  // *available* side rather than subtracting from `plan.estimatedSize` —
+  // subtracting would suppress a real space warning if the sweep
+  // partially fails. The estimate is generous by design; the executor's
+  // transfer phase still surfaces ENOSPC if actual freed bytes fall
+  // short. Coordinate with TASK-378 (free-space probe rewrite) if the
+  // accounting model evolves.
+  const debrisFreedEstimate = plan.preliminaries?.debrisCleanup?.totalBytes ?? 0;
+  const effectiveFreeSpace = (storage?.free ?? 0) + debrisFreedEstimate;
+  const hasEnoughSpace = storage ? presenter.willFit(plan, effectiveFreeSpace, core) : true;
 
   // 6b. Check for unmanaged file collisions (mass-storage only)
   if (typeof ipod.checkAddCollisions === 'function' && presenter.getCollisionCheckInputs) {
