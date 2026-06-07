@@ -260,6 +260,13 @@ function makeFakeCore(opts: FakeCoreOptions = {}): unknown {
     IpodDeviceAdapter: FakeIpodDeviceAdapter,
     getDiagnosticCheck: (id: string) => registry.find((c) => c.id === id),
     getDiagnosticCheckIds: () => checkIds,
+    // Dispatch surface used by the unified `--repair orphan-files` /
+    // `--repair debris-files` IDs. The fake core treats every registered
+    // check as 1:1 — tests register a check at the exact ID they pass.
+    PUBLIC_REPAIR_IDS: checkIds,
+    resolvePublicRepairId: (publicId: string) => publicId,
+    getRepairCheck: (id: string) => registry.find((c) => c.id === id),
+    getRepairCheckForValidation: (id: string) => registry.find((c) => c.id === id),
     runDiagnostics: async (input: {
       scopes?: ReadonlyArray<'system' | 'device-readiness' | 'database-health'>;
       mountPoint: string;

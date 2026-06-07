@@ -29,8 +29,9 @@ describe('doctor --repair .choices()', () => {
     expect(repairOption.argChoices).toEqual([
       'artwork-rebuild',
       'artwork-reset',
+      'debris-files',
+      'debris-transcode-tmp',
       'orphan-files',
-      'orphan-files-mass-storage',
       'sysinfo-consistency',
       'sysinfo-extended',
       'sysinfo-modelnum-mismatch',

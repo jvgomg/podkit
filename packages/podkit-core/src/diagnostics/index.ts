@@ -49,6 +49,14 @@ export type {
   DiagnosticReport,
 } from './types.js';
 
+// Public --repair ID dispatch
+export {
+  PUBLIC_REPAIR_IDS,
+  resolvePublicRepairId,
+  getRepairCheck,
+  getRepairCheckForValidation,
+} from './repair-dispatch.js';
+
 // ── Registry ────────────────────────────────────────────────────────────────
 
 /** All registered diagnostic checks */

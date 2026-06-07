@@ -283,10 +283,14 @@ export const doctorCommand = new Command('doctor')
     // Note: this list must be kept in sync with diagnostic checks registered
     // in packages/podkit-core/src/diagnostics/index.ts (getDiagnosticCheckIds)
     new Option('--repair <check-id>', 'repair a specific check by ID').choices([
+      // Keep this list in lockstep with PUBLIC_REPAIR_IDS in
+      // packages/podkit-core/src/diagnostics/repair-dispatch.ts. A test there
+      // pins the canonical set.
       'artwork-rebuild',
       'artwork-reset',
+      'debris-files',
+      'debris-transcode-tmp',
       'orphan-files',
-      'orphan-files-mass-storage',
       'sysinfo-consistency',
       'sysinfo-extended',
       'sysinfo-modelnum-mismatch',
@@ -367,15 +371,18 @@ export async function runDoctorAction(
   if (options.repair) {
     // Look up the check
     const core = await loadCoreOrFail(deps, DoctorErrorCodes.CORE_LOAD_FAILED);
-    const { getDiagnosticCheck, getDiagnosticCheckIds } = core;
+    const { getRepairCheckForValidation, getRepairCheck, PUBLIC_REPAIR_IDS } = core;
 
-    const check = getDiagnosticCheck(options.repair);
+    // Use a device-agnostic variant for pre-device validation. For unified
+    // IDs (orphan-files, debris-files) the iPod variant is the safe early
+    // proxy — both variants share scope + requirements. After device
+    // resolution we look up the device-specific variant via getRepairCheck.
+    let check = getRepairCheckForValidation(options.repair);
     if (!check) {
-      const available = getDiagnosticCheckIds();
       throw new CliError({
-        message: `Unknown check ID: "${options.repair}". Available checks: ${available.join(', ')}`,
+        message: `Unknown check ID: "${options.repair}". Available checks: ${[...PUBLIC_REPAIR_IDS].join(', ')}`,
         code: DoctorErrorCodes.UNKNOWN_CHECK,
-        details: { checkId: options.repair, available },
+        details: { checkId: options.repair, available: [...PUBLIC_REPAIR_IDS] },
       });
     }
 
@@ -427,6 +434,26 @@ export async function runDoctorAction(
 
     const isMassStorage =
       resolved.deviceConfig?.type !== undefined && resolved.deviceConfig.type !== 'ipod';
+
+    // Re-resolve the check now that we know the device type. For unified
+    // public IDs this swaps the iPod-variant `check` we used for early
+    // validation with the actual device-specific variant. For non-unified
+    // IDs it's a no-op (same check).
+    const deviceTypeForDispatch: 'ipod' | 'mass-storage' = isMassStorage ? 'mass-storage' : 'ipod';
+    const resolvedCheck = getRepairCheck(options.repair, deviceTypeForDispatch);
+    if (!resolvedCheck) {
+      // Should not happen — the early validation would have caught an
+      // unknown public ID. But if a unified ID has no implementation for
+      // this device type (e.g. a future ID with iPod-only support), we
+      // need to fail explicitly.
+      throw new CliError({
+        message: `Repair "${options.repair}" is not available for ${isMassStorage ? 'mass-storage' : 'iPod'} devices.`,
+        code: DoctorErrorCodes.INCOMPATIBLE_DEVICE_TYPE,
+        details: { checkId: options.repair, deviceType: deviceTypeForDispatch },
+      });
+    }
+    check = resolvedCheck;
+
     const applicableTypes = check.applicableTo ?? ['ipod'];
     if (isMassStorage) {
       if (!applicableTypes.includes('mass-storage')) {
