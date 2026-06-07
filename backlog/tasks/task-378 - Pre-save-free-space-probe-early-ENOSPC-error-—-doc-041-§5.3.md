@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-06-03 09:08'
-updated_date: '2026-06-06 16:57'
+updated_date: '2026-06-07 12:18'
 labels:
   - enhancement
   - save-transaction
@@ -14,6 +14,8 @@ labels:
   - reliability
 dependencies:
   - TASK-142
+  - TASK-397
+  - TASK-398
 references:
   - packages/podkit-core/src/device/
   - backlog/docs/doc-041 - Save-Transaction-Design-and-State-of-Play.md

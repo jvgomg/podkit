@@ -4,6 +4,7 @@ title: 'podkit doctor: detect + clean orphan sidecar image files'
 status: To Do
 assignee: []
 created_date: '2026-06-03 08:47'
+updated_date: '2026-06-07 12:18'
 labels:
   - enhancement
   - doctor
@@ -12,6 +13,7 @@ labels:
   - mass-storage
 dependencies:
   - TASK-370
+  - TASK-397
 references:
   - packages/podkit-core/src/diagnostics/
   - packages/podkit-core/src/artwork/repair.ts
