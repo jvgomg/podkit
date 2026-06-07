@@ -20,6 +20,7 @@ import {
   generateMiniOggVorbis,
   requireFFmpeg,
 } from '@podkit/test-fixtures';
+import { PODKIT_TEMP_SUFFIX } from '../utils/atomic-fs.js';
 import { TagLibTagWriter, type TagFields } from './mass-storage-tag-writer.js';
 
 requireFFmpeg();
@@ -517,6 +518,74 @@ describe('TagLibTagWriter', () => {
 
       const metadata = await mm.parseFile(filePath, { duration: true });
       expect(metadata.format.duration).toBeGreaterThan(0);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Atomic write contract — pinning the tmp + rename guarantee
+  //
+  // These tests assert that writeTags and writePicture use the atomic-write
+  // path: on success no .podkit-tmp remains; on rename failure the original
+  // file body is untouched and no .podkit-tmp leaks to disk.
+  // ---------------------------------------------------------------------------
+
+  describe('atomic write contract', () => {
+    test('writeTags: no .podkit-tmp left on success', async () => {
+      const filePath = generateFlac(tempDir, 'atomic-tags.flac');
+
+      await writer.writeTags(filePath, { comment: 'atomic-write-test' });
+
+      const files = fs.readdirSync(tempDir);
+      expect(files.some((f) => f.endsWith(PODKIT_TEMP_SUFFIX))).toBe(false);
+    });
+
+    test('writePicture: no .podkit-tmp left on success', async () => {
+      const filePath = generateOpus(tempDir, 'atomic-pic.opus');
+      const imageData = generateTestImage();
+
+      await writer.writePicture(filePath, imageData);
+
+      const files = fs.readdirSync(tempDir);
+      expect(files.some((f) => f.endsWith(PODKIT_TEMP_SUFFIX))).toBe(false);
+    });
+
+    test('writeTags: rename failure leaves original file unchanged and no .podkit-tmp', async () => {
+      const filePath = generateFlac(tempDir, 'rename-fail-tags.flac');
+      const originalBytes = fs.readFileSync(filePath);
+
+      const realRename = fs.promises.rename;
+      (fs.promises as { rename: typeof fs.promises.rename }).rename = () =>
+        Promise.reject(new Error('simulated rename failure'));
+      try {
+        await expect(writer.writeTags(filePath, { comment: 'should-not-land' })).rejects.toThrow(
+          'simulated rename failure'
+        );
+        // Original file body must be intact — the rename never ran.
+        expect(fs.readFileSync(filePath).equals(originalBytes)).toBe(true);
+        // No leaked .podkit-tmp debris.
+        expect(fs.existsSync(filePath + PODKIT_TEMP_SUFFIX)).toBe(false);
+      } finally {
+        (fs.promises as { rename: typeof fs.promises.rename }).rename = realRename;
+      }
+    });
+
+    test('writePicture: rename failure leaves original file unchanged and no .podkit-tmp', async () => {
+      const filePath = generateOpus(tempDir, 'rename-fail-pic.opus');
+      const originalBytes = fs.readFileSync(filePath);
+      const imageData = generateTestImage();
+
+      const realRename = fs.promises.rename;
+      (fs.promises as { rename: typeof fs.promises.rename }).rename = () =>
+        Promise.reject(new Error('simulated rename failure'));
+      try {
+        await expect(writer.writePicture(filePath, imageData)).rejects.toThrow(
+          'simulated rename failure'
+        );
+        expect(fs.readFileSync(filePath).equals(originalBytes)).toBe(true);
+        expect(fs.existsSync(filePath + PODKIT_TEMP_SUFFIX)).toBe(false);
+      } finally {
+        (fs.promises as { rename: typeof fs.promises.rename }).rename = realRename;
+      }
     });
   });
 });

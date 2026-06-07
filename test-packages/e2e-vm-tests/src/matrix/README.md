@@ -54,15 +54,14 @@ TASK-380 implementation notes.
    never holds a partial body, but `.podkit-tmp` debris is left behind for
    `podkit doctor` to clean. (TASK-375 covers the doctor recovery side; the
    atomic copy contract is unit-tested in `utils/atomic-fs.test.ts`.)
-2. **SIGKILL mid-TAG-write / mid-PICTURE-write → torn audio file**: tag and
-   picture writes are still **in-place** via node-taglib-sharp (no atomic
-   helper yet — `TagLibTagWriter.writeTags`/`writePicture` modify files in
-   place). A SIGKILL mid-write leaves a torn audio file — the file-copy
-   atomic contract does NOT protect this path. doc-041 §3.4 + §5.4 calls
-   this out; TASK-376 (atomic on-file writes retrofit, helper landed via
-   TASK-391) tracks the closure. Until TASK-376 lands, this is a real
-   integrity gap that the matrix cannot fence and unit tests cannot
-   substitute for.
+2. **SIGKILL mid-TAG-write / mid-PICTURE-write → `.podkit-tmp` debris**:
+   `TagLibTagWriter.writeTags` and `writePicture` now use
+   `BufferFileAbstraction` + `atomicWriteFileWithSync` (TASK-376). A SIGKILL
+   mid-write leaves either the original file or the new file — never a torn
+   file. A `.podkit-tmp` left behind by a kill between write and rename is
+   cleaned by `podkit doctor` (TASK-375). The torn-file gap tracked in
+   doc-041 §3.4 is closed. The remaining concern is the same as row 1: debris
+   cleanup by doctor (TASK-375).
 3. **SIGKILL mid-manifest-write**: process killed during the manifest's
    tmp+rename step. Either the prior manifest survives or none;
    `loadManifest` treats an absent manifest as "rebuild from filesystem

@@ -190,15 +190,20 @@ truth), but the *shape* is now uniform. See
 per-file failures. Categorization is now `instanceof`-based; the substring
 matcher is gone.
 
-### 3.4 No atomic writes for on-file mutations
+### 3.4 ~~No atomic writes for on-file mutations~~ — CLOSED (TASK-376)
 
-Tag writes, picture writes, sidecar writes (TASK-370) all open the target
-file in-place via node-taglib-sharp. A SIGKILL mid-write **can** leave a
-torn file. Symptom: tracks unreadable on the device after a crash; podkit's
-next scan would either skip them (parse error) or repair them by re-syncing
-the source.
+All three on-file mutation stages now route through
+`atomicWriteFileWithSync` (tmp + fsync + rename):
 
-The manifest IS atomic (tmp + rename). On-file mutations are not.
+- `writeSidecarAtomically` — landed earlier (TASK-391 helper).
+- `TagLibTagWriter.writeTags` — now uses `BufferFileAbstraction` +
+  `atomicWriteFileWithSync`: taglib modifies an in-memory buffer seeded
+  with the original file bytes, then the result lands atomically.
+- `TagLibTagWriter.writePicture` — same shape.
+
+A SIGKILL mid-write now leaves either the original file or the fully-written
+new file. A `.podkit-tmp` left behind by a kill-between-write-and-rename is
+cleaned by `podkit doctor` (TASK-375).
 
 ### 3.5 ~~Cleared-then-thrown vs thrown-then-cleared~~ — CLOSED (TASK-381)
 
@@ -450,20 +455,8 @@ Useful for diagnostics + the doctor flow.
 
 - **TASK-375** — `podkit doctor` orphan sidecar image detection. Reference
   §4.3 (recovery: doctor-cleans).
-- **TASK-376** — Atomic on-file writes (helper + retrofit). Reference §3.4 +
-  §7.2 + §4.2 ("Crash mid-tag-write" gap).
 - **TASK-378** — Pre-save free-space probe + early ENOSPC error. Reference §5.3.
 - **TASK-379** — Device lockfile + concurrent-sync detection. Reference §5.5 + Q2.
-- **TASK-380** — Save-failure matrix test suite (VM-hosted, capability-shape
-  axes). Reference §4.3 + §7.3. Force-function for TASK-376 via `skipBug`
-  fences on torn-file rows.
-- **TASK-391** — Promote `writeSidecarAtomically` → `utils/atomic-fs.ts`
-  generic helper (TASK-376 prep). Reference §3.4 + §7.2.
-- **TASK-392** — Eliminate O(N²) `lookupTrackRef` inside `save()` move loop.
-  Adjacent perf fix.
-- **TASK-393** — Document `save()` stage asymmetries (MoveError throw-on-first
-  vs other stages' settle-all; SidecarWriteError per-album vs per-file
-  aggregation). Depends on TASK-389. Reference §3.5.
 
 ### Future task candidates (not yet filed)
 
@@ -484,6 +477,19 @@ Useful for diagnostics + the doctor flow.
   TASK-381 (resolved as a `WarningSink` channel rather than a typed return,
   keeping the result `Promise<void>`).
 - ~~Sidecar flush `Promise.allSettled` → `runWithConcurrency` normalization for EMFILE safety~~ — closed by TASK-390.
+- ~~No atomic writes for on-file tag/picture mutations~~ — closed by TASK-376.
+  `TagLibTagWriter.writeTags` and `writePicture` now use `BufferFileAbstraction`
+  + `atomicWriteFileWithSync`. Reference §3.4.
+- ~~Promote `writeSidecarAtomically` → `utils/atomic-fs.ts` generic helper~~ —
+  closed by TASK-391 (`atomicWriteFileWithSync` now shared by sidecar +
+  tag-write + picture-write callsites).
+- ~~Save-failure matrix (VM-hosted, capability-shape axes)~~ — closed by
+  TASK-380. 23 cells GREEN; 44 skip; 0 fail. Two `[BUG] TASK-395` cells
+  document a planner-codec-comparison gap. Reference §4.3 / §7.3.
+- ~~Document `save()` stage asymmetries (MoveError throw-on-first;
+  SidecarWriteError per-album aggregation)~~ — closed by TASK-393. Reference §3.5.
+- ~~O(N²) `lookupTrackRef` inside `save()` move loop~~ — closed by TASK-392.
+  Lazy memoization at first ENOENT.
 
 ### Tests to add (not yet filed as tasks)
 

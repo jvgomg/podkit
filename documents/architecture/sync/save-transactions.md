@@ -266,13 +266,15 @@ adapter's `save()`:
      for the full rationale). Self-healing via rescan is the retry
      path; in-adapter retry is not.
 
-2. **Atomic writes for on-file mutations.** New on-file mutations
-   (tag writes, picture writes, sidecar writes, new flushes) should
-   write to `<file>.podkit-tmp` then rename over the target. A
-   SIGKILL mid-write leaves a `.podkit-tmp` behind (cleaned by
-   `podkit doctor`), never a torn target. The sidecar stage already
-   uses this pattern (`writeSidecarAtomically`); other on-file
-   mutations are being retrofitted.
+2. **Atomic writes for on-file mutations.** All on-file mutations
+   (tag writes, picture writes, sidecar writes, new flushes) must
+   write to `<file>.podkit-tmp` then rename over the target via
+   `atomicWriteFileWithSync`. A SIGKILL mid-write leaves a
+   `.podkit-tmp` behind (cleaned by `podkit doctor`), never a torn
+   target. All three existing mutation stages use this pattern:
+   `writeSidecarAtomically`, `TagLibTagWriter.writeTags`, and
+   `TagLibTagWriter.writePicture` all delegate to
+   `atomicWriteFileWithSync`.
 
 3. **Pin the failure behaviour with tests.** Each new stage should
    land with a "save-failure behaviour pinning" describe block in the
@@ -331,10 +333,6 @@ Tracked outside this document:
 - **Sidecar flush stage uses bare `Promise.allSettled`.** No
   concurrency cap. Normalize to `runWithConcurrency` for EMFILE
   safety and symmetry with the other stages — TASK-390.
-- **No atomic-write helper for on-file mutations.** Tag-write,
-  picture-write currently open the target file in-place via
-  node-taglib-sharp; only the sidecar stage uses tmp+rename. TASK-391
-  promotes the helper as prep for the retrofit (TASK-376).
 - **`lookupTrackRef` is O(N²) at save-time** for the ENOENT-vanished
   warning path. Fine for hundreds of pending moves, latent for
   thousands. TASK-392.
