@@ -5,10 +5,14 @@
  * present on disk but not tracked in the .podkit/state.json manifest.
  * These orphaned files waste storage space and can accumulate from
  * interrupted syncs, manual file manipulation, or config changes.
+ *
+ * The file-system walk + categorisation lives in
+ * `../scanners/mass-storage-walker.ts` so the orphan check, debris check,
+ * and pre-sync sweep all share one traversal.
  */
 
-import { readdir, readFile, stat, unlink, rmdir } from 'node:fs/promises';
-import { join, relative, extname, dirname } from 'node:path';
+import { readdir, readFile, unlink, rmdir } from 'node:fs/promises';
+import { join, dirname } from 'node:path';
 import type {
   DiagnosticCheck,
   CheckResult,
@@ -20,22 +24,17 @@ import type {
 import {
   PODKIT_DIR,
   MANIFEST_FILE,
-  isMediaExtension,
-  isDebrisExtension,
   type MassStorageManifest,
 } from '../../device/mass-storage-utils.js';
 import { atomicWriteFile } from '../../utils/atomic-fs.js';
-import type { ContentPaths } from '@podkit/devices-mass-storage';
+import {
+  walkMassStorageContent,
+  resolveContentDirs,
+  getFileSizes,
+  formatBytes,
+} from '../scanners/mass-storage-walker.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-/** Format bytes as a human-readable string */
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-}
 
 /**
  * Load the managed files set from the device's state.json manifest.
@@ -54,186 +53,6 @@ async function loadManagedFiles(mountPoint: string): Promise<Set<string> | undef
   } catch {
     return undefined;
   }
-}
-
-/**
- * Recursively scan a directory and categorise each file as media or
- * adapter-failure debris (weird-extension residue from aborted syncs).
- *
- * Skips dotfiles (._*, .DS_Store, etc.), the .podkit directory, and any
- * directories listed in `excludeDirs` (absolute paths). One traversal returns
- * both categories so the orphan check doesn't double-walk.
- */
-async function scanFiles(
-  dir: string,
-  excludeDirs: Set<string>
-): Promise<{ media: string[]; debris: string[] }> {
-  const media: string[] = [];
-  const debris: string[] = [];
-
-  async function walk(currentDir: string): Promise<void> {
-    let entries;
-    try {
-      entries = await readdir(currentDir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-
-    for (const entry of entries) {
-      const fullPath = join(currentDir, entry.name);
-
-      // Skip dotfiles and dot-directories
-      if (entry.name.startsWith('.')) continue;
-
-      if (entry.isDirectory()) {
-        // Skip excluded directories
-        if (excludeDirs.has(fullPath)) continue;
-        await walk(fullPath);
-      } else if (entry.isFile()) {
-        const ext = extname(entry.name);
-        if (!ext) continue;
-        if (isMediaExtension(ext)) {
-          media.push(fullPath);
-        } else if (isDebrisExtension(ext)) {
-          debris.push(fullPath);
-        }
-      }
-    }
-  }
-
-  await walk(dir);
-  return { media, debris };
-}
-
-/**
- * Get the size of each file, returning entries with path and size.
- * Files that can't be stat'd are included with size 0.
- */
-async function getFileSizes(paths: string[]): Promise<Array<{ path: string; size: number }>> {
-  const results: Array<{ path: string; size: number }> = [];
-  for (const filePath of paths) {
-    try {
-      const s = await stat(filePath);
-      results.push({ path: filePath, size: s.size });
-    } catch {
-      results.push({ path: filePath, size: 0 });
-    }
-  }
-  return results;
-}
-
-/**
- * Determine which absolute directory paths to scan based on content paths.
- * Returns deduplicated list of directories that exist on disk.
- */
-function resolveContentDirs(
-  mountPoint: string,
-  contentPaths: ContentPaths
-): { scanDirs: string[]; excludeDirs: Set<string> } {
-  const podkitDir = join(mountPoint, PODKIT_DIR);
-
-  // Collect all unique content directory absolute paths
-  const dirEntries = [
-    { key: 'musicDir', relative: contentPaths.musicDir },
-    { key: 'moviesDir', relative: contentPaths.moviesDir },
-    { key: 'tvShowsDir', relative: contentPaths.tvShowsDir },
-  ];
-
-  // Resolve to absolute paths; empty string = device root
-  const resolved = dirEntries.map((d) => ({
-    ...d,
-    absolute: d.relative ? join(mountPoint, d.relative) : mountPoint,
-  }));
-
-  // Deduplicate and find the minimal set of directories to scan
-  // (if one directory is a parent of another, only scan the parent)
-  const uniqueDirs = new Map<string, string>();
-  for (const entry of resolved) {
-    uniqueDirs.set(entry.absolute, entry.key);
-  }
-
-  const scanDirs: string[] = [];
-  const allAbsolute = [...uniqueDirs.keys()].sort();
-
-  for (const dir of allAbsolute) {
-    // Skip if this directory is already covered by a parent in scanDirs
-    const alreadyCovered = scanDirs.some(
-      (parent) => dir.startsWith(parent + '/') || dir === parent
-    );
-    if (!alreadyCovered) {
-      scanDirs.push(dir);
-    }
-  }
-
-  // Build exclude set: always exclude .podkit, and exclude content dirs
-  // that are siblings when scanning from a parent
-  const excludeDirs = new Set<string>();
-  excludeDirs.add(podkitDir);
-
-  return { scanDirs, excludeDirs };
-}
-
-/**
- * Find orphan files, adapter-failure debris, and manifest entries with no
- * backing file. Scans content directories once and joins with the manifest's
- * managed-files set both ways:
- *   - Disk-side: media files not in the manifest → orphans
- *   - Disk-side: weird-extension residue → debris
- *   - Manifest-side: tracked paths with no file on disk → missingTrackedFiles
- *     (typically caused by user-deleted files; the
- *     copyTrackFile-failure-before-save pathway was closed by TASK-364)
- */
-async function findIssues(
-  mountPoint: string,
-  contentPaths: ContentPaths,
-  managedFiles: Set<string>
-): Promise<{
-  orphanPaths: string[];
-  debrisPaths: string[];
-  missingTrackedFiles: string[];
-  totalFiles: number;
-}> {
-  const { scanDirs, excludeDirs } = resolveContentDirs(mountPoint, contentPaths);
-
-  const allMedia: string[] = [];
-  const allDebris: string[] = [];
-  for (const dir of scanDirs) {
-    const { media, debris } = await scanFiles(dir, excludeDirs);
-    allMedia.push(...media);
-    allDebris.push(...debris);
-  }
-
-  // Deduplicate in case of overlapping scans
-  const uniqueMedia = [...new Set(allMedia)];
-  const uniqueDebris = [...new Set(allDebris)];
-
-  const orphanPaths = uniqueMedia.filter((f) => {
-    // Normalize to NFC — macOS filesystems may return NFD from readdir
-    const relativePath = relative(mountPoint, f).normalize('NFC');
-    return !managedFiles.has(relativePath);
-  });
-
-  // Symmetric pass: manifest entries with no file on disk. stat() per entry
-  // is fine for typical libraries (one syscall per managed file, parallel via
-  // Promise.all).
-  const missingChecks = await Promise.all(
-    [...managedFiles].map(async (rel) => {
-      try {
-        await stat(join(mountPoint, rel));
-        return null;
-      } catch {
-        return rel;
-      }
-    })
-  );
-  const missingTrackedFiles = missingChecks.filter((r): r is string => r !== null);
-
-  return {
-    orphanPaths,
-    debrisPaths: uniqueDebris,
-    missingTrackedFiles,
-    totalFiles: uniqueMedia.length,
-  };
 }
 
 /**
@@ -279,11 +98,12 @@ export const orphanFilesMassStorageCheck: DiagnosticCheck = {
       };
     }
 
-    const { orphanPaths, debrisPaths, missingTrackedFiles, totalFiles } = await findIssues(
-      ctx.mountPoint,
-      ctx.contentPaths,
-      managedFiles
-    );
+    const {
+      orphans: orphanPaths,
+      debris: debrisPaths,
+      missingTrackedFiles,
+      totalFiles,
+    } = await walkMassStorageContent(ctx.mountPoint, ctx.contentPaths, managedFiles);
 
     if (orphanPaths.length === 0 && debrisPaths.length === 0 && missingTrackedFiles.length === 0) {
       return {
@@ -356,11 +176,11 @@ export const orphanFilesMassStorageCheck: DiagnosticCheck = {
         return { success: false, summary: 'No state manifest found' };
       }
 
-      const { orphanPaths, debrisPaths, missingTrackedFiles } = await findIssues(
-        ctx.mountPoint,
-        ctx.contentPaths,
-        managedFiles
-      );
+      const {
+        orphans: orphanPaths,
+        debris: debrisPaths,
+        missingTrackedFiles,
+      } = await walkMassStorageContent(ctx.mountPoint, ctx.contentPaths, managedFiles);
       const orphans = await getFileSizes(orphanPaths);
       const debris = await getFileSizes(debrisPaths);
       const deletables = [...orphans, ...debris];
