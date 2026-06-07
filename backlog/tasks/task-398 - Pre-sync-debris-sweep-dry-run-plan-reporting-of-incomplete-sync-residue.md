@@ -1,10 +1,10 @@
 ---
 id: TASK-398
 title: Pre-sync debris sweep + dry-run plan-reporting of incomplete-sync residue
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-06-07 12:17'
-updated_date: '2026-06-07 14:25'
+updated_date: '2026-06-07 16:09'
 labels:
   - enhancement
   - sync-engine
@@ -104,15 +104,15 @@ Depends on TASK-397 (the debris-only scanner foundation). Until that lands, call
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 `SyncPlan` carries a typed `debrisCleanup: { paths: string[], totalBytes: number }` (or equivalent) populated by the pre-sync scan
-- [ ] #2 Dry-run text output renders cleanup as a planned preliminary before track ops (clearly labeled as 'from a previous interrupted sync')
-- [ ] #3 Dry-run JSON output exposes the cleanup as `plan.preliminaries[]` (or similar) — NOT inside `operations[]`
-- [ ] #4 Real-run executes the cleanup at sync start; logs a single line with cleaned count + bytes; cleanup failure becomes a Warning (non-fatal)
-- [ ] #5 Free-space pre-check (planner) accounts for bytes that will be freed by debris cleanup
-- [ ] #6 Coverage: mass-storage device dirs, iPod `iPod_Control/Music/F**`, and transcode-output dirs (`pipeline.ts:1590,1696`) all swept
-- [ ] #7 Reuses TASK-397's debris scanner; no duplicate FS walk
-- [ ] #8 Tests pin: dry-run output shape (both modes), real-run cleanup, cleanup-failure-is-warning, SIGKILL fixture round-trip, transcode-debris cleanup
-- [ ] #9 save-transactions.md §6 updated: pre-sync sweep is part of the self-heal model, doctor remains the backstop
+- [x] #1 `SyncPlan` carries a typed `debrisCleanup: { paths: string[], totalBytes: number }` (or equivalent) populated by the pre-sync scan
+- [x] #2 Dry-run text output renders cleanup as a planned preliminary before track ops (clearly labeled as 'from a previous interrupted sync')
+- [x] #3 Dry-run JSON output exposes the cleanup as `plan.preliminaries[]` (or similar) — NOT inside `operations[]`
+- [x] #4 Real-run executes the cleanup at sync start; logs a single line with cleaned count + bytes; cleanup failure becomes a Warning (non-fatal)
+- [x] #5 Free-space pre-check (planner) accounts for bytes that will be freed by debris cleanup
+- [x] #6 Coverage: mass-storage device dirs, iPod `iPod_Control/Music/F**`, and transcode-output dirs (`pipeline.ts:1590,1696`) all swept
+- [x] #7 Reuses TASK-397's debris scanner; no duplicate FS walk
+- [x] #8 Tests pin: dry-run output shape (both modes), real-run cleanup, cleanup-failure-is-warning, SIGKILL fixture round-trip, transcode-debris cleanup
+- [x] #9 save-transactions.md §6 updated: pre-sync sweep is part of the self-heal model, doctor remains the backstop
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -162,3 +162,83 @@ Beyond device debris:
 - Doctor remains backstop — explicitly stated in save-transactions.md §6 sibling subsection.
 - TASK-399 (doctor docs drift) lands first as separate PR; this task's doc updates layer on top.
 <!-- SECTION:PLAN:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Pre-sync debris sweep landed end-to-end. Every `podkit sync` now reaps `.podkit-tmp` residue + abandoned `os.tmpdir()/podkit-transcode-*` directories before track operations run; doctor remains the backstop for devices that aren't synced.
+
+## What landed
+
+**Type surface** (`packages/podkit-core/src/sync/engine/types.ts`):
+- `PlanPreliminaries` — extensible device-scoped pre-flight envelope with `debrisCleanup` + `phantomPrune`.
+- `SyncPlan.preliminaries?: PlanPreliminaries` — optional; only the FIRST plan executed against a device carries it.
+- New `'debris-cleanup-failure'` Warning type for non-fatal pre-flight failures.
+
+**Sweep + pre-flight** (`packages/podkit-core/src/sync/engine/pre-sync-sweep.ts`):
+- `runPreSyncSweep(input)` aggregates the three TASK-397 scanners (mass-storage walker, iPod walker, transcode-tmp walker) into one `PlanPreliminaries`. Tolerant of every scanner failure; the next sync retries.
+- `runPreliminariesPreFlight(preliminaries, options)` consumes the result during executor pre-flight. `rm({ recursive: true, force: true })` handles both file debris (`.podkit-tmp` siblings) AND directory debris (transcode-tmp dirs) with one code path. Per-path failures become Warnings; the loop continues. Respects abort signals.
+
+**Orchestrator wiring** (`packages/podkit-cli/src/commands/sync.ts`):
+- Runs `runPreSyncSweep` ONCE per device sync before the music/video loops.
+- Prints a single preamble line (text mode): `Cleaning N incomplete-write files (X MB) from a previous interrupted sync` (or `Would clean...` in dry-run).
+- `preliminariesConsumed` flag ensures only the FIRST collection's `genericSyncCollection` call receives the result.
+
+**Presenter layer**:
+- `genericSyncCollection` gained a `preliminaries` param threaded through to `plan.preliminaries`.
+- Music + video presenters serialize `plan.preliminaries` into the dry-run JSON (`plan.preliminaries`, per task spec §3).
+- `willFit` adds `debrisFreedEstimate` to the available envelope (not subtracted from `estimatedSize`) — honest accounting per opus critique.
+
+**openDevice** returns the resolved `contentPaths` alongside the adapter so the sweep can walk mass-storage content paths without duplicating the resolution logic.
+
+**Executors**:
+- `MusicPipeline.execute()` runs the pre-flight before the dry-run/real branches.
+- Generic `SyncExecutor.execute()` (used by video) does the same.
+
+## Architecture docs
+
+- **NEW** `documents/architecture/sync/planning.md` — long-overdue per the README migration plan. Eight-section template covering the SyncDiffer → SyncPlanner pipeline plus the device-scoped `PlanPreliminaries` pre-flight that landed here. README marked ✅.
+- `sync/save-transactions.md` §3 grew a new "Pre-sync sweep" subsection naming the sweep as co-owner of the rescan-recovery responsibility (doctor stays the backstop).
+- `sync/error-handling.md` §3 names `runPreliminariesPreFlight` as the new `'debris-cleanup-failure'` emitter + phantom-manifest advisory carrier.
+
+## User-facing docs
+
+- `docs/user-guide/devices/doctor.md` "Cleaning up Debris Files" section now leads with "you usually don't need to run this" — the sweep makes it automatic.
+- `docs/troubleshooting/common-issues.md` points users at the automatic sweep first, doctor second.
+
+## Tests
+
+- 4692/4692 podkit-core + podkit-cli tests green (5 skip).
+- 18 pre-sync-sweep unit tests cover scanner failure tolerance, dry-run no-op, abort signal mid-loop, file-vs-directory `rm` handling, phantom-prune advisory emission, and the throwing-loadManagedFiles fallback.
+- New flag-matrix AC #15b pins `debris-transcode-tmp` through the system-repair fast-path (lands in TASK-397, exercised here).
+
+## Sonnet review (folded in)
+
+Final Phase 2 sonnet review found 0 blockers, 2 fix-soon items both addressed in commit `a86e02d1`:
+1. `runPreSyncSweep` now wraps `loadManagedFiles` in its own try/catch (docstring promised tolerance; implementation diverged).
+2. `planning.md` §6 documents the partial-sweep ENOSPC degradation honestly — the failed-rm-during-pre-flight path falls through to per-track write errors during transfer rather than a single ENOSPC summary. TASK-378's free-space probe rewrite is the eventual fix.
+
+Three nice-to-have items not addressed (no behaviour impact):
+- `perPathEstimate` even-allocation accuracy (informational log line only).
+- `tmpDirOverride`/`sessionStartMsOverride` could be tagged `@internal` (test-only).
+- Mid-loop partial-abort test (existing pre-abort test covers the contract).
+
+## Carried forward / deferred
+
+- **TASK-400** filed: e2e-vm SIGKILL round-trip fixture. Unit coverage exercises every code path; the VM fixture is the end-to-end completeness layer. Deferred for scope.
+- **TASK-401** filed: auto-prune phantom manifest entries from the pre-sync sweep. Currently the pre-flight emits an advisory pointing at `--repair orphan-files` because the manifest rewrite crosses the adapter contract boundary.
+
+## Commit log (9)
+
+c0ff37dd Sonnet-review nice-to-haves from Phase 1 (TASK-397)
+4164e8cf `SyncPlan.preliminaries` + `'debris-cleanup-failure'` Warning type
+972c08f4 Pre-sync sweep module (`runPreSyncSweep`)
+b3fffb5b Executor pre-flight (`runPreliminariesPreFlight`)
+158c1303 Orchestrator + presenter wiring
+4e3830e1 Free-space envelope math fix
+471f0299 Architecture docs (new `sync/planning.md` + updates)
+9176755e User-facing doc updates
+a86e02d1 Sonnet review follow-ups
+
+Branch: `phase2-task-398` → merged to `main`.
+<!-- SECTION:FINAL_SUMMARY:END -->
