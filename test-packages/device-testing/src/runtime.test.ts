@@ -10,7 +10,7 @@ describe('@podkit/device-testing scaffold', () => {
 
   it('exposes a populated systemStates Map', () => {
     expect(systemStates).toBeInstanceOf(Map);
-    expect(systemStates.size).toBe(6);
+    expect(systemStates.size).toBe(7);
   });
 
   it('auto-registers the local-linux runner', () => {

@@ -119,7 +119,8 @@ provision:
         ca-certificates \
         kmod \
         dosfstools \
-        mtools
+        mtools \
+        e2fsprogs
 
       echo "=== Configuring kernel modules to load at boot ==="
       # USB gadget stack: dummy_hcd provides a virtual USB host controller in

@@ -10,7 +10,8 @@
 #
 # Contract:
 #   - Single positional arg: a SystemState id (one of `healthy`, `no-ffmpeg`,
-#     `no-libgpod`, `no-udev`, `no-sg-perms`, `corrupt-configfs`).
+#     `no-libgpod`, `no-udev`, `no-sg-perms`, `corrupt-configfs`,
+#     `device-mount-near-full`).
 #   - Exits 0 on success; non-zero on any failure.
 #   - Idempotent: running twice with the same arg leaves the VM in the same
 #     end state and does not error on already-applied mutations (e.g. removing
@@ -226,6 +227,12 @@ apply_healthy() {
   #    "healthy" VM even with /dev/sg* available. Production-equivalent
   #    repair, idempotent (doctor skips if the rule is already current).
   ensure_podkit_udev_rule
+
+  # 7. device-mount-near-full loopback — torn down. The state's apply
+  #    function leaves a loopback mount + filled image behind; a
+  #    transition back to `healthy` must remove them or subsequent runs
+  #    will inherit a near-full mount that doctor doesn't expect.
+  tear_down_near_full
 }
 
 ensure_podkit_udev_rule() {
@@ -318,6 +325,91 @@ apply_no_sg_perms() {
   remove_sg_perms_rule
 }
 
+# ---------------------------------------------------------------------------
+# device-mount-near-full
+#
+# Provisions a small ext4 loopback filesystem at a known mountpoint and fills
+# it so the next sizeable write fails with ENOSPC. Used by the save-failure
+# matrix to exercise the ENOSPC code path against a real filesystem without
+# disturbing the rest of the VM.
+#
+# Layout:
+#   $NEAR_FULL_IMG  — 5 MiB ext4 image file
+#   $NEAR_FULL_MNT  — mountpoint
+#   $NEAR_FULL_MNT/_fill — pad file written via dd to occupy the free space
+#
+# 5 MiB leaves room for the manifest + a couple of tiny metadata files but
+# fails the first flac copy (the audio-multi-format fixtures used by the
+# matrix are >50 KiB each).
+# ---------------------------------------------------------------------------
+
+NEAR_FULL_IMG=/var/lib/podkit-device-harness/podkit-device-fs.img
+NEAR_FULL_MNT=/mnt/podkit-device-fs
+# Padding leaves ~50 KiB free — enough for the ext4 superblock + journal +
+# a manifest, but not enough for a flac source body.
+NEAR_FULL_RESERVE_KIB=50
+
+ensure_near_full_tooling() {
+  # mkfs.ext4 ships in e2fsprogs; losetup in util-linux. Both are in the
+  # Debian 12 cloud image base, but the device-harness yaml does not
+  # explicitly pin e2fsprogs — install if absent.
+  if ! command -v mkfs.ext4 >/dev/null 2>&1; then
+    log "installing e2fsprogs (mkfs.ext4 missing)"
+    apt_quiet update
+    apt_quiet install --no-install-recommends e2fsprogs
+  fi
+}
+
+tear_down_near_full() {
+  # Idempotent cleanup. Best-effort umount + image removal so transitions
+  # back to `healthy` leave the VM in a known-clean state.
+  if mountpoint -q "$NEAR_FULL_MNT" 2>/dev/null; then
+    umount -l "$NEAR_FULL_MNT" || true
+    log "unmounted: $NEAR_FULL_MNT"
+  fi
+  if [ -f "$NEAR_FULL_IMG" ]; then
+    rm -f "$NEAR_FULL_IMG"
+    log "removed: $NEAR_FULL_IMG"
+  fi
+}
+
+apply_device_mount_near_full() {
+  ensure_near_full_tooling
+
+  # Always tear down first — idempotent re-application starts from a clean
+  # image so the fill calculation is deterministic.
+  tear_down_near_full
+
+  mkdir -p "$(dirname "$NEAR_FULL_IMG")"
+  mkdir -p "$NEAR_FULL_MNT"
+
+  # 5 MiB image, ext4, mounted at $NEAR_FULL_MNT.
+  truncate -s 5M "$NEAR_FULL_IMG"
+  mkfs.ext4 -F -q "$NEAR_FULL_IMG"
+  mount -o loop "$NEAR_FULL_IMG" "$NEAR_FULL_MNT"
+  log "mounted near-full loopback: $NEAR_FULL_IMG → $NEAR_FULL_MNT"
+
+  # World-writable so the test user (uid 501 / james) can write through
+  # podkit without sudo. The mount itself was created by root.
+  chmod 0777 "$NEAR_FULL_MNT"
+
+  # Compute available KiB and write a fill file that leaves
+  # $NEAR_FULL_RESERVE_KIB free. The `df --output=avail` field is in 1K
+  # blocks; subtract the reserve, never go below 0.
+  avail_kib=$(df --output=avail "$NEAR_FULL_MNT" | tail -n1 | tr -d ' ')
+  fill_kib=$(( avail_kib - NEAR_FULL_RESERVE_KIB ))
+  if [ "$fill_kib" -lt 1 ]; then
+    log "WARN: computed fill_kib=$fill_kib (avail=$avail_kib, reserve=$NEAR_FULL_RESERVE_KIB) — skipping fill"
+  else
+    dd if=/dev/zero of="$NEAR_FULL_MNT/_fill" bs=1K count="$fill_kib" 2>/dev/null || true
+    log "filled loopback: $fill_kib KiB written, ~$NEAR_FULL_RESERVE_KIB KiB free"
+  fi
+
+  # Final state echo for diagnostics in CI logs.
+  df_line=$(df --output=avail,used,size "$NEAR_FULL_MNT" | tail -n1)
+  log "near-full df (avail/used/size KiB): $df_line"
+}
+
 apply_corrupt_configfs() {
   # Unmount /sys/kernel/config. mountpoint -q returns 0 only when the path is
   # actively a mount point; once it is gone, the gadget setup path that
@@ -339,7 +431,7 @@ apply_corrupt_configfs() {
 main() {
   if [ "$#" -ne 1 ]; then
     echo "usage: apply-state.sh <state-id>" >&2
-    echo "  state-id ∈ { healthy, no-ffmpeg, no-libgpod, no-udev, no-sg-perms, corrupt-configfs }" >&2
+    echo "  state-id ∈ { healthy, no-ffmpeg, no-libgpod, no-udev, no-sg-perms, corrupt-configfs, device-mount-near-full }" >&2
     exit 2
   fi
 
@@ -365,9 +457,12 @@ main() {
     corrupt-configfs)
       apply_corrupt_configfs
       ;;
+    device-mount-near-full)
+      apply_device_mount_near_full
+      ;;
     *)
       echo "apply-state.sh: unknown state id '$state_id'" >&2
-      echo "  valid ids: healthy, no-ffmpeg, no-libgpod, no-udev, no-sg-perms, corrupt-configfs" >&2
+      echo "  valid ids: healthy, no-ffmpeg, no-libgpod, no-udev, no-sg-perms, corrupt-configfs, device-mount-near-full" >&2
       exit 2
       ;;
   esac

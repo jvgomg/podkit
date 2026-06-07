@@ -74,6 +74,8 @@ export {
   noUdev,
   noSgPerms,
   corruptConfigfs,
+  deviceMountNearFull,
+  DEVICE_MOUNT_NEAR_FULL_PATH,
 } from './system-states/index.js';
 
 // Runtime

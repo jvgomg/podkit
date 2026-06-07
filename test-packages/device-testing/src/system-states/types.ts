@@ -23,7 +23,8 @@ export type SystemStateId =
   | 'no-libgpod'
   | 'no-udev'
   | 'no-sg-perms'
-  | 'corrupt-configfs';
+  | 'corrupt-configfs'
+  | 'device-mount-near-full';
 
 /**
  * Stable, registry-keyed fixture describing one host-environment state.

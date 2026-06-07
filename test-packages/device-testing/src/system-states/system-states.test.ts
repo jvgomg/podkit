@@ -29,15 +29,23 @@ const EXPECTED_IDS = [
   'no-udev',
   'no-sg-perms',
   'corrupt-configfs',
+  'device-mount-near-full',
 ] as const;
 
-const FAILING_IDS = EXPECTED_IDS.filter((id) => id !== 'healthy');
+// States whose `expectedDoctorSystemOutput.overallStatus` is anything other
+// than `'healthy'`. `device-mount-near-full` provisions a per-test loopback
+// mount that the system-scope doctor cannot see, so its expected doctor
+// output mirrors `healthy` exactly — exclude from the failing-states
+// invariants.
+const FAILING_IDS = EXPECTED_IDS.filter(
+  (id) => id !== 'healthy' && id !== 'device-mount-near-full'
+);
 
 // ── Registry size + key presence ─────────────────────────────────────────────
 
 describe('systemStates registry', () => {
-  it('contains exactly 6 states', () => {
-    expect(systemStates.size).toBe(6);
+  it('contains exactly 7 states', () => {
+    expect(systemStates.size).toBe(7);
   });
 
   for (const id of EXPECTED_IDS) {
@@ -147,5 +155,17 @@ describe('named failure checks', () => {
     const state = systemStates.get('corrupt-configfs');
     const check = state?.expectedDoctorSystemOutput.checks.find((c) => c.id === 'configfs-mount');
     expect(check?.status).toBe('fail');
+  });
+
+  it('device-mount-near-full mirrors healthy at the doctor system scope', () => {
+    // The near-full loopback is a per-test artefact, invisible to system-
+    // scope doctor checks. Expected doctor output must equal healthy's
+    // exactly so the smoke + golden invariants continue to hold.
+    const healthyState = systemStates.get('healthy');
+    const nearFullState = systemStates.get('device-mount-near-full');
+    expect(nearFullState?.expectedDoctorSystemOutput).toEqual(
+      healthyState!.expectedDoctorSystemOutput
+    );
+    expect(nearFullState?.expectedExitCode).toBe(0);
   });
 });

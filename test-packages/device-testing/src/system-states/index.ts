@@ -23,6 +23,7 @@ export { noLibgpod } from './no-libgpod.js';
 export { noUdev } from './no-udev.js';
 export { noSgPerms } from './no-sg-perms.js';
 export { corruptConfigfs } from './corrupt-configfs.js';
+export { deviceMountNearFull, DEVICE_MOUNT_NEAR_FULL_PATH } from './device-mount-near-full.js';
 
 import { healthy } from './healthy.js';
 import { noFfmpeg } from './no-ffmpeg.js';
@@ -30,6 +31,7 @@ import { noLibgpod } from './no-libgpod.js';
 import { noUdev } from './no-udev.js';
 import { noSgPerms } from './no-sg-perms.js';
 import { corruptConfigfs } from './corrupt-configfs.js';
+import { deviceMountNearFull } from './device-mount-near-full.js';
 
 /**
  * Registry of host-environment states, keyed by `SystemState.id`.
@@ -44,4 +46,5 @@ export const systemStates: Map<SystemStateId, SystemState> = new Map<SystemState
   ['no-udev', noUdev],
   ['no-sg-perms', noSgPerms],
   ['corrupt-configfs', corruptConfigfs],
+  ['device-mount-near-full', deviceMountNearFull],
 ]);
