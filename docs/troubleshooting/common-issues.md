@@ -205,17 +205,19 @@ podkit sync --force-transcode
 
 **Cause:** If a sync was force-quit (double Ctrl+C), crashed, or the device was disconnected mid-sync, audio files may have been copied without being registered in the database (iPod) or the `.podkit/state.json` manifest (mass-storage). These orphaned files waste storage space but don't cause corruption.
 
-**Solution:** Run `podkit doctor` to detect orphans, then run the appropriate repair for your device:
+**Solution:** Run `podkit doctor` to detect orphans, then `--repair orphan-files` to remove them. The same flag works on iPod and mass-storage devices — doctor dispatches the right walker based on the connected device:
 
 ```bash
-# iPod
+# iPod (default device)
 podkit doctor --repair orphan-files
 
 # Mass-storage (Echo Mini, Rockbox, generic DAPs)
-podkit doctor -d mydevice --repair orphan-files-mass-storage
+podkit doctor -d mydevice --repair orphan-files
 ```
 
 Add `--dry-run` to preview the file list before deleting anything.
+
+If you're cleaning up after an interrupted sync, the related `--repair debris-files` flag separately surfaces podkit's `.podkit-tmp` incomplete-write residue (no confirmation needed — it's always safe to delete by construction).
 
 A single Ctrl+C during sync triggers a graceful shutdown that saves all completed work — orphaned files only occur from force-quit, crashes, or disconnection. See [iPod Health Checks](/user-guide/devices/doctor#repairing-orphan-files) for details.
 

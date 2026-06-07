@@ -60,6 +60,8 @@ If problems are detected, doctor tells you what's wrong and how to fix it. Devic
 | **Artwork Integrity** | Corrupted artwork database — wrong album art, glitched images, artwork from other albums | Failure |
 | **Artwork Reset** | Maintenance action — clears all artwork without needing a source collection | Repair-only |
 | **Orphan Files** | Unreferenced audio/video files in `iPod_Control/Music` wasting storage space | Warning |
+| **Debris Files** | podkit's incomplete-write residue (`.podkit-tmp`) from prior interrupted syncs | Warning |
+| **Abandoned transcode scratch directories** | `podkit-transcode-*` dirs left in `os.tmpdir()` by SIGKILLed prior syncs | Warning |
 | **SysInfoExtended** | Missing device identity file required for database checksums on newer iPods | Failure (repair-only) |
 | **SysInfoExtended consistency with device** | On-disk `SysInfoExtended` doesn't match firmware-derived identity (stale after device swap or restore) | Warning |
 | **SysInfo ModelNumStr vs firmware identity** | Classic `SysInfo` lists wrong `ModelNumStr` — device misidentified by libgpod | Failure |
@@ -72,6 +74,8 @@ If problems are detected, doctor tells you what's wrong and how to fix it. Devic
 | **Video Encoder (H.264)** | Missing FFmpeg `libx264` for video transcoding | Warning |
 | **udev Rule (Linux SCSI + USB Access)** | Missing podkit udev rule granting unprivileged USB access on Linux | Warning (Linux only) |
 | **Orphan Files (Mass Storage)** | Files in content directories not tracked in `.podkit/state.json` | Warning |
+| **Debris Files (Mass Storage)** | podkit's incomplete-write residue (`.podkit-tmp`, `.Audio file`) from prior interrupted syncs | Warning |
+| **Abandoned transcode scratch directories** | `podkit-transcode-*` dirs left in `os.tmpdir()` by SIGKILLed prior syncs | Warning |
 
 ## Repairing Artwork Corruption
 
@@ -129,31 +133,46 @@ podkit eject
 
 ## Repairing Orphan Files
 
-### iPod
+Orphan files are media files on the device that aren't tracked by podkit. On an iPod they're audio/video files in `iPod_Control/Music/` that aren't referenced by the iTunesDB. On a mass-storage device they're files under the configured content directories that aren't in `.podkit/state.json`. Either way, they waste storage but don't cause other problems. They typically accumulate from interrupted syncs, manual file manipulation, or changing content paths in your config.
 
-Orphan files are audio or video files on the iPod that aren't referenced by the database. They waste storage but don't cause other problems. This typically happens after an interrupted sync (force-quit, crash, or disconnection during transfer).
+A single `--repair orphan-files` flag handles both — doctor dispatches the right walker based on the device.
 
 ```bash
-# Preview what would be deleted
+# Preview what would be deleted (no -d defaults to your primary iPod)
 podkit doctor --repair orphan-files --dry-run
 
-# Remove orphaned files
+# Remove orphan files on an iPod
 podkit doctor --repair orphan-files
+
+# Mass-storage devices need -d to identify which one
+podkit doctor -d mydevice --repair orphan-files
 ```
 
-### Mass-Storage Devices
+Files outside the content directories are always ignored — doctor only considers directories that podkit manages. The `--delete` flag during sync respects the same boundary.
 
-On mass-storage devices, orphan files are media files in the configured content directories (e.g., `Music/`, `Video/`) that aren't tracked in the `.podkit/state.json` manifest. These can accumulate from interrupted syncs, manual file manipulation, or changing content directory paths in your config.
+## Cleaning up Debris Files
+
+Debris is podkit's own incomplete-write residue (`.podkit-tmp` siblings, `.Audio file` adapter-failure leftovers) from prior interrupted syncs. Every debris file is incomplete by construction — the atomic-write helper writes to a tmp sibling first and renames on success, so anything still wearing the `.podkit-tmp` suffix means the writer never finished. Cleanup is safe-by-design — no source collection or confirmation prompt needed.
 
 ```bash
-# Preview what would be deleted
-podkit doctor -d mydevice --repair orphan-files-mass-storage --dry-run
+# Preview
+podkit doctor --repair debris-files --dry-run
 
-# Remove orphaned files
-podkit doctor -d mydevice --repair orphan-files-mass-storage
+# Clean debris on an iPod
+podkit doctor --repair debris-files
+
+# Mass-storage devices need -d
+podkit doctor -d mydevice --repair debris-files
 ```
 
-Files outside the content directories are always ignored — doctor only considers directories that podkit manages. The `--delete` flag during sync also respects this boundary: it only removes files that podkit placed on the device.
+A separate host-side check covers abandoned transcode scratch directories left under `os.tmpdir()` by SIGKILLed prior syncs:
+
+```bash
+podkit doctor --repair debris-transcode-tmp --dry-run
+podkit doctor --repair debris-transcode-tmp
+```
+
+The transcode-tmp sweep uses an mtime safety floor — only directories created before this podkit session began are eligible for cleanup, so concurrent sibling processes (a running daemon, another manual sync) are never disturbed.
 
 ## Repairing Missing SysInfoExtended
 
@@ -176,9 +195,16 @@ Every repair supports `--dry-run` to preview changes without modifying anything:
 podkit doctor --repair artwork-reset --dry-run
 podkit doctor --repair artwork-rebuild -c main --dry-run
 
-# Orphan files
+# Orphan files (one ID for both device types; -d targets mass-storage)
 podkit doctor --repair orphan-files --dry-run                    # iPod
-podkit doctor -d mydevice --repair orphan-files-mass-storage --dry-run
+podkit doctor -d mydevice --repair orphan-files --dry-run        # mass-storage
+
+# Debris files (incomplete-write residue) — same dispatch
+podkit doctor --repair debris-files --dry-run                    # iPod
+podkit doctor -d mydevice --repair debris-files --dry-run        # mass-storage
+
+# Abandoned transcode scratch dirs (host-only)
+podkit doctor --repair debris-transcode-tmp --dry-run
 
 # Identity / SysInfo
 podkit doctor --repair sysinfo-extended --dry-run

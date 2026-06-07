@@ -3,10 +3,10 @@ id: TASK-397
 title: >-
   Split mass-storage orphan check into orphan + debris (separate podkit residue
   from user content)
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-06-07 12:17'
-updated_date: '2026-06-07 14:37'
+updated_date: '2026-06-07 14:58'
 labels:
   - enhancement
   - doctor

@@ -740,6 +740,8 @@ System-scope checks (host environment) and database-health checks (per-device st
 | Artwork Integrity | Verifies ArtworkDB offsets are within `.ithmb` file bounds | `--repair artwork-rebuild -c <collection>` |
 | Artwork Reset | Clears all artwork without needing a source collection | `--repair artwork-reset` |
 | Orphan Files | Detects unreferenced files in `iPod_Control/Music` that waste storage | `--repair orphan-files` |
+| Debris Files | Detects podkit's incomplete-write residue (`.podkit-tmp`) from prior interrupted syncs | `--repair debris-files` |
+| Abandoned transcode scratch directories | Detects `podkit-transcode-*` dirs left in `os.tmpdir()` by SIGKILLed prior syncs | `--repair debris-transcode-tmp` |
 | SysInfoExtended | Reads device identity from iPod firmware via USB; required for database checksums on newer iPods | `--repair sysinfo-extended` |
 | SysInfoExtended consistency with device | Detects on-disk `SysInfoExtended` that doesn't match firmware-derived identity (stale after device swap) | `--repair sysinfo-consistency` |
 | SysInfo ModelNumStr vs firmware identity | Detects classic `SysInfo` with wrong `ModelNumStr` | `--repair sysinfo-modelnum-mismatch` |
@@ -751,7 +753,9 @@ System-scope checks (host environment) and database-health checks (per-device st
 | Codec Encoders | Probes FFmpeg encoder availability against your codec preference stack | _(informational)_ |
 | Video Encoder (H.264) | Probes FFmpeg `libx264` availability for video transcoding | _(informational)_ |
 | udev Rule (Linux SCSI + USB Access) | Detects the podkit udev rule for unprivileged USB access on Linux | `--repair udev-rule` |
-| Orphan Files (Mass Storage) | Detects files in content directories not tracked in `.podkit/state.json` | `--repair orphan-files-mass-storage` |
+| Orphan Files (Mass Storage) | Detects files in content directories not tracked in `.podkit/state.json` | `--repair orphan-files` |
+| Debris Files (Mass Storage) | Detects podkit's incomplete-write residue (`.podkit-tmp`, `.Audio file`) from prior interrupted syncs | `--repair debris-files` |
+| Abandoned transcode scratch directories | Detects `podkit-transcode-*` dirs left in `os.tmpdir()` by SIGKILLed prior syncs | `--repair debris-transcode-tmp` |
 
 See [Device Health Checks](/user-guide/devices/doctor) for a full guide to using doctor, including when to use each repair option.
 
