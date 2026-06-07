@@ -244,6 +244,32 @@ tracked outside this doc (see ADR-009 for the broader rationale).
   covers, manifest-vs-filesystem drift).
 - **Not in the save() path.** Doctor is an opt-in recovery tool, not
   an automatic post-save sweeper.
+- **Orphan vs debris split (TASK-397).** Doctor's view of "stale stuff
+  on disk" now distinguishes two categorically different concerns:
+  - **Orphans** — media files on disk that aren't in the manifest /
+    iTunesDB. May be user-placed (intentional) or pre-podkit content.
+    Repair is confirmation-gated.
+  - **Debris** — podkit's own incomplete-write residue (`.podkit-tmp`,
+    adapter-failure `.Audio file`). Always podkit-owned, always
+    incomplete by construction. Repair is safe-by-design — no prompt.
+  Both classes are produced by the same FS traversal (one walker per
+  device surface) but surfaced under separate check IDs
+  (`orphan-files`, `debris-files`) so the pre-sync sweep (TASK-398)
+  can safely auto-clean debris without ever touching user-owned
+  orphans.
+
+### Scanner registry
+
+- **Owns:** the read-only "what podkit residue is here?" survey.
+  Mirrors the `DiagnosticCheck` registry shape but answers a
+  different question — every path a scanner returns is safe to
+  delete because it represents an atomic-write tmp that never
+  completed.
+- **Consumers:** the doctor `debris-*` checks reach the same walkers
+  the scanner registry exposes (no double traversal). The pre-sync
+  sweep (TASK-398) consumes the scanner registry directly at sync
+  start, so debris cleanup happens by default — doctor is the
+  backstop, not the primary surface.
 
 ---
 
