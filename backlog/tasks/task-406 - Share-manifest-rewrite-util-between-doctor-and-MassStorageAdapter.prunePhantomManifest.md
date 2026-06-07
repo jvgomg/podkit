@@ -3,9 +3,10 @@ id: TASK-406
 title: >-
   Share manifest-rewrite util between doctor and
   MassStorageAdapter.prunePhantomManifest
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-06-07 17:57'
+updated_date: '2026-06-07 22:21'
 labels:
   - refactor
   - tech-debt
@@ -65,9 +66,24 @@ Both call sites work correctly today. The duplication is small (a few dozen line
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 New util `pruneManifestRows` in packages/podkit-core/src/device/mass-storage-manifest.ts
-- [ ] #2 MassStorageAdapter.prunePhantomManifest delegates to the util + handles in-memory managedFiles sync
-- [ ] #3 orphans-mass-storage.ts doctor repair delegates to the util
-- [ ] #4 No behaviour change for either consumer (existing tests pass unchanged)
-- [ ] #5 Direct unit tests for the util cover empty / single / multiple / missing-manifest / read-only mount / unrecognised shape
+- [x] #1 New util `pruneManifestRows` in packages/podkit-core/src/device/mass-storage-manifest.ts
+- [x] #2 MassStorageAdapter.prunePhantomManifest delegates to the util + handles in-memory managedFiles sync
+- [x] #3 orphans-mass-storage.ts doctor repair delegates to the util
+- [x] #4 No behaviour change for either consumer (existing tests pass unchanged)
+- [x] #5 Direct unit tests for the util cover empty / single / multiple / missing-manifest / read-only mount / unrecognised shape
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Extracted `pruneManifestRows(stateDir, paths)` to `packages/podkit-core/src/device/mass-storage-manifest.ts`. Both consumers now delegate:
+
+- `MassStorageAdapter.prunePhantomManifest` keeps the missing-manifest ENOENT pre-check (preserves the adapter-level "in-memory state claims managed files but manifest is gone = surface as errors" expectation) plus the post-prune in-memory `managedFiles` sync.
+- `orphans-mass-storage.ts` `--repair orphan-files` path replaces its inline rewrite block with a call to the util.
+
+No behaviour change — existing tests passed without modification. 9 new direct unit tests for the util cover the six required scenarios (empty / single / multiple / missing-manifest / read-only-mount atomic rollback / unrecognised shape) plus a few edge cases.
+
+Net: 2 new files (~290 lines util + tests), -13 lines from consumers (~20 from adapter hot path, ~10 from doctor inline block, minus +17 across both).
+
+Future-worth-noting: the adapter's `this.manifest` field could drift if anything other than `prunePhantomManifest` writes the manifest on disk without updating it. Worth a future audit.
+<!-- SECTION:FINAL_SUMMARY:END -->

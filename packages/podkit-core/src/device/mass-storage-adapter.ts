@@ -47,6 +47,7 @@ import {
   DEFAULT_CONTENT_PATHS,
   MASS_STORAGE_UNSUPPORTED_OUTPUT_CODECS,
 } from '@podkit/devices-mass-storage';
+import { pruneManifestRows } from './mass-storage-manifest.js';
 import type { ContentPaths } from '@podkit/devices-mass-storage';
 import { isVideoMediaType } from '../ipod/video.js';
 import { CODEC_METADATA } from '../transcode/codecs.js';
@@ -1519,50 +1520,47 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
       return { pruned: 0, errors: [] };
     }
 
-    const errors: Array<{ path: string; error: Error }> = [];
-    const manifestPath = path.join(this.mountPoint, PODKIT_DIR, MANIFEST_FILE);
-    const phantomSet = new Set(paths.map((p) => p.normalize('NFC')));
+    const stateDir = path.join(this.mountPoint, PODKIT_DIR);
 
+    // Check for missing manifest before delegating — the adapter treats a
+    // missing manifest as a per-path error (in-memory state claims managed
+    // files exist but there's nothing on disk to rewrite, which is an
+    // inconsistency worth surfacing). The util's ENOENT-as-no-op behaviour is
+    // appropriate for the doctor path, which has no in-memory expectations.
+    const manifestFilePath = path.join(stateDir, MANIFEST_FILE);
     try {
-      // Re-read on disk so an unrelated change (manual edit, another tool)
-      // doesn't get clobbered. The atomic write below preserves the original
-      // file if anything throws between here and rename().
-      const raw = await fs.promises.readFile(manifestPath, 'utf-8');
-      const parsed = JSON.parse(raw) as MassStorageManifest;
-      if (parsed.version !== 1 || !Array.isArray(parsed.managedFiles)) {
-        // Unrecognised shape — bail rather than overwrite a manifest we don't
-        // know how to round-trip. Surface as a single error against the first
-        // requested path so the caller still sees the failure mode.
-        const failure = new Error('Unrecognised manifest shape; refusing to rewrite');
-        for (const p of paths) {
-          errors.push({ path: p, error: failure });
-        }
-        return { pruned: 0, errors };
-      }
+      await fs.promises.access(manifestFilePath);
+    } catch {
+      const error = new Error(`Manifest file not found: ${manifestFilePath}`);
+      return { pruned: 0, errors: paths.map((p) => ({ path: p, error })) };
+    }
 
-      const before = parsed.managedFiles.length;
-      parsed.managedFiles = parsed.managedFiles.filter((p) => !phantomSet.has(p.normalize('NFC')));
-      const pruned = before - parsed.managedFiles.length;
+    const result = await pruneManifestRows(stateDir, paths);
 
-      // Only mutate on-disk + in-memory state after the rewrite succeeds —
-      // a failure here leaves the original manifest intact (atomicWriteFile
-      // cleans up its tmp file on error). The in-memory managedFiles set is
-      // kept in lock-step so a subsequent save() doesn't write the phantoms
-      // back. allocatedPaths is unaffected: phantom rows correspond to files
-      // missing from disk, which scanTracks() never recorded there.
-      atomicWriteFile(manifestPath, JSON.stringify(parsed) + '\n', 'utf-8');
-      this.manifest = parsed;
+    // Update in-memory state only after the on-disk rewrite succeeded (i.e.
+    // the util returned without errors from the write step). A subsequent
+    // save() must not regress the prune back to disk. allocatedPaths is
+    // unaffected: phantom rows correspond to files missing from disk, which
+    // scanTracks() never recorded there.
+    if (result.pruned > 0 && result.errors.length === 0) {
+      const phantomSet = new Set(paths.map((p) => p.normalize('NFC')));
       for (const p of phantomSet) {
         this.managedFiles.delete(p);
       }
-      return { pruned, errors };
-    } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
-      for (const p of paths) {
-        errors.push({ path: p, error });
+      // Re-read the manifest from disk so this.manifest stays in sync with
+      // what pruneManifestRows wrote. If the read fails we leave this.manifest
+      // stale — save() will overwrite with the current managedFiles set, which
+      // is already correct (phantoms removed above).
+      try {
+        const raw = await fs.promises.readFile(manifestFilePath, 'utf-8');
+        this.manifest = JSON.parse(raw);
+      } catch {
+        // Leave this.manifest stale — managedFiles is the source of truth for
+        // the next save().
       }
-      return { pruned: 0, errors };
     }
+
+    return result;
   }
 
   /**

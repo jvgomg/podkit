@@ -28,7 +28,7 @@ import {
   MANIFEST_FILE,
   type MassStorageManifest,
 } from '../../device/mass-storage-utils.js';
-import { atomicWriteFile } from '../../utils/atomic-fs.js';
+import { pruneManifestRows } from '../../device/mass-storage-manifest.js';
 import {
   walkMassStorageContent,
   resolveContentDirs,
@@ -234,29 +234,17 @@ export const orphanFilesMassStorageCheck: DiagnosticCheck = {
         }
       }
 
-      // Prune phantom manifest entries by rewriting the manifest atomically.
-      // Re-read on disk to avoid clobbering concurrent edits, then drop the
-      // missing entries from managedFiles. `phantomsPruned` is only set after
-      // atomicWriteFile completes — otherwise a failed rewrite would report
-      // a non-zero prune count alongside a "failed to prune" error.
+      // Prune phantom manifest entries by delegating to the shared util.
+      // The util re-reads from disk, filters, and atomically rewrites — if the
+      // write fails, the original manifest survives and we surface an error.
       let phantomsPruned = 0;
       if (phantomCount > 0) {
-        try {
-          const manifestPath = join(ctx.mountPoint, PODKIT_DIR, MANIFEST_FILE);
-          const raw = await readFile(manifestPath, 'utf-8');
-          const parsed = JSON.parse(raw) as MassStorageManifest;
-          if (parsed.version === 1 && Array.isArray(parsed.managedFiles)) {
-            const missingSet = new Set(missingTrackedFiles);
-            const before = parsed.managedFiles.length;
-            parsed.managedFiles = parsed.managedFiles.filter(
-              (p) => !missingSet.has(p.normalize('NFC'))
-            );
-            atomicWriteFile(manifestPath, JSON.stringify(parsed) + '\n', 'utf-8');
-            phantomsPruned = before - parsed.managedFiles.length;
-          }
-        } catch (error) {
+        const stateDir = join(ctx.mountPoint, PODKIT_DIR);
+        const pruneResult = await pruneManifestRows(stateDir, missingTrackedFiles);
+        phantomsPruned = pruneResult.pruned;
+        if (pruneResult.errors.length > 0) {
           errors.push(
-            `Failed to prune phantom manifest entries: ${error instanceof Error ? error.message : String(error)}`
+            `Failed to prune phantom manifest entries: ${pruneResult.errors[0]!.error.message}`
           );
         }
       }
