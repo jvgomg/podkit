@@ -95,6 +95,11 @@ export {
   type PidFileEntry,
 } from './lib/pid-file.js';
 
+// Per-device sync-lock path. Single source of truth shared by every writer
+// surface (sync executor, doctor repairs, daemon) so the layout decision
+// stays in one place.
+export { resolveSyncLockPath } from './lib/sync-lock-path.js';
+
 // Per-handler operation types
 export type { MusicOperation } from './sync/music/types.js';
 export type { VideoOperation } from './sync/video/types.js';

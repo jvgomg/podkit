@@ -31,6 +31,14 @@ export function manifestPath(mountPoint: string): string {
  * Remove specific rows from the on-disk mass-storage manifest (state.json)
  * via an atomic rewrite.
  *
+ * **Caller MUST hold the per-device sync lock before invoking.** This util
+ * only touches disk and does not coordinate with concurrent writers — an
+ * in-flight `podkit sync` that reads the manifest at `open()`, mutates
+ * `managedFiles` in-memory, and writes the full manifest back at `save()`
+ * will clobber this prune if both run unlocked. See
+ * `documents/architecture/sync/planning.md` §6 for the writer-surfaces
+ * enumeration and lock-acquisition rules.
+ *
  * Behaviour:
  * - Empty `pathsToRemove` → immediate no-op, returns `{ pruned: 0, errors: [] }`.
  * - Missing manifest file → treated the same way: nothing to prune.

@@ -54,7 +54,16 @@ export const DoctorErrorCodes = {
   COLLECTION_NOT_FOUND: 'COLLECTION_NOT_FOUND',
   ADAPTER_CONNECT_FAILED: 'ADAPTER_CONNECT_FAILED',
   SCOPE_CONFLICT: 'SCOPE_CONFLICT',
+  LOCK_HELD: 'LOCK_HELD',
 } as const;
+
+/**
+ * Exit code emitted when another podkit process holds the per-device sync
+ * lock. Mirrors `SYNC_LOCK_HELD_EXIT_CODE` from `sync.ts` so callers (and
+ * the daemon) can branch on a single contention exit code regardless of
+ * whether `sync` or `doctor --repair` lost the race.
+ */
+export const DOCTOR_LOCK_HELD_EXIT_CODE = 4;
 export type DoctorErrorCode = (typeof DoctorErrorCodes)[keyof typeof DoctorErrorCodes];
 
 export type DoctorErrorOutput = CliErrorOutput & { code: DoctorErrorCode };
@@ -463,13 +472,8 @@ export async function runDoctorAction(
           details: { checkId: options.repair, deviceType: resolved.deviceConfig?.type },
         });
       }
-      await runMassStorageRepair(
-        resolved.path,
-        resolved.deviceConfig!,
-        check,
-        options,
-        out,
-        config
+      await withDeviceWriteLock(resolved.path, /* isIpodDevice */ false, core, () =>
+        runMassStorageRepair(resolved.path, resolved.deviceConfig!, check, options, out, config)
       );
       return;
     }
@@ -482,7 +486,9 @@ export async function runDoctorAction(
       });
     }
 
-    await runRepair(resolved.path, check, options, out, config);
+    await withDeviceWriteLock(resolved.path, /* isIpodDevice */ true, core, () =>
+      runRepair(resolved.path, check, options, out, config)
+    );
     return;
   }
 
@@ -1430,6 +1436,81 @@ export async function runRepair(
       }
     }
     db?.close();
+  }
+}
+
+// ── Per-device write lock ──────────────────────────────────────────────
+
+/**
+ * Acquire the per-device sync lock, run `fn`, release the lock in a
+ * `finally`. Translates `LockHeldError` / `LockContestedError` into a
+ * `CliError` with code `LOCK_HELD` and exit code `4`, mirroring `podkit
+ * sync` so the daemon (and any other caller) can branch on a single
+ * contention exit code regardless of which writer surface lost the race.
+ *
+ * Every doctor repair that mutates on-device state (manifest writes,
+ * iTunesDB writes via libgpod, SysInfo / SysInfoExtended writes, physical
+ * file deletes that could collide with an in-flight sync's adds) must go
+ * through this wrapper. Read-only repairs do not exist today — every
+ * registered repair writes something — so this helper is exercised on
+ * every `--repair` path that requires a device.
+ *
+ * Release is best-effort: an `unlink` failure (already-released file,
+ * unmounted device) is swallowed because the next acquireLock's liveness
+ * probe will reclaim it.
+ *
+ * Exported for unit-test coverage of the contention path — production
+ * callers go through `runDoctorAction`.
+ */
+export async function withDeviceWriteLock<T>(
+  devicePath: string,
+  isIpodDevice: boolean,
+  core: typeof import('@podkit/core'),
+  fn: () => Promise<T>
+): Promise<T> {
+  const lockPath = await core.resolveSyncLockPath(devicePath, isIpodDevice);
+  let handle: import('@podkit/core').LockHandle;
+  try {
+    handle = await core.acquireLock(lockPath);
+  } catch (err) {
+    if (err instanceof core.LockHeldError) {
+      const heldPid = err.pid;
+      throw new CliError({
+        message: `Another podkit process is using ${devicePath} (pid ${heldPid}). Wait for it to finish or kill it.`,
+        code: DoctorErrorCodes.LOCK_HELD,
+        exitCode: DOCTOR_LOCK_HELD_EXIT_CODE,
+        details: { device: devicePath, holderPid: heldPid, lockPath: err.lockPath },
+        printText: (o) => {
+          o.error(`Another podkit process is using ${devicePath} (pid ${heldPid}).`);
+          o.error('Wait for it to finish or kill it.');
+          if (o.isVerbose) {
+            o.error('');
+            o.error(`Lock file: ${err.lockPath}`);
+          }
+        },
+      });
+    }
+    if (err instanceof core.LockContestedError) {
+      throw new CliError({
+        message: err.message,
+        code: DoctorErrorCodes.LOCK_HELD,
+        exitCode: DOCTOR_LOCK_HELD_EXIT_CODE,
+        details: { device: devicePath, lockPath: err.lockPath },
+        printText: (o) => {
+          o.error(err.message);
+        },
+      });
+    }
+    throw err;
+  }
+  try {
+    return await fn();
+  } finally {
+    try {
+      await handle.release();
+    } catch {
+      // See LockHandle.release: tolerant by design.
+    }
   }
 }
 

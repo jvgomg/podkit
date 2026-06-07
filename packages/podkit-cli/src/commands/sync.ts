@@ -25,8 +25,6 @@
  * ```
  */
 import { existsSync } from '../utils/fs.js';
-import { mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
 import { Command, Option } from 'commander';
 import { getContext } from '../context.js';
 import type {
@@ -991,7 +989,7 @@ export async function runSync(
   //                   (iPod_Control already exists; no extra mkdir).
   let lockHandle: import('@podkit/core').LockHandle | null = null;
   if (!dryRun) {
-    const lockPath = await resolveSyncLockPath(devicePath, isIpodDevice);
+    const lockPath = await core.resolveSyncLockPath(devicePath, isIpodDevice);
     try {
       lockHandle = await core.acquireLock(lockPath);
     } catch (err) {
@@ -1606,27 +1604,4 @@ export async function runSync(
       }
     }
   }
-}
-
-/**
- * Resolve the lock-file path for a device.
- *
- * - iPod: `<mountPoint>/iPod_Control/.podkit-sync.lock`. `iPod_Control/`
- *   is always present on a real iPod (the database lives under it), so
- *   no mkdir is needed.
- * - mass-storage: `<mountPoint>/.podkit/sync.lock`. We create `.podkit/`
- *   if absent so virgin devices acquire cleanly on first sync.
- */
-async function resolveSyncLockPath(devicePath: string, isIpodDevice: boolean): Promise<string> {
-  if (isIpodDevice) {
-    return join(devicePath, 'iPod_Control', '.podkit-sync.lock');
-  }
-  const podkitDir = join(devicePath, '.podkit');
-  try {
-    await mkdir(podkitDir, { recursive: true });
-  } catch {
-    // Best-effort: if mkdir fails, the subsequent acquireLock open will
-    // surface the real error (likely EACCES or ENOENT on the mount).
-  }
-  return join(podkitDir, 'sync.lock');
 }

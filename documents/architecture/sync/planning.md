@@ -271,31 +271,72 @@ relies only on `open(O_CREAT|O_EXCL)` + `unlink` + `kill(pid, 0)`, which
 behave uniformly across exFAT, FAT32, HFS+, APFS, ext4, and NTFS. One
 primitive, predictable behaviour, no native deps.
 
-### Consumer A — per-device sync lock (TASK-404)
+### Consumer A — per-device sync lock
 
-`runSyncAction` in `packages/podkit-cli/src/commands/sync.ts` acquires
-the lock immediately after `openDevice` succeeds and releases in a
-`finally`. Lock path:
+The lock-path resolver lives in
+`packages/podkit-core/src/lib/sync-lock-path.ts` and is exported as
+`resolveSyncLockPath` from `@podkit/core`. **Every** writer surface in
+podkit calls it, so the on-disk layout decision is in one place.
+
+Lock path:
 
 - iPod: `<mountPoint>/iPod_Control/.podkit-sync.lock`.
 - mass-storage: `<mountPoint>/.podkit/sync.lock` (`.podkit/` created if
   absent for virgin devices).
 
-Contention raises `LockHeldError`, which the CLI translates into a
-`CliError` with code `LOCK_HELD` and exit code `4` (distinct from the
-generic command-error `1` and partial-failure `2`). The daemon in
+#### Writer surfaces (all hold the lock)
+
+The lock guards every podkit code path that mutates on-device state.
+The complete inventory:
+
+| Surface | Code | What it writes |
+|---|---|---|
+| `podkit sync` (executor) | `packages/podkit-cli/src/commands/sync.ts` (`runSync`) | iTunesDB / manifest / track files. Acquires immediately after `openDevice` succeeds; releases in `finally`. |
+| Pre-sync debris sweep auto-prune | `packages/podkit-core/src/sync/engine/pre-sync-sweep.ts` → `DeviceAdapter.prunePhantomManifest` | Manifest (mass-storage). Runs inside the sync's acquired lock — no separate acquisition. |
+| `podkit doctor --repair orphan-files` (mass-storage) | `packages/podkit-cli/src/commands/doctor.ts` (`runMassStorageRepair` for `orphan-files-mass-storage`) | Manifest via `pruneManifestRows` + deletes physical files. Wrapped in `withDeviceWriteLock`. |
+| `podkit doctor --repair debris-files` (mass-storage) | `runMassStorageRepair` for `debris-files-mass-storage` | Deletes `.podkit-tmp` siblings under content roots. Wrapped in `withDeviceWriteLock`. |
+| `podkit doctor --repair artwork-rebuild` / `artwork-reset` | `runRepair` (iPod) | iTunesDB + ArtworkDB via libgpod. Wrapped in `withDeviceWriteLock`. |
+| `podkit doctor --repair orphan-files` (iPod) | `runRepair` for `orphan-files` | Deletes physical files under `iPod_Control/Music/F*` — could collide with an in-flight sync writing a new track before it adds the DB entry. Wrapped in `withDeviceWriteLock`. |
+| `podkit doctor --repair debris-files` (iPod) | `runRepair` for `debris-files-ipod` | Deletes `.podkit-tmp` files under `iPod_Control/`. Wrapped in `withDeviceWriteLock`. |
+| `podkit doctor --repair sysinfo-extended` | `runRepair` | Writes `SysInfoExtended` file. Wrapped in `withDeviceWriteLock`. |
+| `podkit doctor --repair sysinfo-consistency` | `runRepair` | Rewrites `SysInfoExtended` from USB firmware. Wrapped in `withDeviceWriteLock`. |
+| `podkit doctor --repair sysinfo-modelnum-mismatch` | `runRepair` | Rewrites classic `SysInfo`'s `ModelNumStr` line + backup file. Wrapped in `withDeviceWriteLock`. |
+
+Every doctor repair that requires a device today writes something —
+there are no read-only repairs registered. The wrapper
+(`withDeviceWriteLock` in `doctor.ts`) is therefore on every device-
+scoped repair dispatch path. System-only repairs (`udev-rule`,
+`debris-transcode-tmp`) bypass device resolution entirely and don't
+acquire the lock — they have no device to lock against.
+
+**`pruneManifestRows` is "writes only" by construction.** It rewrites
+`state.json` atomically but does not coordinate with concurrent
+writers. Its JSDoc names the lock requirement explicitly so future
+callers don't reintroduce the race the doctor lock now prevents.
+
+#### Contention contract
+
+Contention raises `LockHeldError` (or `LockContestedError` when the
+file is persistently unreadable). Every wrapper — the sync executor and
+`withDeviceWriteLock` in the doctor — translates this into a `CliError`
+with code `LOCK_HELD` and exit code `4` (distinct from the generic
+command-error `1` and partial-failure `2`). The daemon in
 `packages/podkit-daemon/src/sync-orchestrator.ts` recognises exit code
 `4` as a contention skip — logs `daemon: cycle skipped — lock held by
-pid N` and proceeds to eject without raising an error notification.
+pid N` and proceeds to eject without raising an error notification. The
+daemon's branch fires regardless of whether the contention came from a
+concurrent `sync` or a concurrent `doctor --repair`.
 
 **Reads are not gated.** `podkit device scan`, `device info`,
-`device music` never acquire the lock — only the writing sync path
-does. The lock guards mutating writes to iTunesDB / manifest / track
-files; reads against an in-flight sync are best-effort by design.
+`device music` never acquire the lock. Diagnostic-only `podkit doctor`
+(no `--repair`) also never acquires the lock — its checks read state
+without writing. The lock guards mutating writes only; reads against an
+in-flight sync are best-effort by design.
 
-A crashed `podkit sync` leaves the lock file behind. The next process's
-`acquireLock` reads it, probes liveness, finds the holder dead, unlinks
-the stale file, and retakes the lock. Single retry, no spin.
+A crashed `podkit sync` or `podkit doctor --repair` leaves the lock
+file behind. The next process's `acquireLock` reads it, probes
+liveness, finds the holder dead, unlinks the stale file, and retakes
+the lock. Single retry, no spin.
 
 Cross-host coordination (two hosts sharing a network-mounted iPod) is
 explicitly out-of-scope; advisory file locks aren't honoured uniformly
@@ -309,6 +350,16 @@ to iTunesDB, the manifest, or track files. The lock exists to prevent
 concurrent corrupt writes; dry-run cannot corrupt anything. Trade-off: a
 dry-run running concurrently with a real sync may observe a partially-updated
 device state and produce a stale plan, but it cannot cause data loss.
+
+`podkit doctor --repair <id> --dry-run` currently acquires the lock
+even though the underlying repair runners branch on `dryRun` and skip
+the writes. The over-acquisition is harmless (a dry-run inspects state
+without mutating, so holding the lock for a few ms doesn't change
+outcomes), but it does block a concurrent sync — a noticeable mismatch
+with the sync-side dry-run policy. A future refactor can thread
+`dryRun` into the wrapper and short-circuit acquisition; today the
+trade-off is "uniform writer-path coverage" over "exact symmetry with
+sync".
 
 ### Consumer B — transcode-tmp `.owner` (TASK-402)
 
@@ -372,6 +423,13 @@ Cross-references: TASK-402 + TASK-404.
     `readOwnership`, `writeOwnership`, `isAlive`).
   - `packages/podkit-core/src/lib/pid-file.test.ts` — unit tests for
     the PID-file primitive.
+  - `packages/podkit-core/src/lib/sync-lock-path.ts` —
+    `resolveSyncLockPath` (single source of truth for the on-disk
+    lock layout, shared by sync + doctor + daemon).
+  - `packages/podkit-core/src/lib/sync-lock-path.test.ts` — layout +
+    cross-process contention pins.
+  - `packages/podkit-core/src/device/mass-storage-manifest.ts` —
+    `pruneManifestRows` (writes-only; caller MUST hold the lock).
   - `packages/podkit-core/src/sync/engine/differ.ts` — `SyncDiffer`.
   - `packages/podkit-core/src/sync/engine/planner.ts` — `SyncPlanner`.
   - `packages/podkit-core/src/sync/engine/types.ts` — `SyncPlan`,
@@ -385,6 +443,8 @@ Cross-references: TASK-402 + TASK-404.
     runs the device-level sweep once per sync.
   - `packages/podkit-cli/src/commands/sync-presenter.ts` —
     `genericSyncCollection`, plan stamping, free-space envelope math.
+  - `packages/podkit-cli/src/commands/doctor.ts` —
+    `withDeviceWriteLock` wraps every device-scoped repair dispatch.
 - **Companion architecture docs:**
   - [`save-transactions.md`](./save-transactions.md) — what happens
     after the plan executes.
