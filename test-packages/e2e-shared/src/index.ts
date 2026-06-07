@@ -17,6 +17,7 @@ export {
   isCliAvailable,
   runCli,
   runCliJson,
+  type CliBinary,
   type CliJsonResult,
   type CliOptions,
   type CliResult,

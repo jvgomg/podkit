@@ -783,3 +783,8 @@ export { streamToTempFile, cleanupTempFile } from './utils/stream.js';
 
 // Canonical docs site URL builder
 export { DOCS_BASE_URL, DOCS_URLS, docsUrl } from './docs-urls.js';
+
+// Dev hooks — compile-time-stripped test seams. See documents/architecture/dev-builds.md.
+// Production builds (__PODKIT_DEV_HOOKS__=false) tree-shake the body away;
+// debug builds (__PODKIT_DEV_HOOKS__=true) activate the pause primitive.
+export { devPause } from './dev/hooks.js';

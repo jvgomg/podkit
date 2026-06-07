@@ -2711,3 +2711,7 @@ export const DOCS_URLS = {
   userGuideConfiguration: docsUrl('user-guide/configuration'),
   cleanArtists: docsUrl('reference/clean-artists'),
 } as const;
+
+// Dev hooks — no-op stub in the demo. Real consumers go through the
+// compile-time-stripped surface in packages/podkit-core/src/dev/hooks.ts.
+export const devPause: (key: string) => Promise<void> = async () => {};

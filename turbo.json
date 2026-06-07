@@ -92,6 +92,8 @@
     "@podkit/e2e-tests#test:e2e": {
       "dependsOn": [
         "^build",
+        "podkit#compile",
+        "podkit#compile:debug",
         "@podkit/gpod-testing#generate-templates",
         "@podkit/test-fixtures#generate-static-fixtures"
       ],
@@ -101,6 +103,8 @@
     "@podkit/e2e-tests#test:e2e:docker": {
       "dependsOn": [
         "^build",
+        "podkit#compile",
+        "podkit#compile:debug",
         "@podkit/gpod-testing#generate-templates",
         "@podkit/test-fixtures#generate-static-fixtures"
       ],
@@ -114,8 +118,26 @@
     },
     "compile": {
       "dependsOn": ["^build"],
-      "inputs": ["src/**", "!src/**/*.test.ts", "!src/__tests__/**", "package.json"],
-      "outputs": ["bin/**"]
+      "inputs": [
+        "src/**",
+        "!src/**/*.test.ts",
+        "!src/__tests__/**",
+        "scripts/compile.sh",
+        "package.json"
+      ],
+      "outputs": ["bin/podkit"]
+    },
+    "compile:debug": {
+      "dependsOn": ["^build"],
+      "env": ["PODKIT_DEV_HOOKS"],
+      "inputs": [
+        "src/**",
+        "!src/**/*.test.ts",
+        "!src/__tests__/**",
+        "scripts/compile.sh",
+        "package.json"
+      ],
+      "outputs": ["bin/podkit-debug"]
     },
     "record": {
       "dependsOn": ["build"],
@@ -242,6 +264,8 @@
       "dependsOn": [
         "@podkit/device-testing-daemon#build",
         "^build",
+        "podkit#compile",
+        "podkit#compile:debug",
         "@podkit/device-testing#test:vm",
         "@podkit/device-testing#vm:install",
         "@podkit/device-testing#vm:doctor"

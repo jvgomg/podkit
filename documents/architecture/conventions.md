@@ -130,10 +130,30 @@ mix architecture (for contributors) with user-facing (for users).
 
 ---
 
-## 8. References
+## 8. Test seams live behind compile-time hooks
+
+When a test needs to drive an internal state the production code path
+doesn't expose (e.g. pause mid-rename, dump a stack trace at a
+specific point), the seam goes behind the `__PODKIT_DEV_HOOKS__`
+compile-time flag — never as an env-var sniff on the production code
+path. The production binary then strips the seam entirely via bundler
+tree-shaking; a parallel debug binary carries it.
+
+Full pattern, build pipeline, e2e wiring, and the recipe for adding a
+new hook: [dev-builds](./dev-builds.md).
+
+The discipline matters because the alternative — env-var sniffing in
+production code — leaks test scaffold into the shipping binary and
+opens the door to "production override" anti-patterns (debug logging
+flags, experimental codepaths) that nobody ever cleans up.
+
+---
+
+## 9. References
 
 - [sync/error-handling](./sync/error-handling.md) — the working example of
   these conventions applied to the sync engine.
+- [dev-builds](./dev-builds.md) — compile-time-stripped test seams.
 - `AGENTS.md` (repo root) — pointers for AI agents working in this repo;
   cross-references the architecture docs.
 - `packages/podkit-core/src/index.ts` — the public API surface.

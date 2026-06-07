@@ -86,8 +86,27 @@ cleanup() { rm -f "$STAGED" "$USB_STAGED"; }
 trap cleanup EXIT
 
 # Compile the CLI binary
+#
+# Dev-hook policy (TASK-405 / dev-builds.md):
+#   PODKIT_DEV_HOOKS=1 → __PODKIT_DEV_HOOKS__=true, output bin/podkit-debug.
+#   Otherwise          → __PODKIT_DEV_HOOKS__=false, output bin/podkit
+#                        (production: the dev-hooks ternary collapses + the
+#                        bundler tree-shakes the body away).
 cd "$CLI_DIR"
 VERSION="${PODKIT_VERSION_OVERRIDE:-$(bun -e "console.log(require('./package.json').version)")}"
-bun build --compile src/compile-entry.js --outfile bin/podkit --define "PODKIT_VERSION='$VERSION'"
 
-echo "Compiled: bin/podkit (v$VERSION)"
+if [ "${PODKIT_DEV_HOOKS:-0}" = "1" ]; then
+  DEV_HOOKS_DEFINE="true"
+  OUTFILE="bin/podkit-debug"
+  BUILD_LABEL="debug"
+else
+  DEV_HOOKS_DEFINE="false"
+  OUTFILE="bin/podkit"
+  BUILD_LABEL="production"
+fi
+
+bun build --compile src/compile-entry.js --outfile "$OUTFILE" \
+  --define "PODKIT_VERSION='$VERSION'" \
+  --define "__PODKIT_DEV_HOOKS__=$DEV_HOOKS_DEFINE"
+
+echo "Compiled: $OUTFILE (v$VERSION, $BUILD_LABEL)"

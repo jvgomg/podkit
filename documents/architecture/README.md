@@ -33,6 +33,10 @@ an architecture doc to match a change you're shipping, ask whether the
 - **[testing/vm-build-orchestration](./testing/vm-build-orchestration.md)** —
   How `bun run test:vm` guarantees a fresh podkit binary lands in the
   device-harness VM and detects baseline drift.
+- **[dev-builds](./dev-builds.md)** — Compile-time-stripped dev hooks:
+  why `bin/podkit` and `bin/podkit-debug` exist side by side, the
+  `__PODKIT_DEV_HOOKS__` strip pattern, and the e2e wiring that opts
+  into test seams.
 
 That's it for now. The rest of the library is pending — see
 [Goals and migration plan](#goals-and-migration-plan) below.

@@ -17,13 +17,14 @@
     "share"
   ],
   "scripts": {
-    "build": "bun build src/main.ts --outdir dist --target node --external koffi --external usb --define PODKIT_VERSION=\"'$(node -p \"require('./package.json').version\")'\" && bun run build:types",
+    "build": "bun build src/main.ts --outdir dist --target node --external koffi --external usb --define PODKIT_VERSION=\"'$(node -p \"require('./package.json').version\")'\" --define __PODKIT_DEV_HOOKS__=false && bun run build:types",
     "build:types": "tsc -p tsconfig.build.json --emitDeclarationOnly --outDir dist",
     "dev": "bun run src/main.ts",
     "test": "true",
     "test:unit": "bun test --pass-with-no-tests",
     "test:integration": "bun test --pass-with-no-tests --path-ignore-patterns= .integration.",
     "compile": "bash scripts/compile.sh",
+    "compile:debug": "PODKIT_DEV_HOOKS=1 bash scripts/compile.sh",
     "install:dev": "bash scripts/install-dev.sh",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist bin"

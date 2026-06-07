@@ -30,6 +30,19 @@ export interface CliResult {
 }
 
 /**
+ * Which build of the CLI to run.
+ *
+ * - `'production'` (default): the bundled `dist/main.js` invoked under
+ *   `node`. Hook bodies (see `documents/architecture/dev-builds.md`) are
+ *   tree-shaken away — same shape as what end users ship.
+ * - `'debug'`: the compiled `bin/podkit-debug` binary invoked directly.
+ *   Hook bodies are active; tests can drive `devPause(key)` via
+ *   `PODKIT_DEV_PAUSE_KEY`. Tests opt in explicitly — most paths should
+ *   stay on `'production'` so we exercise the real shipping artefact.
+ */
+export type CliBinary = 'production' | 'debug';
+
+/**
  * Options for running the CLI.
  */
 export interface CliOptions {
@@ -41,19 +54,33 @@ export interface CliOptions {
   timeout?: number;
   /** Standard input to send to the process. */
   stdin?: string;
+  /**
+   * Which CLI build to run. Default `'production'`. See {@link CliBinary}.
+   *
+   * When `'debug'`, the test is responsible for ensuring `bin/podkit-debug`
+   * has been built — the turbo `test:e2e` / `test:vm` tasks declare a
+   * `podkit#compile:debug` dependency so this is satisfied in CI.
+   */
+  binary?: CliBinary;
 }
 
 /**
- * Path to the built CLI artifact.
+ * Path to the built CLI artifact for the given build.
  *
  * E2E tests run against the compiled CLI, not TypeScript source. The path is
  * resolved at runtime from this file's directory; both the source location
  * (`test-packages/e2e-shared/src/`) and the bundled location
  * (`test-packages/e2e-shared/dist/`) are exactly three levels below the repo
  * root, so the same relative walk works in either mode.
+ *
+ * - `'production'` → `packages/podkit-cli/dist/main.js` (invoke under `node`)
+ * - `'debug'` → `packages/podkit-cli/bin/podkit-debug` (invoke directly)
  */
-export function getCliPath(): string {
+export function getCliPath(binary: CliBinary = 'production'): string {
   const here = dirname(fileURLToPath(import.meta.url));
+  if (binary === 'debug') {
+    return resolve(here, '../../../packages/podkit-cli/bin/podkit-debug');
+  }
   return resolve(here, '../../../packages/podkit-cli/dist/main.js');
 }
 
@@ -68,7 +95,8 @@ export function getCliPath(): string {
  * ```
  */
 export async function runCli(args: string[], options: CliOptions = {}): Promise<CliResult> {
-  const cliPath = getCliPath();
+  const binary: CliBinary = options.binary ?? 'production';
+  const cliPath = getCliPath(binary);
   const timeout = options.timeout ?? 90000;
   const startTime = performance.now();
 
@@ -86,7 +114,12 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
       PODKIT_TEST_SYNTHETIC_VOLUME_UUID: '1',
     };
 
-    const child = spawn('node', [cliPath, ...args], {
+    // 'production' runs the bundle under node; 'debug' invokes the compiled
+    // binary directly. See documents/architecture/dev-builds.md.
+    const [command, commandArgs] =
+      binary === 'debug' ? [cliPath, args] : ['node', [cliPath, ...args]];
+
+    const child = spawn(command, commandArgs, {
       cwd: options.cwd,
       env,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -187,11 +220,12 @@ export async function runCliJson<T>(
  * Check whether the CLI binary has been built.
  *
  * Used by the preflight checks. Tests should not call this themselves —
- * turbo wires `^build` so the CLI exists by the time tests run.
+ * turbo wires `^build` (and `podkit#compile:debug` for the debug binary)
+ * so the CLI exists by the time tests run.
  */
-export async function isCliAvailable(): Promise<boolean> {
+export async function isCliAvailable(binary: CliBinary = 'production'): Promise<boolean> {
   try {
-    await access(getCliPath());
+    await access(getCliPath(binary));
     return true;
   } catch {
     return false;

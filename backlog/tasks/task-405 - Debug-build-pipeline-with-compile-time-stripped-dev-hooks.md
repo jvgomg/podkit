@@ -1,9 +1,10 @@
 ---
 id: TASK-405
 title: Debug build pipeline with compile-time-stripped dev hooks
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-06-07 16:54'
+updated_date: '2026-06-07 23:31'
 labels:
   - enhancement
   - testing
@@ -86,12 +87,61 @@ This task delivers the foundational infrastructure. First consumer: TASK-400.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 devPause(key) primitive added in packages/podkit-core/src/dev/hooks.ts
-- [ ] #2 __PODKIT_DEV_HOOKS__ define plumbed through compile.sh + build script + .d.ts
-- [ ] #3 New turbo task podkit-cli#compile:debug produces bin/podkit-debug with hooks active
-- [ ] #4 Production binary smoke-test asserts __PODKIT_DEV_HOOKS__ symbol absent from final artifact
-- [ ] #5 e2e CLI runner supports `{ binary: 'debug' | 'production' }` opt-in (default production)
-- [ ] #6 e2e-tests + e2e-vm-tests turbo deps include both compile + compile:debug
-- [ ] #7 documents/architecture/dev-builds.md created with full eight-section coverage
-- [ ] #8 documents/architecture/conventions.md cross-references dev-builds.md under test seams
+- [x] #1 devPause(key) primitive added in packages/podkit-core/src/dev/hooks.ts
+- [x] #2 __PODKIT_DEV_HOOKS__ define plumbed through compile.sh + build script + .d.ts
+- [x] #3 New turbo task podkit-cli#compile:debug produces bin/podkit-debug with hooks active
+- [x] #4 Production binary smoke-test asserts __PODKIT_DEV_HOOKS__ symbol absent from final artifact
+- [x] #5 e2e CLI runner supports `{ binary: 'debug' | 'production' }` opt-in (default production)
+- [x] #6 e2e-tests + e2e-vm-tests turbo deps include both compile + compile:debug
+- [x] #7 documents/architecture/dev-builds.md created with full eight-section coverage
+- [x] #8 documents/architecture/conventions.md cross-references dev-builds.md under test seams
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+## Pinned design (decided 2026-06-08)
+
+**Resume semantics: none.** `devPause(key)` blocks indefinitely (`await new Promise(() => {})`) when `key` matches the configured pause key. The process is expected to be SIGKILLed by the test once observable state confirms it has reached the pause point (e.g. a `.podkit-tmp` file landed on disk). Simpler than signal-based resume; matches TASK-400's actual needs (none of its scenarios require post-pause resume).
+
+If a future hook consumer wants resume semantics, extend the primitive then. YAGNI now.
+
+**Pause-key dispatch:** controlled by env var `PODKIT_DEV_PAUSE_KEY` read once at module load. `devPause('foo')` only blocks when `process.env.PODKIT_DEV_PAUSE_KEY === 'foo'`. No env match → no-op. Single env-controlled key per process invocation is enough for TASK-400's scenarios.
+
+**Symbol naming:** `__PODKIT_DEV_HOOKS__` (esbuild --define boolean). Lives in `packages/podkit-core/src/dev/hooks.ts` behind:
+```ts
+declare const __PODKIT_DEV_HOOKS__: boolean;
+export const devPause: (key: string) => Promise<void> = __PODKIT_DEV_HOOKS__
+  ? async (key) => { if (process.env.PODKIT_DEV_PAUSE_KEY === key) await new Promise<void>(() => {}); }
+  : async () => {};
+```
+Production builds set `__PODKIT_DEV_HOOKS__=false` → ternary collapses to no-op arrow → tree-shaken.
+
+**Build outputs side-by-side:** `bin/podkit` (production, no hooks) + `bin/podkit-debug` (hooks active). Different turbo cache keys via different output paths + env input.
+
+**e2e CLI runner:** existing helper in `test-packages/e2e-shared/` gains `{ binary: 'debug' | 'production' }` option, default `'production'`. Tests opt into debug explicitly.
+
+**Smoke test:** simple grep/strings on `bin/podkit` for any `__PODKIT_DEV_HOOKS__` / `devPause` reference — must return nothing for production binary.
+<!-- SECTION:PLAN:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+`devPause(key)` primitive in `packages/podkit-core/src/dev/hooks.ts` blocks forever when `__PODKIT_DEV_HOOKS__` is true AND `PODKIT_DEV_PAUSE_KEY` env var matches the call's `key`. No resume semantics by design — tests SIGKILL the paused process once surrounding state confirms the pause was reached.
+
+Guard pattern: `typeof __PODKIT_DEV_HOOKS__ !== 'undefined' && __PODKIT_DEV_HOOKS__` — `typeof` short-circuit prevents `ReferenceError` in unbundled runtime (cross-process tests spawn core via `bun -e`). Inline-in-ternary placement preserves bundler constant folding.
+
+Build wiring:
+- `packages/podkit-cli/package.json` `build` script defines `__PODKIT_DEV_HOOKS__=false`
+- `packages/podkit-cli/scripts/compile.sh` reads `PODKIT_DEV_HOOKS` env var, defines `__PODKIT_DEV_HOOKS__=true|false`, outputs `bin/podkit-debug` when active else `bin/podkit`
+- New `compile:debug` npm script + matching turbo task with own cache key
+- `e2e-tests` + `e2e-vm-tests` turbo deps include `podkit#compile:debug`
+
+e2e helper: `test-packages/e2e-shared/src/cli-runner.ts` gains `binary: 'debug' | 'production'` option. Debug path invokes `bin/podkit-debug` directly (no `node` wrapper).
+
+Smoke test `packages/podkit-cli/src/dev-hooks-strip.test.ts` reads `dist/main.js` (always built) and optionally `bin/podkit` (compiled on demand, skipped when absent), asserts both forbidden substrings (`__PODKIT_DEV_HOOKS__`, `PODKIT_DEV_PAUSE_KEY`) absent.
+
+Architecture doc `documents/architecture/dev-builds.md` (352 lines) covers all 8 sections: purpose, pattern, boundaries, build pipeline, e2e wiring, adding-a-hook recipe, production guarantees, open items. `conventions.md` cross-references it under test-seams.
+
+Demo `packages/demo/src/mock-core.ts` stubs `devPause` for the mocked-core build path.
+<!-- SECTION:FINAL_SUMMARY:END -->
