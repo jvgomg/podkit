@@ -1656,6 +1656,7 @@ describe('MusicHandler.executeBatch — artwork forwarding', () => {
       // Mock replaces the real generator; yielding nothing is enough since
       // the test only inspects the options bag. Cast required — bun:test's
       // spy typing doesn't accept an async-generator return shape directly.
+      // eslint-disable-next-line require-yield
       async function* (_plan: unknown, options: Record<string, unknown>) {
         captured.push(options);
       } as unknown as MusicPipeline['execute']

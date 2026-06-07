@@ -253,6 +253,7 @@ describe('VideoPresenter execute-phase warnings', () => {
           yield { operation: op, phase: 'starting' };
           yield { operation: op, phase: 'complete' };
         },
+        // eslint-disable-next-line require-yield
         async *executeBatch(): AsyncGenerator<OperationProgress<VideoOperation>> {
           throw new Error('simulated executor failure');
         },

@@ -73,7 +73,7 @@ import { SAVE_FAILURE_FAULTS, type FaultContext } from './matrix/save-failure-fa
  */
 function mountPointFor(cell: SaveFailCell): string {
   if (cell.failureMode === 'enospc') return DEVICE_MOUNT_NEAR_FULL_PATH;
-  const slug = saveFailCellKey(cell).replace(/[\/]/g, '_');
+  const slug = saveFailCellKey(cell).replace(/[/]/g, '_');
   return `/tmp/podkit-savefail-${slug}`;
 }
 
@@ -98,12 +98,12 @@ function deviceRelPath(
 }
 
 function sourceDirFor(cell: SaveFailCell): string {
-  const slug = saveFailCellKey(cell).replace(/[\/]/g, '_');
+  const slug = saveFailCellKey(cell).replace(/[/]/g, '_');
   return `/tmp/podkit-savefail-src-${slug}`;
 }
 
 function configPathFor(cell: SaveFailCell): string {
-  const slug = saveFailCellKey(cell).replace(/[\/]/g, '_');
+  const slug = saveFailCellKey(cell).replace(/[/]/g, '_');
   return `/tmp/podkit-savefail-cfg-${slug}.toml`;
 }
 
@@ -629,8 +629,8 @@ async function walkMount(mount: string): Promise<{
   const audioCount = entries.filter((e) => /\.(flac|ogg|m4a|mp3)$/.test(e)).length;
   const podkitTmpCount = entries.filter((e) => e.endsWith('.podkit-tmp')).length;
   const hasManifest = entries.some((e) => e.endsWith('.podkit/state.json'));
-  const hasSidecar = entries.some((e) => /\/cover\.jpg$/.test(e));
-  const hasItunesDb = entries.some((e) => /iPod_Control\/iTunes\/iTunesDB$/.test(e));
+  const hasSidecar = entries.some((e) => e.endsWith('/cover.jpg'));
+  const hasItunesDb = entries.some((e) => e.endsWith('iPod_Control/iTunes/iTunesDB'));
   return { audioCount, podkitTmpCount, hasManifest, hasSidecar, hasItunesDb, entries };
 }
 
