@@ -173,7 +173,8 @@ export type WarningType =
   // execute
   | 'artwork'
   | 'metadata'
-  | 'tag-write';
+  | 'tag-write'
+  | 'debris-cleanup-failure';
 
 /**
  * A non-fatal warning generated during sync planning or execution.
@@ -237,6 +238,46 @@ export interface BaseOperation {
 export type SyncOperation = MusicOperation | VideoOperation;
 
 /**
+ * Device-level pre-flight work that runs before the track operations.
+ *
+ * Sync orchestration (one `runSyncAction` call) may iterate multiple
+ * collections — typically music then video — against a single device.
+ * Some work is device-scoped, not collection-scoped: in particular the
+ * pre-sync debris sweep (TASK-398) walks the device's content surface
+ * once and reaps `.podkit-tmp` residue + phantom manifest entries before
+ * any track op runs. The result attaches to the FIRST collection's plan
+ * (so the executor consumes it once) and to nothing on subsequent plans.
+ *
+ * Future device-level pre-flight steps (e.g. a free-space probe rewrite
+ * landing as part of TASK-378) plug into this same shape rather than
+ * growing a new top-level type.
+ */
+export interface PlanPreliminaries {
+  /**
+   * Debris files the executor should delete before track ops run. Always
+   * safe-by-design — every entry came from a scanner that only surfaces
+   * podkit-owned `.podkit-tmp` / adapter-failure residue.
+   */
+  debrisCleanup?: {
+    paths: string[];
+    /** Sum of `fs.stat().size` at scan time. Best-effort, may differ from
+     *  actual freed bytes when the file vanishes between scan and unlink. */
+    totalBytes: number;
+  };
+
+  /**
+   * Manifest entries whose backing file is missing. Pruned from the
+   * mass-storage manifest in lockstep with the debris cleanup. Always
+   * safe by construction — the symmetric pass that produces them is
+   * also the orphan check's prune path (`orphans-mass-storage.ts`).
+   */
+  phantomPrune?: {
+    /** Manifest paths to drop (NFC-normalised, relative to mountPoint). */
+    paths: string[];
+  };
+}
+
+/**
  * Execution plan for sync operations
  *
  * Generic over operation type. Defaults to `SyncOperation` (all content types)
@@ -251,6 +292,12 @@ export interface SyncPlan<TOp extends BaseOperation = SyncOperation> {
   estimatedSize: number;
   /** Warnings generated during planning (e.g., lossy-to-lossy conversions). Always `phase: 'plan'`. */
   warnings: Warning[];
+  /**
+   * Device-level pre-flight populated once per device sync. Only the FIRST
+   * plan executed against the device carries this — subsequent plans see
+   * `undefined`. The executor runs the pre-flight before any track ops.
+   */
+  preliminaries?: PlanPreliminaries;
 }
 
 /**
