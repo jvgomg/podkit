@@ -4,6 +4,7 @@ title: Pre-sync debris sweep + dry-run plan-reporting of incomplete-sync residue
 status: To Do
 assignee: []
 created_date: '2026-06-07 12:17'
+updated_date: '2026-06-07 14:25'
 labels:
   - enhancement
   - sync-engine
@@ -113,3 +114,51 @@ Depends on TASK-397 (the debris-only scanner foundation). Until that lands, call
 - [ ] #8 Tests pin: dry-run output shape (both modes), real-run cleanup, cleanup-failure-is-warning, SIGKILL fixture round-trip, transcode-debris cleanup
 - [ ] #9 save-transactions.md §6 updated: pre-sync sweep is part of the self-heal model, doctor remains the backstop
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+## Revised approach (2026-06-07 design session)
+
+After opus second-opinion + design discussion, dropped the `DeviceSyncPlan` wrapper and inlined `preliminaries?` on the existing `SyncPlan`. Free-space accounting moved to execute-time entry (not plan-time `estimatedSize` subtraction).
+
+### Decisions
+
+1. **No new top-level type.** Original task spec mentioned a typed `debrisCleanup` shape on `SyncPlan` — we'll do exactly that via `preliminaries?: PlanPreliminaries`. NO `DeviceSyncPlan` aggregator. Future unified-plan refactor can collapse `collections[]` into a single `operations[]` without touching `preliminaries`.
+
+2. **Sweep runs ONCE per device, not per-collection.** Orchestrator in `sync.ts` runs the sweep before the music + video collection loops; result threaded through a shared `SyncContext` and stamped onto the FIRST plan's `preliminaries`. Subsequent plans in the same device sync see `preliminaries === undefined`. Avoids duplicate display when syncing music + video to one device.
+
+3. **Free-space math correction.** Do NOT subtract `preliminaries.totalBytes` from `plan.estimatedSize` (would suppress real space warnings if sweep partially fails). Subtract from REQUIRED-SPACE at execute-time entry, AFTER the sweep actually ran, using ACTUAL freed bytes. Coordinate with TASK-378 (free-space audit) — cross-reference in arch doc; do not add a third overlapping accounting point.
+
+4. **Phantom manifest pruning closes a doctor-only gap.** Pre-sync sweep runs phantom-manifest prune alongside debris cleanup. Surfaced via TASK-397's shared scanner. Folded into AC scope.
+
+5. **No `device-plan.md` arch doc.** Instead: NEW `documents/architecture/sync/planning.md` (long-overdue per README migration plan); `preliminaries` gets a subsection there. Plus sibling subsection in `sync/save-transactions.md` §6 for "pre-sync sweep" (sync becomes co-owner of the rescan-recovery responsibility; doctor remains the backstop).
+
+6. **Phase 2 split into 2a + 2b** for sharper sonnet checkpoints:
+   - **2a**: `SyncPlan.preliminaries` field + executor pre-flight runs sweep + Warning('debris-cleanup-failure') on non-fatal failure. Data-flow only, no UI.
+   - **2b**: Presenter `renderPreamble` (text + JSON `plan.preliminaries[]`) + free-space pre-check at execute-time entry. UI + math.
+
+### Concurrency safety inherited from TASK-397
+
+`os.tmpdir()` is host-global. Two podkit processes (daemon + manual CLI) can stomp transcode-tmp dirs. TASK-397's scanner uses mtime-older-than-session-start filter; pre-sync sweep inherits this safety automatically.
+
+### Sweep coverage (broader than original task spec)
+
+Beyond device debris:
+- `os.tmpdir()/podkit-transcode-*` orphaned scratch dirs (separate scanner, separate diagnostic)
+- libgpod tmp-suffix residue on iPod (TASK-397 scope)
+- Phantom manifest entries (this task)
+
+### Test surface
+
+- Unit: orchestrator threads sweep result correctly; first-plan-only attachment; cleanup-failure-as-warning; free-space math at execute-time entry.
+- e2e-vm: SIGKILL round-trip (sync → kill → re-sync → assert preamble + cleaned line).
+- e2e-vm: transcode-tmp sweep with concurrent-pid case (younger mtime skipped).
+- Presenter shape pins (text + JSON).
+
+### Cross-task coordination
+
+- Cross-ref TASK-378 §4 in arch doc: pre-sync sweep makes free-space estimates more accurate but is NOT the free-space probe rewrite.
+- Doctor remains backstop — explicitly stated in save-transactions.md §6 sibling subsection.
+- TASK-399 (doctor docs drift) lands first as separate PR; this task's doc updates layer on top.
+<!-- SECTION:PLAN:END -->
