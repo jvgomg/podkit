@@ -65,14 +65,16 @@ bun run test --filter podkit-core # Run tests for specific package
 mise run test:linux               # Run tests on Debian + Alpine Linux VMs
 
 # Device-harness VM lifecycle (macOS dev; Lima)
-bun run harness:setup            # First-time: create VM, build + install binaries, status
+bun run harness:setup            # First-time: create VM, build + install binaries, seal baseline hash
 bun run harness:start            # Resume a stopped VM
 bun run harness:stop             # Stop the VM (preserves state)
 bun run harness:status           # Health check: VM, binaries, systemd unit, kernel modules
-bun run harness:install          # Rebuild + transfer podkit/daemon/gpod-tool/unit
+bun run harness:install          # Rebuild + transfer podkit/daemon/gpod-tool/unit (manual; test:vm now does this automatically)
 bun run harness:shell            # Interactive shell inside the VM
 bun run harness:destroy          # Delete the VM entirely (--yes to skip confirm)
-bun run test:vm                  # Run VM tests (preflights the harness)
+bun run test:vm                  # Run VM tests — auto-runs vm:install (cached) + vm:doctor (drift check) first
+bunx turbo run @podkit/device-testing#vm:install  # Force-refresh the in-VM binary outside test:vm
+bunx turbo run @podkit/device-testing#vm:doctor   # Drift-check only — no install
 
 # Build
 bun run build                    # Build all packages for Node.js

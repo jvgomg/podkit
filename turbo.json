@@ -178,7 +178,12 @@
       "cache": true
     },
     "@podkit/device-testing#test:vm": {
-      "dependsOn": ["build", "^build"],
+      "dependsOn": [
+        "build",
+        "^build",
+        "@podkit/device-testing#vm:install",
+        "@podkit/device-testing#vm:doctor"
+      ],
       "cache": true,
       "inputs": [
         "src/vm/**",
@@ -194,11 +199,52 @@
       ],
       "outputs": []
     },
+    "@podkit/device-testing#vm:install": {
+      "dependsOn": [
+        "@podkit/device-testing#build:linux-binary",
+        "@podkit/device-testing-daemon#build",
+        "@podkit/gpod-testing#build:linux-binary"
+      ],
+      "env": ["PODKIT_HOST_ARCH"],
+      "inputs": [
+        "scripts/vm-install.ts",
+        "scripts/harness.ts",
+        "src/runners/lima-test-vm-binary.ts",
+        "src/runners/lima-test-vm-systemd.ts",
+        "src/runners/lima-test-vm.ts",
+        "src/runners/lima-limactl.ts",
+        "src/subprocess.ts",
+        "src/baseline-hash.ts",
+        "package.json",
+        "$TURBO_ROOT$/packages/podkit-cli/bin/podkit-linux-*",
+        "$TURBO_ROOT$/test-packages/device-testing-daemon/dist/dummy-hcd-daemon-linux-*",
+        "$TURBO_ROOT$/test-packages/gpod-testing/bin/gpod-tool-linux-*",
+        "$TURBO_ROOT$/test-packages/device-testing-daemon/dummy-hcd-daemon@.service"
+      ],
+      "outputs": [".turbo/vm-install-marker"],
+      "cache": true
+    },
+    "@podkit/device-testing#vm:doctor": {
+      "dependsOn": [],
+      "inputs": [
+        "scripts/vm-doctor.ts",
+        "src/baseline-hash.ts",
+        "src/runners/lima-test-vm.ts",
+        "src/runners/lima-limactl.ts",
+        "src/subprocess.ts",
+        "lima/podkit-device-harness.yaml",
+        "scripts/apply-state.sh"
+      ],
+      "outputs": [],
+      "cache": false
+    },
     "@podkit/e2e-vm-tests#test:vm": {
       "dependsOn": [
         "@podkit/device-testing-daemon#build",
         "^build",
-        "@podkit/device-testing#test:vm"
+        "@podkit/device-testing#test:vm",
+        "@podkit/device-testing#vm:install",
+        "@podkit/device-testing#vm:doctor"
       ],
       "cache": true,
       "inputs": [

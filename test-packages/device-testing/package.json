@@ -27,6 +27,8 @@
     "build:linux-binary": "bash scripts/build-linux-binary.sh",
     "build:backing-file": "bun run scripts/build-backing-file.ts",
     "transfer-binary": "bun run scripts/transfer-binary.ts",
+    "vm:install": "bun run scripts/vm-install.ts",
+    "vm:doctor": "bun run scripts/vm-doctor.ts",
     "harness:create": "bun run scripts/harness.ts create",
     "harness:start": "bun run scripts/harness.ts start",
     "harness:stop": "bun run scripts/harness.ts stop",

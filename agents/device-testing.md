@@ -24,6 +24,15 @@ bun run harness:stop   # when done
 
 `bun run harness:status` prints a single-screen health check of the VM, binaries, systemd unit, and kernel modules. `bun run harness:install` re-runs the turbo builds and re-transfers everything (cheap; sha256-skips no-op transfers). All `harness:*` scripts dispatch into `test-packages/device-testing/scripts/harness.ts`.
 
+**`bun run test:vm` is now self-orchestrating.** It turbo-depends on two new tasks:
+
+- `@podkit/device-testing#vm:install` — cached fresh-binary install. Invalidates on changes to podkit/daemon/gpod-tool source globs OR `scripts/harness.ts` / `runners/lima-test-vm-*.ts`. Replays as a cache hit (~300ms) when nothing changed.
+- `@podkit/device-testing#vm:doctor` — preflight drift check. Hashes `podkit-device-harness.yaml` + `apply-state.sh` and compares against the baseline hash sealed inside the VM at `harness:setup`. **No silent recovery** — drift exits 1 with the exact `harness:destroy && harness:setup` remediation command.
+
+You almost never need `harness:install` directly anymore; `test:vm` covers the binary-freshness contract. Force-refresh via `bunx turbo run @podkit/device-testing#vm:install` if needed (e.g. after a manual rebuild outside the test loop). Drift-check only: `bunx turbo run @podkit/device-testing#vm:doctor`.
+
+Full design + error semantics + scope boundaries in [documents/architecture/testing/vm-build-orchestration.md](../documents/architecture/testing/vm-build-orchestration.md).
+
 ## Purpose
 
 `@podkit/device-testing` is the single package that supplies fixture data and the test runtime to every test tier. It exports:

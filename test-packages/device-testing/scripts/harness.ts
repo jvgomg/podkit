@@ -29,6 +29,7 @@ import { spawnSync } from 'node:child_process';
 
 import { runLimactl } from '../src/runners/lima-limactl.js';
 import { defaultSubprocessRunner } from '../src/subprocess.js';
+import { computeBaselineHash, BASELINE_VM_HASH_PATH } from '../src/baseline-hash.js';
 import {
   instanceStatus,
   LIMA_DEVICE_HARNESS_VM_NAME,
@@ -503,7 +504,61 @@ async function cmdSetup(): Promise<number> {
   console.log('[harness:setup] installing binaries + systemd unit...');
   const installCode = await cmdInstall();
   if (installCode !== 0) return installCode;
+
+  // Seal the baseline hash AFTER install so vm:doctor has a current
+  // reference. Drift between this hash and the host-side recomputation
+  // is the signal vm:doctor uses to error future test:vm runs.
+  const sealCode = await sealBaselineHash();
+  if (sealCode !== 0) return sealCode;
   // cmdInstall already runs cmdStatus at the end. No need to repeat.
+  return 0;
+}
+
+async function sealBaselineHash(): Promise<number> {
+  const { combinedSha, files } = computeBaselineHash(PACKAGE_ROOT);
+  console.log(
+    `[harness:setup] sealing baseline hash (${combinedSha.slice(0, 12)}...; ${files.length} files)`
+  );
+  // `install -D -m 0644 /dev/stdin ${BASELINE_VM_HASH_PATH}` would be the
+  // POSIX-pure form, but limactl shell over ssh doesn't reliably forward
+  // stdin to a remote `install` invocation. printf into a /tmp file then
+  // sudo install is the same shape as the persona sidecar emission.
+  const mkdirResult = spawnSync(
+    'limactl',
+    [
+      'shell',
+      VM,
+      '--',
+      'sudo',
+      'install',
+      '-d',
+      '-m',
+      '0755',
+      path.posix.dirname(BASELINE_VM_HASH_PATH),
+    ],
+    { stdio: 'inherit' }
+  );
+  if ((mkdirResult.status ?? 1) !== 0) {
+    console.error('[harness:setup] failed to mkdir baseline-hash parent');
+    return 1;
+  }
+
+  const writeResult = spawnSync(
+    'limactl',
+    [
+      'shell',
+      VM,
+      '--',
+      'sh',
+      '-c',
+      `echo ${combinedSha} | sudo tee ${BASELINE_VM_HASH_PATH} >/dev/null`,
+    ],
+    { stdio: 'inherit' }
+  );
+  if ((writeResult.status ?? 1) !== 0) {
+    console.error(`[harness:setup] failed to write baseline-hash to ${BASELINE_VM_HASH_PATH}`);
+    return 1;
+  }
   return 0;
 }
 
