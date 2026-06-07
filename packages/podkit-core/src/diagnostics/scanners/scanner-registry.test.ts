@@ -15,20 +15,46 @@ const baseCtx: ScannerContext = {
 };
 
 describe('Scanner registry shape', () => {
-  it('returns empty by default', () => {
-    expect(getScannerIds()).toEqual([]);
-    expect(getApplicableScanners('ipod')).toEqual([]);
-    expect(getApplicableScanners('mass-storage')).toEqual([]);
-    expect(getApplicableScanners('host')).toEqual([]);
+  it('registers the three baked-in debris scanners', () => {
+    expect(getScannerIds()).toEqual(
+      expect.arrayContaining([
+        'mass-storage-content-debris',
+        'ipod-content-debris',
+        'transcode-tmp-debris',
+      ])
+    );
+  });
+
+  it('routes by applicableTo target', () => {
+    const ms = getApplicableScanners('mass-storage').map((s) => s.id);
+    const ipod = getApplicableScanners('ipod').map((s) => s.id);
+    const host = getApplicableScanners('host').map((s) => s.id);
+
+    expect(ms).toContain('mass-storage-content-debris');
+    expect(ms).not.toContain('ipod-content-debris');
+    expect(ms).not.toContain('transcode-tmp-debris');
+
+    expect(ipod).toContain('ipod-content-debris');
+    expect(ipod).not.toContain('mass-storage-content-debris');
+    expect(ipod).not.toContain('transcode-tmp-debris');
+
+    expect(host).toContain('transcode-tmp-debris');
+    expect(host).not.toContain('ipod-content-debris');
+    expect(host).not.toContain('mass-storage-content-debris');
   });
 
   it('getScanner returns undefined for unknown id', () => {
     expect(getScanner('does-not-exist')).toBeUndefined();
   });
+
+  it('getScanner returns a registered scanner by id', () => {
+    expect(getScanner('mass-storage-content-debris')?.applicableTo).toEqual(['mass-storage']);
+  });
 });
 
 describe('runScanners aggregation', () => {
-  it('returns empty debris when no scanners apply', async () => {
+  it('returns empty debris when applicable scanners find nothing', async () => {
+    // Mass-storage scanner returns empty when contentPaths is undefined.
     const result = await runScanners('mass-storage', baseCtx);
     expect(result).toEqual({ debris: [], totalBytes: 0 });
   });

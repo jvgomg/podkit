@@ -6,12 +6,19 @@
  */
 
 import type { Scanner, ScannerApplicableTo, ScannerContext, DebrisScanResult } from './types.js';
+import { massStorageContentDebrisScanner } from './mass-storage-debris-scanner.js';
+import { ipodContentDebrisScanner } from './ipod-debris-scanner.js';
+import { transcodeTmpDebrisScanner } from './transcode-tmp-scanner.js';
 
 export type { Scanner, ScannerApplicableTo, ScannerContext, DebrisScanResult } from './types.js';
 export type { DebrisEntry } from './types.js';
 
 /** All registered scanners. */
-const SCANNERS: Scanner[] = [];
+const SCANNERS: Scanner[] = [
+  massStorageContentDebrisScanner,
+  ipodContentDebrisScanner,
+  transcodeTmpDebrisScanner,
+];
 
 /** Look up a scanner by ID. */
 export function getScanner(id: string): Scanner | undefined {
