@@ -472,8 +472,13 @@ export async function runDoctorAction(
           details: { checkId: options.repair, deviceType: resolved.deviceConfig?.type },
         });
       }
-      await withDeviceWriteLock(resolved.path, /* isIpodDevice */ false, core, () =>
-        runMassStorageRepair(resolved.path, resolved.deviceConfig!, check, options, out, config)
+      await withDeviceWriteLock(
+        resolved.path,
+        /* isIpodDevice */ false,
+        core,
+        () =>
+          runMassStorageRepair(resolved.path, resolved.deviceConfig!, check, options, out, config),
+        { dryRun: options.dryRun ?? false }
       );
       return;
     }
@@ -486,8 +491,12 @@ export async function runDoctorAction(
       });
     }
 
-    await withDeviceWriteLock(resolved.path, /* isIpodDevice */ true, core, () =>
-      runRepair(resolved.path, check, options, out, config)
+    await withDeviceWriteLock(
+      resolved.path,
+      /* isIpodDevice */ true,
+      core,
+      () => runRepair(resolved.path, check, options, out, config),
+      { dryRun: options.dryRun ?? false }
     );
     return;
   }
@@ -1448,6 +1457,11 @@ export async function runRepair(
  * sync` so the daemon (and any other caller) can branch on a single
  * contention exit code regardless of which writer surface lost the race.
  *
+ * When `dryRun` is `true`, the lock is skipped entirely — the repair fn
+ * runs directly with no lock acquire and no `finally` release. This
+ * mirrors `podkit sync --dry-run`, which also bypasses the lock on the
+ * grounds that dry-run is read-only by design and cannot corrupt state.
+ *
  * Every doctor repair that mutates on-device state (manifest writes,
  * iTunesDB writes via libgpod, SysInfo / SysInfoExtended writes, physical
  * file deletes that could collide with an in-flight sync's adds) must go
@@ -1466,8 +1480,15 @@ export async function withDeviceWriteLock<T>(
   devicePath: string,
   isIpodDevice: boolean,
   core: typeof import('@podkit/core'),
-  fn: () => Promise<T>
+  fn: () => Promise<T>,
+  { dryRun = false }: { dryRun?: boolean } = {}
 ): Promise<T> {
+  // Dry-run is read-only by design — skip lock acquisition entirely so a
+  // user can inspect state during a live sync without contending on the lock.
+  if (dryRun) {
+    return fn();
+  }
+
   const lockPath = await core.resolveSyncLockPath(devicePath, isIpodDevice);
   let handle: import('@podkit/core').LockHandle;
   try {

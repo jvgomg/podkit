@@ -351,15 +351,12 @@ concurrent corrupt writes; dry-run cannot corrupt anything. Trade-off: a
 dry-run running concurrently with a real sync may observe a partially-updated
 device state and produce a stale plan, but it cannot cause data loss.
 
-`podkit doctor --repair <id> --dry-run` currently acquires the lock
-even though the underlying repair runners branch on `dryRun` and skip
-the writes. The over-acquisition is harmless (a dry-run inspects state
-without mutating, so holding the lock for a few ms doesn't change
-outcomes), but it does block a concurrent sync — a noticeable mismatch
-with the sync-side dry-run policy. A future refactor can thread
-`dryRun` into the wrapper and short-circuit acquisition; today the
-trade-off is "uniform writer-path coverage" over "exact symmetry with
-sync".
+`podkit doctor --repair <id> --dry-run` follows the same policy.
+`withDeviceWriteLock` accepts a `dryRun` option; when `true`, it skips lock
+acquisition entirely and runs the repair fn directly. The underlying repair
+runners already branch on `dryRun` and skip all writes, so holding the lock
+would be redundant — and it would block a concurrent sync from proceeding,
+which is the exact mismatch the policy exists to prevent.
 
 ### Consumer B — transcode-tmp `.owner` (TASK-402)
 

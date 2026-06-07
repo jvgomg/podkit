@@ -224,3 +224,80 @@ describe('withDeviceWriteLock — contention (LOCK_HELD)', () => {
     });
   });
 });
+
+describe('withDeviceWriteLock — dry-run skips lock', () => {
+  it('dry-run: fn runs without creating the lock file', async () => {
+    await withTempMount(async (mount) => {
+      let ran = false;
+      await withDeviceWriteLock(
+        mount,
+        false,
+        core,
+        async () => {
+          ran = true;
+          // In dry-run mode the lock file must NOT exist.
+          const lockPath = await resolveSyncLockPath(mount, false);
+          expect(existsSync(lockPath)).toBe(false);
+        },
+        { dryRun: true }
+      );
+      expect(ran).toBe(true);
+      // Still no lock file after fn completes.
+      const lockPath = await resolveSyncLockPath(mount, false);
+      expect(existsSync(lockPath)).toBe(false);
+    });
+  });
+
+  it('dry-run + dry-run in parallel: both succeed, neither blocks the other', async () => {
+    await withTempMount(async (mount) => {
+      let ranCount = 0;
+      const work = async (): Promise<string> =>
+        withDeviceWriteLock(
+          mount,
+          false,
+          core,
+          async () => {
+            ranCount += 1;
+            await new Promise((r) => setTimeout(r, 20));
+            return 'done';
+          },
+          { dryRun: true }
+        );
+
+      const results = await Promise.allSettled([work(), work()]);
+      const fulfilled = results.filter((r) => r.status === 'fulfilled');
+      const rejected = results.filter((r) => r.status === 'rejected');
+      // Both dry-run invocations succeed — no contention.
+      expect(fulfilled).toHaveLength(2);
+      expect(rejected).toHaveLength(0);
+      // Both bodies ran.
+      expect(ranCount).toBe(2);
+    });
+  });
+
+  it('real-write holding lock + concurrent dry-run: dry-run succeeds, does not contend', async () => {
+    await withTempMount(async (mount) => {
+      const lockPath = await resolveSyncLockPath(mount, false);
+      // Pre-acquire to simulate a live sync holding the lock.
+      const syncHandle = await acquireLock(lockPath);
+      try {
+        let dryRunRan = false;
+        // Dry-run must not throw even though the lock is held.
+        await withDeviceWriteLock(
+          mount,
+          false,
+          core,
+          async () => {
+            dryRunRan = true;
+          },
+          { dryRun: true }
+        );
+        expect(dryRunRan).toBe(true);
+        // The real-write's lock file is still present — dry-run did not touch it.
+        expect(existsSync(lockPath)).toBe(true);
+      } finally {
+        await syncHandle.release();
+      }
+    });
+  });
+});

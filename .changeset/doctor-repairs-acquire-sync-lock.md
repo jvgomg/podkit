@@ -13,6 +13,6 @@ The fix: every `--repair` that mutates the device now acquires the same per-devi
 Error: Another podkit process is using /Volumes/TERAPOD (pid 12345). Wait for it to finish or kill it.
 ```
 
-Audited and locked: `orphan-files`, `artwork-rebuild`, `artwork-reset`, `debris-files` (iPod), `sysinfo-extended`, `sysinfo-consistency`, `sysinfo-modelnum-mismatch`. System-only repairs that don't touch the device (`udev-rule`, `debris-transcode-tmp`) correctly skip the lock.
+Audited and locked: `orphan-files`, `artwork-rebuild`, `artwork-reset`, `debris-files` (iPod), `sysinfo-extended`, `sysinfo-consistency`, `sysinfo-modelnum-mismatch`. System-only repairs that don't touch the device (`udev-rule`, `debris-transcode-tmp`) correctly skip the lock. `--dry-run` repair invocations also skip the lock — dry-run is read-only by design and matches `podkit sync --dry-run`'s policy.
 
 **Internal:** `resolveSyncLockPath` moved from the CLI to `@podkit/core` (exported from `lib/sync-lock-path.ts`) so doctor and sync share the same implementation. New JSDoc on `pruneManifestRows` documents the lock requirement for any future direct caller. Architecture doc `documents/architecture/sync/planning.md` §6 now enumerates every manifest-writer surface with confirmed lock semantics.
