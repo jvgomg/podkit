@@ -101,9 +101,15 @@ export const VIDEO_EXTENSIONS = new Set(['.m4v', '.mp4', '.mov', '.avi', '.mkv']
  * - `.Audio file` — legacy pre-TASK-358.01 debris (a `getFileTypeLabel`
  *   fallback that became a literal extension on aborted OGG/WAV/AIFF syncs).
  *   Now fixed at the source but historical devices still carry these.
+ *   *False-positive risk:* a user could in principle create a file with this
+ *   literal extension (it's unusual — has a space — but not impossible). The
+ *   safe-auto debris repair will delete such a file. Accepted trade-off: the
+ *   extension was never a legitimate format and the recovery cost (rewrite
+ *   the file from source) is low.
  * - `.podkit-tmp` — in-flight write suffix used by `atomic-fs`. A successful
  *   atomic write renames it away; presence at scan time means a sync crashed
- *   between the temp-file write and the rename.
+ *   between the temp-file write and the rename. podkit owns this suffix
+ *   exclusively — no false-positive risk.
  */
 export const KNOWN_DEBRIS_EXTENSIONS = new Set(['.Audio file', '.podkit-tmp']);
 

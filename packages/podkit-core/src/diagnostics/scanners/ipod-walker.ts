@@ -25,6 +25,12 @@ import { PODKIT_TEMP_SUFFIX } from '../../utils/atomic-fs.js';
  * Sticking to a fixed list is a deliberate trade-off: it catches every
  * surface known to receive atomic writes today, and adding a directory is
  * a one-line change when a new write site lands.
+ *
+ * `iPod_Control/Photos` is included pre-emptively for future artwork-
+ * thumbnail writes; no current code path writes `.podkit-tmp` there today
+ * (artwork lands via libgpod, not via the atomic-write helper). Listing it
+ * costs one `readdir()` of a typically-empty dir and frontloads coverage
+ * for the day photo thumbnails get a write site.
  */
 const IPOD_CONTENT_DIRS: readonly string[] = [
   'iPod_Control/Music',

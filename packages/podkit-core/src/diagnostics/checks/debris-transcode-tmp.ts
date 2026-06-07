@@ -31,6 +31,15 @@ import {
  * The wall-clock time the check + repair use as the "anything newer is live"
  * floor. Captured at module load — once per process — so the diagnostic and
  * any subsequent invocations inside the same run share the same cutoff.
+ *
+ * **Timing guarantee.** `@podkit/core` is lazy-loaded by the CLI (`await
+ * import('@podkit/core')` in `runDoctorAction` and `genericSyncCollection`),
+ * and the diagnostics barrel transitively imports this file. The first
+ * sync- or doctor-related CLI command in a process triggers the load
+ * BEFORE any file-system operations run, so `SESSION_START_MS` reliably
+ * precedes any podkit-owned write activity in the same process. Sibling
+ * `podkit-transcode-*` directories created after this point are by
+ * definition another process's work and must not be reaped.
  */
 const SESSION_START_MS = Date.now();
 
