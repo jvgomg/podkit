@@ -237,11 +237,37 @@ tracked outside this doc (see ADR-009 for the broader rationale).
 - **Assumes:** the device-side state after a partial save is "what
   actually landed" — not the manifest's pre-save snapshot.
 
+### Pre-sync sweep
+
+- **Owns:** debris cleanup at sync start (TASK-398). Before any track
+  ops run, `runPreSyncSweep` calls the same walkers the doctor
+  `debris-files-*` checks consume and produces a `PlanPreliminaries`.
+  The executor's pre-flight unlinks every path in the `debrisCleanup`
+  bucket before transferring tracks.
+- **Co-owner with doctor of the rescan-recovery responsibility.** doctor
+  used to be the only path to clean `.podkit-tmp` residue between
+  failed syncs; the pre-sync sweep now does it by default for any
+  device the user actually syncs. doctor stays the backstop for
+  devices that aren't being synced and for the edge case where the
+  sweep itself failed (failures are non-fatal — the next sync retries).
+- **Device-scoped, runs once per `runSyncAction`.** Music + video
+  collections against the same device share one sweep — only one walk,
+  only one cleanup. The orchestrator stamps the result onto the FIRST
+  collection's plan and leaves subsequent collections' plans without
+  preliminaries.
+- **Free-space envelope.** Estimated debris bytes are added to the
+  available side of the `willFit` check (not subtracted from
+  `estimatedSize`) — the executor's transfer phase still surfaces
+  ENOSPC when actual freed bytes fall short. See
+  [planning.md §3](./planning.md) for the full math.
+
 ### `podkit doctor`
 
 - **Owns:** cleanup of debris a save() may leave on partial failure
   (`.podkit-tmp` files from a torn atomic write, orphaned sidecar
-  covers, manifest-vs-filesystem drift).
+  covers, manifest-vs-filesystem drift). Now SHARED with the pre-sync
+  sweep above — doctor is the backstop for devices that don't get
+  synced and for cases where the sweep itself failed.
 - **Not in the save() path.** Doctor is an opt-in recovery tool, not
   an automatic post-save sweeper.
 - **Orphan vs debris split (TASK-397).** Doctor's view of "stale stuff

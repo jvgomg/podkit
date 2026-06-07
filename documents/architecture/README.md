@@ -52,7 +52,7 @@ documents/architecture/
 ├── conventions.md                    # cross-cutting rules
 ├── sync/                             # sync engine
 │   ├── error-handling.md             # ✅ landed
-│   ├── planning.md                   # ⏳ pending
+│   ├── planning.md                   # ✅ landed
 │   ├── execution-pipeline.md         # ⏳ pending
 │   ├── save-transactions.md          # ✅ landed (companion to doc-041 journal)
 │   ├── content-type-handlers.md      # ⏳ pending
@@ -146,9 +146,9 @@ Each of these should ideally happen as part of a refactor in the area —
 the architecture doc captures the convention the refactor pinned, just
 like `sync/error-handling.md` did for TASK-381.
 
-- [ ] **`sync/planning.md`** — Source → diff → plan. `SyncDiffer` and
-  `SyncPlanner`. Triggered by: any planning refactor (e.g. a new diff
-  reason type).
+- [x] **`sync/planning.md`** — Source → diff → plan. `SyncDiffer` and
+  `SyncPlanner` + the device-scoped `PlanPreliminaries` pre-flight
+  (TASK-398).
 - [ ] **`sync/execution-pipeline.md`** — `MusicPipeline` three-stage
   (download / prepare / transfer), the executor's per-op state, save
   checkpoints. ADR-011 captures the original design decision; the

@@ -170,6 +170,12 @@ a `WarningSink` so the executor can accumulate them in order:
 - `IpodAdapter.setWarningSink(sink)` — pipeline calls this at execute
   start; the adapter emits `'tag-write'` warnings for best-effort
   portable-mode file-tag writes that drop or fail.
+- `runPreliminariesPreFlight` (pre-sync sweep, TASK-398) — emits
+  `'debris-cleanup-failure'` warnings for individual paths that fail
+  to unlink during the device-level pre-flight. Also used as the
+  carrier for the phantom-manifest advisory ("run `podkit doctor
+  --repair orphan-files` to prune"). Always non-fatal — the next
+  sync's sweep retries.
 - `MusicPipeline.warnings` accumulates everything emitted into its
   internal sink and exposes them via `getWarnings()` at the end of a
   run.
