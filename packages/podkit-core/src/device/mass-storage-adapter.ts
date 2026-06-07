@@ -38,7 +38,6 @@ import {
   deduplicatePath,
   isAudioExtension,
   isVideoExtension,
-  createEmptyManifest,
   normalizeContentPaths,
   validateContentPaths,
   type MassStorageManifest,
@@ -504,7 +503,18 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
   readonly mountPoint: string;
 
   private tracks: MassStorageTrack[] = [];
-  private manifest: MassStorageManifest;
+  /**
+   * `lastSync` carried over from a previously-loaded manifest, surfaced
+   * here so `save()` can promote it forward if nothing on disk changed.
+   * `save()` overwrites this with `new Date().toISOString()` unconditionally
+   * today; the field exists so a future `save()` that wants to skip the
+   * timestamp bump (e.g. a metadata-only flush) has a place to read from.
+   *
+   * The envelope itself (`{ version, managedFiles, lastSync }`) is
+   * reconstructed at save-time from `managedFiles` + this value — there is
+   * no in-memory `manifest` to drift out of sync with `managedFiles`.
+   */
+  private lastSync: string | undefined;
   private managedFiles: Set<string>;
   private allocatedPaths: Set<string>;
   private readonly contentPaths: ContentPaths;
@@ -590,7 +600,7 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
 
     this.metadataReader = options?.metadataReader ?? defaultMetadataReader;
     this.tagWriter = options?.tagWriter ?? new TagLibTagWriter();
-    this.manifest = createEmptyManifest();
+    this.lastSync = undefined;
     this.managedFiles = new Set();
     this.allocatedPaths = new Set();
     this.artworkSink = deriveArtworkSink(this.capabilities);
@@ -1476,9 +1486,17 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
       }
     }
 
-    // Write manifest
-    this.manifest.managedFiles = [...this.managedFiles].sort();
-    this.manifest.lastSync = new Date().toISOString();
+    // Write manifest. The envelope is reconstructed fresh every save()
+    // from the current `managedFiles` set + a refreshed `lastSync`
+    // timestamp — there is no in-memory manifest object that has to be
+    // kept in sync with `managedFiles`, which removes a class of
+    // "forgot to update both" bugs as the schema grows.
+    this.lastSync = new Date().toISOString();
+    const manifest: MassStorageManifest = {
+      version: 1,
+      managedFiles: [...this.managedFiles].sort(),
+      lastSync: this.lastSync,
+    };
 
     const stateDir = path.join(this.mountPoint, PODKIT_DIR);
     fs.mkdirSync(stateDir, { recursive: true });
@@ -1487,7 +1505,7 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
     // (loadManifest swallows parse errors and treats the device as having no
     // managed files — invisible debris on every subsequent sync).
     const manifestPath = path.join(stateDir, MANIFEST_FILE);
-    atomicWriteFile(manifestPath, JSON.stringify(this.manifest) + '\n', 'utf-8');
+    atomicWriteFile(manifestPath, JSON.stringify(manifest) + '\n', 'utf-8');
   }
 
   close(): void {
@@ -1542,21 +1560,15 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
     // save() must not regress the prune back to disk. allocatedPaths is
     // unaffected: phantom rows correspond to files missing from disk, which
     // scanTracks() never recorded there.
+    //
+    // No re-read of the on-disk manifest is needed: the envelope is
+    // reconstructed fresh by save() from `managedFiles` + `lastSync`, and
+    // both are already authoritative in memory once we delete the
+    // phantoms below.
     if (result.pruned > 0 && result.errors.length === 0) {
       const phantomSet = new Set(paths.map((p) => p.normalize('NFC')));
       for (const p of phantomSet) {
         this.managedFiles.delete(p);
-      }
-      // Re-read the manifest from disk so this.manifest stays in sync with
-      // what pruneManifestRows wrote. If the read fails we leave this.manifest
-      // stale — save() will overwrite with the current managedFiles set, which
-      // is already correct (phantoms removed above).
-      try {
-        const raw = await fs.promises.readFile(manifestFilePath, 'utf-8');
-        this.manifest = JSON.parse(raw);
-      } catch {
-        // Leave this.manifest stale — managedFiles is the source of truth for
-        // the next save().
       }
     }
 
@@ -1586,6 +1598,19 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
 
   /**
    * Load the manifest from disk (if it exists).
+   *
+   * Hydrates the in-memory mirrors of the on-disk fields:
+   * - `managedFiles` from `parsed.managedFiles` (NFC-normalised for
+   *   cross-FS Set lookups).
+   * - `lastSync` from `parsed.lastSync` so `save()` can promote it forward
+   *   (today it overwrites with a fresh timestamp; this field exists so a
+   *   future "metadata-only" save can preserve the prior value).
+   *
+   * The envelope shape itself is not retained — `save()` reconstructs it
+   * fresh from `managedFiles` + `lastSync` so there is no in-memory
+   * manifest object to drift out of sync with `managedFiles`. Missing /
+   * unparseable / unrecognised-shape manifests are treated as "no managed
+   * files yet" and leave both fields at their constructor defaults.
    */
   private loadManifest(): void {
     const manifestPath = path.join(this.mountPoint, PODKIT_DIR, MANIFEST_FILE);
@@ -1594,13 +1619,13 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
       const raw = fs.readFileSync(manifestPath, 'utf-8');
       const parsed = JSON.parse(raw) as MassStorageManifest;
       if (parsed.version === 1 && Array.isArray(parsed.managedFiles)) {
-        this.manifest = parsed;
         // Normalize stored paths to NFC for consistent Set lookups
         this.managedFiles = new Set(parsed.managedFiles.map((p: string) => p.normalize('NFC')));
+        this.lastSync = parsed.lastSync;
       }
     } catch {
       // No manifest yet — all existing files are unmanaged
-      this.manifest = createEmptyManifest();
+      this.lastSync = undefined;
       this.managedFiles = new Set();
     }
   }
