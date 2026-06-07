@@ -2632,6 +2632,69 @@ export function reconcileIpodDiscovery(_blockDevices: any[], _usbClassified: any
   return [];
 }
 
+// Repair dispatch — stubs; demo never runs diagnostic repairs.
+export const PUBLIC_REPAIR_IDS: readonly string[] = [];
+export function getRepairCheck(_publicId: string, _deviceType: any): any {
+  return undefined;
+}
+export function getRepairCheckForValidation(_publicId: string): any {
+  return undefined;
+}
+
+// Pre-sync sweep — stubs; demo skips real sweeps.
+export async function runPreSyncSweep(_input: any): Promise<any> {
+  return {};
+}
+export async function runPreliminariesPreFlight(_input: any): Promise<any> {
+  return { ok: true };
+}
+
+// PID-file primitives — stubs; demo never coordinates across processes.
+export interface PidFileEntry {
+  pid: number;
+  startTimeMs: number;
+}
+export class LockHeldError extends Error {
+  readonly pid: number;
+  readonly startTimeMs: number;
+  readonly lockPath: string;
+  constructor(lockPath: string, holder: PidFileEntry) {
+    super(`lock held by pid ${holder.pid} at ${lockPath}`);
+    this.name = 'LockHeldError';
+    this.pid = holder.pid;
+    this.startTimeMs = holder.startTimeMs;
+    this.lockPath = lockPath;
+  }
+}
+export class LockContestedError extends Error {
+  readonly lockPath: string;
+  constructor(lockPath: string) {
+    super(`lock contested at ${lockPath}`);
+    this.name = 'LockContestedError';
+    this.lockPath = lockPath;
+  }
+}
+export class LockHandle {
+  constructor(
+    readonly path: string,
+    readonly identity: PidFileEntry
+  ) {}
+  async release(): Promise<void> {}
+}
+export function getOwnIdentity(): PidFileEntry {
+  return { pid: 0, startTimeMs: 0 };
+}
+export async function isAlive(_entry: PidFileEntry): Promise<boolean> {
+  return false;
+}
+export async function readOwnership(_path: string): Promise<PidFileEntry | null> {
+  return null;
+}
+export async function writeOwnership(_path: string, _identity: PidFileEntry): Promise<void> {}
+export async function acquireLock(path: string): Promise<LockHandle> {
+  return new LockHandle(path, getOwnIdentity());
+}
+
 // Docs URLs — stubs for demo; never shown to users.
 export const DOCS_BASE_URL = 'https://jvgomg.github.io/podkit';
 export function docsUrl(slug: string): string {
