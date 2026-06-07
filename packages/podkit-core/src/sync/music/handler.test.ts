@@ -1319,6 +1319,44 @@ describe('MusicHandler', () => {
       expect(codecChange).toBeUndefined();
     });
 
+    // Regression for TASK-395: iPod portable MP3 round-trip with quality=max
+    // and the matrix's `prefer-copy` codec config (lossy=['aac'],
+    // lossless=['source']). The second sync was re-firing upgrade-direct-copy
+    // with reason 'codec-changed' despite an identical mp3 codec on both
+    // sides. Pins the canonical-codec round-trip when the lossless stack is
+    // `['source']` (which makes `resolvedLosslessStack` truthy and thus
+    // arms the codec-changes pass).
+    test('does not fire codec-changed for MP3 portable round-trip under quality=max + lossless=[source]', () => {
+      const h = createMusicHandler(
+        makeConfig({
+          quality: 'max',
+          codecPreference: { lossy: ['aac'], lossless: ['source'] },
+          encoderAvailability: { hasEncoder: () => true },
+          transferMode: 'portable',
+          capabilities: makeCapabilities({
+            supportedAudioCodecs: ['mp3', 'aac'],
+          }),
+        })
+      );
+      const source = makeCollectionTrack({
+        fileType: 'mp3',
+        lossless: false,
+        codec: 'mpeg 1 layer 3',
+      });
+      const device = makeDeviceTrack({
+        filetype: 'MPEG audio file',
+        bitrate: 256,
+        syncTag: parseSyncTag('[podkit:v1 quality=copy codec=mp3 transfer=portable]') ?? undefined,
+      });
+      const diff = makeCodecDiff(source, device);
+
+      h.postProcessDiff(diff);
+
+      expect(diff.existing).toHaveLength(1);
+      const codecChange = diff.toUpdate.find((u) => u.reasons.includes('codec-changed'));
+      expect(codecChange).toBeUndefined();
+    });
+
     // Companion: an MP3 source on a device that does NOT support MP3 natively
     // would actually be transcoded to AAC — codec-changed is the correct call.
     test('does fire codec-changed for an MP3 source on an MP3-incompatible device', () => {

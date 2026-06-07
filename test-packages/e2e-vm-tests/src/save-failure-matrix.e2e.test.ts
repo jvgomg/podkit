@@ -1036,14 +1036,15 @@ function skipForCell(cell: SaveFailCell) {
       );
     }
     if (cell.failureMode === 'track-readonly' && cell.transferMode === 'portable') {
-      // Planner re-fires upgrade-direct-copy with reason 'codec-changed' on
-      // an identical mp3 round-trip — the codec-identity comparison normalises
-      // one side but not the other (ffprobe label vs libgpod track-info).
-      // Other cell observations (TagWriteError warn-only via WarningSink,
-      // partialDeviceState, failedTrackCount) match prediction; only the
-      // rescan-refire claim diverges.
+      // TASK-395 confirmed fixed (codec-changed no longer fires; the rescan
+      // dry-run yields zero ops on the matrix's mp3 round-trip). Cells stay
+      // fenced because removing the fence exposes an adjacent prediction
+      // gap on `portableTagWarn` introduced by TASK-376's atomic on-file
+      // writes — chmod 0444 + atomic rename no longer trips a TagWriteError,
+      // so the matrix's predicted soft-warn does not fire. Out of TASK-395
+      // scope; tracked separately.
       return skipBug(
-        `iPod portable mp3 rescan re-fires upgrade-direct-copy with codec-changed on identical codec round-trip`,
+        `prediction gap: TASK-376 atomic on-file writes mean chmod 0444 does not trip a TagWriteError; portableTagWarn prediction is now stale (codec-changed rescan-refire is fixed)`,
         'TASK-395'
       );
     }
