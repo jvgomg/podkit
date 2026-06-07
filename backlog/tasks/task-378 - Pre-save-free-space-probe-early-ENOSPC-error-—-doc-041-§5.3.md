@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-06-03 09:08'
-updated_date: '2026-06-07 12:18'
+updated_date: '2026-06-07 16:16'
 labels:
   - enhancement
   - save-transaction
@@ -80,3 +80,36 @@ Reference: `test-packages/e2e-vm-tests/src/save-failure-matrix.e2e.test.ts` — 
 - [ ] #8 **JSON envelope gap**: `sync --json` + `doctor --json` audit — errors[] array now carries `{class, category, causes}` per CategorizedSyncError for every typed error path, not just ENOSPC. Matches the error-handling.md contract.
 - [ ] #9 **OGG filetype-label gap**: planner's filetype-label resolution correctly identifies OGG sources (and any other format falling through to the `Audio file` generic fallback). Test pins OGG → `.ogg` on the device. Audit other extensions for similar gaps.
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+## Pre-existing context from TASK-398 (landed 2026-06-07)
+
+TASK-398 added a partial free-space accounting layer that this audit should fold into:
+
+- `SyncPlan.preliminaries.debrisCleanup.totalBytes` carries the *estimated* bytes the pre-sync sweep will free (scan-time totals from `walkMassStorageContent` + `walkIpodContentForDebris` + `walkAbandonedTranscodeDirs`).
+- `genericSyncCollection` (`sync-presenter.ts`) now treats those bytes as additional headroom on the AVAILABLE side of `willFit`:
+  ```
+  effectiveFreeSpace = storage.free + plan.preliminaries.debrisCleanup.totalBytes
+  ```
+  rather than subtracting from `plan.estimatedSize`. Per opus's Phase 1 critique this is the honest model: subtracting from required space would suppress real warnings when the sweep partially fails.
+- **Known degradation** (documented in `documents/architecture/sync/planning.md` §6): when the pre-flight's `rm` calls fail (permissions, ENOENT race, transient I/O), the actual freed bytes can fall short of `totalBytes`. The transfer phase surfaces these as per-track write errors rather than a coherent ENOSPC summary. This audit's call-site catalogue should explicitly cover the post-sweep-failure ENOSPC pathway and recommend either a probe-rewrite that reads space POST-sweep, a more conservative envelope, or both.
+- **Top-level sweep failure surfaces as a `Warning('debris-cleanup-failure')`** (added 2026-06-07 after sonnet review) — the orchestrator catches the sweep error and pushes the warning into `allWarnings` so JSON consumers see it. The audit's `--json` envelope gap (AC #8) should verify this warning surfaces correctly through the typed-error path.
+
+### Where TASK-398 left the math
+
+- Plan-time: estimate is generous (assumes sweep will free `totalBytes`).
+- Execute-time: the executor's pre-flight returns `PreFlightResult.freedBytes` (actual freed bytes after per-path `rm`). Today this value is NOT fed back into any free-space recalculation — it's only used for log-line formatting.
+
+The probe rewrite should consider whether to:
+1. Recompute `willFit` after the pre-flight using actual freed bytes (re-fail the sync if space is now insufficient), OR
+2. Trust the plan-time generosity + rely on per-track ENOSPC handling at the transfer phase (current behaviour).
+
+Option 1 is more correct but introduces a new exit point; option 2 is simpler but leaks accounting drift into the transfer-phase error surface. Audit + decide as part of this task.
+
+### Documentation hand-off
+
+- `sync/planning.md` §3 covers the current `willFit` math; §6 documents the degradation. Both should evolve as this task lands.
+- `sync/save-transactions.md` already has a 'Pre-sync sweep' subsection (added by TASK-398) that names sync + doctor as co-owners of the rescan-recovery responsibility. The 'Free-space contract' subsection this task plans to add should sit alongside it.
+<!-- SECTION:PLAN:END -->
