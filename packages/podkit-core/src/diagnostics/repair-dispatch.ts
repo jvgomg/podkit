@@ -79,17 +79,24 @@ export function getRepairCheck(
 
 /**
  * Pre-device-resolution lookup: returns SOME variant of the check so the
- * CLI can read its scope + requirements before resolving the device. For
- * unified IDs both variants share scope + requirements, so picking either
- * is safe for early validation. For non-unified IDs it's a straight
- * registry lookup.
+ * CLI can read its `scope` and CLI-visible requirements (`source-collection`
+ * for the `-c` flag gate, empty-set for the system-repair fast path) before
+ * resolving the device.
  *
- * After the device is resolved, the CLI must call `getRepairCheck()` (or
- * `resolvePublicRepairId()` + `getDiagnosticCheck()`) to get the variant
- * that actually runs.
+ * For unified IDs both variants share `scope` and those two CLI-visible
+ * requirement signals, so the iPod variant is a safe early proxy. Per-variant
+ * `requirements` arrays may diverge in other elements (e.g. iPod
+ * `orphan-files` declares `['writable-device', 'database']`; the mass-storage
+ * variant declares `['writable-device']`); enforcement of those non-CLI
+ * requirements happens inside `runRepair` / `runMassStorageRepair`, not at
+ * the CLI's early-validation step.
+ *
+ * If the public ID has no iPod variant (a hypothetical future mass-storage-
+ * only unified ID), the function falls back to the mass-storage variant so
+ * the CLI can still validate it. After the device is resolved, the CLI must
+ * call `getRepairCheck(publicId, deviceType)` to get the variant that
+ * actually runs.
  */
 export function getRepairCheckForValidation(publicId: string): DiagnosticCheck | undefined {
-  // Use the iPod variant as the default — for unified IDs the iPod variant
-  // is the historical one and is always defined.
-  return getRepairCheck(publicId, 'ipod');
+  return getRepairCheck(publicId, 'ipod') ?? getRepairCheck(publicId, 'mass-storage');
 }

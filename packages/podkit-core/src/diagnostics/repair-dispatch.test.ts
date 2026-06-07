@@ -111,7 +111,7 @@ describe('getRepairCheck', () => {
 describe('getRepairCheckForValidation', () => {
   it('returns a check (iPod variant) for unified IDs — early validation', () => {
     // Used before device resolution; both variants of a unified ID share
-    // scope + requirements so the iPod variant is a safe early proxy.
+    // scope + CLI-visible requirements so the iPod variant is a safe proxy.
     const check = getRepairCheckForValidation('debris-files');
     expect(check?.applicableTo).toContain('ipod');
     expect(check?.scope).toBe('database-health');
@@ -120,5 +120,23 @@ describe('getRepairCheckForValidation', () => {
   it('returns the only variant for non-unified IDs', () => {
     expect(getRepairCheckForValidation('artwork-rebuild')?.id).toBe('artwork-rebuild');
     expect(getRepairCheckForValidation('debris-transcode-tmp')?.id).toBe('debris-transcode-tmp');
+  });
+
+  it('pins that orphan-files variants have divergent requirements (intentional)', () => {
+    // The iPod orphan check declares a 'database' requirement because it
+    // walks the iTunesDB; the mass-storage variant does not (manifest is
+    // a flat JSON file, not a libgpod handle). This divergence is
+    // intentional and must NOT be relied on for CLI early validation —
+    // the CLI only consults 'source-collection' and empty-set
+    // (system-repair fast path) from the requirements array.
+    const ipod = getRepairCheck('orphan-files', 'ipod');
+    const ms = getRepairCheck('orphan-files', 'mass-storage');
+    expect(ipod?.repair?.requirements).toContain('writable-device');
+    expect(ipod?.repair?.requirements).toContain('database');
+    expect(ms?.repair?.requirements).toContain('writable-device');
+    expect(ms?.repair?.requirements).not.toContain('database');
+    // Both share the CLI-visible signals: neither needs source-collection.
+    expect(ipod?.repair?.requirements).not.toContain('source-collection');
+    expect(ms?.repair?.requirements).not.toContain('source-collection');
   });
 });

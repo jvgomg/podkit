@@ -1131,6 +1131,43 @@ describe('AC #15: --repair udev-rule routes through runSystemRepair without -d',
   });
 });
 
+// ── AC #15b: --repair debris-transcode-tmp routes through runSystemRepair ──
+//
+// debris-transcode-tmp is the second public ID (alongside udev-rule) that
+// triggers the system-repair fast-path. Pin that the fast-path evaluation
+// (scope === 'system' && requirements.length === 0) reads cleanly from
+// the validation-time check returned by getRepairCheckForValidation.
+
+describe('AC #15b: --repair debris-transcode-tmp routes through runSystemRepair', () => {
+  it('succeeds with no device argument; check.repair.run called once', async () => {
+    const ctx = makeContext({ device: undefined });
+    const { out, stdout, exitCode } = makeOut('json');
+
+    let calls = 0;
+    const debrisTmp = makeSystemRepair('debris-transcode-tmp');
+    debrisTmp.repair!.run = async () => {
+      calls += 1;
+      return {
+        success: true,
+        summary: 'Removed 2 abandoned dirs, freed 1.4 MB',
+      };
+    };
+    const fakeCore = makeFakeCore({ registry: [debrisTmp] });
+
+    await runAction1(ctx, out, () =>
+      runDoctorAction({ repair: 'debris-transcode-tmp' }, out, {
+        loadCore: async () => fakeCore as typeof import('@podkit/core'),
+      })
+    );
+
+    expect(calls).toBe(1);
+    expect(exitCode.get()).toBeUndefined();
+    const payload = stdout.json<{ success: boolean; checkId: string }>();
+    expect(payload.success).toBe(true);
+    expect(payload.checkId).toBe('debris-transcode-tmp');
+  });
+});
+
 // ── AC #16: --scope × --json × --no-system cross-product ──────────────────
 
 let sharedDevicePath: string;
