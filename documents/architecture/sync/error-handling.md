@@ -65,13 +65,20 @@ keyword bank required.
 
 ### Current subclasses
 
-| Class                | Category   | Thrown from                                                |
-|----------------------|------------|------------------------------------------------------------|
-| `TagWriteError`      | `copy`     | `MassStorageAdapter.save()` — aggregated `writeTags` failures. |
-| `SidecarWriteError`  | `copy`     | `MassStorageAdapter.save()` — aggregated sidecar `cover.jpg` failures. |
-| `PictureWriteError`  | `copy`     | `MassStorageAdapter.save()` — aggregated embedded-picture failures (OGG/Opus). |
-| `MoveError`          | `copy`     | `MassStorageAdapter.save()` — file move (`renameSync`) failures, wrapped from raw fs error. |
-| `DatabaseWriteError` | `database` | `IpodAdapter` — wraps libgpod failures in `save()`, `addTrack`, `updateTrack`, `removeTrack`. |
+| Class                | Category   | Thrown from                                                | Aggregation |
+|----------------------|------------|------------------------------------------------------------|-------------|
+| `TagWriteError`      | `copy`     | `MassStorageAdapter.save()` — aggregated `writeTags` failures. | per-file |
+| `SidecarWriteError`  | `copy`     | `MassStorageAdapter.save()` — aggregated sidecar `cover.jpg` failures. | per-album |
+| `PictureWriteError`  | `copy`     | `MassStorageAdapter.save()` — aggregated embedded-picture failures (OGG/Opus). | per-file |
+| `MoveError`          | `copy`     | `MassStorageAdapter.save()` — file move (`renameSync`) failures, wrapped from raw fs error. | single-cause (throw on first non-ENOENT) |
+| `DatabaseWriteError` | `database` | `IpodAdapter` — wraps libgpod failures in `save()`, `addTrack`, `updateTrack`, `removeTrack`. | single-cause |
+
+The aggregation granularity matches the natural unit of the underlying write:
+tag and picture writes are per-file operations, sidecar writes are per-album
+operations (one `cover.jpg` per directory), and move/database failures terminate
+on the first hard error rather than aggregating across the batch. See
+[save-transactions.md §save() stage asymmetries](./save-transactions.md#save-stage-asymmetries-intentional)
+for the rationale behind the move-stage and sidecar-stage deviations.
 
 ### The categorizer
 
@@ -269,9 +276,6 @@ Tracked outside this document:
   doesn't emit any warnings today, so the optional interface accepts
   this. Add a stub when the first warning needs emission (e.g. partial
   picture writes, transient sidecar failures).
-- **Sidecar flush stage uses bare `Promise.allSettled`.** No concurrency
-  cap. Normalize to `runWithConcurrency` for EMFILE safety and symmetry
-  with the other stages — doc-041 §7.1 future task.
 - **iPod sync mutators (`addTrack`, `updateTrack`, `removeTrack`) are
   wrapped synchronously via `wrapDatabaseError`.** If a future code path
   introduces async libgpod calls, an async-aware wrapper is needed.

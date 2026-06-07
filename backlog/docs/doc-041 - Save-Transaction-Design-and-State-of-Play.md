@@ -22,7 +22,7 @@ Companion docs:
 - [doc-039](./doc-039 - E2E-Sync-Matrix-Testing-Strategy.md) — Sync matrix testing strategy
 - [ADR-009](../../adr/adr-009-self-healing-sync.md) — Self-healing sync rationale
 
-Cross-referenced tasks: TASK-370, TASK-371, TASK-372, TASK-375.
+Cross-referenced tasks: see §9 (Open tasks anchored here / Recently closed).
 
 ---
 
@@ -164,12 +164,12 @@ not playback. Warnings flow through the pipeline's accumulator and surface in
 | Moves | for-loop, typed `MoveError` on first non-ENOENT; ENOENT skip emits warning via sink | serial | wrapped in `MoveError` | only on success |
 | Tag writes | `runWithConcurrency` + `TagWriteError` | 16-capped | per-file aggregated | before throw |
 | Picture writes | `runWithConcurrency` + `PictureWriteError` | 16-capped | per-file aggregated | before throw |
-| Sidecar writes | `Promise.allSettled` + `SidecarWriteError` | unbounded (TODO) | per-album aggregated | before throw |
+| Sidecar writes | `runWithConcurrency` + `SidecarWriteError` | 16-capped | per-album aggregated | before throw |
 
-Picture-write stage normalized to match tag-write (TASK-381). Sidecar still
-uses bare `Promise.allSettled` with no concurrency cap — open follow-up to
-normalize to `runWithConcurrency` for EMFILE safety, but the typed-error and
-clear-before-throw conventions are met.
+All four flush stages now use `runWithConcurrency` with a 16-cap, typed aggregate
+error, and clear-before-throw semantics. The remaining asymmetries (MoveError
+throw-on-first vs others' settle-all; SidecarWriteError per-album vs per-file
+aggregation) are intentional — see save-transactions.md §save-stage-asymmetries.
 
 ### 3.2 ~~Asymmetry between IpodAdapter and MassStorageAdapter~~ — CLOSED (TASK-381)
 
@@ -204,9 +204,8 @@ The manifest IS atomic (tmp + rename). On-file mutations are not.
 
 All save() flush stages now clear their pending map BEFORE throw — matches
 the tag-write convention. Self-healing via rescan is the retry path; no
-in-adapter retry. The move stage retains its for-loop semantics (one throw
-on first non-ENOENT) since each move is atomic and re-queueing isn't useful
-when the source has gone missing.
+in-adapter retry. Move-stage asymmetry intentional — see
+[save-transactions.md §save() stage asymmetries](../../documents/architecture/sync/save-transactions.md#save-stage-asymmetries-intentional).
 
 ### 3.6 No `executeOnce` guard
 
@@ -449,34 +448,42 @@ Useful for diagnostics + the doctor flow.
 
 ### Open tasks anchored here
 
-- **TASK-370** — Executor sidecar device-write + rockbox matrix sweep.
-  Extended scope (per discussion 2026-06-03) to include the save-failure test
-  surface AND atomic-write requirement for sidecars. Reference §7.1 + §7.2.
-- **TASK-371** — Mass-storage non-OGG embed via taglib. Reference §3.1
-  (normalize picture-write flush shape).
-- **TASK-372** — `DeviceTrack.artworkSink` primitive. Reference §3.2
-  (asymmetry between adapters) — `artworkSink === 'noop'` suppresses the
-  syncTag claim, breaking the documented mass-storage non-OGG churn loop.
 - **TASK-375** — `podkit doctor` orphan sidecar image detection. Reference
   §4.3 (recovery: doctor-cleans).
+- **TASK-376** — Atomic on-file writes (helper + retrofit). Reference §3.4 +
+  §7.2 + §4.2 ("Crash mid-tag-write" gap).
+- **TASK-378** — Pre-save free-space probe + early ENOSPC error. Reference §5.3.
+- **TASK-379** — Device lockfile + concurrent-sync detection. Reference §5.5 + Q2.
+- **TASK-380** — Save-failure matrix test suite (VM-hosted, capability-shape
+  axes). Reference §4.3 + §7.3. Force-function for TASK-376 via `skipBug`
+  fences on torn-file rows.
+- **TASK-391** — Promote `writeSidecarAtomically` → `utils/atomic-fs.ts`
+  generic helper (TASK-376 prep). Reference §3.4 + §7.2.
+- **TASK-392** — Eliminate O(N²) `lookupTrackRef` inside `save()` move loop.
+  Adjacent perf fix.
+- **TASK-393** — Document `save()` stage asymmetries (MoveError throw-on-first
+  vs other stages' settle-all; SidecarWriteError per-album vs per-file
+  aggregation). Depends on TASK-389. Reference §3.5.
 
 ### Future task candidates (not yet filed)
 
-- Atomic on-file writes (helper + retrofit). Reference §3.4 + §7.2.
-- Pre-save free-space probe. Reference §5.3.
-- Device lockfile + concurrent-sync detection. Reference §5.5 + Q2.
-- `MusicPipeline.execute()` concurrent-call defensive guard for library users.
-  Reference §3.6.
-- Sidecar-write `Promise.allSettled` → `runWithConcurrency` normalization for
-  EMFILE safety. Reference §3.1.
+(Empty — every previously-listed candidate has been filed.)
 
 ### Recently closed
 
+- ~~Settled doc-041 sections (§1/§2/§6/§7) → architecture doc~~ — closed by
+  TASK-389 (`documents/architecture/sync/save-transactions.md`). The journal
+  retains §3/§4/§5/§8 as the living catalogue; §1/§2/§6/§7 are now
+  forward-pointers into the architecture doc.
+- ~~`MusicPipeline.execute()` concurrent-call defensive guard for library
+  users~~ — closed by `PipelineBusyError` (commit 2161dbda, landed alongside
+  doc-041 itself). Reference §3.6 / §5.7.
 - ~~Picture-write `Promise.all` → `runWithConcurrency` normalization + typed
   `PictureWriteError`~~ — closed by TASK-381.
 - ~~IpodAdapter `IpodPortableTagWriteResult` typed return~~ — closed by
   TASK-381 (resolved as a `WarningSink` channel rather than a typed return,
   keeping the result `Promise<void>`).
+- ~~Sidecar flush `Promise.allSettled` → `runWithConcurrency` normalization for EMFILE safety~~ — closed by TASK-390.
 
 ### Tests to add (not yet filed as tasks)
 

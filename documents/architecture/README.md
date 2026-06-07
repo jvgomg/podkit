@@ -26,6 +26,13 @@ an architecture doc to match a change you're shipping, ask whether the
   test-pins-contract).
 - **[sync/error-handling](./sync/error-handling.md)** — How errors and
   warnings flow through the sync engine. The first per-subsystem doc.
+- **[sync/save-transactions](./sync/save-transactions.md)** — How `save()`
+  works in podkit's device adapters, what survives a partial failure, and
+  how the next sync's rescan self-heals. Companion to doc-041's living
+  journal.
+- **[testing/vm-build-orchestration](./testing/vm-build-orchestration.md)** —
+  How `bun run test:vm` guarantees a fresh podkit binary lands in the
+  device-harness VM and detects baseline drift.
 
 That's it for now. The rest of the library is pending — see
 [Goals and migration plan](#goals-and-migration-plan) below.
@@ -47,7 +54,7 @@ documents/architecture/
 │   ├── error-handling.md             # ✅ landed
 │   ├── planning.md                   # ⏳ pending
 │   ├── execution-pipeline.md         # ⏳ pending
-│   ├── save-transactions.md          # ⏳ pending (settled version of doc-041)
+│   ├── save-transactions.md          # ✅ landed (companion to doc-041 journal)
 │   ├── content-type-handlers.md      # ⏳ pending
 │   └── transfer-modes.md             # ⏳ pending (settled version of doc-012)
 ├── device/                           # device adapter pattern
@@ -69,10 +76,12 @@ documents/architecture/
 │   ├── libgpod-binding.md            # ⏳ pending
 │   ├── itunes-db.md                  # ⏳ pending
 │   └── artwork-db.md                 # ⏳ pending
-└── cli/                              # CLI structure
-    ├── output-context.md             # ⏳ pending
-    ├── decisions-and-provenance.md   # ⏳ pending
-    └── shell-completions.md          # ⏳ pending
+├── cli/                              # CLI structure
+│   ├── output-context.md             # ⏳ pending
+│   ├── decisions-and-provenance.md   # ⏳ pending
+│   └── shell-completions.md          # ⏳ pending
+└── testing/                          # testing infrastructure
+    └── vm-build-orchestration.md     # ✅ landed
 ```
 
 This list is **a planning artefact, not a contract.** Folders are added
