@@ -86,7 +86,18 @@ export async function runPreSyncSweep(input: PreSyncSweepInput): Promise<PlanPre
 
   // ── Device-side ────────────────────────────────────────────────────────────
   if (input.deviceType === 'mass-storage' && input.contentPaths) {
-    const managedFiles = input.loadManagedFiles ? await input.loadManagedFiles() : undefined;
+    let managedFiles: Set<string> | undefined;
+    if (input.loadManagedFiles) {
+      try {
+        managedFiles = await input.loadManagedFiles();
+      } catch {
+        // Loader rejection is non-fatal — fall back to debris-only
+        // detection. The walker still runs against an empty managed set,
+        // so debris surfaces correctly; phantom rows just don't surface
+        // this run.
+        managedFiles = undefined;
+      }
+    }
     try {
       const result = await walkMassStorageContent(
         input.mountPoint,

@@ -127,6 +127,31 @@ describe('runPreSyncSweep', () => {
       });
     });
 
+    it('tolerates a throwing loadManagedFiles (falls back to debris-only)', async () => {
+      // Module-level docstring promises "tolerant of every scanner failure" —
+      // pin that a rejected loader becomes a no-phantom-pruning result
+      // instead of propagating.
+      await withTempDirs(async (mount, hostTmp) => {
+        await makeFiles(mount, {
+          'Music/half.m4a.podkit-tmp': 'half',
+        });
+        const result = await runPreSyncSweep({
+          mountPoint: mount,
+          deviceType: 'mass-storage',
+          contentPaths: DEFAULT_CONTENT_PATHS,
+          loadManagedFiles: async () => {
+            throw new Error('manifest read failed');
+          },
+          tmpDirOverride: hostTmp,
+          sessionStartMsOverride: Date.now(),
+        });
+        // Debris still surfaces…
+        expect(result.debrisCleanup?.paths).toHaveLength(1);
+        // …but no phantom-prune entries since the manifest never loaded.
+        expect(result.phantomPrune).toBeUndefined();
+      });
+    });
+
     it('skips phantom pruning when no loader is provided', async () => {
       await withTempDirs(async (mount, hostTmp) => {
         await makeFiles(mount, {

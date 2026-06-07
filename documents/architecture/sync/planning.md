@@ -242,6 +242,16 @@ Two invariants the layout enforces:
   (reserved space for libgpod overhead, sync-tag overhead, etc.).
   `PlanPreliminaries` is the right place to extend with the probe's
   output.
+
+  **Known degradation:** `debrisFreedEstimate` is the value the scanner
+  reports at scan time. If the pre-flight's `rm` calls fail (permissions,
+  ENOENT race, network FS hiccup), the actual freed bytes can fall
+  short. The transfer phase surfaces these as per-track write errors
+  rather than a single ENOSPC summary — the user sees individual
+  failures, not "space accounting was invalidated by the partial sweep".
+  Acceptable trade-off until TASK-378 lands a proper probe model; the
+  failed sweep is also surfaced via `Warning('debris-cleanup-failure')`
+  so the per-track noise has a top-level explanation.
 - **Unified plan across content types.** Today one device sync produces
   N per-content-type plans (music + video). A future refactor may
   collapse `collections[]` into a single `operations[]` to enable
