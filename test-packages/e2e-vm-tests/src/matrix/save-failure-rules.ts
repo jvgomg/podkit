@@ -405,11 +405,17 @@ function predictChmodFault(cell: SaveFailCell): SaveFailExpected {
 
   switch (cell.failureMode) {
     case 'track-readonly': {
-      // Pre-seed: first sync lands the file (managed). Source title is
+      // Pre-seed: first sync lands the file (managed). Source genre is
       // mutated. Second sync queues a tag-update diff on the managed file
-      // (in-place taglib write). chmod 0444 makes the tag-write open() fail
-      // with EACCES → TagWriteError. The PortableTagWriter path on iPod
-      // soft-warns instead of throwing — surface as a warning.
+      // (in-place taglib write). After TASK-376, `TagLibTagWriter.writeTags`
+      // routes through `atomicWriteFileWithSync` (write sibling tmp → fsync
+      // → renameat over target). A plain `chmod 0444` no longer trips the
+      // write because the parent dir stays writable and rename ignores file
+      // perms. The fault instead applies ext4's immutable bit (`chattr +i`)
+      // to the target inode, which blocks both `unlinkat()` and the rename
+      // overlay regardless of dir perms — EPERM surfaces inside the taglib
+      // flush and the adapter wraps it as TagWriteError. The iPod portable
+      // path soft-warns via WarningSink instead of throwing.
       if (isIpod && cell.transferMode === 'portable') {
         return {
           plannerRejects: false,
@@ -421,7 +427,7 @@ function predictChmodFault(cell: SaveFailCell): SaveFailExpected {
           errorMessageMatches: null,
           failedTrackCount: 0,
           portableTagWarn: true,
-          reason: `${cell.shape} × ${cell.sourceFormat} × ${cell.codecConfig} × ${cell.transferMode} × track-readonly — iPod portable mode: iTunesDB is authoritative for playback; file tag write failure surfaces as a warning, not a thrown error. Pre-seeded; source mutated; chmod 0444 lands EACCES on the in-place tag write; warning emitted via WarningSink (--json + summary).`,
+          reason: `${cell.shape} × ${cell.sourceFormat} × ${cell.codecConfig} × ${cell.transferMode} × track-readonly — iPod portable mode: iTunesDB is authoritative for playback; file tag write failure surfaces as a warning, not a thrown error. Pre-seeded; source mutated; chattr +i lands EPERM on the atomic rename in the in-place tag write; warning emitted via WarningSink (--json + summary).`,
         };
       }
       return {
@@ -434,7 +440,7 @@ function predictChmodFault(cell: SaveFailCell): SaveFailExpected {
         errorMessageMatches: null,
         failedTrackCount: 1,
         portableTagWarn: false,
-        reason: `${cell.shape} × ${cell.sourceFormat} × ${cell.codecConfig} × ${cell.transferMode} × track-readonly — syncPath=${syncPath}; pre-seed lands the file on first sync, source title mutated, then chmod 0444 makes the second sync's in-place tag-write open() fail with EACCES → TagWriteError. The file body from first sync remains on disk with stale tags.`,
+        reason: `${cell.shape} × ${cell.sourceFormat} × ${cell.codecConfig} × ${cell.transferMode} × track-readonly — syncPath=${syncPath}; pre-seed lands the file on first sync, source genre mutated, then chattr +i on the target inode blocks the second sync's atomic tag-write rename with EPERM → TagWriteError. The file body from first sync remains on disk with stale tags.`,
       };
     }
 

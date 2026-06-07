@@ -85,9 +85,18 @@ TASK-380 implementation notes.
    `SidecarWriteError` aggregates per album. Same v1 caveat as row 5.
 8. **ENOSPC during picture write** (OGG/Opus only): in-file picture frame
    write fails; surfaces as `PictureWriteError`. Same v1 caveat as row 5.
-9. **EACCES on the audio file (chmod 0444)**: tag write fails because the
-   target file is read-only. Expects `TagWriteError`. Phase 2 (chmod fault
-   `track-readonly`).
+9. **Immutable audio file (chattr +i)**: tag write fails because the
+   target inode is locked against unlink + rename. Expects `TagWriteError`.
+   Phase 2 (fault `track-readonly`). Originally implemented as `chmod 0444`
+   on the file body; after TASK-376 routed `writeTags`/`writePicture` through
+   `atomicWriteFileWithSync` (sibling tmp + fsync + rename), chmod on the
+   file is invisible to the writer — `renameat()` honours the parent dir's
+   permissions, not the target file's. The fault now uses ext4's immutable
+   attribute (`chattr +i`), which blocks both `unlinkat()` and the rename
+   overlay regardless of dir perms; the rejection surfaces as EPERM and the
+   adapter wraps it as `TagWriteError`. Works on the ext4 mounts used by the
+   matrix; if the ext4 immutable bit is ever unavailable the cell would
+   collapse into `album-readonly` semantics.
 10. **EACCES on the album directory (chmod 0555)**: sidecar write fails
     because the album dir can't be written. Expects `SidecarWriteError`.
     Phase 2 (chmod fault `album-readonly`).

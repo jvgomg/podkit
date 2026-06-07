@@ -130,18 +130,26 @@ async function shAsRootBestEffort(runtime: TestRuntime, body: string): Promise<v
 const TRACK_READONLY: FaultSpec = {
   id: 'track-readonly',
   description:
-    "chmod 0444 on the target audio file after first sync — second sync's in-place tag write hits EACCES.",
+    "chattr +i on the target audio file after first sync — second sync's in-place tag write hits EPERM. The ext4 immutable bit blocks unlink AND rename of the target inode (and rename-onto-target), so the tag-writer's tmp+rename atomic flow trips EPERM instead of the chmod 0444 EACCES it relied on before TASK-376's atomicWriteFileWithSync routing.",
   preseed: 'first-sync',
   async apply(runtime, ctx) {
-    // The target file must exist before chmod — `preseed: 'first-sync'`
+    // The target file must exist before chattr — `preseed: 'first-sync'`
     // makes the harness run a clean first sync to create the managed file,
     // mutate the source so the second sync queues a tag-update on it, then
-    // call this apply() to chmod 0444 before the second sync runs.
-    // Without preseed, chmod hits a path that doesn't exist (ENOENT).
-    await shAsRoot(runtime, `chmod 0444 ${sq(ctx.targetFile)}`);
+    // call this apply() to flip the immutable bit before the second sync.
+    //
+    // chmod 0444 USED to block tag writes (the writer opened the target
+    // file for write directly). After TASK-376, `TagLibTagWriter` reads the
+    // file, mutates a buffer, writes a sibling `.podkit-tmp`, fsyncs it,
+    // then `renameat()` over the target. `renameat()` honours parent-dir
+    // permissions, not the source/target file perms — so chmod 0444 on the
+    // target no longer trips anything. The ext4 immutable bit DOES block
+    // both `unlink(target)` and `renameat(tmp, target)` regardless of dir
+    // perms, with EPERM ("Operation not permitted").
+    await shAsRoot(runtime, `chattr +i ${sq(ctx.targetFile)}`);
   },
   async cleanup(runtime, ctx) {
-    await shAsRootBestEffort(runtime, `chmod 0644 ${sq(ctx.targetFile)} || true`);
+    await shAsRootBestEffort(runtime, `chattr -i ${sq(ctx.targetFile)} || true`);
   },
 };
 

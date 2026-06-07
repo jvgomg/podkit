@@ -1036,16 +1036,23 @@ function skipForCell(cell: SaveFailCell) {
       );
     }
     if (cell.failureMode === 'track-readonly' && cell.transferMode === 'portable') {
-      // TASK-395 confirmed fixed (codec-changed no longer fires; the rescan
-      // dry-run yields zero ops on the matrix's mp3 round-trip). Cells stay
-      // fenced because removing the fence exposes an adjacent prediction
-      // gap on `portableTagWarn` introduced by TASK-376's atomic on-file
-      // writes — chmod 0444 + atomic rename no longer trips a TagWriteError,
-      // so the matrix's predicted soft-warn does not fire. Out of TASK-395
-      // scope; tracked separately.
+      // The fault (chattr +i) correctly trips EPERM inside the atomic tag-write
+      // rename, the iPod adapter wraps it into a structured Warning, and emits
+      // it into the warningSink. But the warning never reaches the CLI summary
+      // or the --json envelope: MusicHandler.executeBatch instantiates a fresh
+      // MusicPipeline per call, the warnings accumulate on that pipeline's
+      // private state, and SyncExecutor — the executor MusicPresenter actually
+      // duck-types `getWarnings()` against — has no surface for them. The
+      // pipeline's warnings are garbage-collected with the pipeline instance.
+      //
+      // The matrix's `portableTagWarn: true` prediction therefore observes
+      // false (CLI text/JSON has no Warnings: line), and the fault triggers
+      // no observable assertion at the CLI surface. Pre-existing wiring gap
+      // unrelated to the TASK-376 atomic-write retrofit — needs a dedicated
+      // task to lift warnings from MusicPipeline through the executor surface.
       return skipBug(
-        `prediction gap: TASK-376 atomic on-file writes mean chmod 0444 does not trip a TagWriteError; portableTagWarn prediction is now stale (codec-changed rescan-refire is fixed)`,
-        'TASK-395'
+        `warning surface gap: MusicPipeline accumulates the tag-write warning into warningSink, but MusicHandler.executeBatch never re-exposes MusicPipeline.getWarnings() through SyncExecutor → MusicPresenter, so the CLI never sees it. Pre-existing wiring (predates TASK-376).`,
+        'TASK-396'
       );
     }
   } else {
