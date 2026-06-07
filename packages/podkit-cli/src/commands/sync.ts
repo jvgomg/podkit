@@ -1110,9 +1110,27 @@ export async function runSync(
           );
         }
       }
-    } catch {
-      // Sweep failures are non-fatal. Don't block the sync.
+    } catch (sweepError) {
+      // Top-level sweep failures are non-fatal — the next sync retries.
+      // But silence is wrong: the user just lost their automatic debris
+      // cleanup and may need to fall back to `podkit doctor --repair
+      // debris-files` if the failure is persistent. Surface a single
+      // warning so the cause isn't invisible.
       preSyncPreliminaries = undefined;
+      const message = sweepError instanceof Error ? sweepError.message : String(sweepError);
+      if (!out.isJson) {
+        out.warn(
+          `Pre-sync debris sweep failed: ${message}. Sync will proceed without cleanup; run \`podkit doctor --repair debris-files\` if debris persists.`
+        );
+      }
+      // Also push into the run-level warning accumulator so JSON consumers
+      // see it on the aggregate envelope at the end of the sync.
+      allWarnings.push({
+        phase: 'plan',
+        type: 'debris-cleanup-failure',
+        message: `Pre-sync sweep failed: ${message}`,
+        tracks: [],
+      });
     }
     // Flag: only the FIRST collection's genericSyncCollection call
     // receives the preliminaries. After that, the executor's pre-flight
