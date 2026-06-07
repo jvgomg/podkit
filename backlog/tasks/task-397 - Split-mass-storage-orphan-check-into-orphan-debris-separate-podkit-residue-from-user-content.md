@@ -3,10 +3,10 @@ id: TASK-397
 title: >-
   Split mass-storage orphan check into orphan + debris (separate podkit residue
   from user content)
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-06-07 12:17'
-updated_date: '2026-06-07 14:58'
+updated_date: '2026-06-07 15:32'
 labels:
   - enhancement
   - doctor
@@ -77,21 +77,17 @@ This task is the framework foundation for:
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Shared file-categorising walker extracted; orphan and debris checks both consume it (no double FS walk)
-- [ ] #2 `orphan-files-mass-storage` emits only orphans; repair preserves current confirmation-gated UX
-- [ ] #3 `debris-files-mass-storage` (new) emits only debris (`.podkit-tmp`, `.Audio file`, etc.); repair is safe-auto (no prompt)
-- [ ] #4 iPod-side debris check covers `iPod_Control/Music/F**` `.podkit-tmp` residue from TASK-376 portable tag-writes
-- [ ] #5 Test file split: orphan tests vs debris tests; iPod debris test pins the new walk
-- [ ] #6 Doctor report distinguishes the two check sections cleanly (existing renderer should handle this via separate ids)
-- [ ] #7 Architecture doc updated to name the debris-vs-orphan split if responsibility-boundaries warrant
-- [ ] #8 Public --repair IDs unified: `orphan-files` (dispatched by device type), `debris-files` (dispatched by device type), `debris-transcode-tmp` (host scratch). NO device-suffixed public IDs.
-- [ ] #9 `--repair orphan-files-mass-storage` is HARD REMOVED — invocation errors out with a clear message pointing to `--repair orphan-files`. Changeset published with minor bump.
-- [ ] #10 doctor.md + cli-commands.md + common-issues.md updated to reference only the unified IDs; no remaining references to device-suffixed --repair flags.
+- [x] #1 Shared file-categorising walker extracted; orphan and debris checks both consume it (no double FS walk)
+- [x] #2 `orphan-files-mass-storage` emits only orphans; repair preserves current confirmation-gated UX
+- [x] #3 `debris-files-mass-storage` (new) emits only debris (`.podkit-tmp`, `.Audio file`, etc.); repair is safe-auto (no prompt)
+- [x] #4 iPod-side debris check covers `iPod_Control/Music/F**` `.podkit-tmp` residue from TASK-376 portable tag-writes
+- [x] #5 Test file split: orphan tests vs debris tests; iPod debris test pins the new walk
+- [x] #6 Doctor report distinguishes the two check sections cleanly (existing renderer should handle this via separate ids)
+- [x] #7 Architecture doc updated to name the debris-vs-orphan split if responsibility-boundaries warrant
+- [x] #8 Public --repair IDs unified: `orphan-files` (dispatched by device type), `debris-files` (dispatched by device type), `debris-transcode-tmp` (host scratch). NO device-suffixed public IDs.
+- [x] #9 `--repair orphan-files-mass-storage` is HARD REMOVED — invocation errors out with a clear message pointing to `--repair orphan-files`. Changeset published with minor bump.
+- [x] #10 doctor.md + cli-commands.md + common-issues.md updated to reference only the unified IDs; no remaining references to device-suffixed --repair flags.
 <!-- AC:END -->
-
-
-
-
 
 ## Implementation Plan
 
@@ -168,3 +164,58 @@ The scanner registry can still have device-specific walker implementations (iPod
 
 Fold into AC: `--repair orphan-files` works on both device types; `--repair orphan-files-mass-storage` is rejected (hard removed); changeset published; docs updated to unified IDs.
 <!-- SECTION:PLAN:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Closed the orphan-vs-debris split, added iPod + transcode-tmp debris coverage, and unified the public `--repair` ID surface. Ships as a minor bump (CLI breaking change: `--repair orphan-files-mass-storage` removed).
+
+## What landed
+
+**Scanner registry** (`packages/podkit-core/src/diagnostics/scanners/`): new module mirroring the `DiagnosticCheck` registry shape but answering a different question — every path returned is podkit-owned debris (safe to delete by construction). Three walkers, three scanner adapters, one shared FS surface per device type so doctor checks + pre-sync sweep never double-walk.
+
+**Check splits**:
+- `orphan-files-mass-storage` now emits orphans + phantom-manifest only. Repair stays confirmation-gated.
+- New `debris-files-mass-storage` (manifest-agnostic, extension-keyed). Repair is safe-auto.
+- New `debris-files-ipod` walks the FULL `iPod_Control/` surface (Music, iTunes, Artwork, Device, Photos), not just F-buckets. Keys on `.podkit-tmp` suffix.
+- New `debris-transcode-tmp` reaps abandoned `os.tmpdir()/podkit-transcode-*` dirs with an mtime-based safety floor — concurrent sibling podkit processes (a daemon + manual CLI) are never disturbed.
+
+**Unified public `--repair` IDs** via `repair-dispatch.ts`:
+- `orphan-files` → iPod check on iPod, mass-storage check on mass-storage
+- `debris-files` → device-specific debris check
+- `debris-transcode-tmp` → host-only, no device dispatch
+- `--repair orphan-files-mass-storage` HARD REMOVED. Commander's choices() error surfaces the new ID set.
+
+**Docs**:
+- `docs/user-guide/devices/doctor.md`, `docs/reference/cli-commands.md`, `docs/troubleshooting/common-issues.md` rewritten for unified IDs.
+- `documents/architecture/sync/save-transactions.md` §3 names the orphan-vs-debris responsibility split + the scanner registry as a sibling to the check registry.
+
+**Sonnet review**: 0 blocking bugs found. Three fix-soon items folded in (mass-storage fallback in `getRepairCheckForValidation`, requirements-divergence pin test, `debris-transcode-tmp` system-repair fast-path test). Three nice-to-have comment improvements deferred — no behaviour impact.
+
+## Test coverage
+
+- 473/473 affected tests green (diagnostics suite + doctor CLI tests).
+- Split test files: `orphans-mass-storage.test.ts` (orphan-only, 25 tests), new `debris-files-mass-storage.test.ts` (12 tests), new `debris-files-ipod.test.ts` (12 tests), new `debris-transcode-tmp.test.ts` (8 tests), new `repair-dispatch.test.ts` (21 tests including divergence pin).
+- New flag-matrix AC #15b pins `debris-transcode-tmp` through the runSystemRepair fast-path.
+
+## Carried forward / deferred
+
+- **libgpod tmp residue**: libgpod uses GLib `g_file_set_contents` with random-suffix dot-prefixed tmp files (e.g. `.iTunesDB.tmpXXX`). The dotfile filter in the walker correctly skips macOS resource forks AND these GLib tmps. Detecting libgpod tmp residue is a separate problem (no fixed extension) — out of scope here, can be a follow-up.
+- **Doctor registry re-org by `{scope, category}`** (scope expansion from the design session): not done. The orphan-vs-debris split is the substantive structural improvement; further re-org by failure-mode would be a separate refactor.
+
+## Commit log (11)
+
+cee0e3ab Scanner registry foundation
+d594a44e Mass-storage walker extraction (no behaviour change)
+afe382eb Split mass-storage check into orphan + debris
+38ba7341 iPod debris check + walker + tests
+3f6e6f26 Transcode-tmp host check + walker + tests
+1249ecd7 Register the three scanners
+4efa15c7 Unify --repair IDs + changeset
+4f81a23f User-facing doc updates
+b152ef93 Architecture doc (save-transactions §3)
+85aa5d19 Test scaffold fix (doctor-device-types fake core)
+24b80ef9 Sonnet review follow-ups
+
+Branch: `phase1-task-397` → merged to `main`.
+<!-- SECTION:FINAL_SUMMARY:END -->
