@@ -1,11 +1,12 @@
 ---
-id: TASK-403
+id: DRAFT-015
 title: >-
   Pre-sync sweep performance baseline for large libraries (and the case for
   caching)
-status: To Do
+status: Draft
 assignee: []
 created_date: '2026-06-07 16:17'
+updated_date: '2026-06-07 17:57'
 labels:
   - performance
   - sync-engine
@@ -65,3 +66,9 @@ No user complaints yet — small libraries are fast. But the cost is paid on EVE
 - [ ] #4 If mitigation lands: ADR or architecture doc subsection describes the approach
 - [ ] #5 sync/planning.md §6 updated with performance characteristics + strategy
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Deferred 2026-06-07 — perf budget threshold not yet set; revisit when a user complains about sweep latency on a large library, or when capturing real-world P95 against TERAPOD becomes practical.
+<!-- SECTION:NOTES:END -->
