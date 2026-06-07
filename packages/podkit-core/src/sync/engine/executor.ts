@@ -25,6 +25,7 @@ import type {
 import type { TranscodeProgress } from '../../transcode/types.js';
 import type { ContentTypeHandler, ExecutionContext, OperationProgress } from './content-type.js';
 import { categorizeError, createCategorizedError, type RetryConfig } from './error-handling.js';
+import { runPreliminariesPreFlight } from './pre-sync-sweep.js';
 
 // =============================================================================
 // Types
@@ -192,6 +193,17 @@ export class SyncExecutor<TSource, TDevice, TOp extends BaseOperation = SyncOper
       continueOnError,
       warningSink,
     };
+
+    // Pre-sync sweep pre-flight (TASK-398). Only the FIRST plan against a
+    // device carries `preliminaries`; subsequent collection plans see
+    // undefined and the helper short-circuits. No-op in dry-run.
+    if (plan.preliminaries) {
+      await runPreliminariesPreFlight(plan.preliminaries, {
+        dryRun,
+        warningSink,
+        signal,
+      });
+    }
 
     // Path 1: Batch execution (when handler has executeBatch and not dry-run)
     if (!dryRun && this.handler.executeBatch) {

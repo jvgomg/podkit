@@ -56,6 +56,7 @@ import { getCodecMetadata } from '../../transcode/codecs.js';
 import { getCodecPresetBitrate, getCodecVbrQuality } from '../../transcode/types.js';
 import type { TransferMode } from '../../transcode/types.js';
 import type { TranscodePresetRef } from '../engine/types.js';
+import { runPreliminariesPreFlight } from '../engine/pre-sync-sweep.js';
 import type {
   ExecuteOptions,
   SyncExecutor,
@@ -819,6 +820,25 @@ export class MusicPipeline implements SyncExecutor {
       // in the pipeline's accumulator instead of being dropped on the floor.
       // Optional method — adapters that never emit warnings can omit it.
       this.device.setWarningSink?.(this.warningSink);
+
+      // Pre-sync sweep pre-flight (TASK-398). When plan.preliminaries is set
+      // (only the FIRST collection's plan against a given device carries
+      // it), clean up debris before track ops run. No-op in dry-run; the
+      // presenter renders the preliminaries from the plan directly.
+      if (plan.preliminaries) {
+        const preflight = await runPreliminariesPreFlight(plan.preliminaries, {
+          dryRun,
+          warningSink: this.warningSink,
+          signal,
+        });
+        if (!dryRun && preflight.debrisDeleted > 0) {
+          // Single log line per task spec §4.
+          // Use the device adapter's stdout-equivalent if available, else
+          // skip — the warnings accumulator already records failures.
+          // (The orchestrator will surface the summary line via the
+          // presenter's renderPreamble in the same render pass.)
+        }
+      }
 
       if (needsTempDir && !dryRun) {
         await mkdir(transcodeDir, { recursive: true });

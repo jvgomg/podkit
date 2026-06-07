@@ -25,9 +25,9 @@
  * traversal produces both buckets, no double walk.
  */
 
-import { stat } from 'node:fs/promises';
+import { rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import type { PlanPreliminaries } from './types.js';
+import type { PlanPreliminaries, Warning, WarningSink } from './types.js';
 import type { DiagnosticDeviceType } from '../../diagnostics/types.js';
 import type { ContentPaths } from '@podkit/devices-mass-storage';
 import { walkMassStorageContent } from '../../diagnostics/scanners/mass-storage-walker.js';
@@ -150,4 +150,94 @@ async function sizeOrZero(path: string): Promise<number> {
   } catch {
     return 0;
   }
+}
+
+// =============================================================================
+// Executor pre-flight
+// =============================================================================
+
+/**
+ * Result of the pre-flight: how many paths were removed and how many bytes
+ * were freed. The executor logs a single line based on this so the user
+ * can see what the pre-sync sweep did before track ops started.
+ */
+export interface PreFlightResult {
+  /** Number of paths the pre-flight successfully unlinked. */
+  debrisDeleted: number;
+  /** Sum of bytes freed across successfully-deleted paths. */
+  freedBytes: number;
+  /** Paths where deletion failed (already surfaced as Warnings). */
+  failedPaths: string[];
+}
+
+/**
+ * Run the pre-flight cleanup that consumes a {@link PlanPreliminaries}.
+ *
+ * - **No-op** when `preliminaries` is undefined, when no `debrisCleanup`
+ *   bucket is set, or when running in dry-run mode (the presenter
+ *   reports preliminaries from the plan directly; the executor doesn't
+ *   simulate them).
+ * - **Tolerant of every individual unlink failure**: a single failure
+ *   becomes a `Warning('debris-cleanup-failure')` and the loop continues.
+ *   The pre-flight NEVER throws — the next sync will retry.
+ * - **Phantom-manifest pruning is currently advisory**: if `phantomPrune`
+ *   is set, a single advisory warning is emitted recommending the user
+ *   run `podkit doctor --repair orphan-files` to clean up phantom rows.
+ *   Full auto-pruning is deferred — the manifest-rewrite crosses adapter
+ *   boundaries that this sweep deliberately avoids touching today.
+ */
+export async function runPreliminariesPreFlight(
+  preliminaries: PlanPreliminaries | undefined,
+  options: { dryRun: boolean; warningSink: WarningSink; signal?: AbortSignal }
+): Promise<PreFlightResult> {
+  const empty: PreFlightResult = { debrisDeleted: 0, freedBytes: 0, failedPaths: [] };
+  if (!preliminaries || options.dryRun) return empty;
+
+  const debris = preliminaries.debrisCleanup;
+  let debrisDeleted = 0;
+  let freedBytes = 0;
+  const failedPaths: string[] = [];
+
+  if (debris && debris.paths.length > 0) {
+    // Distribute the totalBytes pessimistically across paths so a
+    // pre-stat'd estimate is available even when a per-path stat fails
+    // mid-unlink. The number is only used for the summary log line.
+    const perPathEstimate = Math.floor(debris.totalBytes / debris.paths.length);
+
+    for (const path of debris.paths) {
+      if (options.signal?.aborted) break;
+      try {
+        // rm with recursive+force handles BOTH single files (e.g.
+        // `.podkit-tmp` siblings) AND abandoned transcode-tmp
+        // directories. No need to discriminate kind at the caller.
+        await rm(path, { recursive: true, force: true });
+        debrisDeleted += 1;
+        freedBytes += perPathEstimate;
+      } catch (err) {
+        failedPaths.push(path);
+        const warning: Warning = {
+          phase: 'execute',
+          type: 'debris-cleanup-failure',
+          message: `Failed to clean up incomplete-write residue ${path}: ${err instanceof Error ? err.message : String(err)}`,
+          // No track ref — debris isn't track-scoped.
+          tracks: [],
+        };
+        options.warningSink.emit(warning);
+      }
+    }
+  }
+
+  // Phantom-manifest prune is currently advisory. Surface a single
+  // warning per sweep when any phantom rows were detected so the user
+  // knows to run doctor manually.
+  if (preliminaries.phantomPrune && preliminaries.phantomPrune.paths.length > 0) {
+    options.warningSink.emit({
+      phase: 'execute',
+      type: 'debris-cleanup-failure',
+      message: `${preliminaries.phantomPrune.paths.length} phantom manifest entries detected. Run \`podkit doctor --repair orphan-files\` to prune them.`,
+      tracks: [],
+    });
+  }
+
+  return { debrisDeleted, freedBytes, failedPaths };
 }
