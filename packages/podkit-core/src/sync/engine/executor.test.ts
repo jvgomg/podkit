@@ -802,4 +802,116 @@ describe('SyncExecutor', () => {
       expect(result.completed).toBe(1);
     });
   });
+
+  describe('warning sink', () => {
+    // Pins the wiring contract: handlers emit via ctx.warningSink, the
+    // executor accumulates into both ExecuteResult.warnings and the typed
+    // getWarnings() surface that presenters consume. Presenters iterate the
+    // progress stream and discard the generator return value, so
+    // getWarnings() is what they actually read.
+    it('provides ctx.warningSink to executeBatch handlers and accumulates emissions', async () => {
+      const handler = createMockHandler({
+        async *executeBatch(
+          operations: SyncOperation[],
+          ctx: ExecutionContext
+        ): AsyncGenerator<OperationProgress> {
+          ctx.warningSink?.emit({
+            phase: 'execute',
+            type: 'tag-write',
+            message: 'synthetic portable tag-write miss',
+            tracks: [{ artist: 'Test Artist', title: 'Test Song' }],
+          });
+          for (const op of operations) {
+            yield { operation: op, phase: 'starting' };
+            yield { operation: op, phase: 'complete' };
+          }
+        },
+      });
+
+      const executor = new SyncExecutor(handler);
+      const plan = makePlan([makeCopyOp('a.mp3')]);
+      const { result } = await consumeExecutor(executor.execute(plan, { device: {} as any }));
+
+      expect(result.warnings).toHaveLength(1);
+      expect(result.warnings[0]!.type).toBe('tag-write');
+      expect(result.warnings[0]!.tracks[0]!.title).toBe('Test Song');
+      expect(executor.getWarnings()).toEqual(result.warnings);
+    });
+
+    it('exposes accumulated warnings via the typed getWarnings() method', async () => {
+      // Presenters iterate the progress stream and discard the generator
+      // return value, so the result.warnings array is invisible to them.
+      // getWarnings() is the surface they read instead.
+      const handler = createMockHandler({
+        async *executeBatch(
+          operations: SyncOperation[],
+          ctx: ExecutionContext
+        ): AsyncGenerator<OperationProgress> {
+          ctx.warningSink?.emit({
+            phase: 'execute',
+            type: 'artwork',
+            message: 'artwork extraction failed',
+            tracks: [{ artist: 'A', title: 'B' }],
+          });
+          ctx.warningSink?.emit({
+            phase: 'execute',
+            type: 'tag-write',
+            message: 'tag write failed',
+            tracks: [{ artist: 'C', title: 'D' }],
+          });
+          for (const op of operations) {
+            yield { operation: op, phase: 'starting' };
+            yield { operation: op, phase: 'complete' };
+          }
+        },
+      });
+
+      const executor = new SyncExecutor(handler);
+      const plan = makePlan([makeCopyOp('a.mp3')]);
+
+      // Mimic the presenter: drain the progress stream without consuming the
+      // generator return value.
+      for await (const _ of executor.execute(plan, { device: {} as any })) {
+        void _;
+      }
+
+      const warnings = executor.getWarnings();
+      expect(warnings).toHaveLength(2);
+      expect(warnings.map((w) => w.type).sort()).toEqual(['artwork', 'tag-write']);
+    });
+
+    it('clears warnings between sequential execute() calls on the same instance', async () => {
+      let runIndex = 0;
+      const handler = createMockHandler({
+        async *executeBatch(
+          operations: SyncOperation[],
+          ctx: ExecutionContext
+        ): AsyncGenerator<OperationProgress> {
+          runIndex++;
+          ctx.warningSink?.emit({
+            phase: 'execute',
+            type: 'tag-write',
+            message: `run ${runIndex}`,
+            tracks: [{ artist: 'A', title: 'B' }],
+          });
+          for (const op of operations) {
+            yield { operation: op, phase: 'starting' };
+            yield { operation: op, phase: 'complete' };
+          }
+        },
+      });
+
+      const executor = new SyncExecutor(handler);
+      const plan = makePlan([makeCopyOp('a.mp3')]);
+
+      await consumeExecutor(executor.execute(plan, { device: {} as any }));
+      expect(executor.getWarnings()).toHaveLength(1);
+      expect(executor.getWarnings()[0]!.message).toBe('run 1');
+
+      await consumeExecutor(executor.execute(plan, { device: {} as any }));
+      // Second run must not include the first run's warning.
+      expect(executor.getWarnings()).toHaveLength(1);
+      expect(executor.getWarnings()[0]!.message).toBe('run 2');
+    });
+  });
 });

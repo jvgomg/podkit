@@ -20,6 +20,7 @@ import type {
   ExecuteResult,
   CategorizedError,
   Warning,
+  WarningSink,
 } from './types.js';
 import type { TranscodeProgress } from '../../transcode/types.js';
 import type { ContentTypeHandler, ExecutionContext, OperationProgress } from './content-type.js';
@@ -115,11 +116,38 @@ function buildExecutorProgress<TOp extends BaseOperation>(
 /**
  * Generic sync executor that delegates to a ContentTypeHandler.
  *
+ * Owns the execute-phase {@link WarningSink}: handlers (and the adapters /
+ * pipelines they wrap) emit soft signals into the sink injected via
+ * {@link ExecutionContext.warningSink}, the executor accumulates them on
+ * `this.warnings`, surfaces them on the {@link ExecuteResult}, and exposes a
+ * typed {@link getWarnings} method for callers that consume the progress
+ * stream without reading the generator return value (e.g. the CLI presenters,
+ * which iterate `for await ... of executor.execute(...)`).
+ *
  * @typeParam TSource - The source item type
  * @typeParam TDevice - The device item type
  */
 export class SyncExecutor<TSource, TDevice, TOp extends BaseOperation = SyncOperation> {
+  /**
+   * Warnings collected during the most recent {@link execute} call.
+   *
+   * Cleared at the start of every `execute()` so reuse on the same executor
+   * instance doesn't leak warnings from a previous run.
+   */
+  private warnings: Warning[] = [];
+
   constructor(private handler: ContentTypeHandler<TSource, TDevice, TOp>) {}
+
+  /**
+   * Warnings emitted into the executor's sink during the most recent run.
+   *
+   * Typed surface that replaces the prior CLI duck-typing of `getWarnings()`
+   * against the music pipeline. Callers that iterate the progress stream and
+   * discard the generator return value should drain this at end of stream.
+   */
+  getWarnings(): Warning[] {
+    return [...this.warnings];
+  }
 
   /**
    * Execute a sync plan, yielding progress updates.
@@ -145,7 +173,15 @@ export class SyncExecutor<TSource, TDevice, TOp extends BaseOperation = SyncOper
     let skipped = 0;
     const errors: Array<{ operation: TOp; error: Error }> = [];
     const categorizedErrors: CategorizedError[] = [];
-    const warnings: Warning[] = [];
+    // Reset the accumulator before constructing the sink so the closure below
+    // appends into a fresh array rather than carrying over from a prior run.
+    this.warnings = [];
+    const warnings = this.warnings;
+    const warningSink: WarningSink = {
+      emit: (w: Warning) => {
+        warnings.push(w);
+      },
+    };
     let aborted = false;
 
     const ctx: ExecutionContext = {
@@ -154,6 +190,7 @@ export class SyncExecutor<TSource, TDevice, TOp extends BaseOperation = SyncOper
       dryRun,
       tempDir,
       continueOnError,
+      warningSink,
     };
 
     // Path 1: Batch execution (when handler has executeBatch and not dry-run)
@@ -271,7 +308,10 @@ export class SyncExecutor<TSource, TDevice, TOp extends BaseOperation = SyncOper
     const skipped = 0;
     const errors: Array<{ operation: TOp; error: Error }> = [];
     const categorizedErrors: CategorizedError[] = [];
-    const warnings: Warning[] = [];
+    // Reference the executor-level accumulator so warnings handlers push via
+    // ctx.warningSink (e.g. drained MusicPipeline warnings) flow into both
+    // ExecuteResult.warnings and the typed getWarnings() surface.
+    const warnings = this.warnings;
     let aborted = false;
     let operationIndex = 0;
 

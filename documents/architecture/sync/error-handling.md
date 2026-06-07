@@ -162,7 +162,7 @@ there's no fan-in — the planner is a single sequential pass.
 
 Execute warnings come from many places during a run — the transfer
 manager, the artwork manager, the adapter's `save()`. They go through
-a `WarningSink` so the pipeline can accumulate them in order:
+a `WarningSink` so the executor can accumulate them in order:
 
 - `MusicArtworkManager` takes a sink at construction; emits `'artwork'`
   warnings when extraction/transfer fails (non-fatal: artwork is
@@ -170,8 +170,31 @@ a `WarningSink` so the pipeline can accumulate them in order:
 - `IpodAdapter.setWarningSink(sink)` — pipeline calls this at execute
   start; the adapter emits `'tag-write'` warnings for best-effort
   portable-mode file-tag writes that drop or fail.
-- `MusicPipeline.warnings` accumulates everything and exposes them via
-  `getWarnings()` at the end of a run.
+- `MusicPipeline.warnings` accumulates everything emitted into its
+  internal sink and exposes them via `getWarnings()` at the end of a
+  run.
+
+The sink **chains across two layers** so a single Warning emission
+reaches the CLI envelope:
+
+1. The **engine executor** (`SyncExecutor`) owns the outer sink — it
+   builds one per `execute()` call, threads it through
+   `ExecutionContext.warningSink`, accumulates emissions on
+   `this.warnings`, surfaces them on the `ExecuteResult.warnings` array
+   AND on the typed `executor.getWarnings()` method that presenters
+   read. Reset at the top of every `execute()` call so reuse on the
+   same instance doesn't leak warnings across runs.
+2. The **music pipeline** still owns its own inner sink (passed into
+   `MusicArtworkManager`, wired into the adapter at execute start). At
+   the end of `MusicHandler.executeBatch`, the handler drains
+   `pipeline.getWarnings()` into `ctx.warningSink`, forwarding the
+   inner accumulator's contents to the outer one. The drain runs in a
+   `finally` so an early break (e.g. fatal stage error) still surfaces
+   warnings that fired before the throw.
+
+Without that handler-level drain the pipeline's sink stays private to
+the pipeline instance and the warnings GC with it — the failure mode
+the matrix's iPod portable cells observed before the fix.
 
 ### Adapters never touch stderr
 
@@ -203,19 +226,48 @@ Drawing the line between layers:
   `Warning[]` with `phase: 'plan'`).
 - **Calls into adapter:** for execution; receives typed errors and
   propagates them up.
+- **Forwards execute-phase warnings to the executor's sink.** The
+  music handler instantiates a fresh `MusicPipeline` per batch and
+  drains `pipeline.getWarnings()` into `ctx.warningSink` (in `finally`)
+  when the batch completes. The video handler wires `ctx.warningSink`
+  into the device adapter directly via `setWarningSink` at the start
+  of the batch — its own batch loop has no pipeline-local accumulator.
+  Without this forwarding step, adapter-emitted Warnings never reach
+  `SyncOutput.warnings[]`.
 
-### Pipeline / executor
+### Pipeline (music)
 
-- **Knows:** retry policy, warning accumulation, progress event shape.
-- **Provides:** the `WarningSink` to adapter + sub-managers at execute
-  start.
+- **Knows:** transcode/copy/transfer mechanics, per-album artwork
+  cache.
+- **Owns:** an inner `WarningSink` it wires into the artwork manager
+  and the device adapter at execute start.
+- **Accumulates:** every emission into `this.warnings`; exposes via
+  `getWarnings()` at end of run.
+- **Does not** know about the engine-level executor — the handler is
+  responsible for forwarding the accumulator outward.
+
+### Engine executor (`SyncExecutor`)
+
+- **Knows:** retry policy (per-op path), warning accumulation, progress
+  event shape.
+- **Builds the outer `WarningSink`** once per `execute()` call and
+  threads it through `ExecutionContext.warningSink`.
 - **Catches:** typed errors → reads category → consults retry config →
   decides retry vs. surface.
-- **Accumulates:** warnings into `ExecuteResult.warnings`.
+- **Accumulates:** warnings into `this.warnings`; surfaces them on
+  `ExecuteResult.warnings` (for callers reading the generator return
+  value) AND on the typed `executor.getWarnings()` method (for callers
+  iterating the progress stream and discarding the return value, e.g.
+  the CLI presenters).
 
 ### CLI
 
 - **Consumes:** `SyncOutput` (warnings + errors + result).
+- **Drains** `executor.getWarnings()` at end of `presenter.executeSync`,
+  forwarding into the presenter's returned `warnings` field. `sync.ts`
+  aggregates those across collections into `allWarnings` and renders
+  both the text `Warnings:` summary (grouped by type, expanded under
+  `-v`) and the `--json` `warnings[]` envelope.
 - **Renders:** text + JSON. Doesn't duplicate-deduplicate stderr against
   JSON because adapters never write stderr.
 

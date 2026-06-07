@@ -16,6 +16,7 @@ import type {
   SyncOperation,
   SyncPlan,
   UpdateReason,
+  WarningSink,
 } from './types.js';
 
 // =============================================================================
@@ -55,6 +56,19 @@ export interface ExecutionContext {
    * single failing track aborts the whole run.
    */
   continueOnError?: boolean;
+  /**
+   * Sink owned by the executor for collecting execute-phase warnings emitted
+   * during this run. Handlers forward soft signals (adapter `tag-write`,
+   * artwork extraction failures, future mass-storage emissions) here so they
+   * land in `ExecuteResult.warnings` and ultimately `SyncOutput.warnings[]`.
+   *
+   * Always populated by `SyncExecutor.execute()`; handlers may rely on its
+   * presence in batch mode.
+   *
+   * See `documents/architecture/sync/error-handling.md` §4 for the layer
+   * responsibilities.
+   */
+  warningSink?: WarningSink;
 }
 
 // =============================================================================

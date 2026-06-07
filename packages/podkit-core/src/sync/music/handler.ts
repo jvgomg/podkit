@@ -932,6 +932,12 @@ export class MusicHandler implements ContentTypeHandler<
 
   // ---- Execution ----
 
+  /**
+   * Single-operation stub. Dead in production — `executeBatch` covers all
+   * music sync flows. If this path is ever resurrected, it must forward
+   * `ctx.warningSink` to the inner pipeline so warning-sink consumers
+   * (music-presenter.ts, SyncOutput.warnings[]) keep working.
+   */
   async *execute(
     op: MusicOperation,
     _ctx: ExecutionContext
@@ -958,31 +964,46 @@ export class MusicHandler implements ContentTypeHandler<
     // Create the 3-stage pipeline executor.
     const executor = new MusicPipeline({ device: ctx.device, transcoder });
 
-    // Execute and bridge events
-    for await (const progress of executor.execute(plan, {
-      dryRun: ctx.dryRun,
-      signal: ctx.signal,
-      tempDir: ctx.tempDir,
-      artwork: this.config.raw.artwork,
-      adapter: this.config.raw.adapter,
-      syncTagConfig: {
-        encodingMode: this.config.raw.encoding,
-        customBitrate: this.config.raw.customBitrate,
-      },
-      continueOnError: this.config.raw.continueOnError ?? ctx.continueOnError,
-      retryConfig: this.config.raw.retryConfig,
-      transferMode: this.config.transferMode,
-      artworkResize: this.config.artworkResize,
-      sidecarResize: this.config.sidecarResize,
-      audioNormalization: this.config.audioNormalization,
-    })) {
-      // Filter out batch-level events that don't map to per-operation progress
-      if (progress.phase === 'updating-db' || progress.phase === 'complete') {
-        continue;
-      }
+    try {
+      // Execute and bridge events
+      for await (const progress of executor.execute(plan, {
+        dryRun: ctx.dryRun,
+        signal: ctx.signal,
+        tempDir: ctx.tempDir,
+        artwork: this.config.raw.artwork,
+        adapter: this.config.raw.adapter,
+        syncTagConfig: {
+          encodingMode: this.config.raw.encoding,
+          customBitrate: this.config.raw.customBitrate,
+        },
+        continueOnError: this.config.raw.continueOnError ?? ctx.continueOnError,
+        retryConfig: this.config.raw.retryConfig,
+        transferMode: this.config.transferMode,
+        artworkResize: this.config.artworkResize,
+        sidecarResize: this.config.sidecarResize,
+        audioNormalization: this.config.audioNormalization,
+      })) {
+        // Filter out batch-level events that don't map to per-operation progress
+        if (progress.phase === 'updating-db' || progress.phase === 'complete') {
+          continue;
+        }
 
-      // Bridge ExecutorProgress → OperationProgress
-      yield this.bridgeProgress(progress);
+        // Bridge ExecutorProgress → OperationProgress
+        yield this.bridgeProgress(progress);
+      }
+    } finally {
+      // Forward execute-phase warnings the pipeline accumulated (adapter
+      // tag-write soft signals, artwork extraction failures, etc.) into the
+      // executor's sink. The pipeline holds them on a private array that is
+      // GC'd with the instance — without this drain they never reach
+      // ExecuteResult.warnings or SyncOutput.warnings[]. Drain in `finally`
+      // so an early break (e.g. fatal stage error) still surfaces what fired
+      // before the throw.
+      if (ctx.warningSink) {
+        for (const w of executor.getWarnings()) {
+          ctx.warningSink.emit(w);
+        }
+      }
     }
   }
 

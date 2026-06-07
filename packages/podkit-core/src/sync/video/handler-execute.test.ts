@@ -24,6 +24,8 @@ import type {
   DeviceTrackInput,
   DeviceTrackMetadata,
 } from '../../device/adapter.js';
+import type { Warning, WarningSink } from '../engine/types.js';
+import { createSyncExecutor } from '../engine/executor.js';
 
 // =============================================================================
 // Test Fixtures
@@ -50,6 +52,9 @@ function createMockIpod() {
       (_track: DeviceTrack, _sourcePath: string) => mockTrack as unknown as DeviceTrack
     ),
     save: mock(() => Promise.resolve({ warnings: [] }) as Promise<SaveResult>),
+    // Optional per DeviceAdapter interface — present here so sink-wiring tests
+    // can spy on it without adding a required method to every mock.
+    setWarningSink: mock((_sink: WarningSink) => {}),
     mockTrack,
   };
 }
@@ -658,6 +663,94 @@ describe('VideoHandler execution', () => {
       const reachedSecond = events.some((e) => e.operation.type === 'video-copy');
       expect(failed.length).toBeGreaterThan(0);
       expect(reachedSecond).toBe(true);
+    });
+  });
+
+  describe('executeBatch sink wiring', () => {
+    it('wires ctx.warningSink into device.setWarningSink at batch start', async () => {
+      const mockIpod = createMockIpod();
+      const mockSink: WarningSink = { emit: mock(() => {}) };
+      const ops: VideoOperation[] = [{ type: 'video-copy', source: makeVideoSource() }];
+      const ctx: ExecutionContext = {
+        device: mockIpod as unknown as DeviceAdapter,
+        tempDir: '/tmp/batch',
+        warningSink: mockSink,
+      };
+
+      await collectProgress(handler.executeBatch!(ops, ctx));
+
+      // The handler forwards the executor-owned sink so device adapters that
+      // call setWarningSink?.(sink) (future mass-storage video emissions) land
+      // in the same accumulator that executor.getWarnings() drains.
+      expect(mockIpod.setWarningSink).toHaveBeenCalledTimes(1);
+      expect(mockIpod.setWarningSink.mock.calls[0]![0]).toBe(mockSink);
+    });
+
+    it('does not call setWarningSink when ctx.warningSink is absent (optional-chain guard)', async () => {
+      const mockIpod = createMockIpod();
+      const ops: VideoOperation[] = [{ type: 'video-copy', source: makeVideoSource() }];
+      // ctx deliberately omits warningSink — mirrors pre-executor-injection callers
+      const ctx: ExecutionContext = {
+        device: mockIpod as unknown as DeviceAdapter,
+        tempDir: '/tmp/batch',
+      };
+
+      await collectProgress(handler.executeBatch!(ops, ctx));
+
+      expect(mockIpod.setWarningSink).not.toHaveBeenCalled();
+    });
+
+    it('warning emitted via the wired sink reaches the executor getWarnings()', async () => {
+      // This test drives the full SyncExecutor → executeBatch → device.setWarningSink
+      // chain end-to-end: a device that captures the injected sink and emits a
+      // warning through it should make that warning visible on executor.getWarnings()
+      // after the run.
+
+      const TAG_WRITE_WARNING: Warning = {
+        phase: 'execute',
+        type: 'tag-write',
+        message: 'synthetic video tag-write miss',
+        tracks: [{ artist: 'Video Artist', title: 'Test Video', album: '' }],
+      };
+
+      // Build a mock device that captures the injected sink and emits via it.
+      // setWarningSink is invoked before the batch loop, so any operation-level
+      // work that calls emit() reaches the executor's accumulator.
+      let capturedSink: WarningSink | undefined;
+      const mockIpod = createMockIpod();
+      mockIpod.setWarningSink.mockImplementation((sink: WarningSink) => {
+        capturedSink = sink;
+      });
+      // Override copyTrackFile to emit the warning mid-batch (simulates a
+      // device adapter soft-failure that would surface in a real run).
+      (mockIpod as any).copyTrackFile = mock((_track: DeviceTrack, _sourcePath: string) => {
+        capturedSink?.emit(TAG_WRITE_WARNING);
+        return _track;
+      });
+
+      const ops: VideoOperation[] = [{ type: 'video-copy', source: makeVideoSource() }];
+
+      const plan = {
+        operations: ops,
+        estimatedSize: 0,
+        estimatedTime: 0,
+        warnings: [],
+      };
+
+      // Use a real SyncExecutor so the warningSink wiring runs through the
+      // same code path as production.
+      const executor = createSyncExecutor(handler);
+      for await (const _progress of executor.execute(plan, {
+        device: mockIpod as unknown as DeviceAdapter,
+        continueOnError: false,
+      })) {
+        // drain the generator
+      }
+
+      const warnings = executor.getWarnings();
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]!.type).toBe('tag-write');
+      expect(warnings[0]!.message).toBe('synthetic video tag-write miss');
     });
   });
 

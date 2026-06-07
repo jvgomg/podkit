@@ -48,7 +48,7 @@ import {
   healthy,
 } from '@podkit/device-testing';
 
-import { defineMatrix, skipBug, skipImpossible, skipRedundant } from './matrix/harness.js';
+import { defineMatrix, skipImpossible, skipRedundant } from './matrix/harness.js';
 import {
   predictSaveFail,
   saveFailCellKey,
@@ -1035,26 +1035,11 @@ function skipForCell(cell: SaveFailCell) {
         `iPod fast mode does not write file tags — only iTunesDB. track-readonly on the audio file is invisible to save().`
       );
     }
-    if (cell.failureMode === 'track-readonly' && cell.transferMode === 'portable') {
-      // The fault (chattr +i) correctly trips EPERM inside the atomic tag-write
-      // rename, the iPod adapter wraps it into a structured Warning, and emits
-      // it into the warningSink. But the warning never reaches the CLI summary
-      // or the --json envelope: MusicHandler.executeBatch instantiates a fresh
-      // MusicPipeline per call, the warnings accumulate on that pipeline's
-      // private state, and SyncExecutor — the executor MusicPresenter actually
-      // duck-types `getWarnings()` against — has no surface for them. The
-      // pipeline's warnings are garbage-collected with the pipeline instance.
-      //
-      // The matrix's `portableTagWarn: true` prediction therefore observes
-      // false (CLI text/JSON has no Warnings: line), and the fault triggers
-      // no observable assertion at the CLI surface. Pre-existing wiring gap
-      // unrelated to the TASK-376 atomic-write retrofit — needs a dedicated
-      // task to lift warnings from MusicPipeline through the executor surface.
-      return skipBug(
-        `warning surface gap: MusicPipeline accumulates the tag-write warning into warningSink, but MusicHandler.executeBatch never re-exposes MusicPipeline.getWarnings() through SyncExecutor → MusicPresenter, so the CLI never sees it. Pre-existing wiring (predates TASK-376).`,
-        'TASK-396'
-      );
-    }
+    // `track-readonly` × portable now flows: the iPod adapter emits a
+    // structured Warning into its sink, MusicHandler.executeBatch drains the
+    // pipeline's accumulator into the executor's sink, and the presenter
+    // reads the typed getWarnings() surface. The CLI summary and --json
+    // envelope both surface `portableTagWarn: true` end-to-end.
   } else {
     // Non-iPod shapes don't reach iTunesDB.
     if (cell.failureMode === 'itunesdb-readonly') {

@@ -432,6 +432,15 @@ export class VideoHandler implements ContentTypeHandler<
       await this.deps.mkdir(transcodeDir, { recursive: true });
     }
 
+    // Wire the executor's sink into the device adapter so any execute-phase
+    // warnings the adapter emits (today none on the video path; future
+    // mass-storage video sidecar/picture-write soft signals) flow into
+    // ExecuteResult.warnings via the same sink contract music uses. Optional
+    // method per the DeviceAdapter interface — skip when absent.
+    if (ctx.warningSink) {
+      ctx.device.setWarningSink?.(ctx.warningSink);
+    }
+
     try {
       for (const op of operations) {
         if (ctx.signal?.aborted) break;

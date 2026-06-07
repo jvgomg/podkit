@@ -345,6 +345,7 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, Dev
     let lastIndex = -1;
     let lastIndexFailed = false;
     const collectedErrors: CollectedError[] = [];
+    const warnings: import('@podkit/core').Warning[] = [];
     const videoDisplay = new DualProgressDisplay((content) => out.raw(content));
 
     const videoExecutor = core.createSyncExecutor(this.handler!);
@@ -413,16 +414,19 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, Dev
     } catch (err) {
       if (signal?.aborted) {
         videoDisplay.finish();
+        warnings.push(...videoExecutor.getWarnings());
         return {
           completed: videoCompleted,
           failed: videoFailed,
           interrupted: true,
           collectedErrors,
+          warnings,
         };
       }
       const message = err instanceof Error ? err.message : 'Video execution failed';
       out.error(`\nVideo sync error: ${message}`);
-      return { completed: videoCompleted, failed: videoFailed + 1, collectedErrors };
+      warnings.push(...videoExecutor.getWarnings());
+      return { completed: videoCompleted, failed: videoFailed + 1, collectedErrors, warnings };
     }
 
     // Check if aborted after normal generator completion (generic SyncExecutor
@@ -430,11 +434,13 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, Dev
     // without entering the catch block)
     if (signal?.aborted) {
       videoDisplay.finish();
+      warnings.push(...videoExecutor.getWarnings());
       return {
         completed: videoCompleted,
         failed: videoFailed,
         interrupted: true,
         collectedErrors,
+        warnings,
       };
     }
 
@@ -457,7 +463,12 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, Dev
       out.print('Video sync complete.');
     }
 
-    return { completed: videoCompleted, failed: videoFailed, collectedErrors };
+    // Drain execute-phase warnings from the executor's sink. Today the video
+    // path has no emitters, but future mass-storage video sidecar/picture
+    // soft signals flow through the same sink contract music uses.
+    warnings.push(...videoExecutor.getWarnings());
+
+    return { completed: videoCompleted, failed: videoFailed, collectedErrors, warnings };
   }
 
   getCollisionCheckInputs(plan: SyncPlan<VideoOperation>) {

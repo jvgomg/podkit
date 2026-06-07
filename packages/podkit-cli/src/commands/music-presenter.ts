@@ -766,12 +766,6 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
     let failed = 0;
 
     const executor = core.createSyncExecutor(this.handler!);
-    // Some executors (MusicPipeline) accumulate warnings during run and expose
-    // them via getWarnings(). The generic SyncExecutor interface omits this
-    // surface, so we duck-type rather than couple the CLI to the pipeline class.
-    const warningProducer = executor as unknown as {
-      getWarnings?(): import('@podkit/core').Warning[];
-    };
     const musicDisplay = new DualProgressDisplay((content) => out.raw(content));
 
     try {
@@ -820,7 +814,7 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
     } catch (err) {
       if (signal?.aborted) {
         musicDisplay.finish();
-        if (warningProducer.getWarnings) warnings.push(...warningProducer.getWarnings());
+        warnings.push(...executor.getWarnings());
         return { completed, failed, interrupted: true, collectedErrors, warnings };
       }
       throw err;
@@ -828,10 +822,11 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
 
     musicDisplay.finish();
 
-    // Drain execute-phase warnings (artwork failures, tag-write soft signals
-    // once a sink emits them in later refactors). The executor accumulates
-    // them across the run; we surface them once at the end.
-    if (warningProducer.getWarnings) warnings.push(...warningProducer.getWarnings());
+    // Drain execute-phase warnings (artwork extraction failures, iPod portable
+    // tag-write soft signals, future mass-storage emissions). The executor
+    // owns the sink and accumulates everything across the run; we surface
+    // them once at the end so the CLI summary + --json envelope can render.
+    warnings.push(...executor.getWarnings());
 
     // Check if aborted after normal generator completion
     if (signal?.aborted) {
