@@ -313,6 +313,10 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, Dev
                 episodeCount: showsToAdd.length,
               }
             : undefined,
+        // Pre-sync sweep summary (TASK-398). Only present when this
+        // collection is the FIRST against the device — see note in
+        // music-presenter.ts for the cross-collection invariant.
+        preliminaries: plan.preliminaries,
       },
       operations: videoOperations,
     };

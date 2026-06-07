@@ -40,6 +40,12 @@ export interface OpenDeviceResult {
    * Prefer DeviceAdapter methods for everything else.
    */
   ipod?: IpodDatabase;
+  /**
+   * Resolved content paths for mass-storage devices; `undefined` for iPods.
+   * Consumed by the pre-sync sweep (TASK-398) so it can walk the right
+   * directories without duplicating the open-device resolution logic.
+   */
+  contentPaths?: import('@podkit/core').ContentPaths;
 }
 
 /**
@@ -286,6 +292,7 @@ export async function openDevice(
       deviceSupportsAlac: effectiveCaps.supportedAudioCodecs.includes('alac'),
       isIpodDevice: true,
       ipod,
+      contentPaths: undefined,
     };
   }
 
@@ -372,5 +379,10 @@ export async function openDevice(
     capabilities: effectiveCaps,
     deviceSupportsAlac: effectiveCaps.supportedAudioCodecs.includes('alac'),
     isIpodDevice: false,
+    // Pre-sync sweep (TASK-398) needs to walk the configured content paths
+    // to find debris before track ops run. Exposing the resolved paths
+    // alongside the adapter is the smallest surface change that avoids
+    // duplicating the resolution logic in sync.ts.
+    contentPaths,
   };
 }

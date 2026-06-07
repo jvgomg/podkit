@@ -351,6 +351,18 @@ export function formatDuration(seconds: number): string {
   return formatDurationSeconds(seconds);
 }
 
+/**
+ * Compact human-readable bytes for the pre-sync sweep preamble line.
+ * Inline here rather than imported from core to keep the CLI's text
+ * rendering self-contained.
+ */
+function formatPreambleBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
 // Re-export renderProgressBar for tests
 export { renderProgressBar };
 
@@ -1063,6 +1075,50 @@ export async function runSync(
       }
     }
 
+    // ----- Pre-sync debris sweep (TASK-398) -----
+    //
+    // Run once per device sync, before any track ops. The result is
+    // attached to the FIRST collection's plan only (subsequent plans see
+    // undefined) so the executor's pre-flight runs cleanup exactly once
+    // even when music + video share a device. Sweep failures are
+    // non-fatal — the next sync retries.
+    let preSyncPreliminaries: import('@podkit/core').PlanPreliminaries | undefined;
+    try {
+      const deviceType: 'ipod' | 'mass-storage' = isIpodDevice ? 'ipod' : 'mass-storage';
+      preSyncPreliminaries = await core.runPreSyncSweep({
+        mountPoint: devicePath,
+        deviceType,
+        contentPaths: openResult.contentPaths,
+      });
+      const hasWork =
+        (preSyncPreliminaries.debrisCleanup?.paths.length ?? 0) > 0 ||
+        (preSyncPreliminaries.phantomPrune?.paths.length ?? 0) > 0;
+      if (hasWork && !out.isJson) {
+        const debrisCount = preSyncPreliminaries.debrisCleanup?.paths.length ?? 0;
+        const totalBytes = preSyncPreliminaries.debrisCleanup?.totalBytes ?? 0;
+        if (debrisCount > 0) {
+          const action = dryRun ? 'Would clean' : 'Cleaning';
+          const bytesStr = formatPreambleBytes(totalBytes);
+          out.print(
+            `${action} ${debrisCount} incomplete-write file${debrisCount === 1 ? '' : 's'} (${bytesStr}) from a previous interrupted sync`
+          );
+        }
+        const phantomCount = preSyncPreliminaries.phantomPrune?.paths.length ?? 0;
+        if (phantomCount > 0) {
+          out.print(
+            `Detected ${phantomCount} phantom manifest entr${phantomCount === 1 ? 'y' : 'ies'} — run \`podkit doctor --repair orphan-files\` to prune.`
+          );
+        }
+      }
+    } catch {
+      // Sweep failures are non-fatal. Don't block the sync.
+      preSyncPreliminaries = undefined;
+    }
+    // Flag: only the FIRST collection's genericSyncCollection call
+    // receives the preliminaries. After that, the executor's pre-flight
+    // for any subsequent plan sees undefined and short-circuits.
+    let preliminariesConsumed = false;
+
     // ----- Sync Music Collections -----
     if (hasMusicToSync) {
       for (const collection of musicCollections) {
@@ -1147,6 +1203,8 @@ export async function runSync(
           transcoderCapabilities,
           decisions,
         };
+        const musicPreliminaries = preliminariesConsumed ? undefined : preSyncPreliminaries;
+        preliminariesConsumed = true;
         const result = await genericSyncCollection(
           new MusicPresenter(),
           out,
@@ -1159,7 +1217,9 @@ export async function runSync(
           adapter,
           core,
           shutdown.signal,
-          shutdown
+          shutdown,
+          undefined,
+          musicPreliminaries
         );
 
         if (result.jsonOutput && out.isJson) {
@@ -1214,6 +1274,8 @@ export async function runSync(
             effectiveTransferMode,
             forceMetadata: options.forceMetadata ?? false,
           };
+          const videoPreliminaries = preliminariesConsumed ? undefined : preSyncPreliminaries;
+          preliminariesConsumed = true;
           const result = await genericSyncCollection(
             new VideoPresenter(),
             out,
@@ -1226,7 +1288,9 @@ export async function runSync(
             adapter,
             core,
             shutdown.signal,
-            shutdown
+            shutdown,
+            undefined,
+            videoPreliminaries
           );
 
           if (result.jsonOutput && out.isJson) {

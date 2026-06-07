@@ -727,6 +727,12 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
             : undefined,
         albumCount,
         artistCount,
+        // Pre-sync sweep summary (TASK-398). Only present on the FIRST
+        // collection's plan per device sync; subsequent collections
+        // serialize `undefined`. Lives under `plan` rather than at the
+        // top of the output to keep the device-level pre-flight scoped
+        // to the per-collection JSON document the user receives.
+        preliminaries: plan.preliminaries,
       },
       operations,
       warnings: planWarningInfos.length > 0 ? planWarningInfos : undefined,

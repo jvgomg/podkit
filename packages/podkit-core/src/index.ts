@@ -47,6 +47,7 @@ export type { SubsonicAdapterConfig } from './adapters/subsonic.js';
 export type {
   BaseOperation,
   SyncPlan,
+  PlanPreliminaries,
   SyncOperation,
   ExecuteOptions,
   SyncProgress,
@@ -71,6 +72,14 @@ export type {
   ExecutorProgress,
   ExecuteResult,
 } from './sync/engine/types.js';
+
+// Pre-sync sweep (TASK-398): build PlanPreliminaries from scanner registry.
+export {
+  runPreSyncSweep,
+  runPreliminariesPreFlight,
+  type PreSyncSweepInput,
+  type PreFlightResult,
+} from './sync/engine/pre-sync-sweep.js';
 
 // Per-handler operation types
 export type { MusicOperation } from './sync/music/types.js';

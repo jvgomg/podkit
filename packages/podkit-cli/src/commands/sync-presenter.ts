@@ -345,7 +345,14 @@ export async function genericSyncCollection<TSource, TDevice>(
   core: typeof import('@podkit/core'),
   signal?: AbortSignal,
   shutdown?: Pick<import('../shutdown.js').ShutdownController, 'protect' | 'unprotect'>,
-  statfsSyncFn?: (path: string) => { blocks: number; bsize: number; bfree: number }
+  statfsSyncFn?: (path: string) => { blocks: number; bsize: number; bfree: number },
+  /**
+   * Device-level pre-sync sweep result. The orchestrator runs the sweep
+   * once per device and passes it to the FIRST collection's
+   * genericSyncCollection call only — subsequent collections receive
+   * undefined so the executor's pre-flight runs the cleanup exactly once.
+   */
+  preliminaries?: import('@podkit/core').PlanPreliminaries
 ): Promise<GenericSyncResult> {
   // Import statfsSync dynamically if not provided
   const statfsSync = statfsSyncFn ?? (await import('../utils/fs.js')).statfsSync;
@@ -449,6 +456,15 @@ export async function genericSyncCollection<TSource, TDevice>(
 
   // 6. Create plan + check space
   const { plan, summary } = presenter.createPlan(diff, removeOrphans, contentConfig, ipod, core);
+
+  // Attach device-level pre-flight (TASK-398) to the FIRST collection's
+  // plan. Orchestrator (sync.ts) ensures this is only set for one
+  // collection per device — subsequent calls receive `preliminaries =
+  // undefined` so the executor's pre-flight runs exactly once.
+  if (preliminaries) {
+    plan.preliminaries = preliminaries;
+  }
+
   const storage = getStorageInfo(devicePath, statfsSync);
   const hasEnoughSpace = storage ? presenter.willFit(plan, storage.free, core) : true;
 
