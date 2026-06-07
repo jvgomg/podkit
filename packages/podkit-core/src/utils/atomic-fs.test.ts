@@ -3,7 +3,12 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 
-import { atomicCopyFile, atomicWriteFile, PODKIT_TEMP_SUFFIX } from './atomic-fs.js';
+import {
+  atomicCopyFile,
+  atomicWriteFile,
+  atomicWriteFileWithSync,
+  PODKIT_TEMP_SUFFIX,
+} from './atomic-fs.js';
 
 let tempDir: string;
 
@@ -78,5 +83,78 @@ describe('atomicWriteFile', () => {
     atomicWriteFile(dest, 'new', 'utf-8');
 
     expect(fs.readFileSync(dest, 'utf8')).toBe('new');
+  });
+});
+
+describe('atomicWriteFileWithSync', () => {
+  test('writes bytes to dest and leaves no .podkit-tmp', async () => {
+    const dest = path.join(tempDir, 'cover.jpg');
+    const data = Buffer.from('jpeg-bytes');
+
+    await atomicWriteFileWithSync(dest, data);
+
+    expect(fs.readFileSync(dest).equals(data)).toBe(true);
+    expect(fs.existsSync(dest + PODKIT_TEMP_SUFFIX)).toBe(false);
+  });
+
+  test('overwrites prior dest on successful write', async () => {
+    const dest = path.join(tempDir, 'cover.jpg');
+    fs.writeFileSync(dest, 'old');
+
+    await atomicWriteFileWithSync(dest, Buffer.from('new'));
+
+    expect(fs.readFileSync(dest, 'utf8')).toBe('new');
+    expect(fs.existsSync(dest + PODKIT_TEMP_SUFFIX)).toBe(false);
+  });
+
+  test('open failure: nothing to clean (open never succeeded)', async () => {
+    // Destination directory does not exist — open() will fail before any tmp
+    // file is created, so there is nothing to unlink.
+    const dest = path.join(tempDir, 'nonexistent-subdir', 'cover.jpg');
+
+    await expect(atomicWriteFileWithSync(dest, Buffer.from('data'))).rejects.toThrow();
+
+    expect(fs.existsSync(dest)).toBe(false);
+    expect(fs.existsSync(dest + PODKIT_TEMP_SUFFIX)).toBe(false);
+  });
+
+  test('fsync failure: tmp is created then cleaned up (not left as debris)', async () => {
+    const dest = path.join(tempDir, 'cover.jpg');
+    const realOpen = fs.promises.open;
+    (fs.promises as { open: typeof fs.promises.open }).open = async (
+      ...args: Parameters<typeof realOpen>
+    ) => {
+      const handle = await realOpen(...args);
+      handle.sync = () => Promise.reject(new Error('simulated fsync failure'));
+      return handle;
+    };
+    try {
+      await expect(atomicWriteFileWithSync(dest, Buffer.from('data'))).rejects.toThrow(
+        'simulated fsync failure'
+      );
+      // open + writeFile materialised the tmp; cleanup must have removed it.
+      expect(fs.existsSync(dest + PODKIT_TEMP_SUFFIX)).toBe(false);
+      expect(fs.existsSync(dest)).toBe(false);
+    } finally {
+      (fs.promises as { open: typeof fs.promises.open }).open = realOpen;
+    }
+  });
+
+  test('rename failure: dest not created, no .podkit-tmp left', async () => {
+    const dest = path.join(tempDir, 'cover.jpg');
+    const realRename = fs.promises.rename;
+    (fs.promises as { rename: typeof fs.promises.rename }).rename = () =>
+      Promise.reject(new Error('simulated rename failure'));
+    try {
+      await expect(atomicWriteFileWithSync(dest, Buffer.from('data'))).rejects.toThrow(
+        'simulated rename failure'
+      );
+      // No final dest written — rename never completed.
+      expect(fs.existsSync(dest)).toBe(false);
+      // Tmp cleaned up on rename failure so the next run sees no orphan.
+      expect(fs.existsSync(dest + PODKIT_TEMP_SUFFIX)).toBe(false);
+    } finally {
+      (fs.promises as { rename: typeof fs.promises.rename }).rename = realRename;
+    }
   });
 });

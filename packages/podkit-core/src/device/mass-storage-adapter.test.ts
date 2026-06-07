@@ -1352,6 +1352,82 @@ describe('MassStorageAdapter', () => {
       expect(w.tracks[0]!.album).toBe('Album');
     });
 
+    test('memoizes track lookup to avoid O(N²) scans when multiple relocates vanish', async () => {
+      const relocationCount = 10;
+      const metadata: Record<string, any> = {};
+      const origPaths: string[] = [];
+
+      for (let i = 0; i < relocationCount; i++) {
+        const filename = `Song${i}.flac`;
+        const relPath = `Music/Album/${filename}`;
+        origPaths.push(relPath);
+        createFakeAudioFile(mountPoint, relPath);
+        metadata[filename] = {
+          title: `Song${i}`,
+          artist: `Artist${i}`,
+          album: `Album`,
+          trackNumber: i,
+          duration: 180000,
+          bitrate: 320,
+          sampleRate: 44100,
+        };
+      }
+
+      const reader = createMockMetadataReader(metadata);
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: reader,
+      });
+
+      const emitted: import('../sync/engine/types.js').Warning[] = [];
+      adapter.setWarningSink({
+        emit: (w) => {
+          emitted.push(w);
+        },
+      });
+
+      const tracks = adapter.getTracks();
+      expect(tracks).toHaveLength(relocationCount);
+
+      const trackTitles = new Set(tracks.map((t) => t.title));
+
+      for (let i = 0; i < relocationCount; i++) {
+        const track = tracks[i]!;
+        const newPath = `Music/Moved/relocated-${i}.flac`;
+        adapter.relocateTrack(track, newPath);
+      }
+
+      for (let i = 0; i < relocationCount; i++) {
+        const origPath = origPaths[i]!;
+        const absPath = path.join(mountPoint, origPath);
+        fs.unlinkSync(absPath);
+      }
+
+      // Spy on the legacy linear-scan path. Memoisation routes every vanish
+      // through the per-save() map; a regression to per-iteration linear
+      // scans would re-fire this spy and the assertion below would catch it.
+      const adapterAny = adapter as unknown as {
+        lookupTrackRef: (p: string) => unknown;
+      };
+      const origLookup = adapterAny.lookupTrackRef.bind(adapter);
+      let lookupCalls = 0;
+      adapterAny.lookupTrackRef = (p: string) => {
+        lookupCalls++;
+        return origLookup(p);
+      };
+
+      await expect(adapter.save()).resolves.toBeUndefined();
+
+      // O(1) shape: zero linear scans across N vanishes. The map covers
+      // every queued path, so the fallback in `??` is unreachable here.
+      expect(lookupCalls).toBe(0);
+      expect(emitted).toHaveLength(1);
+      const w = emitted[0]!;
+      expect(w.type).toBe('metadata');
+      expect(w.tracks).toHaveLength(relocationCount);
+      const warnedTitles = new Set(w.tracks.map((t) => t.title));
+      expect(warnedTitles).toEqual(trackTitles);
+    });
+
     test('does not emit when relocate succeeds normally', async () => {
       const relPath = 'Music/Old Artist/Album/01 - Song.flac';
       createFakeAudioFile(mountPoint, relPath);
@@ -2450,9 +2526,9 @@ describe('MassStorageAdapter', () => {
         expect(sidecarErr.causes).toHaveLength(1);
         // Per-album context is preserved on `causes` for diagnostics.
         expect(sidecarErr.causes[0]).toContain('AlbumA');
-        // AlbumB still landed despite AlbumA's failure (Promise.allSettled,
-        // not Promise.all). This is the key contract for sidecar — a single
-        // album's failure shouldn't black-hole the rest of the library.
+        // AlbumB still landed despite AlbumA's failure — runWithConcurrency
+        // settles all writes before inspecting failures, so a single album's
+        // failure shouldn't black-hole the rest of the library.
         expect(fs.existsSync(path.join(mountPoint, 'Music/Artist/AlbumB/cover.jpg'))).toBe(true);
         expect(fs.existsSync(path.join(mountPoint, 'Music/Artist/AlbumA/cover.jpg'))).toBe(false);
       } finally {
@@ -2483,6 +2559,82 @@ describe('MassStorageAdapter', () => {
       } finally {
         (fs.promises as { rename: typeof fs.promises.rename }).rename = realRename;
       }
+    });
+
+    test('sidecar flush respects DEFAULT_TAG_WRITE_CONCURRENCY cap (max-in-flight ≤ 16)', async () => {
+      const { DEFAULT_TAG_WRITE_CONCURRENCY } = await import('./mass-storage-tag-writer.js');
+      const ALBUM_COUNT = 50;
+
+      // Create 50 albums each with one track so the adapter has 50 sidecar
+      // entries to flush. Unique basenames avoid metadata-reader collisions.
+      const metaMap: Record<string, { title: string; artist: string; album: string }> = {};
+      for (let i = 0; i < ALBUM_COUNT; i++) {
+        const relPath = `Music/Artist/Album${i}/01.flac`;
+        createFakeAudioFile(mountPoint, relPath);
+        metaMap[`Music/Artist/Album${i}/01.flac`] = {
+          title: `Track ${i}`,
+          artist: 'Artist',
+          album: `Album ${i}`,
+        };
+      }
+
+      const adapter = await MassStorageAdapter.open(mountPoint, SIDECAR_CAPABILITIES, {
+        metadataReader: async (filePath: string) => {
+          const rel = path.relative(mountPoint, filePath);
+          const meta = metaMap[rel] ?? { title: 'T', artist: 'A', album: 'X' };
+          return {
+            common: {
+              title: meta.title,
+              artist: meta.artist,
+              album: meta.album,
+              track: { no: null, of: null },
+              disk: { no: null, of: null },
+            },
+            format: { duration: 180, bitrate: 320000, sampleRate: 44100, codec: 'flac' },
+          };
+        },
+      });
+
+      const tracks = adapter.getTracks();
+      expect(tracks).toHaveLength(ALBUM_COUNT);
+      const bytes = Buffer.from('jpeg-data');
+      for (const track of tracks) {
+        adapter.writeSidecar(track, bytes);
+      }
+
+      // Instrument fs.promises.rename to track max simultaneous in-flight
+      // writes. rename() is the last step of each atomicWriteFileWithSync
+      // call, so peak concurrency measured here reflects the true cap.
+      let inFlight = 0;
+      let maxInFlight = 0;
+      const realRename = fs.promises.rename;
+      (fs.promises as { rename: typeof fs.promises.rename }).rename = async (
+        oldPath: fs.PathLike,
+        newPath: fs.PathLike
+      ): Promise<void> => {
+        inFlight++;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        // Yield so concurrently-running renames also reach the counter before
+        // any of them finishes — this gives the most accurate peak reading.
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        inFlight--;
+        return realRename(oldPath, newPath);
+      };
+
+      try {
+        await adapter.save();
+      } finally {
+        (fs.promises as { rename: typeof fs.promises.rename }).rename = realRename;
+      }
+
+      // All covers must have landed
+      for (let i = 0; i < ALBUM_COUNT; i++) {
+        expect(fs.existsSync(path.join(mountPoint, `Music/Artist/Album${i}/cover.jpg`))).toBe(true);
+      }
+
+      // Peak concurrency must not exceed the cap
+      expect(maxInFlight).toBeGreaterThan(0);
+      expect(maxInFlight).toBeLessThanOrEqual(DEFAULT_TAG_WRITE_CONCURRENCY);
     });
 
     test('save() with no pending sidecar writes does not write a cover.jpg', async () => {

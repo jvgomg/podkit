@@ -17,7 +17,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as mm from 'music-metadata';
 
-import { atomicCopyFile, atomicWriteFile, PODKIT_TEMP_SUFFIX } from '../utils/atomic-fs.js';
+import { atomicCopyFile, atomicWriteFile, atomicWriteFileWithSync } from '../utils/atomic-fs.js';
 
 import type {
   DeviceAdapter,
@@ -444,16 +444,10 @@ export class MassStorageTrack implements DeviceTrack {
  */
 export const SIDECAR_FILENAME = 'cover.jpg';
 
-// PODKIT_TEMP_SUFFIX ('.podkit-tmp') is imported from atomic-fs.ts — the same
-// constant the pipeline uses for transcode temp files, keeping all in-flight
-// write markers uniform.
-
 /**
- * Write a sidecar cover image atomically: ensure the album dir exists, write
- * bytes to `<albumDir>/cover.jpg.podkit-tmp`, fsync, then `rename` over the
- * final `cover.jpg`. The rename is atomic on POSIX same-filesystem paths AND
- * the fsync ensures the renamed target points at durable, non-truncated
- * blocks if the OS power-cuts immediately after `rename` returns.
+ * Write a sidecar cover image atomically: ensure the album dir exists, then
+ * delegate to `atomicWriteFileWithSync` (tmp + fsync + rename). The sidecar
+ * wrapper adds only the mkdir — the atomic-write contract lives in the helper.
  *
  * Concurrent writes to the same album dir would collide on the fixed
  * `.podkit-tmp` suffix (last writer wins for the tmp file). Not a real risk
@@ -465,34 +459,10 @@ export const SIDECAR_FILENAME = 'cover.jpg';
  * simulate the SIGKILL-mid-rename case.
  */
 async function writeSidecarAtomically(absoluteAlbumDir: string, imageData: Buffer): Promise<void> {
+  // Ensure the album directory exists before writing — sidecar-primary devices
+  // may have never had a file added to this album dir in the current session.
   await fs.promises.mkdir(absoluteAlbumDir, { recursive: true });
-  const finalPath = path.join(absoluteAlbumDir, SIDECAR_FILENAME);
-  const tmpPath = finalPath + PODKIT_TEMP_SUFFIX;
-  // Open + write + fsync via a single FD so a power-cut after `rename` cannot
-  // leave the renamed target pointing at unsynced blocks. (writeFile alone
-  // returns once the data is in the page cache, not when it's on disk.)
-  const handle = await fs.promises.open(tmpPath, 'w');
-  try {
-    await handle.writeFile(imageData);
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-  try {
-    await fs.promises.rename(tmpPath, finalPath);
-  } catch (err) {
-    // Best-effort cleanup of the tmp file when rename fails — leaving stale
-    // .podkit-tmp files around triggers spurious doctor warnings later. If
-    // cleanup itself fails (e.g. ENOENT because the tmp file was already
-    // removed concurrently), swallow it and re-throw the original rename
-    // error.
-    try {
-      await fs.promises.unlink(tmpPath);
-    } catch {
-      /* ignore cleanup failure */
-    }
-    throw err;
-  }
+  await atomicWriteFileWithSync(path.join(absoluteAlbumDir, SIDECAR_FILENAME), imageData);
 }
 
 // =============================================================================
@@ -1307,6 +1277,12 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
       // end of the batch rather than N small ones (or worse, N stderr lines).
       const vanished: Array<{ artist: string; title: string; album?: string }> = [];
 
+      // Memoize track lookup by path on first vanish to avoid O(N²) linear
+      // scans through the tracks array when multiple ENOENT errors occur.
+      let trackRefByPath:
+        | Map<string, { artist: string; title: string; album?: string }>
+        | undefined;
+
       for (const [oldPath, newPath] of this.pendingMoves) {
         const absOld = path.join(this.mountPoint, oldPath);
         const absNew = path.join(this.mountPoint, newPath);
@@ -1321,7 +1297,22 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
           fs.renameSync(absOld, absNew);
         } catch (err: any) {
           if (err?.code === 'ENOENT') {
-            const ref = this.lookupTrackRef(newPath);
+            if (!trackRefByPath) {
+              trackRefByPath = new Map(
+                this.tracks.map((t) => [
+                  t.filePath,
+                  {
+                    artist: t.artist ?? 'Unknown Artist',
+                    title: t.title ?? 'Unknown Track',
+                    album: t.album,
+                  },
+                ])
+              );
+            }
+            const ref = trackRefByPath.get(newPath) ?? {
+              artist: 'Unknown Artist',
+              title: 'Unknown Track',
+            };
             vanished.push(ref);
             continue;
           }
@@ -1442,21 +1433,26 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
     // queue-time. Each write is atomic (tmp + fsync + rename) so a SIGKILL
     // mid-write leaves either the old cover, no cover, or a `.podkit-tmp` for
     // a future doctor to clean — never a torn cover.jpg the device would
-    // render as garbage. This is the only save() stage with atomic-write
-    // semantics today; picture writes get the same treatment under TASK-376.
+    // render as garbage.
     //
-    // **Collect-and-aggregate** mirroring the tag-write and picture-write
-    // stages above (`runWithConcurrency` + settled-all + typed aggregate +
-    // clear-before-throw). The remaining `Promise.allSettled` here is
-    // pre-existing and has no concurrency cap — a follow-up will normalize
-    // it to `runWithConcurrency` for symmetry and EMFILE safety on large
-    // libraries.
+    // Collect-and-aggregate mirroring the tag-write and picture-write stages
+    // above: `runWithConcurrency` caps open file handles at
+    // `DEFAULT_TAG_WRITE_CONCURRENCY` for EMFILE safety on large libraries,
+    // all writes settle before failures are inspected, and the map is cleared
+    // before throw so a second `save()` doesn't re-attempt the same writes.
+    //
+    // Aggregation is per-album (not per-file) because the unit of work here is
+    // one cover.jpg per directory — sibling tracks share the entry. This
+    // asymmetry is intentional; see save-transactions.md §save-stage-asymmetries.
     if (this.pendingSidecarWrites.size > 0) {
       const entries = [...this.pendingSidecarWrites.entries()];
-      const settled = await Promise.allSettled(
-        entries.map(([albumDir, imageData]) =>
-          writeSidecarAtomically(path.join(this.mountPoint, albumDir), imageData)
-        )
+      const settled = await runWithConcurrency(
+        entries.map(
+          ([albumDir, imageData]) =>
+            () =>
+              writeSidecarAtomically(path.join(this.mountPoint, albumDir), imageData)
+        ),
+        DEFAULT_TAG_WRITE_CONCURRENCY
       );
       this.pendingSidecarWrites.clear();
       const failures: string[] = [];

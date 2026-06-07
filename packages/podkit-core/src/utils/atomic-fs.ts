@@ -55,3 +55,46 @@ export function atomicWriteFile(
     throw err;
   }
 }
+
+/**
+ * Write `data` to `dest` atomically with fsync (temp + fsync + rename).
+ *
+ * Unlike `atomicWriteFile` (which is safe for the manifest because the
+ * manifest is re-derivable from a filesystem walk), this helper `fsync`s the
+ * tmp before rename. Use for on-file mutations where the file IS the source of
+ * truth (sidecar art, future tag-write/picture-write retrofits).
+ *
+ * The fsync ensures that a power-cut immediately after `rename` returns cannot
+ * leave the renamed target pointing at unsynced blocks. On ANY failure (write,
+ * fsync, or rename), the tmp is best-effort unlinked to avoid `.podkit-tmp`
+ * debris that would otherwise surface as spurious doctor warnings.
+ */
+export async function atomicWriteFileWithSync(
+  dest: string,
+  data: Buffer | Uint8Array
+): Promise<void> {
+  const tmp = dest + PODKIT_TEMP_SUFFIX;
+  let handle: fs.promises.FileHandle | undefined;
+  try {
+    handle = await fs.promises.open(tmp, 'w');
+    await handle.writeFile(data);
+    await handle.sync();
+    await handle.close();
+    handle = undefined;
+    await fs.promises.rename(tmp, dest);
+  } catch (err) {
+    if (handle !== undefined) {
+      try {
+        await handle.close();
+      } catch {
+        // Already failing — ignore secondary close error.
+      }
+    }
+    try {
+      await fs.promises.unlink(tmp);
+    } catch {
+      // Best-effort cleanup — tmp may not exist if open() itself failed.
+    }
+    throw err;
+  }
+}
