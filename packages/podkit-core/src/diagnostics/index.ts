@@ -19,6 +19,7 @@ import { codecEncodersCheck } from './checks/codec-encoders.js';
 import { inquiryMethodsCheck } from './checks/inquiry-methods.js';
 import { orphanFilesCheck } from './checks/orphans.js';
 import { orphanFilesMassStorageCheck } from './checks/orphans-mass-storage.js';
+import { debrisFilesMassStorageCheck } from './checks/debris-files-mass-storage.js';
 import { sysInfoExtendedCheck } from './checks/sysinfo-extended.js';
 import { sysinfoConsistencyCheck } from './checks/sysinfo-consistency.js';
 import { sysinfoModelnumMismatchCheck } from './checks/sysinfo-modelnum-mismatch.js';
@@ -57,6 +58,7 @@ const CHECKS: DiagnosticCheck[] = [
   videoEncoderCheck,
   orphanFilesCheck,
   orphanFilesMassStorageCheck,
+  debrisFilesMassStorageCheck,
   sysInfoExtendedCheck,
   sysinfoConsistencyCheck,
   sysinfoModelnumMismatchCheck,

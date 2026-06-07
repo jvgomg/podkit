@@ -1,14 +1,16 @@
 /**
  * Orphan file detection for mass-storage devices
  *
- * Scans configured content directories for media files that are physically
- * present on disk but not tracked in the .podkit/state.json manifest.
- * These orphaned files waste storage space and can accumulate from
- * interrupted syncs, manual file manipulation, or config changes.
+ * Scans configured content directories for **media files** that are
+ * physically present on disk but not tracked in `.podkit/state.json`.
+ * "Orphan" here means user-owned: the file could have been placed there
+ * intentionally (pre-podkit content, manual copy) so repair is gated by a
+ * confirmation prompt. podkit's own in-flight residue (`.podkit-tmp`,
+ * `.Audio file`) lives in a separate `debris-files-mass-storage` check
+ * with non-interactive safe-auto repair.
  *
- * The file-system walk + categorisation lives in
- * `../scanners/mass-storage-walker.ts` so the orphan check, debris check,
- * and pre-sync sweep all share one traversal.
+ * Same walker, two checks — the shared traversal in
+ * `../scanners/mass-storage-walker.ts` produces both buckets in one pass.
  */
 
 import { readdir, readFile, unlink, rmdir } from 'node:fs/promises';
@@ -100,12 +102,11 @@ export const orphanFilesMassStorageCheck: DiagnosticCheck = {
 
     const {
       orphans: orphanPaths,
-      debris: debrisPaths,
       missingTrackedFiles,
       totalFiles,
     } = await walkMassStorageContent(ctx.mountPoint, ctx.contentPaths, managedFiles);
 
-    if (orphanPaths.length === 0 && debrisPaths.length === 0 && missingTrackedFiles.length === 0) {
+    if (orphanPaths.length === 0 && missingTrackedFiles.length === 0) {
       return {
         status: 'pass',
         summary: `All ${totalFiles} file${totalFiles === 1 ? '' : 's'} on disk are tracked in the manifest`,
@@ -114,27 +115,17 @@ export const orphanFilesMassStorageCheck: DiagnosticCheck = {
           orphanCount: 0,
           wastedBytes: 0,
           orphans: [],
-          debrisCount: 0,
-          debris: [],
           missingTrackedFiles: [],
         },
       };
     }
 
     const orphans = await getFileSizes(orphanPaths);
-    const debris = await getFileSizes(debrisPaths);
-    const totalSize =
-      orphans.reduce((sum, o) => sum + o.size, 0) + debris.reduce((sum, d) => sum + d.size, 0);
+    const totalSize = orphans.reduce((sum, o) => sum + o.size, 0);
 
-    // Build a summary that lists only the non-zero issue classes. Keeps
-    // "${N} orphan files" as the leading phrase when orphans are the only
-    // class — preserves existing summary-substring assertions.
     const parts: string[] = [];
     if (orphans.length > 0) {
       parts.push(`${orphans.length} orphan file${orphans.length === 1 ? '' : 's'}`);
-    }
-    if (debris.length > 0) {
-      parts.push(`${debris.length} debris file${debris.length === 1 ? '' : 's'}`);
     }
     if (missingTrackedFiles.length > 0) {
       parts.push(
@@ -154,16 +145,13 @@ export const orphanFilesMassStorageCheck: DiagnosticCheck = {
         wastedBytes: totalSize,
         wastedFormatted: formatBytes(totalSize),
         orphans: orphans.map((o) => ({ path: o.path, size: o.size })),
-        debrisCount: debris.length,
-        debris: debris.map((d) => ({ path: d.path, size: d.size })),
         missingTrackedFiles,
       },
     };
   },
 
   repair: {
-    description:
-      'Delete orphans + adapter-failure debris and prune manifest entries with no backing file',
+    description: 'Delete orphan files and prune manifest entries with no backing file',
     requirements: ['writable-device'],
 
     async run(ctx: RepairContext, options?: RepairRunOptions): Promise<RepairResult> {
@@ -176,18 +164,16 @@ export const orphanFilesMassStorageCheck: DiagnosticCheck = {
         return { success: false, summary: 'No state manifest found' };
       }
 
-      const {
-        orphans: orphanPaths,
-        debris: debrisPaths,
-        missingTrackedFiles,
-      } = await walkMassStorageContent(ctx.mountPoint, ctx.contentPaths, managedFiles);
+      const { orphans: orphanPaths, missingTrackedFiles } = await walkMassStorageContent(
+        ctx.mountPoint,
+        ctx.contentPaths,
+        managedFiles
+      );
       const orphans = await getFileSizes(orphanPaths);
-      const debris = await getFileSizes(debrisPaths);
-      const deletables = [...orphans, ...debris];
-      const totalSize = deletables.reduce((sum, e) => sum + e.size, 0);
+      const totalSize = orphans.reduce((sum, e) => sum + e.size, 0);
       const phantomCount = missingTrackedFiles.length;
 
-      if (deletables.length === 0 && phantomCount === 0) {
+      if (orphans.length === 0 && phantomCount === 0) {
         return { success: true, summary: 'Nothing to clean up' };
       }
 
@@ -196,8 +182,6 @@ export const orphanFilesMassStorageCheck: DiagnosticCheck = {
         const parts: string[] = [];
         if (orphans.length > 0)
           parts.push(`${orphans.length} orphan file${orphans.length === 1 ? '' : 's'}`);
-        if (debris.length > 0)
-          parts.push(`${debris.length} debris file${debris.length === 1 ? '' : 's'}`);
         if (phantomCount > 0)
           parts.push(`${phantomCount} phantom manifest entr${phantomCount === 1 ? 'y' : 'ies'}`);
         return {
@@ -205,30 +189,28 @@ export const orphanFilesMassStorageCheck: DiagnosticCheck = {
           summary: `Dry run: ${parts.join(' + ')} would be cleaned, freeing ${formatBytes(totalSize)}`,
           details: {
             orphanCount: orphans.length,
-            debrisCount: debris.length,
             phantomCount,
             freedBytes: totalSize,
             freedFormatted: formatBytes(totalSize),
-            files: deletables.map((e) => ({ path: e.path, size: e.size })),
+            files: orphans.map((e) => ({ path: e.path, size: e.size })),
             missingTrackedFiles,
           },
         };
       }
 
-      // Real run — delete orphans + debris, then prune phantom manifest entries
+      // Real run — delete orphans, then prune phantom manifest entries
       let deleted = 0;
       let freedBytes = 0;
       const errors: string[] = [];
 
-      // Determine content root directories for cleanup boundary
       const { scanDirs } = resolveContentDirs(ctx.mountPoint, ctx.contentPaths);
 
-      for (let i = 0; i < deletables.length; i++) {
-        const entry = deletables[i]!;
+      for (let i = 0; i < orphans.length; i++) {
+        const entry = orphans[i]!;
         options?.onProgress?.({
           phase: 'deleting',
           current: i + 1,
-          total: deletables.length,
+          total: orphans.length,
           path: entry.path,
         });
 
