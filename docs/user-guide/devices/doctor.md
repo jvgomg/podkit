@@ -15,26 +15,35 @@ Connect and mount your iPod, then run:
 podkit doctor
 ```
 
-podkit first runs a device readiness check, then runs database health checks:
+podkit runs three groups of checks: **System** (host environment — FFmpeg encoders, Linux udev rule, iPod inquiry transports (iPod only)), **Device Readiness** (USB, partition, filesystem, mount, SysInfo, database), and **Database Health** (artwork integrity, orphans, SysInfo consistency):
 
 ```
 podkit doctor — checking iPod at /Volumes/TERAPOD
 
+System
+  ✓ Codec Encoders                 aac (libfdk_aac, fallback aac), libmp3lame, alac
+  ✓ Video Encoder (H.264)          libx264 available
+  ✓ iPod Firmware Inquiry Methods  iPodDriver.kext present
+
 Device Readiness
   ✓ USB Connection
   ✓ Partition Table
-  ✓ Filesystem    TERAPOD
-  ✓ Mounted    /Volumes/TERAPOD
-  ✓ SysInfo    iPod Classic 120GB Black (6th Generation) (MB147)
+  ✓ Filesystem                     TERAPOD
+  ✓ Mounted                        /Volumes/TERAPOD
+  ✓ SysInfo                        iPod Classic 120GB Black (6th Generation) (MB147)
     SysInfoExtended: present
-  ✓ Database    2,450 tracks
+  ✓ Database                       2,450 tracks
 
 Database Health
-  ✓ Artwork Integrity    2,532 entries, 2 formats (1028, 1029), all offsets valid
-  ✓ Orphan Files         No orphaned files found
+  ✓ Artwork Integrity              2,532 entries, 2 formats (1028, 1029), all offsets valid
+  ✓ Orphan Files                   No orphaned files found
+  ✓ SysInfoExtended consistency with device  matches firmware identity
+  ✓ SysInfo ModelNumStr            no mismatch
 
 All checks passed.
 ```
+
+The exact output varies by device, host platform, and which checks apply. On Linux, you'll also see the `udev Rule` check under System. On a freshly-formatted iPod with no database yet, the `SysInfoExtended` check appears as a repair-only action.
 
 If problems are detected, doctor tells you what's wrong and how to fix it. Devices that aren't ready (e.g., not yet initialized) are handled gracefully — doctor skips the database checks and tells you what to do instead. You don't need a podkit config file or music collection to run diagnostics — some repairs work standalone too.
 
@@ -44,17 +53,25 @@ If problems are detected, doctor tells you what's wrong and how to fix it. Devic
 
 | Check | What it detects | Severity |
 |-------|----------------|----------|
+| **Codec Encoders** | Missing FFmpeg encoders for codecs in your [preference stack](/user-guide/transcoding/codec-preferences) | Warning |
+| **Video Encoder (H.264)** | Missing FFmpeg `libx264` for video transcoding | Warning |
+| **iPod Firmware Inquiry Methods** | SCSI/USB transport availability for iPod firmware identity reads (`iPodDriver.kext` on macOS, `sg` + libusb on Linux) | Warning |
+| **udev Rule (Linux SCSI + USB Access)** | Missing podkit udev rule granting unprivileged SCSI + USB access on Linux | Warning (Linux only) |
 | **Artwork Integrity** | Corrupted artwork database — wrong album art, glitched images, artwork from other albums | Failure |
-| **Encoder Availability** | Missing FFmpeg encoders for codecs in your [preference stack](/user-guide/transcoding/codec-preferences) | Warning |
-| **Orphan Files** | Unreferenced audio/video files wasting storage space | Warning |
+| **Artwork Reset** | Maintenance action — clears all artwork without needing a source collection | Repair-only |
+| **Orphan Files** | Unreferenced audio/video files in `iPod_Control/Music` wasting storage space | Warning |
 | **SysInfoExtended** | Missing device identity file required for database checksums on newer iPods | Failure (repair-only) |
+| **SysInfoExtended consistency with device** | On-disk `SysInfoExtended` doesn't match firmware-derived identity (stale after device swap or restore) | Warning |
+| **SysInfo ModelNumStr vs firmware identity** | Classic `SysInfo` lists wrong `ModelNumStr` — device misidentified by libgpod | Failure |
 
 ### Mass-Storage Devices
 
 | Check | What it detects | Severity |
 |-------|----------------|----------|
-| **Encoder Availability** | Missing FFmpeg encoders for codecs in your [preference stack](/user-guide/transcoding/codec-preferences) | Warning |
-| **Orphan Files** | Files in content directories not tracked in `.podkit/state.json` | Warning |
+| **Codec Encoders** | Missing FFmpeg encoders for codecs in your [preference stack](/user-guide/transcoding/codec-preferences) | Warning |
+| **Video Encoder (H.264)** | Missing FFmpeg `libx264` for video transcoding | Warning |
+| **udev Rule (Linux SCSI + USB Access)** | Missing podkit udev rule granting unprivileged USB access on Linux | Warning (Linux only) |
+| **Orphan Files (Mass Storage)** | Files in content directories not tracked in `.podkit/state.json` | Warning |
 
 ## Repairing Artwork Corruption
 
@@ -155,10 +172,23 @@ Older iPods (Video 5G/5.5G, Nano 1G–2G, Mini, Shuffle) do not need SysInfoExte
 Every repair supports `--dry-run` to preview changes without modifying anything:
 
 ```bash
+# Artwork
 podkit doctor --repair artwork-reset --dry-run
 podkit doctor --repair artwork-rebuild -c main --dry-run
-podkit doctor --repair orphan-files --dry-run
+
+# Orphan files
+podkit doctor --repair orphan-files --dry-run                    # iPod
+podkit doctor -d mydevice --repair orphan-files-mass-storage --dry-run
+
+# Identity / SysInfo
+podkit doctor --repair sysinfo-extended --dry-run
+podkit doctor --repair sysinfo-modelnum-mismatch --dry-run
+
+# Linux host setup
+podkit doctor --repair udev-rule --dry-run
 ```
+
+Repairs without `--dry-run` apply changes directly; for repairs that delete files (orphan-files, artwork-reset), `--dry-run` is the safe way to see the list before committing.
 
 ## Additional Options
 

@@ -729,17 +729,29 @@ Pressing Ctrl+C during a repair triggers a graceful shutdown — partial repair 
 
 #### iPod Checks
 
+System-scope checks (host environment) and database-health checks (per-device state) both run under `podkit doctor`. System checks have no `--repair` for the check itself when nothing is broken; `udev-rule` is the exception — it installs the missing rule file.
+
 | Check | Description | Repair |
 |-------|-------------|--------|
-| Artwork Integrity | Verifies ArtworkDB offsets are within .ithmb file bounds | `--repair artwork-rebuild -c <collection>` |
+| Codec Encoders | Probes FFmpeg encoder availability against your codec preference stack | _(informational)_ |
+| Video Encoder (H.264) | Probes FFmpeg `libx264` availability for video transcoding | _(informational)_ |
+| iPod Firmware Inquiry Methods | Probes SCSI/USB transports used to read firmware-derived identity (`iPodDriver.kext`, `sg`, libusb) | _(informational)_ |
+| udev Rule (Linux SCSI + USB Access) | Detects the podkit udev rule that grants unprivileged SCSI + USB access | `--repair udev-rule` |
+| Artwork Integrity | Verifies ArtworkDB offsets are within `.ithmb` file bounds | `--repair artwork-rebuild -c <collection>` |
 | Artwork Reset | Clears all artwork without needing a source collection | `--repair artwork-reset` |
-| Orphan Files | Detects unreferenced files in iPod_Control/Music that waste storage | `--repair orphan-files` |
+| Orphan Files | Detects unreferenced files in `iPod_Control/Music` that waste storage | `--repair orphan-files` |
+| SysInfoExtended | Reads device identity from iPod firmware via USB; required for database checksums on newer iPods | `--repair sysinfo-extended` |
+| SysInfoExtended consistency with device | Detects on-disk `SysInfoExtended` that doesn't match firmware-derived identity (stale after device swap) | `--repair sysinfo-consistency` |
+| SysInfo ModelNumStr vs firmware identity | Detects classic `SysInfo` with wrong `ModelNumStr` | `--repair sysinfo-modelnum-mismatch` |
 
 #### Mass-Storage Checks
 
 | Check | Description | Repair |
 |-------|-------------|--------|
-| Orphan Files | Detects files in content directories not tracked in `.podkit/state.json` | `--repair orphan-files-mass-storage` |
+| Codec Encoders | Probes FFmpeg encoder availability against your codec preference stack | _(informational)_ |
+| Video Encoder (H.264) | Probes FFmpeg `libx264` availability for video transcoding | _(informational)_ |
+| udev Rule (Linux SCSI + USB Access) | Detects the podkit udev rule for unprivileged USB access on Linux | `--repair udev-rule` |
+| Orphan Files (Mass Storage) | Detects files in content directories not tracked in `.podkit/state.json` | `--repair orphan-files-mass-storage` |
 
 See [Device Health Checks](/user-guide/devices/doctor) for a full guide to using doctor, including when to use each repair option.
 

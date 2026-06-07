@@ -201,11 +201,23 @@ podkit sync --force-transcode
 
 ### Orphaned files after interrupted sync
 
-**Symptoms:** iPod storage is fuller than expected, or `podkit doctor` reports orphan files.
+**Symptoms:** Device storage is fuller than expected, or `podkit doctor` reports orphan files.
 
-**Cause:** If a sync was force-quit (double Ctrl+C), crashed, or the iPod was disconnected mid-sync, audio files may have been copied to the iPod without being registered in the database. These orphaned files waste storage space but don't cause corruption.
+**Cause:** If a sync was force-quit (double Ctrl+C), crashed, or the device was disconnected mid-sync, audio files may have been copied without being registered in the database (iPod) or the `.podkit/state.json` manifest (mass-storage). These orphaned files waste storage space but don't cause corruption.
 
-**Solution:** Run `podkit doctor` to detect orphans, then `podkit doctor --repair orphan-files` to remove them. A single Ctrl+C during sync triggers a graceful shutdown that saves all completed work — orphaned files only occur from force-quit, crashes, or disconnection. See [iPod Health Checks](/user-guide/devices/doctor#repairing-orphan-files) for details.
+**Solution:** Run `podkit doctor` to detect orphans, then run the appropriate repair for your device:
+
+```bash
+# iPod
+podkit doctor --repair orphan-files
+
+# Mass-storage (Echo Mini, Rockbox, generic DAPs)
+podkit doctor -d mydevice --repair orphan-files-mass-storage
+```
+
+Add `--dry-run` to preview the file list before deleting anything.
+
+A single Ctrl+C during sync triggers a graceful shutdown that saves all completed work — orphaned files only occur from force-quit, crashes, or disconnection. See [iPod Health Checks](/user-guide/devices/doctor#repairing-orphan-files) for details.
 
 ## Database Issues
 
