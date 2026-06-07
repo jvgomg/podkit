@@ -1,9 +1,10 @@
 ---
 id: TASK-401
 title: Auto-prune phantom manifest entries from the pre-sync sweep
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-06-07 16:01'
+updated_date: '2026-06-07 17:47'
 labels:
   - enhancement
   - sync-engine
@@ -49,10 +50,16 @@ Either choice is fine. Pick when the work lands.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Pre-flight auto-prunes phantom manifest entries on real-run (no more advisory warning when prune succeeds)
-- [ ] #2 Architecture decision recorded for adapter-method vs closure-on-data shape
-- [ ] #3 Manifest atomically rewritten; original preserved on prune failure
-- [ ] #4 Test pins phantom rows present → sweep → rows absent + manifest valid
-- [ ] #5 Doctor `--repair orphan-files` still prunes phantoms (regression test)
-- [ ] #6 sync/planning.md §6 updated to mark item closed
+- [x] #1 Pre-flight auto-prunes phantom manifest entries on real-run (no more advisory warning when prune succeeds)
+- [x] #2 Architecture decision recorded for adapter-method vs closure-on-data shape
+- [x] #3 Manifest atomically rewritten; original preserved on prune failure
+- [x] #4 Test pins phantom rows present → sweep → rows absent + manifest valid
+- [x] #5 Doctor `--repair orphan-files` still prunes phantoms (regression test)
+- [x] #6 sync/planning.md §6 updated to mark item closed
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Adapter-method (Option A) chosen — `DeviceAdapter.prunePhantomManifest?(paths)` added as an optional surface, implemented on `MassStorageAdapter`, intentionally omitted from `IpodAdapter`. Pre-flight invokes it; advisory `Warning('debris-cleanup-failure')` now fires only when the prune itself failed (or when the adapter doesn't expose the method as a fallback). Doctor `--repair orphan-files` path untouched as backstop.
+<!-- SECTION:FINAL_SUMMARY:END -->

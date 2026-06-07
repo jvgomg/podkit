@@ -575,6 +575,46 @@ describe('SyncOrchestrator', () => {
     expect(cli.calls).toContain('eject');
   });
 
+  it('exit code 4 (LOCK_HELD) is logged + skipped, never notified as error', async () => {
+    const notifications: { title: string; body: string }[] = [];
+    const mockNotify = {
+      notify: async (title: string, body: string) => {
+        notifications.push({ title, body });
+      },
+    };
+
+    const lockHeldResult: CliResult<SyncOutput> = {
+      exitCode: 4,
+      stdout: '',
+      stderr: '',
+      json: {
+        success: false,
+        dryRun: false,
+        error: 'Another podkit process is already syncing /mnt (pid 9999).',
+        // The CLI surfaces holderPid under `details`; the daemon inspects
+        // this best-effort shape to compose its log line.
+      } as SyncOutput & { details?: { holderPid?: number } },
+      duration: 25,
+    };
+
+    const cli = createMockCli({ sync: lockHeldResult });
+    const orchestrator = new SyncOrchestrator({ ...cli, notify: mockNotify });
+
+    await orchestrator.handleDeviceAppeared(makeDevice());
+
+    // No error notification — contention isn't a failure.
+    const errorNotifications = notifications.filter((n) => n.title === 'Sync Error');
+    expect(errorNotifications).toHaveLength(0);
+    // No "Sync Complete" either — we didn't run.
+    const completeNotifications = notifications.filter((n) => n.title === 'Sync Complete');
+    expect(completeNotifications).toHaveLength(0);
+
+    // Eject still proceeds — we mounted, we should unmount even though
+    // the actual sync was skipped.
+    expect(cli.calls).toContain('eject');
+    expect(orchestrator.isSyncing).toBe(false);
+  });
+
   it('exit code 130 is treated as graceful abort, not error', async () => {
     const notifications: { title: string; body: string }[] = [];
     const mockNotify = {

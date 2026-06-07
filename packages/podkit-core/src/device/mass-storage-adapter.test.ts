@@ -2649,6 +2649,128 @@ describe('MassStorageAdapter', () => {
     });
   });
 
+  describe('prunePhantomManifest()', () => {
+    /**
+     * Write a v1 manifest with the requested rows.
+     */
+    function seedManifest(rows: string[]): void {
+      const stateDir = path.join(mountPoint, PODKIT_DIR);
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(stateDir, MANIFEST_FILE),
+        JSON.stringify({
+          version: 1,
+          managedFiles: rows,
+          lastSync: new Date().toISOString(),
+        })
+      );
+    }
+
+    test('removes phantom rows + persists atomically + updates in-memory state', async () => {
+      const present = 'Music/Artist/Album/01 - Song.flac';
+      const phantomA = 'Music/Artist/Album/02 - Gone.flac';
+      const phantomB = 'Music/Other/Solo/01 - Missing.mp3';
+
+      // Only the present file actually exists on disk.
+      createFakeAudioFile(mountPoint, present);
+      seedManifest([present, phantomA, phantomB]);
+
+      const reader = createMockMetadataReader({
+        '01 - Song.flac': { title: 'Song', artist: 'Artist', album: 'Album' },
+      });
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: reader,
+      });
+
+      const result = await adapter.prunePhantomManifest([phantomA, phantomB]);
+      expect(result.pruned).toBe(2);
+      expect(result.errors).toEqual([]);
+
+      const manifestPath = path.join(mountPoint, PODKIT_DIR, MANIFEST_FILE);
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+      expect(manifest.version).toBe(1);
+      expect(manifest.managedFiles).toEqual([present]);
+
+      // A subsequent save() must not regress the phantoms — in-memory state
+      // was updated in lock-step with the rewrite.
+      await adapter.save();
+      const afterSave = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+      expect(afterSave.managedFiles).toEqual([present]);
+    });
+
+    test('empty paths list is a no-op', async () => {
+      seedManifest([]);
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({}),
+      });
+      const result = await adapter.prunePhantomManifest([]);
+      expect(result).toEqual({ pruned: 0, errors: [] });
+    });
+
+    test('missing manifest file surfaces an error per requested path', async () => {
+      // No seed — manifest doesn't exist.
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({}),
+      });
+      const result = await adapter.prunePhantomManifest(['Music/ghost.m4a']);
+      expect(result.pruned).toBe(0);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]!.path).toBe('Music/ghost.m4a');
+    });
+
+    test('preserves original manifest when rewrite fails (atomic semantics)', async () => {
+      // Seed with two phantoms.
+      const phantom = 'Music/ghost.m4a';
+      const original = [phantom, 'Music/keep.m4a'];
+      seedManifest(original);
+
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({}),
+      });
+
+      // Replace the manifest file with a directory of the same name to make
+      // the temp+rename step fail (rename would clobber a directory). The
+      // original tree must remain intact afterwards.
+      const stateDir = path.join(mountPoint, PODKIT_DIR);
+      const manifestPath = path.join(stateDir, MANIFEST_FILE);
+      const savedRaw = fs.readFileSync(manifestPath, 'utf-8');
+
+      // Make the parent directory read-only to force the atomic-write to fail
+      // at the tmp-write step. The original `state.json` file inside must be
+      // unchanged afterwards.
+      fs.chmodSync(stateDir, 0o500);
+      try {
+        const result = await adapter.prunePhantomManifest([phantom]);
+        expect(result.pruned).toBe(0);
+        expect(result.errors.length).toBeGreaterThan(0);
+      } finally {
+        fs.chmodSync(stateDir, 0o755);
+      }
+
+      // Original manifest is intact.
+      const afterRaw = fs.readFileSync(manifestPath, 'utf-8');
+      expect(afterRaw).toBe(savedRaw);
+    });
+
+    test('refuses to rewrite an unrecognised manifest shape', async () => {
+      const stateDir = path.join(mountPoint, PODKIT_DIR);
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.writeFileSync(path.join(stateDir, MANIFEST_FILE), JSON.stringify({ version: 99 }));
+
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({}),
+      });
+      const result = await adapter.prunePhantomManifest(['Music/ghost.m4a']);
+      expect(result.pruned).toBe(0);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]!.error.message).toMatch(/Unrecognised manifest shape/);
+
+      // File untouched.
+      const raw = fs.readFileSync(path.join(stateDir, MANIFEST_FILE), 'utf-8');
+      expect(JSON.parse(raw)).toEqual({ version: 99 });
+    });
+  });
+
   describe('v1 manifest', () => {
     test('v1 manifest recognizes managed files', async () => {
       // Write a v1 manifest with managed files

@@ -11,7 +11,6 @@ import {
 const baseCtx: ScannerContext = {
   mountPoint: '/Volumes/example',
   deviceType: 'mass-storage',
-  sessionStartMs: 1_700_000_000_000,
 };
 
 describe('Scanner registry shape', () => {

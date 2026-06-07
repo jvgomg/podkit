@@ -25,6 +25,8 @@
  * ```
  */
 import { existsSync } from '../utils/fs.js';
+import { mkdir } from 'node:fs/promises';
+import { join } from 'node:path';
 import { Command, Option } from 'commander';
 import { getContext } from '../context.js';
 import type {
@@ -78,8 +80,17 @@ export const SyncErrorCodes = {
   DEVICE_OPEN_FAILED: 'DEVICE_OPEN_FAILED',
   DEVICE_UNSUPPORTED: 'DEVICE_UNSUPPORTED',
   NO_COMPATIBLE_CODEC: 'NO_COMPATIBLE_CODEC',
+  LOCK_HELD: 'LOCK_HELD',
 } as const;
 export type SyncErrorCode = (typeof SyncErrorCodes)[keyof typeof SyncErrorCodes];
+
+/**
+ * Exit code emitted when another podkit process holds the per-device sync
+ * lock. Distinct from the generic command-error code (1) and the
+ * partial-failure code (2) so callers (including the daemon) can branch
+ * on it without scraping stderr.
+ */
+export const SYNC_LOCK_HELD_EXIT_CODE = 4;
 
 export type SyncErrorOutput = CliErrorOutput & { code: SyncErrorCode };
 import { createShutdownController } from '../shutdown.js';
@@ -272,6 +283,7 @@ export interface SyncOutput {
     albumCount?: number;
     artistCount?: number;
     videoSummary?: VideoSummary;
+    preliminaries?: import('@podkit/core').PlanPreliminaries;
   };
   operations?: Array<{
     type:
@@ -964,6 +976,64 @@ export async function runSync(
   const deviceSupportsAlac = openResult.deviceSupportsAlac;
   const deviceCapabilities = openResult.capabilities;
 
+  // ----- Acquire per-device sync lock -----
+  //
+  // Dry-run is read-only by design — it inspects state without writing
+  // to the iTunesDB, manifest, or track files. The lock exists to prevent
+  // concurrent corrupt writes, so dry-run does NOT take the lock. Trade-off:
+  // a dry-run inspecting state during a concurrent real sync may show a
+  // stale plan, but it cannot cause corruption.
+  //
+  // Lock path:
+  //   - mass-storage: `<mountPoint>/.podkit/sync.lock` (we create
+  //     `.podkit/` if needed; virgin devices have no such dir yet).
+  //   - iPod:         `<mountPoint>/iPod_Control/.podkit-sync.lock`
+  //                   (iPod_Control already exists; no extra mkdir).
+  let lockHandle: import('@podkit/core').LockHandle | null = null;
+  if (!dryRun) {
+    const lockPath = await resolveSyncLockPath(devicePath, isIpodDevice);
+    try {
+      lockHandle = await core.acquireLock(lockPath);
+    } catch (err) {
+      // Close the adapter we just opened so we don't leak a database
+      // handle when another process is already syncing.
+      try {
+        adapter.close();
+      } catch {
+        // Best-effort.
+      }
+      if (err instanceof core.LockHeldError) {
+        const heldPid = err.pid;
+        throw new CliError({
+          message: `Another podkit process is already syncing ${devicePath} (pid ${heldPid}). Wait for it to finish or kill it.`,
+          code: SyncErrorCodes.LOCK_HELD,
+          exitCode: SYNC_LOCK_HELD_EXIT_CODE,
+          details: { device: devicePath, holderPid: heldPid, lockPath: err.lockPath },
+          printText: (o) => {
+            o.error(`Another podkit process is already syncing ${devicePath} (pid ${heldPid}).`);
+            o.error('Wait for it to finish or kill it.');
+            if (o.isVerbose) {
+              o.error('');
+              o.error(`Lock file: ${err.lockPath}`);
+            }
+          },
+        });
+      }
+      if (err instanceof core.LockContestedError) {
+        throw new CliError({
+          message: err.message,
+          code: SyncErrorCodes.LOCK_HELD,
+          exitCode: SYNC_LOCK_HELD_EXIT_CODE,
+          details: { device: devicePath, lockPath: err.lockPath },
+          printText: (o) => {
+            o.error(err.message);
+          },
+        });
+      }
+      throw err;
+    }
+  }
+
   // Track overall results — declared here so they're visible after the
   // adapter try/finally block for the final summary.
   let totalCompleted = 0;
@@ -1523,5 +1593,40 @@ export async function runSync(
   } finally {
     shutdown.uninstall();
     adapter.close();
+    // Release the per-device sync lock only if we actually acquired it.
+    // Dry-run skips the lock entirely (lockHandle stays null). Idempotent —
+    // safe even if a prior path already released. Errors are swallowed: an
+    // unlinkable lock file is harmless because the next sync's liveness
+    // probe will reclaim it.
+    if (lockHandle !== null) {
+      try {
+        await lockHandle.release();
+      } catch {
+        // See LockHandle.release: tolerant by design.
+      }
+    }
   }
+}
+
+/**
+ * Resolve the lock-file path for a device.
+ *
+ * - iPod: `<mountPoint>/iPod_Control/.podkit-sync.lock`. `iPod_Control/`
+ *   is always present on a real iPod (the database lives under it), so
+ *   no mkdir is needed.
+ * - mass-storage: `<mountPoint>/.podkit/sync.lock`. We create `.podkit/`
+ *   if absent so virgin devices acquire cleanly on first sync.
+ */
+async function resolveSyncLockPath(devicePath: string, isIpodDevice: boolean): Promise<string> {
+  if (isIpodDevice) {
+    return join(devicePath, 'iPod_Control', '.podkit-sync.lock');
+  }
+  const podkitDir = join(devicePath, '.podkit');
+  try {
+    await mkdir(podkitDir, { recursive: true });
+  } catch {
+    // Best-effort: if mkdir fails, the subsequent acquireLock open will
+    // surface the real error (likely EACCES or ENOENT on the mount).
+  }
+  return join(podkitDir, 'sync.lock');
 }

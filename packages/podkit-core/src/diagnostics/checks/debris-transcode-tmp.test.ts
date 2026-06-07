@@ -1,14 +1,18 @@
 /**
- * Tests for the transcode-tmp debris check.
+ * Tests for the transcode-tmp debris walker.
  *
- * The check walks `os.tmpdir()` for `podkit-transcode-<uuid>/` dirs older
- * than the current session and reaps them. The mtime safety floor protects
- * concurrent sibling podkit processes — a dir younger than the floor is
- * left alone.
+ * The walker walks `os.tmpdir()` for `podkit-transcode-<uuid>/` dirs and
+ * decides whether each one is abandoned via the `.owner` sibling file:
+ *
+ * - missing `.owner` → reap (pre-`.owner` legacy debris OR crash before write)
+ * - malformed `.owner` → reap (treat as no owner)
+ * - `.owner` PID is dead → reap (SIGKILLed prior process)
+ * - `.owner` start-time mismatch → reap (PID reuse guard)
+ * - `.owner` is the live current process → skip (sibling protection)
  */
 
 import { describe, it, expect } from 'bun:test';
-import { mkdtemp, mkdir, rm, writeFile, utimes } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -16,6 +20,7 @@ import {
   walkAbandonedTranscodeDirs,
   removeAbandonedDir,
 } from '../scanners/transcode-tmp-walker.js';
+import { writeOwnership, getOwnIdentity } from '../../lib/pid-file.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -35,7 +40,6 @@ async function withFakeTmp<T>(fn: (root: string) => Promise<T>): Promise<T> {
 async function makeTranscodeDir(
   root: string,
   uuid: string,
-  ageMs: number,
   files: Record<string, string> = {}
 ): Promise<string> {
   const dir = join(root, `podkit-transcode-${uuid}`);
@@ -43,9 +47,6 @@ async function makeTranscodeDir(
   for (const [name, content] of Object.entries(files)) {
     await writeFile(join(dir, name), content);
   }
-  // Stamp mtime to `ageMs` ago.
-  const stampSec = (Date.now() - ageMs) / 1000;
-  await utimes(dir, stampSec, stampSec);
   return dir;
 }
 
@@ -56,31 +57,69 @@ describe('walkAbandonedTranscodeDirs', () => {
     await withFakeTmp(async (root) => {
       await mkdir(join(root, 'unrelated-dir'), { recursive: true });
       await writeFile(join(root, 'some-file.txt'), 'data');
-      const sessionStartMs = Date.now();
-      const result = await walkAbandonedTranscodeDirs(root, sessionStartMs);
+      const result = await walkAbandonedTranscodeDirs(root);
       expect(result).toEqual([]);
     });
   });
 
-  it('flags directories older than sessionStartMs', async () => {
+  it('reaps dirs with no .owner file (legacy debris / pre-owner crash)', async () => {
     await withFakeTmp(async (root) => {
-      // 60 seconds older than now.
-      await makeTranscodeDir(root, 'aaaa', 60_000, { 'output.m4a': 'partial' });
-      const result = await walkAbandonedTranscodeDirs(root, Date.now());
+      await makeTranscodeDir(root, 'aaaa', { 'output.m4a': 'partial' });
+      // No `.owner` written.
+      const result = await walkAbandonedTranscodeDirs(root);
       expect(result).toHaveLength(1);
       expect(result[0]!.path).toContain('podkit-transcode-aaaa');
       expect(result[0]!.bytes).toBe('partial'.length);
     });
   });
 
-  it('SKIPS directories younger than sessionStartMs (sibling process is live)', async () => {
+  it('reaps dirs with malformed .owner', async () => {
     await withFakeTmp(async (root) => {
-      // mtime is "now" — session start was 10 seconds ago, so this dir is
-      // newer than the floor.
-      const tenSecAgo = Date.now() - 10_000;
-      await makeTranscodeDir(root, 'live-bbbb', 0, { 'wip.m4a': 'still writing' });
-      const result = await walkAbandonedTranscodeDirs(root, tenSecAgo);
+      const dir = await makeTranscodeDir(root, 'bad-json', { 'output.m4a': 'partial' });
+      await writeFile(join(dir, '.owner'), 'not json {');
+      const result = await walkAbandonedTranscodeDirs(root);
+      expect(result).toHaveLength(1);
+      expect(result[0]!.path).toContain('podkit-transcode-bad-json');
+    });
+  });
+
+  it('SKIPS dirs whose .owner is the current live process', async () => {
+    await withFakeTmp(async (root) => {
+      const dir = await makeTranscodeDir(root, 'live', { 'wip.m4a': 'still writing' });
+      // Use our own real PID + start time.
+      await writeOwnership(join(dir, '.owner'), getOwnIdentity());
+      const result = await walkAbandonedTranscodeDirs(root);
       expect(result).toEqual([]);
+    });
+  });
+
+  it('reaps dirs whose .owner PID is dead', async () => {
+    await withFakeTmp(async (root) => {
+      const dir = await makeTranscodeDir(root, 'dead', { 'output.m4a': 'partial' });
+      // 999_999 is virtually never a live pid on test hosts.
+      await writeOwnership(join(dir, '.owner'), {
+        pid: 999_999,
+        startTimeMs: Date.now() - 60_000,
+      });
+      const result = await walkAbandonedTranscodeDirs(root);
+      expect(result).toHaveLength(1);
+      expect(result[0]!.path).toBe(dir);
+    });
+  });
+
+  it('reaps dirs whose .owner PID is reused (start time mismatch)', async () => {
+    await withFakeTmp(async (root) => {
+      const dir = await makeTranscodeDir(root, 'reused', { 'output.m4a': 'partial' });
+      // Claim the current process's PID but with a start time from way
+      // back — the liveness probe sees the PID is alive but the start time
+      // doesn't match, so it must treat the owner as dead.
+      await writeOwnership(join(dir, '.owner'), {
+        pid: process.pid,
+        startTimeMs: 1_000_000, // ~1970
+      });
+      const result = await walkAbandonedTranscodeDirs(root);
+      expect(result).toHaveLength(1);
+      expect(result[0]!.path).toBe(dir);
     });
   });
 
@@ -89,27 +128,26 @@ describe('walkAbandonedTranscodeDirs', () => {
       // Look-alike dirs from other tools must not be touched.
       const dir = join(root, 'transcode-leftover-xxxx');
       await mkdir(dir, { recursive: true });
-      const stampSec = (Date.now() - 60_000) / 1000;
-      await utimes(dir, stampSec, stampSec);
-      const result = await walkAbandonedTranscodeDirs(root, Date.now());
+      const result = await walkAbandonedTranscodeDirs(root);
       expect(result).toEqual([]);
     });
   });
 
-  it('aggregates sizes across multiple files within a dir', async () => {
+  it('aggregates sizes across multiple files within an abandoned dir', async () => {
     await withFakeTmp(async (root) => {
-      await makeTranscodeDir(root, 'cccc', 60_000, {
+      await makeTranscodeDir(root, 'cccc', {
         'a.m4a': 'a'.repeat(100),
         'b.m4a': 'b'.repeat(50),
       });
-      const result = await walkAbandonedTranscodeDirs(root, Date.now());
+      // No `.owner` → abandoned.
+      const result = await walkAbandonedTranscodeDirs(root);
       expect(result).toHaveLength(1);
       expect(result[0]!.bytes).toBe(150);
     });
   });
 
   it('handles a missing tmpdir gracefully', async () => {
-    const result = await walkAbandonedTranscodeDirs('/nonexistent-path-7f7f7f', Date.now());
+    const result = await walkAbandonedTranscodeDirs('/nonexistent-path-7f7f7f');
     expect(result).toEqual([]);
   });
 });
@@ -119,10 +157,8 @@ describe('walkAbandonedTranscodeDirs', () => {
 describe('removeAbandonedDir', () => {
   it('removes the directory and reports bytes freed', async () => {
     await withFakeTmp(async (root) => {
-      const dir = await makeTranscodeDir(root, 'dddd', 60_000, {
-        'out.m4a': 'x'.repeat(42),
-      });
-      const result = await walkAbandonedTranscodeDirs(root, Date.now());
+      const dir = await makeTranscodeDir(root, 'dddd', { 'out.m4a': 'x'.repeat(42) });
+      const result = await walkAbandonedTranscodeDirs(root);
       expect(result).toHaveLength(1);
 
       const freed = await removeAbandonedDir(result[0]!);

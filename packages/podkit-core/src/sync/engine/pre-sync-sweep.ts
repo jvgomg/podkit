@@ -16,9 +16,10 @@
  *    `iPod_Control/` surface (Music F-buckets, iTunes/, Artwork/, Device/,
  *    Photos/). Same walker as `debris-files-ipod`.
  * 3. **Host transcode-tmp** — abandoned `podkit-transcode-<uuid>/`
- *    scratch directories under `os.tmpdir()`. The mtime-safety floor from
- *    `transcode-tmp-walker` ensures sibling-process dirs are never
- *    touched (`mtimeMs < sessionStartMs`).
+ *    scratch directories under `os.tmpdir()`. Sibling-process protection
+ *    is enforced by the `.owner` PID-liveness probe in the walker (see
+ *    `transcode-tmp-walker.ts`) — a live owner's dir is never returned,
+ *    a dead-or-missing-owner dir is.
  *
  * Phantom manifest entries (manifest rows whose backing file vanished)
  * are surfaced for mass-storage devices alongside debris — the same FS
@@ -30,10 +31,10 @@ import { tmpdir } from 'node:os';
 import type { PlanPreliminaries, Warning, WarningSink } from './types.js';
 import type { DiagnosticDeviceType } from '../../diagnostics/types.js';
 import type { ContentPaths } from '@podkit/devices-mass-storage';
+import type { DeviceAdapter } from '../../device/adapter.js';
 import { walkMassStorageContent } from '../../diagnostics/scanners/mass-storage-walker.js';
 import { walkIpodContentForDebris } from '../../diagnostics/scanners/ipod-walker.js';
 import { walkAbandonedTranscodeDirs } from '../../diagnostics/scanners/transcode-tmp-walker.js';
-import { getSessionStartMs } from '../../diagnostics/checks/debris-transcode-tmp.js';
 
 export interface PreSyncSweepInput {
   /** Device mount point. */
@@ -58,12 +59,6 @@ export interface PreSyncSweepInput {
    * Tests use this to point the sweep at a controlled fixture root.
    */
   tmpDirOverride?: string;
-  /**
-   * Override for the session-start mtime floor. Defaults to the value
-   * pinned at module-load time. Tests use this to simulate older
-   * sessions.
-   */
-  sessionStartMsOverride?: number;
 }
 
 /**
@@ -128,10 +123,7 @@ export async function runPreSyncSweep(input: PreSyncSweepInput): Promise<PlanPre
 
   // ── Host transcode-tmp ─────────────────────────────────────────────────────
   try {
-    const transcodeDirs = await walkAbandonedTranscodeDirs(
-      input.tmpDirOverride ?? tmpdir(),
-      input.sessionStartMsOverride ?? getSessionStartMs()
-    );
+    const transcodeDirs = await walkAbandonedTranscodeDirs(input.tmpDirOverride ?? tmpdir());
     for (const d of transcodeDirs) {
       debris.push({ path: d.path, bytes: d.bytes });
     }
@@ -179,6 +171,8 @@ export interface PreFlightResult {
   freedBytes: number;
   /** Paths where deletion failed (already surfaced as Warnings). */
   failedPaths: string[];
+  /** Number of phantom manifest rows the pre-flight pruned. */
+  phantomsPruned: number;
 }
 
 /**
@@ -191,17 +185,28 @@ export interface PreFlightResult {
  * - **Tolerant of every individual unlink failure**: a single failure
  *   becomes a `Warning('debris-cleanup-failure')` and the loop continues.
  *   The pre-flight NEVER throws — the next sync will retry.
- * - **Phantom-manifest pruning is currently advisory**: if `phantomPrune`
- *   is set, a single advisory warning is emitted recommending the user
- *   run `podkit doctor --repair orphan-files` to clean up phantom rows.
- *   Full auto-pruning is deferred — the manifest-rewrite crosses adapter
- *   boundaries that this sweep deliberately avoids touching today.
+ * - **Phantom-manifest pruning is adapter-driven**: when the adapter
+ *   exposes {@link DeviceAdapter.prunePhantomManifest} (mass-storage
+ *   today; iPod intentionally omits it), the pre-flight invokes it and
+ *   only emits the advisory warning when the prune itself fails. The
+ *   doctor's `--repair orphan-files` path remains a backstop for cases
+ *   where the sweep didn't run (e.g. devices the user repairs manually).
  */
 export async function runPreliminariesPreFlight(
   preliminaries: PlanPreliminaries | undefined,
-  options: { dryRun: boolean; warningSink: WarningSink; signal?: AbortSignal }
+  options: {
+    dryRun: boolean;
+    warningSink: WarningSink;
+    signal?: AbortSignal;
+    adapter?: Pick<DeviceAdapter, 'prunePhantomManifest'>;
+  }
 ): Promise<PreFlightResult> {
-  const empty: PreFlightResult = { debrisDeleted: 0, freedBytes: 0, failedPaths: [] };
+  const empty: PreFlightResult = {
+    debrisDeleted: 0,
+    freedBytes: 0,
+    failedPaths: [],
+    phantomsPruned: 0,
+  };
   if (!preliminaries || options.dryRun) return empty;
 
   const debris = preliminaries.debrisCleanup;
@@ -238,17 +243,53 @@ export async function runPreliminariesPreFlight(
     }
   }
 
-  // Phantom-manifest prune is currently advisory. Surface a single
-  // warning per sweep when any phantom rows were detected so the user
-  // knows to run doctor manually.
+  // Phantom-manifest prune. When the adapter supports it, try the prune;
+  // on success the phantom rows are gone and we stay silent. On failure
+  // (or when the adapter doesn't implement the method at all — e.g. iPod)
+  // fall back to the advisory warning so the user knows to run doctor
+  // manually as a backstop.
+  let phantomsPruned = 0;
   if (preliminaries.phantomPrune && preliminaries.phantomPrune.paths.length > 0) {
-    options.warningSink.emit({
-      phase: 'execute',
-      type: 'debris-cleanup-failure',
-      message: `${preliminaries.phantomPrune.paths.length} phantom manifest entries detected. Run \`podkit doctor --repair orphan-files\` to prune them.`,
-      tracks: [],
-    });
+    const phantomPaths = preliminaries.phantomPrune.paths;
+    if (options.adapter?.prunePhantomManifest) {
+      try {
+        const result = await options.adapter.prunePhantomManifest(phantomPaths);
+        phantomsPruned = result.pruned;
+        if (result.errors.length > 0) {
+          // Aggregate per-path failures into one warning — the user only
+          // needs the top-level "prune failed" signal + a representative
+          // cause. The doctor backstop still works if they want a
+          // per-path breakdown.
+          const firstError = result.errors[0]!.error.message;
+          options.warningSink.emit({
+            phase: 'execute',
+            type: 'debris-cleanup-failure',
+            message: `Failed to auto-prune ${result.errors.length} phantom manifest entr${result.errors.length === 1 ? 'y' : 'ies'}: ${firstError}. Run \`podkit doctor --repair orphan-files\` to retry.`,
+            tracks: [],
+          });
+        }
+      } catch (err) {
+        // Implementation contract says prunePhantomManifest never throws,
+        // but defend in depth — surface the error rather than aborting
+        // the sync.
+        const message = err instanceof Error ? err.message : String(err);
+        options.warningSink.emit({
+          phase: 'execute',
+          type: 'debris-cleanup-failure',
+          message: `Failed to auto-prune phantom manifest entries: ${message}. Run \`podkit doctor --repair orphan-files\` to retry.`,
+          tracks: [],
+        });
+      }
+    } else {
+      // Adapter has no prune method — fall back to advisory.
+      options.warningSink.emit({
+        phase: 'execute',
+        type: 'debris-cleanup-failure',
+        message: `${phantomPaths.length} phantom manifest entries detected. Run \`podkit doctor --repair orphan-files\` to prune them.`,
+        tracks: [],
+      });
+    }
   }
 
-  return { debrisDeleted, freedBytes, failedPaths };
+  return { debrisDeleted, freedBytes, failedPaths, phantomsPruned };
 }

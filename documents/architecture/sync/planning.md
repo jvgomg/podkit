@@ -144,11 +144,13 @@ siblings) and abandoned directories (transcode-tmp dirs); the executor
 uses `rm({ recursive: true, force: true })` for every entry so the
 caller never has to discriminate kind.
 
-`phantomPrune` is **advisory today** — the pre-flight emits a Warning
-recommending `podkit doctor --repair orphan-files` but doesn't auto-prune
-the manifest. Full prune execution is a follow-up; the manifest rewrite
-crosses the adapter contract boundary which this sweep module
-deliberately doesn't touch.
+`phantomPrune` is **auto-pruned at pre-flight time** for mass-storage
+devices via `DeviceAdapter.prunePhantomManifest` (an optional method
+mass-storage implements; iPod intentionally omits it because the
+manifest is owned by libgpod). The advisory `Warning` only fires now
+when the auto-prune itself failed, or when the device adapter doesn't
+expose the method — the doctor's `--repair orphan-files` path remains a
+backstop. See TASK-401.
 
 ---
 
@@ -229,13 +231,110 @@ Two invariants the layout enforces:
 
 ---
 
-## 6. Open work
+## 6. Cross-process coordination
 
-- **Phantom-manifest auto-prune.** The pre-flight surfaces phantom
-  entries but emits an advisory Warning rather than auto-pruning the
-  manifest (the rewrite crosses the adapter contract boundary). A
-  follow-up should add `MassStorageAdapter.prunePhantomManifest(paths)`
-  and consume it from the pre-flight.
+Two surfaces need to coordinate across podkit processes (host-global
+scratch + device-shared content). Both lean on one primitive — the
+`PidFileEntry` — implemented in
+`packages/podkit-core/src/lib/pid-file.ts`.
+
+### The primitive
+
+A PID-file is a JSON document on disk with shape:
+
+```ts
+interface PidFileEntry { pid: number; startTimeMs: number; }
+```
+
+The `startTimeMs` guards against PID reuse on long-uptime hosts: a probe
+that finds `kill(pid, 0)` succeeding cross-checks the actual process's
+start time (Linux `/proc/<pid>/stat` field 22 over `/proc/stat:btime`;
+macOS `ps -o etime= -p <pid>`), and treats a ±2s mismatch as "dead".
+We use `etime` (elapsed time) rather than `lstart` (absolute) because the
+latter requires parsing a localized date string that is sensitive to the
+host's `TZ` setting.
+On unsupported platforms or any probe error, `isAlive` returns `false`
+so callers reclaim cleanly rather than pinning forever.
+
+Two operations: `acquireLock` (kernel-atomic `open(path, 'wx')` — fall
+through to liveness-probe-then-takeover on EEXIST, single retry, never
+spin) and `readOwnership`/`writeOwnership` (atomic temp+rename,
+malformed-tolerant). Readers of an existing lock retry up to 3× with 5ms
+backoff before declaring the file stale, to handle the brief window between
+another process's `open(wx)` and its content `writeFile`.
+
+### Why a PID-file, not flock(2)
+
+`flock(2)` semantics on FAT32/exFAT — the iPod filesystem families we
+target — are platform-dependent and silently degrade. The PID-file
+relies only on `open(O_CREAT|O_EXCL)` + `unlink` + `kill(pid, 0)`, which
+behave uniformly across exFAT, FAT32, HFS+, APFS, ext4, and NTFS. One
+primitive, predictable behaviour, no native deps.
+
+### Consumer A — per-device sync lock (TASK-404)
+
+`runSyncAction` in `packages/podkit-cli/src/commands/sync.ts` acquires
+the lock immediately after `openDevice` succeeds and releases in a
+`finally`. Lock path:
+
+- iPod: `<mountPoint>/iPod_Control/.podkit-sync.lock`.
+- mass-storage: `<mountPoint>/.podkit/sync.lock` (`.podkit/` created if
+  absent for virgin devices).
+
+Contention raises `LockHeldError`, which the CLI translates into a
+`CliError` with code `LOCK_HELD` and exit code `4` (distinct from the
+generic command-error `1` and partial-failure `2`). The daemon in
+`packages/podkit-daemon/src/sync-orchestrator.ts` recognises exit code
+`4` as a contention skip — logs `daemon: cycle skipped — lock held by
+pid N` and proceeds to eject without raising an error notification.
+
+**Reads are not gated.** `podkit device scan`, `device info`,
+`device music` never acquire the lock — only the writing sync path
+does. The lock guards mutating writes to iTunesDB / manifest / track
+files; reads against an in-flight sync are best-effort by design.
+
+A crashed `podkit sync` leaves the lock file behind. The next process's
+`acquireLock` reads it, probes liveness, finds the holder dead, unlinks
+the stale file, and retakes the lock. Single retry, no spin.
+
+Cross-host coordination (two hosts sharing a network-mounted iPod) is
+explicitly out-of-scope; advisory file locks aren't honoured uniformly
+across NFS / SMB implementations.
+
+### Dry-run policy
+
+`podkit sync --dry-run` does **not** take the per-device lock. Dry-run is
+read-only by design — it inspects collection + device state without writing
+to iTunesDB, the manifest, or track files. The lock exists to prevent
+concurrent corrupt writes; dry-run cannot corrupt anything. Trade-off: a
+dry-run running concurrently with a real sync may observe a partially-updated
+device state and produce a stale plan, but it cannot cause data loss.
+
+### Consumer B — transcode-tmp `.owner` (TASK-402)
+
+The music pipeline (`packages/podkit-core/src/sync/music/pipeline.ts`)
+writes `<podkit-transcode-<uuid>>/.owner` immediately after `mkdir`
+using a module-level cached `getOwnIdentity()`. The walker
+(`packages/podkit-core/src/diagnostics/scanners/transcode-tmp-walker.ts`)
+reads `.owner` for every candidate dir under `os.tmpdir()` and decides:
+
+- live owner → skip (current process OR sibling podkit process).
+- dead owner → reap (SIGKILLed prior process).
+- missing/malformed `.owner` → reap (legacy pre-`.owner` debris OR a
+  crash between `mkdir` and the ownership write — the latter only
+  leaks an empty dir, harmless).
+
+This replaces the previous mtime-based `SESSION_START_MS` floor, which
+was correct for one-shot CLI invocations but missed the daemon's own
+self-interrupted prior-cycle scratch dirs (the floor predated their
+creation, so the walker incorrectly treated them as "live sibling
+work"). The `.owner` probe is sibling-safe by construction and
+daemon-correct in the same primitive.
+
+Cross-references: TASK-402 + TASK-404.
+
+## 7. Open work
+
 - **Free-space probe rewrite (TASK-378).** Today `willFit` is a single
   subtraction (`estimatedSize <= storage.free + debrisFreedEstimate`).
   The probe rewrite will expand this into a proper accounting model
@@ -265,9 +364,14 @@ Two invariants the layout enforces:
 
 ---
 
-## 7. References
+## 8. References
 
 - **Code:**
+  - `packages/podkit-core/src/lib/pid-file.ts` — PID-file primitive
+    (`acquireLock`, `LockHandle`, `LockHeldError`, `LockContestedError`,
+    `readOwnership`, `writeOwnership`, `isAlive`).
+  - `packages/podkit-core/src/lib/pid-file.test.ts` — unit tests for
+    the PID-file primitive.
   - `packages/podkit-core/src/sync/engine/differ.ts` — `SyncDiffer`.
   - `packages/podkit-core/src/sync/engine/planner.ts` — `SyncPlanner`.
   - `packages/podkit-core/src/sync/engine/types.ts` — `SyncPlan`,

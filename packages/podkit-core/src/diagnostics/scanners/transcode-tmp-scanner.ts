@@ -1,9 +1,10 @@
 /**
  * Scanner registration for abandoned transcode scratch directories.
  *
- * Walks `os.tmpdir()` for `podkit-transcode-<uuid>/` directories older than
- * the session start. The mtime-based safety floor (see `transcode-tmp-walker.ts`)
- * guarantees we never reap a concurrent sibling process's in-flight scratch.
+ * Walks `os.tmpdir()` for `podkit-transcode-<uuid>/` directories whose
+ * `.owner` is missing or points at a dead PID (see
+ * `transcode-tmp-walker.ts` for the rationale). Live siblings are skipped
+ * by construction — their `.owner` PID is live.
  *
  * Host-scoped (`applicableTo: ['host']`) — runs without a device attached.
  * The doctor `debris-transcode-tmp` check uses the same walker directly.
@@ -18,8 +19,8 @@ export const transcodeTmpDebrisScanner: Scanner = {
   name: 'Abandoned transcode scratch directories',
   applicableTo: ['host'],
 
-  async scan(ctx: ScannerContext): Promise<DebrisScanResult> {
-    const abandoned = await walkAbandonedTranscodeDirs(tmpdir(), ctx.sessionStartMs);
+  async scan(_ctx: ScannerContext): Promise<DebrisScanResult> {
+    const abandoned = await walkAbandonedTranscodeDirs(tmpdir());
     return {
       debris: abandoned.map((d) => ({ path: d.path, bytes: d.bytes })),
       totalBytes: abandoned.reduce((sum, d) => sum + d.bytes, 0),

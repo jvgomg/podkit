@@ -1498,6 +1498,74 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
   }
 
   /**
+   * Drop phantom manifest entries (rows whose backing file has vanished) from
+   * both the in-memory `managedFiles` set AND the on-disk manifest.
+   *
+   * Atomic on disk: re-reads `state.json` to avoid clobbering concurrent edits,
+   * removes the requested paths, and rewrites via {@link atomicWriteFile}
+   * (tmp + rename). If any step fails the original manifest survives, the
+   * in-memory state stays untouched, and the failure is reported per-path so
+   * the caller can decide whether to surface it.
+   *
+   * Mass-storage only — see the DeviceAdapter JSDoc for why iPod omits this
+   * method. The pre-sync sweep is the only caller today; the doctor's
+   * `orphan-files` repair has its own equivalent pass that runs without an
+   * open adapter.
+   */
+  async prunePhantomManifest(
+    paths: string[]
+  ): Promise<{ pruned: number; errors: Array<{ path: string; error: Error }> }> {
+    if (paths.length === 0) {
+      return { pruned: 0, errors: [] };
+    }
+
+    const errors: Array<{ path: string; error: Error }> = [];
+    const manifestPath = path.join(this.mountPoint, PODKIT_DIR, MANIFEST_FILE);
+    const phantomSet = new Set(paths.map((p) => p.normalize('NFC')));
+
+    try {
+      // Re-read on disk so an unrelated change (manual edit, another tool)
+      // doesn't get clobbered. The atomic write below preserves the original
+      // file if anything throws between here and rename().
+      const raw = await fs.promises.readFile(manifestPath, 'utf-8');
+      const parsed = JSON.parse(raw) as MassStorageManifest;
+      if (parsed.version !== 1 || !Array.isArray(parsed.managedFiles)) {
+        // Unrecognised shape — bail rather than overwrite a manifest we don't
+        // know how to round-trip. Surface as a single error against the first
+        // requested path so the caller still sees the failure mode.
+        const failure = new Error('Unrecognised manifest shape; refusing to rewrite');
+        for (const p of paths) {
+          errors.push({ path: p, error: failure });
+        }
+        return { pruned: 0, errors };
+      }
+
+      const before = parsed.managedFiles.length;
+      parsed.managedFiles = parsed.managedFiles.filter((p) => !phantomSet.has(p.normalize('NFC')));
+      const pruned = before - parsed.managedFiles.length;
+
+      // Only mutate on-disk + in-memory state after the rewrite succeeds —
+      // a failure here leaves the original manifest intact (atomicWriteFile
+      // cleans up its tmp file on error). The in-memory managedFiles set is
+      // kept in lock-step so a subsequent save() doesn't write the phantoms
+      // back. allocatedPaths is unaffected: phantom rows correspond to files
+      // missing from disk, which scanTracks() never recorded there.
+      atomicWriteFile(manifestPath, JSON.stringify(parsed) + '\n', 'utf-8');
+      this.manifest = parsed;
+      for (const p of phantomSet) {
+        this.managedFiles.delete(p);
+      }
+      return { pruned, errors };
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      for (const p of paths) {
+        errors.push({ path: p, error });
+      }
+      return { pruned: 0, errors };
+    }
+  }
+
+  /**
    * Look up the artist/title/album for a relocated track at save-time. The
    * pending-move queue is keyed by paths; the track ref is recovered by
    * matching the new path in the current track list.

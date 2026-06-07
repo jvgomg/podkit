@@ -7,9 +7,10 @@
  * but on a busy machine they accumulate over time and waste disk.
  *
  * Host-scoped (`scope: 'system'`): no device is needed. Repair is
- * safe-by-design because the walker only returns directories older than
- * the current podkit session — anything younger belongs to a concurrent
- * sibling process and is never touched.
+ * safe-by-design because the walker only returns directories whose
+ * `.owner` PID is dead (or whose `.owner` is missing). Live siblings —
+ * including the current Node process's own active scratch dirs — keep
+ * their `.owner` live so the walker skips them.
  */
 
 import { tmpdir } from 'node:os';
@@ -27,29 +28,6 @@ import {
   removeAbandonedDir,
 } from '../scanners/transcode-tmp-walker.js';
 
-/**
- * The wall-clock time the check + repair use as the "anything newer is live"
- * floor. Captured at module load — once per process — so the diagnostic and
- * any subsequent invocations inside the same run share the same cutoff.
- *
- * **Timing guarantee.** `@podkit/core` is lazy-loaded by the CLI (`await
- * import('@podkit/core')` in `runDoctorAction` and `genericSyncCollection`),
- * and the diagnostics barrel transitively imports this file. The first
- * sync- or doctor-related CLI command in a process triggers the load
- * BEFORE any file-system operations run, so `SESSION_START_MS` reliably
- * precedes any podkit-owned write activity in the same process. Sibling
- * `podkit-transcode-*` directories created after this point are by
- * definition another process's work and must not be reaped.
- */
-const SESSION_START_MS = Date.now();
-
-// Exported for tests + the pre-sync sweep so they can override the safety
-// floor (e.g. simulate an old session, or scope a sweep to "since N minutes
-// ago"). Production callers should leave it alone.
-export function getSessionStartMs(): number {
-  return SESSION_START_MS;
-}
-
 // ── Check ────────────────────────────────────────────────────────────────────
 
 export const debrisTranscodeTmpCheck: DiagnosticCheck = {
@@ -62,7 +40,7 @@ export const debrisTranscodeTmpCheck: DiagnosticCheck = {
   scope: 'system',
 
   async check(_ctx: DiagnosticContext): Promise<CheckResult> {
-    const abandoned = await walkAbandonedTranscodeDirs(tmpdir(), getSessionStartMs());
+    const abandoned = await walkAbandonedTranscodeDirs(tmpdir());
 
     if (abandoned.length === 0) {
       return {
@@ -96,7 +74,7 @@ export const debrisTranscodeTmpCheck: DiagnosticCheck = {
     requirements: [],
 
     async run(_ctx: RepairContext, options?: RepairRunOptions): Promise<RepairResult> {
-      const abandoned = await walkAbandonedTranscodeDirs(tmpdir(), getSessionStartMs());
+      const abandoned = await walkAbandonedTranscodeDirs(tmpdir());
       const totalBytes = abandoned.reduce((sum, d) => sum + d.bytes, 0);
 
       if (abandoned.length === 0) {

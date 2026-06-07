@@ -34,6 +34,7 @@ import { rm } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 
 import { PODKIT_TEMP_SUFFIX } from '../../utils/atomic-fs.js';
+import { getOwnIdentity, writeOwnership, type PidFileEntry } from '../../lib/pid-file.js';
 
 import { AsyncQueue } from '../../utils/async-queue.js';
 import { streamToTempFile, cleanupTempFile } from '../../utils/stream.js';
@@ -237,6 +238,15 @@ const PIPELINE_BUFFER_SIZE = 3;
 
 /** Number of files to download ahead of the transcoder (for remote sources) */
 const PREFETCH_BUFFER_SIZE = 2;
+
+/**
+ * Cached process identity for `.owner` writes on transcode scratch dirs.
+ *
+ * One `getOwnIdentity()` call per process is enough — the tuple never
+ * changes for the lifetime of this Node process. The walker uses the
+ * same `{pid, startTimeMs}` shape to detect live owners and skip them.
+ */
+const OWN_IDENTITY: PidFileEntry = getOwnIdentity();
 
 /**
  * A file that has been downloaded/resolved but not yet transcoded/prepared.
@@ -825,11 +835,14 @@ export class MusicPipeline implements SyncExecutor {
       // (only the FIRST collection's plan against a given device carries
       // it), clean up debris before track ops run. No-op in dry-run; the
       // presenter renders the preliminaries from the plan directly.
+      // The adapter is threaded through so the helper can auto-prune
+      // phantom manifest entries on mass-storage devices.
       if (plan.preliminaries) {
         const preflight = await runPreliminariesPreFlight(plan.preliminaries, {
           dryRun,
           warningSink: this.warningSink,
           signal,
+          adapter: this.device,
         });
         if (!dryRun && preflight.debrisDeleted > 0) {
           // Single log line per task spec §4.
@@ -842,6 +855,13 @@ export class MusicPipeline implements SyncExecutor {
 
       if (needsTempDir && !dryRun) {
         await mkdir(transcodeDir, { recursive: true });
+        // Stamp ownership BEFORE the first transcode op. The walker
+        // reads `.owner` to tell a live transcode session apart from
+        // SIGKILLed prior debris. A crash between mkdir and the write
+        // below leaves the dir without an `.owner` file, which the
+        // walker treats as orphaned and reaps — the worst-case is a
+        // just-created empty dir gets reaped, harmless.
+        await writeOwnership(join(transcodeDir, '.owner'), OWN_IDENTITY);
       }
 
       // In dry-run mode, use sequential execution (no actual work to pipeline)

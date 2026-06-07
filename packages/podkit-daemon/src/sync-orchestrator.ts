@@ -26,6 +26,18 @@ import {
 } from './notification-formatter.js';
 import { log } from './logger.js';
 
+/**
+ * Exit code emitted by `podkit sync` when another podkit process holds the
+ * per-device lock. The daemon mirrors the constant rather than importing
+ * it from `@podkit/cli` to keep the daemon package's CLI-shell-out
+ * decoupling intact.
+ *
+ * This exit-code detection works only because the daemon invokes the CLI as
+ * a subprocess. If the daemon ever switches to an in-process `runSync` call,
+ * replace this with a try/catch on `LockHeldError` (and `LockContestedError`).
+ */
+const SYNC_LOCK_HELD_EXIT_CODE = 4;
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -229,6 +241,16 @@ export class SyncOrchestrator {
         if (syncResult.exitCode === 130) {
           log('info', 'Sync aborted gracefully', { device: device.name });
           // Don't treat as failure — database was saved before exit
+        } else if (syncResult.exitCode === SYNC_LOCK_HELD_EXIT_CODE) {
+          // Another podkit process holds the per-device sync lock.
+          // Skip the cycle cleanly — no retry-spin, no error
+          // notification (this isn't a failure mode, just contention).
+          const holderPid =
+            (syncResult.json as { details?: { holderPid?: number } } | undefined)?.details
+              ?.holderPid ?? 'unknown';
+          log('info', `daemon: cycle skipped — lock held by pid ${holderPid}`, {
+            device: device.name,
+          });
         } else if (syncResult.exitCode === 0 || syncResult.exitCode === 2) {
           // 0 = clean success; 2 = ran with item failures (partial-failure).
           // Both produce a success-shape JSON; the daemon logs and notifies

@@ -81,6 +81,20 @@ export {
   type PreFlightResult,
 } from './sync/engine/pre-sync-sweep.js';
 
+// PID-file primitive for cross-process coordination. Used by the per-device
+// sync lock and the transcode-tmp `.owner` marker.
+export {
+  acquireLock,
+  getOwnIdentity,
+  isAlive,
+  LockHandle,
+  LockHeldError,
+  LockContestedError,
+  readOwnership,
+  writeOwnership,
+  type PidFileEntry,
+} from './lib/pid-file.js';
+
 // Per-handler operation types
 export type { MusicOperation } from './sync/music/types.js';
 export type { VideoOperation } from './sync/video/types.js';
@@ -337,6 +351,11 @@ export type {
   RunDiagnosticsInput,
 } from './diagnostics/index.js';
 export { runDiagnostics, getDiagnosticCheck, getDiagnosticCheckIds } from './diagnostics/index.js';
+export {
+  PUBLIC_REPAIR_IDS,
+  getRepairCheck,
+  getRepairCheckForValidation,
+} from './diagnostics/index.js';
 
 // Metadata extraction utilities
 export type { FileDisplayMetadata } from './metadata/extractor.js';

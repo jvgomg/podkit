@@ -2,23 +2,33 @@
  * Shared walker for abandoned transcode scratch directories.
  *
  * podkit creates `<os.tmpdir()>/podkit-transcode-<uuid>/` per sync (see
- * `sync/music/pipeline.ts:804`) and removes it in a `finally` block. A
+ * `sync/music/pipeline.ts`) and removes it in a `finally` block. A
  * SIGKILLed process can't run that finally, so the dir lingers.
  *
- * **Concurrency safety floor.** `os.tmpdir()` is host-global; a daemon
- * and a manual CLI invocation can be active at the same time. We skip any
- * candidate whose `mtime` is `>= sessionStartMs` — those belong to a
- * concurrent sibling process and reaping them would corrupt an in-flight
- * sync. The mtime check is cheap and side-effect free, and is the cheapest
- * substitute for a true PID-based lock that still respects the
- * "never disturb a live process" invariant.
+ * **Concurrency safety via `.owner`.** Each live scratch dir contains an
+ * `.owner` file written by the pipeline immediately after `mkdir` with
+ * a `{pid, startTimeMs}` tuple. The walker probes the owner via
+ * {@link isAlive} (kernel `kill(pid, 0)` + start-time tuple match guards
+ * against PID reuse). Live owner → skip. Dead owner OR missing `.owner` →
+ * reap.
+ *
+ * This replaces the previous mtime-based session-start floor. A daemon's
+ * own prior cycle is now correctly detected as dead when its `.owner`
+ * PID is no longer live, even though both cycles live inside one Node
+ * process from the old floor's point of view. Sibling-process
+ * protection is unchanged — a concurrent `podkit sync`'s `.owner` is
+ * live, so its dir is left alone.
  */
 
 import { readdir, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
+import { isAlive, readOwnership } from '../../lib/pid-file.js';
 
-/** Name pattern emitted by `pipeline.ts:804`. */
+/** Name pattern emitted by the music pipeline. */
 const TRANSCODE_DIR_PREFIX = 'podkit-transcode-';
+
+/** Sibling marker file each live transcode dir carries. */
+const OWNER_FILE = '.owner';
 
 export interface AbandonedTranscodeDir {
   /** Absolute directory path. */
@@ -28,17 +38,17 @@ export interface AbandonedTranscodeDir {
 }
 
 /**
- * Walk `tmpDir` and return every `podkit-transcode-<uuid>/` directory whose
- * `mtime` is strictly older than `sessionStartMs`.
+ * Walk `tmpDir` and return every `podkit-transcode-<uuid>/` directory
+ * whose `.owner` is missing, malformed, or points at a dead process.
  *
- * @param tmpDir          Host scratch root (typically `os.tmpdir()`).
- * @param sessionStartMs  Wall-clock floor — directories newer than this are
- *                        owned by a concurrent process and never returned.
+ * Dirs whose `.owner` points at a live process are always skipped — that
+ * includes both the current Node process's own active dirs and any
+ * sibling podkit process's active dirs.
+ *
+ * Tolerant of every individual stat / readdir failure: a file vanishing
+ * mid-walk simply drops out of the result rather than throwing.
  */
-export async function walkAbandonedTranscodeDirs(
-  tmpDir: string,
-  sessionStartMs: number
-): Promise<AbandonedTranscodeDir[]> {
+export async function walkAbandonedTranscodeDirs(tmpDir: string): Promise<AbandonedTranscodeDir[]> {
   let entries;
   try {
     entries = await readdir(tmpDir, { withFileTypes: true });
@@ -52,15 +62,24 @@ export async function walkAbandonedTranscodeDirs(
     if (!entry.name.startsWith(TRANSCODE_DIR_PREFIX)) continue;
 
     const full = join(tmpDir, entry.name);
-    let dirStat;
+    // Cheap exists-check before the owner probe so a deleted dir doesn't
+    // throw through the bytes accounting.
     try {
-      dirStat = await stat(full);
+      await stat(full);
     } catch {
       continue;
     }
-    // Concurrent-safety floor: anything younger than session start is live.
-    if (dirStat.mtimeMs >= sessionStartMs) continue;
 
+    const owner = await readOwnership(join(full, OWNER_FILE));
+    // Missing or malformed `.owner` → dir is either pre-`.owner` legacy
+    // debris or a crash before the write — reap either way.
+    if (owner === null) {
+      abandoned.push({ path: full, bytes: await dirSize(full) });
+      continue;
+    }
+    // Live owner → never touch.
+    if (await isAlive(owner)) continue;
+    // Dead owner → reap.
     abandoned.push({ path: full, bytes: await dirSize(full) });
   }
 

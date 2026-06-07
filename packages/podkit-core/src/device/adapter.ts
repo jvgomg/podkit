@@ -317,4 +317,22 @@ export interface DeviceAdapter<T extends DeviceTrack = DeviceTrack> {
    * model.
    */
   setWarningSink?(sink: import('../sync/engine/types.js').WarningSink): void;
+
+  // Manifest maintenance
+
+  /**
+   * Prune phantom manifest entries — rows in the device-side manifest whose
+   * backing audio file is missing. Called by the pre-sync sweep when the
+   * walker detects phantoms; returns how many rows were dropped and any
+   * per-path errors. Implementations MUST persist atomically — if the
+   * rewrite fails, the original manifest is preserved.
+   *
+   * Mass-storage only — iPod's manifest is owned by libgpod and not
+   * directly editable by podkit, so the iPod adapter intentionally omits
+   * this method. The optional shape lets the pre-flight skip the prune
+   * step for adapters that don't expose it.
+   */
+  prunePhantomManifest?(
+    paths: string[]
+  ): Promise<{ pruned: number; errors: Array<{ path: string; error: Error }> }>;
 }

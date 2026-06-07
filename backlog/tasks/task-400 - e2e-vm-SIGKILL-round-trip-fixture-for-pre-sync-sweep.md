@@ -4,6 +4,7 @@ title: e2e-vm SIGKILL round-trip fixture for pre-sync sweep
 status: To Do
 assignee: []
 created_date: '2026-06-07 16:00'
+updated_date: '2026-06-07 16:55'
 labels:
   - testing
   - e2e-vm
@@ -11,6 +12,7 @@ labels:
   - follow-up
 dependencies:
   - TASK-398
+  - TASK-405
 references:
   - test-packages/e2e-vm-tests/src/
   - packages/podkit-core/src/sync/engine/pre-sync-sweep.ts
@@ -61,8 +63,38 @@ TASK-398 unit coverage exercises every code path the e2e-vm fixture would exerci
 <!-- AC:BEGIN -->
 - [ ] #1 New e2e-vm test file pre-sync-sweep.e2e.test.ts
 - [ ] #2 SIGKILL round-trip (mass-storage): debris on disk → next sync surfaces cleanup line + final state clean
-- [ ] #3 SIGKILL round-trip (iPod): same pattern against iPod persona
-- [ ] #4 transcode-tmp round-trip: orphaned /tmp/podkit-transcode-* reaped + reported in cleanup line
-- [ ] #5 Concurrent-process safety: dir with mtime > session start is NOT reaped (test pins safety floor)
-- [ ] #6 Tests run under `mise run test:linux` + `bun run test:vm` with no flakes across 5 runs
+- [ ] #3 SIGKILL round-trip (iPod): same pattern against iPod persona (manual-plant variant until TASK-376 lands; promote to real SIGKILL after)
+- [ ] #4 transcode-tmp round-trip: orphaned podkit-transcode-* with dead `.owner` reaped + reported in cleanup line (requires TASK-402)
+- [ ] #5 Concurrent-process safety: live podkit holding pre-rename-transcode pause is NOT reaped by sibling sweep (test pins safety floor via TASK-402's PID-liveness probe)
+- [ ] #6 Tests use bin/podkit-debug (TASK-405) for the SIGKILL scenarios; production binary used for assertion runs
+- [ ] #7 Tests run under `mise run test:linux` + `bun run test:vm` with no flakes across 5 runs
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+## Pinned design (decided 2026-06-07)
+
+**Consumes TASK-405's debug build** for deterministic SIGKILL timing. Tests opt into `bin/podkit-debug` via the e2e CLI runner; production binary is unchanged.
+
+### Pause keys used (added in podkit-core)
+
+- `pre-rename-track` — after `target.podkit-tmp` exists, before rename to final path. Test polls for the tmp file, sends SIGKILL once observed (no need to resume — we want the dir to die mid-write).
+- `pre-rename-transcode` — analogous, inside `podkit-transcode-<uuid>/` after transcode output exists but before move-out.
+
+### Scenario mapping
+
+- **AC #2 mass-storage SIGKILL**: arm `pre-rename-track`, kick sync, kill once `.podkit-tmp` lands. Next sync sees debris in content dir, sweep surfaces cleanup line.
+- **AC #3 iPod SIGKILL**: **scope adjustment** — `.podkit-tmp` is mass-storage-only today (TASK-376 hasn't wired portable tag-writes into the iPod adapter). Two options:
+  - Plant debris manually before re-syncing (simulates the post-crash state without an actual crash). Less faithful but exercises the same sweep code path.
+  - Defer this AC behind TASK-376 landing and add an explicit blocker note.
+  - **Recommended**: do the manual-plant variant now; mark it as "synthetic debris, not crash-induced" in a test comment. When TASK-376 lands, the test can be promoted to a real SIGKILL round-trip.
+- **AC #4 transcode-tmp SIGKILL**: arm `pre-rename-transcode`, kill mid-transcode. Next sync's walker sees the dead-`.owner` dir (after TASK-402 — needed for the assertion), reaps it, surfaces cleanup line.
+- **AC #5 concurrent-process safety**: spawn a live podkit holding `pre-rename-transcode`, run a separate `podkit sync --dry-run` in parallel, assert the live one's dir is NOT reaped.
+
+### Dependency graph
+
+- TASK-405 (debug build + devPause primitive) — blocker for AC #2/#3/#4.
+- TASK-402 (PID-file `.owner` on transcode dirs) — blocker for AC #4/#5 (walker logic changes).
+- TASK-376 (iPod portable tag-writes) — soft blocker for AC #3 fidelity; recommended workaround above.
+<!-- SECTION:PLAN:END -->

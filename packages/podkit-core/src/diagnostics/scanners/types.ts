@@ -45,10 +45,11 @@ export interface DebrisScanResult {
 /**
  * Inputs the scanner registry hands to each `scan()` call.
  *
- * The shape is a superset of {@link DiagnosticContext} that adds session-time
- * awareness — scanners that traverse host-global directories (`os.tmpdir()`)
- * use `sessionStartMs` to ignore dirs created by *sibling* podkit processes
- * after this session began.
+ * Sibling-process protection for host-global scanners is enforced by the
+ * walker via `.owner` PID liveness probes (see `transcode-tmp-walker.ts`
+ * and `packages/podkit-core/src/lib/pid-file.ts`), not by a session-time
+ * floor. The scanner context therefore carries only the device-scoped
+ * inputs.
  */
 export interface ScannerContext {
   /**
@@ -58,16 +59,6 @@ export interface ScannerContext {
   mountPoint?: string;
   deviceType?: DiagnosticDeviceType;
   contentPaths?: ContentPaths;
-  /**
-   * Wall-clock time at which this podkit session started (ms since epoch).
-   *
-   * Scanners that walk host-global directories use this as a safety floor:
-   * any candidate whose `mtime` is `>= sessionStartMs` was created AFTER we
-   * started looking, which means a concurrent podkit process owns it and we
-   * must not touch it. Device-scoped scanners can ignore the field — their
-   * surfaces are not host-global.
-   */
-  sessionStartMs: number;
 }
 
 export interface Scanner {

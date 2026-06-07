@@ -11,10 +11,11 @@
  */
 
 import { describe, it, expect } from 'bun:test';
-import { mkdtemp, mkdir, rm, writeFile, utimes } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runPreSyncSweep, runPreliminariesPreFlight } from './pre-sync-sweep.js';
+import { writeOwnership } from '../../lib/pid-file.js';
 import type { ContentPaths } from '@podkit/devices-mass-storage';
 import type { Warning, WarningSink } from './types.js';
 
@@ -50,10 +51,14 @@ async function makeFiles(root: string, files: Record<string, string>): Promise<v
   }
 }
 
-async function makeOldTranscodeDir(
+/**
+ * Build a `podkit-transcode-<uuid>/` dir with no `.owner` — represents
+ * either pre-`.owner` legacy debris or a crash before the ownership
+ * write. Both cases must reap.
+ */
+async function makeAbandonedTranscodeDir(
   hostTmp: string,
   uuid: string,
-  ageMs: number,
   files: Record<string, string> = {}
 ): Promise<void> {
   const dir = join(hostTmp, `podkit-transcode-${uuid}`);
@@ -61,8 +66,49 @@ async function makeOldTranscodeDir(
   for (const [name, content] of Object.entries(files)) {
     await writeFile(join(dir, name), content);
   }
-  const stampSec = (Date.now() - ageMs) / 1000;
-  await utimes(dir, stampSec, stampSec);
+  // No `.owner` written → walker treats as abandoned.
+}
+
+/**
+ * Build a `podkit-transcode-<uuid>/` dir with a live `.owner` — represents
+ * the current process's own active scratch dir. Walker must skip.
+ */
+async function makeLiveTranscodeDir(
+  hostTmp: string,
+  uuid: string,
+  files: Record<string, string> = {}
+): Promise<void> {
+  const dir = join(hostTmp, `podkit-transcode-${uuid}`);
+  await mkdir(dir, { recursive: true });
+  for (const [name, content] of Object.entries(files)) {
+    await writeFile(join(dir, name), content);
+  }
+  // Use our own PID + start time so the walker's isAlive probe returns true.
+  await writeOwnership(join(dir, '.owner'), {
+    pid: process.pid,
+    startTimeMs: Date.now() - Math.floor(process.uptime() * 1000),
+  });
+}
+
+/**
+ * Build a `podkit-transcode-<uuid>/` dir with a dead `.owner` — represents
+ * a SIGKILLed prior process. Walker must reap.
+ */
+async function makeDeadOwnerTranscodeDir(
+  hostTmp: string,
+  uuid: string,
+  files: Record<string, string> = {}
+): Promise<void> {
+  const dir = join(hostTmp, `podkit-transcode-${uuid}`);
+  await mkdir(dir, { recursive: true });
+  for (const [name, content] of Object.entries(files)) {
+    await writeFile(join(dir, name), content);
+  }
+  // 999_999 is virtually never a live pid on test hosts.
+  await writeOwnership(join(dir, '.owner'), {
+    pid: 999_999,
+    startTimeMs: Date.now() - 60_000,
+  });
 }
 
 describe('runPreSyncSweep', () => {
@@ -73,7 +119,6 @@ describe('runPreSyncSweep', () => {
         deviceType: 'mass-storage',
         contentPaths: DEFAULT_CONTENT_PATHS,
         tmpDirOverride: hostTmp,
-        sessionStartMsOverride: Date.now(),
       });
       expect(result.debrisCleanup).toBeUndefined();
       expect(result.phantomPrune).toBeUndefined();
@@ -92,7 +137,6 @@ describe('runPreSyncSweep', () => {
           deviceType: 'mass-storage',
           contentPaths: DEFAULT_CONTENT_PATHS,
           tmpDirOverride: hostTmp,
-          sessionStartMsOverride: Date.now(),
         });
         expect(result.debrisCleanup?.paths).toHaveLength(1);
         expect(result.debrisCleanup?.paths[0]).toContain('02 - Broken.m4a.podkit-tmp');
@@ -116,7 +160,6 @@ describe('runPreSyncSweep', () => {
               'Music/Artist/Album/03 - AlsoMissing.flac',
             ]),
           tmpDirOverride: hostTmp,
-          sessionStartMsOverride: Date.now(),
         });
         expect(result.phantomPrune?.paths).toEqual(
           expect.arrayContaining([
@@ -143,7 +186,6 @@ describe('runPreSyncSweep', () => {
             throw new Error('manifest read failed');
           },
           tmpDirOverride: hostTmp,
-          sessionStartMsOverride: Date.now(),
         });
         // Debris still surfaces…
         expect(result.debrisCleanup?.paths).toHaveLength(1);
@@ -163,7 +205,6 @@ describe('runPreSyncSweep', () => {
           contentPaths: DEFAULT_CONTENT_PATHS,
           // No loadManagedFiles — only debris surfaces.
           tmpDirOverride: hostTmp,
-          sessionStartMsOverride: Date.now(),
         });
         expect(result.debrisCleanup?.paths).toHaveLength(1);
         expect(result.phantomPrune).toBeUndefined();
@@ -177,7 +218,6 @@ describe('runPreSyncSweep', () => {
           deviceType: 'mass-storage',
           // no contentPaths
           tmpDirOverride: hostTmp,
-          sessionStartMsOverride: Date.now(),
         });
         expect(result.debrisCleanup).toBeUndefined();
       });
@@ -197,7 +237,6 @@ describe('runPreSyncSweep', () => {
           mountPoint: mount,
           deviceType: 'ipod',
           tmpDirOverride: hostTmp,
-          sessionStartMsOverride: Date.now(),
         });
         expect(result.debrisCleanup?.paths).toHaveLength(3);
         expect(result.phantomPrune).toBeUndefined();
@@ -215,7 +254,6 @@ describe('runPreSyncSweep', () => {
             return new Set();
           },
           tmpDirOverride: hostTmp,
-          sessionStartMsOverride: Date.now(),
         });
       });
       expect(called).toBe(false);
@@ -223,34 +261,45 @@ describe('runPreSyncSweep', () => {
   });
 
   describe('host transcode-tmp', () => {
-    it('surfaces abandoned podkit-transcode-* directories older than the session', async () => {
+    it('surfaces abandoned podkit-transcode-* dirs with no .owner', async () => {
       await withTempDirs(async (mount, hostTmp) => {
-        await makeOldTranscodeDir(hostTmp, 'aaaa', 60_000, { 'partial.m4a': 'data' });
+        await makeAbandonedTranscodeDir(hostTmp, 'aaaa', { 'partial.m4a': 'data' });
         const result = await runPreSyncSweep({
           mountPoint: mount,
           deviceType: 'mass-storage',
           contentPaths: DEFAULT_CONTENT_PATHS,
           tmpDirOverride: hostTmp,
-          sessionStartMsOverride: Date.now(),
         });
         expect(result.debrisCleanup?.paths).toHaveLength(1);
         expect(result.debrisCleanup?.paths[0]).toContain('podkit-transcode-aaaa');
       });
     });
 
-    it('SKIPS dirs younger than sessionStartMs (concurrent sibling protection)', async () => {
+    it('SKIPS dirs whose .owner is the current live process (sibling protection)', async () => {
       await withTempDirs(async (mount, hostTmp) => {
-        // Live dir: mtime = now; session started 30s ago.
-        await makeOldTranscodeDir(hostTmp, 'live-bbbb', 0, { 'wip.m4a': 'still writing' });
-        const sessionStart = Date.now() - 30_000;
+        // Live dir: `.owner` points at the current process.
+        await makeLiveTranscodeDir(hostTmp, 'live-bbbb', { 'wip.m4a': 'still writing' });
         const result = await runPreSyncSweep({
           mountPoint: mount,
           deviceType: 'mass-storage',
           contentPaths: DEFAULT_CONTENT_PATHS,
           tmpDirOverride: hostTmp,
-          sessionStartMsOverride: sessionStart,
         });
         expect(result.debrisCleanup).toBeUndefined();
+      });
+    });
+
+    it('surfaces dirs whose .owner is a dead PID (SIGKILLed prior process)', async () => {
+      await withTempDirs(async (mount, hostTmp) => {
+        await makeDeadOwnerTranscodeDir(hostTmp, 'dead-cccc', { 'partial.m4a': 'data' });
+        const result = await runPreSyncSweep({
+          mountPoint: mount,
+          deviceType: 'mass-storage',
+          contentPaths: DEFAULT_CONTENT_PATHS,
+          tmpDirOverride: hostTmp,
+        });
+        expect(result.debrisCleanup?.paths).toHaveLength(1);
+        expect(result.debrisCleanup?.paths[0]).toContain('podkit-transcode-dead-cccc');
       });
     });
 
@@ -259,7 +308,7 @@ describe('runPreSyncSweep', () => {
         await makeFiles(mount, {
           'Music/half.m4a.podkit-tmp': 'x'.repeat(100),
         });
-        await makeOldTranscodeDir(hostTmp, 'cccc', 60_000, {
+        await makeAbandonedTranscodeDir(hostTmp, 'cccc', {
           'partial.m4a': 'y'.repeat(50),
         });
         const result = await runPreSyncSweep({
@@ -267,7 +316,6 @@ describe('runPreSyncSweep', () => {
           deviceType: 'mass-storage',
           contentPaths: DEFAULT_CONTENT_PATHS,
           tmpDirOverride: hostTmp,
-          sessionStartMsOverride: Date.now(),
         });
         expect(result.debrisCleanup?.paths).toHaveLength(2);
         expect(result.debrisCleanup?.totalBytes).toBe(150);
@@ -280,7 +328,12 @@ describe('runPreliminariesPreFlight', () => {
   it('is a no-op when preliminaries are undefined', async () => {
     const { sink, warnings } = makeSink();
     const result = await runPreliminariesPreFlight(undefined, { dryRun: false, warningSink: sink });
-    expect(result).toEqual({ debrisDeleted: 0, freedBytes: 0, failedPaths: [] });
+    expect(result).toEqual({
+      debrisDeleted: 0,
+      freedBytes: 0,
+      failedPaths: [],
+      phantomsPruned: 0,
+    });
     expect(warnings).toEqual([]);
   });
 
@@ -289,11 +342,27 @@ describe('runPreliminariesPreFlight', () => {
       const target = join(mount, 'leaveme.podkit-tmp');
       await writeFile(target, 'do not delete');
       const { sink, warnings } = makeSink();
+      let prunedCalls = 0;
       const result = await runPreliminariesPreFlight(
-        { debrisCleanup: { paths: [target], totalBytes: 13 } },
-        { dryRun: true, warningSink: sink }
+        {
+          debrisCleanup: { paths: [target], totalBytes: 13 },
+          phantomPrune: { paths: ['Music/gone.m4a'] },
+        },
+        {
+          dryRun: true,
+          warningSink: sink,
+          adapter: {
+            prunePhantomManifest: async () => {
+              prunedCalls += 1;
+              return { pruned: 0, errors: [] };
+            },
+          },
+        }
       );
       expect(result.debrisDeleted).toBe(0);
+      expect(result.phantomsPruned).toBe(0);
+      // Adapter must NOT be invoked in dry-run.
+      expect(prunedCalls).toBe(0);
       // File still on disk.
       const { existsSync } = await import('node:fs');
       expect(existsSync(target)).toBe(true);
@@ -361,12 +430,85 @@ describe('runPreliminariesPreFlight', () => {
     });
   });
 
-  it('emits an advisory Warning when phantom-prune paths are present', async () => {
+  it('auto-prunes phantom rows via the adapter and stays silent on success', async () => {
+    const { sink, warnings } = makeSink();
+    const pruneCalls: string[][] = [];
+    const result = await runPreliminariesPreFlight(
+      {
+        phantomPrune: { paths: ['Music/ghost.m4a', 'Music/missing.flac'] },
+      },
+      {
+        dryRun: false,
+        warningSink: sink,
+        adapter: {
+          prunePhantomManifest: async (paths) => {
+            pruneCalls.push(paths);
+            return { pruned: paths.length, errors: [] };
+          },
+        },
+      }
+    );
+    expect(pruneCalls).toHaveLength(1);
+    expect(pruneCalls[0]).toEqual(['Music/ghost.m4a', 'Music/missing.flac']);
+    expect(result.phantomsPruned).toBe(2);
+    // No advisory when the prune succeeded.
+    expect(warnings).toEqual([]);
+  });
+
+  it('emits an advisory Warning when the adapter prune reports per-path errors', async () => {
+    const { sink, warnings } = makeSink();
+    await runPreliminariesPreFlight(
+      {
+        phantomPrune: { paths: ['Music/ghost.m4a'] },
+      },
+      {
+        dryRun: false,
+        warningSink: sink,
+        adapter: {
+          prunePhantomManifest: async (paths) => ({
+            pruned: 0,
+            errors: paths.map((p) => ({ path: p, error: new Error('EACCES rewrite denied') })),
+          }),
+        },
+      }
+    );
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]!.type).toBe('debris-cleanup-failure');
+    expect(warnings[0]!.message).toContain('auto-prune');
+    expect(warnings[0]!.message).toContain('EACCES rewrite denied');
+    expect(warnings[0]!.message).toContain('--repair orphan-files');
+  });
+
+  it('emits an advisory Warning when the adapter prune throws unexpectedly', async () => {
+    const { sink, warnings } = makeSink();
+    await runPreliminariesPreFlight(
+      {
+        phantomPrune: { paths: ['Music/ghost.m4a'] },
+      },
+      {
+        dryRun: false,
+        warningSink: sink,
+        adapter: {
+          prunePhantomManifest: async () => {
+            throw new Error('boom');
+          },
+        },
+      }
+    );
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]!.type).toBe('debris-cleanup-failure');
+    expect(warnings[0]!.message).toContain('boom');
+    expect(warnings[0]!.message).toContain('--repair orphan-files');
+  });
+
+  it('falls back to the doctor-advisory Warning when the adapter has no prune method', async () => {
     const { sink, warnings } = makeSink();
     await runPreliminariesPreFlight(
       {
         phantomPrune: { paths: ['Music/ghost.m4a', 'Music/missing.flac'] },
       },
+      // No adapter at all — iPod paths and tests that exercise the legacy
+      // surface go through here.
       { dryRun: false, warningSink: sink }
     );
     expect(warnings).toHaveLength(1);

@@ -1,9 +1,10 @@
 ---
 id: TASK-404
 title: Concurrent multi-process sync against the same device (advisory lock)
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-06-07 16:17'
+updated_date: '2026-06-07 17:49'
 labels:
   - bug
   - reliability
@@ -62,10 +63,57 @@ Rare in practice today — most users don't run the daemon and a manual sync sim
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Per-device advisory lock acquired at sync start; second concurrent process exits with LOCK_HELD
-- [ ] #2 Crashing podkit releases the lock automatically (flock auto-release or PID-liveness)
-- [ ] #3 Daemon respects the lock: cycle is skipped + logged on contention (not retry-spin)
-- [ ] #4 Test pins parallel-two-processes scenario
-- [ ] #5 Architecture decision recorded (flock vs PID file vs other)
-- [ ] #6 Doc updated: sync/planning.md §6 marks this open item closed
+- [x] #1 Per-device PID-file lock acquired at sync start (after openDevice); second concurrent process exits with LOCK_HELD
+- [x] #2 Lock file at `.podkit/sync.lock` (mass-storage) or `iPod_Control/.podkit-sync.lock` (iPod); contains `{pid, startTimeMs}` JSON
+- [x] #3 Crashing podkit leaves a stale lock; next process probes PID liveness + start-time, takes over cleanly
+- [x] #4 Daemon respects the lock: cycle is skipped + logged on contention (not retry-spin)
+- [x] #5 Test pins parallel-two-processes scenario (one succeeds, one errors LOCK_HELD)
+- [x] #6 Test pins stale-lock-takeover scenario (crashed-process PID dead → next sync acquires)
+- [x] #7 Read operations (scan, info) do NOT take the lock; documented as writes-only
+- [x] #8 Architecture doc (sync/planning.md §6 or sibling) records the PID-file primitive shared with TASK-402
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+## Pinned design (decided 2026-06-07)
+
+**Primitive: PID-file with `{pid, startTimeMs}` tuple.** Shared with TASK-402 — single liveness abstraction across both tasks.
+
+Per-device lock path: `.podkit/sync.lock` on mass-storage, `iPod_Control/.podkit-sync.lock` on iPod. File contents: JSON `{pid, startTimeMs}`.
+
+**Acquire algorithm:**
+```
+1. Try fs.open(path, 'wx')  // O_CREAT|O_EXCL — kernel-atomic
+2. On success: write {pid, startTimeMs}, return handle
+3. On EEXIST: read existing, probe liveness (kill(pid, 0) + start-time compare)
+   - Alive → throw LockHeldError(existingPid)
+   - Dead → unlink stale, retry (once)
+4. On retry EEXIST: another process won the takeover race → re-probe, error if alive
+```
+
+**Release:** unlink in `finally`. Crash leaks file; next process detects via stale-PID probe and self-heals.
+
+**Why PID-file, not flock(2):** flock semantics on FAT32/exFAT (common iPod filesystem families) are platform-dependent. PID-file uses only `open(O_CREAT|O_EXCL)` + `unlink` + `kill(pid, 0)` — stable across all target filesystems (exFAT/FAT32/HFS+/APFS/ext4/NTFS). See sibling decision in TASK-402.
+
+**Scope clarifications:**
+- Writes only — daemon scan/info read operations do NOT take the lock.
+- `.podkit/` dir created if absent during acquire (virgin mass-storage device).
+- Cross-host (network-mounted iPod) explicitly out-of-scope; document as known limitation.
+
+**Daemon integration (AC #3):** daemon catches `LockHeldError`, logs `cycle skipped: lock held by pid N`, returns from cycle. No retry-spin within the cycle.
+<!-- SECTION:PLAN:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+PID-file primitive landed in `packages/podkit-core/src/lib/pid-file.ts` with `{pid, startTimeMs}` ownership tuple, `acquireLock`/`LockHandle`/`LockHeldError`/`LockContestedError`, and platform-specific start-time probes (Linux `/proc/<pid>/stat`, macOS `ps -o etime=` — etime over lstart to dodge TZ ambiguity).
+
+CLI sync command takes the lock at `.podkit/sync.lock` (mass-storage) or `iPod_Control/.podkit-sync.lock` (iPod) after `openDevice`, releases in `finally` with pre-unlink ownership verification (prevents late-A unlinking B's lock after takeover). `LOCK_HELD` exit code 4. Dry-run skips the lock — documented in arch §6.
+
+Daemon detects LOCK_HELD via subprocess exit code with a one-line caveat comment for if/when it switches to in-process `runSync`.
+
+Architecture doc `documents/architecture/sync/planning.md` §6 added covering primitive shape, acquire algorithm, `waitForOwnership` 3×5ms read-backoff (defends the open(wx)→writeFile race discovered in 8-parallel testing), dry-run policy, and known limitations. §8 References include `lib/pid-file.ts` + test.
+
+Tests: pid-file.test.ts covers identity, round-trip, liveness, acquire/contention/stale-takeover, release idempotency + foreign-takeover protection, 8-parallel acquire (exactly-one-wins), deterministic `LockContestedError` via test-seam hooks. Two coverage gaps annotated in-code: ENOSPC mid-write (kernel fault-injection not portable) and HZ≠100 kernels (failure mode is contention, not corruption).
+<!-- SECTION:FINAL_SUMMARY:END -->
