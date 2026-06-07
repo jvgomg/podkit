@@ -154,6 +154,14 @@ Files outside the content directories are always ignored — doctor only conside
 
 Debris is podkit's own incomplete-write residue (`.podkit-tmp` siblings, `.Audio file` adapter-failure leftovers) from prior interrupted syncs. Every debris file is incomplete by construction — the atomic-write helper writes to a tmp sibling first and renames on success, so anything still wearing the `.podkit-tmp` suffix means the writer never finished. Cleanup is safe-by-design — no source collection or confirmation prompt needed.
 
+**You usually don't need to run this manually.** As of podkit's pre-sync sweep, every `podkit sync` cleans up debris automatically at the start of the run — you'll see a line like:
+
+```
+Cleaning 3 incomplete-write files (12.4 MB) from a previous interrupted sync
+```
+
+doctor remains the backstop for devices you don't currently sync to, and for the edge case where the sweep itself failed (failures are non-fatal: the warning surfaces in the sync's output and the next sync retries).
+
 ```bash
 # Preview
 podkit doctor --repair debris-files --dry-run

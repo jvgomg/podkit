@@ -217,7 +217,7 @@ podkit doctor -d mydevice --repair orphan-files
 
 Add `--dry-run` to preview the file list before deleting anything.
 
-If you're cleaning up after an interrupted sync, the related `--repair debris-files` flag separately surfaces podkit's `.podkit-tmp` incomplete-write residue (no confirmation needed — it's always safe to delete by construction).
+**For incomplete-write residue (the `.podkit-tmp` leftover from a SIGKILLed sync), you typically don't need to run anything manually** — every `podkit sync` now sweeps these at start (you'll see a `Cleaning N incomplete-write files...` line). doctor is the backstop if a device isn't being synced or the sweep itself failed.
 
 A single Ctrl+C during sync triggers a graceful shutdown that saves all completed work — orphaned files only occur from force-quit, crashes, or disconnection. See [iPod Health Checks](/user-guide/devices/doctor#repairing-orphan-files) for details.
 
