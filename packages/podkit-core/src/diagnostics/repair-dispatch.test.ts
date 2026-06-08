@@ -122,6 +122,27 @@ describe('getRepairCheckForValidation', () => {
     expect(getRepairCheckForValidation('debris-transcode-tmp')?.id).toBe('debris-transcode-tmp');
   });
 
+  // Catches the drift mode where someone removes/renames an internal check
+  // but the dispatch table still points at the old ID — the CLI would then
+  // accept the public ID at the `--repair <id>` choices() gate but fail
+  // late inside `runDoctorAction` with a confusing "Unknown check" message.
+  it('every PUBLIC_REPAIR_IDS entry resolves to a registered check', () => {
+    const unresolved: string[] = [];
+    for (const id of PUBLIC_REPAIR_IDS) {
+      if (!getRepairCheckForValidation(id)) unresolved.push(id);
+    }
+    expect(unresolved).toEqual([]);
+  });
+
+  it('every PUBLIC_REPAIR_IDS entry has a repair (otherwise --repair X would fail late)', () => {
+    const nonRepairable: string[] = [];
+    for (const id of PUBLIC_REPAIR_IDS) {
+      const check = getRepairCheckForValidation(id);
+      if (!check?.repair) nonRepairable.push(id);
+    }
+    expect(nonRepairable).toEqual([]);
+  });
+
   it('pins that orphan-files variants have divergent requirements (intentional)', () => {
     // The iPod orphan check declares a 'database' requirement because it
     // walks the iTunesDB; the mass-storage variant does not (manifest is

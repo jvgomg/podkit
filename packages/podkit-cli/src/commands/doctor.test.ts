@@ -39,6 +39,16 @@ describe('doctor --repair .choices()', () => {
     ]);
   });
 
+  // Drift guard: the commander choices() list above is a hardcoded copy of
+  // the canonical PUBLIC_REPAIR_IDS in @podkit/core. If the registry adds a
+  // new public repair ID and the CLI's choices() isn't updated, commander
+  // will reject the new ID at parse time — silently breaking the user-facing
+  // surface. This pin makes that drift impossible to land green.
+  it.concurrent('stays in lockstep with @podkit/core PUBLIC_REPAIR_IDS', async () => {
+    const { PUBLIC_REPAIR_IDS } = await import('@podkit/core');
+    expect([...(repairOption.argChoices ?? [])].sort()).toEqual([...PUBLIC_REPAIR_IDS].sort());
+  });
+
   it.concurrent('rejects an unknown check ID at parse time, before action runs', async () => {
     // Build a throwaway parent program around a stub command that mirrors
     // doctor's --repair option. The stub action is a no-op — we only care

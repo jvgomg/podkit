@@ -26,6 +26,7 @@ import { describe, it, expect } from 'bun:test';
 
 import { checkInquiryMethods, inquiryMethodsCheck, type ProbeFn } from './inquiry-methods.js';
 import { checkEncoderAvailability, codecEncodersCheck } from './codec-encoders.js';
+import { debrisTranscodeTmpCheck } from './debris-transcode-tmp.js';
 import { checkVideoEncoderForRunner, videoEncoderCheck } from './video-encoder.js';
 import {
   checkUdevRule,
@@ -620,6 +621,9 @@ describe('AC#16 — every system-scope check declares scope: "system"', () => {
     codecEncodersCheck,
     videoEncoderCheck,
     udevRuleCheck,
+    // Added post-TASK-397: host-global walker for abandoned
+    // `podkit-transcode-<uuid>/` scratch dirs left by SIGKILLed syncs.
+    debrisTranscodeTmpCheck,
   ] as const;
 
   for (const check of SYSTEM_SCOPE_CHECKS) {

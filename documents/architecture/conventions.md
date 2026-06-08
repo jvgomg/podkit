@@ -149,7 +149,44 @@ flags, experimental codepaths) that nobody ever cleans up.
 
 ---
 
-## 9. References
+## 9. Doctor check IDs are referenced through the registry, not strings
+
+Diagnostic check IDs (`orphan-files`, `debris-files-mass-storage`, etc.) live
+in two surfaces: the **public --repair IDs** that the CLI advertises
+(`PUBLIC_REPAIR_IDS` in `packages/podkit-core/src/diagnostics/repair-dispatch.ts`),
+and the **internal check IDs** that the registry dispatches to per device
+type. Most checks share the same string for both surfaces; the unified
+IDs (`orphan-files`, `debris-files`) deliberately diverge so iPod and
+mass-storage variants can carry different walkers and repair requirements.
+
+When code or tests need to query a doctor report by check ID:
+
+- **CLI rendering / repair dispatch:** look up via `getDiagnosticCheck(id)` or
+  `getRepairCheck(publicId, deviceType)`. Never hardcode a single internal
+  ID for behaviour that should apply to both device-type variants (the CSV
+  export drift in `doctor.ts` only matched `'orphan-files'` and silently
+  dropped mass-storage orphans — fixed by funneling through
+  `emitOrphanCsv()` which checks both variants).
+- **E2E matrix helpers:** when a helper queries `report.checks.find((c) => c.id === ...)`,
+  add a fallback for the device-type variant or look up through the
+  registry. `doctorSeesPodkitTmp` in
+  `test-packages/e2e-vm-tests/src/save-failure-matrix.e2e.test.ts` is the
+  reference shape: try the mass-storage ID first, fall back to the iPod ID.
+- **Drift guards:** the registry-completeness test in
+  `packages/podkit-core/src/diagnostics/checks/scope-matrix.test.ts`
+  fails when a new check ID lands without a scope/applicableTo pin.
+  `packages/podkit-cli/src/commands/doctor.test.ts` pins the CLI's
+  `--repair` commander choices against `PUBLIC_REPAIR_IDS`. Treat both as
+  load-bearing — extend them when you add a new check, don't disable.
+
+The string is not the contract; the registry is. Helpers that hardcode a
+single ID become drift surfaces the next time a check is split or
+renamed (as happened with TASK-397's `orphan-files-mass-storage` →
+`debris-files-mass-storage` extraction).
+
+---
+
+## 10. References
 
 - [sync/error-handling](./sync/error-handling.md) — the working example of
   these conventions applied to the sync engine.

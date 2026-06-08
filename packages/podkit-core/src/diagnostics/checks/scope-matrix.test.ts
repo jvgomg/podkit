@@ -22,6 +22,9 @@ import { describe, it, expect } from 'bun:test';
 import { artworkRebuildCheck } from './artwork.js';
 import { artworkResetCheck } from './artwork-reset.js';
 import { codecEncodersCheck } from './codec-encoders.js';
+import { debrisFilesIpodCheck } from './debris-files-ipod.js';
+import { debrisFilesMassStorageCheck } from './debris-files-mass-storage.js';
+import { debrisTranscodeTmpCheck } from './debris-transcode-tmp.js';
 import { inquiryMethodsCheck } from './inquiry-methods.js';
 import { orphanFilesCheck } from './orphans.js';
 import { orphanFilesMassStorageCheck } from './orphans-mass-storage.js';
@@ -30,6 +33,7 @@ import { sysinfoConsistencyCheck } from './sysinfo-consistency.js';
 import { sysinfoModelnumMismatchCheck } from './sysinfo-modelnum-mismatch.js';
 import { udevRuleCheck } from './udev-rule.js';
 import { videoEncoderCheck } from './video-encoder.js';
+import { getDiagnosticCheck, getDiagnosticCheckIds } from '../index.js';
 import type { DiagnosticCheck } from '../types.js';
 
 // ── Expected metadata table ─────────────────────────────────────────────────
@@ -66,16 +70,42 @@ const EXPECTATIONS: ReadonlyArray<Expectation> = [
     scope: 'system',
     applicableTo: ['ipod'],
   },
+  {
+    // Host-global: reaps abandoned `<tmpdir>/podkit-transcode-<uuid>/`
+    // directories left behind by SIGKILLed syncs. Applies to both device
+    // types because the residue is independent of which device is plugged
+    // in (added by TASK-397 + ADR-018 follow-up work).
+    check: debrisTranscodeTmpCheck,
+    scope: 'system',
+    applicableTo: ['ipod', 'mass-storage'],
+  },
   // Database-health (iPod)
   { check: artworkRebuildCheck, scope: 'database-health', applicableTo: ['ipod'] },
   { check: artworkResetCheck, scope: 'database-health', applicableTo: ['ipod'] },
   { check: orphanFilesCheck, scope: 'database-health', applicableTo: ['ipod'] },
+  {
+    // TASK-376: surfaces `.podkit-tmp` residue under `iPod_Control/`.
+    // Split from `orphan-files` so debris (always podkit-owned) gets safe
+    // non-interactive repair while orphans (user-owned) stay confirmation-gated.
+    check: debrisFilesIpodCheck,
+    scope: 'database-health',
+    applicableTo: ['ipod'],
+  },
   { check: sysInfoExtendedCheck, scope: 'database-health', applicableTo: ['ipod'] },
   { check: sysinfoConsistencyCheck, scope: 'database-health', applicableTo: ['ipod'] },
   { check: sysinfoModelnumMismatchCheck, scope: 'database-health', applicableTo: ['ipod'] },
   // Database-health (mass-storage)
   {
     check: orphanFilesMassStorageCheck,
+    scope: 'database-health',
+    applicableTo: ['mass-storage'],
+  },
+  {
+    // TASK-397: split from `orphan-files-mass-storage` so the orphan vs
+    // debris repair-confirmation gating could diverge — debris is always
+    // podkit-owned (`.podkit-tmp`, `.Audio file`) so its repair runs
+    // non-interactively, unlike orphans (potentially pre-podkit content).
+    check: debrisFilesMassStorageCheck,
     scope: 'database-health',
     applicableTo: ['mass-storage'],
   },
@@ -110,5 +140,34 @@ describe('diagnostic check scope matrix — every check declares scope + applica
 describe('iPod Firmware Inquiry Methods does not apply to mass-storage', () => {
   it('inquiry-methods is scoped to iPod devices only', () => {
     expect(inquiryMethodsCheck.applicableTo).toEqual(['ipod']);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Registry completeness — every registered check has an EXPECTATIONS entry
+//
+// Pinning this here closes the drift mode where a new check lands in the
+// registry but its scope/applicableTo never gets a contract assertion. If
+// you see this fail after adding a check, add it to EXPECTATIONS above.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('every registered diagnostic check has a scope-matrix EXPECTATIONS entry', () => {
+  it('EXPECTATIONS covers every check returned by getDiagnosticCheckIds()', () => {
+    const registeredIds = new Set(getDiagnosticCheckIds());
+    const pinnedIds = new Set(EXPECTATIONS.map((e) => e.check.id));
+
+    const missing: string[] = [];
+    for (const id of registeredIds) {
+      if (!pinnedIds.has(id)) missing.push(id);
+    }
+    expect(missing).toEqual([]);
+  });
+
+  it('every EXPECTATIONS entry resolves through getDiagnosticCheck (no orphan pins)', () => {
+    const unresolved: string[] = [];
+    for (const exp of EXPECTATIONS) {
+      if (!getDiagnosticCheck(exp.check.id)) unresolved.push(exp.check.id);
+    }
+    expect(unresolved).toEqual([]);
   });
 });
