@@ -1,13 +1,17 @@
 /**
- * `no-sg-perms` system state — `/dev/sg*` nodes are present but not readable
- * by the test user.
+ * `no-sg-perms` system state — `/dev/sg*` perms udev rule removed.
  *
- * FFmpeg, libgpod, and udev rule are all healthy. The SCSI inquiry path is
- * blocked by permission denial. Doctor reports the inquiry-methods check as
- * a warning (not a hard failure — USB inquiry still works for most devices).
- * Doctor exits with code 1.
+ * The apply-state.sh action removes the `40-podkit-sg-perms.rules`
+ * marker that grants world-readable mode on `/dev/sg*` nodes, then
+ * chmods 0600 any existing nodes. On the device-harness VM there are
+ * no `/dev/sg*` nodes to perms-test (no real SCSI device is attached),
+ * so the doctor `inquiry-methods` check reports the same "no /dev/sg*
+ * nodes" warn it does under `healthy`. The state's intent — surfacing
+ * a sg-perms-denial path — would need a synthetic /dev/sg* node (or a
+ * real iPod) to actually exercise the doctor path.
  *
  * @see adr/adr-017-device-persona-fixtures.md §"SystemState schema"
+ * @see test-packages/e2e-vm-tests/src/system-state-cross-check.e2e.test.ts
  * @module
  */
 
@@ -25,18 +29,22 @@ export const noSgPerms: SystemState = {
   sgPermissions: 'denied',
   configfs: 'mounted',
 
+  // Doctor output is identical to `healthy` on the harness VM because
+  // there are no physical /dev/sg* nodes for the perms change to bite.
+  // The inquiry-methods check warns with "no /dev/sg* nodes" regardless
+  // of whether the perms rule is installed.
   expectedDoctorSystemOutput: {
     overallStatus: 'warn',
     checks: [
       {
-        id: 'ffmpeg',
-        status: 'pass',
-        summary: 'FFmpeg available',
-      },
-      {
         id: 'codec-encoders',
         status: 'pass',
-        summary: 'All codec encoders available',
+        summary: 'All 5 codec encoders available',
+      },
+      {
+        id: 'inquiry-methods',
+        status: 'warn',
+        summary: 'no /dev/sg* nodes',
       },
       {
         id: 'video-encoder',
@@ -44,22 +52,17 @@ export const noSgPerms: SystemState = {
         summary: 'libx264 available',
       },
       {
-        id: 'libgpod-runtime',
+        id: 'debris-transcode-tmp',
         status: 'pass',
-        summary: 'libgpod runtime available',
+        summary: 'No abandoned transcode scratch directories',
       },
       {
-        id: 'inquiry-methods',
-        status: 'warn',
-        summary: '/dev/sg* present but not readable (gid plugdev or sudo required)',
-      },
-      {
-        id: 'configfs-mount',
+        id: 'udev-rule',
         status: 'pass',
-        summary: 'configfs mounted',
+        summary: 'iPod udev rule installed',
       },
     ],
   },
 
-  expectedExitCode: 1,
+  expectedExitCode: 2,
 };

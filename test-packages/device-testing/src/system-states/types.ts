@@ -58,10 +58,21 @@ export interface SystemState {
     overallStatus: 'healthy' | 'warn' | 'fail';
     checks: Array<{
       id: string;
-      status: 'pass' | 'warn' | 'fail';
+      /**
+       * Status the check should report. `skip` is a real outcome for
+       * checks whose dependency probe fails — e.g. `codec-encoders` /
+       * `video-encoder` skip when FFmpeg is missing because the upstream
+       * "FFmpeg" probe failure leaves nothing to inspect.
+       */
+      status: 'pass' | 'warn' | 'fail' | 'skip';
       summary?: string;
     }>;
   };
-  /** Exit code the doctor command should produce (per TASK-308). */
+  /**
+   * Exit code the doctor command should produce. `runSystemOnlyDoctor`
+   * uses `0` for healthy and `2` for issues-found (warn or fail);
+   * exit `1` is reserved for command-level errors (parse failure, missing
+   * dependency, etc.) and is never emitted by a clean diagnostic run.
+   */
   expectedExitCode: 0 | 1 | 2;
 }

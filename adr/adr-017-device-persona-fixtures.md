@@ -296,6 +296,8 @@ interface SystemState {
 
 The unit-test mock layer uses `SystemState` by injecting matching subprocess responses (e.g., `ffmpeg: 'no-aac-encoder'` → the `SubprocessRunner` returns a canned `ffmpeg -encoders` output that omits AAC). The VM-test layer applies the state via `apply-state.sh` before running the test group and restores to `healthy` after. State IDs map 1-to-1 to `SystemState.id`.
 
+**Cross-check (added post-decision):** `test-packages/e2e-vm-tests/src/system-state-cross-check.e2e.test.ts` enforces that the implication above ("`expectedDoctorSystemOutput` is the golden output") actually holds for every registered state — without it, the fixture's `checks[]` was pure documentation and could drift from the live registry silently (phantom check ids `ffmpeg`, `libgpod-runtime`, `configfs-mount` had accumulated). Strict on `id` + `status` + exit code; tolerant on `summary` prose. See `test-packages/device-testing/src/system-states/README.md` for the capture workflow.
+
 ### Starter persona set (v1)
 
 Three personas ship as the bootstrap set. They are sufficient to cover the happy-path iPod workflow, a mass-storage DAP workflow, and one rejection case:

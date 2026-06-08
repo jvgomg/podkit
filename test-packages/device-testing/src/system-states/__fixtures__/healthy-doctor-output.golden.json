@@ -1,15 +1,15 @@
 {
-  "overallStatus": "healthy",
+  "overallStatus": "warn",
   "checks": [
-    {
-      "id": "ffmpeg",
-      "status": "pass",
-      "summary": "FFmpeg available"
-    },
     {
       "id": "codec-encoders",
       "status": "pass",
-      "summary": "All codec encoders available"
+      "summary": "All 5 codec encoders available"
+    },
+    {
+      "id": "inquiry-methods",
+      "status": "warn",
+      "summary": "no /dev/sg* nodes"
     },
     {
       "id": "video-encoder",
@@ -17,19 +17,14 @@
       "summary": "libx264 available"
     },
     {
-      "id": "libgpod-runtime",
+      "id": "debris-transcode-tmp",
       "status": "pass",
-      "summary": "libgpod runtime available"
+      "summary": "No abandoned transcode scratch directories"
     },
     {
-      "id": "inquiry-methods",
+      "id": "udev-rule",
       "status": "pass",
-      "summary": "/dev/sg* present"
-    },
-    {
-      "id": "configfs-mount",
-      "status": "pass",
-      "summary": "configfs mounted"
+      "summary": "iPod udev rule installed"
     }
   ]
 }

@@ -47,18 +47,37 @@ export const deviceMountFitsEstimateSourceDrifts: SystemState = {
   configfs: 'mounted',
 
   expectedDoctorSystemOutput: {
-    overallStatus: 'healthy',
+    overallStatus: 'warn',
     checks: [
-      { id: 'ffmpeg', status: 'pass', summary: 'FFmpeg available' },
-      { id: 'codec-encoders', status: 'pass', summary: 'All codec encoders available' },
-      { id: 'video-encoder', status: 'pass', summary: 'libx264 available' },
-      { id: 'libgpod-runtime', status: 'pass', summary: 'libgpod runtime available' },
-      { id: 'inquiry-methods', status: 'pass', summary: '/dev/sg* present' },
-      { id: 'configfs-mount', status: 'pass', summary: 'configfs mounted' },
+      {
+        id: 'codec-encoders',
+        status: 'pass',
+        summary: 'All 5 codec encoders available',
+      },
+      {
+        id: 'inquiry-methods',
+        status: 'warn',
+        summary: 'no /dev/sg* nodes',
+      },
+      {
+        id: 'video-encoder',
+        status: 'pass',
+        summary: 'libx264 available',
+      },
+      {
+        id: 'debris-transcode-tmp',
+        status: 'pass',
+        summary: 'No abandoned transcode scratch directories',
+      },
+      {
+        id: 'udev-rule',
+        status: 'pass',
+        summary: 'iPod udev rule installed',
+      },
     ],
   },
 
-  expectedExitCode: 0,
+  expectedExitCode: 2,
 };
 
 /**

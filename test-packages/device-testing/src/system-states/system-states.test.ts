@@ -2,10 +2,18 @@
  * Smoke tests for the SystemState registry.
  *
  * Asserts:
- *  - Registry contains all 6 expected states.
+ *  - Registry contains all expected states.
  *  - Each state satisfies the schema invariants (schemaVersion, etc.).
  *  - `healthy` state's expectedDoctorSystemOutput matches the golden file.
- *  - Each failing state reports at least one non-pass check.
+ *  - Every fixture's `checks[].id` is a real doctor system-scope check id
+ *    (no phantoms — the VM cross-check would fail otherwise, but it's
+ *    cheaper to fail in unit tests when a registry rename happens).
+ *
+ * The end-to-end "doctor under this state actually emits these checks"
+ * assertion lives in `test-packages/e2e-vm-tests/src/system-state-cross-
+ * check.e2e.test.ts` — that test runs `apply-state.sh` + `podkit doctor
+ * --scope system --json` inside the VM and compares the parsed output to
+ * `expectedDoctorSystemOutput`.
  *
  * Golden file: __fixtures__/healthy-doctor-output.golden.json
  * Update it intentionally when the healthy state's doctor output changes.
@@ -34,18 +42,24 @@ const EXPECTED_IDS = [
   'device-mount-fits-estimate-source-drifts',
 ] as const;
 
-// States whose `expectedDoctorSystemOutput.overallStatus` is anything other
-// than `'healthy'`. The three loopback-provisioning states (TASK-380 +
-// TASK-412) provision per-test mounts that the system-scope doctor cannot
-// see, so their expected doctor output mirrors `healthy` exactly —
-// exclude from the failing-states invariants.
-const FAILING_IDS = EXPECTED_IDS.filter(
-  (id) =>
-    id !== 'healthy' &&
-    id !== 'device-mount-near-full' &&
-    id !== 'device-mount-fits-estimate-failed-sweep' &&
-    id !== 'device-mount-fits-estimate-source-drifts'
-);
+/**
+ * Registry of valid doctor system-scope check ids. Mirrors the system-scope
+ * subset of `packages/podkit-core/src/diagnostics/index.ts`'s CHECKS list.
+ * The unit test below asserts every fixture's `checks[].id` is in this set
+ * so a registry rename (or a fixture typo) fails here before the VM
+ * cross-check runs.
+ *
+ * If a new system-scope check lands in the registry, add its id here AND
+ * add it to the relevant fixtures (the cross-check will fail with a clear
+ * "missing check" diff if you forget).
+ */
+const KNOWN_SYSTEM_CHECK_IDS = new Set<string>([
+  'codec-encoders',
+  'inquiry-methods',
+  'video-encoder',
+  'debris-transcode-tmp',
+  'udev-rule',
+]);
 
 // ── Registry size + key presence ─────────────────────────────────────────────
 
@@ -85,6 +99,27 @@ describe('schema invariants', () => {
       const state = systemStates.get(id);
       expect(state?.expectedDoctorSystemOutput.checks.length).toBeGreaterThan(0);
     });
+
+    it(`"${id}" expectedExitCode is 0 or 2 (never 1 — that's command error)`, () => {
+      const state = systemStates.get(id);
+      // System-only doctor uses exit 0 (healthy) or 2 (issues-found);
+      // exit 1 is reserved for command-level errors (e.g. CORE_LOAD_FAILED)
+      // and is never emitted by a clean diagnostic run.
+      expect([0, 2]).toContain(state?.expectedExitCode ?? -1);
+    });
+  }
+});
+
+// ── Phantom-ID guard ─────────────────────────────────────────────────────────
+
+describe('no phantom check ids', () => {
+  for (const id of EXPECTED_IDS) {
+    it(`"${id}" references only registered system-scope check ids`, () => {
+      const state = systemStates.get(id);
+      const fixtureIds = (state?.expectedDoctorSystemOutput.checks ?? []).map((c) => c.id);
+      const phantoms = fixtureIds.filter((cid) => !KNOWN_SYSTEM_CHECK_IDS.has(cid));
+      expect(phantoms).toEqual([]);
+    });
   }
 });
 
@@ -98,80 +133,5 @@ describe('healthy state golden snapshot', () => {
     ) as SystemState['expectedDoctorSystemOutput'];
     const state = systemStates.get('healthy');
     expect(state?.expectedDoctorSystemOutput).toEqual(golden);
-  });
-});
-
-// ── Failing states ───────────────────────────────────────────────────────────
-
-describe('failing states', () => {
-  it('healthy state has overallStatus "healthy"', () => {
-    const state = systemStates.get('healthy');
-    expect(state?.expectedDoctorSystemOutput.overallStatus).toBe('healthy');
-  });
-
-  for (const id of FAILING_IDS) {
-    it(`"${id}" overallStatus is not "healthy"`, () => {
-      const state = systemStates.get(id);
-      expect(state?.expectedDoctorSystemOutput.overallStatus).not.toBe('healthy');
-    });
-
-    it(`"${id}" has at least one check with status "fail" or "warn"`, () => {
-      const state = systemStates.get(id);
-      const hasFailOrWarn = state?.expectedDoctorSystemOutput.checks.some(
-        (c) => c.status === 'fail' || c.status === 'warn'
-      );
-      expect(hasFailOrWarn).toBe(true);
-    });
-
-    it(`"${id}" expectedExitCode is non-zero`, () => {
-      const state = systemStates.get(id);
-      expect(state?.expectedExitCode).not.toBe(0);
-    });
-  }
-});
-
-// ── Named failure mapping ─────────────────────────────────────────────────────
-
-describe('named failure checks', () => {
-  it('no-ffmpeg has a failing ffmpeg check', () => {
-    const state = systemStates.get('no-ffmpeg');
-    const ffmpegCheck = state?.expectedDoctorSystemOutput.checks.find((c) => c.id === 'ffmpeg');
-    expect(ffmpegCheck?.status).toBe('fail');
-  });
-
-  it('no-libgpod has a failing libgpod-runtime check', () => {
-    const state = systemStates.get('no-libgpod');
-    const check = state?.expectedDoctorSystemOutput.checks.find((c) => c.id === 'libgpod-runtime');
-    expect(check?.status).toBe('fail');
-  });
-
-  it('no-udev has a failing udev-rule check', () => {
-    const state = systemStates.get('no-udev');
-    const check = state?.expectedDoctorSystemOutput.checks.find((c) => c.id === 'udev-rule');
-    expect(check?.status).toBe('fail');
-  });
-
-  it('no-sg-perms has a warning inquiry-methods check', () => {
-    const state = systemStates.get('no-sg-perms');
-    const check = state?.expectedDoctorSystemOutput.checks.find((c) => c.id === 'inquiry-methods');
-    expect(check?.status).toBe('warn');
-  });
-
-  it('corrupt-configfs has a failing configfs-mount check', () => {
-    const state = systemStates.get('corrupt-configfs');
-    const check = state?.expectedDoctorSystemOutput.checks.find((c) => c.id === 'configfs-mount');
-    expect(check?.status).toBe('fail');
-  });
-
-  it('device-mount-near-full mirrors healthy at the doctor system scope', () => {
-    // The near-full loopback is a per-test artefact, invisible to system-
-    // scope doctor checks. Expected doctor output must equal healthy's
-    // exactly so the smoke + golden invariants continue to hold.
-    const healthyState = systemStates.get('healthy');
-    const nearFullState = systemStates.get('device-mount-near-full');
-    expect(nearFullState?.expectedDoctorSystemOutput).toEqual(
-      healthyState!.expectedDoctorSystemOutput
-    );
-    expect(nearFullState?.expectedExitCode).toBe(0);
   });
 });

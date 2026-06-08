@@ -1,15 +1,16 @@
 /**
  * `corrupt-configfs` system state — configfs filesystem is not mounted.
  *
- * FFmpeg, libgpod, udev rule, and sg permissions are all healthy. The
- * configfs mount is absent (unmounted), which blocks USB gadget setup for
- * the virtual iPod server and VM test VM. Doctor exits with code 1.
- *
- * Note: the state is named `corrupt-configfs` per the ADR-017 starter set,
- * but the concrete condition used here is `unmounted` (the most common
- * failure mode). A `corrupt` mount is also covered by this state ID.
+ * Doctor has no `configfs-mount` check; configfs is only consumed by the
+ * USB gadget infrastructure used by the virtual iPod server and the
+ * VM-test harness, not by podkit's user-facing flows. The legacy
+ * fixture id was a phantom. This state's host-environment mutation
+ * still has value for the gadget-setup smoke tests (the daemon fails
+ * to bind a gadget when configfs is gone), but the doctor system-scope
+ * report under this state is identical to `healthy`.
  *
  * @see adr/adr-017-device-persona-fixtures.md §"SystemState schema"
+ * @see test-packages/e2e-vm-tests/src/system-state-cross-check.e2e.test.ts
  * @module
  */
 
@@ -27,18 +28,19 @@ export const corruptConfigfs: SystemState = {
   sgPermissions: 'group-readable',
   configfs: 'unmounted',
 
+  // Same as `healthy`: no doctor system-scope check observes configfs.
   expectedDoctorSystemOutput: {
-    overallStatus: 'fail',
+    overallStatus: 'warn',
     checks: [
-      {
-        id: 'ffmpeg',
-        status: 'pass',
-        summary: 'FFmpeg available',
-      },
       {
         id: 'codec-encoders',
         status: 'pass',
-        summary: 'All codec encoders available',
+        summary: 'All 5 codec encoders available',
+      },
+      {
+        id: 'inquiry-methods',
+        status: 'warn',
+        summary: 'no /dev/sg* nodes',
       },
       {
         id: 'video-encoder',
@@ -46,22 +48,17 @@ export const corruptConfigfs: SystemState = {
         summary: 'libx264 available',
       },
       {
-        id: 'libgpod-runtime',
+        id: 'debris-transcode-tmp',
         status: 'pass',
-        summary: 'libgpod runtime available',
+        summary: 'No abandoned transcode scratch directories',
       },
       {
-        id: 'inquiry-methods',
+        id: 'udev-rule',
         status: 'pass',
-        summary: '/dev/sg* present',
-      },
-      {
-        id: 'configfs-mount',
-        status: 'fail',
-        summary: 'configfs is not mounted at /sys/kernel/config',
+        summary: 'iPod udev rule installed',
       },
     ],
   },
 
-  expectedExitCode: 1,
+  expectedExitCode: 2,
 };

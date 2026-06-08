@@ -1,11 +1,20 @@
 /**
- * `no-udev` system state — podkit udev rule is not installed.
+ * `no-udev` system state — libgpod-shipped udev rules removed.
  *
- * FFmpeg, libgpod, and sg permissions are all healthy. The udev rule check
- * fails, meaning SCSI access to iPod devices requires sudo. Doctor exits
- * with code 1.
+ * The apply-state.sh action stashes any `/lib/udev/rules.d/*libgpod*`
+ * files (Debian's libgpod-common ships these). It does NOT touch the
+ * podkit-owned rule at `/etc/udev/rules.d/91-podkit-ipod.rules`, which
+ * is the only rule the doctor `udev-rule` check inspects. As a result
+ * the doctor system-scope output under this state is identical to
+ * `healthy` — the libgpod rule absence is observable to the test VM's
+ * SCSI access path but invisible to doctor today.
+ *
+ * If we ever add a doctor check that observes the libgpod-shipped rule
+ * (or apply-state.sh starts removing the podkit rule), update this
+ * fixture and the cross-check test will catch the drift.
  *
  * @see adr/adr-017-device-persona-fixtures.md §"SystemState schema"
+ * @see test-packages/e2e-vm-tests/src/system-state-cross-check.e2e.test.ts
  * @module
  */
 
@@ -22,18 +31,22 @@ export const noUdev: SystemState = {
   sgPermissions: 'group-readable',
   configfs: 'mounted',
 
+  // Same as `healthy` at the doctor system scope. The udev-rule check
+  // tracks the podkit rule, which apply-state.sh's `no-udev` action
+  // leaves in place; only the libgpod-shipped rules get stashed, and
+  // doctor has no check for those.
   expectedDoctorSystemOutput: {
-    overallStatus: 'fail',
+    overallStatus: 'warn',
     checks: [
-      {
-        id: 'ffmpeg',
-        status: 'pass',
-        summary: 'FFmpeg available',
-      },
       {
         id: 'codec-encoders',
         status: 'pass',
-        summary: 'All codec encoders available',
+        summary: 'All 5 codec encoders available',
+      },
+      {
+        id: 'inquiry-methods',
+        status: 'warn',
+        summary: 'no /dev/sg* nodes',
       },
       {
         id: 'video-encoder',
@@ -41,27 +54,17 @@ export const noUdev: SystemState = {
         summary: 'libx264 available',
       },
       {
-        id: 'libgpod-runtime',
+        id: 'debris-transcode-tmp',
         status: 'pass',
-        summary: 'libgpod runtime available',
-      },
-      {
-        id: 'inquiry-methods',
-        status: 'pass',
-        summary: '/dev/sg* present',
+        summary: 'No abandoned transcode scratch directories',
       },
       {
         id: 'udev-rule',
-        status: 'fail',
-        summary: 'podkit udev rule not found at /etc/udev/rules.d/91-podkit-ipod.rules',
-      },
-      {
-        id: 'configfs-mount',
         status: 'pass',
-        summary: 'configfs mounted',
+        summary: 'iPod udev rule installed',
       },
     ],
   },
 
-  expectedExitCode: 1,
+  expectedExitCode: 2,
 };

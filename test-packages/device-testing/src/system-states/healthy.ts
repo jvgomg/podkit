@@ -1,10 +1,19 @@
 /**
  * `healthy` system state — all required host tools and permissions present.
  *
- * Baseline state. Every system-scope doctor check passes. Used as the
- * control state against which failing states are compared.
+ * Baseline state. Every system-scope doctor check passes EXCEPT
+ * `inquiry-methods`, which warns with `'no /dev/sg* nodes'` on the
+ * device-harness VM. The VM has the `sg` kernel module loaded but no
+ * physical SCSI generic devices attached (no real iPod / no dummy
+ * scsi_generic node), so the check correctly reports "no /dev/sg*" rather
+ * than the "/dev/sg* present" path. Real podkit users on a host with an
+ * iPod plugged in observe the pass status; the warn here is an
+ * environment property of the headless harness, not a regression.
+ *
+ * Used as the control state against which failing states are compared.
  *
  * @see adr/adr-017-device-persona-fixtures.md §"SystemState schema"
+ * @see test-packages/e2e-vm-tests/src/system-state-cross-check.e2e.test.ts
  * @module
  */
 
@@ -22,17 +31,22 @@ export const healthy: SystemState = {
   configfs: 'mounted',
 
   expectedDoctorSystemOutput: {
-    overallStatus: 'healthy',
+    // `warn` (not `healthy`) because `inquiry-methods` warns on the
+    // device-harness VM — no /dev/sg* nodes are present without a real
+    // iPod attached. See module-level comment.
+    overallStatus: 'warn',
     checks: [
-      {
-        id: 'ffmpeg',
-        status: 'pass',
-        summary: 'FFmpeg available',
-      },
       {
         id: 'codec-encoders',
         status: 'pass',
-        summary: 'All codec encoders available',
+        summary: 'All 5 codec encoders available',
+      },
+      {
+        id: 'inquiry-methods',
+        // warn: harness VM has no physical SCSI devices; doctor's
+        // observation is "no /dev/sg* nodes". Real-iPod users see pass.
+        status: 'warn',
+        summary: 'no /dev/sg* nodes',
       },
       {
         id: 'video-encoder',
@@ -40,22 +54,20 @@ export const healthy: SystemState = {
         summary: 'libx264 available',
       },
       {
-        id: 'libgpod-runtime',
+        id: 'debris-transcode-tmp',
         status: 'pass',
-        summary: 'libgpod runtime available',
+        summary: 'No abandoned transcode scratch directories',
       },
       {
-        id: 'inquiry-methods',
+        id: 'udev-rule',
         status: 'pass',
-        summary: '/dev/sg* present',
-      },
-      {
-        id: 'configfs-mount',
-        status: 'pass',
-        summary: 'configfs mounted',
+        summary: 'iPod udev rule installed',
       },
     ],
   },
 
-  expectedExitCode: 0,
+  // System-only doctor uses exit 0 (healthy) or 2 (issues-found); never 1
+  // (1 is reserved for command errors). The harness VM's inquiry-methods
+  // warn means doctor emits exit 2 even under the "healthy" SystemState.
+  expectedExitCode: 2,
 };
