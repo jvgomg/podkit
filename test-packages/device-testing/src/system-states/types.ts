@@ -24,7 +24,9 @@ export type SystemStateId =
   | 'no-udev'
   | 'no-sg-perms'
   | 'corrupt-configfs'
-  | 'device-mount-near-full';
+  | 'device-mount-near-full'
+  | 'device-mount-fits-estimate-failed-sweep'
+  | 'device-mount-fits-estimate-source-drifts';
 
 /**
  * Stable, registry-keyed fixture describing one host-environment state.

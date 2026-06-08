@@ -137,6 +137,8 @@ describe('applyState: every SystemState id is supported', () => {
     'no-sg-perms',
     'corrupt-configfs',
     'device-mount-near-full',
+    'device-mount-fits-estimate-failed-sweep',
+    'device-mount-fits-estimate-source-drifts',
   ];
 
   for (const stateId of allStates) {

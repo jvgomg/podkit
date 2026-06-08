@@ -24,6 +24,14 @@ export { noUdev } from './no-udev.js';
 export { noSgPerms } from './no-sg-perms.js';
 export { corruptConfigfs } from './corrupt-configfs.js';
 export { deviceMountNearFull, DEVICE_MOUNT_NEAR_FULL_PATH } from './device-mount-near-full.js';
+export {
+  deviceMountFitsEstimateFailedSweep,
+  DEVICE_MOUNT_FITS_ESTIMATE_FAILED_SWEEP_PATH,
+} from './device-mount-fits-estimate-failed-sweep.js';
+export {
+  deviceMountFitsEstimateSourceDrifts,
+  DEVICE_MOUNT_FITS_ESTIMATE_SOURCE_DRIFTS_PATH,
+} from './device-mount-fits-estimate-source-drifts.js';
 
 import { healthy } from './healthy.js';
 import { noFfmpeg } from './no-ffmpeg.js';
@@ -32,6 +40,8 @@ import { noUdev } from './no-udev.js';
 import { noSgPerms } from './no-sg-perms.js';
 import { corruptConfigfs } from './corrupt-configfs.js';
 import { deviceMountNearFull } from './device-mount-near-full.js';
+import { deviceMountFitsEstimateFailedSweep } from './device-mount-fits-estimate-failed-sweep.js';
+import { deviceMountFitsEstimateSourceDrifts } from './device-mount-fits-estimate-source-drifts.js';
 
 /**
  * Registry of host-environment states, keyed by `SystemState.id`.
@@ -47,4 +57,6 @@ export const systemStates: Map<SystemStateId, SystemState> = new Map<SystemState
   ['no-sg-perms', noSgPerms],
   ['corrupt-configfs', corruptConfigfs],
   ['device-mount-near-full', deviceMountNearFull],
+  ['device-mount-fits-estimate-failed-sweep', deviceMountFitsEstimateFailedSweep],
+  ['device-mount-fits-estimate-source-drifts', deviceMountFitsEstimateSourceDrifts],
 ]);

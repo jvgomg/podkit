@@ -233,6 +233,13 @@ apply_healthy() {
   #    transition back to `healthy` must remove them or subsequent runs
   #    will inherit a near-full mount that doctor doesn't expect.
   tear_down_near_full
+  # 7b. TASK-412 ADR-018 / estimate-drift loopbacks — same teardown
+  #     responsibility. The post-sweep loopback also carries
+  #     chattr-immutable debris that MUST be cleared before unmount,
+  #     else the image keeps inode-level immutability flags into the
+  #     next reuse.
+  tear_down_postsweep
+  tear_down_drift
 }
 
 ensure_podkit_udev_rule() {
@@ -410,6 +417,160 @@ apply_device_mount_near_full() {
   log "near-full df (avail/used/size KiB): $df_line"
 }
 
+# ---------------------------------------------------------------------------
+# Shared loopback ext4 helper (TASK-412)
+#
+# Used by the post-sweep + drift SystemStates. Provisions a fresh ext4
+# loopback at the given mountpoint, sized to the requested total size,
+# and (optionally) fills it so the remaining free space matches the
+# requested reserve.
+#
+# Args:
+#   $1 - image path (e.g. /var/lib/podkit-device-harness/postsweep.img)
+#   $2 - mountpoint (e.g. /mnt/podkit-device-fs-postsweep)
+#   $3 - total image size in MiB (e.g. 1, 2)
+#   $4 - reserve_kib: free KiB to leave after fill (use "none" to skip fill)
+# ---------------------------------------------------------------------------
+provision_loopback_ext4() {
+  local img=$1
+  local mnt=$2
+  local size_mb=$3
+  local reserve=$4
+
+  mkdir -p "$(dirname "$img")"
+  mkdir -p "$mnt"
+
+  truncate -s "${size_mb}M" "$img"
+  mkfs.ext4 -F -q "$img"
+  mount -o loop "$img" "$mnt"
+  log "mounted loopback: $img → $mnt (${size_mb}M)"
+  chmod 0777 "$mnt"
+
+  if [ "$reserve" = "none" ]; then
+    log "loopback fill skipped: $mnt"
+    return 0
+  fi
+
+  local avail_kib
+  avail_kib=$(df --output=avail "$mnt" | tail -n1 | tr -d ' ')
+  local fill_kib=$((avail_kib - reserve))
+  if [ "$fill_kib" -lt 1 ]; then
+    log "WARN: provision_loopback_ext4 $mnt: computed fill_kib=$fill_kib (avail=$avail_kib reserve=$reserve) — skipping fill"
+  else
+    dd if=/dev/zero of="${mnt}/_fill" bs=1K count="$fill_kib" 2>/dev/null || true
+    log "filled $mnt: $fill_kib KiB written, ~$reserve KiB free"
+  fi
+
+  local df_line
+  df_line=$(df --output=avail,used,size "$mnt" | tail -n1)
+  log "$mnt df (avail/used/size KiB): $df_line"
+}
+
+# ---------------------------------------------------------------------------
+# device-mount-fits-estimate-failed-sweep (TASK-412 ADR-018 post-sweep cell)
+#
+# Provisions a 1 MiB ext4 loopback with chattr-immutable debris under the
+# Music content path. The pre-sync sweep walks the debris (scanner reports
+# its bytes) but the per-path `rm` returns EPERM, so freedBytes stays 0
+# and the post-sweep statfs sees the original ~200 KiB free.
+# ---------------------------------------------------------------------------
+
+POSTSWEEP_IMG=/var/lib/podkit-device-harness/podkit-device-fs-postsweep.img
+POSTSWEEP_MNT=/mnt/podkit-device-fs-postsweep
+POSTSWEEP_RESERVE_KIB=200
+POSTSWEEP_DEBRIS_KIB=120
+POSTSWEEP_DEBRIS_DIR_REL=Music/SeededArtist/SeededAlbum
+
+tear_down_postsweep() {
+  if mountpoint -q "$POSTSWEEP_MNT" 2>/dev/null; then
+    # `chattr -i` BEFORE unmount — leaving the inode flag set inside the
+    # image means the next mount + write attempt against those paths
+    # will still see EPERM. Clear flags on every debris file.
+    if [ -d "$POSTSWEEP_MNT/$POSTSWEEP_DEBRIS_DIR_REL" ]; then
+      find "$POSTSWEEP_MNT/$POSTSWEEP_DEBRIS_DIR_REL" -type f \
+        -exec chattr -i {} + 2>/dev/null || true
+    fi
+    umount -l "$POSTSWEEP_MNT" || true
+    log "unmounted: $POSTSWEEP_MNT"
+  fi
+  if [ -f "$POSTSWEEP_IMG" ]; then
+    rm -f "$POSTSWEEP_IMG"
+    log "removed: $POSTSWEEP_IMG"
+  fi
+}
+
+apply_device_mount_fits_estimate_failed_sweep() {
+  ensure_near_full_tooling
+
+  # Always tear down first — idempotent re-application starts from a clean
+  # image so the fill + debris calculation is deterministic.
+  tear_down_postsweep
+
+  # 1 MiB image, ~200 KiB free after baseline fill.
+  provision_loopback_ext4 "$POSTSWEEP_IMG" "$POSTSWEEP_MNT" 1 "$POSTSWEEP_RESERVE_KIB"
+
+  # Seed debris under the Music content path. Two .podkit-tmp files at
+  # ~60 KiB each = ~120 KiB total. The scanner reports their bytes;
+  # chattr +i makes rm fail per-file with EPERM.
+  local debris_dir="$POSTSWEEP_MNT/$POSTSWEEP_DEBRIS_DIR_REL"
+  mkdir -p "$debris_dir"
+  dd if=/dev/zero of="$debris_dir/01-old.flac.podkit-tmp" bs=1K count=60 2>/dev/null || true
+  dd if=/dev/zero of="$debris_dir/02-old.flac.podkit-tmp" bs=1K count=60 2>/dev/null || true
+  chattr +i "$debris_dir/01-old.flac.podkit-tmp"
+  chattr +i "$debris_dir/02-old.flac.podkit-tmp"
+  log "seeded chattr-immutable debris: $debris_dir/{01,02}-old.flac.podkit-tmp (~$POSTSWEEP_DEBRIS_KIB KiB total)"
+
+  # Echo final free-space for diagnostics — the sync's pre-flight reads
+  # this same value.
+  local df_line
+  df_line=$(df --output=avail,used,size "$POSTSWEEP_MNT" | tail -n1)
+  log "postsweep df (avail/used/size KiB): $df_line"
+}
+
+# ---------------------------------------------------------------------------
+# device-mount-fits-estimate-source-drifts (TASK-412 estimate-drift cell)
+#
+# Provisions a 2 MiB ext4 loopback sized to fit the planner's
+# estimateCopySize prediction for a 30s mp3 (~960 KiB at 256 kbps default)
+# but NOT the actual 320 kbps source body (~1200 KiB). The source itself
+# is provisioned by the test, not this SystemState.
+# ---------------------------------------------------------------------------
+
+# The drift cell's planner estimate is ~940 KiB (30s mp3 × 256 kbps typical
+# + M4A overhead) and the source's actual body is ~1200 KiB (30s × 320 kbps).
+# Reserve must be > 940 KiB so the plan-time gate passes AND < 1200 KiB so
+# the transfer-phase atomic copy ENOSPCs. 1100 KiB gives ~80 KiB margin on
+# each side after ext4 reserved-blocks (5%) + fs overhead.
+DRIFT_IMG=/var/lib/podkit-device-harness/podkit-device-fs-drift.img
+DRIFT_MNT=/mnt/podkit-device-fs-drift
+DRIFT_RESERVE_KIB=1100
+
+tear_down_drift() {
+  if mountpoint -q "$DRIFT_MNT" 2>/dev/null; then
+    umount -l "$DRIFT_MNT" || true
+    log "unmounted: $DRIFT_MNT"
+  fi
+  if [ -f "$DRIFT_IMG" ]; then
+    rm -f "$DRIFT_IMG"
+    log "removed: $DRIFT_IMG"
+  fi
+}
+
+apply_device_mount_fits_estimate_source_drifts() {
+  ensure_near_full_tooling
+  tear_down_drift
+
+  # 3 MiB image, ~1100 KiB free after baseline fill — enough headroom for
+  # ext4's 5% reserved-blocks + journal overhead to leave the actual
+  # `statfs` reading above the 940 KiB plan estimate but below the 1200
+  # KiB actual mp3 body.
+  provision_loopback_ext4 "$DRIFT_IMG" "$DRIFT_MNT" 3 "$DRIFT_RESERVE_KIB"
+
+  local df_line
+  df_line=$(df --output=avail,used,size "$DRIFT_MNT" | tail -n1)
+  log "drift df (avail/used/size KiB): $df_line"
+}
+
 apply_corrupt_configfs() {
   # Unmount /sys/kernel/config. mountpoint -q returns 0 only when the path is
   # actively a mount point; once it is gone, the gadget setup path that
@@ -431,7 +592,7 @@ apply_corrupt_configfs() {
 main() {
   if [ "$#" -ne 1 ]; then
     echo "usage: apply-state.sh <state-id>" >&2
-    echo "  state-id ∈ { healthy, no-ffmpeg, no-libgpod, no-udev, no-sg-perms, corrupt-configfs, device-mount-near-full }" >&2
+    echo "  state-id ∈ { healthy, no-ffmpeg, no-libgpod, no-udev, no-sg-perms, corrupt-configfs, device-mount-near-full, device-mount-fits-estimate-failed-sweep, device-mount-fits-estimate-source-drifts }" >&2
     exit 2
   fi
 
@@ -460,9 +621,15 @@ main() {
     device-mount-near-full)
       apply_device_mount_near_full
       ;;
+    device-mount-fits-estimate-failed-sweep)
+      apply_device_mount_fits_estimate_failed_sweep
+      ;;
+    device-mount-fits-estimate-source-drifts)
+      apply_device_mount_fits_estimate_source_drifts
+      ;;
     *)
       echo "apply-state.sh: unknown state id '$state_id'" >&2
-      echo "  valid ids: healthy, no-ffmpeg, no-libgpod, no-udev, no-sg-perms, corrupt-configfs, device-mount-near-full" >&2
+      echo "  valid ids: healthy, no-ffmpeg, no-libgpod, no-udev, no-sg-perms, corrupt-configfs, device-mount-near-full, device-mount-fits-estimate-failed-sweep, device-mount-fits-estimate-source-drifts" >&2
       exit 2
       ;;
   esac

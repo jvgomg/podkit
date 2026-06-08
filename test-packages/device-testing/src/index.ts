@@ -76,6 +76,10 @@ export {
   corruptConfigfs,
   deviceMountNearFull,
   DEVICE_MOUNT_NEAR_FULL_PATH,
+  deviceMountFitsEstimateFailedSweep,
+  DEVICE_MOUNT_FITS_ESTIMATE_FAILED_SWEEP_PATH,
+  deviceMountFitsEstimateSourceDrifts,
+  DEVICE_MOUNT_FITS_ESTIMATE_SOURCE_DRIFTS_PATH,
 } from './system-states/index.js';
 
 // Runtime

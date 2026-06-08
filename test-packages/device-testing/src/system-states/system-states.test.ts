@@ -30,22 +30,28 @@ const EXPECTED_IDS = [
   'no-sg-perms',
   'corrupt-configfs',
   'device-mount-near-full',
+  'device-mount-fits-estimate-failed-sweep',
+  'device-mount-fits-estimate-source-drifts',
 ] as const;
 
 // States whose `expectedDoctorSystemOutput.overallStatus` is anything other
-// than `'healthy'`. `device-mount-near-full` provisions a per-test loopback
-// mount that the system-scope doctor cannot see, so its expected doctor
-// output mirrors `healthy` exactly — exclude from the failing-states
-// invariants.
+// than `'healthy'`. The three loopback-provisioning states (TASK-380 +
+// TASK-412) provision per-test mounts that the system-scope doctor cannot
+// see, so their expected doctor output mirrors `healthy` exactly —
+// exclude from the failing-states invariants.
 const FAILING_IDS = EXPECTED_IDS.filter(
-  (id) => id !== 'healthy' && id !== 'device-mount-near-full'
+  (id) =>
+    id !== 'healthy' &&
+    id !== 'device-mount-near-full' &&
+    id !== 'device-mount-fits-estimate-failed-sweep' &&
+    id !== 'device-mount-fits-estimate-source-drifts'
 );
 
 // ── Registry size + key presence ─────────────────────────────────────────────
 
 describe('systemStates registry', () => {
-  it('contains exactly 7 states', () => {
-    expect(systemStates.size).toBe(7);
+  it('contains exactly 9 states', () => {
+    expect(systemStates.size).toBe(9);
   });
 
   for (const id of EXPECTED_IDS) {
