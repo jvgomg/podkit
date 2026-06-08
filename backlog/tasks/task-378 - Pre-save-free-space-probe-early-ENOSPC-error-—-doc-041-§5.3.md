@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-06-03 09:08'
-updated_date: '2026-06-07 16:16'
+updated_date: '2026-06-08 08:18'
 labels:
   - enhancement
   - save-transaction
@@ -70,15 +70,15 @@ Reference: `test-packages/e2e-vm-tests/src/save-failure-matrix.e2e.test.ts` — 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Audit of existing free-space probe code complete: documented per-call-site (planner / executor / save / transcode / transfer manager) with the typed-error class each throws (or string-error fallback if not typed)
-- [ ] #2 Situations catalogue lists at least 7 scenarios: device full at start, planner-estimate-vs-actual mismatch, transcode bigger than source, manifest+sidecar+ithmb overhead, source added between plan and execute, ENOSPC mid-save (pre-flight cannot catch), Subsonic source download mid-sync, video transcoding (different dynamics)
-- [ ] #3 Error surface evaluated: --json structure documented; user message actionable; matches typed-error convention from error-handling.md or has a justified divergence
-- [ ] #4 Strategy on rejection evaluated: device left clean (atomic contract honoured) or partial debris documented as known-gap with doctor recovery path
-- [ ] #5 save-transactions.md gains a `Free-space contract` subsection describing the primitive
-- [ ] #6 doc-041 §5.3 updated to reflect implemented vs open
+- [x] #1 Audit of existing free-space probe code complete: documented per-call-site (planner / executor / save / transcode / transfer manager) with the typed-error class each throws (or string-error fallback if not typed)
+- [x] #2 Situations catalogue lists at least 7 scenarios: device full at start, planner-estimate-vs-actual mismatch, transcode bigger than source, manifest+sidecar+ithmb overhead, source added between plan and execute, ENOSPC mid-save (pre-flight cannot catch), Subsonic source download mid-sync, video transcoding (different dynamics)
+- [x] #3 Error surface evaluated: --json structure documented; user message actionable; matches typed-error convention from error-handling.md or has a justified divergence
+- [x] #4 Strategy on rejection evaluated: device left clean (atomic contract honoured) or partial debris documented as known-gap with doctor recovery path
+- [x] #5 save-transactions.md gains a `Free-space contract` subsection describing the primitive
+- [x] #6 doc-041 §5.3 updated to reflect implemented vs open
 - [ ] #7 Unit + integration tests pin each call-site's contract; TASK-380 matrix references at least the planner-pre-flight envelope; mid-save ENOSPC tested if reachable
-- [ ] #8 **JSON envelope gap**: `sync --json` + `doctor --json` audit — errors[] array now carries `{class, category, causes}` per CategorizedSyncError for every typed error path, not just ENOSPC. Matches the error-handling.md contract.
-- [ ] #9 **OGG filetype-label gap**: planner's filetype-label resolution correctly identifies OGG sources (and any other format falling through to the `Audio file` generic fallback). Test pins OGG → `.ogg` on the device. Audit other extensions for similar gaps.
+- [x] #8 **JSON envelope gap**: `sync --json` + `doctor --json` audit — errors[] array now carries `{class, category, causes}` per CategorizedSyncError for every typed error path, not just ENOSPC. Matches the error-handling.md contract.
+- [x] #9 **OGG filetype-label gap**: planner's filetype-label resolution correctly identifies OGG sources (and any other format falling through to the `Audio file` generic fallback). Test pins OGG → `.ogg` on the device. Audit other extensions for similar gaps.
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -113,3 +113,88 @@ Option 1 is more correct but introduces a new exit point; option 2 is simpler bu
 - `sync/planning.md` §3 covers the current `willFit` math; §6 documents the degradation. Both should evolve as this task lands.
 - `sync/save-transactions.md` already has a 'Pre-sync sweep' subsection (added by TASK-398) that names sync + doctor as co-owners of the rescan-recovery responsibility. The 'Free-space contract' subsection this task plans to add should sit alongside it.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+## AC #9 (OGG filetype-label) — closed without code change (2026-06-08)
+
+The `.Audio file` artefact on OGG sources was the stale-binary symptom from TASK-380 Phase C.2, not a live planner bug. Closed by:
+
+- **TASK-358.01** added `OptimizedCopyFormat='vorbis'` + `getOptimizedCopyFormat(fileType='ogg')` → FFmpeg `-f ogg` (was falling through to `-f ipod` which produced the original error).
+- **TASK-394** (closed obsolete) confirmed the bug doesn't exist on main; the May-26 VM binary used by Phase C.2 predated TASK-358.01.
+- **TASK-380 Phase E** (commit `fa6b2502`) added Turborepo-driven VM build-staleness detection (`@podkit/device-testing#vm:install` + `#vm:doctor`) so this class of false-RED can't recur silently.
+
+### Current invariants pinned by existing tests
+
+- `packages/podkit-core/src/sync/music/pipeline.ts:344-370` — `getFileTypeLabel` covers every member of `AudioFileType` (`flac|mp3|m4a|aac|ogg|opus|wav|aiff|alac` + the `.aif` synonym).
+- `packages/podkit-core/src/device/mass-storage-adapter.ts:1874-1896` — `resolveFileExtension('Ogg Vorbis audio file')` → `.ogg` via `label.includes('vorbis')`.
+- `packages/podkit-core/src/sync/music/pipeline.test.ts:257-274` — round-trips every `AudioFileType` extension through `getFileTypeLabel → resolveFileExtension`. Comment explicitly locks the `.ogg → 'Audio file' → .Audio file` regression class.
+- `packages/podkit-core/src/device/mass-storage-utils.ts:114` `KNOWN_DEBRIS_EXTENSIONS` + `debris-files-mass-storage.test.ts:87,172` — any leftover `.Audio file` debris on disk from prior versions is now swept by the pre-sync sweep (TASK-398) or `--repair debris-files` (TASK-397).
+
+### Residual hazard NOT taken in scope
+
+`getFileTypeLabel`'s `default: return 'Audio file'` branch is unreachable from valid `AudioFileType` inputs but would silently fire if a new format is added to the union without updating the switch. Considered tightening to an exhaustive `assertNever`; opus second-opinion (2026-06-08) flagged it as churn — the existing round-trip test already breaks on the same scenario with a clearer failure than a buried `never` violation. Not worth the call-site ripple; leaving as-is.
+
+No files modified.
+
+## ACs #1-6 — audit + docs slice landed (2026-06-08)
+
+Four doc artefacts; zero production code changes in this slice. ADR-018 implementation, AC #7, and AC #8 tracked as follow-up code work.
+
+### What landed
+
+- **NEW** `adr/adr-018-free-space-pre-flight-strategy.md` — decides the TASK-398-deferred probe-rewrite question. Option 1 (recompute willFit post-sweep via fresh `statfsSync`) + new `InsufficientSpaceAfterCleanup` typed error subclass under `CategorizedSyncError`. Sonnet review caught a guard-vs-decision-driver inconsistency; recompute is unconditional when `preliminaries` is present (not gated on `freedBytes > 0`).
+- **EDIT** `documents/architecture/sync/planning.md` — new "Free-space contract — plan-time" subsection under §2 Primitives covering estimator surface, envelope math, planner-side `space-constraint` warning, and three drift classes (sweep partial-fail / estimate drift / plan-execute race). §7 Open-work entry rewritten to point at ADR-018 + estimate-drift as separate follow-up.
+- **EDIT** `documents/architecture/sync/save-transactions.md` — new "Free-space contract — execute-time" subsection under §2 Primitives covering three execute-time ENOSPC pathways (post-sweep recompute, per-track atomic-write, sweep-failure-as-warning), the atomic-write contract under ENOSPC, and a what-the-user-sees table. §3 Pre-sync sweep's "Free-space envelope" bullet rewritten to cross-link both new subsections + ADR-018.
+- **EDIT** `backlog/docs/doc-041` §5.3 — replaced gap entry with settled three-tier model + journal of what TASK-378 closes (ACs #1-6) vs leaves open (ADR-018 implementation, estimate-drift mitigation, AC #8 JSON envelope, AC #7 mid-save test).
+
+### Findings folded into the docs
+
+- `estimatedSize` is gross, not net (upgrade ops add full bytes; remove ops contribute zero). Conservative-by-design.
+- `estimateCopySize` uses *typical* bitrates per format (256kbps mp3/aac, 900 flac, 1411 wav). A 320kbps mp3 estimated at 256kbps underestimates by 25%. Tracked as the estimate-drift follow-up.
+- Plan-time envelope adds `debrisCleanup.totalBytes` to AVAILABLE side, not subtracted from REQUIRED — TASK-398 opus-review rationale preserved.
+- `PreFlightResult.freedBytes` is currently log-only; ADR-018 wires it into a new recompute path.
+- The planner's own `space-constraint` warning at `planner.ts:153-162` only fires when callers pass `maxSize`; the CLI doesn't, so it serves library consumers today.
+- ENOSPC at iPod database write surfaces as `DatabaseWriteError` (single hard fail; rescan recovers via libgpod's atomic tmp+rename).
+
+### Sonnet review (folded in)
+
+Three fixes applied:
+1. Cross-doc anchors used single-dash where em-dash headings produce double-dash on GitHub/Starlight (`#free-space-contract--plan-time` / `#free-space-contract--execute-time`). Pattern matches existing `error-handling.md#2-hard-failures--categorizedsyncerror`.
+2. ADR-018 implementation outline had a guard `if (freedBytes > 0 || failedPaths.length > 0)` that contradicted the "concurrent processes can shift free-space" decision driver. Recompute is now unconditional when `preliminaries` is present.
+3. `sync/video/planner.ts` line range corrected from `80-138` (overshot into the time estimator) to `80-113` (size only).
+
+## AC #8 + ADR-018 implementation — landed (2026-06-08)
+
+### ADR-018: post-sweep statfs recompute
+
+- **NEW** `InsufficientSpaceAfterCleanup` typed error in `packages/podkit-core/src/sync/engine/errors.ts`. Subclass of `CategorizedSyncError`, category `'space'`, detail payload `{bytesNeeded, bytesAvailable, bytesFreedBySweep, failedSweepPaths}`. `causes` populated from `failedSweepPaths`.
+- **NEW** `'space'` member added to `ErrorCategory` union (`types.ts`). Threaded through `RetryConfig` / `DEFAULT_RETRY_CONFIG` / `VIDEO_RETRY_CONFIG` / `getRetriesForCategory` exhaustive switch with `space: 0` (no retry).
+- **NEW** `safeStatfsFree(mountPoint)` + `assertSpaceAfterSweep({mountPoint, bytesNeeded, preflight})` exported from `pre-sync-sweep.ts`. statfs failure → silent fallback to plan-time envelope (current behaviour preserved).
+- Wired into both pre-flight call sites: `executor.ts` (generic executor) + `MusicPipeline.execute()`. Unconditional recompute when `plan.preliminaries` is present (per ADR-018 decision driver).
+- Exported from `@podkit/core` barrel + mirrored in `packages/demo/src/mock-core.ts`.
+
+### AC #8: JSON envelope `errors[]`
+
+- Extended `ErrorInfo` (`sync.ts`) with optional `class?: string` + `causes?: readonly string[]`.
+- Extended `CollectedError` (`output/formatters.ts`) with `errorClass?: string` + `causes?: readonly string[]`. Music + video presenters now capture both from `CategorizedSyncError` instances when pushing to `collectedErrors`.
+- Plan-time ENOSPC JSON path (`sync-presenter.ts:566-604`) now populates `errors: [{class:'NotEnoughSpacePlanTime', category:'space', ...}]` alongside the existing `error` string. Existing string kept for backwards-compat.
+- Post-sweep ENOSPC: new try/catch around `executeSync` in `sync-presenter.ts` catches `InsufficientSpaceAfterCleanup` and renders the same shape with the typed-error detail payload via `buildPostSweepSpaceErrorInfo`.
+- Execute-phase typed errors: per-collection `collectedErrors` now flow through `genericSyncCollection` return → orchestrator `allErrors` aggregator → final JSON output's `errors[]` field.
+
+### Tests
+
+- 7 new tests in `pre-sync-sweep.test.ts`: `safeStatfsFree` (positive byte count, nonexistent path → undefined) + `assertSpaceAfterSweep` (fits / exceeds throws with full detail / statfs failure silent fallback).
+- 672/672 podkit-core sync tests green. 1469/1469 podkit-cli tests green. Workspace typecheck 34/34 clean.
+
+### Sonnet review (folded in)
+
+Verdict: ship. No blockers. One informational observation:
+- `InsufficientSpaceAfterCleanup` catch in sync-presenter returns early without populating `collectedErrors`, so per-collection JSON envelope (emitted immediately at the catch) carries the detail but the multi-collection aggregate envelope does not. Consistent with the existing plan-time ENOSPC asymmetry; documented for future readers if it ever needs to change.
+
+### Open
+
+- AC #7 (mid-save ENOSPC reachability test) — separate slice. Requires a new `SystemState` forcing estimate drift (device-full-at-start is now caught by both the plan-time and post-sweep gates). Tracked as a follow-up.
+- Changeset — not written; the new `errors[]` field is additive and `InsufficientSpaceAfterCleanup` is a new export. No CLI break; could ship as a patch or minor depending on policy.
+<!-- SECTION:NOTES:END -->

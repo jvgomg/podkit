@@ -202,6 +202,75 @@ If a write silently succeeds-then-rots (taglib writes a tag the device
 firmware ignores), no rescan will detect it. That's a separate concern
 tracked outside this doc (see ADR-009 for the broader rationale).
 
+### Free-space contract — execute-time
+
+The execute side of the free-space contract complements the plan-time
+gate described in
+[`planning.md` §2 "Free-space contract — plan-time"](./planning.md#free-space-contract--plan-time).
+Plan-time decides "should we even try"; execute-time handles "what
+happens when reality diverges from the plan".
+
+Three execute-time pathways carry ENOSPC signal today:
+
+1. **Post-sweep recompute** (ADR-018, pending implementation). After
+   `runPreliminariesPreFlight` finishes, the executor re-reads
+   `storage.free` via `statfsSync` and re-runs `willFit` against the
+   fresh value. If insufficient, it throws a typed
+   `InsufficientSpaceAfterCleanup` (subclass of `CategorizedSyncError`,
+   category `space`). This closes the sweep-partial-fail gap: the
+   user gets a single coherent ENOSPC failure before any track is
+   attempted, instead of N consecutive per-track ENOSPC errors as the
+   transfer phase exhausts a not-quite-recovered device. See
+   [ADR-018](../../../adr/adr-018-free-space-pre-flight-strategy.md).
+2. **Per-track ENOSPC at atomic write** (today). The atomic-write
+   helper writes to `<target>.podkit-tmp`, fsyncs, then renames. An
+   ENOSPC during the write throws inside the stage; the stage wraps
+   it in its typed error (`MoveError`/`TagWriteError`/`PictureWriteError`/
+   `SidecarWriteError` per the asymmetry table above) and propagates to
+   the executor, which catches per-track and continues if
+   `continueOnError` is set. The half-written `.podkit-tmp` survives
+   on disk until the next pre-sync sweep removes it. This handles
+   estimate-drift and source-added-between-plan-and-execute cases —
+   the post-sweep recompute can't catch them because the planner's
+   own estimate is what underestimated.
+3. **Sweep failure as a warning, not a hard fail.** When the pre-flight
+   `rm` itself fails for some debris paths, the failures are emitted
+   as `Warning('debris-cleanup-failure')` rather than fatal errors —
+   the sync continues. ADR-018's post-sweep recompute is what
+   converts a *consequential* sweep failure (one that leaves the
+   device unable to fit the plan) into a hard error; *inconsequential*
+   sweep failures (enough space recovered anyway) stay as warnings.
+
+#### Atomic-write contract under ENOSPC
+
+The per-track atomic-write contract is honoured under ENOSPC: a
+mid-write failure leaves the target file unchanged and the
+`.podkit-tmp` partial on disk. Two consequences:
+
+- **No torn target.** The user's prior version of the track stays
+  intact. The next sync's diff re-detects the failed update and
+  re-queues it.
+- **`.podkit-tmp` accumulates until the next sweep.** TASK-398's
+  pre-sync sweep (see [§3 Pre-sync sweep](#pre-sync-sweep)) cleans
+  this debris automatically on the next run; `podkit doctor --repair
+  debris-files` is the manual backstop.
+
+#### What the user sees
+
+| Situation                                  | Surfaced as                                              |
+|--------------------------------------------|----------------------------------------------------------|
+| Device full at start                       | Plan-time `"Not enough space. Need X, have Y"` (CLI exit)|
+| Sweep partial-fail + still insufficient    | `InsufficientSpaceAfterCleanup` (post ADR-018)           |
+| Sweep partial-fail + still sufficient      | `Warning('debris-cleanup-failure')` + sync continues     |
+| Estimate drift / mid-batch ENOSPC          | Per-track typed errors (`MoveError`/`TagWriteError`/...) |
+| iPod libgpod ENOSPC at database write      | `DatabaseWriteError` (single hard fail; rescan recovers) |
+
+The first row exits before any device-state change; rows 2-3 exit
+after the sweep but before any track is attempted; rows 4-5 surface
+through the executor's per-operation typed-error channel. The
+boundary between rows 3 and 4 is the only one that has changed
+recently — see ADR-018 for the rationale.
+
 ---
 
 ## 3. Responsibility boundaries
@@ -257,9 +326,12 @@ tracked outside this doc (see ADR-009 for the broader rationale).
   preliminaries.
 - **Free-space envelope.** Estimated debris bytes are added to the
   available side of the `willFit` check (not subtracted from
-  `estimatedSize`) — the executor's transfer phase still surfaces
-  ENOSPC when actual freed bytes fall short. See
-  [planning.md §3](./planning.md) for the full math.
+  `estimatedSize`). The plan-time math lives in
+  [planning.md "Free-space contract — plan-time"](./planning.md#free-space-contract--plan-time);
+  the post-sweep recompute decision is captured in
+  [ADR-018](../../../adr/adr-018-free-space-pre-flight-strategy.md)
+  and the user-visible failure modes are tabled in
+  [§2 "Free-space contract — execute-time"](#free-space-contract-execute-time).
 
 ### `podkit doctor`
 

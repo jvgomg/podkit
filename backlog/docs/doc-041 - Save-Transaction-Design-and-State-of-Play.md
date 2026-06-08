@@ -296,13 +296,50 @@ message + diagnostic hint to check mount permissions.
 **Gap:** No upfront capability probe. The user discovers it only at save time
 after a full diff + transcode has happened. Wasted work.
 
-### 5.3 Out of space (ENOSPC) mid-save
+### 5.3 Out of space (ENOSPC) — settled across plan + execute boundaries
 
-**Today:** `renameSync` or `writeFile` returns ENOSPC. Move stage throws,
-later stages don't run. Tag/picture writes that already partially landed stay.
+**Today (settled by TASK-378 audit, 2026-06-08):** ENOSPC is gated at
+three distinct points along the sync, each with a defined
+contract. The full picture lives in the architecture docs; this
+section is a journal of how the design evolved.
 
-**Gap:** ENOSPC isn't pre-checked. The free-space probe at plan time would
-catch most cases; today's only line of defence is the executor's error message.
+1. **Plan-time gate** —
+   [`planning.md` §2 "Free-space contract — plan-time"](../../documents/architecture/sync/planning.md#free-space-contract-plan-time).
+   `SyncPlanner` sums `handler.estimateSize(op)`. CLI computes
+   `effectiveFreeSpace = storage.free + debrisCleanup.totalBytes`.
+   `willFit` rejects before any track is attempted, exits with
+   `"Not enough space. Need X, have Y"`. Closes "device full at start".
+2. **Post-sweep recompute** — decided in
+   [ADR-018](../../adr/adr-018-free-space-pre-flight-strategy.md),
+   implementation tracked by TASK-378. Re-reads `storage.free` after
+   `runPreliminariesPreFlight` and throws
+   `InsufficientSpaceAfterCleanup` if the sweep failed to recover
+   enough. Closes the "sweep partial-fail leaks into per-track
+   ENOSPC noise" gap.
+3. **Per-track ENOSPC at atomic write** —
+   [`save-transactions.md` §2 "Free-space contract — execute-time"](../../documents/architecture/sync/save-transactions.md#free-space-contract-execute-time).
+   Atomic-write helper's `.podkit-tmp` failure throws a typed error
+   per stage (`MoveError`/`TagWriteError`/`PictureWriteError`/
+   `SidecarWriteError`/`DatabaseWriteError`). Handles estimate-drift
+   and concurrent-modification cases the post-sweep recompute
+   cannot catch. The atomic contract guarantees no torn target
+   file; the `.podkit-tmp` survives until the next pre-sync sweep.
+
+**Open work tracked under TASK-378:**
+
+- ADR-018 implementation (post-sweep recompute + new typed error
+  class).
+- Estimate-drift mitigation — `estimateCopySize` uses *typical*
+  bitrates per format; a 320kbps mp3 estimated at 256kbps
+  underestimates by 25%. Audit + decide: switch to actual-file-size
+  probing, or accept the drift.
+- JSON envelope gap (AC #8) — `sync --json`'s `errors[]` array
+  doesn't carry `{class, category, causes}` for the pre-flight
+  ENOSPC path today; the string error at `sync-presenter.ts:591`
+  pre-dates the `CategorizedSyncError` hierarchy.
+- Mid-save ENOSPC reachability test (AC #7) — requires a new
+  `SystemState` variant forcing estimate drift (device-full-at-start
+  is now caught by both the plan-time and ADR-018 post-sweep gates).
 
 ### 5.4 Process killed mid-write (SIGKILL, OOM, OS reboot)
 

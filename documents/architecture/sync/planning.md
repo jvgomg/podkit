@@ -152,6 +152,106 @@ when the auto-prune itself failed, or when the device adapter doesn't
 expose the method — the doctor's `--repair orphan-files` path remains a
 backstop. See TASK-401.
 
+### Free-space contract — plan-time
+
+The planner is the first of two free-space gates (the second lives in
+[`save-transactions.md`](./save-transactions.md#free-space-contract--execute-time)).
+Its job: predict whether a plan will fit on the device's free space
+**before** any track is attempted, so the user gets a single "not
+enough space" exit instead of a stream of per-track ENOSPC errors
+mid-transfer.
+
+#### Estimator surface
+
+`SyncPlan.estimatedSize` is the sum of `handler.estimateSize(op)`
+across `plan.operations`. The music + video handlers each delegate to
+a per-operation calculator:
+
+- **Music** (`sync/music/planner.ts:265-320`):
+  - `estimateTranscodedSize(durationMs, bitrateKbps)` —
+    `(duration/1000) × (bitrate × 1000 / 8) + M4A_CONTAINER_OVERHEAD_BYTES`.
+    Used for every `*-transcode` op; the bitrate is the user's
+    preset target.
+  - `estimateCopySize(track)` — `estimateTranscodedSize` again, but
+    using a *typical* bitrate per format (256 for mp3/aac, 900 for
+    flac/alac, 1411 for wav/aiff, 192 for ogg/opus). Used for every
+    `*-direct-copy` and `*-optimized-copy` op. Drifts from real
+    file size whenever the source's actual bitrate differs from
+    the typical — see below.
+  - `upgrade-artwork` returns `200 * 1024` for the `artwork-updated`
+    reason and `0` for `artwork-removed`.
+  - `remove`, `update-metadata`, `update-sync-tag`, `relocate`
+    return `0` (these don't add bytes; removes free bytes but the
+    estimator doesn't net them).
+- **Video** (`sync/video/planner.ts:80-113`): per-operation
+  `calculateVideoOperationSize` using a similar bitrate-times-duration
+  model. The time-side companion (`calculateVideoOperationTime`)
+  feeds `plan.estimatedTime`, which is orthogonal to free-space.
+
+`estimatedSize` is **gross, not net.** An `upgrade-*` operation adds
+the full estimated bytes without subtracting the old file it
+replaces. A `remove` operation contributes zero rather than a
+negative number. Both choices are intentionally conservative — the
+goal is to refuse the sync when it can't fit, not to optimise.
+
+#### Envelope math
+
+The CLI does the gating in `genericSyncCollection`
+(`packages/podkit-cli/src/commands/sync-presenter.ts:477-479`):
+
+```ts
+const debrisFreedEstimate = plan.preliminaries?.debrisCleanup?.totalBytes ?? 0;
+const effectiveFreeSpace = (storage?.free ?? 0) + debrisFreedEstimate;
+const hasEnoughSpace = presenter.willFit(plan, effectiveFreeSpace, core);
+```
+
+`willFit` is `plan.estimatedSize <= freeSpace`. On false the sync
+exits with `"Not enough space. Need X, have Y"`
+(`sync-presenter.ts:591` JSON, `:595-601` text). No track is
+attempted; no `save()` runs.
+
+The `debrisCleanup.totalBytes` is added to the **available** side
+rather than subtracted from the **required** side. The rationale,
+locked in by TASK-398's opus review: subtracting would suppress a
+real space warning if the pre-flight's `rm` partially fails.
+Inflating the available side keeps the warning honest — when the
+sweep recovers less than promised, the user sees a meaningful
+ENOSPC, not a silently-suppressed one.
+
+#### Planner-side constraint warning
+
+Separately from the CLI's `willFit` gate, the planner itself emits a
+`Warning('space-constraint')` (`planner.ts:153-162`) when
+`estimatedSize > maxSize` is passed via the planner options. This is
+the path-of-record for library consumers calling the planner
+directly (no CLI). The CLI doesn't pass `maxSize` — it does its own
+storage probe + envelope math at the presenter layer — so this
+warning is dormant in the CLI today and serves library consumers.
+
+#### Known drift sources
+
+The plan-time gate is **necessary but not sufficient.** Three
+classes of drift remain reachable:
+
+1. **Sweep partial failure** — `debrisCleanup.totalBytes` counts
+   scan-time bytes; if `runPreliminariesPreFlight`'s per-path `rm`
+   fails for some entries, the real `freedBytes` is less than
+   promised. Closed by ADR-018: the executor recomputes `willFit`
+   post-sweep using a fresh `statfsSync`. Top-level sweep failure
+   also surfaces as `Warning('debris-cleanup-failure')` for the
+   per-path detail.
+2. **Estimate drift** — `estimateCopySize` uses *typical* bitrates,
+   not the source file's actual size. A 320kbps mp3 estimated at
+   256kbps underestimates by 25%. Mitigated by the executor's
+   per-track ENOSPC handling but not closed at plan time.
+3. **Race between plan and execute** — source files added or
+   resized in the window between diff and transfer. Not closed; the
+   transfer-phase per-track typed errors are the safety net.
+
+ADR-018 closes (1). The remaining drift sources surface through the
+execute-time pre-flight and the transfer-phase typed errors —
+see [`save-transactions.md`](./save-transactions.md#free-space-contract--execute-time).
+
 ---
 
 ## 3. Responsibility boundaries
@@ -383,22 +483,19 @@ Cross-references: TASK-402 + TASK-404.
 
 ## 7. Open work
 
-- **Free-space probe rewrite (TASK-378).** Today `willFit` is a single
-  subtraction (`estimatedSize <= storage.free + debrisFreedEstimate`).
-  The probe rewrite will expand this into a proper accounting model
-  (reserved space for libgpod overhead, sync-tag overhead, etc.).
-  `PlanPreliminaries` is the right place to extend with the probe's
-  output.
-
-  **Known degradation:** `debrisFreedEstimate` is the value the scanner
-  reports at scan time. If the pre-flight's `rm` calls fail (permissions,
-  ENOENT race, network FS hiccup), the actual freed bytes can fall
-  short. The transfer phase surfaces these as per-track write errors
-  rather than a single ENOSPC summary — the user sees individual
-  failures, not "space accounting was invalidated by the partial sweep".
-  Acceptable trade-off until TASK-378 lands a proper probe model; the
-  failed sweep is also surfaced via `Warning('debris-cleanup-failure')`
-  so the per-track noise has a top-level explanation.
+- **Free-space contract execute-side hand-off (ADR-018, TASK-378).**
+  The plan-time gate is settled (see §2 "Free-space contract —
+  plan-time"). The execute-side companion — recomputing `willFit`
+  post-sweep using a fresh `statfsSync` so sweep-partial-fail
+  surfaces as a single coherent ENOSPC instead of per-track noise —
+  is decided in [ADR-018](../../../adr/adr-018-free-space-pre-flight-strategy.md)
+  but not yet implemented. Tracked under TASK-378.
+- **Estimate-drift mitigation.** `estimateCopySize` uses *typical*
+  bitrates per format; sources that diverge produce systematic
+  drift. Audit + decide whether to switch to actual-file-size
+  probing (more correct, requires a stat per source) or accept the
+  drift and rely on the post-sweep recompute + per-track ENOSPC
+  handling. Tracked under TASK-378.
 - **Unified plan across content types.** Today one device sync produces
   N per-content-type plans (music + video). A future refactor may
   collapse `collections[]` into a single `operations[]` to enable
