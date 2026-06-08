@@ -1651,9 +1651,12 @@ export class MusicPipeline implements SyncExecutor {
     // after the transcoded `.podkit-tmp` lands but before the move-out
     // rename, so e2e tests can SIGKILL the sync and assert the next
     // sync's sweep reaps the orphaned `podkit-transcode-<uuid>/`
-    // scratch dir. No-op in production (compile-time stripped). See
+    // scratch dir. Production builds tree-shake the entire branch —
+    // neither the call nor the key string survives the bundle. See
     // `documents/architecture/dev-builds.md`.
-    await devPause('pre-rename-transcode');
+    if (typeof __PODKIT_DEV_HOOKS__ !== 'undefined' && __PODKIT_DEV_HOOKS__) {
+      await devPause('pre-rename-transcode');
+    }
     await rename(tmpOutputPath, outputPath);
 
     return {
@@ -1757,8 +1760,11 @@ export class MusicPipeline implements SyncExecutor {
     // Same `pre-rename-transcode` seam as prepareTranscode above —
     // covers the optimized-copy path so e2e tests don't need to pick
     // between lossless-vs-compatible-lossy source formats to trigger
-    // the pause.
-    await devPause('pre-rename-transcode');
+    // the pause. Tree-shakes in production (see prepareTranscode for
+    // the rationale).
+    if (typeof __PODKIT_DEV_HOOKS__ !== 'undefined' && __PODKIT_DEV_HOOKS__) {
+      await devPause('pre-rename-transcode');
+    }
     await rename(tmpOutputPath, outputPath);
 
     // Get output file size

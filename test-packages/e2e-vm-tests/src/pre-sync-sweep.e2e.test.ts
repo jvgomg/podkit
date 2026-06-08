@@ -514,15 +514,23 @@ describe('VM: pre-sync sweep SIGKILL round-trip', () => {
   );
 
   // ─────────────────────────────────────────────────────────────────────────
-  // AC #3 — iPod SIGKILL (synthetic-debris variant)
+  // AC #3 — iPod SIGKILL (synthetic-debris variant — permanent)
   //
-  // The portable tag-write path that produces `.podkit-tmp` under
-  // iPod_Control/ on real crashes hasn't landed yet (tracked separately as
-  // TASK-376 — iPod portable tag-writes via the shared atomic helper).
-  // Until then, the sweep code path is the same as the real-crash route:
-  // we plant a `.podkit-tmp` ourselves under iPod_Control/Music/F00/ and
-  // assert the dry-run surfaces it. When TASK-376 lands, this scenario can
-  // promote to a real SIGKILL round-trip using `pre-rename-track`.
+  // The iPod adapter does not use podkit's atomic-write helper for any of
+  // its on-disk writes today. iTunesDB / ArtworkDB writes go through
+  // libgpod which uses GLib's `g_file_set_contents` (random `.tmpXXXXXX`
+  // suffix, not `.podkit-tmp`). Track files are added through libgpod's
+  // copy-and-register path, not through `atomicCopyFile`. So no current
+  // code path under `iPod_Control/` produces `.podkit-tmp` debris on
+  // crash — the `debris-files-ipod` walker exists to catch future writes,
+  // not anything written today.
+  //
+  // The synthetic-debris approach below is therefore PERMANENT, not a
+  // workaround pending another task. It exercises the same sweep code
+  // path the walker would surface for any future iPod write that adopted
+  // the shared atomic helper. If/when an iPod write path is retrofitted
+  // to use `atomicCopyFile` / `atomicWriteFile`, a real-SIGKILL variant
+  // can be added alongside this one.
   // ─────────────────────────────────────────────────────────────────────────
 
   it(
@@ -548,10 +556,11 @@ describe('VM: pre-sync sweep SIGKILL round-trip', () => {
       }
 
       // Plant a `.podkit-tmp` next to where a track would live. This
-      // simulates "podkit was killed between writing the tmp and the
-      // rename to the final hashed path" — the synthetic-debris stand-in
-      // for the real SIGKILL round-trip pending TASK-376 (portable
-      // tag-writes on the iPod adapter).
+      // simulates "any future iPod write path adopted atomicCopyFile and
+      // was SIGKILLed between tmp and rename". No iPod path produces this
+      // pattern today (libgpod uses random `.tmpXXXXXX` suffixes); the
+      // synthetic plant exercises the same sweep code that would surface
+      // real debris if such a path landed.
       const plantedTmp = `${VM_MOUNT_POINT}/iPod_Control/Music/F00/SWPK.mp3.podkit-tmp`;
       await runVmRoot(`mkdir -p ${VM_MOUNT_POINT}/iPod_Control/Music/F00`);
       await runVmRoot(`printf 'planted-debris' > ${sq(plantedTmp)}`);

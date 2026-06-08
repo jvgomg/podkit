@@ -406,8 +406,13 @@ export class MassStorageTrack implements DeviceTrack {
     // with `PODKIT_DEV_PAUSE_KEY=pre-rename-track`, the call blocks
     // forever after the `.podkit-tmp` lands but before the rename, so
     // e2e tests can SIGKILL the sync and assert the next sync's sweep
-    // cleans the debris. No-op in production builds (tree-shaken).
-    atomicCopyFile(sourcePath, absolutePath, 'pre-rename-track');
+    // cleans the debris. Production builds tree-shake the entire branch
+    // — the string literal does not survive the bundle.
+    if (typeof __PODKIT_DEV_HOOKS__ !== 'undefined' && __PODKIT_DEV_HOOKS__) {
+      atomicCopyFile(sourcePath, absolutePath, 'pre-rename-track');
+    } else {
+      atomicCopyFile(sourcePath, absolutePath);
+    }
 
     // Update size from the copied file
     const stats = fs.statSync(absolutePath);

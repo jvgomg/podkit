@@ -25,7 +25,16 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const CLI_BUNDLE = resolve(__dirname, '..', 'dist', 'main.js');
 const CLI_BINARY = resolve(__dirname, '..', 'bin', 'podkit');
 
-const FORBIDDEN_SUBSTRINGS = ['__PODKIT_DEV_HOOKS__', 'PODKIT_DEV_PAUSE_KEY'] as const;
+const FORBIDDEN_SUBSTRINGS = [
+  '__PODKIT_DEV_HOOKS__',
+  'PODKIT_DEV_PAUSE_KEY',
+  // Pause-key call-site arg literals must not survive the bundle either.
+  // Each call site wraps its `devPause`/`devPauseSync` call (and the key
+  // arg) in an `if (__PODKIT_DEV_HOOKS__)` guard so production bundles
+  // tree-shake the whole branch.
+  'pre-rename-track',
+  'pre-rename-transcode',
+] as const;
 
 function readArtifact(path: string): string {
   // Read as binary then look for the ASCII substrings — works for both the

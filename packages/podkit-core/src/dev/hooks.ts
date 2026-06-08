@@ -23,8 +23,6 @@
  * @module
  */
 
-declare const __PODKIT_DEV_HOOKS__: boolean;
-
 /**
  * Block forever when the hook is active and the configured pause key matches.
  *
