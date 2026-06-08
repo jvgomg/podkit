@@ -1,10 +1,10 @@
 ---
 id: TASK-142
 title: Sidecar artwork support and executor adapter fallback
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-03-17 14:58'
-updated_date: '2026-06-03 21:36'
+updated_date: '2026-06-08 07:10'
 labels:
   - enhancement
   - artwork

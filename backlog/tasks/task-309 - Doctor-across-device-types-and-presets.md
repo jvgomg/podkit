@@ -1,10 +1,10 @@
 ---
 id: TASK-309
 title: Doctor across device types and presets
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-05-08 07:24'
-updated_date: '2026-05-20 23:03'
+updated_date: '2026-06-08 07:10'
 labels:
   - testing
   - doctor
@@ -45,7 +45,7 @@ For every test, run `podkit doctor --device <name|path> --json --no-system` and 
 - [x] #6 rockbox mass-storage preset: doctor runs cleanly using rockbox-specific content paths from preset defaults
 - [x] #7 Unsupported iPod (e.g. iOS-range product ID): readiness usb stage surfaces unsupportedReason; doctor exits with a clear error rather than running checks against an unsupported device
 - [x] #8 Mass-storage device with --repair targeting an iPod-only check (e.g. artwork-rebuild) fails clearly, exit 1, with explanatory message
-- [ ] #9 iPod device with --repair targeting a mass-storage-only check (orphan-files-mass-storage) fails clearly, exit 1
+- [x] #9 iPod device with --repair targeting a mass-storage-only check (orphan-files-mass-storage) fails clearly, exit 1
 - [x] #10 deviceModel field in JSON: iPod resolves to model display name (e.g. 'iPod nano 4th generation 8GB Silver'); mass-storage resolves to preset display name (e.g. 'Echo Mini')
 - [ ] #11 Device specified by config name (-d echomini) and by path (-d /Volumes/...) produce equivalent output for the same physical device fixture
 - [x] #12 Doctor against a path that is not a recognised device (random temp dir) fails with 'Device path not found' or readiness mount-stage failure
@@ -193,4 +193,12 @@ NONE added. Reused:
   from path, or (b) explicit clarification that by-name and by-path
   surface inherently different envelopes. Suggest filing a new task to
   resolve.
+
+## 2026-06-08 — closure
+
+**AC #9 ticked.** Symmetric `applicableTo` gate landed in commit `ddf8d478` (m-19 VM Testing). `doctor.ts:486-492` now raises `INCOMPATIBLE_DEVICE_TYPE` for mass-storage-only repairs against iPod. `doctor-device-types.test.ts:761-805` pins the new correct behaviour ('not available for iPod'). The 'Bugs found #1' note above is resolved.
+
+**AC #11 — not ticked, tracked downstream.** Full equivalence between `-d <name>` and `-d <path>` requires auto-detecting mass-storage device type from a mountpoint. Owned by **TASK-256** (Auto-detect device type from USB identifiers, m-14, Low). TASK-262 (Interactive Device Add Wizard) covers the UX surface. The pinned test in `tier3/task-309-doctor-device-types.tier3.test.ts` documents the current asymmetry — it flips when TASK-256 lands.
+
+TASK-309 closed.
 <!-- SECTION:NOTES:END -->
