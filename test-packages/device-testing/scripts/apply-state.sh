@@ -387,30 +387,9 @@ apply_device_mount_near_full() {
   # image so the fill calculation is deterministic.
   tear_down_near_full
 
-  mkdir -p "$(dirname "$NEAR_FULL_IMG")"
-  mkdir -p "$NEAR_FULL_MNT"
-
-  # 5 MiB image, ext4, mounted at $NEAR_FULL_MNT.
-  truncate -s 5M "$NEAR_FULL_IMG"
-  mkfs.ext4 -F -q "$NEAR_FULL_IMG"
-  mount -o loop "$NEAR_FULL_IMG" "$NEAR_FULL_MNT"
-  log "mounted near-full loopback: $NEAR_FULL_IMG → $NEAR_FULL_MNT"
-
-  # World-writable so the test user (uid 501 / james) can write through
-  # podkit without sudo. The mount itself was created by root.
-  chmod 0777 "$NEAR_FULL_MNT"
-
-  # Compute available KiB and write a fill file that leaves
-  # $NEAR_FULL_RESERVE_KIB free. The `df --output=avail` field is in 1K
-  # blocks; subtract the reserve, never go below 0.
-  avail_kib=$(df --output=avail "$NEAR_FULL_MNT" | tail -n1 | tr -d ' ')
-  fill_kib=$(( avail_kib - NEAR_FULL_RESERVE_KIB ))
-  if [ "$fill_kib" -lt 1 ]; then
-    log "WARN: computed fill_kib=$fill_kib (avail=$avail_kib, reserve=$NEAR_FULL_RESERVE_KIB) — skipping fill"
-  else
-    dd if=/dev/zero of="$NEAR_FULL_MNT/_fill" bs=1K count="$fill_kib" 2>/dev/null || true
-    log "filled loopback: $fill_kib KiB written, ~$NEAR_FULL_RESERVE_KIB KiB free"
-  fi
+  # 5 MiB image, ext4, filled so ~50 KiB free remains. Delegates to the
+  # shared helper for symmetry with the TASK-412 postsweep + drift states.
+  provision_loopback_ext4 "$NEAR_FULL_IMG" "$NEAR_FULL_MNT" 5 "$NEAR_FULL_RESERVE_KIB"
 
   # Final state echo for diagnostics in CI logs.
   df_line=$(df --output=avail,used,size "$NEAR_FULL_MNT" | tail -n1)
