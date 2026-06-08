@@ -25,7 +25,7 @@ import type {
 import type { TranscodeProgress } from '../../transcode/types.js';
 import type { ContentTypeHandler, ExecutionContext, OperationProgress } from './content-type.js';
 import { categorizeError, createCategorizedError, type RetryConfig } from './error-handling.js';
-import { runPreliminariesPreFlight } from './pre-sync-sweep.js';
+import { runPreliminariesPreFlight, assertSpaceAfterSweep } from './pre-sync-sweep.js';
 
 // =============================================================================
 // Types
@@ -200,12 +200,19 @@ export class SyncExecutor<TSource, TDevice, TOp extends BaseOperation = SyncOper
     // The adapter is threaded through so the helper can auto-prune
     // phantom manifest entries on mass-storage devices.
     if (plan.preliminaries) {
-      await runPreliminariesPreFlight(plan.preliminaries, {
+      const preflight = await runPreliminariesPreFlight(plan.preliminaries, {
         dryRun,
         warningSink,
         signal,
         adapter: device,
       });
+      if (!dryRun && device) {
+        assertSpaceAfterSweep({
+          mountPoint: device.mountPoint,
+          bytesNeeded: plan.estimatedSize,
+          preflight,
+        });
+      }
     }
 
     // Path 1: Batch execution (when handler has executeBatch and not dry-run)

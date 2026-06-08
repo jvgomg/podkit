@@ -27,8 +27,10 @@
  */
 
 import { rm, stat } from 'node:fs/promises';
+import { statfsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import type { PlanPreliminaries, Warning, WarningSink } from './types.js';
+import { InsufficientSpaceAfterCleanup } from './errors.js';
 import type { DiagnosticDeviceType } from '../../diagnostics/types.js';
 import type { ContentPaths } from '@podkit/devices-mass-storage';
 import type { DeviceAdapter } from '../../device/adapter.js';
@@ -292,4 +294,51 @@ export async function runPreliminariesPreFlight(
   }
 
   return { debrisDeleted, freedBytes, failedPaths, phantomsPruned };
+}
+
+/**
+ * Statfs read that returns `undefined` on any failure (missing path,
+ * EACCES, network FS hiccup) so the caller can fall back to the plan-
+ * time envelope instead of crashing the sync.
+ *
+ * Exported for unit-test injection.
+ */
+export function safeStatfsFree(mountPoint: string): number | undefined {
+  try {
+    const stats = statfsSync(mountPoint);
+    return Number(stats.bavail) * Number(stats.bsize);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Post-sweep free-space recompute (ADR-018).
+ *
+ * Re-reads `mountPoint`'s free space via `statfsSync` and throws
+ * {@link InsufficientSpaceAfterCleanup} if the actual free bytes are
+ * below `bytesNeeded`. When the statfs itself fails, falls back
+ * silently — the plan-time envelope is the prior gate and the
+ * transfer-phase per-track ENOSPC errors are the safety net.
+ *
+ * Runs **unconditionally** when called (callers gate on
+ * `plan.preliminaries`). Even a clean zero-byte sweep doesn't prove
+ * disk state matches the plan-time envelope — concurrent processes
+ * can shift `storage.free` between plan and execute. See ADR-018.
+ */
+export function assertSpaceAfterSweep(args: {
+  mountPoint: string;
+  bytesNeeded: number;
+  preflight: PreFlightResult;
+}): void {
+  const freshFree = safeStatfsFree(args.mountPoint);
+  if (freshFree === undefined) return;
+  if (args.bytesNeeded > freshFree) {
+    throw new InsufficientSpaceAfterCleanup({
+      bytesNeeded: args.bytesNeeded,
+      bytesAvailable: freshFree,
+      bytesFreedBySweep: args.preflight.freedBytes,
+      failedSweepPaths: args.preflight.failedPaths,
+    });
+  }
 }

@@ -42,6 +42,8 @@ export interface RetryConfig {
   database?: number;
   /** Number of retries for artwork operations (default: 0) */
   artwork?: number;
+  /** Number of retries for free-space exhaustion (default: 0 — hard sync exit) */
+  space?: number;
   /** Number of retries for unknown errors (default: 0) */
   unknown?: number;
   /** Delay between retries in milliseconds (default: 1000) */
@@ -56,6 +58,7 @@ export const DEFAULT_RETRY_CONFIG: Required<RetryConfig> = {
   copy: 1,
   database: 0,
   artwork: 0,
+  space: 0,
   unknown: 0,
   retryDelayMs: 1000,
 };
@@ -71,6 +74,7 @@ export const VIDEO_RETRY_CONFIG: Required<RetryConfig> = {
   copy: 1,
   database: 0,
   artwork: 0,
+  space: 0,
   unknown: 0,
   retryDelayMs: 1000,
 };
@@ -148,6 +152,8 @@ export function getRetriesForCategory(
       return config.database;
     case 'artwork':
       return config.artwork;
+    case 'space':
+      return config.space;
     case 'unknown':
       return config.unknown;
   }

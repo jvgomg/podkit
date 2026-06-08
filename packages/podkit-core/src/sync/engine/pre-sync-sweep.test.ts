@@ -14,7 +14,13 @@ import { describe, it, expect } from 'bun:test';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { runPreSyncSweep, runPreliminariesPreFlight } from './pre-sync-sweep.js';
+import {
+  runPreSyncSweep,
+  runPreliminariesPreFlight,
+  assertSpaceAfterSweep,
+  safeStatfsFree,
+} from './pre-sync-sweep.js';
+import { InsufficientSpaceAfterCleanup } from './errors.js';
 import { writeOwnership } from '../../lib/pid-file.js';
 import type { ContentPaths } from '@podkit/devices-mass-storage';
 import type { Warning, WarningSink } from './types.js';
@@ -536,5 +542,79 @@ describe('runPreliminariesPreFlight', () => {
       expect(existsSync(a)).toBe(true);
       expect(existsSync(b)).toBe(true);
     });
+  });
+});
+
+describe('safeStatfsFree (ADR-018)', () => {
+  it('returns a positive byte count for an existing mount', async () => {
+    await withTempDirs(async (mount) => {
+      const free = safeStatfsFree(mount);
+      expect(free).toBeGreaterThan(0);
+    });
+  });
+
+  it('returns undefined for a path that does not exist', () => {
+    const free = safeStatfsFree('/nonexistent/path/does/not/exist/abc123');
+    expect(free).toBeUndefined();
+  });
+});
+
+describe('assertSpaceAfterSweep (ADR-018)', () => {
+  const emptyPreflight = {
+    debrisDeleted: 0,
+    freedBytes: 0,
+    failedPaths: [],
+    phantomsPruned: 0,
+  };
+
+  it('returns silently when bytesNeeded fits in fresh free space', async () => {
+    await withTempDirs(async (mount) => {
+      expect(() =>
+        assertSpaceAfterSweep({
+          mountPoint: mount,
+          bytesNeeded: 1, // 1 byte against gigabytes-of-tmpfs
+          preflight: emptyPreflight,
+        })
+      ).not.toThrow();
+    });
+  });
+
+  it('throws InsufficientSpaceAfterCleanup when bytesNeeded exceeds fresh free space', async () => {
+    await withTempDirs(async (mount) => {
+      const fresh = safeStatfsFree(mount) ?? 0;
+      let caught: unknown;
+      try {
+        assertSpaceAfterSweep({
+          mountPoint: mount,
+          bytesNeeded: fresh + 10 ** 12, // 1 TB beyond fresh free
+          preflight: {
+            debrisDeleted: 3,
+            freedBytes: 12345,
+            failedPaths: ['/some/failed/path'],
+            phantomsPruned: 0,
+          },
+        });
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(InsufficientSpaceAfterCleanup);
+      const err = caught as InsufficientSpaceAfterCleanup;
+      expect(err.category).toBe('space');
+      expect(err.detail.bytesNeeded).toBe(fresh + 10 ** 12);
+      expect(err.detail.bytesAvailable).toBe(fresh);
+      expect(err.detail.bytesFreedBySweep).toBe(12345);
+      expect(err.detail.failedSweepPaths).toEqual(['/some/failed/path']);
+      expect(err.causes).toEqual(['/some/failed/path']);
+    });
+  });
+
+  it('falls back silently when statfs fails (does not crash the sync)', () => {
+    expect(() =>
+      assertSpaceAfterSweep({
+        mountPoint: '/nonexistent/path/does/not/exist/abc123',
+        bytesNeeded: 10 ** 18,
+        preflight: emptyPreflight,
+      })
+    ).not.toThrow();
   });
 });

@@ -70,3 +70,36 @@ export class DatabaseWriteError extends CategorizedSyncError {
     super(`device database write failed: ${cause}`, [cause]);
   }
 }
+
+/**
+ * Insufficient free space detected after the pre-sync sweep ran.
+ *
+ * Thrown by the executor's post-sweep recompute (see ADR-018) when the
+ * sweep recovered less than promised — the plan-time envelope counted
+ * `debrisCleanup.totalBytes` as available, but per-path `rm` failures
+ * left the actual freed bytes below the threshold. Surfaces ONCE,
+ * before any track is attempted, instead of leaking into N consecutive
+ * per-track ENOSPC errors as the transfer phase exhausts the device.
+ *
+ * Carries structured detail so `--json` consumers can render without
+ * scraping the message body.
+ *
+ * See `adr/adr-018-free-space-pre-flight-strategy.md`.
+ */
+export class InsufficientSpaceAfterCleanup extends CategorizedSyncError {
+  readonly category = 'space' as const;
+
+  constructor(
+    readonly detail: {
+      bytesNeeded: number;
+      bytesAvailable: number;
+      bytesFreedBySweep: number;
+      failedSweepPaths: readonly string[];
+    }
+  ) {
+    super(
+      `Not enough space after debris cleanup. Need ${detail.bytesNeeded} bytes, have ${detail.bytesAvailable} (sweep freed ${detail.bytesFreedBySweep} bytes${detail.failedSweepPaths.length > 0 ? `; ${detail.failedSweepPaths.length} sweep path(s) failed` : ''}).`,
+      detail.failedSweepPaths
+    );
+  }
+}

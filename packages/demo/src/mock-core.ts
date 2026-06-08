@@ -382,6 +382,20 @@ export class DatabaseWriteError extends CategorizedSyncError {
   }
 }
 
+export class InsufficientSpaceAfterCleanup extends CategorizedSyncError {
+  readonly category = 'space' as const;
+  constructor(
+    readonly detail: {
+      bytesNeeded: number;
+      bytesAvailable: number;
+      bytesFreedBySweep: number;
+      failedSweepPaths: readonly string[];
+    }
+  ) {
+    super(`Not enough space after debris cleanup`, detail.failedSweepPaths);
+  }
+}
+
 // =============================================================================
 // Mock IpodTrack implementation
 // =============================================================================

@@ -542,6 +542,7 @@ export type ErrorCategory =
   | 'copy' // File copy failure - retry once
   | 'database' // iPod database error - no retry
   | 'artwork' // Artwork error - skip artwork only, continue sync
+  | 'space' // Free-space exhaustion - no retry, hard sync exit
   | 'unknown'; // Other errors - no retry
 
 /**

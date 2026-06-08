@@ -170,7 +170,11 @@ export {
 } from './sync/engine/error-handling.js';
 
 // Typed sync errors — see documents/architecture/error-handling.md
-export { CategorizedSyncError, DatabaseWriteError } from './sync/engine/errors.js';
+export {
+  CategorizedSyncError,
+  DatabaseWriteError,
+  InsufficientSpaceAfterCleanup,
+} from './sync/engine/errors.js';
 export {
   TagWriteError,
   SidecarWriteError,

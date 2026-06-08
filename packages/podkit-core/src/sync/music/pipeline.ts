@@ -58,7 +58,7 @@ import { getCodecMetadata } from '../../transcode/codecs.js';
 import { getCodecPresetBitrate, getCodecVbrQuality } from '../../transcode/types.js';
 import type { TransferMode } from '../../transcode/types.js';
 import type { TranscodePresetRef } from '../engine/types.js';
-import { runPreliminariesPreFlight } from '../engine/pre-sync-sweep.js';
+import { runPreliminariesPreFlight, assertSpaceAfterSweep } from '../engine/pre-sync-sweep.js';
 import type {
   ExecuteOptions,
   SyncExecutor,
@@ -542,6 +542,7 @@ export function getRetriesForCategory(
     copy: config.copyRetries,
     database: config.databaseRetries,
     artwork: 0,
+    space: 0,
     unknown: 0,
     retryDelayMs: config.retryDelayMs,
   };
@@ -851,6 +852,13 @@ export class MusicPipeline implements SyncExecutor {
           // skip — the warnings accumulator already records failures.
           // (The orchestrator will surface the summary line via the
           // presenter's renderPreamble in the same render pass.)
+        }
+        if (!dryRun && this.device) {
+          assertSpaceAfterSweep({
+            mountPoint: this.device.mountPoint,
+            bytesNeeded: plan.estimatedSize,
+            preflight,
+          });
         }
       }
 
