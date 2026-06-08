@@ -942,6 +942,122 @@ describe('AC #11: --format csv with no orphans', () => {
   });
 });
 
+// ── Mass-storage CSV export (drift coverage, not part of TASK-307 ACs) ────
+//
+// The original CSV handling was wired only to the iPod path: the mass-
+// storage branch in `runDoctorDiagnostics` returned early before the CSV
+// guard, AND the iPod CSV guard looked up `id === 'orphan-files'` which
+// can't match a mass-storage report (which carries `orphan-files-mass-storage`).
+// Result: `podkit doctor -d echomini --format csv` printed nothing even when
+// the device had orphans. These tests pin the now-symmetric behaviour.
+
+describe('--format csv on a mass-storage device (echo-mini)', () => {
+  it('emits orphans from orphan-files-mass-storage with the same path,size CSV shape', async () => {
+    const tmpDevice = mkdtempSync(join(tmpdir(), 'podkit-doctor-ms-csv-'));
+    try {
+      const ctx = makeContext({ device: 'echo' });
+      ctx.config.devices = { echo: { type: 'echo-mini', path: tmpDevice } };
+      const { out, stdout } = makeOut('text');
+
+      const fakeCore = makeFakeCore({
+        report: {
+          checks: [
+            {
+              // Mass-storage variant — the iPod-side `orphan-files` check is
+              // filtered out by deviceType, so only this ID appears.
+              id: 'orphan-files-mass-storage',
+              name: 'Orphan Files (Mass Storage)',
+              status: 'warn',
+              summary: '2 orphan files',
+              repairable: true,
+              hasRepair: true,
+              repairOnly: false,
+              scope: 'database-health',
+              details: {
+                orphans: [
+                  { path: '/Music/Artist/Album/track1.flac', size: 1024 },
+                  { path: '/Music/Artist/Album/track, with comma.flac', size: 2048 },
+                ],
+              },
+            },
+          ],
+        },
+      });
+
+      await runWithContext(ctx, () =>
+        runAction(out, () =>
+          runDoctorDiagnostics(
+            tmpDevice,
+            { type: 'echo-mini', path: tmpDevice },
+            out,
+            { format: 'csv' },
+            {
+              loadCore: async () => fakeCore as typeof import('@podkit/core'),
+              getDeviceManager: () => fakeManager(),
+            }
+          )
+        )
+      );
+
+      const lines = stdout.lines();
+      expect(lines[0]).toBe('path,size');
+      expect(lines[1]).toBe('/Music/Artist/Album/track1.flac,1024');
+      // Comma-bearing path is CSV-escaped (shared escape helper).
+      expect(lines[2]).toBe('"/Music/Artist/Album/track, with comma.flac",2048');
+    } finally {
+      rmSync(tmpDevice, { recursive: true, force: true });
+    }
+  });
+
+  it('emits empty output when the mass-storage report has no orphans', async () => {
+    const tmpDevice = mkdtempSync(join(tmpdir(), 'podkit-doctor-ms-csv-empty-'));
+    try {
+      const ctx = makeContext({ device: 'echo' });
+      ctx.config.devices = { echo: { type: 'echo-mini', path: tmpDevice } };
+      const { out, stdout, exitCode } = makeOut('text');
+
+      const fakeCore = makeFakeCore({
+        report: {
+          checks: [
+            {
+              id: 'orphan-files-mass-storage',
+              name: 'Orphan Files (Mass Storage)',
+              status: 'pass',
+              summary: 'No orphan files',
+              repairable: false,
+              hasRepair: false,
+              repairOnly: false,
+              scope: 'database-health',
+              details: { orphans: [] },
+            },
+          ],
+        },
+      });
+
+      await runWithContext(ctx, () =>
+        runAction(out, () =>
+          runDoctorDiagnostics(
+            tmpDevice,
+            { type: 'echo-mini', path: tmpDevice },
+            out,
+            { format: 'csv' },
+            {
+              loadCore: async () => fakeCore as typeof import('@podkit/core'),
+              getDeviceManager: () => fakeManager(),
+            }
+          )
+        )
+      );
+
+      // No header on an empty list — symmetrical with the iPod path's AC #11.
+      expect(stdout.text()).toBe('');
+      expect(exitCode.get()).toBeUndefined();
+    } finally {
+      rmSync(tmpDevice, { recursive: true, force: true });
+    }
+  });
+});
+
 // ── AC #12: --json suppresses human text; stdout is exactly one JSON doc ───
 
 describe('AC #12: --json output is exactly one JSON document', () => {

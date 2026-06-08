@@ -553,6 +553,17 @@ export async function runDoctorDiagnostics(
       scopes,
     });
 
+    // CSV format: dump the orphan-file list and exit before the human-
+    // readable rendering. Symmetrical with the iPod path's CSV branch at
+    // the bottom of this function — extracted into emitOrphanCsv so both
+    // device-type code paths funnel through the same `details.orphans[]`
+    // shape regardless of whether the underlying check ID is
+    // `orphan-files` (iPod) or `orphan-files-mass-storage`.
+    if (options.format === 'csv') {
+      emitOrphanCsv(report, out);
+      return;
+    }
+
     const checksOutput: DoctorCheckOutput[] = report.checks.map((c) => ({
       id: c.id,
       name: c.name,
@@ -809,16 +820,7 @@ export async function runDoctorDiagnostics(
   // CSV format: dump orphan file list and exit
   if (options.format === 'csv') {
     if (report) {
-      const orphanCheck = report.checks.find((c) => c.id === 'orphan-files');
-      const orphans = (orphanCheck?.details as Record<string, unknown>)?.orphans as
-        | Array<{ path: string; size: number }>
-        | undefined;
-      if (orphans && orphans.length > 0) {
-        out.stdout('path,size');
-        for (const o of orphans) {
-          out.stdout(`${escapeCsvField(o.path)},${o.size}`);
-        }
-      }
+      emitOrphanCsv(report, out);
     }
     opened?.ipod?.close();
     return;
@@ -1823,4 +1825,37 @@ function escapeCsvField(value: string): string {
     return `"${value.replace(/"/g, '""')}"`;
   }
   return value;
+}
+
+/**
+ * Emit the orphan-file list from a diagnostic report as CSV.
+ *
+ * Walks both possible check IDs — iPod (`orphan-files`) and mass-storage
+ * (`orphan-files-mass-storage`) — so the CSV export works regardless of
+ * the device type that produced the report. Both checks expose the same
+ * `details.orphans: Array<{ path; size }>` shape so the row format is
+ * identical.
+ *
+ * Emits a header row when at least one orphan is present; otherwise emits
+ * nothing (caller's responsibility to leave stdout empty rather than
+ * print a lone header). This matches the pre-fix iPod-only behaviour
+ * that the doctor-flag-matrix tests pin.
+ */
+function emitOrphanCsv(
+  report: { checks: ReadonlyArray<{ id: string; details?: Record<string, unknown> | undefined }> },
+  out: OutputContext
+): void {
+  // Try iPod variant first, then mass-storage. Only one check fires per
+  // device type so the second find() is cheap and never returns a duplicate.
+  const orphanCheck =
+    report.checks.find((c) => c.id === 'orphan-files') ??
+    report.checks.find((c) => c.id === 'orphan-files-mass-storage');
+  const orphans = (orphanCheck?.details as Record<string, unknown> | undefined)?.orphans as
+    | Array<{ path: string; size: number }>
+    | undefined;
+  if (!orphans || orphans.length === 0) return;
+  out.stdout('path,size');
+  for (const o of orphans) {
+    out.stdout(`${escapeCsvField(o.path)},${o.size}`);
+  }
 }
