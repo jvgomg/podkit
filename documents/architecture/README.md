@@ -114,6 +114,18 @@ readers can navigate them with one mental model:
 `sync/error-handling.md` is the canonical example. When in doubt, copy
 its skeleton.
 
+### Cross-doc anchors
+
+Em-dash characters in markdown headings produce **double-dash** anchors when
+GitHub or Starlight auto-generates them — e.g. the heading
+`### Free-space contract — plan-time` becomes
+`#free-space-contract--plan-time` (two dashes around the em-dash, not one).
+When linking to such headings, use `#section--name`, not `#section-name`;
+the single-dash form silently 404s. Existing examples to grep from:
+`sync/planning.md` → `#free-space-contract--plan-time`,
+`sync/save-transactions.md` → `#free-space-contract--execute-time`,
+`sync/error-handling.md` → `#2-hard-failures--categorizedsyncerror`.
+
 ---
 
 ## Goals and migration plan
