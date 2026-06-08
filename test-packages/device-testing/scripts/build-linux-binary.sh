@@ -110,7 +110,7 @@ limactl shell --workdir "$VM_SRC" "$VM_NAME" bash -c '
   echo "==> building TS packages..."
   bunx turbo run build --filter=!@podkit/docs-site --filter=!@podkit/virtual-ipod-app --filter=!@podkit/ipod-web --filter=!@podkit/demo
 
-  echo "==> compiling podkit binary..."
+  echo "==> compiling podkit binary (production)..."
   bash packages/podkit-cli/scripts/compile.sh
 
   echo "==> verifying podkit binary..."
@@ -120,9 +120,20 @@ limactl shell --workdir "$VM_SRC" "$VM_NAME" bash -c '
     echo "ERROR: podkit binary has unexpected dynamic dependencies." >&2
     exit 1
   fi
+
+  # Debug binary — same source, hooks active. Tests that need the
+  # devPause(key) primitive (see documents/architecture/dev-builds.md)
+  # opt into bin/podkit-debug via the e2e cli runner. Production
+  # binary above is unaffected — the `--define __PODKIT_DEV_HOOKS__=false`
+  # path in compile.sh tree-shakes the hook bodies away there.
+  echo "==> compiling podkit binary (debug)..."
+  PODKIT_DEV_HOOKS=1 bash packages/podkit-cli/scripts/compile.sh
+
+  echo "==> verifying podkit-debug binary..."
+  packages/podkit-cli/bin/podkit-debug --version
 '
 
-# Copy the compiled binary from the VM-local build tree back to the host.
+# Copy the compiled binaries from the VM-local build tree back to the host.
 # The libgpod-node prebuild .node file is NOT copied back — it was written
 # to the host by `build-linux-prebuild.sh` (the prerequisite turbo task)
 # before the rsync above carried it into the VM-local checkout, so the host
@@ -133,3 +144,9 @@ log "copying ${VM_NAME}:${VM_BIN_DIR}/podkit → ${DEST}..."
 limactl copy "${VM_NAME}:${VM_BIN_DIR}/podkit" "$DEST"
 chmod +x "$DEST"
 log "produced $DEST"
+
+DEBUG_DEST="$CLI_BIN_DIR/podkit-debug-linux-${NODE_ARCH}"
+log "copying ${VM_NAME}:${VM_BIN_DIR}/podkit-debug → ${DEBUG_DEST}..."
+limactl copy "${VM_NAME}:${VM_BIN_DIR}/podkit-debug" "$DEBUG_DEST"
+chmod +x "$DEBUG_DEST"
+log "produced $DEBUG_DEST"

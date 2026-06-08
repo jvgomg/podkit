@@ -66,3 +66,39 @@ export const devPause: (key: string) => Promise<void> =
         }
       }
     : async () => {};
+
+/**
+ * Synchronous variant of {@link devPause} for use inside sync code paths.
+ *
+ * Same key-match + tree-shake semantics as {@link devPause}, but blocks the
+ * thread synchronously via `Atomics.wait` on a `SharedArrayBuffer` futex.
+ * Tests SIGKILL the process to release the block; there is no resume
+ * mechanism (matching the async variant).
+ *
+ * **When to use:** the call site is a sync interface contract that cannot
+ * be made async without a cascading refactor (e.g. `DeviceTrack.copyFile`,
+ * which is invoked across iPod + mass-storage adapters). Prefer
+ * {@link devPause} in async paths — the async form costs nothing and the
+ * Atomics-based block is heavier-handed.
+ *
+ * Atomics.wait + a one-cell `SharedArrayBuffer` is the JavaScript-native
+ * way to park a thread indefinitely without busy-spinning. The Bun and
+ * Node.js runtimes both implement this on top of a real OS futex, so the
+ * paused process consumes no CPU until the SIGKILL arrives.
+ *
+ * Same compile-time-strip story as the async variant: the bundler folds
+ * the inline `__PODKIT_DEV_HOOKS__` guard to `false` in production builds
+ * and tree-shakes both the active arrow and the `SharedArrayBuffer`
+ * allocation away. The `dev-hooks-strip.test.ts` smoke test pins this.
+ */
+export const devPauseSync: (key: string) => void =
+  typeof __PODKIT_DEV_HOOKS__ !== 'undefined' && __PODKIT_DEV_HOOKS__
+    ? (key) => {
+        if (process.env.PODKIT_DEV_PAUSE_KEY === key) {
+          // Park the thread on a futex that is never woken. SIGKILL is the
+          // only way out — matches the async variant's "no resume" contract.
+          const cell = new Int32Array(new SharedArrayBuffer(4));
+          Atomics.wait(cell, 0, 0);
+        }
+      }
+    : () => {};

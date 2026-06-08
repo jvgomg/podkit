@@ -239,6 +239,7 @@
         "src/baseline-hash.ts",
         "package.json",
         "$TURBO_ROOT$/packages/podkit-cli/bin/podkit-linux-*",
+        "$TURBO_ROOT$/packages/podkit-cli/bin/podkit-debug-linux-*",
         "$TURBO_ROOT$/test-packages/device-testing-daemon/dist/dummy-hcd-daemon-linux-*",
         "$TURBO_ROOT$/test-packages/gpod-testing/bin/gpod-tool-linux-*",
         "$TURBO_ROOT$/test-packages/device-testing-daemon/dummy-hcd-daemon@.service"
@@ -324,7 +325,10 @@
         "$TURBO_ROOT$/bun.lock",
         "scripts/build-linux-binary.sh"
       ],
-      "outputs": ["$TURBO_ROOT$/packages/podkit-cli/bin/podkit-linux-*"]
+      "outputs": [
+        "$TURBO_ROOT$/packages/podkit-cli/bin/podkit-linux-*",
+        "$TURBO_ROOT$/packages/podkit-cli/bin/podkit-debug-linux-*"
+      ]
     },
     "@podkit/gpod-testing#build:linux-binary": {
       "dependsOn": [],

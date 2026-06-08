@@ -9,6 +9,8 @@
 
 import * as fs from 'node:fs';
 
+import { devPauseSync } from '../dev/hooks.js';
+
 /** Suffix for in-flight writes. Visible to debris-cleanup tooling. */
 export const PODKIT_TEMP_SUFFIX = '.podkit-tmp';
 
@@ -16,11 +18,24 @@ export const PODKIT_TEMP_SUFFIX = '.podkit-tmp';
  * Copy `src` to `dest` atomically (temp + rename).
  *
  * On error the temp file is best-effort cleaned up before rethrowing.
+ *
+ * @param pauseKey Optional dev-hook key. When set AND the build is the
+ *                 debug build AND the env var `PODKIT_DEV_PAUSE_KEY`
+ *                 matches this key, the call blocks indefinitely AFTER
+ *                 the tmp file lands on disk but BEFORE the rename — the
+ *                 test SIGKILLs the process to leave `.podkit-tmp`
+ *                 debris on disk for the next sync's sweep to surface.
+ *                 No-op in production builds (compile-time stripped) and
+ *                 when the env var is unset/mismatched.
  */
-export function atomicCopyFile(src: string, dest: string): void {
+export function atomicCopyFile(src: string, dest: string, pauseKey?: string): void {
   const tmp = dest + PODKIT_TEMP_SUFFIX;
   try {
     fs.copyFileSync(src, tmp);
+    if (pauseKey !== undefined) {
+      // Block here in debug-build-with-matching-env-var; otherwise no-op.
+      devPauseSync(pauseKey);
+    }
     fs.renameSync(tmp, dest);
   } catch (err) {
     try {

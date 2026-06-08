@@ -1,10 +1,10 @@
 ---
 id: TASK-400
 title: e2e-vm SIGKILL round-trip fixture for pre-sync sweep
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-06-07 16:00'
-updated_date: '2026-06-07 16:55'
+updated_date: '2026-06-08 00:04'
 labels:
   - testing
   - e2e-vm
@@ -61,13 +61,13 @@ TASK-398 unit coverage exercises every code path the e2e-vm fixture would exerci
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 New e2e-vm test file pre-sync-sweep.e2e.test.ts
-- [ ] #2 SIGKILL round-trip (mass-storage): debris on disk → next sync surfaces cleanup line + final state clean
-- [ ] #3 SIGKILL round-trip (iPod): same pattern against iPod persona (manual-plant variant until TASK-376 lands; promote to real SIGKILL after)
-- [ ] #4 transcode-tmp round-trip: orphaned podkit-transcode-* with dead `.owner` reaped + reported in cleanup line (requires TASK-402)
-- [ ] #5 Concurrent-process safety: live podkit holding pre-rename-transcode pause is NOT reaped by sibling sweep (test pins safety floor via TASK-402's PID-liveness probe)
-- [ ] #6 Tests use bin/podkit-debug (TASK-405) for the SIGKILL scenarios; production binary used for assertion runs
-- [ ] #7 Tests run under `mise run test:linux` + `bun run test:vm` with no flakes across 5 runs
+- [x] #1 New e2e-vm test file pre-sync-sweep.e2e.test.ts
+- [x] #2 SIGKILL round-trip (mass-storage): debris on disk → next sync surfaces cleanup line + final state clean
+- [x] #3 SIGKILL round-trip (iPod): same pattern against iPod persona (manual-plant variant until TASK-376 lands; promote to real SIGKILL after)
+- [x] #4 transcode-tmp round-trip: orphaned podkit-transcode-* with dead `.owner` reaped + reported in cleanup line (requires TASK-402)
+- [x] #5 Concurrent-process safety: live podkit holding pre-rename-transcode pause is NOT reaped by sibling sweep (test pins safety floor via TASK-402's PID-liveness probe)
+- [x] #6 Tests use bin/podkit-debug (TASK-405) for the SIGKILL scenarios; production binary used for assertion runs
+- [x] #7 Tests run under `mise run test:linux` + `bun run test:vm` with no flakes across 5 runs
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -98,3 +98,31 @@ TASK-398 unit coverage exercises every code path the e2e-vm fixture would exerci
 - TASK-402 (PID-file `.owner` on transcode dirs) — blocker for AC #4/#5 (walker logic changes).
 - TASK-376 (iPod portable tag-writes) — soft blocker for AC #3 fidelity; recommended workaround above.
 <!-- SECTION:PLAN:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+724-line `test-packages/e2e-vm-tests/src/pre-sync-sweep.e2e.test.ts` with four scenarios: mass-storage SIGKILL round-trip, iPod synthetic-debris (until TASK-376 lands), transcode-tmp SIGKILL round-trip, concurrent-process safety.
+
+**5× consecutive runs, zero flakes** (4 tests per run, 12.9–13.1s each).
+
+Pause-key insertion sites:
+- `pre-rename-track` → `packages/podkit-core/src/utils/atomic-fs.ts:33` (between copyFileSync + renameSync), wired by `mass-storage-adapter.ts:413` via new optional `pauseKey?: string` param on `atomicCopyFile`. Relocate-path caller deliberately opts out.
+- `pre-rename-transcode` → `pipeline.ts:1653` (`prepareTranscode` after FFmpeg, before rename) AND `pipeline.ts:1762` (`prepareOptimizedCopy` same pattern). Both paths so source format (FLAC vs MP3) doesn't matter.
+
+**New primitive: `devPauseSync(key)`** — sync variant of `devPause` via `Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0)`. Required because `atomicCopyFile` → `DeviceTrack.copyFile` is a sync contract across iPod + mass-storage adapters; async-ifying would cascade. Same `__PODKIT_DEV_HOOKS__` compile-time-strip semantics. Futex-based park — no busy-spin, no CPU consumption while blocked. SIGKILL only exit.
+
+Lima harness extended:
+- `build-linux-binary.sh` compiles both `bin/podkit` + `bin/podkit-debug` in same builder-VM run
+- `vm-install.ts` + `harness.ts` ship debug binary best-effort (skip-with-log if missing)
+- New `resolveDefaultPodkitDebugBinary(env)` helper + `DEFAULT_PODKIT_DEBUG_VM_PATH = '/usr/local/bin/podkit-debug'`
+- turbo.json `build:linux-binary` outputs + `vm:install` inputs include debug binary
+
+SIGKILL synchronisation: host spawns `limactl shell ... PODKIT_DEV_PAUSE_KEY=<key> /usr/local/bin/podkit-debug sync ...`, polls (50ms interval, 30s deadline) for the expected debris pattern, then `pkill -KILL -f` in-VM. Asserts debris still on disk after kill (guards race), then production-binary `sync --dry-run` for cleanup-line assertion + production `sync` for final state.
+
+iPod scenario uses real `gpod-tool init` (sync.ts gates the sweep on IpodDatabase.open succeeding, line 945, before line 1156 — bare mkdir wouldn't trigger).
+
+**Known carve-outs:**
+- iPod synthetic-debris stays until TASK-376 wires portable tag-writes through the shared atomic helper. Test name + comment make this explicit.
+- Pause-key string literals (`"pre-rename-track"`, `"pre-rename-transcode"`) survive in production bundle as call-site args (devPauseSync collapses to `() => {}` but arg strings not pure-marked). Smoke test intentionally permits — contextual labels, not hook-infra leaks.
+<!-- SECTION:FINAL_SUMMARY:END -->

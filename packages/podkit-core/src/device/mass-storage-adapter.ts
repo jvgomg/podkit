@@ -400,7 +400,14 @@ export class MassStorageTrack implements DeviceTrack {
     // sync is killed mid-copy, the destination is either absent or the
     // previous version — never a partial file at the final path that the
     // manifest will silently mark as managed.
-    atomicCopyFile(sourcePath, absolutePath);
+    //
+    // The `'pre-rename-track'` pause key is a test seam — see
+    // `documents/architecture/dev-builds.md`. In a debug build invoked
+    // with `PODKIT_DEV_PAUSE_KEY=pre-rename-track`, the call blocks
+    // forever after the `.podkit-tmp` lands but before the rename, so
+    // e2e tests can SIGKILL the sync and assert the next sync's sweep
+    // cleans the debris. No-op in production builds (tree-shaken).
+    atomicCopyFile(sourcePath, absolutePath, 'pre-rename-track');
 
     // Update size from the copied file
     const stats = fs.statSync(absolutePath);

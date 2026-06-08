@@ -91,6 +91,7 @@ export {
   transferBinary,
   transferGpodTool,
   DEFAULT_PODKIT_VM_PATH,
+  DEFAULT_PODKIT_DEBUG_VM_PATH,
   DEFAULT_GPOD_TOOL_VM_PATH,
 } from './runners/lima-test-vm-binary.js';
 
@@ -129,6 +130,7 @@ export {
   stopDaemon,
   instanceStatus,
   resolveDefaultPodkitBinary,
+  resolveDefaultPodkitDebugBinary,
   resolveDefaultDummyHcdDaemonBinary,
   resolveDefaultGpodToolBinary,
   LIMA_DEVICE_HARNESS_VM_NAME,

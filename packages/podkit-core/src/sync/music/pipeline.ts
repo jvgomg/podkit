@@ -35,6 +35,7 @@ import { spawn } from 'node:child_process';
 
 import { PODKIT_TEMP_SUFFIX } from '../../utils/atomic-fs.js';
 import { getOwnIdentity, writeOwnership, type PidFileEntry } from '../../lib/pid-file.js';
+import { devPause } from '../../dev/hooks.js';
 
 import { AsyncQueue } from '../../utils/async-queue.js';
 import { streamToTempFile, cleanupTempFile } from '../../utils/stream.js';
@@ -1645,6 +1646,14 @@ export class MusicPipeline implements SyncExecutor {
       artworkResize: ctx.artworkResize,
       replayGain: this.buildReplayGainOption(operation.source, ctx),
     });
+    // Test seam: in a debug build invoked with
+    // `PODKIT_DEV_PAUSE_KEY=pre-rename-transcode`, this blocks forever
+    // after the transcoded `.podkit-tmp` lands but before the move-out
+    // rename, so e2e tests can SIGKILL the sync and assert the next
+    // sync's sweep reaps the orphaned `podkit-transcode-<uuid>/`
+    // scratch dir. No-op in production (compile-time stripped). See
+    // `documents/architecture/dev-builds.md`.
+    await devPause('pre-rename-transcode');
     await rename(tmpOutputPath, outputPath);
 
     return {
@@ -1745,6 +1754,11 @@ export class MusicPipeline implements SyncExecutor {
       replayGain: this.buildReplayGainOption(source, ctx),
     });
     await this.runFFmpeg(args, signal);
+    // Same `pre-rename-transcode` seam as prepareTranscode above —
+    // covers the optimized-copy path so e2e tests don't need to pick
+    // between lossless-vs-compatible-lossy source formats to trigger
+    // the pause.
+    await devPause('pre-rename-transcode');
     await rename(tmpOutputPath, outputPath);
 
     // Get output file size

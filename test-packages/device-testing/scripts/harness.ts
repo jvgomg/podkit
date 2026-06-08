@@ -35,6 +35,7 @@ import {
   LIMA_DEVICE_HARNESS_VM_NAME,
   DEFAULT_DUMMY_HCD_DAEMON_VM_PATH,
   resolveDefaultPodkitBinary,
+  resolveDefaultPodkitDebugBinary,
   resolveDefaultDummyHcdDaemonBinary,
   resolveDefaultGpodToolBinary,
 } from '../src/runners/lima-test-vm.js';
@@ -42,6 +43,7 @@ import {
   transferBinary,
   transferGpodTool,
   DEFAULT_PODKIT_VM_PATH,
+  DEFAULT_PODKIT_DEBUG_VM_PATH,
   DEFAULT_GPOD_TOOL_VM_PATH,
 } from '../src/runners/lima-test-vm-binary.js';
 import {
@@ -420,6 +422,32 @@ async function cmdInstall(): Promise<number> {
       ? `  skipped — sha256 matches (${podkitResult.hostSha256.slice(0, 12)}...)`
       : `  installed (sha256=${podkitResult.hostSha256.slice(0, 12)}...)`
   );
+
+  // 2b. podkit-debug binary — best-effort. Ships side-by-side with the
+  //     production binary for e2e tests that need devPause(key) (see
+  //     documents/architecture/dev-builds.md). Treat as optional so
+  //     older builders that don't yet produce it stay usable.
+  const podkitDebugPath = resolveDefaultPodkitDebugBinary();
+  if (fs.existsSync(podkitDebugPath)) {
+    console.log(
+      `[harness:install] transferring podkit-debug binary → ${VM}:${DEFAULT_PODKIT_DEBUG_VM_PATH}`
+    );
+    const podkitDebugResult = await transferBinary({
+      vmName: VM,
+      binaryPath: podkitDebugPath,
+      vmPath: DEFAULT_PODKIT_DEBUG_VM_PATH,
+    });
+    console.log(
+      podkitDebugResult.skipped
+        ? `  skipped — sha256 matches (${podkitDebugResult.hostSha256.slice(0, 12)}...)`
+        : `  installed (sha256=${podkitDebugResult.hostSha256.slice(0, 12)}...)`
+    );
+  } else {
+    console.log(
+      `[harness:install] podkit-debug binary missing at ${podkitDebugPath} — skipping ` +
+        '(rebuild via `bunx turbo run @podkit/device-testing#build:linux-binary --force`).'
+    );
+  }
 
   // 3. dummy-hcd-daemon — also fatal if missing (the build step claimed
   //    success so the binary should be on disk).

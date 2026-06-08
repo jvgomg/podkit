@@ -2715,3 +2715,4 @@ export const DOCS_URLS = {
 // Dev hooks — no-op stub in the demo. Real consumers go through the
 // compile-time-stripped surface in packages/podkit-core/src/dev/hooks.ts.
 export const devPause: (key: string) => Promise<void> = async () => {};
+export const devPauseSync: (key: string) => void = () => {};

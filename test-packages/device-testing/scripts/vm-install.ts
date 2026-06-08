@@ -39,6 +39,7 @@ import {
   LIMA_DEVICE_HARNESS_VM_NAME,
   DEFAULT_DUMMY_HCD_DAEMON_VM_PATH,
   resolveDefaultPodkitBinary,
+  resolveDefaultPodkitDebugBinary,
   resolveDefaultDummyHcdDaemonBinary,
   resolveDefaultGpodToolBinary,
 } from '../src/runners/lima-test-vm.js';
@@ -46,6 +47,7 @@ import {
   transferBinary,
   transferGpodTool,
   DEFAULT_PODKIT_VM_PATH,
+  DEFAULT_PODKIT_DEBUG_VM_PATH,
   DEFAULT_GPOD_TOOL_VM_PATH,
 } from '../src/runners/lima-test-vm-binary.js';
 import {
@@ -61,6 +63,7 @@ const MARKER_PATH = path.join(PACKAGE_ROOT, '.turbo', 'vm-install-marker');
 interface Summary {
   vmName: string;
   podkitSha: string;
+  podkitDebugSha: string | null;
   daemonSha: string | null;
   gpodToolSha: string;
   unitSha: string;
@@ -106,6 +109,35 @@ async function main(): Promise<number> {
       ` (${podkitResult.skipped ? 'skipped — sha256 matches' : 'installed'}; ` +
       `sha256=${podkitResult.hostSha256.slice(0, 12)}...)\n`
   );
+
+  // 1b. Podkit-debug binary — best-effort. The
+  //     `@podkit/device-testing#build:linux-binary` task now produces both
+  //     bin/podkit-linux-* AND bin/podkit-debug-linux-*. Treat the debug
+  //     artefact as optional so an older builder VM (or a partial cache
+  //     hit from before this change landed) doesn't break vm:install.
+  //     Tests that genuinely need the debug binary (e.g. the SIGKILL
+  //     round-trip in pre-sync-sweep.e2e.test.ts) preflight its
+  //     existence and skip with a clear message when absent.
+  const podkitDebugPath = resolveDefaultPodkitDebugBinary();
+  let podkitDebugSha: string | null = null;
+  if (fs.existsSync(podkitDebugPath)) {
+    const podkitDebugResult = await transferBinary({
+      vmName,
+      binaryPath: podkitDebugPath,
+      vmPath: DEFAULT_PODKIT_DEBUG_VM_PATH,
+    });
+    podkitDebugSha = podkitDebugResult.hostSha256;
+    process.stdout.write(
+      `[vm:install] podkit-debug → ${vmName}:${DEFAULT_PODKIT_DEBUG_VM_PATH}` +
+        ` (${podkitDebugResult.skipped ? 'skipped — sha256 matches' : 'installed'}; ` +
+        `sha256=${podkitDebugResult.hostSha256.slice(0, 12)}...)\n`
+    );
+  } else {
+    process.stdout.write(
+      `[vm:install] podkit-debug binary missing at ${podkitDebugPath} — ` +
+        `skipping (rebuild via \`bunx turbo run @podkit/device-testing#build:linux-binary --force\`).\n`
+    );
+  }
 
   // 2. gpod-tool — REQUIRED. Same reasoning as podkit.
   const gpodToolPath = resolveDefaultGpodToolBinary();
@@ -164,6 +196,7 @@ async function main(): Promise<number> {
   const summary: Summary = {
     vmName,
     podkitSha: podkitResult.hostSha256,
+    podkitDebugSha,
     daemonSha,
     gpodToolSha: gpodResult.hostSha256,
     unitSha: unitResult.hostSha256,

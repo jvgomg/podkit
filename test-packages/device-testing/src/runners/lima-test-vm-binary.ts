@@ -33,6 +33,14 @@ import { limactlError, runLimactl, shellQuote } from './lima-limactl.js';
 
 /** Default destination inside the VM for the podkit binary. */
 export const DEFAULT_PODKIT_VM_PATH = '/usr/local/bin/podkit';
+/**
+ * Default destination inside the VM for the podkit-debug binary
+ * (`__PODKIT_DEV_HOOKS__=true`, hooks active). E2E tests that need to
+ * pause podkit mid-flight (e.g. for SIGKILL round-trip coverage) invoke
+ * this path explicitly via the e2e cli runner's `binary: 'debug'`
+ * option. See `documents/architecture/dev-builds.md`.
+ */
+export const DEFAULT_PODKIT_DEBUG_VM_PATH = '/usr/local/bin/podkit-debug';
 /** Default destination inside the VM for the gpod-tool helper. */
 export const DEFAULT_GPOD_TOOL_VM_PATH = '/usr/local/bin/gpod-tool';
 
