@@ -1096,13 +1096,15 @@ device = "echomini"
       expect(details1.orphanCount).toBe(1);
       expect(details1.wastedBytes as number).toBe(2048);
 
-      // Step 4: Run podkit doctor --repair to clean up the orphan
+      // Step 4: Run podkit doctor --repair to clean up the orphan.
+      // The public --repair ID is 'orphan-files' regardless of device type;
+      // the CLI dispatches to the mass-storage variant internally.
       const { result: repairResult, json: repairJson } = await runCliJson<RepairOutput>([
         '--config',
         configPath,
         'doctor',
         '--repair',
-        'orphan-files-mass-storage',
+        'orphan-files',
         '--device',
         'echomini',
         '--json',
