@@ -7,8 +7,10 @@
  *
  *   1. Whether the planner's pre-flight (free-space check, etc.) intercepts
  *      the failure BEFORE `save()` runs. When it does, the sync exits with
- *      `{success: false, error: "..."}` and NO `errors[]` array — the typed
- *      save() error is unreachable for this cell.
+ *      `{success: false, error: "..."}` and a synthetic `errors[]` entry
+ *      (post-TASK-378 AC #8: e.g. `class: 'NotEnoughSpacePlanTime'`) —
+ *      the typed save() error path is unreachable for this cell, but the
+ *      envelope still carries structured detail.
  *   2. Typed error class thrown out of `save()` (or `null` when the planner
  *      pre-flight intercepted, or when the failure surfaces only as a
  *      categorized executor error).
@@ -363,10 +365,15 @@ export const SAVE_FAIL_CELLS: readonly SaveFailCell[] = generateFanOut();
  *
  * ENOSPC special case: the planner-level pre-flight free-space check
  * intercepts BEFORE `save()` can fire its typed errors — see
- * `save-transactions.md` and TASK-378 for the broader free-space-handling
- * audit. Until that audit lands, the matrix pins the current behaviour
- * (envelope-only `error: "Not enough space..."`, no `errors[]`) rather
- * than predicting the typed throw path that is unreachable today.
+ * `documents/architecture/sync/planning.md` "Free-space contract —
+ * plan-time" + `save-transactions.md` "Free-space contract — execute-
+ * time". This cell pins the plan-time envelope path; the ADR-018
+ * post-sweep recompute path (sweep partial-fail + still insufficient)
+ * is structurally not reachable from a device-mount-near-full mount
+ * because the plan-time gate fires first. The post-sweep recompute
+ * cell needs its own SystemState variant (mount sized to fit estimate
+ * + a fault that makes the sweep partially recoverable) — tracked as
+ * follow-up work.
  */
 export function predictSaveFail(cell: SaveFailCell): SaveFailExpected {
   if (cell.failureMode === 'enospc') {
@@ -386,7 +393,7 @@ function predictEnospc(cell: SaveFailCell): SaveFailExpected {
     errorMessageMatches: /^Not enough space\. Need [0-9.]+ [KMGT]?B, have [0-9.]+ [KMGT]?B$/,
     failedTrackCount: 0,
     portableTagWarn: false,
-    reason: `${cell.shape} × ${cell.sourceFormat} × ${cell.codecConfig} × ${cell.transferMode} × ENOSPC — planner pre-flight intercepts ENOSPC before save() can fire its typed errors (see save-transactions.md and TASK-378). Sync exits with envelope-level "Not enough space..." and no errors[] array; post-cleanup rescan re-queues the unwritten add ops.`,
+    reason: `${cell.shape} × ${cell.sourceFormat} × ${cell.codecConfig} × ${cell.transferMode} × ENOSPC — planner pre-flight intercepts ENOSPC before save() can fire its typed errors (see planning.md + save-transactions.md "Free-space contract" subsections). Sync exits with envelope-level "Not enough space..." plus a synthetic NotEnoughSpacePlanTime entry in errors[] (TASK-378 AC #8); post-cleanup rescan re-queues the unwritten add ops.`,
   };
 }
 

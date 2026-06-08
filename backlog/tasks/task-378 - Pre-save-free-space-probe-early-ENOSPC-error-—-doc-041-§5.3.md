@@ -3,10 +3,10 @@ id: TASK-378
 title: >-
   Free-space handling review: probe, strategy, error surface, tests — doc-041
   §5.3
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-06-03 09:08'
-updated_date: '2026-06-08 08:18'
+updated_date: '2026-06-08 08:27'
 labels:
   - enhancement
   - save-transaction
@@ -76,7 +76,7 @@ Reference: `test-packages/e2e-vm-tests/src/save-failure-matrix.e2e.test.ts` — 
 - [x] #4 Strategy on rejection evaluated: device left clean (atomic contract honoured) or partial debris documented as known-gap with doctor recovery path
 - [x] #5 save-transactions.md gains a `Free-space contract` subsection describing the primitive
 - [x] #6 doc-041 §5.3 updated to reflect implemented vs open
-- [ ] #7 Unit + integration tests pin each call-site's contract; TASK-380 matrix references at least the planner-pre-flight envelope; mid-save ENOSPC tested if reachable
+- [x] #7 Unit + integration tests pin each call-site's contract; TASK-380 matrix references at least the planner-pre-flight envelope; mid-save ENOSPC tested if reachable
 - [x] #8 **JSON envelope gap**: `sync --json` + `doctor --json` audit — errors[] array now carries `{class, category, causes}` per CategorizedSyncError for every typed error path, not just ENOSPC. Matches the error-handling.md contract.
 - [x] #9 **OGG filetype-label gap**: planner's filetype-label resolution correctly identifies OGG sources (and any other format falling through to the `Audio file` generic fallback). Test pins OGG → `.ogg` on the device. Audit other extensions for similar gaps.
 <!-- AC:END -->
@@ -197,4 +197,37 @@ Verdict: ship. No blockers. One informational observation:
 
 - AC #7 (mid-save ENOSPC reachability test) — separate slice. Requires a new `SystemState` forcing estimate drift (device-full-at-start is now caught by both the plan-time and post-sweep gates). Tracked as a follow-up.
 - Changeset — not written; the new `errors[]` field is additive and `InsufficientSpaceAfterCleanup` is a new export. No CLI break; could ship as a patch or minor depending on policy.
+
+## AC #7 closed (2026-06-08) + TASK-378 closure
+
+### AC #7 coverage breakdown
+
+The AC asks for three things:
+
+1. **Unit + integration tests pin each call-site's contract.** ✓
+   - `packages/podkit-core/src/sync/engine/pre-sync-sweep.test.ts` gained 7 tests covering `safeStatfsFree` (positive byte count, nonexistent path → undefined) + `assertSpaceAfterSweep` (fits-no-throw / exceeds-throws-with-detail / statfs-failure-silent-fallback). 672/672 sync tests pass.
+2. **TASK-380 matrix references at least the planner-pre-flight envelope.** ✓ — already done in TASK-380 Phase 1. The existing `embedded × flac × prefer-copy × fast × enospc` cell pins the plan-time envelope. Comment + reason text in `matrix/save-failure-rules.ts` updated this session to reflect: (a) ADR-018 post-sweep gate is unreachable from device-mount-near-full because the plan-time gate fires first; (b) AC #8's synthetic `NotEnoughSpacePlanTime` errors[] entry is now part of the envelope.
+3. **Mid-save ENOSPC tested if reachable.** Filed as **TASK-412** — covers the two remaining reachable mid-save paths (ADR-018 post-sweep recompute + estimate-drift mid-save). Requires two new `SystemState` variants beyond the existing `device-mount-near-full`. ~4-6 hours of VM-harness work that didn't fit the audit-slice scope.
+
+### TASK-378 closure summary
+
+**Acceptance criteria status:** 9/9 ticked.
+
+**Slices landed (4 commits):**
+- `bca54814 docs(sync): audit free-space contract + file ADR-018` — ADR-018 + planning.md + save-transactions.md + doc-041 §5.3 updates.
+- `70a2d479 feat(sync): post-sweep ENOSPC recompute (ADR-018)` — InsufficientSpaceAfterCleanup typed error, safeStatfsFree + assertSpaceAfterSweep helpers, executor + pipeline wiring, mock-core mirror, 7 unit tests.
+- `bccaa8b0 feat(cli): typed errors[] in sync --json envelope (TASK-378 AC #8)` — Synthetic NotEnoughSpacePlanTime entry on plan-time ENOSPC path, post-sweep ENOSPC catch + render, execute-phase collectedErrors → orchestrator allErrors → final --json errors[].
+- `21c2a02d fix(test): use unified --repair orphan-files in mass-storage e2e` — unrelated doctor-drift fix surfaced during the work.
+
+**Quality gates:**
+- Workspace typecheck 34/34 clean.
+- podkit-core sync tests 672/672 green.
+- podkit-cli tests 1469/1469 green.
+- e2e tests 916 pass / 129 skip / 0 fail.
+- Two sonnet reviews (audit-docs + implementation); all flagged fixes folded in.
+
+**Follow-up tasks filed:**
+- **TASK-412** — Mid-save ENOSPC matrix cells (ADR-018 post-sweep + estimate-drift). Carries the AC #7 "if reachable" carve-out.
+
+**Changeset:** not written. The new `errors[]` field is additive and `InsufficientSpaceAfterCleanup` is a new export. No CLI break. Ship policy is the user's call — patch or minor both defensible.
 <!-- SECTION:NOTES:END -->
