@@ -55,6 +55,7 @@ export const DoctorErrorCodes = {
   ADAPTER_CONNECT_FAILED: 'ADAPTER_CONNECT_FAILED',
   SCOPE_CONFLICT: 'SCOPE_CONFLICT',
   LOCK_HELD: 'LOCK_HELD',
+  LOCK_UNAVAILABLE: 'LOCK_UNAVAILABLE',
 } as const;
 
 /**
@@ -1519,6 +1520,23 @@ export async function withDeviceWriteLock<T>(
         details: { device: devicePath, lockPath: err.lockPath },
         printText: (o) => {
           o.error(err.message);
+        },
+      });
+    }
+    if (err instanceof core.LockUnavailableError) {
+      // FS-level write refusal on the lock path itself — mirror sync.ts.
+      // Exit code 1 (generic) is intentional: contention exit code 4 is
+      // reserved for cases where another process IS using the device.
+      throw new CliError({
+        message: err.message,
+        code: DoctorErrorCodes.LOCK_UNAVAILABLE,
+        details: { device: devicePath, lockPath: err.lockPath, errno: err.code },
+        printText: (o) => {
+          o.error(`Cannot acquire sync lock at ${err.lockPath} (${err.code}).`);
+          o.error(
+            'The directory containing the lock file is not writable. ' +
+              'Check permissions and that the device is mounted read-write.'
+          );
         },
       });
     }

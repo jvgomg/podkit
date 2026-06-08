@@ -79,6 +79,7 @@ export const SyncErrorCodes = {
   DEVICE_UNSUPPORTED: 'DEVICE_UNSUPPORTED',
   NO_COMPATIBLE_CODEC: 'NO_COMPATIBLE_CODEC',
   LOCK_HELD: 'LOCK_HELD',
+  LOCK_UNAVAILABLE: 'LOCK_UNAVAILABLE',
 } as const;
 export type SyncErrorCode = (typeof SyncErrorCodes)[keyof typeof SyncErrorCodes];
 
@@ -1035,6 +1036,25 @@ export async function runSync(
           details: { device: devicePath, lockPath: err.lockPath },
           printText: (o) => {
             o.error(err.message);
+          },
+        });
+      }
+      if (err instanceof core.LockUnavailableError) {
+        // FS-level write refusal on the lock path itself (e.g.
+        // `.podkit/` chmod 0555, read-only mount, ext4 +i). Surface as
+        // a typed error so the matrix observes errorCategory + JS-stack
+        // hygiene rather than an uncaught EACCES propagating past the
+        // sync orchestrator.
+        throw new CliError({
+          message: err.message,
+          code: SyncErrorCodes.LOCK_UNAVAILABLE,
+          details: { device: devicePath, lockPath: err.lockPath, errno: err.code },
+          printText: (o) => {
+            o.error(`Cannot acquire sync lock at ${err.lockPath} (${err.code}).`);
+            o.error(
+              'The directory containing the lock file is not writable. ' +
+                'Check permissions and that the device is mounted read-write.'
+            );
           },
         });
       }

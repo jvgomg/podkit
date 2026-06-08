@@ -372,6 +372,25 @@ export class MoveError extends CategorizedSyncError {
   }
 }
 
+export class CopyError extends CategorizedSyncError {
+  readonly category = 'copy' as const;
+  readonly errorCode: string | undefined;
+  readonly sourcePath: string;
+  constructor(sourcePath: string, underlying: unknown) {
+    const message = underlying instanceof Error ? underlying.message : String(underlying);
+    const cause = `${sourcePath}: ${message}`;
+    super(`file copy failed for 1 file(s): ${cause}`, [cause]);
+    this.sourcePath = sourcePath;
+    this.errorCode =
+      typeof underlying === 'object' &&
+      underlying !== null &&
+      'code' in underlying &&
+      typeof (underlying as { code?: unknown }).code === 'string'
+        ? (underlying as { code: string }).code
+        : undefined;
+  }
+}
+
 export class DatabaseWriteError extends CategorizedSyncError {
   readonly category = 'database' as const;
   constructor(
@@ -2686,6 +2705,19 @@ export class LockContestedError extends Error {
     super(`lock contested at ${lockPath}`);
     this.name = 'LockContestedError';
     this.lockPath = lockPath;
+  }
+}
+export class LockUnavailableError extends Error {
+  readonly lockPath: string;
+  readonly code: 'EACCES' | 'EROFS' | 'EPERM';
+  constructor(lockPath: string, code: 'EACCES' | 'EROFS' | 'EPERM', cause?: unknown) {
+    super(`lock unavailable at ${lockPath} (${code})`);
+    this.name = 'LockUnavailableError';
+    this.lockPath = lockPath;
+    this.code = code;
+    if (cause !== undefined) {
+      (this as Error & { cause?: unknown }).cause = cause;
+    }
   }
 }
 export class LockHandle {

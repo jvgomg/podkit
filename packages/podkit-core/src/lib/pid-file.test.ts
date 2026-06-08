@@ -9,7 +9,7 @@
 
 import { describe, it, expect } from 'bun:test';
 import { spawn } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -19,6 +19,7 @@ import {
   isAlive,
   LockHeldError,
   LockContestedError,
+  LockUnavailableError,
   readOwnership,
   writeOwnership,
 } from './pid-file.js';
@@ -335,6 +336,73 @@ describe('acquireLock', () => {
       expect(err.message).toContain(path);
       // Both waitForOwnership rounds fired: 3 attempts each = 6 total reads.
       expect(readCount).toBe(6);
+    });
+  });
+
+  it('throws LockUnavailableError when the parent directory is read-only (EACCES)', async () => {
+    // Regression for TASK-413: when `.podkit/` is chmod 0555 (manifest-dir-readonly
+    // fault), `open(path, 'wx')` returns EACCES. Before TASK-413 this propagated
+    // as a raw ErrnoException past the sync orchestrator's catch block, producing
+    // a JS stack trace on stderr instead of a typed CliError. The fix wraps EACCES
+    // (and EROFS/EPERM) as LockUnavailableError so the CLI surfaces a clean
+    // "directory not writable" message.
+    //
+    // Skipped when running as root (e.g. some CI containers): root bypasses the
+    // dir-perm check and the open succeeds, masking the regression we're guarding.
+    if (process.getuid?.() === 0) {
+      expect(true).toBe(true); // can't reproduce as root; skip via no-op
+      return;
+    }
+    await withTempDir(async (dir) => {
+      const lockDir = join(dir, 'lockdir');
+      await mkdir(lockDir, { recursive: true });
+      const path = join(lockDir, 'sync.lock');
+      await chmod(lockDir, 0o555);
+      try {
+        let caught: unknown;
+        try {
+          await acquireLock(path);
+        } catch (err) {
+          caught = err;
+        }
+        expect(caught).toBeInstanceOf(LockUnavailableError);
+        const err = caught as LockUnavailableError;
+        expect(err.lockPath).toBe(path);
+        expect(err.code).toBe('EACCES');
+        expect(err.message).toContain(path);
+        // No lock file should have been created.
+        expect(existsSync(path)).toBe(false);
+      } finally {
+        // Restore writable perms so withTempDir teardown can remove the dir.
+        await chmod(lockDir, 0o755).catch(() => {});
+      }
+    });
+  });
+
+  it('LockUnavailableError preserves the originating ErrnoException as `cause`', async () => {
+    if (process.getuid?.() === 0) {
+      expect(true).toBe(true); // can't reproduce as root; skip via no-op
+      return;
+    }
+    await withTempDir(async (dir) => {
+      const lockDir = join(dir, 'lockdir');
+      await mkdir(lockDir, { recursive: true });
+      const path = join(lockDir, 'sync.lock');
+      await chmod(lockDir, 0o555);
+      try {
+        let caught: unknown;
+        try {
+          await acquireLock(path);
+        } catch (err) {
+          caught = err;
+        }
+        const err = caught as LockUnavailableError;
+        const cause = (err as Error & { cause?: unknown }).cause as NodeJS.ErrnoException;
+        expect(cause).toBeDefined();
+        expect(cause.code).toBe('EACCES');
+      } finally {
+        await chmod(lockDir, 0o755).catch(() => {});
+      }
     });
   });
 

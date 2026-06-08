@@ -90,6 +90,7 @@ export {
   LockHandle,
   LockHeldError,
   LockContestedError,
+  LockUnavailableError,
   readOwnership,
   writeOwnership,
   type PidFileEntry,
@@ -180,6 +181,7 @@ export {
   SidecarWriteError,
   PictureWriteError,
   MoveError,
+  CopyError,
 } from './device/mass-storage-tag-writer.js';
 
 // Audio container helpers

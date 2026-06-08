@@ -300,6 +300,41 @@ export class LockContestedError extends Error {
 }
 
 /**
+ * Raised by {@link acquireLock} when the lock file cannot be created because
+ * the containing filesystem refuses the write outright — EACCES (permissions),
+ * EROFS (read-only filesystem), or EPERM (operation not permitted, e.g. an
+ * ext4 immutable bit on the parent dir).
+ *
+ * Distinct from {@link LockHeldError} (no live owner exists; the lock file
+ * was never even created) and from {@link LockContestedError} (the file does
+ * exist but its contents are unreadable). The caller should surface a typed
+ * CLI error with a message describing the unwritable path — sync cannot
+ * proceed and there is no contention to wait on.
+ *
+ * Carries the originating errno so callers can disambiguate "fix the
+ * permissions" (EACCES/EPERM) from "remount writable" (EROFS) if needed.
+ */
+export class LockUnavailableError extends Error {
+  readonly lockPath: string;
+  readonly code: 'EACCES' | 'EROFS' | 'EPERM';
+
+  constructor(lockPath: string, code: 'EACCES' | 'EROFS' | 'EPERM', cause?: unknown) {
+    super(
+      `Lock file at ${lockPath} could not be created (${code}). ` +
+        'The containing directory is not writable by this process. ' +
+        'Check the directory permissions and that the device is mounted read-write.'
+    );
+    this.name = 'LockUnavailableError';
+    this.lockPath = lockPath;
+    this.code = code;
+    if (cause !== undefined) {
+      // Preserve the underlying ErrnoException for diagnostics.
+      (this as Error & { cause?: unknown }).cause = cause;
+    }
+  }
+}
+
+/**
  * Handle returned by {@link acquireLock}. Hold for the duration of the
  * critical section and call {@link release} in a `finally`.
  *
@@ -483,7 +518,17 @@ async function tryCreateAndWrite(
   try {
     handle = await open(path, 'wx');
   } catch (err: unknown) {
-    if ((err as NodeJS.ErrnoException).code === 'EEXIST') return 'eexist';
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'EEXIST') return 'eexist';
+    // Filesystem refuses the write outright (read-only mount, parent dir
+    // chmod 0555, ext4 +i on the parent). There is no contention to wait
+    // on and no holder to report — wrap as LockUnavailableError so the
+    // CLI can surface a typed error with a clear "directory not writable"
+    // message instead of an uncaught JS stack trace propagating out of
+    // the sync orchestrator.
+    if (code === 'EACCES' || code === 'EROFS' || code === 'EPERM') {
+      throw new LockUnavailableError(path, code, err);
+    }
     throw err;
   }
   // `open(wx)` succeeded — we own the file. If writeFile/sync fails (e.g.
