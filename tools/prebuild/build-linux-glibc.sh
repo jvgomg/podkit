@@ -99,13 +99,29 @@ export STATIC_DEPS_DIR
 # ---------------------------------------------------------------------------
 # Phase 2: prebuildify (produces packages/libgpod-node/prebuilds/linux-${arch}/)
 # ---------------------------------------------------------------------------
+# Invariant assumed by this script: $REPO_ROOT is a VM-local source tree, not
+# a host-mounted one. The caller (build-linux-prebuild.sh on macOS, or the CI
+# runner on GitHub Actions) rsyncs the repo into a VM-local path before
+# invoking this script. Why this matters: node-gyp bakes absolute host paths
+# (node_modules/.bun/node-gyp@<hash>, /tmp/prebuildify/node/<ver>) into
+# build/*.d dep files. If the source tree is shared between host and VM, those
+# baked paths reference filesystems that don't exist on the other side, and
+# incremental rebuilds on `--force` rerun produce stale-state link failures.
+# Building in a VM-local tree keeps the dep graph internally coherent and
+# makes every rerun reproducible.
+#
+# --target node@22 pins prebuildify to Node 22 LTS headers. Without it,
+# prebuildify selects the latest Node release line known to its node-abi
+# dependency, currently Node 25 — silent input drift turbo can't see. The
+# N-API ABI guarantees runtime compat across Node versions; --target only
+# fixes which headers we *compile* against.
 log "running prebuildify (linux-${NODE_ARCH})..."
 cd "$REPO_ROOT/packages/libgpod-node"
 # bunx instead of npx so the build path stays Bun-first; npm only enters
 # transitively when prebuildify shells out to node-gyp (unavoidable — node-gyp
 # is the canonical N-API build driver). Also avoids npm's "new major version
 # available" nag in the log.
-bunx prebuildify --napi --strip
+bunx prebuildify --napi --strip --target node@22.11.0
 
 # ---------------------------------------------------------------------------
 # Phase 3: verify the prebuild is genuinely statically linked

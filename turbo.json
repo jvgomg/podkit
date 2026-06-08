@@ -289,11 +289,13 @@
         "$TURBO_ROOT$/packages/libgpod-node/native/**",
         "$TURBO_ROOT$/packages/libgpod-node/binding.gyp",
         "$TURBO_ROOT$/packages/libgpod-node/scripts/has-prebuild.cjs",
+        "$TURBO_ROOT$/packages/libgpod-node/package.json",
         "$TURBO_ROOT$/tools/prebuild/build-static-deps.sh",
         "$TURBO_ROOT$/tools/prebuild/build-linux-glibc.sh",
         "$TURBO_ROOT$/tools/prebuild/get-cflags.sh",
         "$TURBO_ROOT$/tools/prebuild/get-ldflags.sh",
         "$TURBO_ROOT$/test-packages/device-testing/lima/podkit-linux-builder.yaml",
+        "$TURBO_ROOT$/bun.lock",
         "scripts/build-linux-prebuild.sh"
       ],
       "outputs": [
