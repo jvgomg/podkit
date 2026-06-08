@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import { MassStorageAdapter, MassStorageTrack } from './mass-storage-adapter.js';
 import type { MetadataReader } from './mass-storage-adapter.js';
 import type { TagFields, TagWriter } from './mass-storage-tag-writer.js';
+import { CopyError } from './mass-storage-tag-writer.js';
 import type { DeviceCapabilities } from '@podkit/device-types';
 import {
   sanitizeFilename,
@@ -2083,6 +2084,94 @@ describe('MassStorageAdapter', () => {
       expect(replaced.filePath).toMatch(/01 - Song-\d+\.opus$/);
 
       fs.rmSync(sourceDir, { recursive: true, force: true });
+    });
+
+    test('copyTrackFile wraps raw fs errors as CopyError carrying errno', async () => {
+      // Pins TASK-412 estimate-drift contract: a raw fs error thrown out of
+      // `MassStorageTrack.copyFile` (from a missing source path → ENOENT)
+      // is wrapped at the adapter boundary so the executor's categorizer
+      // reads `category: 'copy'` off the class instead of falling back to
+      // the operation-type table — and the original errno survives on
+      // `CopyError.errorCode` for the matrix harness to branch on.
+      const tagWriter = createMockTagWriter();
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({}),
+        tagWriter,
+      });
+
+      const track = adapter.addTrack({
+        title: 'WillFail',
+        artist: 'Artist',
+        album: 'Album',
+        filetype: 'flac',
+      });
+
+      const bogusSource = path.join(tmpdir(), 'definitely-nonexistent.flac');
+      let caught: unknown;
+      try {
+        adapter.copyTrackFile(track, bogusSource);
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(CopyError);
+      const copyErr = caught as CopyError;
+      expect(copyErr.category).toBe('copy');
+      expect(copyErr.errorCode).toBe('ENOENT');
+      expect(copyErr.sourcePath).toBe(bogusSource);
+      expect(copyErr.causes.length).toBe(1);
+      // Full rollback: the track is removed from the in-memory list so a
+      // retry's addTrack lands on a clean slate (no "occupied by an
+      // unmanaged file" collision error swallowing the underlying CopyError).
+      expect(adapter.getTracks().length).toBe(0);
+      // Re-adding the same input under a freshly-attempted path must
+      // succeed — proves allocatedPaths was rolled back too.
+      const retried = adapter.addTrack({
+        title: 'WillFail',
+        artist: 'Artist',
+        album: 'Album',
+        filetype: 'flac',
+      });
+      expect(retried.filePath).toBe(track.filePath);
+    });
+
+    test('copyTrackFile passes through an already-typed CategorizedSyncError', async () => {
+      // The adapter's catch has an `instanceof CategorizedSyncError`
+      // passthrough so an inner typed error (e.g. one a stubbed transport
+      // layer might raise) is NOT double-wrapped as `CopyError(... :
+      // file move failed for ...)`.
+      const tagWriter = createMockTagWriter();
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({}),
+        tagWriter,
+      });
+
+      const track = adapter.addTrack({
+        title: 'Pass',
+        artist: 'Artist',
+        album: 'Album',
+        filetype: 'flac',
+      });
+
+      const inner = new (await import('./mass-storage-tag-writer.js')).MoveError([
+        '/x → /y: EACCES',
+      ]);
+      // Monkey-patch the track instance to raise the inner typed error.
+      // Tests do not normally reach in like this, but the passthrough path
+      // is otherwise unreachable in unit tests (the adapter's filesystem
+      // surface only raises raw fs errors).
+      const original = (track as MassStorageTrack).copyFile;
+      (track as { copyFile: (p: string) => MassStorageTrack }).copyFile = () => {
+        throw inner;
+      };
+      let caught: unknown;
+      try {
+        adapter.copyTrackFile(track, '/source.flac');
+      } catch (err) {
+        caught = err;
+      } finally {
+        (track as { copyFile: typeof original }).copyFile = original;
+      }
+      expect(caught).toBe(inner);
     });
 
     test('copyTrackFile updates track list with new instance', async () => {

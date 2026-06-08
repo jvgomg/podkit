@@ -28,6 +28,7 @@ import {
 } from './error-handling.js';
 import { CategorizedSyncError, DatabaseWriteError } from './errors.js';
 import {
+  CopyError,
   MoveError,
   PictureWriteError,
   SidecarWriteError,
@@ -64,6 +65,58 @@ describe('categorizeError', () => {
     it('reads category from MoveError', () => {
       const err = new MoveError(['/old → /new: EACCES']);
       expect(categorizeError(err, 'relocate')).toBe('copy');
+    });
+
+    it('reads category from CopyError, regardless of operation type', () => {
+      const underlying = Object.assign(new Error('ENOSPC: no space left on device, write'), {
+        code: 'ENOSPC',
+      });
+      const err = new CopyError('/src/song.mp3', underlying);
+      expect(categorizeError(err, 'add-direct-copy')).toBe('copy');
+      // Even with an op type that doesn't route to 'copy' via fallback,
+      // the typed-error class wins.
+      expect(categorizeError(err, 'update-metadata')).toBe('copy');
+    });
+
+    it('preserves underlying errno on CopyError.errorCode and surfaces a single cause', () => {
+      const underlying = Object.assign(new Error('ENOSPC: no space left on device, write'), {
+        code: 'ENOSPC',
+      });
+      const err = new CopyError('/src/song.mp3', underlying);
+      expect(err.errorCode).toBe('ENOSPC');
+      expect(err.sourcePath).toBe('/src/song.mp3');
+      expect(err.causes.length).toBe(1);
+      expect(err.causes[0]).toBe('/src/song.mp3: ENOSPC: no space left on device, write');
+      // Class name comes from `new.target.name` on the base class.
+      expect(err.name).toBe('CopyError');
+      // Message format matches the matrix's classifyThrowsClass regex.
+      expect(/file copy failed for/.test(err.message)).toBe(true);
+    });
+
+    it('CopyError tolerates an underlying error without a `code` property', () => {
+      const err = new CopyError('/src/song.mp3', new Error('synthetic failure'));
+      expect(err.errorCode).toBeUndefined();
+      expect(err.causes[0]).toBe('/src/song.mp3: synthetic failure');
+    });
+
+    it('CopyError tolerates a non-Error underlying value', () => {
+      const err = new CopyError('/src/song.mp3', 'string failure');
+      expect(err.errorCode).toBeUndefined();
+      expect(err.causes[0]).toBe('/src/song.mp3: string failure');
+    });
+
+    it('CopyError can wrap another CategorizedSyncError without recursion concerns', () => {
+      // Sanity check: the adapter's copyTrackFile catch has an
+      // `instanceof CategorizedSyncError` passthrough so it does NOT
+      // double-wrap an already-typed error. The CopyError class itself
+      // doesn't enforce that — it just records the message — but the
+      // round-trip via the categorizer should still classify the OUTER
+      // error's category.
+      const inner = new MoveError(['/x: EACCES']);
+      const outer = new CopyError('/src/song.mp3', inner);
+      expect(categorizeError(outer, 'add-direct-copy')).toBe('copy');
+      // The wrapped message is preserved in the causes for diagnostics.
+      expect(outer.causes[0]).toContain('file move failed for');
     });
 
     it('reads category from DatabaseWriteError', () => {

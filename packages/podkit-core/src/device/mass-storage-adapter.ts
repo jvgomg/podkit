@@ -18,6 +18,7 @@ import * as path from 'node:path';
 import * as mm from 'music-metadata';
 
 import { atomicCopyFile, atomicWriteFile, atomicWriteFileWithSync } from '../utils/atomic-fs.js';
+import { CategorizedSyncError } from '../sync/engine/errors.js';
 
 import type {
   DeviceAdapter,
@@ -51,6 +52,7 @@ import type { ContentPaths } from '@podkit/devices-mass-storage';
 import { isVideoMediaType } from '../ipod/video.js';
 import { CODEC_METADATA } from '../transcode/codecs.js';
 import {
+  CopyError,
   DEFAULT_TAG_WRITE_CONCURRENCY,
   MoveError,
   PictureWriteError,
@@ -1018,13 +1020,34 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
 
       return updated;
     } catch (err) {
-      // Roll back the managedFiles entry that addTrack added. Otherwise a
-      // later checkpoint save() (driven by a different successful track)
-      // would persist a phantom path the file copy never produced — the
-      // exact "manifest references missing file" class that
-      // orphans-mass-storage.test.ts test #2 documents.
+      // Roll back the state addTrack added so the executor's retry path
+      // sees a clean adapter:
+      //   - managedFiles: otherwise a later checkpoint save() (driven by a
+      //     different successful track) would persist a phantom path the
+      //     file copy never produced — the "manifest references missing
+      //     file" class that orphans-mass-storage.test.ts test #2 documents.
+      //   - allocatedPaths + tracks: otherwise the retry's `addTrack` would
+      //     see `allocatedPaths.has(desiredPath) && !managedFiles.has(...)`
+      //     and throw the "occupied by an unmanaged file" collision error,
+      //     swallowing the original CopyError that caused the first attempt
+      //     to fail. The retry should re-attempt the same path with a clean
+      //     slate, not collide with the in-memory state from attempt 1.
       this.managedFiles.delete(track.filePath);
-      throw err;
+      this.allocatedPaths.delete(track.filePath);
+      const idx = this.tracks.findIndex((t) => t.filePath === track.filePath);
+      if (idx >= 0) {
+        this.tracks.splice(idx, 1);
+      }
+      // Wrap raw fs errors in a typed CopyError so the executor's
+      // categorizer reads `category: 'copy'` off the class instead of
+      // falling back to the operation-type table — and so the original
+      // errno survives on `errorCode` for consumers (e.g. the matrix
+      // harness) that want to branch ENOSPC vs EACCES vs EROFS without
+      // scraping the message.
+      if (err instanceof CategorizedSyncError) {
+        throw err;
+      }
+      throw new CopyError(sourcePath, err);
     }
   }
 
@@ -1142,10 +1165,21 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
       targetAbsolutePath = absolutePath;
     }
 
-    // Copy the new file to the target path (atomic: temp + rename)
+    // Copy the new file to the target path (atomic: temp + rename).
+    // Wrap raw fs errors — both from `mkdirSync` (EACCES/EROFS on the
+    // album dir) and from `atomicCopyFile` (ENOSPC mid-write, EACCES/EROFS
+    // on the rename) — in CopyError so the categorizer reads category off
+    // the type. Same rationale as copyTrackFile above.
     const dir = path.dirname(targetAbsolutePath);
-    fs.mkdirSync(dir, { recursive: true });
-    atomicCopyFile(newFilePath, targetAbsolutePath);
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      atomicCopyFile(newFilePath, targetAbsolutePath);
+    } catch (err) {
+      if (err instanceof CategorizedSyncError) {
+        throw err;
+      }
+      throw new CopyError(newFilePath, err);
+    }
 
     // If path changed, delete the old file and update bookkeeping
     if (targetRelativePath !== track.filePath) {

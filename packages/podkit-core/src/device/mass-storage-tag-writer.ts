@@ -241,6 +241,48 @@ export class MoveError extends CategorizedSyncError {
 }
 
 /**
+ * Track-body copy failure during `MassStorageAdapter.copyTrackFile` (or
+ * `replaceTrackFile`). Wraps the raw fs error thrown out of
+ * `atomicCopyFile` (which itself wraps `fs.copyFileSync` + `renameSync`)
+ * so the executor's categorizer reads `category` off the type instead of
+ * falling back to the operation-type table — and so the original errno
+ * (`ENOSPC` / `EACCES` / `EROFS` / `ENOENT`) survives the wrap on the
+ * `errorCode` field for consumers that want to branch.
+ *
+ * Single-cause aggregate (`causes.length === 1`) matching the other
+ * per-track wraps in this file. The source path is folded into the cause
+ * string so consumers reading `causes[0]` get the same `"<path>: <msg>"`
+ * shape as `MoveError`.
+ */
+export class CopyError extends CategorizedSyncError {
+  readonly category = 'copy' as const;
+
+  /**
+   * Underlying fs error code (`ENOSPC`, `EACCES`, `EROFS`, `ENOENT`, …)
+   * recovered from the wrapped error's `code` property. `undefined` when
+   * the underlying error carried no `code` (e.g. a synthetic test error).
+   */
+  readonly errorCode: string | undefined;
+
+  /** Source path passed to `copyTrackFile`/`replaceTrackFile`. */
+  readonly sourcePath: string;
+
+  constructor(sourcePath: string, underlying: unknown) {
+    const message = underlying instanceof Error ? underlying.message : String(underlying);
+    const cause = `${sourcePath}: ${message}`;
+    super(`file copy failed for 1 file(s): ${cause}`, [cause]);
+    this.sourcePath = sourcePath;
+    this.errorCode =
+      typeof underlying === 'object' &&
+      underlying !== null &&
+      'code' in underlying &&
+      typeof (underlying as { code?: unknown }).code === 'string'
+        ? (underlying as { code: string }).code
+        : undefined;
+  }
+}
+
+/**
  * Default concurrency cap for tag-write flushes during `save()`.
  *
  * Each call opens a file via node-taglib-sharp. Without a cap, syncing a

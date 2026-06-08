@@ -593,38 +593,32 @@ function predictChmodFault(cell: SaveFailCell): SaveFailExpected {
     }
 
     case 'album-readonly': {
-      // The album directory is chmod 0500 BEFORE the sync runs. The copy
-      // stage cannot create the target file → fails before save() reaches
-      // any tag/picture/sidecar stage. For sidecar-primary shapes the
-      // sidecar write would also fail, but the copy fails first.
-      //
-      // The mass-storage adapter's copy stage runs OUTSIDE save() (in
-      // copyTrackFile / atomicCopyFile), so the raw fs EACCES propagates
-      // as a plain Error categorized by the executor to the operation type
-      // that was running when the fault fired. When syncPath='optimized-copy'
-      // or 'direct-copy', the file-copy op is categorized 'copy'. When
-      // syncPath='transcode-aac', the FFmpeg transcode runs first (to a temp
-      // output), then the atomic copy/rename into the album dir fails —
-      // the executor categorizes that error as 'transcode' because the op
-      // type is a transcode op.
+      // The album directory is chmod 0500 BEFORE the sync runs. Every
+      // syncPath (direct-copy, optimized-copy, transcode-aac) ultimately
+      // funnels through `MassStorageAdapter.copyTrackFile` to land the
+      // (possibly transcoded) source body on the device. That call wraps
+      // the raw fs EACCES in a typed CopyError, so the executor's
+      // categorizer reads 'copy' off the class regardless of the operation
+      // type — even add-transcode ops now classify as 'copy' here, NOT
+      // 'transcode', because the failure mode is the device-side file copy
+      // not the FFmpeg transcode itself (which succeeded into a temp dir).
       //
       // `failedTrackCount: null` because the executor's retry policy
       // generates an extra dedup-suffixed copy attempt — observed count
       // is 2 (1 original + 1 dedup-retry), but the underlying behaviour
       // we care about (no files land) is captured by partialDeviceState.
-      const albumReadonlyCategory: ErrorCategory =
-        syncPath === 'transcode-aac' ? 'transcode' : 'copy';
+      void syncPath;
       return {
         plannerRejects: false,
-        throwsClass: null,
-        errorCategory: albumReadonlyCategory,
+        throwsClass: 'CopyError',
+        errorCategory: 'copy',
         partialDeviceState: 'no-files-landed',
         rescanRefiresAddOrUpgrade: true,
         doctorSeesPodkitTmp: false,
         errorMessageMatches: null,
         failedTrackCount: null,
         portableTagWarn: false,
-        reason: `${cell.shape} × ${cell.sourceFormat} × ${cell.codecConfig} × ${cell.transferMode} × album-readonly — syncPath=${syncPath}; chmod 0500 on the album dir blocks atomicCopyFile's mkdir/create before save() runs. Raw fs EACCES → categorized '${albumReadonlyCategory}' by operation-type fallback; no typed class. No files land. failedTrackCount unconstrained — the retry policy can produce dedup-suffixed phantom attempts that count separately.`,
+        reason: `${cell.shape} × ${cell.sourceFormat} × ${cell.codecConfig} × ${cell.transferMode} × album-readonly — syncPath=${syncPath}; chmod 0500 on the album dir blocks copyTrackFile's atomic copy regardless of whether the source is a raw input (direct/optimized) or a transcoded temp (transcode-aac). Raw fs EACCES wrapped in typed CopyError at the adapter boundary; categorized 'copy' off the class. No files land. failedTrackCount unconstrained — the retry policy can produce dedup-suffixed phantom attempts that count separately.`,
       };
     }
 
