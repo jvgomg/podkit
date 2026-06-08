@@ -313,15 +313,17 @@ by music-metadata.
 
 **Gap:** No atomic write helper. No test that exercises this path.
 
-### 5.5 Concurrent processes hitting the same device
+### 5.5 Concurrent processes hitting the same device — RESOLVED (TASK-404/407/409)
 
-**Today:** No file lock. Two `podkit sync` runs against the same device can
-overlap and corrupt each other's manifest writes (the tmp+rename serializes
-the LAST write, but the in-between state is undefined).
-
-**Gap:** No PID/lockfile. The mass-storage adapter could write `.podkit/lock`
-during `open()` and clear it on `close()` (with a stale-lock heuristic for
-crashes). Filed as a future task candidate, not yet open.
+Per-device PID-file lock at `.podkit/sync.lock` (mass-storage) or
+`iPod_Control/.podkit-sync.lock` (iPod). Contents: `{pid, startTimeMs}` JSON.
+Kernel-atomic `open(wx)` acquire; `kill(pid,0)` + start-time read liveness
+probe with single-retry stale-takeover. Every writer surface holds it: sync
+executor, pre-sync sweep auto-prune, all device-scoped doctor repairs. Reads
+(`device scan/info/music`, diagnostic-only `doctor`) and `--dry-run` carve
+out. Daemon recognises exit code 4 as contention skip — no retry-spin.
+Cross-host (NFS/SMB) explicitly out-of-scope. Full design + writer inventory
+in `documents/architecture/sync/planning.md` §6.
 
 ### 5.6 SIGINT (user pressed Ctrl-C) mid-sync
 
@@ -418,11 +420,14 @@ Today it's opaque — caller awaits, gets back or throws. A progress event
 (`{stage, completed, total}`) would let the CLI render "writing tags (12/47)"
 instead of "saving..."
 
-**Q2: Should we add a device lockfile?**
-Concurrent `podkit sync` runs against the same device are unsafe today (§5.5).
-A `.podkit/lock` with PID + start time, cleared on close, heuristic stale-lock
-detection. Trade-off: cross-host networks make stale-lock detection hard
-(NFS mounts, time skew).
+**Q2: Should we add a device lockfile?** — RESOLVED (TASK-404/407/409).
+Per-device PID-file lock at `.podkit/sync.lock` / `iPod_Control/.podkit-sync.lock`
+with `{pid, startTimeMs}` contents and `kill(pid,0)` + start-time liveness probe.
+Cross-host case punted — advisory file locks aren't honoured uniformly across
+NFS/SMB, and podkit's deployment is laptop-local. No `--ignore-device-lock`
+override flag; manual `rm <lockfile>` is the escape hatch and is rarely needed
+because the liveness probe auto-takes-over on unsupported platforms (Windows)
+and dead-pid stale locks. See `documents/architecture/sync/planning.md` §6.
 
 **Q3: Should `pendingTagWrites.clear()` move to AFTER the throw?**
 Today: clear-then-throw means the adapter forgets failed writes. Rescan
@@ -456,7 +461,6 @@ Useful for diagnostics + the doctor flow.
 - **TASK-375** — `podkit doctor` orphan sidecar image detection. Reference
   §4.3 (recovery: doctor-cleans).
 - **TASK-378** — Pre-save free-space probe + early ENOSPC error. Reference §5.3.
-- **TASK-379** — Device lockfile + concurrent-sync detection. Reference §5.5 + Q2.
 
 ### Future task candidates (not yet filed)
 
@@ -490,6 +494,11 @@ Useful for diagnostics + the doctor flow.
   SidecarWriteError per-album aggregation)~~ — closed by TASK-393. Reference §3.5.
 - ~~O(N²) `lookupTrackRef` inside `save()` move loop~~ — closed by TASK-392.
   Lazy memoization at first ENOENT.
+- ~~Device lockfile + concurrent-sync detection (§5.5, Q2)~~ — closed by
+  TASK-404 (primitive + sync executor) / TASK-407 (doctor repairs) / TASK-409
+  (dry-run carve-out). Originally tracked as TASK-379, which is closed as
+  superseded. See `documents/architecture/sync/planning.md` §6 for the settled
+  design.
 
 ### Tests to add (not yet filed as tasks)
 
