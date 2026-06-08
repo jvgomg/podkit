@@ -106,6 +106,8 @@ export type TransferMode = 'fast' | 'portable';
  */
 export type FailureMode =
   | 'enospc'
+  | 'enospc-post-sweep'
+  | 'enospc-estimate-drift'
   | 'track-readonly'
   | 'album-readonly'
   | 'cover-collision'
@@ -193,9 +195,17 @@ export type ThrowsClass =
   | 'PictureWriteError'
   | 'SidecarWriteError'
   | 'DatabaseWriteError'
+  | 'InsufficientSpaceAfterCleanup'
   | null;
 
-export type ErrorCategory = 'copy' | 'transcode' | 'database' | 'artwork' | 'unknown' | null;
+export type ErrorCategory =
+  | 'copy'
+  | 'transcode'
+  | 'database'
+  | 'artwork'
+  | 'space'
+  | 'unknown'
+  | null;
 
 export type PartialDeviceState =
   | 'no-files-landed'
@@ -246,6 +256,20 @@ export interface SaveFailObserved extends Record<string, unknown> {
    * the warning is present; false when no such warning is observed.
    */
   portableTagWarn: boolean;
+  /**
+   * Typed-error detail recovered from `sync --json`'s errors[] envelope for
+   * the ADR-018 post-sweep cell. Populated only when the surfaced error
+   * class is `InsufficientSpaceAfterCleanup`; absent otherwise.
+   *
+   * The fields mirror the typed-error payload shape in
+   * `packages/podkit-core/src/sync/engine/errors.ts` so the matrix can
+   * assert the structured `bytesFreedBySweep` + `failedSweepPaths` carry
+   * through to the CLI consumer.
+   */
+  postSweepDetail?: {
+    bytesFreedBySweep: number;
+    failedSweepPathsCount: number;
+  } | null;
   /** Free-form debug echo on mismatch — diff renderer surfaces this verbatim. */
   debug?: unknown;
 }
@@ -277,6 +301,16 @@ export interface SaveFailExpected extends CellExpectation {
    * not a thrown error.
    */
   portableTagWarn: boolean;
+  /**
+   * Expected typed-error payload detail. Set only by the ADR-018 post-sweep
+   * cell where the typed `InsufficientSpaceAfterCleanup` envelope carries
+   * structured fields the matrix wants to pin. Omitted for every other
+   * cell — the diff comparator skips missing keys.
+   */
+  postSweepDetail?: {
+    bytesFreedBySweep: number;
+    failedSweepPathsCount: number;
+  } | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -303,12 +337,38 @@ const FAILURE_MODES_CHMOD: readonly FailureMode[] = [
 function generateFanOut(): SaveFailCell[] {
   const cells: SaveFailCell[] = [];
   // ENOSPC cell — Phase C.1 (Option A): embedded shape × FLAC × prefer-copy × fast.
+  // Pins the plan-time pre-flight envelope path.
   cells.push({
     shape: 'embedded',
     sourceFormat: 'flac',
     codecConfig: 'prefer-copy',
     transferMode: 'fast',
     failureMode: 'enospc',
+  });
+  // TASK-412: ADR-018 post-sweep recompute cell — embedded × flac × prefer-copy × fast.
+  // Pins the path where the plan-time gate passes (free + debrisCleanup
+  // covers the estimate), the sweep partially fails (chattr-immutable
+  // debris files survive rm), and the post-sweep statfs recompute throws
+  // InsufficientSpaceAfterCleanup before any track is attempted.
+  cells.push({
+    shape: 'embedded',
+    sourceFormat: 'flac',
+    codecConfig: 'prefer-copy',
+    transferMode: 'fast',
+    failureMode: 'enospc-post-sweep',
+  });
+  // TASK-412: estimate-drift cell — embedded × mp3 × prefer-copy × fast.
+  // Pins the path where both the plan-time gate AND the post-sweep gate
+  // pass (the planner's typical-bitrate estimate fits the mount free)
+  // but the source mp3's actual bytes exceed it, so the transfer phase
+  // atomic copy ENOSPCs mid-write. Raw fs error → no typed wrap on this
+  // path; categorized as `'copy'` via operation-type fallback.
+  cells.push({
+    shape: 'embedded',
+    sourceFormat: 'mp3',
+    codecConfig: 'prefer-copy',
+    transferMode: 'fast',
+    failureMode: 'enospc-estimate-drift',
   });
   // Mass-storage chmod-based fan-out (Phase C.2 + Stage D).
   for (const shape of MASS_STORAGE_SHAPES) {
@@ -379,6 +439,12 @@ export function predictSaveFail(cell: SaveFailCell): SaveFailExpected {
   if (cell.failureMode === 'enospc') {
     return predictEnospc(cell);
   }
+  if (cell.failureMode === 'enospc-post-sweep') {
+    return predictPostSweep(cell);
+  }
+  if (cell.failureMode === 'enospc-estimate-drift') {
+    return predictEstimateDrift(cell);
+  }
   return predictChmodFault(cell);
 }
 
@@ -393,7 +459,77 @@ function predictEnospc(cell: SaveFailCell): SaveFailExpected {
     errorMessageMatches: /^Not enough space\. Need [0-9.]+ [KMGT]?B, have [0-9.]+ [KMGT]?B$/,
     failedTrackCount: 0,
     portableTagWarn: false,
+    postSweepDetail: null,
     reason: `${cell.shape} × ${cell.sourceFormat} × ${cell.codecConfig} × ${cell.transferMode} × ENOSPC — planner pre-flight intercepts ENOSPC before save() can fire its typed errors (see planning.md + save-transactions.md "Free-space contract" subsections). Sync exits with envelope-level "Not enough space..." plus a synthetic NotEnoughSpacePlanTime entry in errors[] (TASK-378 AC #8); post-cleanup rescan re-queues the unwritten add ops.`,
+  };
+}
+
+/**
+ * ADR-018 post-sweep recompute cell (TASK-412).
+ *
+ * The mount carries chattr-immutable `.podkit-tmp` debris under the Music
+ * content path. Plan-time envelope `free + debrisCleanup.totalBytes`
+ * covers the source's `estimateCopySize`, but the per-path `rm` in
+ * `runPreliminariesPreFlight` returns EPERM for every immutable file, so
+ * `freedBytes = 0` and `failedSweepPaths.length = 2`. The post-sweep
+ * `statfsSync` reads the original free, which is below the estimate, and
+ * `assertSpaceAfterSweep` throws `InsufficientSpaceAfterCleanup`.
+ */
+function predictPostSweep(cell: SaveFailCell): SaveFailExpected {
+  return {
+    plannerRejects: false,
+    throwsClass: 'InsufficientSpaceAfterCleanup',
+    errorCategory: 'space',
+    partialDeviceState: 'no-files-landed',
+    rescanRefiresAddOrUpgrade: true,
+    doctorSeesPodkitTmp: false,
+    errorMessageMatches: /^Not enough space after debris cleanup\./,
+    failedTrackCount: 0,
+    portableTagWarn: false,
+    postSweepDetail: {
+      bytesFreedBySweep: 0,
+      failedSweepPathsCount: 2,
+    },
+    reason: `${cell.shape} × ${cell.sourceFormat} × ${cell.codecConfig} × ${cell.transferMode} × ENOSPC-post-sweep — ADR-018 post-sweep statfs recompute fires when the sweep cannot recover the bytes the plan-time envelope counted on. Two chattr-immutable .podkit-tmp files survive the per-path rm (EPERM), so freedBytes stays 0 and freshFree shows the original (insufficient) free. Throws InsufficientSpaceAfterCleanup before any track is attempted; rescan re-fires the unwritten add ops.`,
+  };
+}
+
+/**
+ * Estimate-drift mid-save cell (TASK-412).
+ *
+ * Mount sized to fit `estimateCopySize` (typical-bitrate × duration) but
+ * not the source's actual bytes. Plan-time + post-sweep gates both pass;
+ * the transfer-phase `atomicCopyFile` ENOSPCs mid-write. Raw fs error
+ * propagates through `MassStorageAdapter.copyTrackFile` with no typed
+ * wrap, so `categorizeError` falls back to operation-type 'copy' via
+ * `categoryForOperationType('add-direct-copy')`.
+ *
+ * Pins a weaker contract than the post-sweep cell — `throwsClass: null`
+ * because raw fs errors aren't wrapped today. Strengthening to a typed
+ * `CopyError extends CategorizedSyncError` is a follow-up.
+ */
+function predictEstimateDrift(cell: SaveFailCell): SaveFailExpected {
+  return {
+    plannerRejects: false,
+    throwsClass: null,
+    errorCategory: 'copy',
+    partialDeviceState: 'no-files-landed',
+    rescanRefiresAddOrUpgrade: true,
+    // Atomic copy writes to `<target>.podkit-tmp` then renames on success;
+    // an ENOSPC mid-write throws BEFORE the rename, but the tmp file may
+    // survive. The `rm` cleanup is the helper's responsibility — check
+    // doctor for the residual.
+    doctorSeesPodkitTmp: false,
+    errorMessageMatches: null,
+    // `add-direct-copy` retries once via DEFAULT_RETRY_CONFIG.copy=1, so
+    // the same track surfaces twice in failure count terms — but the
+    // CLI's "Failed: N tracks" header counts unique tracks, not attempts.
+    // Use `null` to skip the numeric assertion until we observe the real
+    // behaviour against the VM.
+    failedTrackCount: null,
+    portableTagWarn: false,
+    postSweepDetail: null,
+    reason: `${cell.shape} × ${cell.sourceFormat} × ${cell.codecConfig} × ${cell.transferMode} × ENOSPC-estimate-drift — plan-time + post-sweep gates both pass (mount fits estimateCopySize prediction) but the 320kbps mp3 source's actual bytes exceed the free space. Transfer-phase atomicCopyFile ENOSPCs mid-write; raw fs error propagates unwrapped through copyTrackFile (no typed CopyError today), categorized as 'copy' via operation-type fallback. Rescan re-queues the un-landed add op.`,
   };
 }
 

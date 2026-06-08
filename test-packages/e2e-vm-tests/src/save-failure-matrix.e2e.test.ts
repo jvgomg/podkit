@@ -45,6 +45,10 @@ import {
   VM_WARM_TIMEOUT_MS,
   deviceMountNearFull,
   DEVICE_MOUNT_NEAR_FULL_PATH,
+  deviceMountFitsEstimateFailedSweep,
+  DEVICE_MOUNT_FITS_ESTIMATE_FAILED_SWEEP_PATH,
+  deviceMountFitsEstimateSourceDrifts,
+  DEVICE_MOUNT_FITS_ESTIMATE_SOURCE_DRIFTS_PATH,
   healthy,
 } from '@podkit/device-testing';
 
@@ -67,14 +71,34 @@ import { SAVE_FAILURE_FAULTS, type FaultContext } from './matrix/save-failure-fa
 // ---------------------------------------------------------------------------
 
 /**
- * Derive the per-cell mount point inside the VM. ENOSPC cells reuse the
- * loopback at `DEVICE_MOUNT_NEAR_FULL_PATH`; chmod cells use a fresh
- * `/tmp` directory keyed by cell signature.
+ * Derive the per-cell mount point inside the VM. SystemState-provisioned
+ * cells use their loopback's known path; chmod cells use a fresh `/tmp`
+ * directory keyed by cell signature.
  */
 function mountPointFor(cell: SaveFailCell): string {
   if (cell.failureMode === 'enospc') return DEVICE_MOUNT_NEAR_FULL_PATH;
+  if (cell.failureMode === 'enospc-post-sweep') {
+    return DEVICE_MOUNT_FITS_ESTIMATE_FAILED_SWEEP_PATH;
+  }
+  if (cell.failureMode === 'enospc-estimate-drift') {
+    return DEVICE_MOUNT_FITS_ESTIMATE_SOURCE_DRIFTS_PATH;
+  }
   const slug = saveFailCellKey(cell).replace(/[/]/g, '_');
   return `/tmp/podkit-savefail-${slug}`;
+}
+
+/**
+ * Failure modes provisioned by a SystemState loopback (rather than chmod
+ * faults). Used as a type predicate so the chmod-fault dispatch can
+ * narrow `cell.failureMode` to the `FaultId` union safely.
+ */
+type LoopbackFailureMode = 'enospc' | 'enospc-post-sweep' | 'enospc-estimate-drift';
+type ChmodFailureMode = Exclude<SaveFailCell['failureMode'], LoopbackFailureMode>;
+
+function isLoopbackProvisionedFailure(
+  mode: SaveFailCell['failureMode']
+): mode is LoopbackFailureMode {
+  return mode === 'enospc' || mode === 'enospc-post-sweep' || mode === 'enospc-estimate-drift';
 }
 
 const ARTIST = 'SaveFail Artist';
@@ -224,12 +248,31 @@ async function writeSourceTrack(
   const albumArtist = seed.albumArtist ?? ALBUM_ARTIST_ORIGINAL;
   const rel = `${ARTIST}/${album}/${String(seed.trackNumber).padStart(2, '0')} ${seed.title}`;
   const ext = cell.sourceFormat === 'flac' ? 'flac' : cell.sourceFormat === 'mp3' ? 'mp3' : 'ogg';
+  // TASK-412 estimate-drift cell: force a high-bitrate, long-duration mp3
+  // so the actual file size exceeds estimateCopySize (typical-bitrate ×
+  // duration → 256 kbps × 30s ≈ 960 KiB; actual at 320 kbps × 30s ≈ 1.2 MiB).
+  const isDriftCell = cell.failureMode === 'enospc-estimate-drift';
   const codecArgs =
     cell.sourceFormat === 'flac'
       ? '-c:a flac'
       : cell.sourceFormat === 'mp3'
-        ? '-c:a libmp3lame -b:a 128k'
+        ? isDriftCell
+          ? '-c:a libmp3lame -b:a 320k'
+          : '-c:a libmp3lame -b:a 128k'
         : '-c:a libvorbis';
+  // Duration budget per failure mode:
+  //   - enospc-estimate-drift: 30s so the 320kbps body (~1.2 MiB) exceeds the
+  //     1024 KiB mount free space while the planner's 256kbps estimate (~940 KiB)
+  //     fits.
+  //   - enospc-post-sweep: 2s so the FLAC estimate (estimateCopySize at 900 kbps
+  //     × 2s ≈ 222 KiB) fits inside the plan-time envelope
+  //     (free 200 KiB + debris 120 KiB = 320 KiB) but exceeds actual free space
+  //     (200 KiB) once the chattr-immutable sweep fails to reclaim the debris.
+  //     At 4s the estimate (≈ 442 KiB) exceeds the 320 KiB envelope and the
+  //     planner-level pre-flight fires first — the wrong path for this cell.
+  //   - all others: 4s (default).
+  const isPostSweepCell = cell.failureMode === 'enospc-post-sweep';
+  const audioDuration = isDriftCell ? 30 : isPostSweepCell ? 2 : 4;
   // ffmpeg pre-create the cover (10x10 red JPEG) once per source dir.
   const coverPath = `${dir}/cover-src.jpg`;
   const outputPath = `${dir}/${rel}.${ext}`;
@@ -262,7 +305,7 @@ mkdir -p ${sq(albumDir)}
 if [ ! -f ${sq(coverPath)} ]; then
   ffmpeg -y -f lavfi -i 'color=red:size=10x10:duration=1' -frames:v 1 -update 1 ${sq(coverPath)} >/dev/null 2>&1
 fi
-ffmpeg -y -f lavfi -i 'sine=frequency=${seed.frequency}:sample_rate=44100:duration=4' \\
+ffmpeg -y -f lavfi -i 'sine=frequency=${seed.frequency}:sample_rate=44100:duration=${audioDuration}' \\
   -metadata artist=${sq(ARTIST)} -metadata album=${sq(album)} \\
   -metadata title=${sq(seed.title)} -metadata track=${seed.trackNumber} \\
   -metadata album_artist=${sq(albumArtist)} \\
@@ -280,7 +323,7 @@ mkdir -p ${sq(albumDir)}
 if [ ! -f ${sq(coverPath)} ]; then
   ffmpeg -y -f lavfi -i 'color=red:size=10x10:duration=1' -frames:v 1 -update 1 ${sq(coverPath)} >/dev/null 2>&1
 fi
-ffmpeg -y -f lavfi -i 'sine=frequency=${seed.frequency}:sample_rate=44100:duration=4' \\
+ffmpeg -y -f lavfi -i 'sine=frequency=${seed.frequency}:sample_rate=44100:duration=${audioDuration}' \\
   -i ${sq(coverPath)} \\
   -map 0:a -map 1:v \\
   -metadata artist=${sq(ARTIST)} -metadata album=${sq(album)} \\
@@ -294,7 +337,7 @@ ffmpeg -y -f lavfi -i 'sine=frequency=${seed.frequency}:sample_rate=44100:durati
   } else {
     script = `set -eu
 mkdir -p ${sq(albumDir)}
-ffmpeg -y -f lavfi -i 'sine=frequency=${seed.frequency}:sample_rate=44100:duration=4' \\
+ffmpeg -y -f lavfi -i 'sine=frequency=${seed.frequency}:sample_rate=44100:duration=${audioDuration}' \\
   -metadata artist=${sq(ARTIST)} -metadata album=${sq(album)} \\
   -metadata title=${sq(seed.title)} -metadata track=${seed.trackNumber} \\
   -metadata album_artist=${sq(albumArtist)} \\
@@ -469,7 +512,7 @@ async function stageConfig(cell: SaveFailCell): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function provisionMount(cell: SaveFailCell): Promise<void> {
-  if (cell.failureMode === 'enospc') return;
+  if (isLoopbackProvisionedFailure(cell.failureMode)) return;
   const mount = mountPointFor(cell);
   const caps = CAPABILITY_SHAPES[cell.shape];
   // Fresh, world-writable dir. For iPod cells, also run gpod-tool init so
@@ -489,7 +532,7 @@ async function provisionMount(cell: SaveFailCell): Promise<void> {
 }
 
 async function cleanupMount(cell: SaveFailCell): Promise<void> {
-  if (cell.failureMode === 'enospc') return;
+  if (isLoopbackProvisionedFailure(cell.failureMode)) return;
   const mount = mountPointFor(cell);
   await runRoot(`chmod -R 0777 ${sq(mount)} 2>/dev/null; rm -rf ${sq(mount)} || true`).catch(
     () => {}
@@ -526,6 +569,9 @@ interface DoctorJsonShape {
 }
 
 function classifyThrowsClass(message: string): SaveFailObserved['throwsClass'] {
+  if (/Not enough space after debris cleanup/.test(message)) {
+    return 'InsufficientSpaceAfterCleanup';
+  }
   if (/file move failed for/.test(message) || /\bMoveError\b/.test(message)) return 'MoveError';
   if (/Failed to save database/.test(message) || /\bDatabaseWriteError\b/.test(message))
     return 'DatabaseWriteError';
@@ -559,7 +605,35 @@ function parseVerboseSyncOutput(
   firstError?: { category: string; message: string };
   failedTrackCount: number;
   portableTagWarn: boolean;
+  postSweepDetail?: {
+    bytesFreedBySweep: number;
+    failedSweepPathsCount: number;
+  };
 } {
+  // Post-sweep ENOSPC (ADR-018): `InsufficientSpaceAfterCleanup` message is
+  // emitted via `out.error(err.message)` from sync-presenter's catch. The
+  // constructor's message format carries the typed-error detail (see
+  // packages/podkit-core/src/sync/engine/errors.ts):
+  //   "Not enough space after debris cleanup. Need <N> bytes, have <M>
+  //    (sweep freed <F> bytes[; <K> sweep path(s) failed])."
+  const postSweepMatch = stderr.match(
+    /^Not enough space after debris cleanup\. Need (\d+) bytes, have (\d+) \(sweep freed (\d+) bytes(?:; (\d+) sweep path\(s\) failed)?\)\.$/m
+  );
+  if (postSweepMatch) {
+    const bytesFreedBySweep = parseInt(postSweepMatch[3] ?? '0', 10) || 0;
+    const failedSweepPathsCount = postSweepMatch[4] ? parseInt(postSweepMatch[4], 10) || 0 : 0;
+    return {
+      // The post-sweep gate runs INSIDE the executor's pre-flight, so by
+      // matrix nomenclature it's not the "planner" rejecting (no save() runs
+      // either way, but the throw site is execute-time, not plan-time).
+      plannerRejects: false,
+      errorMessage: postSweepMatch[0],
+      failedTrackCount: 0,
+      portableTagWarn: false,
+      postSweepDetail: { bytesFreedBySweep, failedSweepPathsCount },
+    };
+  }
+
   // Planner pre-flight: emitted on stderr.
   const enospcMatch = stderr.match(/^Not enough space (?:on device|for video sync)\.$/m);
   if (enospcMatch) {
@@ -742,14 +816,23 @@ async function observeCell(cell: SaveFailCell): Promise<SaveFailObserved> {
   // 1. Provision mount + source tree + config.
   if (cell.failureMode === 'enospc') {
     await limaTestVmRunner.applyState(deviceMountNearFull);
+  } else if (cell.failureMode === 'enospc-post-sweep') {
+    await limaTestVmRunner.applyState(deviceMountFitsEstimateFailedSweep);
+  } else if (cell.failureMode === 'enospc-estimate-drift') {
+    await limaTestVmRunner.applyState(deviceMountFitsEstimateSourceDrifts);
   } else {
     await provisionMount(cell);
   }
   await provisionSourceTree(cell);
   await stageConfig(cell);
 
-  const fault =
-    cell.failureMode !== 'enospc' ? SAVE_FAILURE_FAULTS.get(cell.failureMode) : undefined;
+  // SystemState-provisioned cells (enospc, enospc-post-sweep,
+  // enospc-estimate-drift) don't use chmod faults. The narrowed
+  // `ChmodFailureMode` type lines up with `FaultId` so the lookup
+  // typechecks.
+  const fault = isLoopbackProvisionedFailure(cell.failureMode)
+    ? undefined
+    : SAVE_FAILURE_FAULTS.get(cell.failureMode satisfies ChmodFailureMode);
   const preseed = fault?.preseed === 'first-sync';
 
   // 2. Pre-seed: first sync clean, then mutate source so the second sync
@@ -809,10 +892,17 @@ async function observeCell(cell: SaveFailCell): Promise<SaveFailObserved> {
   const plannerRejects = parsed.plannerRejects;
   const errorMessage = parsed.errorMessage;
   const firstErrorMessage = parsed.firstError?.message ?? '';
-  const throwsClass = classifyThrowsClass(firstErrorMessage);
+  // ADR-018 post-sweep throw surfaces via `out.error(err.message)` on
+  // stderr — the verbose-formatted per-track block (`[copy] ...`) never
+  // emits because no track was attempted. Classify off the errorMessage
+  // when no per-track entry exists.
+  const throwsClass =
+    classifyThrowsClass(firstErrorMessage) ?? classifyThrowsClass(errorMessage ?? '');
   const errorCategory: SaveFailObserved['errorCategory'] = parsed.firstError
     ? (parsed.firstError.category as SaveFailObserved['errorCategory'])
-    : null;
+    : throwsClass === 'InsufficientSpaceAfterCleanup'
+      ? 'space'
+      : null;
 
   const partialDeviceState = classifyPartialDeviceState({
     cell,
@@ -833,8 +923,11 @@ async function observeCell(cell: SaveFailCell): Promise<SaveFailObserved> {
   const doctor = await runDoctor(cell);
   const doctorTmp = doctorSeesPodkitTmp(doctor);
 
-  // 9. Rescan via dry-run. ENOSPC needs the loopback rebuilt empty.
-  if (cell.failureMode === 'enospc') {
+  // 9. Rescan via dry-run. Loopback-provisioned cells need the mount
+  //    rebuilt empty so the rescan's plan-time pre-flight reads a clean
+  //    state — otherwise the same ENOSPC fires again and the rescan can't
+  //    surface what it would re-queue.
+  if (isLoopbackProvisionedFailure(cell.failureMode)) {
     await remountClean(faultCtx.mountPoint);
   }
   const dry = await runDryRun(cell);
@@ -852,8 +945,10 @@ async function observeCell(cell: SaveFailCell): Promise<SaveFailObserved> {
         op.type === 'update-metadata')
   );
 
-  // 10. Per-cell cleanup.
-  if (cell.failureMode === 'enospc') {
+  // 10. Per-cell cleanup. Loopback-provisioned cells unmount the
+  //     clean-remount image and reset the VM to `healthy`; chmod cells
+  //     run cleanupMount.
+  if (isLoopbackProvisionedFailure(cell.failureMode)) {
     await runRoot(
       `umount ${sq(faultCtx.mountPoint)} 2>/dev/null || true; rm -f /tmp/podkit-savefail-clean.img`
     ).catch(() => {});
@@ -872,6 +967,12 @@ async function observeCell(cell: SaveFailCell): Promise<SaveFailObserved> {
     errorMessage,
     failedTrackCount: parsed.failedTrackCount,
     portableTagWarn: parsed.portableTagWarn,
+    postSweepDetail: parsed.postSweepDetail
+      ? {
+          bytesFreedBySweep: parsed.postSweepDetail.bytesFreedBySweep,
+          failedSweepPathsCount: parsed.postSweepDetail.failedSweepPathsCount,
+        }
+      : null,
     debug: {
       syncExit: syncResult.exitCode,
       syncStdoutHead: syncResult.stdout.slice(0, 1200),
@@ -919,6 +1020,22 @@ function isCanonicalCell(cell: SaveFailCell): boolean {
       cell.shape === 'embedded' &&
       cell.sourceFormat === 'flac' &&
       cell.codecConfig === 'prefer-copy'
+    );
+  }
+  if (cell.failureMode === 'enospc-post-sweep') {
+    // TASK-412: one canonical post-sweep cell (embedded × flac × prefer-copy).
+    return (
+      cell.shape === 'embedded' &&
+      cell.sourceFormat === 'flac' &&
+      cell.codecConfig === 'prefer-copy'
+    );
+  }
+  if (cell.failureMode === 'enospc-estimate-drift') {
+    // TASK-412: one canonical drift cell (embedded × mp3 × prefer-copy) —
+    // mp3 because the planner's typical-bitrate gap is most easily forced
+    // with 320kbps mp3 vs 256kbps default.
+    return (
+      cell.shape === 'embedded' && cell.sourceFormat === 'mp3' && cell.codecConfig === 'prefer-copy'
     );
   }
   // iPod cells are pre-pruned at generation time — they have one

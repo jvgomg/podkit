@@ -22,10 +22,12 @@ This matrix now spans:
   - Codec configs: `prefer-copy`, `transcode-aac`.
   - Transfer modes: `fast`, `portable` (iPod-only — warn-only file-tag
     semantics; iTunesDB is authoritative).
-  - Failure modes: `enospc`, `track-readonly`, `album-readonly`,
-    `cover-collision`, `manifest-dir-readonly` (mass-storage),
-    `itunesdb-readonly` (iPod), `move-parent-readonly` (Stage D —
-    MoveError throw-on-first asymmetry).
+  - Failure modes: `enospc`, `enospc-post-sweep` (TASK-412 ADR-018),
+    `enospc-estimate-drift` (TASK-412), `track-readonly`,
+    `album-readonly`, `cover-collision`, `manifest-dir-readonly`
+    (mass-storage), `itunesdb-readonly` (iPod),
+    `move-parent-readonly` (Stage D — MoveError throw-on-first
+    asymmetry).
 
 Faults flagged `preseed: 'first-sync'` (track-readonly, itunesdb-readonly,
 move-parent-readonly) sequence the harness so that a clean first sync
@@ -38,6 +40,24 @@ contract.
 
 The ENOSPC cell is unchanged (Phase C.1): provisioned by the
 `device-mount-near-full` SystemState rather than a per-cell fault.
+
+TASK-412 added two more SystemState-provisioned cells alongside it:
+
+- **`enospc-post-sweep`** — `device-mount-fits-estimate-failed-sweep`
+  SystemState seeds chattr-immutable `.podkit-tmp` debris on a small
+  loopback. Plan-time envelope (`free + debrisCleanup.totalBytes`)
+  covers the source estimate, but the per-path `rm` in
+  `runPreliminariesPreFlight` returns EPERM for every immutable file,
+  so the ADR-018 post-sweep `statfsSync` recompute sees the original
+  (insufficient) free and throws `InsufficientSpaceAfterCleanup`.
+- **`enospc-estimate-drift`** — `device-mount-fits-estimate-source-drifts`
+  SystemState provisions a loopback sized to fit the planner's
+  typical-bitrate `estimateCopySize` prediction. The cell's source
+  mp3 is generated at 320 kbps / 30 s so its actual bytes exceed
+  the planner's 256 kbps prediction; the transfer phase's
+  `atomicCopyFile` ENOSPCs mid-write. No typed wrap on the raw
+  `fs.copyFileSync` error today — surfaces via operation-type
+  fallback as `'copy'` category.
 
 ## Carve-out catalogue (long-term scope)
 
