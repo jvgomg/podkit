@@ -6,5 +6,5 @@
       "@podkit/core": ["../podkit-core/src/index.ts"]
     }
   },
-  "include": ["src/**/*.ts", "build.ts"]
+  "include": ["src/**/*.ts", "build.ts", "../podkit-core/src/dev/build-globals.d.ts"]
 }

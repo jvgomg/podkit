@@ -2694,6 +2694,12 @@ export async function writeOwnership(_path: string, _identity: PidFileEntry): Pr
 export async function acquireLock(path: string): Promise<LockHandle> {
   return new LockHandle(path, getOwnIdentity());
 }
+export async function resolveSyncLockPath(
+  devicePath: string,
+  _isIpodDevice: boolean
+): Promise<string> {
+  return `${devicePath}/.podkit-sync.lock`;
+}
 
 // Docs URLs — stubs for demo; never shown to users.
 export const DOCS_BASE_URL = 'https://jvgomg.github.io/podkit';
