@@ -20,6 +20,7 @@ import {
   createMusicPipeline,
   executeMusicPlan,
   getFileTypeLabel,
+  getFileTypeLabelForFileType,
   getMusicOperationDisplayName,
   categorizeError,
   getRetriesForCategory,
@@ -250,7 +251,7 @@ describe('getFileTypeLabel', () => {
     expect(getFileTypeLabel('/x/song.OGG')).toBe('Ogg Vorbis audio file');
   });
 
-  it('returns the generic fallback for unknown extensions', () => {
+  it('returns the generic fallback for unknown extensions (defence-in-depth; typed exhaustiveness lives in getFileTypeLabelForFileType)', () => {
     expect(getFileTypeLabel('/x/song.weird')).toBe('Audio file');
   });
 
@@ -272,6 +273,52 @@ describe('getFileTypeLabel', () => {
       expect(resolveFileExtension(label)).toBe(expectedRoundTripExt);
     }
   );
+});
+
+// =============================================================================
+// getFileTypeLabelForFileType Tests
+// =============================================================================
+
+describe('getFileTypeLabelForFileType', () => {
+  // Enumerating every AudioFileType member here doubles as the runtime check
+  // for the compile-time exhaustiveness guard: adding a new AudioFileType
+  // member breaks the switch in pipeline.ts at compile time AND surfaces here
+  // because the new member won't appear in this matrix.
+  it.each<[AudioFileType, string]>([
+    ['mp3', 'MPEG audio file'],
+    ['m4a', 'AAC audio file'],
+    ['aac', 'AAC audio file'],
+    ['alac', 'ALAC audio file'],
+    ['opus', 'Opus audio file'],
+    ['flac', 'FLAC audio file'],
+    ['ogg', 'Ogg Vorbis audio file'],
+    ['wav', 'WAV audio file'],
+    ['aiff', 'AIFF audio file'],
+  ])('maps AudioFileType %s → %s', (fileType, expected) => {
+    expect(getFileTypeLabelForFileType(fileType)).toBe(expected);
+  });
+
+  it('every label round-trips through resolveFileExtension (no `.Audio file` artefacts can leak)', () => {
+    const fileTypes: AudioFileType[] = [
+      'mp3',
+      'm4a',
+      'aac',
+      'alac',
+      'opus',
+      'flac',
+      'ogg',
+      'wav',
+      'aiff',
+    ];
+    for (const ft of fileTypes) {
+      const label = getFileTypeLabelForFileType(ft);
+      // Sanity: never returns the generic fallback for a typed input.
+      expect(label).not.toBe('Audio file');
+      // Sanity: the produced extension is one of the known mass-storage
+      // extensions, never `.Audio file`.
+      expect(resolveFileExtension(label)).not.toBe('.Audio file');
+    }
+  });
 });
 
 // =============================================================================

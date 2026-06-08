@@ -48,6 +48,7 @@ import {
 } from '../engine/error-handling.js';
 
 import type { CollectionTrack, CollectionAdapter } from '../../adapters/interface.js';
+import type { AudioFileType } from '../../types.js';
 import type {
   FFmpegTranscoder,
   OptimizedCopyFormat,
@@ -336,38 +337,96 @@ async function getTrackFilePath(
 }
 
 /**
- * Get a human-readable filetype label based on file extension.
+ * Map a known file extension to its `AudioFileType` discriminant, or `null`
+ * for unrecognised extensions.
  *
- * Used for the iPod database `filetype` field which displays the format
- * in iTunes and on the device.
+ * Kept extension-driven (not codec-driven) because the call sites only have
+ * `source.filePath` in scope and ALAC tracks legitimately diverge from this
+ * mapping: ALAC lives in a `.m4a` container but has `fileType = 'alac'`. The
+ * extension `.m4a` therefore resolves to `m4a` (AAC display label) here, and
+ * the codec-aware paths handle ALAC disambiguation elsewhere
+ * (see `getOptimizedCopyFormat`).
  */
-export function getFileTypeLabel(filePath: string): string {
-  const ext = extname(filePath).toLowerCase();
+function extensionToAudioFileType(ext: string): AudioFileType | null {
   switch (ext) {
     case '.mp3':
-      return 'MPEG audio file';
+      return 'mp3';
     case '.m4a':
+      return 'm4a';
     case '.aac':
-      return 'AAC audio file';
+      return 'aac';
     case '.alac':
+      return 'alac';
+    case '.opus':
+      return 'opus';
+    case '.flac':
+      return 'flac';
+    case '.ogg':
+      return 'ogg';
+    case '.wav':
+      return 'wav';
+    case '.aiff':
+    case '.aif':
+      return 'aiff';
+    default:
+      return null;
+  }
+}
+
+/**
+ * Get the human-readable filetype label for an `AudioFileType` discriminant.
+ *
+ * Exhaustive over `AudioFileType` via `assertNever`: adding a new member to
+ * `AudioFileType` is a compile error here, forcing an explicit decision
+ * instead of silently producing a `'Audio file'` fallback (which the
+ * mass-storage adapter then turns into a `.Audio file` filename on the
+ * device — see `KNOWN_DEBRIS_EXTENSIONS` in `device/mass-storage-utils.ts`).
+ */
+export function getFileTypeLabelForFileType(fileType: AudioFileType): string {
+  switch (fileType) {
+    case 'mp3':
+      return 'MPEG audio file';
+    case 'm4a':
+    case 'aac':
+      return 'AAC audio file';
+    case 'alac':
       // Match CODEC_METADATA.alac.filetypeLabel so the mass-storage adapter's
       // resolveFileExtension round-trips this label back to .m4a (ALAC's real
       // container) instead of landing a `.Apple Lossless audio file` filename.
       return 'ALAC audio file';
-    case '.opus':
+    case 'opus':
       return 'Opus audio file';
-    case '.flac':
+    case 'flac':
       return 'FLAC audio file';
-    case '.ogg':
+    case 'ogg':
       return 'Ogg Vorbis audio file';
-    case '.wav':
+    case 'wav':
       return 'WAV audio file';
-    case '.aiff':
-    case '.aif':
+    case 'aiff':
       return 'AIFF audio file';
     default:
-      return 'Audio file';
+      return assertNever(fileType, `unhandled AudioFileType for filetype label: ${fileType}`);
   }
+}
+
+/**
+ * Get a human-readable filetype label based on file extension.
+ *
+ * Used for the iPod database `filetype` field which displays the format
+ * in iTunes and on the device.
+ *
+ * Unrecognised extensions return the generic `'Audio file'` fallback. This
+ * is preserved for defence-in-depth: source files reach this helper from
+ * adapter-supplied `CollectionTrack.filePath` strings, and an upstream bug
+ * that delivered a non-audio path (or a typed-but-not-yet-mapped extension)
+ * shouldn't crash the sync. The compile-time exhaustiveness check lives in
+ * `getFileTypeLabelForFileType` instead.
+ */
+export function getFileTypeLabel(filePath: string): string {
+  const ext = extname(filePath).toLowerCase();
+  const fileType = extensionToAudioFileType(ext);
+  if (fileType === null) return 'Audio file';
+  return getFileTypeLabelForFileType(fileType);
 }
 
 /**
