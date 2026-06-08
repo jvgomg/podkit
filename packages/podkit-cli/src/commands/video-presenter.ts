@@ -381,6 +381,7 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, Dev
         if (progress.error) {
           lastIndexFailed = true;
           const err = progress.error;
+          const typed = err instanceof core.CategorizedSyncError ? err : null;
           collectedErrors.push({
             trackName: this.handler!.getDisplayName(progress.operation),
             category: progress.categorizedError?.category ?? 'unknown',
@@ -388,6 +389,8 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, Dev
             retryAttempts: 0,
             wasRetried: false,
             stack: err instanceof Error ? err.stack : undefined,
+            errorClass: typed ? typed.constructor.name : undefined,
+            causes: typed ? typed.causes : undefined,
           });
         }
 

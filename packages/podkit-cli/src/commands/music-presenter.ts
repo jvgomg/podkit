@@ -782,6 +782,7 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
       })) {
         if (progress.error) {
           const categorized = progress.categorizedError;
+          const typed = progress.error instanceof core.CategorizedSyncError ? progress.error : null;
           collectedErrors.push({
             trackName:
               categorized?.trackName ?? core.getMusicOperationDisplayName(progress.operation),
@@ -790,6 +791,8 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
             retryAttempts: categorized?.retryAttempts ?? 0,
             wasRetried: categorized?.wasRetried ?? false,
             stack: progress.error.stack,
+            errorClass: typed ? typed.constructor.name : undefined,
+            causes: typed ? typed.causes : undefined,
           });
           failed++;
         } else if (progress.phase !== 'preparing') {

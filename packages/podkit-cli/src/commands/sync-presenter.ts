@@ -18,7 +18,57 @@ import type {
 import type { EncodingMode, TransferMode } from '@podkit/core';
 import type { OutputContext, CollectedError } from '../output/index.js';
 import { formatBytes } from '../output/index.js';
-import type { SyncOutput } from './sync.js';
+import type { SyncOutput, ErrorInfo } from './sync.js';
+
+// =============================================================================
+// Free-space JSON envelope helpers (TASK-378 AC #8)
+// =============================================================================
+
+/**
+ * Build a structured ErrorInfo for the plan-time not-enough-space exit
+ * path (see `genericSyncCollection` step 8 below). Synthesises a typed
+ * payload that mirrors the {@link CategorizedSyncError} hierarchy even
+ * though no actual exception is thrown at this point — the planner
+ * decides the sync cannot proceed before any track is attempted.
+ */
+function buildPlanTimeSpaceErrorInfo(args: {
+  bytesNeeded: number;
+  bytesAvailable: number;
+}): ErrorInfo {
+  return {
+    track: '',
+    category: 'space',
+    class: 'NotEnoughSpacePlanTime',
+    message: `Not enough space. Need ${formatBytes(args.bytesNeeded)}, have ${formatBytes(args.bytesAvailable)}`,
+    retryAttempts: 0,
+    wasRetried: false,
+    causes: [],
+  };
+}
+
+/**
+ * Build a structured ErrorInfo for the post-sweep not-enough-space exit
+ * path (ADR-018). Surfaces the typed-error detail so JSON consumers can
+ * render `bytesFreedBySweep` + `failedSweepPaths` without scraping the
+ * message body.
+ */
+export function buildPostSweepSpaceErrorInfo(detail: {
+  bytesNeeded: number;
+  bytesAvailable: number;
+  bytesFreedBySweep: number;
+  failedSweepPaths: readonly string[];
+  message: string;
+}): ErrorInfo {
+  return {
+    track: '',
+    category: 'space',
+    class: 'InsufficientSpaceAfterCleanup',
+    message: detail.message,
+    retryAttempts: 0,
+    wasRetried: false,
+    causes: detail.failedSweepPaths,
+  };
+}
 
 // =============================================================================
 // Types
@@ -103,6 +153,13 @@ export interface GenericSyncResult {
    * these across collections before constructing the final JSON output.
    */
   warnings?: import('@podkit/core').Warning[];
+  /**
+   * Per-track typed errors from the execute phase (TASK-378 AC #8).
+   * Sync.ts aggregates these into the final JSON output's `errors[]` array
+   * so consumers can read `{class, category, causes}` without scraping
+   * the message body.
+   */
+  collectedErrors?: CollectedError[];
 }
 
 // =============================================================================
@@ -589,6 +646,12 @@ export async function genericSyncCollection<TSource, TDevice>(
             estimatedTime: plan.estimatedTime,
           },
           error: `Not enough space. Need ${formatBytes(plan.estimatedSize)}, have ${formatBytes(storage?.free ?? 0)}`,
+          errors: [
+            buildPlanTimeSpaceErrorInfo({
+              bytesNeeded: plan.estimatedSize,
+              bytesAvailable: storage?.free ?? 0,
+            }),
+          ],
         },
       };
     }
@@ -627,7 +690,52 @@ export async function genericSyncCollection<TSource, TDevice>(
   shutdown?.protect();
   let execResult;
   try {
-    execResult = await presenter.executeSync(out, plan, adapter, contentConfig, ipod, core, signal);
+    try {
+      execResult = await presenter.executeSync(
+        out,
+        plan,
+        adapter,
+        contentConfig,
+        ipod,
+        core,
+        signal
+      );
+    } catch (err) {
+      // ADR-018: post-sweep recompute may throw InsufficientSpaceAfterCleanup
+      // before any track is attempted. Convert to the same not-enough-space
+      // exit shape as the plan-time gate so JSON consumers see a structured
+      // `errors[]` entry instead of an unhandled crash.
+      if (err instanceof core.InsufficientSpaceAfterCleanup) {
+        if (out.isJson) {
+          await adapter.disconnect();
+          return {
+            success: false,
+            completed: 0,
+            failed: 0,
+            jsonOutput: {
+              success: false,
+              dryRun: false,
+              source: sourcePath,
+              device: devicePath,
+              error: err.message,
+              errors: [
+                buildPostSweepSpaceErrorInfo({
+                  bytesNeeded: err.detail.bytesNeeded,
+                  bytesAvailable: err.detail.bytesAvailable,
+                  bytesFreedBySweep: err.detail.bytesFreedBySweep,
+                  failedSweepPaths: err.detail.failedSweepPaths,
+                  message: err.message,
+                }),
+              ],
+            },
+          };
+        }
+        out.error(err.message);
+        await adapter.disconnect();
+        return { success: false, completed: 0, failed: 0 };
+      }
+      throw err;
+    }
   } finally {
     shutdown?.unprotect();
   }
@@ -643,6 +751,7 @@ export async function genericSyncCollection<TSource, TDevice>(
     failed: execResult.failed,
     interrupted: execResult.interrupted,
     warnings: execResult.warnings,
+    collectedErrors: execResult.collectedErrors,
     ...(postDiffData.artworkMissingBaseline !== undefined
       ? { artworkMissingBaseline: postDiffData.artworkMissingBaseline as number }
       : {}),

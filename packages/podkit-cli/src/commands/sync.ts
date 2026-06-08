@@ -143,7 +143,13 @@ interface SyncOptions {
 }
 
 /**
- * Categorized error info for JSON output
+ * Categorized error info for JSON output.
+ *
+ * Per-track errors set `track` to the source track name; sync-wide errors
+ * (e.g. pre-flight free-space failure) leave it empty. When the underlying
+ * error is a {@link CategorizedSyncError} subclass, `class` and `causes`
+ * carry the typed-error provenance so JSON consumers don't have to scrape
+ * the message body. See `documents/architecture/error-handling.md`.
  */
 export interface ErrorInfo {
   track: string;
@@ -152,6 +158,10 @@ export interface ErrorInfo {
   retryAttempts: number;
   wasRetried: boolean;
   stack?: string;
+  /** Typed-error class name when the error extends CategorizedSyncError. */
+  class?: string;
+  /** Per-entry failure descriptions for aggregated typed errors. */
+  causes?: readonly string[];
 }
 
 /**
@@ -1040,6 +1050,7 @@ export async function runSync(
   let totalArtworkMissingBaseline = 0;
   let totalTransferModeMismatch = 0;
   const allWarnings: import('@podkit/core').Warning[] = [];
+  const allErrors: import('../output/index.js').CollectedError[] = [];
   // Captured per-collection inside the music loop so the non-dry-run
   // aggregate JSON can surface decision provenance. Decisions are device-wide,
   // so the last collection's value is equivalent to any other's.
@@ -1319,6 +1330,9 @@ export async function runSync(
         if (result.warnings && result.warnings.length > 0) {
           allWarnings.push(...result.warnings);
         }
+        if (result.collectedErrors && result.collectedErrors.length > 0) {
+          allErrors.push(...result.collectedErrors);
+        }
         if (!result.success) {
           anyError = true;
         }
@@ -1387,6 +1401,9 @@ export async function runSync(
           totalFailed += result.failed;
           if (result.warnings && result.warnings.length > 0) {
             allWarnings.push(...result.warnings);
+          }
+          if (result.collectedErrors && result.collectedErrors.length > 0) {
+            allErrors.push(...result.collectedErrors);
           }
           if (!result.success) {
             anyError = true;
@@ -1516,6 +1533,19 @@ export async function runSync(
                 tracks: out.isVerbose && w.tracks.length > 0 ? w.tracks : undefined,
               }))
             : undefined;
+        const errorInfos: ErrorInfo[] | undefined =
+          allErrors.length > 0
+            ? allErrors.map((e) => ({
+                track: e.trackName,
+                category: e.category,
+                message: e.message,
+                retryAttempts: e.retryAttempts,
+                wasRetried: e.wasRetried,
+                ...(e.stack !== undefined ? { stack: e.stack } : {}),
+                ...(e.errorClass !== undefined ? { class: e.errorClass } : {}),
+                ...(e.causes !== undefined ? { causes: e.causes } : {}),
+              }))
+            : undefined;
         out.json({
           success: true,
           status: cleanRun ? 'ok' : 'partial-failure',
@@ -1530,6 +1560,7 @@ export async function runSync(
           },
           eject: ejectInfo,
           warnings: warningInfos,
+          errors: errorInfos,
         });
       }
 

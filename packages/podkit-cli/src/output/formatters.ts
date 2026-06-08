@@ -160,6 +160,10 @@ export interface CollectedError {
   retryAttempts: number;
   wasRetried: boolean;
   stack?: string;
+  /** Typed-error class name (CategorizedSyncError subclass) when applicable. */
+  errorClass?: string;
+  /** Per-entry failure descriptions for aggregated typed errors. */
+  causes?: readonly string[];
 }
 
 /**
