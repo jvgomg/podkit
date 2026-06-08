@@ -573,6 +573,7 @@ function classifyThrowsClass(message: string): SaveFailObserved['throwsClass'] {
     return 'InsufficientSpaceAfterCleanup';
   }
   if (/file move failed for/.test(message) || /\bMoveError\b/.test(message)) return 'MoveError';
+  if (/file copy failed for/.test(message) || /\bCopyError\b/.test(message)) return 'CopyError';
   if (/Failed to save database/.test(message) || /\bDatabaseWriteError\b/.test(message))
     return 'DatabaseWriteError';
   if (/tag write failed for/.test(message) || /\bTagWriteError\b/.test(message))
@@ -786,11 +787,27 @@ async function runDoctor(cell: SaveFailCell): Promise<DoctorJsonShape> {
 }
 
 function doctorSeesPodkitTmp(doctor: DoctorJsonShape): boolean | null {
+  // `.podkit-tmp` debris lives in two device-typed checks after TASK-397:
+  //   - mass-storage devices → `debris-files-mass-storage` (split out of the
+  //     legacy `orphan-files-mass-storage` so orphan vs debris confirmation
+  //     gating could diverge).
+  //   - iPod devices → `debris-files-ipod` (added by TASK-376's atomic
+  //     tag-write that can leave residue anywhere under iPod_Control/).
+  //
+  // For each cell, the doctor JSON includes whichever check matches the
+  // device's `applicableTo` set; the other is absent. The helper picks
+  // whichever fired and reads its `details.debris[]`. If neither fired
+  // (no doctor run yet, or both checks skipped), return null so the
+  // matrix prediction can explicitly carry `null` for shapes that have
+  // no podkit-tmp surface (e.g. iPod cells where the failure mode never
+  // exercises a tag-write tmp+rename).
   if (!doctor.checks || doctor.checks.length === 0) return null;
-  const orphan = doctor.checks.find((c) => c.id === 'orphan-files-mass-storage');
-  if (!orphan) return null;
-  if (orphan.status === 'skip') return false;
-  const debris = orphan.details?.debris ?? [];
+  const debrisCheck =
+    doctor.checks.find((c) => c.id === 'debris-files-mass-storage') ??
+    doctor.checks.find((c) => c.id === 'debris-files-ipod');
+  if (!debrisCheck) return null;
+  if (debrisCheck.status === 'skip') return false;
+  const debris = debrisCheck.details?.debris ?? [];
   return debris.some((d) => typeof d.path === 'string' && d.path.endsWith('.podkit-tmp'));
 }
 

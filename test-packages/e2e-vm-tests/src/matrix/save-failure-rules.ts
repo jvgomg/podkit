@@ -191,6 +191,7 @@ export function derivedSyncPath(
 
 export type ThrowsClass =
   | 'MoveError'
+  | 'CopyError'
   | 'TagWriteError'
   | 'PictureWriteError'
   | 'SidecarWriteError'
@@ -482,7 +483,14 @@ function predictPostSweep(cell: SaveFailCell): SaveFailExpected {
     errorCategory: 'space',
     partialDeviceState: 'no-files-landed',
     rescanRefiresAddOrUpgrade: true,
-    doctorSeesPodkitTmp: false,
+    // The fault setup chattr +i's two pre-seeded `.podkit-tmp` files so the
+    // per-path rm in `runPreliminariesPreFlight` returns EPERM. Those tmps
+    // survive on disk, and after TASK-413's helper fix (which correctly
+    // reads `debris-files-mass-storage` instead of the legacy
+    // `orphan-files-mass-storage`) doctor sees them as debris → `true`.
+    // Previously masked because the helper queried the wrong check ID and
+    // returned `false` for any cell with leftover .podkit-tmp residue.
+    doctorSeesPodkitTmp: true,
     errorMessageMatches: /^Not enough space after debris cleanup\./,
     failedTrackCount: 0,
     portableTagWarn: false,
@@ -490,7 +498,7 @@ function predictPostSweep(cell: SaveFailCell): SaveFailExpected {
       bytesFreedBySweep: 0,
       failedSweepPathsCount: 2,
     },
-    reason: `${cell.shape} × ${cell.sourceFormat} × ${cell.codecConfig} × ${cell.transferMode} × ENOSPC-post-sweep — ADR-018 post-sweep statfs recompute fires when the sweep cannot recover the bytes the plan-time envelope counted on. Two chattr-immutable .podkit-tmp files survive the per-path rm (EPERM), so freedBytes stays 0 and freshFree shows the original (insufficient) free. Throws InsufficientSpaceAfterCleanup before any track is attempted; rescan re-fires the unwritten add ops.`,
+    reason: `${cell.shape} × ${cell.sourceFormat} × ${cell.codecConfig} × ${cell.transferMode} × ENOSPC-post-sweep — ADR-018 post-sweep statfs recompute fires when the sweep cannot recover the bytes the plan-time envelope counted on. Two chattr-immutable .podkit-tmp files survive the per-path rm (EPERM), so freedBytes stays 0 and freshFree shows the original (insufficient) free. Throws InsufficientSpaceAfterCleanup before any track is attempted; rescan re-fires the unwritten add ops. The surviving .podkit-tmp tmps are visible to doctor's debris-files-mass-storage check (doctorSeesPodkitTmp: true).`,
   };
 }
 
@@ -499,19 +507,16 @@ function predictPostSweep(cell: SaveFailCell): SaveFailExpected {
  *
  * Mount sized to fit `estimateCopySize` (typical-bitrate × duration) but
  * not the source's actual bytes. Plan-time + post-sweep gates both pass;
- * the transfer-phase `atomicCopyFile` ENOSPCs mid-write. Raw fs error
- * propagates through `MassStorageAdapter.copyTrackFile` with no typed
- * wrap, so `categorizeError` falls back to operation-type 'copy' via
- * `categoryForOperationType('add-direct-copy')`.
- *
- * Pins a weaker contract than the post-sweep cell — `throwsClass: null`
- * because raw fs errors aren't wrapped today. Strengthening to a typed
- * `CopyError extends CategorizedSyncError` is a follow-up.
+ * the transfer-phase `atomicCopyFile` ENOSPCs mid-write. The raw fs error
+ * is wrapped in a typed `CopyError extends CategorizedSyncError` at the
+ * `MassStorageAdapter.copyTrackFile` boundary, so `categorizeError` reads
+ * `'copy'` off the class (not via operation-type fallback) and the
+ * underlying errno survives on `CopyError.errorCode`.
  */
 function predictEstimateDrift(cell: SaveFailCell): SaveFailExpected {
   return {
     plannerRejects: false,
-    throwsClass: null,
+    throwsClass: 'CopyError',
     errorCategory: 'copy',
     partialDeviceState: 'no-files-landed',
     rescanRefiresAddOrUpgrade: true,
@@ -529,7 +534,7 @@ function predictEstimateDrift(cell: SaveFailCell): SaveFailExpected {
     failedTrackCount: null,
     portableTagWarn: false,
     postSweepDetail: null,
-    reason: `${cell.shape} × ${cell.sourceFormat} × ${cell.codecConfig} × ${cell.transferMode} × ENOSPC-estimate-drift — plan-time + post-sweep gates both pass (mount fits estimateCopySize prediction) but the 320kbps mp3 source's actual bytes exceed the free space. Transfer-phase atomicCopyFile ENOSPCs mid-write; raw fs error propagates unwrapped through copyTrackFile (no typed CopyError today), categorized as 'copy' via operation-type fallback. Rescan re-queues the un-landed add op.`,
+    reason: `${cell.shape} × ${cell.sourceFormat} × ${cell.codecConfig} × ${cell.transferMode} × ENOSPC-estimate-drift — plan-time + post-sweep gates both pass (mount fits estimateCopySize prediction) but the 320kbps mp3 source's actual bytes exceed the free space. Transfer-phase atomicCopyFile ENOSPCs mid-write; raw fs error wrapped in typed CopyError at the copyTrackFile boundary; categorizer reads 'copy' off the class. Rescan re-queues the un-landed add op.`,
   };
 }
 
@@ -667,28 +672,33 @@ function predictChmodFault(cell: SaveFailCell): SaveFailExpected {
     }
 
     case 'manifest-dir-readonly': {
-      // chmod 0500 on <mount>/.podkit/ BEFORE the sync. Every other save()
-      // stage runs to completion (copy, tag, picture, sidecar all succeed);
-      // the final manifest write hits EACCES on the tmp file create inside
-      // .podkit/. The manifest write currently propagates the raw fs error
-      // (no typed class for manifest writes today), so it surfaces as a
-      // plain Error categorized to whichever fallback bucket the executor
-      // assigns. The category tracks the active operation type that triggered
-      // the save(): 'copy' when the sync path was a direct/optimized copy op,
-      // 'transcode' when the sync path was a transcode op.
-      const manifestReadonlyCategory: ErrorCategory =
-        syncPath === 'transcode-aac' ? 'transcode' : 'copy';
+      // chmod 0500 on <mount>/.podkit/ BEFORE the sync. After TASK-404 the
+      // per-device sync lock acquires `<mount>/.podkit/sync.lock` BEFORE any
+      // track operation runs; the lock create hits EACCES on the read-only
+      // dir. TASK-413 wraps that EACCES in a typed `LockUnavailableError`
+      // which the sync orchestrator translates to a `CliError` (code
+      // LOCK_UNAVAILABLE) emitted BEFORE save() ever runs. Symptoms:
+      //   - syncExit: 1 with a clean stderr message (no JS stack trace).
+      //   - No per-track error envelope → errorCategory: null,
+      //     failedTrackCount: 0.
+      //   - No files landed → partialDeviceState: 'no-files-landed' and the
+      //     next dry-run sync re-fires the add op (rescan: true).
+      // The old "copy succeeds; manifest write fails late" prediction
+      // captured the pre-TASK-404 behaviour where the manifest write inside
+      // save() was the first thing to hit .podkit/. With the lock now
+      // gating the whole sync, the early-typed-failure path supersedes it.
+      void syncPath;
       return {
         plannerRejects: false,
         throwsClass: null,
-        errorCategory: manifestReadonlyCategory,
-        partialDeviceState: 'file-copied-manifest-stale',
-        rescanRefiresAddOrUpgrade: false,
+        errorCategory: null,
+        partialDeviceState: 'no-files-landed',
+        rescanRefiresAddOrUpgrade: true,
         doctorSeesPodkitTmp: false,
         errorMessageMatches: null,
-        failedTrackCount: 1,
+        failedTrackCount: 0,
         portableTagWarn: false,
-        reason: `${cell.shape} × ${cell.sourceFormat} × ${cell.codecConfig} × ${cell.transferMode} × manifest-dir-readonly — syncPath=${syncPath}; copy + tag + picture + sidecar stages succeed; manifest write into .podkit/ fails with EACCES. No typed error class for manifest writes today. Error category follows the active operation type: '${manifestReadonlyCategory}' for syncPath=${syncPath}. Tracks physically landed with correct tags → rescan sees them, no add ops re-fire.`,
+        reason: `${cell.shape} × ${cell.sourceFormat} × ${cell.codecConfig} × ${cell.transferMode} × manifest-dir-readonly — TASK-413: the per-device sync lock at <mount>/.podkit/sync.lock cannot be created (.podkit/ is chmod 0555 → EACCES). Wrapped as LockUnavailableError → typed CliError (code LOCK_UNAVAILABLE) emitted BEFORE save() runs, so no per-track error envelope, no files landed, rescan still wants to add. Replaces the pre-TASK-404 "manifest write fails late" path.`,
       };
     }
 
@@ -702,13 +712,17 @@ function predictChmodFault(cell: SaveFailCell): SaveFailExpected {
         errorCategory: 'database',
         partialDeviceState: 'database-stale',
         rescanRefiresAddOrUpgrade: true,
-        // iPod doesn't use a mass-storage manifest — `orphan-files-mass-storage`
-        // check is skip/absent and `doctorSeesPodkitTmp` returns null.
-        doctorSeesPodkitTmp: null,
+        // The failure happens inside libgpod's iTunesDB write (`.<DB>.<rand>`
+        // sidecar; not a `.podkit-tmp`). After TASK-413 the
+        // `doctorSeesPodkitTmp` helper inspects `debris-files-ipod`, which
+        // walks for `.podkit-tmp` residue only — libgpod's tmp pattern is
+        // ignored. So the check fires `pass` with empty debris and the
+        // helper returns `false`, not `null`.
+        doctorSeesPodkitTmp: false,
         errorMessageMatches: null,
         failedTrackCount: 1,
         portableTagWarn: false,
-        reason: `${cell.shape} × ${cell.sourceFormat} × ${cell.codecConfig} × ${cell.transferMode} × itunesdb-readonly — iPod cell. Pre-seed (first sync) wires up iTunesDB; chmod 0555 on the iTunes dir blocks the second sync's libgpod tmp+rename → save() stage 1 throws DatabaseWriteError (categorised 'database', no retry). New track was copied to disk but the database write didn't land.`,
+        reason: `${cell.shape} × ${cell.sourceFormat} × ${cell.codecConfig} × ${cell.transferMode} × itunesdb-readonly — iPod cell. Pre-seed (first sync) wires up iTunesDB; chmod 0555 on the iTunes dir blocks the second sync's libgpod tmp+rename → save() stage 1 throws DatabaseWriteError (categorised 'database', no retry). New track was copied to disk but the database write didn't land. doctor's debris-files-ipod check sees no .podkit-tmp residue (libgpod's tmp pattern is not .podkit-tmp).`,
       };
     }
 
