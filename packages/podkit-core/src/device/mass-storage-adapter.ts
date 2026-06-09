@@ -621,6 +621,11 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
     // for direct-copy-vs-transcode decisions. See
     // MASS_STORAGE_UNSUPPORTED_OUTPUT_CODECS in @podkit/devices-mass-storage
     // for the rationale (tag-write reliability across RIFF/IFF containers).
+    //
+    // The CLI carries the unfiltered list separately (OpenDeviceResult.
+    // firmwareCapabilities) so `podkit device info` can show users both
+    // views — firmware truth vs operational — and annotate the gap codecs
+    // as transcoded before transfer.
     this.capabilities = {
       ...capabilities,
       supportedAudioCodecs: capabilities.supportedAudioCodecs.filter(

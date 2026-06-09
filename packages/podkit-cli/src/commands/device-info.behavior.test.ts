@@ -111,6 +111,7 @@ interface InfoJson {
     databaseError?: string;
     massStorageCapabilities?: {
       supportedAudioCodecs: string[];
+      firmwareSupportedAudioCodecs?: string[];
       supportsVideo: boolean;
     };
   };
@@ -180,6 +181,47 @@ describe('runDeviceInfo: behaviour past openDevice', () => {
     const result = stdout.json<InfoJson>();
     expect(result.status?.massStorageCapabilities?.supportedAudioCodecs).toEqual(['flac', 'mp3']);
     expect(result.status?.massStorageCapabilities?.supportsVideo).toBe(true);
+    // No firmware diff plumbed through → omit the field rather than echo
+    // the operational list. Absence is the "both views agree" signal.
+    expect(result.status?.massStorageCapabilities?.firmwareSupportedAudioCodecs).toBeUndefined();
+  });
+
+  it('emits firmwareSupportedAudioCodecs when openDevice surfaces a stricter operational list', async () => {
+    const ctx = makeContext(mount);
+    const { out, stdout, exitCode } = makeOut();
+
+    const deps: DeviceInfoDeps = {
+      loadCore: async () => fakeCore(),
+      getDeviceManager: () => fakeManager(),
+      openDevice: async () =>
+        makeFakeOpenDeviceResult({
+          tracks: [makeFakeIpodTrack({ mediaType: 1 })],
+          isIpodDevice: false,
+          capabilities: {
+            supportedAudioCodecs: ['aac', 'mp3', 'flac'],
+          },
+          firmwareCapabilities: {
+            supportedAudioCodecs: ['aac', 'mp3', 'flac', 'wav', 'aiff'],
+          },
+        }),
+    };
+
+    await runWithContext(ctx, () => runAction(out, () => runDeviceInfo(out, deps)));
+    expect(exitCode.get()).toBeUndefined();
+
+    const result = stdout.json<InfoJson>();
+    expect(result.status?.massStorageCapabilities?.supportedAudioCodecs).toEqual([
+      'aac',
+      'mp3',
+      'flac',
+    ]);
+    expect(result.status?.massStorageCapabilities?.firmwareSupportedAudioCodecs).toEqual([
+      'aac',
+      'mp3',
+      'flac',
+      'wav',
+      'aiff',
+    ]);
   });
 
   it('demotes openDevice failure to status.databaseError (no thrown CliError)', async () => {

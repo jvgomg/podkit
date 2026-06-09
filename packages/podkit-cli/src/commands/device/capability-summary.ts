@@ -44,6 +44,31 @@ export type CapabilityRenderContext =
 export interface PrintCapabilitySummaryOptions {
   /** Outer indent for the "Capabilities:" header. Default `''`. */
   indent?: string;
+  /**
+   * Mass-storage-only: unfiltered "device firmware can play" view. When this
+   * is a strict superset of `capabilities.supportedAudioCodecs`, the renderer
+   * shows both lists with the dropped codecs annotated as transcoded; when
+   * the two lists are equal, the renderer collapses to a single `Audio Codecs:`
+   * line. Ignored on the iPod variant.
+   */
+  firmwareCapabilities?: DeviceCapabilities;
+}
+
+/**
+ * Codecs the firmware accepts but podkit will transcode before transfer
+ * (the firmware ⊋ operational gap). Returns `[]` when firmware is absent or
+ * when the operational list already covers every firmware codec.
+ *
+ * Shared between the `Audio Codecs:` sub-block render and the JSON
+ * `firmwareSupportedAudioCodecs` gate in `info.ts` so the two surfaces
+ * agree on what counts as a diff.
+ */
+export function getTranscodedCodecs(
+  firmwareCodecs: readonly string[] | undefined,
+  operationalCodecs: readonly string[]
+): string[] {
+  if (!firmwareCodecs) return [];
+  return firmwareCodecs.filter((c) => !operationalCodecs.includes(c));
 }
 
 /**
@@ -55,7 +80,9 @@ export interface PrintCapabilitySummaryOptions {
  *
  * Mass-storage variant: tabular `Key: value` layout listing codecs, artwork
  * sources/resolution, video support, normalization mode, and album-artist
- * browsing.
+ * browsing. When `opts.firmwareCapabilities` carries a strict-superset codec
+ * list (e.g. rockbox declares wav/aiff but the adapter drops them), the
+ * `Audio Codecs:` line expands into a `Firmware:` / `Podkit:` sub-block.
  */
 export function printCapabilitySummary(
   out: OutputContext,
@@ -93,7 +120,20 @@ export function printCapabilitySummary(
   }
 
   // mass-storage — tabular layout
-  out.print(`${inner}Audio Codecs:    ${capabilities.supportedAudioCodecs.join(', ')}`);
+  const operationalCodecs = capabilities.supportedAudioCodecs;
+  const firmwareCodecs = opts.firmwareCapabilities?.supportedAudioCodecs;
+  const transcoded = getTranscodedCodecs(firmwareCodecs, operationalCodecs);
+  if (firmwareCodecs && transcoded.length > 0) {
+    // Sub-block: firmware ⊋ operational. Show both views so users see what
+    // their firmware can play AND what podkit will write — see
+    // MASS_STORAGE_UNSUPPORTED_OUTPUT_CODECS in @podkit/devices-mass-storage.
+    out.print(`${inner}Audio Codecs:`);
+    out.print(`${inner}  Firmware:   ${firmwareCodecs.join(', ')}`);
+    out.print(`${inner}  Podkit:     ${operationalCodecs.join(', ') || 'none'}`);
+    out.print(`${inner}              (${transcoded.join(', ')} transcoded before transfer)`);
+  } else {
+    out.print(`${inner}Audio Codecs:    ${operationalCodecs.join(', ')}`);
+  }
   out.print(
     `${inner}Artwork:         ${capabilities.artworkSources.join(', ')} (max ${capabilities.artworkMaxResolution}px)`
   );

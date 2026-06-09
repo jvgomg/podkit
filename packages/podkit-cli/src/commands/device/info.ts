@@ -25,7 +25,7 @@ import {
   synthesizePathModeDeviceInfo,
 } from './shared.js';
 import type { DeviceInfoOutput, DeviceInfoSuccess } from './output-types.js';
-import { printCapabilitySummary } from './capability-summary.js';
+import { printCapabilitySummary, getTranscodedCodecs } from './capability-summary.js';
 
 export interface DeviceInfoDeps extends CoreLoaderDeps {
   getDeviceManager?: () => import('@podkit/core').DeviceManager;
@@ -63,6 +63,7 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
   let liveStatus: DeviceInfoSuccess['status'] | undefined;
   let databaseErrorIsUnexpected = false;
   let resolvedDeviceCapabilities: import('@podkit/core').DeviceCapabilities | undefined;
+  let firmwareDeviceCapabilities: import('@podkit/core').DeviceCapabilities | undefined;
   let readinessData: DeviceInfoSuccess['readiness'] | undefined;
 
   try {
@@ -95,6 +96,7 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
               podkitConfig.deviceDefaults
             );
             resolvedDeviceCapabilities = openedDeviceResult.capabilities;
+            firmwareDeviceCapabilities = openedDeviceResult.firmwareCapabilities;
             const storage = getStorageInfo(resolveResult.path);
             const tracks = openedDeviceResult.adapter.getTracks();
             const musicTracks = tracks.filter((t) => core.isMusicMediaType(t.mediaType));
@@ -156,10 +158,19 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
               };
             }
 
-            // Mass-storage capabilities for JSON output
+            // Mass-storage capabilities for JSON output. `firmwareSupportedAudioCodecs`
+            // is only set when the firmware list strictly differs from the
+            // operational one — most devices (echo-mini, generic) have no diff,
+            // and the absence is the signal that the two views are equal.
             if (!openedDeviceResult.ipod && resolvedDeviceCapabilities) {
+              const operational = resolvedDeviceCapabilities.supportedAudioCodecs;
+              const firmware = firmwareDeviceCapabilities?.supportedAudioCodecs;
+              const hasFirmwareDiff = getTranscodedCodecs(firmware, operational).length > 0;
               liveStatus.massStorageCapabilities = {
-                supportedAudioCodecs: [...resolvedDeviceCapabilities.supportedAudioCodecs],
+                supportedAudioCodecs: [...operational],
+                ...(hasFirmwareDiff && firmware
+                  ? { firmwareSupportedAudioCodecs: [...firmware] }
+                  : {}),
                 artworkSources: [...resolvedDeviceCapabilities.artworkSources],
                 artworkMaxResolution: resolvedDeviceCapabilities.artworkMaxResolution,
                 supportsVideo: resolvedDeviceCapabilities.supportsVideo,
@@ -416,7 +427,7 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
             out,
             resolvedDeviceCapabilities,
             { kind: 'mass-storage' },
-            { indent: '  ' }
+            { indent: '  ', firmwareCapabilities: firmwareDeviceCapabilities }
           );
         }
 

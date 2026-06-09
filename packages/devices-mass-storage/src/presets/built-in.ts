@@ -25,6 +25,13 @@ import type { BuiltInPresetId, MassStoragePreset } from './types.js';
  * presets represent device facts. The sync planner is the gate that
  * actually enforces this policy.
  *
+ * `podkit device info` surfaces both views so users can see the gap:
+ * the unfiltered "Firmware:" line lists what the device can play, and the
+ * "Podkit:" line lists what podkit will actually write (with the gap codecs
+ * annotated as "transcoded before transfer"). The filter site is
+ * `MassStorageAdapter`'s constructor; the renderer is
+ * `packages/podkit-cli/src/commands/device/capability-summary.ts`.
+ *
  * Note: iPod is exempt. Its `supportedAudioCodecs` come from libgpod
  * generation metadata and the iPod's iTunesDB carries metadata so the
  * tag-writing limitation does not apply.

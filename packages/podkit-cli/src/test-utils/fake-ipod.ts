@@ -84,6 +84,7 @@ export function makeFakeOpenDeviceResult(
   opts: {
     tracks?: IpodTrack[];
     capabilities?: Partial<DeviceCapabilities>;
+    firmwareCapabilities?: Partial<DeviceCapabilities>;
     isIpodDevice?: boolean;
     adapter?: DeviceAdapter;
     ipod?: OpenDeviceResult['ipod'];
@@ -100,6 +101,9 @@ export function makeFakeOpenDeviceResult(
   return {
     adapter,
     capabilities,
+    ...(opts.firmwareCapabilities !== undefined
+      ? { firmwareCapabilities: { ...NULL_CAPABILITIES, ...opts.firmwareCapabilities } }
+      : {}),
     deviceSupportsAlac: capabilities.supportedAudioCodecs.includes('alac'),
     isIpodDevice: opts.isIpodDevice ?? true,
     ipod: opts.ipod,

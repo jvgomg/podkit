@@ -30,6 +30,19 @@ export interface OpenDeviceResult {
   adapter: DeviceAdapter;
   /** Resolved capabilities for this device */
   capabilities: DeviceCapabilities;
+  /**
+   * Unfiltered "device firmware can play" view for mass-storage devices.
+   *
+   * `capabilities.supportedAudioCodecs` is the operational view that the
+   * adapter / planner consume — MassStorageAdapter filters out codecs podkit
+   * refuses to USE as output (today: wav, aiff). `firmwareCapabilities`
+   * carries the raw preset (or override) list so `device info` can show users
+   * both views: what their firmware can play AND what podkit will write.
+   *
+   * `undefined` on iPod (no filter is applied; `capabilities` is already the
+   * firmware truth).
+   */
+  firmwareCapabilities?: DeviceCapabilities;
   /** Whether the device supports ALAC playback */
   deviceSupportsAlac: boolean;
   /** Whether this is an iPod device (type undefined or 'ipod') */
@@ -377,6 +390,10 @@ export async function openDevice(
   return {
     adapter,
     capabilities: effectiveCaps,
+    // Surface the pre-filter list so `device info` can show users both views
+    // (firmware vs operational). `resolvedCaps` is the same bag the adapter
+    // received before its supportedAudioCodecs filter ran.
+    firmwareCapabilities: resolvedCaps,
     deviceSupportsAlac: effectiveCaps.supportedAudioCodecs.includes('alac'),
     isIpodDevice: false,
     // Pre-sync sweep (TASK-398) needs to walk the configured content paths

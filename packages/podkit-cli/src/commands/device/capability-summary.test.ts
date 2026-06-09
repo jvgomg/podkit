@@ -133,6 +133,25 @@ describe('printCapabilitySummary — iPod', () => {
     expect(stdout.lines()).not.toContain('  + Podcasts');
     expect(stdout.lines()).not.toContain('  - Podcasts');
   });
+
+  it('ignores firmwareCapabilities on the ipod branch (filter is mass-storage-only)', () => {
+    const { out, stdout } = makeOut();
+    const firmware: DeviceCapabilities = {
+      ...IPOD_CAPS_FULL,
+      supportedAudioCodecs: ['aac', 'mp3', 'wav', 'aiff'],
+    };
+    printCapabilitySummary(
+      out,
+      IPOD_CAPS_FULL,
+      { kind: 'ipod', modelDisplay: 'iPod video' },
+      { firmwareCapabilities: firmware }
+    );
+    // iPod path returns before the firmware-diff block; no sub-block rendered.
+    const lines = stdout.lines();
+    expect(lines.some((l) => l.includes('Firmware:'))).toBe(false);
+    expect(lines.some((l) => l.includes('Podkit:'))).toBe(false);
+    expect(lines.some((l) => l.includes('transcoded before transfer'))).toBe(false);
+  });
 });
 
 describe('printCapabilitySummary — mass-storage', () => {
@@ -155,6 +174,53 @@ describe('printCapabilitySummary — mass-storage', () => {
     const lines = stdout.lines();
     expect(lines[0]).toBe('  Capabilities:');
     expect(lines[1]).toBe('    Audio Codecs:    aac, flac, mp3');
+  });
+
+  it('renders the Firmware/Podkit sub-block when firmwareCapabilities is a strict superset', () => {
+    const { out, stdout } = makeOut();
+    const operational: DeviceCapabilities = {
+      ...MASS_STORAGE_CAPS,
+      supportedAudioCodecs: ['aac', 'alac', 'mp3', 'flac', 'vorbis', 'opus'],
+    };
+    const firmware: DeviceCapabilities = {
+      ...operational,
+      supportedAudioCodecs: ['aac', 'alac', 'mp3', 'flac', 'vorbis', 'opus', 'wav', 'aiff'],
+    };
+    printCapabilitySummary(
+      out,
+      operational,
+      { kind: 'mass-storage' },
+      { firmwareCapabilities: firmware }
+    );
+    expect(stdout.lines()).toEqual([
+      'Capabilities:',
+      '  Audio Codecs:',
+      '    Firmware:   aac, alac, mp3, flac, vorbis, opus, wav, aiff',
+      '    Podkit:     aac, alac, mp3, flac, vorbis, opus',
+      '                (wav, aiff transcoded before transfer)',
+      '  Artwork:         database, embedded (max 320px)',
+      '  Video:           no',
+      '  Normalization:   replaygain',
+      '  Album Artist:    yes',
+    ]);
+  });
+
+  it('collapses to a single Audio Codecs line when firmware == operational', () => {
+    const { out, stdout } = makeOut();
+    printCapabilitySummary(
+      out,
+      MASS_STORAGE_CAPS,
+      { kind: 'mass-storage' },
+      { firmwareCapabilities: MASS_STORAGE_CAPS }
+    );
+    expect(stdout.lines()).toEqual([
+      'Capabilities:',
+      '  Audio Codecs:    aac, flac, mp3',
+      '  Artwork:         database, embedded (max 320px)',
+      '  Video:           no',
+      '  Normalization:   replaygain',
+      '  Album Artist:    yes',
+    ]);
   });
 });
 

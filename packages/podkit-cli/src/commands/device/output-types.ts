@@ -139,7 +139,21 @@ export interface DeviceInfoSuccess {
     syncTagMissingArt?: number;
     syncTagMissingTransfer?: number;
     massStorageCapabilities?: {
+      /**
+       * Codecs podkit will use as device output on this device. Filtered:
+       * MassStorageAdapter drops codecs whose tag-writing is unreliable
+       * (today: wav, aiff). Consumers branching direct-copy vs transcode
+       * should read this list.
+       */
       supportedAudioCodecs: string[];
+      /**
+       * Unfiltered "device firmware can play" view — the preset's
+       * supportedAudioCodecs after device-config / device-defaults overrides,
+       * before podkit's output filter. Set out alongside
+       * `supportedAudioCodecs` so users can see codecs the firmware accepts
+       * but podkit transcodes before transfer.
+       */
+      firmwareSupportedAudioCodecs?: string[];
       artworkSources: string[];
       artworkMaxResolution: number | null;
       supportsVideo: boolean;
