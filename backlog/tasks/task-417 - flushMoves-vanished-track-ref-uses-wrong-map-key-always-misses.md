@@ -1,9 +1,10 @@
 ---
 id: TASK-417
 title: flushMoves vanished-track ref uses wrong map key (always misses)
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-06-09 10:02'
+updated_date: '2026-06-09 15:41'
 labels:
   - bug
   - mass-storage
@@ -53,7 +54,32 @@ Bug pre-dates TASK-416 (which extracted `flushMoves` from the old inline `save()
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 #1 `flushMoves()` uses `oldPath` (not `newPath`) when looking up the vanished track ref; warning emits real artist/title
-- [ ] #2 #2 "skips move gracefully when source file is missing" test gains an assertion on the warning's track refs (no "Unknown Artist / Unknown Track" fallback for known tracks)
-- [ ] #3 #3 No regression on existing relocate / move tests
+- [x] #1 #2 "skips move gracefully when source file is missing" test gains an assertion on the warning's track refs (no "Unknown Artist / Unknown Track" fallback for known tracks)
+- [x] #2 #3 No regression on existing relocate / move tests
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+## Outcome
+
+Original AC#1 premise was wrong. Investigation found that `relocateTrack` synchronously updates `this.tracks[index]` to `withPath(finalPath)` before `flushMoves` runs, so the in-memory track's `filePath` already equals `newPath` at flush time. The lookup `trackRefByPath.get(newPath)` hits. The existing `save() — WarningSink emit sites` test already asserts the warning carries real artist/title/album and passes — proving no bug exists. AC#1 removed.
+
+## What was done instead
+
+Three real issues found nearby were addressed in a single refactor:
+
+1. **Dead code**: `lookupTrackRef` private method never called by production. Deleted.
+2. **Hollow test**: "memoizes track lookup to avoid O(N²) scans" spied on the dead method, giving false confidence. Replaced with "captured ref survives downstream mutation of the in-memory track" that pins snapshot semantics.
+3. **Fragile design**: `pendingMoves: Map<oldPath, newPath>` required a flush-time lookup against mutable `this.tracks` — asymmetric with `replaceTrackFile`'s warning site which captures `track.artist/title/album` directly. Changed to `Map<oldPath, { newPath, trackRef }>`; ref captured eagerly at `relocateTrack` time. `flushMoves` ENOENT branch pushes `entry.trackRef` directly. Memo + sentinel fallback gone.
+
+Also strengthened "skips move gracefully when source file is missing" test (AC#2) with the missing artist/title/album assertion. Updated `documents/architecture/sync/save-transactions.md` to note TASK-417 superseded the TASK-392 lazy-memo approach.
+
+## Files touched
+
+- `packages/podkit-core/src/device/mass-storage-adapter.ts` — pendingMoves type, relocateTrack capture, flushMoves simplified, lookupTrackRef deleted
+- `packages/podkit-core/src/device/mass-storage-adapter.test.ts` — strengthened "skips move gracefully", new "captured ref survives mutation" test, reshaped N-track test
+- `documents/architecture/sync/save-transactions.md` — note on supersession
+
+Provenance: original bug report came from a sonnet mid-impl review during TASK-416 that misread the relocate/flush data flow. Subsequent investigation + user-directed refactor (worktree `task-417-capture-ref-at-plan`).
+<!-- SECTION:FINAL_SUMMARY:END -->
