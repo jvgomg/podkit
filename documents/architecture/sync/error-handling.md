@@ -42,12 +42,47 @@ sync-engine stage extends `CategorizedSyncError`:
 abstract class CategorizedSyncError extends Error {
   abstract readonly category: ErrorCategory;
   readonly causes: readonly string[];
+  readonly structuredCauses: readonly ErrorCause[] | undefined;
+  get hasEnospc(): boolean;
 }
 ```
 
 The `category` lives on the **class**, not the message. The pipeline's
 categorizer reads `error.category` directly — it does not (and must not)
 inspect the message body.
+
+Two cause channels coexist:
+
+- `causes: readonly string[]` — human-readable `"${path}: ${message}"`
+  lines, surfaced as-is into the `--json` envelope's
+  `errors[].causes` array. Stable wire format; downstream consumers
+  parse these as opaque strings.
+- `structuredCauses?: readonly ErrorCause[]` — typed in-process detail
+  with `{ path, message, errno }`. Populated by the aggregate flush
+  errors (`TagWriteError`, `PictureWriteError`, `SidecarWriteError`,
+  `MoveError`) and the single-cause `CopyError` wrap. Single-string
+  subclasses (`DatabaseWriteError`,
+  `InsufficientSpaceAfterCleanup` whose causes are bare path strings)
+  leave it `undefined`.
+
+When both channels are populated they stay in lockstep — `causes[i]`
+formats `structuredCauses[i]` as `"${path}: ${message}"`.
+
+### The ENOSPC override
+
+A `CategorizedSyncError` carrying any `ENOSPC` errno in
+`structuredCauses` routes to the `'space'` category regardless of the
+class's declared default. This catches the case where a file-I/O error
+class (`TagWriteError`/`PictureWriteError`/`SidecarWriteError`/
+`MoveError`/`CopyError`) reports a category of `'copy'` (1 retry) when
+the underlying failure is device exhaustion — retrying a copy when the
+disk is full just wastes a second.
+
+The override is the only deviation from "category lives on the class".
+It surfaces a clearer user error (`'space'`-classified failures render
+"out of space" in the CLI summary) and matches the retry policy
+(`getRetriesForCategory('space') === 0`). All other category routing
+remains class-driven.
 
 ### Why typed errors
 
@@ -85,24 +120,29 @@ for the rationale behind the move-stage and sidecar-stage deviations.
 ```ts
 function categorizeError(error: Error, operationType: string): ErrorCategory {
   if (error instanceof CategorizedSyncError) {
+    if (error.hasEnospc) return 'space';
     return error.category;
   }
   return categoryForOperationType(operationType);
 }
 ```
 
-Two rules, in order:
+Three rules, in order:
 
-1. **Typed error** → read `error.category`. This is the recommended path.
-2. **Untyped error** → fall back to a small operation-type table
+1. **Typed error with any ENOSPC cause** → `'space'`. The override
+   described above; reads errno off `structuredCauses`.
+2. **Typed error** → read `error.category`. The class declares it.
+3. **Untyped error** → fall back to a small operation-type table
    (`add-transcode` → `transcode`, `add-direct-copy` → `copy`, etc.).
    `update-metadata`, `remove`, `update-sync-tag` fall through to
    `unknown` — the call site intentionally chose the op-type, so it's
    the next-best signal when the throwing code hasn't yet wrapped.
 
 There is **no message-keyword inspection**. Strings like `'ffmpeg'`,
-`'database'`, `'ENOSPC'` in `error.message` do not change the category.
-If you want a category, throw a `CategorizedSyncError`.
+`'database'`, `'ENOSPC'` in `error.message` do not change the category;
+the override reads `structuredCauses[i].errno`, which is set at the
+throw site from the underlying error's `.code` field. If you want a
+category, throw a `CategorizedSyncError`.
 
 ### Retry policy
 
@@ -287,15 +327,24 @@ When adding a new device adapter:
    you won't, omit it (the interface declares it optional).
 2. **Throw typed errors.** Create a new `CategorizedSyncError` subclass
    if no existing class fits. Set `category` on the class. Aggregate
-   per-entry failures into `causes`.
+   per-entry failures into `causes` (and `structuredCauses` if your
+   underlying errors carry an `errno` — see the ENOSPC override
+   discussion in §2).
 3. **Wrap raw library errors at the boundary.** If your device uses a
    native binding that throws raw `Error`, wrap each call in a typed
    error like `IpodAdapter` does with `DatabaseWriteError`. The wrap
    protects against op-type-fallback mis-categorization.
-4. **Use `runWithConcurrency` for flush stages.** All `save()` flush
-   stages should follow the shape: settle-all + concurrency cap +
-   typed aggregate + clear-before-throw. See doc-041 §7.1.
-5. **Don't touch the console.** Use the sink.
+4. **Use `flushPending<K, V>` (or the shared shape it implements) for
+   flush stages.** All `save()` flush stages should follow the shape:
+   settle-all + concurrency cap + typed aggregate + clear-before-throw.
+   `MassStorageAdapter.flushPending<K, V>` is the canonical implementation;
+   see also [save-transactions §2](./save-transactions.md#massstorageadaptersave-flush-stages).
+5. **Carry errno on per-entry causes.** When wrapping an fs (or
+   fs-style) error into an `ErrorCause`, copy the `.code` field into
+   `errno`. This is what the categorizer's `ENOSPC → 'space'` override
+   reads; lose it and a disk-full failure mid-save categorizes as
+   `'copy'` and wastes a retry.
+6. **Don't touch the console.** Use the sink.
 
 When adding a new sync stage:
 
@@ -330,10 +379,6 @@ does not cover:
 
 Tracked outside this document:
 
-- **`MassStorageAdapter` doesn't yet implement `setWarningSink`.** It
-  doesn't emit any warnings today, so the optional interface accepts
-  this. Add a stub when the first warning needs emission (e.g. partial
-  picture writes, transient sidecar failures).
 - **iPod sync mutators (`addTrack`, `updateTrack`, `removeTrack`) are
   wrapped synchronously via `wrapDatabaseError`.** If a future code path
   introduces async libgpod calls, an async-aware wrapper is needed.
@@ -342,8 +387,8 @@ Tracked outside this document:
 
 ## 8. References
 
-- `packages/podkit-core/src/sync/engine/errors.ts` — `CategorizedSyncError` base.
-- `packages/podkit-core/src/sync/engine/types.ts` — `Warning`, `WarningSink`, `ErrorCategory`.
+- `packages/podkit-core/src/sync/engine/errors.ts` — `CategorizedSyncError` base, `hasEnospc` override hook.
+- `packages/podkit-core/src/sync/engine/types.ts` — `Warning`, `WarningSink`, `ErrorCategory`, `ErrorCause`.
 - `packages/podkit-core/src/sync/engine/error-handling.ts` — `categorizeError`, retry config.
 - `packages/podkit-core/src/device/mass-storage-tag-writer.ts` — `TagWriteError`, `SidecarWriteError`, `PictureWriteError`, `MoveError`.
 - `packages/podkit-core/src/device/ipod-adapter.ts` — `setWarningSink`, `wrapDatabaseError`.

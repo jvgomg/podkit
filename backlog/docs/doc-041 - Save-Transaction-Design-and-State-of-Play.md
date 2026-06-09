@@ -157,19 +157,28 @@ not playback. Warnings flow through the pipeline's accumulator and surface in
 
 ## 3. Rough edges (the catalogue)
 
-### 3.1 ~~Three inconsistent failure shapes within one `MassStorageAdapter.save()`~~ — CLOSED (TASK-381)
+### 3.1 ~~Three inconsistent failure shapes within one `MassStorageAdapter.save()`~~ — CLOSED (TASK-381 + TASK-416)
 
 | Stage | Shape | Concurrency | Aggregation | Map clear timing |
 |---|---|---|---|---|
 | Moves | for-loop, typed `MoveError` on first non-ENOENT; ENOENT skip emits warning via sink | serial | wrapped in `MoveError` | only on success |
-| Tag writes | `runWithConcurrency` + `TagWriteError` | 16-capped | per-file aggregated | before throw |
-| Picture writes | `runWithConcurrency` + `PictureWriteError` | 16-capped | per-file aggregated | before throw |
-| Sidecar writes | `runWithConcurrency` + `SidecarWriteError` | 16-capped | per-album aggregated | before throw |
+| Tag writes | `flushPending` → `runWithConcurrency` + `TagWriteError` | 16-capped | per-file aggregated | before throw |
+| Picture writes | `flushPending` → `runWithConcurrency` + `PictureWriteError` | 16-capped | per-file aggregated | before throw |
+| Sidecar writes | `flushPending` → `runWithConcurrency` + `SidecarWriteError` | 16-capped | per-album aggregated | before throw |
 
-All four flush stages now use `runWithConcurrency` with a 16-cap, typed aggregate
-error, and clear-before-throw semantics. The remaining asymmetries (MoveError
-throw-on-first vs others' settle-all; SidecarWriteError per-album vs per-file
-aggregation) are intentional — see save-transactions.md §save-stage-asymmetries.
+TASK-381 normalized the BEHAVIOUR across stages 2–4. TASK-416 followed up
+on the CODE: the triplicated boilerplate (collect → settle → clear →
+aggregate → throw) collapsed into one private helper
+`flushPending<K, V>` shared by all three stages; pending-map re-keying
+on `relocateTrack`/`replaceTrackFile` collapsed into one
+`rekeyPendingWrites` helper; aggregate errors gained a
+`structuredCauses: ErrorCause[]` channel carrying per-cause errno so
+the categorizer's `ENOSPC → 'space'` override (also TASK-416) reads
+the routing decision off typed state instead of message scraping;
+`save()` itself split into per-stage private methods. The remaining
+asymmetries (MoveError throw-on-first vs others' settle-all;
+SidecarWriteError per-album vs per-file aggregation) are intentional
+— see save-transactions.md §save-stage-asymmetries.
 
 ### 3.2 ~~Asymmetry between IpodAdapter and MassStorageAdapter~~ — CLOSED (TASK-381)
 
@@ -536,6 +545,25 @@ Useful for diagnostics + the doctor flow.
   (dry-run carve-out). Originally tracked as TASK-379, which is closed as
   superseded. See `documents/architecture/sync/planning.md` §6 for the settled
   design.
+- ~~Triplicated flush-stage boilerplate inside `save()` (tag / picture /
+  sidecar)~~ — closed by TASK-416 (`flushPending<K, V>` private helper;
+  each stage now calls into a single shared implementation). Reference §3.1.
+- ~~Pending-map re-key duplication in `relocateTrack` / `replaceTrackFile`~~
+  — closed by TASK-416 (`rekeyPendingWrites(oldPath, newPath)` private
+  helper handling `pendingTagWrites` + `pendingPictureWrites` plus the
+  album-dir-keyed `pendingSidecarWrites` + `managedFiles` sidecar entry).
+- ~~Aggregate errors lose errno (categorizer cannot distinguish ENOSPC
+  from other 'copy' failures)~~ — closed by TASK-416. Aggregate errors
+  (`TagWriteError`/`PictureWriteError`/`SidecarWriteError`/`MoveError`)
+  and `CopyError` now carry `structuredCauses: ErrorCause[]` alongside
+  the string-array `causes` JSON wire format; the categorizer routes
+  any-cause-`ENOSPC` to category `'space'` (no retry) instead of
+  `'copy'` (1 wasted retry). Documented in
+  `documents/architecture/sync/error-handling.md` §2 "The ENOSPC override".
+- ~~220-line `save()` body~~ — closed by TASK-416. `save()` is now the
+  five-line orchestration shell; each stage lives in its own private
+  method (`flushMoves`, `flushTagWrites`, `flushPictureWrites`,
+  `flushSidecarWrites`, `writeManifest`).
 
 ### Tests to add (not yet filed as tasks)
 

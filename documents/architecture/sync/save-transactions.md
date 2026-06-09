@@ -57,25 +57,48 @@ status enum.
 
 Five stages, in order. Each stage gates the next: if a stage throws,
 later stages do not run. Within a stage, all writes settle before the
-typed aggregate is thrown.
+typed aggregate is thrown. `save()` is the orchestration shell —
+each stage lives in its own private method (`flushMoves`,
+`flushTagWrites`, `flushPictureWrites`, `flushSidecarWrites`,
+`writeManifest`) so the contract per row reads off the code.
 
 | Stage             | Pending source            | Shape                                      | Typed error          | Map cleared    |
 |-------------------|---------------------------|--------------------------------------------|----------------------|----------------|
 | 1. File moves     | `pendingMoves`            | for-loop, serial, ENOENT skip emits warning | `MoveError`          | only on success |
 | 2. Tag writes     | `pendingTagWrites`        | `runWithConcurrency` (cap 16), settle-all  | `TagWriteError`      | before throw   |
 | 3. Picture writes | `pendingPictureWrites`    | `runWithConcurrency` (cap 16), settle-all  | `PictureWriteError`  | before throw   |
-| 4. Sidecar writes | `pendingSidecarWrites`    | `Promise.allSettled` (no cap), settle-all  | `SidecarWriteError`  | before throw   |
+| 4. Sidecar writes | `pendingSidecarWrites`    | `runWithConcurrency` (cap 16), settle-all  | `SidecarWriteError`  | before throw   |
 | 5. Manifest       | `manifest` (in-memory)    | atomic write (tmp + rename)                | n/a (throws raw fs)  | n/a            |
 
-Stage 4 is the one stage that still uses bare `Promise.allSettled` with
-no concurrency cap. The typed-aggregate and clear-before-throw
-conventions are met; the EMFILE-safety normalisation is tracked
-separately (see §6).
+Stages 2–4 share a single private helper, `flushPending<K, V>(map, work,
+formatPath, ErrorCtor)`. Each stage's caller is three lines (map +
+per-entry work + error class); the helper owns the
+`runWithConcurrency` cap, the settle-all loop, the
+clear-before-throw, and the `ErrorCause[]` construction. Adding a new
+flush stage that follows the convention is an Nth line in the table,
+not an Nth copy of the boilerplate.
 
 Stage 5's atomic write means a SIGKILL mid-write leaves either the old
 manifest or no manifest — `loadManifest` treats an absent or
 unparseable manifest as "empty manifest, rebuild from filesystem walk".
 There is no torn-manifest failure mode.
+
+### Errno on aggregate errors
+
+Each aggregate flush error (`TagWriteError`, `PictureWriteError`,
+`SidecarWriteError`, `MoveError`) carries two cause channels in
+lockstep: a string array `causes: readonly string[]` that surfaces
+verbatim into the `--json` envelope (`SyncOutput.errors[].causes`), and
+a structured `structuredCauses: readonly ErrorCause[]` for in-process
+consumers that need the underlying errno (`ENOSPC`/`EACCES`/`EROFS`/…).
+The single-cause wrap `CopyError` populates both channels the same way.
+
+The errno is what the categorizer's "ENOSPC → `'space'`" override reads
+off — see [`error-handling.md` §2](./error-handling.md#2-hard-failures--categorizedsyncerror).
+Without it, a mid-save ENOSPC inside a tag write would categorize as
+`'copy'` (1 retry) and waste a second before the executor surfaces the
+real failure. The structured channel keeps the routing decision out of
+message-body inspection.
 
 ### `IpodAdapter.save()` flush stages
 
@@ -212,7 +235,7 @@ happens when reality diverges from the plan".
 
 Three execute-time pathways carry ENOSPC signal today:
 
-1. **Post-sweep recompute** (ADR-018, pending implementation). After
+1. **Post-sweep recompute** (ADR-018, landed TASK-378). After
    `runPreliminariesPreFlight` finishes, the executor re-reads
    `storage.free` via `statfsSync` and re-runs `willFit` against the
    fresh value. If insufficient, it throws a typed
@@ -222,17 +245,21 @@ Three execute-time pathways carry ENOSPC signal today:
    attempted, instead of N consecutive per-track ENOSPC errors as the
    transfer phase exhausts a not-quite-recovered device. See
    [ADR-018](../../../adr/adr-018-free-space-pre-flight-strategy.md).
-2. **Per-track ENOSPC at atomic write** (today). The atomic-write
-   helper writes to `<target>.podkit-tmp`, fsyncs, then renames. An
-   ENOSPC during the write throws inside the stage; the stage wraps
-   it in its typed error (`MoveError`/`TagWriteError`/`PictureWriteError`/
-   `SidecarWriteError` per the asymmetry table above) and propagates to
-   the executor, which catches per-track and continues if
-   `continueOnError` is set. The half-written `.podkit-tmp` survives
-   on disk until the next pre-sync sweep removes it. This handles
-   estimate-drift and source-added-between-plan-and-execute cases —
-   the post-sweep recompute can't catch them because the planner's
-   own estimate is what underestimated.
+2. **Per-track ENOSPC at atomic write.** The atomic-write helper
+   writes to `<target>.podkit-tmp`, fsyncs, then renames. An ENOSPC
+   during the write throws inside the stage; the stage wraps it in its
+   typed error (`MoveError`/`TagWriteError`/`PictureWriteError`/
+   `SidecarWriteError` per the asymmetry table above, or `CopyError`
+   for the track-body copy in `copyTrackFile`/`replaceTrackFile`) and
+   propagates to the executor. The aggregates carry the underlying
+   errno on `structuredCauses[i].errno`, so the categorizer's
+   "any-cause-ENOSPC → `'space'`" override routes to category
+   `'space'` (no retry) instead of the class's declared `'copy'`
+   (1 retry). The half-written `.podkit-tmp` survives on disk until
+   the next pre-sync sweep removes it. This handles estimate-drift
+   and source-added-between-plan-and-execute cases — the post-sweep
+   recompute can't catch them because the planner's own estimate is
+   what underestimated.
 3. **Sweep failure as a warning, not a hard fail.** When the pre-flight
    `rm` itself fails for some debris paths, the failures are emitted
    as `Warning('debris-cleanup-failure')` rather than fatal errors —
@@ -454,26 +481,43 @@ cover:
 
 Tracked outside this document:
 
-- **Sidecar flush stage uses bare `Promise.allSettled`.** No
-  concurrency cap. Normalize to `runWithConcurrency` for EMFILE
-  safety and symmetry with the other stages — TASK-390.
-- **`lookupTrackRef` is O(N²) at save-time** for the ENOENT-vanished
-  warning path. Fine for hundreds of pending moves, latent for
-  thousands. TASK-392.
-- **Cross-adapter asymmetry write-up.** What's still asymmetric
-  between `IpodAdapter` and `MassStorageAdapter` at the contract
-  level (concurrent execute, deferred-load timing, etc.) — TASK-393,
-  depends on this doc landing.
-- **Save-failure matrix as a coherent end-to-end test surface.**
-  Sweep device × failure-mode × recovery-strategy. TASK-380, cites
-  this doc directly.
+- **Daemon-mode `save()` semantics.** Should a failed save() retry
+  inside the daemon loop (eats CPU until success) or proceed to the
+  next cycle? Today the adapter is identical between CLI and daemon
+  contexts; the call site decides. See doc-041 Q5.
+- **Per-stage progress events** (`{stage, completed, total}`). The
+  CLI currently renders an opaque "saving…" — surfacing per-stage
+  granularity would let it show "writing tags (12/47)" without the
+  adapter taking on rendering responsibility. See doc-041 Q1.
+
+Settled work moved out of this section:
+
+- ~~Sidecar flush stage uses bare `Promise.allSettled`~~ — closed by
+  TASK-390 (`runWithConcurrency` cap, EMFILE-safe).
+- ~~`lookupTrackRef` O(N²) at save-time~~ — closed by TASK-392 (lazy
+  memoization at first ENOENT).
+- ~~Cross-adapter asymmetry write-up~~ — closed by TASK-393
+  (asymmetries documented in §2 above).
+- ~~Save-failure matrix as a coherent test surface~~ — closed by
+  TASK-380 (`save-failure-matrix.e2e.test.ts`); extended for mid-save
+  ENOSPC paths by TASK-412.
+- ~~Flush-stage triplicate boilerplate~~ — closed by TASK-416
+  (`flushPending<K,V>` helper).
+- ~~Pending-map rekey duplication across `relocateTrack` /
+  `replaceTrackFile`~~ — closed by TASK-416 (`rekeyPendingWrites`
+  private helper).
+- ~~Errno lost on aggregate errors~~ — closed by TASK-416
+  (`structuredCauses: ErrorCause[]` channel + `ENOSPC → 'space'`
+  categorizer override).
 
 ---
 
 ## 7. References
 
 - `packages/podkit-core/src/device/mass-storage-adapter.ts` —
-  `save()` at line 1302.
+  `save()` plus `flushMoves` / `flushTagWrites` / `flushPictureWrites` /
+  `flushSidecarWrites` / `writeManifest` private stages, and the
+  shared `flushPending<K, V>` helper they delegate to.
 - `packages/podkit-core/src/device/ipod-adapter.ts` — `save()` at
   line 224.
 - `packages/podkit-core/src/device/mass-storage-tag-writer.ts` —

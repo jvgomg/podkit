@@ -15,7 +15,19 @@ import { ByteVector, File as TagFile, Picture, PictureType, SeekOrigin } from 'n
 import type { IFileAbstraction, IStream } from 'node-taglib-sharp';
 
 import { atomicWriteFileWithSync } from '../utils/atomic-fs.js';
-import { CategorizedSyncError } from '../sync/engine/errors.js';
+import { CategorizedSyncError, errnoOf } from '../sync/engine/errors.js';
+import type { ErrorCause } from '../sync/engine/types.js';
+
+/**
+ * Format a structured per-entry cause as a human-readable
+ * `"${path}: ${message}"` line. The aggregate `causes: readonly string[]`
+ * channel surfaces these strings as-is into the `--json` envelope; the
+ * structured `ErrorCause[]` carries the errno separately for in-process
+ * categorization. Kept in sync via the aggregate constructors below.
+ */
+function formatCause(cause: ErrorCause): string {
+  return `${cause.path}: ${cause.message}`;
+}
 
 /**
  * In-memory stream backed by a dynamically resizable Buffer.
@@ -185,13 +197,16 @@ class BufferFileAbstraction implements IFileAbstraction {
  *
  * Categorized as `copy` (file-I/O) via the class declaration so the executor's
  * categorizer reads it off the type without inspecting `message`. Per-file
- * failure descriptions live on `causes` for diagnostics.
+ * failure descriptions live on `causes` (string lines for the `--json`
+ * envelope) and `structuredCauses` (typed entries with errno for routing
+ * `ENOSPC` to the `'space'` category).
  */
 export class TagWriteError extends CategorizedSyncError {
   readonly category = 'copy' as const;
 
-  constructor(causes: readonly string[]) {
-    super(`tag write failed for ${causes.length} file(s): ${causes.join('; ')}`, causes);
+  constructor(causes: readonly ErrorCause[]) {
+    const lines = causes.map(formatCause);
+    super(`tag write failed for ${causes.length} file(s): ${lines.join('; ')}`, lines, causes);
   }
 }
 
@@ -205,8 +220,9 @@ export class TagWriteError extends CategorizedSyncError {
 export class SidecarWriteError extends CategorizedSyncError {
   readonly category = 'copy' as const;
 
-  constructor(causes: readonly string[]) {
-    super(`sidecar write failed for ${causes.length} album(s): ${causes.join('; ')}`, causes);
+  constructor(causes: readonly ErrorCause[]) {
+    const lines = causes.map(formatCause);
+    super(`sidecar write failed for ${causes.length} album(s): ${lines.join('; ')}`, lines, causes);
   }
 }
 
@@ -221,8 +237,9 @@ export class SidecarWriteError extends CategorizedSyncError {
 export class PictureWriteError extends CategorizedSyncError {
   readonly category = 'copy' as const;
 
-  constructor(causes: readonly string[]) {
-    super(`picture write failed for ${causes.length} file(s): ${causes.join('; ')}`, causes);
+  constructor(causes: readonly ErrorCause[]) {
+    const lines = causes.map(formatCause);
+    super(`picture write failed for ${causes.length} file(s): ${lines.join('; ')}`, lines, causes);
   }
 }
 
@@ -230,13 +247,15 @@ export class PictureWriteError extends CategorizedSyncError {
  * Move (`renameSync`) failure during the move stage of
  * `MassStorageAdapter.save()`. Wraps the raw fs error so the categorizer
  * doesn't have to substring-match `ENOENT` / `EACCES` / `ENOSPC` out of the
- * message — the category is on the type.
+ * message — the category is on the type, and the errno survives on the
+ * structured cause for the `ENOSPC → 'space'` routing override.
  */
 export class MoveError extends CategorizedSyncError {
   readonly category = 'copy' as const;
 
-  constructor(causes: readonly string[]) {
-    super(`file move failed for ${causes.length} file(s): ${causes.join('; ')}`, causes);
+  constructor(causes: readonly ErrorCause[]) {
+    const lines = causes.map(formatCause);
+    super(`file move failed for ${causes.length} file(s): ${lines.join('; ')}`, lines, causes);
   }
 }
 
@@ -269,16 +288,15 @@ export class CopyError extends CategorizedSyncError {
 
   constructor(sourcePath: string, underlying: unknown) {
     const message = underlying instanceof Error ? underlying.message : String(underlying);
-    const cause = `${sourcePath}: ${message}`;
-    super(`file copy failed for 1 file(s): ${cause}`, [cause]);
+    const errno = errnoOf(underlying);
+    const structured: ErrorCause = { path: sourcePath, message, errno };
+    super(
+      `file copy failed for 1 file(s): ${formatCause(structured)}`,
+      [formatCause(structured)],
+      [structured]
+    );
     this.sourcePath = sourcePath;
-    this.errorCode =
-      typeof underlying === 'object' &&
-      underlying !== null &&
-      'code' in underlying &&
-      typeof (underlying as { code?: unknown }).code === 'string'
-        ? (underlying as { code: string }).code
-        : undefined;
+    this.errorCode = errno;
   }
 }
 

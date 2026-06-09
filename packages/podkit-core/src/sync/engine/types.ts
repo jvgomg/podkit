@@ -546,6 +546,38 @@ export type ErrorCategory =
   | 'unknown'; // Other errors - no retry
 
 /**
+ * Per-entry structured failure carried on `CategorizedSyncError.structuredCauses`.
+ *
+ * Aggregate errors (`TagWriteError`, `PictureWriteError`, `SidecarWriteError`,
+ * `MoveError`) and single-cause wraps (`CopyError`) populate this so the
+ * categorizer can read `errno` directly off the cause — without scraping the
+ * message body — and route `ENOSPC` to the `'space'` category regardless of
+ * the error class's declared default.
+ *
+ * The `causes: readonly string[]` field on the base class is kept as the
+ * `--json` envelope wire format; `structuredCauses` is the in-process
+ * detail. JSON consumers reading the `causes` array see the human-readable
+ * `"${path}: ${message}"` strings; the internal categorizer reads
+ * `structuredCauses[i].errno`.
+ */
+export interface ErrorCause {
+  /**
+   * Where the failure happened. File path for tag/picture writes, album dir
+   * for sidecar writes, `"oldPath → newPath"` for moves. Identifies the unit
+   * of work that failed within an aggregate.
+   */
+  path: string;
+  /** The underlying error's `message` field, verbatim. */
+  message: string;
+  /**
+   * Underlying fs error code (`ENOSPC`, `EACCES`, `EROFS`, `ENOENT`, …) when
+   * the wrapped error exposed a `code` property. `undefined` for synthetic or
+   * non-fs errors. Drives the categorizer's `ENOSPC → 'space'` override.
+   */
+  errno: string | undefined;
+}
+
+/**
  * Extended error with category information
  */
 export interface CategorizedError {

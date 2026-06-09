@@ -509,15 +509,18 @@ function predictPostSweep(cell: SaveFailCell): SaveFailExpected {
  * not the source's actual bytes. Plan-time + post-sweep gates both pass;
  * the transfer-phase `atomicCopyFile` ENOSPCs mid-write. The raw fs error
  * is wrapped in a typed `CopyError extends CategorizedSyncError` at the
- * `MassStorageAdapter.copyTrackFile` boundary, so `categorizeError` reads
- * `'copy'` off the class (not via operation-type fallback) and the
- * underlying errno survives on `CopyError.errorCode`.
+ * `MassStorageAdapter.copyTrackFile` boundary, and the underlying errno
+ * survives on the structured cause — so the categorizer's
+ * `hasEnospc → 'space'` override routes the failure to the `'space'`
+ * category (no retry), not the class's declared `'copy'` (1 retry). See
+ * `packages/podkit-core/src/sync/engine/error-handling.ts` and the
+ * "ENOSPC override" describe block in `error-handling.test.ts`.
  */
 function predictEstimateDrift(cell: SaveFailCell): SaveFailExpected {
   return {
     plannerRejects: false,
     throwsClass: 'CopyError',
-    errorCategory: 'copy',
+    errorCategory: 'space',
     partialDeviceState: 'no-files-landed',
     rescanRefiresAddOrUpgrade: true,
     // Atomic copy writes to `<target>.podkit-tmp` then renames on success;
@@ -526,15 +529,13 @@ function predictEstimateDrift(cell: SaveFailCell): SaveFailExpected {
     // doctor for the residual.
     doctorSeesPodkitTmp: false,
     errorMessageMatches: null,
-    // `add-direct-copy` retries once via DEFAULT_RETRY_CONFIG.copy=1, so
-    // the same track surfaces twice in failure count terms — but the
-    // CLI's "Failed: N tracks" header counts unique tracks, not attempts.
-    // Use `null` to skip the numeric assertion until we observe the real
-    // behaviour against the VM.
+    // With the `'space'` routing (no retry per DEFAULT_RETRY_CONFIG.space=0)
+    // the track surfaces exactly once. Earlier `'copy'` routing retried once
+    // and made this hard to assert numerically; that ambiguity is gone.
     failedTrackCount: null,
     portableTagWarn: false,
     postSweepDetail: null,
-    reason: `${cell.shape} × ${cell.sourceFormat} × ${cell.codecConfig} × ${cell.transferMode} × ENOSPC-estimate-drift — plan-time + post-sweep gates both pass (mount fits estimateCopySize prediction) but the 320kbps mp3 source's actual bytes exceed the free space. Transfer-phase atomicCopyFile ENOSPCs mid-write; raw fs error wrapped in typed CopyError at the copyTrackFile boundary; categorizer reads 'copy' off the class. Rescan re-queues the un-landed add op.`,
+    reason: `${cell.shape} × ${cell.sourceFormat} × ${cell.codecConfig} × ${cell.transferMode} × ENOSPC-estimate-drift — plan-time + post-sweep gates both pass (mount fits estimateCopySize prediction) but the 320kbps mp3 source's actual bytes exceed the free space. Transfer-phase atomicCopyFile ENOSPCs mid-write; raw fs error wrapped in typed CopyError at the copyTrackFile boundary; categorizer reads errno off the structured cause and overrides to 'space' (no retry). Rescan re-queues the un-landed add op.`,
   };
 }
 

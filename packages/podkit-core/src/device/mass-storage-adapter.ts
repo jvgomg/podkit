@@ -18,7 +18,7 @@ import * as path from 'node:path';
 import * as mm from 'music-metadata';
 
 import { atomicCopyFile, atomicWriteFile, atomicWriteFileWithSync } from '../utils/atomic-fs.js';
-import { CategorizedSyncError } from '../sync/engine/errors.js';
+import { CategorizedSyncError, toErrorCause } from '../sync/engine/errors.js';
 
 import type {
   DeviceAdapter,
@@ -26,7 +26,7 @@ import type {
   DeviceTrackInput,
   DeviceTrackMetadata,
 } from './adapter.js';
-import type { WarningSink } from '../sync/engine/types.js';
+import type { ErrorCause, WarningSink } from '../sync/engine/types.js';
 import type { DeviceCapabilities } from '@podkit/device-types';
 import type { SyncTagData, SyncTagUpdate } from '../metadata/sync-tags.js';
 import { parseSyncTag, writeSyncTag } from '../metadata/sync-tags.js';
@@ -828,6 +828,60 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
   }
 
   /**
+   * Migrate every pending-write entry keyed on `oldPath` to `newPath`.
+   *
+   * Called by `relocateTrack` (same-extension renames, path-template moves)
+   * and `replaceTrackFile` (codec-swap transcodes that change the extension).
+   * Both call sites used to inline the same set of re-key dances for each
+   * pending map; this helper is the single point of truth so adding a new
+   * pending map (lyrics, playlist updates) only requires one edit.
+   *
+   * What gets re-keyed:
+   *
+   * - `pendingTagWrites` / `pendingPictureWrites` are keyed by **file path** —
+   *   simple swap of map entry.
+   * - `pendingSidecarWrites` is keyed by **album directory** — the audio
+   *   file's parent dir. Re-key only fires when the dirname actually changes
+   *   (cross-album-dir relocate / codec swap that crosses content roots).
+   *   The sidecar's `cover.jpg` path lives in `managedFiles` so the manifest
+   *   tracks it across sessions; both ends are updated atomically here.
+   *
+   * No-op when `oldPath === newPath`. Safe to call before or after the
+   * `pendingMoves` entry is queued — the move stage flushes via raw rename
+   * and doesn't read any pending-write map.
+   */
+  private rekeyPendingWrites(oldPath: string, newPath: string): void {
+    if (oldPath === newPath) return;
+
+    const tagFields = this.pendingTagWrites.get(oldPath);
+    if (tagFields !== undefined) {
+      this.pendingTagWrites.delete(oldPath);
+      this.pendingTagWrites.set(newPath, tagFields);
+    }
+    const picture = this.pendingPictureWrites.get(oldPath);
+    if (picture !== undefined) {
+      this.pendingPictureWrites.delete(oldPath);
+      this.pendingPictureWrites.set(newPath, picture);
+    }
+
+    const oldDir = path.dirname(oldPath);
+    const newDir = path.dirname(newPath);
+    if (oldDir === newDir) return;
+
+    const sidecar = this.pendingSidecarWrites.get(oldDir);
+    if (sidecar !== undefined) {
+      this.pendingSidecarWrites.delete(oldDir);
+      this.pendingSidecarWrites.set(newDir, sidecar);
+      const oldSidecarPath = path.join(oldDir, SIDECAR_FILENAME);
+      const newSidecarPath = path.join(newDir, SIDECAR_FILENAME);
+      if (this.managedFiles.has(oldSidecarPath)) {
+        this.managedFiles.delete(oldSidecarPath);
+        this.managedFiles.add(newSidecarPath);
+      }
+    }
+  }
+
+  /**
    * Check if planned add operations would collide with unmanaged files on device.
    *
    * Predicts the device path for each input using the same path generation logic
@@ -961,37 +1015,7 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
       this.managedFiles.add(finalPath);
     }
 
-    // Re-key any pending writes from old path to new path
-    if (this.pendingTagWrites.has(oldPath)) {
-      const val = this.pendingTagWrites.get(oldPath)!;
-      this.pendingTagWrites.delete(oldPath);
-      this.pendingTagWrites.set(finalPath, val);
-    }
-    if (this.pendingPictureWrites.has(oldPath)) {
-      const val = this.pendingPictureWrites.get(oldPath)!;
-      this.pendingPictureWrites.delete(oldPath);
-      this.pendingPictureWrites.set(finalPath, val);
-    }
-
-    // Re-key pending sidecar writes if the album dir changed. The album dir
-    // is `path.dirname(filePath)` — a relocate that only renames the file but
-    // keeps the parent dir invariant is the common case (and a no-op here);
-    // a relocate across album dirs is the rare case worth re-keying for. We
-    // also update `managedFiles` so the manifest accurately tracks the new
-    // sidecar location.
-    const oldAlbumDir = path.dirname(oldPath);
-    const newAlbumDir = path.dirname(finalPath);
-    if (oldAlbumDir !== newAlbumDir && this.pendingSidecarWrites.has(oldAlbumDir)) {
-      const val = this.pendingSidecarWrites.get(oldAlbumDir)!;
-      this.pendingSidecarWrites.delete(oldAlbumDir);
-      this.pendingSidecarWrites.set(newAlbumDir, val);
-      const oldSidecar = path.join(oldAlbumDir, SIDECAR_FILENAME);
-      const newSidecar = path.join(newAlbumDir, SIDECAR_FILENAME);
-      if (this.managedFiles.has(oldSidecar)) {
-        this.managedFiles.delete(oldSidecar);
-        this.managedFiles.add(newSidecar);
-      }
-    }
+    this.rekeyPendingWrites(oldPath, finalPath);
 
     // Queue the filesystem move
     this.pendingMoves.set(oldPath, finalPath);
@@ -1032,8 +1056,21 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
       //     swallowing the original CopyError that caused the first attempt
       //     to fail. The retry should re-attempt the same path with a clean
       //     slate, not collide with the in-memory state from attempt 1.
+      //   - pendingTagWrites / pendingPictureWrites: addTrack queues a
+      //     `comment` tag write at allocation time, and the artwork pipeline
+      //     can queue a picture write before copyTrackFile fires; without
+      //     this cleanup, save() later tries to write tags into a file the
+      //     copy never produced and throws ENOENT as a second classification.
+      //     For an ENOSPC copy that no longer retries (category 'space',
+      //     0 retries via the categorizer override) the second error was
+      //     pure noise — same track failing twice with two different
+      //     categories. Sidecar map is album-dir-keyed and shared across
+      //     siblings, so it's NOT cleared here — other tracks in the album
+      //     may still need the cover.
       this.managedFiles.delete(track.filePath);
       this.allocatedPaths.delete(track.filePath);
+      this.pendingTagWrites.delete(track.filePath);
+      this.pendingPictureWrites.delete(track.filePath);
       const idx = this.tracks.findIndex((t) => t.filePath === track.filePath);
       if (idx >= 0) {
         this.tracks.splice(idx, 1);
@@ -1215,36 +1252,7 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
       this.managedFiles.delete(track.filePath);
       this.managedFiles.add(targetRelativePath);
 
-      // Update pendingTagWrites if keyed on old path
-      if (this.pendingTagWrites.has(track.filePath)) {
-        const fields = this.pendingTagWrites.get(track.filePath)!;
-        this.pendingTagWrites.delete(track.filePath);
-        this.pendingTagWrites.set(targetRelativePath, fields);
-      }
-
-      // Update pendingPictureWrites if keyed on old path
-      if (this.pendingPictureWrites.has(track.filePath)) {
-        const pic = this.pendingPictureWrites.get(track.filePath)!;
-        this.pendingPictureWrites.delete(track.filePath);
-        this.pendingPictureWrites.set(targetRelativePath, pic);
-      }
-
-      // Re-key sidecar write if the album dir changed (codec swap can move
-      // the file across content roots in pathological cases). Same rationale
-      // as relocateTrack: only act when the album dir actually changed.
-      const oldAlbumDir = path.dirname(track.filePath);
-      const newAlbumDir = path.dirname(targetRelativePath);
-      if (oldAlbumDir !== newAlbumDir && this.pendingSidecarWrites.has(oldAlbumDir)) {
-        const sidecar = this.pendingSidecarWrites.get(oldAlbumDir)!;
-        this.pendingSidecarWrites.delete(oldAlbumDir);
-        this.pendingSidecarWrites.set(newAlbumDir, sidecar);
-        const oldSidecarPath = path.join(oldAlbumDir, SIDECAR_FILENAME);
-        const newSidecarPath = path.join(newAlbumDir, SIDECAR_FILENAME);
-        if (this.managedFiles.has(oldSidecarPath)) {
-          this.managedFiles.delete(oldSidecarPath);
-          this.managedFiles.add(newSidecarPath);
-        }
-      }
+      this.rekeyPendingWrites(track.filePath, targetRelativePath);
     }
 
     // Update file stats
@@ -1326,217 +1334,266 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
   // Persistence
   // ---------------------------------------------------------------------------
 
+  /**
+   * Flush in-memory mutations to the device.
+   *
+   * Five ordered stages, each gating the next. Within a flush stage, all writes
+   * settle before failures are surfaced (see `flushPending` for the shared
+   * shape used by stages 2–4). The move stage is bespoke — fail-fast,
+   * ENOENT-skip with warning, no clear-on-throw — see
+   * `documents/architecture/sync/save-transactions.md` §save-stage-asymmetries.
+   *
+   * Moves run first so subsequent tag/picture writes target the new paths.
+   * The manifest is written last so a torn save doesn't promote half-flushed
+   * state into the persisted view of "what podkit owns".
+   */
   async save(): Promise<void> {
-    // Flush pending file moves (relocations) — must happen before tag writes
-    // so that tag writes target the new file paths
-    if (this.pendingMoves.size > 0) {
-      // Accumulate ENOENT-skipped relocates so a single warning lands at the
-      // end of the batch rather than N small ones (or worse, N stderr lines).
-      const vanished: Array<{ artist: string; title: string; album?: string }> = [];
+    await this.flushMoves();
+    await this.flushTagWrites();
+    await this.flushPictureWrites();
+    await this.flushSidecarWrites();
+    this.writeManifest();
+  }
 
-      // Memoize track lookup by path on first vanish to avoid O(N²) linear
-      // scans through the tracks array when multiple ENOENT errors occur.
-      let trackRefByPath:
-        | Map<string, { artist: string; title: string; album?: string }>
-        | undefined;
+  /**
+   * Stage 1: flush pending file moves (relocations).
+   *
+   * Bespoke shape (see save-transactions.md §asymmetries):
+   * - `for...of` over `pendingMoves`, fail-fast on first non-ENOENT.
+   * - ENOENT means the source vanished between plan and save (external
+   *   delete) — skip + accumulate into a single batched warning instead of
+   *   spamming N warnings or aborting the batch.
+   * - `pendingMoves` is cleared on full success only; surviving entries
+   *   re-fire on the next `save()` (the ENOENT-skip path is idempotent —
+   *   moved files become missing, queued for next-run rescan).
+   *
+   * Must run before tag/picture writes so those stages target the new paths.
+   */
+  private async flushMoves(): Promise<void> {
+    if (this.pendingMoves.size === 0) return;
 
-      for (const [oldPath, newPath] of this.pendingMoves) {
-        const absOld = path.join(this.mountPoint, oldPath);
-        const absNew = path.join(this.mountPoint, newPath);
+    // Accumulate ENOENT-skipped relocates so a single warning lands at the
+    // end of the batch rather than N small ones (or worse, N stderr lines).
+    const vanished: Array<{ artist: string; title: string; album?: string }> = [];
 
-        // Ensure target directory exists
-        fs.mkdirSync(path.dirname(absNew), { recursive: true });
+    // Memoize track lookup by path on first vanish to avoid O(N²) linear
+    // scans through the tracks array when multiple ENOENT errors occur.
+    let trackRefByPath: Map<string, { artist: string; title: string; album?: string }> | undefined;
 
-        // Same-filesystem rename (atomic, no data copy).
-        // If the source file was removed externally, skip this move
-        // rather than aborting all remaining moves in the batch.
-        try {
-          fs.renameSync(absOld, absNew);
-        } catch (err: any) {
-          if (err?.code === 'ENOENT') {
-            if (!trackRefByPath) {
-              trackRefByPath = new Map(
-                this.tracks.map((t) => [
-                  t.filePath,
-                  {
-                    artist: t.artist ?? 'Unknown Artist',
-                    title: t.title ?? 'Unknown Track',
-                    album: t.album,
-                  },
-                ])
-              );
-            }
-            const ref = trackRefByPath.get(newPath) ?? {
-              artist: 'Unknown Artist',
-              title: 'Unknown Track',
-            };
-            vanished.push(ref);
-            continue;
+    for (const [oldPath, newPath] of this.pendingMoves) {
+      const absOld = path.join(this.mountPoint, oldPath);
+      const absNew = path.join(this.mountPoint, newPath);
+
+      fs.mkdirSync(path.dirname(absNew), { recursive: true });
+
+      // Same-filesystem rename (atomic, no data copy).
+      // If the source file was removed externally, skip this move
+      // rather than aborting all remaining moves in the batch.
+      try {
+        fs.renameSync(absOld, absNew);
+      } catch (err: any) {
+        if (err?.code === 'ENOENT') {
+          if (!trackRefByPath) {
+            trackRefByPath = new Map(
+              this.tracks.map((t) => [
+                t.filePath,
+                {
+                  artist: t.artist ?? 'Unknown Artist',
+                  title: t.title ?? 'Unknown Track',
+                  album: t.album,
+                },
+              ])
+            );
           }
-          // Wrap raw fs errors so the categorizer doesn't have to substring-
-          // match ENOSPC/EACCES out of the message. Single-cause aggregate.
-          throw new MoveError([
-            `${oldPath} → ${newPath}: ${(err as Error)?.message ?? String(err)}`,
-          ]);
+          const ref = trackRefByPath.get(newPath) ?? {
+            artist: 'Unknown Artist',
+            title: 'Unknown Track',
+          };
+          vanished.push(ref);
+          continue;
         }
-
-        // Clean up empty parent directories of the old path
-        let dir = path.dirname(absOld);
-        const contentRoots = this.getContentRoots().map((r) =>
-          r ? path.join(this.mountPoint, r) : this.mountPoint
-        );
-        const matchedRoot = contentRoots
-          .filter((r) => dir.startsWith(r + '/') || dir.startsWith(r + path.sep) || dir === r)
-          .sort((a, b) => b.length - a.length)[0];
-        if (matchedRoot) {
-          while (dir !== matchedRoot && dir.startsWith(matchedRoot) && dir !== this.mountPoint) {
-            try {
-              const entries = fs.readdirSync(dir);
-              if (entries.length === 0) {
-                fs.rmdirSync(dir);
-                dir = path.dirname(dir);
-              } else {
-                break;
-              }
-            } catch {
-              break;
-            }
-          }
-        }
+        // Wrap raw fs errors so the categorizer reads category off the type
+        // (and errno off the structured cause) instead of substring-matching
+        // the message. The errno survives so an ENOSPC move routes to the
+        // `'space'` category override — no wasted retry.
+        throw new MoveError([toErrorCause(`${oldPath} → ${newPath}`, err)]);
       }
-      this.pendingMoves.clear();
 
-      // Surface the batch of vanished sources as a single warning. Each
-      // entry is a track the user planned to relocate; the on-disk file
-      // disappeared between plan and save. Sync still proceeds — the next
-      // run's rescan will treat the missing file as orphaned and re-queue
-      // whatever's appropriate.
-      if (vanished.length > 0) {
-        this.warningSink.emit({
-          phase: 'execute',
-          type: 'metadata',
-          tracks: vanished,
-          message: `${vanished.length} track(s) skipped relocate: source file disappeared between plan and save (external delete?)`,
-        });
+      this.cleanupEmptyParentDirs(absOld);
+    }
+    this.pendingMoves.clear();
+
+    // Surface the batch of vanished sources as a single warning. Each
+    // entry is a track the user planned to relocate; the on-disk file
+    // disappeared between plan and save. Sync still proceeds — the next
+    // run's rescan will treat the missing file as orphaned and re-queue
+    // whatever's appropriate.
+    if (vanished.length > 0) {
+      this.warningSink.emit({
+        phase: 'execute',
+        type: 'metadata',
+        tracks: vanished,
+        message: `${vanished.length} track(s) skipped relocate: source file disappeared between plan and save (external delete?)`,
+      });
+    }
+  }
+
+  /**
+   * Walk up from `absPath`'s parent directory removing empty dirs until we
+   * hit a content root or a non-empty entry. Best-effort — any I/O error
+   * (EBUSY mid-sync, race with another writer) stops the walk silently;
+   * leftover empty dirs are recovered by the next sync's pre-flight sweep
+   * or `podkit doctor`. Used after a file move/delete to keep the device
+   * tree tidy.
+   */
+  private cleanupEmptyParentDirs(absPath: string): void {
+    let dir = path.dirname(absPath);
+    const contentRoots = this.getContentRoots().map((r) =>
+      r ? path.join(this.mountPoint, r) : this.mountPoint
+    );
+    const matchedRoot = contentRoots
+      .filter((r) => dir.startsWith(r + '/') || dir.startsWith(r + path.sep) || dir === r)
+      .sort((a, b) => b.length - a.length)[0];
+    if (!matchedRoot) return;
+    while (dir !== matchedRoot && dir.startsWith(matchedRoot) && dir !== this.mountPoint) {
+      try {
+        const entries = fs.readdirSync(dir);
+        if (entries.length === 0) {
+          fs.rmdirSync(dir);
+          dir = path.dirname(dir);
+        } else {
+          break;
+        }
+      } catch {
+        break;
       }
     }
+  }
 
-    // Flush pending tag writes to audio files. Concurrency is capped to
-    // avoid `EMFILE` on large libraries — each writeTags opens the file
-    // via node-taglib-sharp.
-    if (this.pendingTagWrites.size > 0) {
-      const entries = [...this.pendingTagWrites.entries()];
-      const settled = await runWithConcurrency(
-        entries.map(
-          ([filePath, fields]) =>
-            () =>
-              this.tagWriter.writeTags(path.join(this.mountPoint, filePath), fields)
-        ),
-        DEFAULT_TAG_WRITE_CONCURRENCY
-      );
-      this.pendingTagWrites.clear();
-      const failures: string[] = [];
-      for (let i = 0; i < settled.length; i++) {
-        const outcome = settled[i]!;
-        if (outcome.status === 'rejected') {
-          const [filePath] = entries[i]!;
-          failures.push(`${filePath}: ${(outcome.reason as Error).message ?? outcome.reason}`);
-        }
-      }
-      if (failures.length > 0) {
-        // Surface as a single aggregated error so callers (sync executor)
-        // can categorise it via instanceof TagWriteError. Per-file context
-        // is preserved on `err.causes` for diagnostics. The next sync will
-        // re-detect any unwritten diffs and retry — mass-storage reads file
-        // tags as the source of truth on rescan.
-        throw new TagWriteError(failures);
+  /**
+   * Shared shape for stages 2–4 of {@link save}.
+   *
+   * Runs every pending entry through `work` concurrently (capped by
+   * `concurrency` for EMFILE safety on large libraries), settles all writes
+   * before surfacing failures, clears the map BEFORE throwing, then —
+   * if any entries failed — builds typed `ErrorCause[]` (path + message +
+   * errno) and throws a typed aggregate via `ErrorCtor`.
+   *
+   * Stage 1 (moves) stays bespoke — fail-fast, ENOENT-skip, no-clear-on-
+   * throw — see `flushMoves` and save-transactions.md §asymmetries.
+   *
+   * @param map           pending state to flush; cleared before throw on
+   *                      failure, or after a clean run.
+   * @param work          per-entry I/O. Rejection captured into `ErrorCause`.
+   * @param formatPath    project the map key into the `ErrorCause.path`
+   *                      string. File-path keys pass through; album-dir keys
+   *                      pass through; tuple keys can format as needed.
+   * @param ErrorCtor     class to throw when any entry failed. Must take
+   *                      `readonly ErrorCause[]`.
+   * @param concurrency   in-flight cap. Defaults to
+   *                      `DEFAULT_TAG_WRITE_CONCURRENCY`.
+   */
+  private async flushPending<K, V>(
+    map: Map<K, V>,
+    work: (key: K, value: V) => Promise<void>,
+    formatPath: (key: K) => string,
+    ErrorCtor: new (causes: readonly ErrorCause[]) => CategorizedSyncError,
+    concurrency: number = DEFAULT_TAG_WRITE_CONCURRENCY
+  ): Promise<void> {
+    if (map.size === 0) return;
+    const entries = [...map.entries()];
+    const settled = await runWithConcurrency(
+      entries.map(
+        ([k, v]) =>
+          () =>
+            work(k, v)
+      ),
+      concurrency
+    );
+    map.clear();
+    const failures: ErrorCause[] = [];
+    for (let i = 0; i < settled.length; i++) {
+      const outcome = settled[i]!;
+      if (outcome.status === 'rejected') {
+        failures.push(toErrorCause(formatPath(entries[i]![0]), outcome.reason));
       }
     }
-
-    // Flush pending picture writes (OGG/Opus artwork embedding).
-    //
-    // Collect-and-aggregate, mirroring the tag-write stage above (closes
-    // doc-041 §3.1 / §7.1). Concurrency-capped to avoid EMFILE on large
-    // libraries, settles all writes before checking failures so one failed
-    // write doesn't black-hole the rest of the batch. Per-file context lives
-    // on `err.causes` for diagnostics.
-    if (this.pendingPictureWrites.size > 0) {
-      const entries = [...this.pendingPictureWrites.entries()];
-      const settled = await runWithConcurrency(
-        entries.map(
-          ([filePath, imageData]) =>
-            () =>
-              this.tagWriter.writePicture(path.join(this.mountPoint, filePath), imageData)
-        ),
-        DEFAULT_TAG_WRITE_CONCURRENCY
-      );
-      this.pendingPictureWrites.clear();
-      const failures: string[] = [];
-      for (let i = 0; i < settled.length; i++) {
-        const outcome = settled[i]!;
-        if (outcome.status === 'rejected') {
-          const [filePath] = entries[i]!;
-          failures.push(`${filePath}: ${(outcome.reason as Error).message ?? outcome.reason}`);
-        }
-      }
-      if (failures.length > 0) {
-        throw new PictureWriteError(failures);
-      }
+    if (failures.length > 0) {
+      throw new ErrorCtor(failures);
     }
+  }
 
-    // Flush pending sidecar writes (peer cover.jpg for sidecar-primary devices).
-    //
-    // One write per album dir — sibling tracks collapse into a single entry at
-    // queue-time. Each write is atomic (tmp + fsync + rename) so a SIGKILL
-    // mid-write leaves either the old cover, no cover, or a `.podkit-tmp` for
-    // a future doctor to clean — never a torn cover.jpg the device would
-    // render as garbage.
-    //
-    // Collect-and-aggregate mirroring the tag-write and picture-write stages
-    // above: `runWithConcurrency` caps open file handles at
-    // `DEFAULT_TAG_WRITE_CONCURRENCY` for EMFILE safety on large libraries,
-    // all writes settle before failures are inspected, and the map is cleared
-    // before throw so a second `save()` doesn't re-attempt the same writes.
-    //
-    // Aggregation is per-album (not per-file) because the unit of work here is
-    // one cover.jpg per directory — sibling tracks share the entry. This
-    // asymmetry is intentional; see save-transactions.md §save-stage-asymmetries.
-    if (this.pendingSidecarWrites.size > 0) {
-      const entries = [...this.pendingSidecarWrites.entries()];
-      const settled = await runWithConcurrency(
-        entries.map(
-          ([albumDir, imageData]) =>
-            () =>
-              writeSidecarAtomically(path.join(this.mountPoint, albumDir), imageData)
-        ),
-        DEFAULT_TAG_WRITE_CONCURRENCY
-      );
-      this.pendingSidecarWrites.clear();
-      const failures: string[] = [];
-      for (let i = 0; i < settled.length; i++) {
-        const outcome = settled[i]!;
-        if (outcome.status === 'rejected') {
-          const [albumDir] = entries[i]!;
-          failures.push(
-            `${albumDir}: ${(outcome.reason as Error).message ?? String(outcome.reason)}`
-          );
-        }
-      }
-      if (failures.length > 0) {
-        // Sidecar art is the device's PRIMARY artwork source on rockbox — a
-        // failure means the device shows no cover. Throw a typed error so the
-        // executor can surface it (rather than swallowing it as a warning,
-        // which is what the per-track artwork branch in transferArtwork does
-        // for transient errors). Per-album context is preserved on `causes`.
-        throw new SidecarWriteError(failures);
-      }
-    }
+  /**
+   * Stage 2: flush pending textual tag writes to audio files.
+   *
+   * Concurrency-capped settle-all, clear-before-throw, typed aggregate on
+   * failure — see {@link flushPending}. Self-healing via rescan is the retry
+   * path; mass-storage reads file tags as the source of truth so the next
+   * sync re-detects any unwritten diffs.
+   */
+  private flushTagWrites(): Promise<void> {
+    return this.flushPending(
+      this.pendingTagWrites,
+      (filePath, fields) => this.tagWriter.writeTags(path.join(this.mountPoint, filePath), fields),
+      (filePath) => filePath,
+      TagWriteError
+    );
+  }
 
-    // Write manifest. The envelope is reconstructed fresh every save()
-    // from the current `managedFiles` set + a refreshed `lastSync`
-    // timestamp — there is no in-memory manifest object that has to be
-    // kept in sync with `managedFiles`, which removes a class of
-    // "forgot to update both" bugs as the schema grows.
+  /**
+   * Stage 3: flush pending embedded picture writes (OGG/Opus artwork).
+   * Closes doc-041 §3.1 / §7.1 — same shape as stages 2 and 4 via
+   * {@link flushPending}.
+   */
+  private flushPictureWrites(): Promise<void> {
+    return this.flushPending(
+      this.pendingPictureWrites,
+      (filePath, imageData) =>
+        this.tagWriter.writePicture(path.join(this.mountPoint, filePath), imageData),
+      (filePath) => filePath,
+      PictureWriteError
+    );
+  }
+
+  /**
+   * Stage 4: flush pending peer cover.jpg writes (sidecar-primary devices).
+   *
+   * One write per album dir — sibling tracks collapse to a single entry at
+   * queue-time. Each write is atomic (tmp + fsync + rename) so a SIGKILL
+   * mid-write leaves either the old cover, no cover, or a `.podkit-tmp` for
+   * a future doctor to clean — never a torn cover.jpg the device would
+   * render as garbage.
+   *
+   * Aggregation is per-album (not per-file) because the unit of work here is
+   * one cover.jpg per directory; the map key IS the album dir. See
+   * save-transactions.md §save-stage-asymmetries.
+   *
+   * Sidecar art is the device's PRIMARY artwork source on rockbox — failure
+   * means the device shows no cover, so the typed aggregate is surfaced
+   * rather than swallowed as a warning.
+   */
+  private flushSidecarWrites(): Promise<void> {
+    return this.flushPending(
+      this.pendingSidecarWrites,
+      (albumDir, imageData) =>
+        writeSidecarAtomically(path.join(this.mountPoint, albumDir), imageData),
+      (albumDir) => albumDir,
+      SidecarWriteError
+    );
+  }
+
+  /**
+   * Stage 5: write the manifest. The envelope is reconstructed fresh every
+   * `save()` from the current `managedFiles` set + a refreshed `lastSync`
+   * timestamp — there is no in-memory manifest object that has to be kept
+   * in sync with `managedFiles`, which removes a class of "forgot to update
+   * both" bugs as the schema grows.
+   *
+   * Atomic write: a SIGKILL mid-write must not leave a truncated manifest
+   * (loadManifest swallows parse errors and treats the device as having no
+   * managed files — invisible debris on every subsequent sync).
+   */
+  private writeManifest(): void {
     this.lastSync = new Date().toISOString();
     const manifest: MassStorageManifest = {
       version: 1,
@@ -1547,9 +1604,6 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
     const stateDir = path.join(this.mountPoint, PODKIT_DIR);
     fs.mkdirSync(stateDir, { recursive: true });
 
-    // Atomic write: a SIGKILL mid-write must not leave a truncated manifest
-    // (loadManifest swallows parse errors and treats the device as having no
-    // managed files — invisible debris on every subsequent sync).
     const manifestPath = path.join(stateDir, MANIFEST_FILE);
     atomicWriteFile(manifestPath, JSON.stringify(manifest) + '\n', 'utf-8');
   }

@@ -1145,6 +1145,155 @@ describe('MassStorageAdapter', () => {
       // save() should not throw
       await adapter.save();
     });
+
+    // -------------------------------------------------------------------------
+    // rekeyPendingWrites contract
+    //
+    // The private helper is exercised through `relocateTrack` and
+    // `replaceTrackFile`. These tests pin the cross-map re-key behaviour as
+    // a direct contract — a regression in any of the three pending maps
+    // (tag / picture / sidecar) or in `managedFiles` would silently leave
+    // queued writes targeting the old path, and `save()` would either NOOP
+    // (entry not found) or write to the wrong file.
+    // -------------------------------------------------------------------------
+    test('relocate carries a pending tag write to the new path', async () => {
+      const oldPath = 'Music/Old/Album/01 - Song.flac';
+      const newPath = 'Music/New/Album/01 - Song.flac';
+      createFakeAudioFile(mountPoint, oldPath);
+
+      const reader = createMockMetadataReader({
+        '01 - Song.flac': { title: 'Song', artist: 'Old', album: 'Album' },
+      });
+
+      const tagWriter: TagWriter & { tagCalls: string[]; pictureCalls: string[] } = {
+        tagCalls: [],
+        pictureCalls: [],
+        async writeTags(filePath: string) {
+          this.tagCalls.push(filePath);
+        },
+        async writePicture(filePath: string) {
+          this.pictureCalls.push(filePath);
+        },
+      };
+
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: reader,
+        tagWriter,
+      });
+
+      const track = adapter.getTracks()[0]!;
+      // Queue a tag write keyed on the OLD path...
+      adapter.updateTrack(track, { title: 'Renamed Song' });
+      // ...then relocate. The pending tag write should follow.
+      adapter.relocateTrack(track, newPath);
+      await adapter.save();
+
+      expect(tagWriter.tagCalls).toHaveLength(1);
+      expect(tagWriter.tagCalls[0]).toContain(newPath);
+      expect(tagWriter.tagCalls[0]).not.toContain(oldPath);
+    });
+
+    test('relocate carries a pending picture write to the new path', async () => {
+      const oldPath = 'Music/Old/Album/01 - Song.opus';
+      const newPath = 'Music/New/Album/01 - Song.opus';
+      createFakeAudioFile(mountPoint, oldPath);
+
+      const reader = createMockMetadataReader({
+        '01 - Song.opus': { title: 'Song', artist: 'Old', album: 'Album' },
+      });
+
+      const tagWriter: TagWriter & { pictureCalls: string[] } = {
+        pictureCalls: [],
+        async writeTags() {},
+        async writePicture(filePath: string) {
+          this.pictureCalls.push(filePath);
+        },
+      };
+
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: reader,
+        tagWriter,
+      });
+
+      const track = adapter.getTracks()[0]!;
+      adapter.updateTrack(track, { embeddedPictureData: Buffer.from('jpeg-bytes') });
+      adapter.relocateTrack(track, newPath);
+      await adapter.save();
+
+      expect(tagWriter.pictureCalls).toHaveLength(1);
+      expect(tagWriter.pictureCalls[0]).toContain(newPath);
+      expect(tagWriter.pictureCalls[0]).not.toContain(oldPath);
+    });
+
+    test('relocate across album dirs carries the pending sidecar + managedFiles entry', async () => {
+      const sidecarCaps: DeviceCapabilities = {
+        artworkSources: ['sidecar', 'embedded'],
+        artworkMaxResolution: 320,
+        supportedAudioCodecs: ['flac', 'mp3', 'aac', 'vorbis'],
+        supportsVideo: false,
+        audioNormalization: 'replaygain',
+        supportsAlbumArtistBrowsing: true,
+      };
+
+      const oldPath = 'Music/Old/Album/01 - Song.flac';
+      const newPath = 'Music/New/AlbumX/01 - Song.flac';
+      createFakeAudioFile(mountPoint, oldPath);
+
+      const adapter = await MassStorageAdapter.open(mountPoint, sidecarCaps, {
+        metadataReader: createMockMetadataReader({
+          '01 - Song.flac': { title: 'Song', artist: 'Old', album: 'Album' },
+        }),
+      });
+
+      const track = adapter.getTracks()[0]!;
+      // Queue a sidecar at the OLD album dir.
+      adapter.writeSidecar(track, Buffer.from('cover-bytes'));
+      // Relocate across album dirs — should carry the sidecar entry.
+      adapter.relocateTrack(track, newPath);
+      await adapter.save();
+
+      // cover.jpg landed at the NEW album dir, not the old one.
+      expect(fs.existsSync(path.join(mountPoint, 'Music/New/AlbumX/cover.jpg'))).toBe(true);
+      expect(fs.existsSync(path.join(mountPoint, 'Music/Old/Album/cover.jpg'))).toBe(false);
+
+      // Manifest's managedFiles tracks the NEW sidecar path so a future
+      // doctor sees it as podkit-owned (not orphan).
+      const manifest = JSON.parse(
+        fs.readFileSync(path.join(mountPoint, PODKIT_DIR, MANIFEST_FILE), 'utf-8')
+      ) as { managedFiles: string[] };
+      expect(manifest.managedFiles).toContain('Music/New/AlbumX/cover.jpg');
+      expect(manifest.managedFiles).not.toContain('Music/Old/Album/cover.jpg');
+    });
+
+    test('intra-album-dir relocate does NOT re-key the sidecar (no-op when dirname unchanged)', async () => {
+      const sidecarCaps: DeviceCapabilities = {
+        artworkSources: ['sidecar', 'embedded'],
+        artworkMaxResolution: 320,
+        supportedAudioCodecs: ['flac', 'mp3', 'aac', 'vorbis'],
+        supportsVideo: false,
+        audioNormalization: 'replaygain',
+        supportsAlbumArtistBrowsing: true,
+      };
+
+      // Same album dir, just renaming the file within it.
+      const oldPath = 'Music/Artist/Album/01 - Song.flac';
+      const newPath = 'Music/Artist/Album/01 - Renamed.flac';
+      createFakeAudioFile(mountPoint, oldPath);
+
+      const adapter = await MassStorageAdapter.open(mountPoint, sidecarCaps, {
+        metadataReader: createMockMetadataReader({
+          '01 - Song.flac': { title: 'Song', artist: 'Artist', album: 'Album' },
+        }),
+      });
+
+      const track = adapter.getTracks()[0]!;
+      adapter.writeSidecar(track, Buffer.from('cover-bytes'));
+      adapter.relocateTrack(track, newPath);
+      await adapter.save();
+
+      // cover.jpg stays at the (unchanged) album dir; no orphan created.
+      expect(fs.existsSync(path.join(mountPoint, 'Music/Artist/Album/cover.jpg'))).toBe(true);
+    });
   });
 
   describe('removeTrack()', () => {
@@ -2134,6 +2283,59 @@ describe('MassStorageAdapter', () => {
       expect(retried.filePath).toBe(track.filePath);
     });
 
+    test('copyTrackFile rollback also drops pending tag + picture writes for the failed path', async () => {
+      // The catch path used to clean only `managedFiles`/`allocatedPaths`/
+      // `tracks`. Pending writes survived — when the body never landed,
+      // `save()` later threw ENOENT trying to write tags into a file that
+      // didn't exist. Old behaviour masked it because `CopyError` retried
+      // once via the `'copy'` category (1 retry under DEFAULT_RETRY_CONFIG)
+      // and the retry often succeeded. After TASK-416's ENOSPC override
+      // routes `CopyError` ENOSPC to `'space'` (0 retries), the second
+      // ENOENT lands as a distinct noise error in `errors[]`. Pin the
+      // rollback so the same path can't recur.
+      const tagWriter: TagWriter & {
+        tagCalls: Array<{ filePath: string; fields: TagFields }>;
+        pictureCalls: string[];
+      } = {
+        tagCalls: [],
+        pictureCalls: [],
+        async writeTags(filePath: string, fields: TagFields) {
+          this.tagCalls.push({ filePath, fields });
+        },
+        async writePicture(filePath: string) {
+          this.pictureCalls.push(filePath);
+        },
+      };
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({}),
+        tagWriter,
+      });
+
+      // addTrack with a comment queues a tag write at allocation time.
+      const track = adapter.addTrack({
+        title: 'WillFail',
+        artist: 'Artist',
+        album: 'Album',
+        filetype: 'flac',
+        comment: 'queued sync-tag comment',
+      });
+      // Also queue a picture write (artwork pipeline can fire before copy).
+      adapter.updateTrack(track, { embeddedPictureData: Buffer.from('jpeg-bytes') });
+
+      const bogusSource = path.join(tmpdir(), 'definitely-nonexistent.flac');
+      try {
+        adapter.copyTrackFile(track, bogusSource);
+      } catch {
+        // expected
+      }
+
+      // The failed track left no debris in the pending maps. `save()` now
+      // has nothing to flush against the missing path.
+      await adapter.save();
+      expect(tagWriter.tagCalls).toHaveLength(0);
+      expect(tagWriter.pictureCalls).toHaveLength(0);
+    });
+
     test('copyTrackFile passes through an already-typed CategorizedSyncError', async () => {
       // The adapter's catch has an `instanceof CategorizedSyncError`
       // passthrough so an inner typed error (e.g. one a stubbed transport
@@ -2153,7 +2355,7 @@ describe('MassStorageAdapter', () => {
       });
 
       const inner = new (await import('./mass-storage-tag-writer.js')).MoveError([
-        '/x → /y: EACCES',
+        { path: '/x → /y', message: 'EACCES', errno: 'EACCES' },
       ]);
       // Monkey-patch the track instance to raise the inner typed error.
       // Tests do not normally reach in like this, but the passthrough path
@@ -2487,6 +2689,58 @@ describe('MassStorageAdapter', () => {
       // rescan would re-detect the gap and re-queue — that's the retry path.
       await adapter.save();
       expect(tagWriter.pictureCalls.length).toBe(callsAfterFirst);
+    });
+
+    // -------------------------------------------------------------------------
+    // ENOSPC → 'space' routing — end-to-end wiring proof
+    //
+    // The tag writer throws a raw fs-style ENOSPC error. The adapter wraps
+    // it in `TagWriteError` carrying `structuredCauses[0].errno = 'ENOSPC'`.
+    // The categorizer reads errno off the structured cause and overrides the
+    // class's declared `'copy'` to `'space'` — which the executor's retry
+    // policy translates to "no retry". Catches a regression where the errno
+    // gets dropped on the floor anywhere along the chain (e.g. helper change,
+    // structured-causes constructor argument re-ordering).
+    // -------------------------------------------------------------------------
+    test('tag-write ENOSPC propagates errno → categorizes as "space" (no retry)', async () => {
+      createFakeAudioFile(mountPoint, 'Music/Artist/Album/01.flac');
+
+      const failingTagWriter: TagWriter = {
+        async writeTags() {
+          // Raw fs-style error with errno on `code`.
+          const err = new Error('ENOSPC: no space left on device, write');
+          (err as Error & { code: string }).code = 'ENOSPC';
+          throw err;
+        },
+        async writePicture() {},
+      };
+
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({
+          '01.flac': { title: 'One', artist: 'Artist', album: 'Album' },
+        }),
+        tagWriter: failingTagWriter,
+      });
+
+      const track = adapter.getTracks()[0]!;
+      adapter.updateTrack(track, { title: 'Renamed' });
+
+      const { TagWriteError } = await import('./mass-storage-tag-writer.js');
+      const { categorizeError } = await import('../sync/engine/error-handling.js');
+
+      let thrown: unknown;
+      try {
+        await adapter.save();
+      } catch (err) {
+        thrown = err;
+      }
+      expect(thrown).toBeInstanceOf(TagWriteError);
+      const tagErr = thrown as InstanceType<typeof TagWriteError>;
+      expect(tagErr.structuredCauses?.[0]?.errno).toBe('ENOSPC');
+      expect(tagErr.hasEnospc).toBe(true);
+      // Declared class category is 'copy' — override flips to 'space'.
+      expect(tagErr.category).toBe('copy');
+      expect(categorizeError(tagErr, 'update-metadata')).toBe('space');
     });
   });
 

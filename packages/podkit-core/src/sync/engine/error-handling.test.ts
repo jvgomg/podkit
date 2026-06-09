@@ -46,35 +46,49 @@ describe('categorizeError', () => {
       // and mis-classify this as a database error. The typed class closes
       // that hole — the category is on the type.
       const err = new TagWriteError([
-        '/mnt/iPod/foo.flac: ENOENT',
-        '/mnt/itunes-style/x.flac: permission denied',
+        { path: '/mnt/iPod/foo.flac', message: 'ENOENT', errno: 'ENOENT' },
+        { path: '/mnt/itunes-style/x.flac', message: 'permission denied', errno: 'EACCES' },
       ]);
       expect(categorizeError(err, 'update-metadata')).toBe('copy');
     });
 
     it('reads category from SidecarWriteError', () => {
-      const err = new SidecarWriteError(['/album/foo: rename failed']);
+      const err = new SidecarWriteError([
+        { path: '/album/foo', message: 'rename failed', errno: 'EACCES' },
+      ]);
       expect(categorizeError(err, 'upgrade-artwork')).toBe('copy');
     });
 
     it('reads category from PictureWriteError', () => {
-      const err = new PictureWriteError(['/x.ogg: write failed']);
+      const err = new PictureWriteError([
+        { path: '/x.ogg', message: 'write failed', errno: 'EACCES' },
+      ]);
       expect(categorizeError(err, 'add-direct-copy')).toBe('copy');
     });
 
     it('reads category from MoveError', () => {
-      const err = new MoveError(['/old → /new: EACCES']);
+      const err = new MoveError([{ path: '/old → /new', message: 'EACCES', errno: 'EACCES' }]);
       expect(categorizeError(err, 'relocate')).toBe('copy');
     });
 
-    it('reads category from CopyError, regardless of operation type', () => {
+    it('routes CopyError ENOSPC to space (override on top of declared copy)', () => {
+      // The ENOSPC override fires regardless of the error class's declared
+      // category. CopyError declares 'copy' (1 retry) but a disk-full
+      // failure should not retry — the second attempt would fail the same
+      // way. The categorizer reads errno off the structured cause and
+      // overrides to 'space' (0 retries).
       const underlying = Object.assign(new Error('ENOSPC: no space left on device, write'), {
         code: 'ENOSPC',
       });
       const err = new CopyError('/src/song.mp3', underlying);
+      expect(categorizeError(err, 'add-direct-copy')).toBe('space');
+      expect(categorizeError(err, 'update-metadata')).toBe('space');
+    });
+
+    it('CopyError without ENOSPC keeps declared copy category', () => {
+      const underlying = Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+      const err = new CopyError('/src/song.mp3', underlying);
       expect(categorizeError(err, 'add-direct-copy')).toBe('copy');
-      // Even with an op type that doesn't route to 'copy' via fallback,
-      // the typed-error class wins.
       expect(categorizeError(err, 'update-metadata')).toBe('copy');
     });
 
@@ -87,6 +101,12 @@ describe('categorizeError', () => {
       expect(err.sourcePath).toBe('/src/song.mp3');
       expect(err.causes.length).toBe(1);
       expect(err.causes[0]).toBe('/src/song.mp3: ENOSPC: no space left on device, write');
+      expect(err.structuredCauses?.length).toBe(1);
+      expect(err.structuredCauses?.[0]).toEqual({
+        path: '/src/song.mp3',
+        message: 'ENOSPC: no space left on device, write',
+        errno: 'ENOSPC',
+      });
       // Class name comes from `new.target.name` on the base class.
       expect(err.name).toBe('CopyError');
       // Message format matches the matrix's classifyThrowsClass regex.
@@ -97,6 +117,7 @@ describe('categorizeError', () => {
       const err = new CopyError('/src/song.mp3', new Error('synthetic failure'));
       expect(err.errorCode).toBeUndefined();
       expect(err.causes[0]).toBe('/src/song.mp3: synthetic failure');
+      expect(err.structuredCauses?.[0]?.errno).toBeUndefined();
     });
 
     it('CopyError tolerates a non-Error underlying value', () => {
@@ -112,7 +133,7 @@ describe('categorizeError', () => {
       // doesn't enforce that — it just records the message — but the
       // round-trip via the categorizer should still classify the OUTER
       // error's category.
-      const inner = new MoveError(['/x: EACCES']);
+      const inner = new MoveError([{ path: '/x', message: 'EACCES', errno: 'EACCES' }]);
       const outer = new CopyError('/src/song.mp3', inner);
       expect(categorizeError(outer, 'add-direct-copy')).toBe('copy');
       // The wrapped message is preserved in the causes for diagnostics.
@@ -130,7 +151,7 @@ describe('categorizeError', () => {
     it('ignores operation type when the error is typed', () => {
       // Even with op-type='video-transcode' (which would fall back to
       // 'transcode'), the typed error's category wins.
-      const err = new TagWriteError(['x.flac: failed']);
+      const err = new TagWriteError([{ path: 'x.flac', message: 'failed', errno: undefined }]);
       expect(categorizeError(err, 'video-transcode')).toBe('copy');
     });
 
@@ -140,6 +161,67 @@ describe('categorizeError', () => {
       }
       const err = new CustomTranscodeError('encoder died');
       expect(categorizeError(err, 'remove')).toBe('transcode');
+    });
+  });
+
+  describe('ENOSPC override (hasEnospc → "space")', () => {
+    // An aggregate or single-cause typed error whose structured causes
+    // include an ENOSPC entry routes to 'space' regardless of the class's
+    // declared `category`. This catches the case where a file-I/O error
+    // class (`TagWriteError`/`PictureWriteError`/`SidecarWriteError`/
+    // `MoveError`/`CopyError`) would otherwise route to 'copy' (1 retry) and
+    // waste a retry attempt when the disk is genuinely full.
+
+    it('TagWriteError with ENOSPC cause routes to space', () => {
+      const err = new TagWriteError([
+        { path: 'a.flac', message: 'ENOSPC: no space left', errno: 'ENOSPC' },
+      ]);
+      expect(categorizeError(err, 'update-metadata')).toBe('space');
+    });
+
+    it('PictureWriteError with ENOSPC cause routes to space', () => {
+      const err = new PictureWriteError([
+        { path: 'a.ogg', message: 'ENOSPC: no space left', errno: 'ENOSPC' },
+      ]);
+      expect(categorizeError(err, 'upgrade-artwork')).toBe('space');
+    });
+
+    it('SidecarWriteError with ENOSPC cause routes to space', () => {
+      const err = new SidecarWriteError([
+        { path: '/album', message: 'ENOSPC: no space left', errno: 'ENOSPC' },
+      ]);
+      expect(categorizeError(err, 'upgrade-artwork')).toBe('space');
+    });
+
+    it('MoveError with ENOSPC cause routes to space', () => {
+      const err = new MoveError([
+        { path: '/old → /new', message: 'ENOSPC: no space left', errno: 'ENOSPC' },
+      ]);
+      expect(categorizeError(err, 'relocate')).toBe('space');
+    });
+
+    it('any ENOSPC cause wins — mixed EACCES + ENOSPC routes to space', () => {
+      const err = new TagWriteError([
+        { path: 'a.flac', message: 'EACCES', errno: 'EACCES' },
+        { path: 'b.flac', message: 'ENOSPC: no space left', errno: 'ENOSPC' },
+      ]);
+      expect(categorizeError(err, 'update-metadata')).toBe('space');
+    });
+
+    it('non-ENOSPC mixed causes keep the declared category', () => {
+      const err = new TagWriteError([
+        { path: 'a.flac', message: 'EACCES', errno: 'EACCES' },
+        { path: 'b.flac', message: 'EROFS', errno: 'EROFS' },
+      ]);
+      expect(categorizeError(err, 'update-metadata')).toBe('copy');
+    });
+
+    it('typed error without structuredCauses falls through to declared category', () => {
+      // DatabaseWriteError doesn't populate structuredCauses (its causes are
+      // bare path strings). hasEnospc returns false → declared category wins.
+      const err = new DatabaseWriteError('itunesdb corrupt');
+      expect(err.hasEnospc).toBe(false);
+      expect(categorizeError(err, 'add-direct-copy')).toBe('database');
     });
   });
 
@@ -348,7 +430,7 @@ describe('withRetry', () => {
     const result = await withRetry(
       async () => {
         callCount++;
-        throw new TagWriteError(['x.flac: failed']);
+        throw new TagWriteError([{ path: 'x.flac', message: 'failed', errno: undefined }]);
       },
       { ...DEFAULT_RETRY_CONFIG, retryDelayMs: 0 },
       'update-metadata',

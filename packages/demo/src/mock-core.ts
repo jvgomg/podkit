@@ -332,6 +332,16 @@ export class IpodError extends Error {
 
 // =============================================================================
 // Categorized sync errors
+//
+// Lower-fidelity stand-ins for the real classes in
+// `packages/podkit-core/src/sync/engine/errors.ts` +
+// `packages/podkit-core/src/device/mass-storage-tag-writer.ts`. The demo
+// only references these by name (`instanceof` + class-name printing); it
+// does not exercise the `structuredCauses` / `hasEnospc` surface added by
+// the real implementation. The constructor signatures here intentionally
+// stay on `readonly string[]` to keep the demo's hand-rolled mocks short.
+// If the demo ever needs to round-trip an errno through the categorizer,
+// re-sync these classes with the real shape.
 // =============================================================================
 
 export abstract class CategorizedSyncError extends Error {
@@ -341,6 +351,10 @@ export abstract class CategorizedSyncError extends Error {
     super(message);
     this.name = new.target.name;
     this.causes = causes;
+  }
+  /** Stub mirror of the real getter; demo never populates an ENOSPC cause. */
+  get hasEnospc(): boolean {
+    return false;
   }
 }
 

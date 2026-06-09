@@ -19,7 +19,33 @@
  * @module
  */
 
-import type { ErrorCategory } from './types.js';
+import type { ErrorCategory, ErrorCause } from './types.js';
+
+/**
+ * Recover an fs-style errno code (`ENOSPC`, `EACCES`, `EROFS`, `ENOENT`, …)
+ * from an arbitrary thrown value. Node's fs errors and many native bindings
+ * expose `code` as a string; synthetic errors and non-Error values return
+ * `undefined`. Used by every {@link ErrorCause} construction site to keep
+ * errno extraction out of message-body inspection.
+ */
+export function errnoOf(value: unknown): string | undefined {
+  if (typeof value === 'object' && value !== null && 'code' in value) {
+    const code = (value as { code?: unknown }).code;
+    if (typeof code === 'string') return code;
+  }
+  return undefined;
+}
+
+/**
+ * Build an {@link ErrorCause} from a thrown value at a flush-stage rejection
+ * or throw site. `path` identifies the unit of work (file path, album dir,
+ * `"oldPath → newPath"` for moves); errno is recovered via {@link errnoOf}
+ * — used by the categorizer's `hasEnospc → 'space'` override.
+ */
+export function toErrorCause(path: string, reason: unknown): ErrorCause {
+  const message = reason instanceof Error ? reason.message : String(reason);
+  return { path, message, errno: errnoOf(reason) };
+}
 
 /**
  * Abstract base class for all categorized sync errors.
@@ -28,9 +54,21 @@ import type { ErrorCategory } from './types.js';
  * {@link categorizeError} (in `error-handling.ts`) can recover the category
  * without inspecting the message.
  *
- * Carries an optional `causes` array — adapters that aggregate per-entry
- * failures into a single thrown error (TagWriteError, SidecarWriteError,
- * PictureWriteError) populate it for diagnostics.
+ * Carries two failure-description channels:
+ *
+ * - `causes: readonly string[]` — human-readable `"${path}: ${message}"`
+ *   lines, surfaced as-is into the `--json` envelope's `errors[].causes`
+ *   array (see `packages/podkit-cli/src/commands/sync.ts` `ErrorInfo`).
+ *   Stable wire format; consumers parse these as opaque strings.
+ * - `structuredCauses?: readonly ErrorCause[]` — in-process detail with
+ *   typed `{ path, message, errno }` so the categorizer can read the
+ *   underlying fs errno (`ENOSPC`/`EACCES`/…) without scraping the message
+ *   body. Optional — single-string-cause subclasses (`DatabaseWriteError`,
+ *   `InsufficientSpaceAfterCleanup` where causes are bare path strings)
+ *   leave it `undefined`.
+ *
+ * Both channels stay in lockstep when populated together — `causes[i]`
+ * formats `structuredCauses[i]` as `"${path}: ${message}"`.
  */
 export abstract class CategorizedSyncError extends Error {
   /** Category used by the executor's retry policy. */
@@ -38,15 +76,39 @@ export abstract class CategorizedSyncError extends Error {
 
   /**
    * Per-entry failure descriptions for aggregated errors. Single-cause
-   * subclasses (e.g. MoveError) populate it with one entry; consumers should
-   * not assume length > 1.
+   * subclasses (e.g. DatabaseWriteError) populate it with one entry;
+   * consumers should not assume length > 1.
    */
   readonly causes: readonly string[];
 
-  constructor(message: string, causes: readonly string[] = []) {
+  /**
+   * Structured per-entry detail with errno. Populated by aggregate errors
+   * (`TagWriteError`/`PictureWriteError`/`SidecarWriteError`/`MoveError`) and
+   * the `CopyError` single-cause wrap. `undefined` when the subclass does
+   * not carry per-cause errno detail.
+   */
+  readonly structuredCauses: readonly ErrorCause[] | undefined;
+
+  constructor(
+    message: string,
+    causes: readonly string[] = [],
+    structuredCauses?: readonly ErrorCause[]
+  ) {
     super(message);
     this.name = new.target.name;
     this.causes = causes;
+    this.structuredCauses = structuredCauses;
+  }
+
+  /**
+   * True when any cause carries an `ENOSPC` errno. Drives the categorizer's
+   * "device exhausted" override: an ENOSPC inside a tag/picture/sidecar/move
+   * flush should route to the `'space'` category (no retry) regardless of
+   * the subclass's declared default of `'copy'`. Falls back to `false` when
+   * the subclass does not populate `structuredCauses`.
+   */
+  get hasEnospc(): boolean {
+    return this.structuredCauses?.some((c) => c.errno === 'ENOSPC') ?? false;
   }
 }
 

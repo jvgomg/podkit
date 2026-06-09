@@ -660,12 +660,13 @@ function parseVerboseSyncOutput(
   }
   // If `Failed:` line absent, count the `[<category>]` bullet lines.
   if (failedTrackCount === 0) {
-    const errBlocks = stdout.match(/^\s*\[(copy|transcode|database|artwork|unknown)\]\s+/gm) ?? [];
+    const errBlocks =
+      stdout.match(/^\s*\[(copy|transcode|database|artwork|space|unknown)\]\s+/gm) ?? [];
     failedTrackCount = errBlocks.length;
   }
 
   // Per-track error emitted by formatErrors at verbosity >= 2.
-  const errLine = stdout.match(/^\s*\[(copy|transcode|database|artwork|unknown)\]\s+(.+)$/m);
+  const errLine = stdout.match(/^\s*\[(copy|transcode|database|artwork|space|unknown)\]\s+(.+)$/m);
   const firstError = errLine
     ? { category: errLine[1] ?? 'unknown', message: errLine[2] ?? '' }
     : undefined;

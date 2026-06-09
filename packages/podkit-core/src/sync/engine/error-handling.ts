@@ -91,6 +91,14 @@ export const VIDEO_RETRY_CONFIG: Required<RetryConfig> = {
  * category on the class. The categorizer then reads `error.category`
  * directly — no inspecting the message body.
  *
+ * One override: any `CategorizedSyncError` carrying an `ENOSPC` cause routes
+ * to `'space'` regardless of its declared category. This catches the case
+ * where a file-I/O class (`TagWriteError`/`CopyError`/…) reports a category
+ * of `'copy'` (1 retry) when the underlying failure is actually device
+ * exhaustion — retrying a copy when the disk is full just wastes a second.
+ * The errno survives on `CategorizedSyncError.structuredCauses[i].errno`;
+ * see `./errors.ts` and `./types.ts ErrorCause`.
+ *
  * Untyped errors (third-party libraries that throw `Error` directly, e.g.
  * libgpod failures or raw FFmpeg subprocess errors that aren't yet wrapped
  * by their handler) fall back to a small operation-type table: the call site
@@ -102,6 +110,7 @@ export const VIDEO_RETRY_CONFIG: Required<RetryConfig> = {
  */
 export function categorizeError(error: Error, operationType: string): ErrorCategory {
   if (error instanceof CategorizedSyncError) {
+    if (error.hasEnospc) return 'space';
     return error.category;
   }
   return categoryForOperationType(operationType);
