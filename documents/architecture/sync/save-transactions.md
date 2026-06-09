@@ -495,7 +495,9 @@ Settled work moved out of this section:
 - ~~Sidecar flush stage uses bare `Promise.allSettled`~~ — closed by
   TASK-390 (`runWithConcurrency` cap, EMFILE-safe).
 - ~~`lookupTrackRef` O(N²) at save-time~~ — closed by TASK-392 (lazy
-  memoization at first ENOENT).
+  memoization at first ENOENT); superseded by TASK-417 (eager plan-time
+  capture in `pendingMoves`, no flush-time lookup at all — memo and
+  helper both deleted).
 - ~~Cross-adapter asymmetry write-up~~ — closed by TASK-393
   (asymmetries documented in §2 above).
 - ~~Save-failure matrix as a coherent test surface~~ — closed by

@@ -1136,6 +1136,13 @@ describe('MassStorageAdapter', () => {
         metadataReader: reader,
       });
 
+      const emitted: import('../sync/engine/types.js').Warning[] = [];
+      adapter.setWarningSink({
+        emit: (w) => {
+          emitted.push(w);
+        },
+      });
+
       const track = adapter.getTracks()[0]!;
       adapter.relocateTrack(track, 'Music/New/Album/01 - Song.flac');
 
@@ -1144,6 +1151,16 @@ describe('MassStorageAdapter', () => {
 
       // save() should not throw
       await adapter.save();
+
+      // The batched warning must carry the real artist/title/album so the
+      // user can see *which* track lost its source. A silent fallback to
+      // `Unknown Artist / Unknown Track` would mask the loss.
+      expect(emitted).toHaveLength(1);
+      expect(emitted[0]!.tracks[0]).toEqual({
+        artist: 'Artist',
+        title: 'Song',
+        album: 'Album',
+      });
     });
 
     // -------------------------------------------------------------------------
@@ -1502,7 +1519,7 @@ describe('MassStorageAdapter', () => {
       expect(w.tracks[0]!.album).toBe('Album');
     });
 
-    test('memoizes track lookup to avoid O(N²) scans when multiple relocates vanish', async () => {
+    test('warning carries every vanished track when N relocates fail in one batch', async () => {
       const relocationCount = 10;
       const metadata: Record<string, any> = {};
       const origPaths: string[] = [];
@@ -1552,30 +1569,71 @@ describe('MassStorageAdapter', () => {
         fs.unlinkSync(absPath);
       }
 
-      // Spy on the legacy linear-scan path. Memoisation routes every vanish
-      // through the per-save() map; a regression to per-iteration linear
-      // scans would re-fire this spy and the assertion below would catch it.
-      const adapterAny = adapter as unknown as {
-        lookupTrackRef: (p: string) => unknown;
-      };
-      const origLookup = adapterAny.lookupTrackRef.bind(adapter);
-      let lookupCalls = 0;
-      adapterAny.lookupTrackRef = (p: string) => {
-        lookupCalls++;
-        return origLookup(p);
-      };
-
       await expect(adapter.save()).resolves.toBeUndefined();
 
-      // O(1) shape: zero linear scans across N vanishes. The map covers
-      // every queued path, so the fallback in `??` is unreachable here.
-      expect(lookupCalls).toBe(0);
+      // One batched warning carries every track's real metadata — never a
+      // mix of real entries and `Unknown` sentinels.
       expect(emitted).toHaveLength(1);
       const w = emitted[0]!;
       expect(w.type).toBe('metadata');
       expect(w.tracks).toHaveLength(relocationCount);
       const warnedTitles = new Set(w.tracks.map((t) => t.title));
       expect(warnedTitles).toEqual(trackTitles);
+      expect(w.tracks.every((t) => t.artist !== 'Unknown Artist')).toBe(true);
+    });
+
+    test('captured ref survives downstream mutation of the in-memory track', async () => {
+      // Pins the invariant: pendingMoves stores the artist/title at plan
+      // time, not a live reference to the in-memory track. A future change
+      // that lazily re-derives the ref from `this.tracks` at flush would
+      // silently regress to whatever the track looks like *now* — masking
+      // edits, or worse, falling through to `Unknown` if the track was
+      // dropped from `this.tracks` between relocate and save.
+      const relPath = 'Music/Old Artist/Album/01 - Song.flac';
+      createFakeAudioFile(mountPoint, relPath);
+
+      const reader = createMockMetadataReader({
+        '01 - Song.flac': {
+          title: 'Original Title',
+          artist: 'Original Artist',
+          album: 'Original Album',
+          trackNumber: 1,
+          duration: 180000,
+          bitrate: 320,
+          sampleRate: 44100,
+        },
+      });
+
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: reader,
+      });
+
+      const emitted: import('../sync/engine/types.js').Warning[] = [];
+      adapter.setWarningSink({ emit: (w) => emitted.push(w) });
+
+      const track = adapter.getTracks()[0]!;
+      const newPath = 'Music/New Artist/Album/01 - Song.flac';
+      adapter.relocateTrack(track, newPath);
+
+      // Reach into the adapter and mutate the in-memory track that
+      // `flushMoves` would scan if it lazily re-derived the ref. A correct
+      // implementation captures by value at plan time, so this mutation is
+      // invisible to the warning.
+      const liveTrack = adapter.getTracks()[0]!;
+      (liveTrack as unknown as { artist: string }).artist = 'Mutated Artist';
+      (liveTrack as unknown as { title: string }).title = 'Mutated Title';
+      (liveTrack as unknown as { album: string }).album = 'Mutated Album';
+
+      fs.unlinkSync(path.join(mountPoint, relPath));
+
+      await expect(adapter.save()).resolves.toBeUndefined();
+
+      expect(emitted).toHaveLength(1);
+      expect(emitted[0]!.tracks[0]).toEqual({
+        artist: 'Original Artist',
+        title: 'Original Title',
+        album: 'Original Album',
+      });
     });
 
     test('does not emit when relocate succeeds normally', async () => {

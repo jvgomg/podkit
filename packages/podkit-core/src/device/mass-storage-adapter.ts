@@ -569,10 +569,17 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
   private pendingSidecarWrites = new Map<string, Buffer>();
 
   /**
-   * Pending file moves, keyed by current relative path → new relative path.
-   * Accumulated by relocateTrack() and flushed by save() via fs.rename().
+   * Pending file moves, keyed by current relative path. Value carries the new
+   * relative path plus the track's metadata ref captured at plan time. The ref
+   * is captured eagerly (rather than reconstructed from `this.tracks` at flush
+   * time) so an ENOENT warning emits the original artist/title even if the
+   * track instance was subsequently mutated or removed. Accumulated by
+   * relocateTrack() and flushed by save() via fs.rename().
    */
-  private pendingMoves = new Map<string, string>();
+  private pendingMoves = new Map<
+    string,
+    { newPath: string; trackRef: { artist: string; title: string; album?: string } }
+  >();
 
   /**
    * Receiver for execute-phase warnings. Set by the pipeline at execute
@@ -1017,8 +1024,17 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
 
     this.rekeyPendingWrites(oldPath, finalPath);
 
-    // Queue the filesystem move
-    this.pendingMoves.set(oldPath, finalPath);
+    // Queue the filesystem move. Capture the track's identity now so an
+    // ENOENT at flush time can surface real artist/title — no later lookup
+    // against the mutable `this.tracks` array required.
+    this.pendingMoves.set(oldPath, {
+      newPath: finalPath,
+      trackRef: {
+        artist: track.artist,
+        title: track.title,
+        album: track.album,
+      },
+    });
 
     // Create a new track instance with updated path
     const relocated = track.withPath(finalPath);
@@ -1234,8 +1250,8 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
             type: 'metadata',
             tracks: [
               {
-                artist: track.artist ?? 'Unknown Artist',
-                title: track.title ?? 'Unknown Title',
+                artist: track.artist,
+                title: track.title,
                 album: track.album,
               },
             ],
@@ -1376,11 +1392,7 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
     // end of the batch rather than N small ones (or worse, N stderr lines).
     const vanished: Array<{ artist: string; title: string; album?: string }> = [];
 
-    // Memoize track lookup by path on first vanish to avoid O(N²) linear
-    // scans through the tracks array when multiple ENOENT errors occur.
-    let trackRefByPath: Map<string, { artist: string; title: string; album?: string }> | undefined;
-
-    for (const [oldPath, newPath] of this.pendingMoves) {
+    for (const [oldPath, { newPath, trackRef }] of this.pendingMoves) {
       const absOld = path.join(this.mountPoint, oldPath);
       const absNew = path.join(this.mountPoint, newPath);
 
@@ -1393,23 +1405,7 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
         fs.renameSync(absOld, absNew);
       } catch (err: any) {
         if (err?.code === 'ENOENT') {
-          if (!trackRefByPath) {
-            trackRefByPath = new Map(
-              this.tracks.map((t) => [
-                t.filePath,
-                {
-                  artist: t.artist ?? 'Unknown Artist',
-                  title: t.title ?? 'Unknown Track',
-                  album: t.album,
-                },
-              ])
-            );
-          }
-          const ref = trackRefByPath.get(newPath) ?? {
-            artist: 'Unknown Artist',
-            title: 'Unknown Track',
-          };
-          vanished.push(ref);
+          vanished.push(trackRef);
           continue;
         }
         // Wrap raw fs errors so the categorizer reads category off the type
@@ -1673,23 +1669,6 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
     }
 
     return result;
-  }
-
-  /**
-   * Look up the artist/title/album for a relocated track at save-time. The
-   * pending-move queue is keyed by paths; the track ref is recovered by
-   * matching the new path in the current track list.
-   *
-   * Returns a placeholder ref when the track can't be found — better to emit
-   * a warning with `'Unknown Track'` than to drop the warning entirely.
-   */
-  private lookupTrackRef(filePath: string): { artist: string; title: string; album?: string } {
-    const track = this.tracks.find((t) => t.filePath === filePath);
-    return {
-      artist: track?.artist ?? 'Unknown Artist',
-      title: track?.title ?? 'Unknown Track',
-      album: track?.album,
-    };
   }
 
   // ---------------------------------------------------------------------------
