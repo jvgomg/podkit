@@ -3050,6 +3050,302 @@ describe('MassStorageAdapter', () => {
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // Sidecar cleanup — abandoned cover.jpg deletes on album emptying
+  // ---------------------------------------------------------------------------
+  //
+  // The invariant:
+  //   - Every managed sidecar (`cover.jpg`) has at least one managed audio
+  //     sibling in its parent dir at flush time.
+  //   - removeTrack(last in dir) and relocateTrack(last out of dir) queue
+  //     the dir for sidecar delete; save() runs the unlink after the
+  //     sidecar-write stage so re-adds (write + delete queued for the same
+  //     dir in one save) leave the file present.
+  //   - The flush re-evaluates the predicate per entry so a re-add that
+  //     bypasses writeSidecar (artwork hash matched, pipeline skipped) is
+  //     still safe — the queued delete is dropped.
+  //   - ENOENT on unlink is silent success (legacy data with manifest entry
+  //     but no on-disk file).
+  describe('sidecar cleanup on album abandonment', () => {
+    const SIDECAR_CAPABILITIES: DeviceCapabilities = {
+      artworkSources: ['sidecar', 'embedded'],
+      artworkMaxResolution: 320,
+      supportedAudioCodecs: ['flac', 'mp3', 'aac', 'vorbis'],
+      supportsVideo: false,
+      audioNormalization: 'replaygain',
+      supportsAlbumArtistBrowsing: true,
+    };
+
+    const EMBEDDED_CAPABILITIES: DeviceCapabilities = {
+      ...SIDECAR_CAPABILITIES,
+      artworkSources: ['embedded'],
+    };
+
+    /**
+     * Pre-stage the device filesystem (audio + cover.jpg files + manifest)
+     * then open the adapter so scanned tracks come up as `managed: true`
+     * with the sidecars already claimed. Simulates the "second sync cycle"
+     * state: the cleanup paths are exercised on a real post-sync device.
+     */
+    async function seedAdapterWithSidecars(
+      tracks: Record<string, { title: string; artist: string; album: string }>,
+      capabilities: DeviceCapabilities = SIDECAR_CAPABILITIES
+    ): Promise<MassStorageAdapter> {
+      const metaMap: Record<string, { title: string; artist: string; album: string }> = {};
+      for (const [relPath, meta] of Object.entries(tracks)) {
+        createFakeAudioFile(mountPoint, relPath);
+        metaMap[relPath] = meta;
+      }
+      const managedFilePaths = Object.keys(tracks);
+      if (capabilities.artworkSources[0] === 'sidecar') {
+        const albumDirs = new Set(Object.keys(tracks).map((p) => path.dirname(p)));
+        for (const dir of albumDirs) {
+          const coverPath = path.join(mountPoint, dir, 'cover.jpg');
+          fs.mkdirSync(path.dirname(coverPath), { recursive: true });
+          fs.writeFileSync(coverPath, Buffer.from('jpeg'));
+          managedFilePaths.push(path.join(dir, 'cover.jpg'));
+        }
+      }
+      // Pre-write the manifest so scanTracks finds tracks as managed.
+      const stateDir = path.join(mountPoint, PODKIT_DIR);
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(stateDir, MANIFEST_FILE),
+        JSON.stringify({
+          version: 1,
+          managedFiles: managedFilePaths.sort(),
+          lastSync: new Date().toISOString(),
+        }) + '\n',
+        'utf-8'
+      );
+
+      return MassStorageAdapter.open(mountPoint, capabilities, {
+        metadataReader: async (filePath: string) => {
+          const rel = path.relative(mountPoint, filePath);
+          const meta = metaMap[rel] ?? { title: 'T', artist: 'A', album: 'X' };
+          return {
+            common: {
+              title: meta.title,
+              artist: meta.artist,
+              album: meta.album,
+              track: { no: null, of: null },
+              disk: { no: null, of: null },
+            },
+            format: { duration: 180, bitrate: 320000, sampleRate: 44100, codec: 'flac' },
+          };
+        },
+      });
+    }
+
+    test('removeTrack on the last sibling of an album unlinks cover.jpg and drops the manifest entry', async () => {
+      const adapter = await seedAdapterWithSidecars({
+        'Music/Artist/Album/01.flac': { title: 'One', artist: 'Artist', album: 'Album' },
+      });
+      const coverPath = path.join(mountPoint, 'Music/Artist/Album/cover.jpg');
+      expect(fs.existsSync(coverPath)).toBe(true);
+
+      const track = adapter.getTracks()[0]!;
+      adapter.removeTrack(track);
+      await adapter.save();
+
+      expect(fs.existsSync(coverPath)).toBe(false);
+      const manifest = JSON.parse(
+        fs.readFileSync(path.join(mountPoint, PODKIT_DIR, MANIFEST_FILE), 'utf-8')
+      ) as { managedFiles: string[] };
+      expect(manifest.managedFiles).not.toContain('Music/Artist/Album/cover.jpg');
+    });
+
+    test('removeTrack on one of several siblings leaves cover.jpg alone', async () => {
+      const adapter = await seedAdapterWithSidecars({
+        'Music/Artist/Album/01.flac': { title: 'One', artist: 'Artist', album: 'Album' },
+        'Music/Artist/Album/02.flac': { title: 'Two', artist: 'Artist', album: 'Album' },
+      });
+      const coverPath = path.join(mountPoint, 'Music/Artist/Album/cover.jpg');
+
+      const one = adapter.getTracks().find((t) => t.title === 'One')!;
+      adapter.removeTrack(one);
+      await adapter.save();
+
+      expect(fs.existsSync(coverPath)).toBe(true);
+      const manifest = JSON.parse(
+        fs.readFileSync(path.join(mountPoint, PODKIT_DIR, MANIFEST_FILE), 'utf-8')
+      ) as { managedFiles: string[] };
+      expect(manifest.managedFiles).toContain('Music/Artist/Album/cover.jpg');
+    });
+
+    test('removeTrack with deleteFile: false leaves the sidecar in place', async () => {
+      // The caller chose to retain the on-disk audio (e.g. demoting to
+      // unmanaged). The album dir still LOOKS like a managed album to the
+      // device; the sidecar must stay with it.
+      const adapter = await seedAdapterWithSidecars({
+        'Music/Artist/Album/01.flac': { title: 'One', artist: 'Artist', album: 'Album' },
+      });
+      const coverPath = path.join(mountPoint, 'Music/Artist/Album/cover.jpg');
+
+      adapter.removeTrack(adapter.getTracks()[0]!, { deleteFile: false });
+      await adapter.save();
+
+      expect(fs.existsSync(coverPath)).toBe(true);
+    });
+
+    test('removeTrack on an embedded-art device is a sidecar no-op', async () => {
+      // Sanity: embedded-sink devices never touched pendingSidecarDeletes
+      // before this change; verify the new code path stays gated behind
+      // artworkSink === 'sidecar'.
+      const adapter = await seedAdapterWithSidecars(
+        {
+          'Music/Artist/Album/01.flac': { title: 'One', artist: 'Artist', album: 'Album' },
+        },
+        EMBEDDED_CAPABILITIES
+      );
+
+      adapter.removeTrack(adapter.getTracks()[0]!);
+      await adapter.save();
+
+      // Nothing related to cover.jpg should have happened. The fact that
+      // there's no cover.jpg in the temp dir (embedded device never wrote
+      // one) is enough — but more importantly, save() should not throw.
+      expect(fs.existsSync(path.join(mountPoint, 'Music/Artist/Album/cover.jpg'))).toBe(false);
+    });
+
+    test('relocateTrack cross-album deletes the source-dir sidecar when its last track leaves', async () => {
+      const adapter = await seedAdapterWithSidecars({
+        'Music/Artist/Old/01.flac': { title: 'One', artist: 'Artist', album: 'Old' },
+      });
+      const oldCover = path.join(mountPoint, 'Music/Artist/Old/cover.jpg');
+      expect(fs.existsSync(oldCover)).toBe(true);
+
+      const track = adapter.getTracks()[0]!;
+      adapter.relocateTrack(track, 'Music/Artist/New/01.flac');
+      await adapter.save();
+
+      expect(fs.existsSync(oldCover)).toBe(false);
+      const manifest = JSON.parse(
+        fs.readFileSync(path.join(mountPoint, PODKIT_DIR, MANIFEST_FILE), 'utf-8')
+      ) as { managedFiles: string[] };
+      expect(manifest.managedFiles).not.toContain('Music/Artist/Old/cover.jpg');
+    });
+
+    test('relocateTrack one of several siblings to a new dir leaves the source-dir sidecar alone', async () => {
+      const adapter = await seedAdapterWithSidecars({
+        'Music/Artist/Old/01.flac': { title: 'One', artist: 'Artist', album: 'Old' },
+        'Music/Artist/Old/02.flac': { title: 'Two', artist: 'Artist', album: 'Old' },
+      });
+      const oldCover = path.join(mountPoint, 'Music/Artist/Old/cover.jpg');
+
+      const one = adapter.getTracks().find((t) => t.title === 'One')!;
+      adapter.relocateTrack(one, 'Music/Artist/New/01.flac');
+      await adapter.save();
+
+      // 'Two' still occupies Old; cover.jpg stays.
+      expect(fs.existsSync(oldCover)).toBe(true);
+    });
+
+    test('write-wins: a sidecar write queued after removeTrack on the same dir leaves cover.jpg present', async () => {
+      // Plan ordering can produce remove-then-add for the same album dir
+      // (e.g. all tracks transcoded). The remove queues a sidecar delete;
+      // the subsequent writeSidecar must clear it so the file lands.
+      const adapter = await seedAdapterWithSidecars({
+        'Music/Artist/Album/01.flac': { title: 'One', artist: 'Artist', album: 'Album' },
+      });
+      const coverPath = path.join(mountPoint, 'Music/Artist/Album/cover.jpg');
+
+      // Simulate a remove-then-add cycle on the same album dir.
+      const original = adapter.getTracks()[0]!;
+      adapter.removeTrack(original);
+      const newTrack = adapter.addTrack({
+        title: 'Replacement',
+        artist: 'Artist',
+        album: 'Album',
+        filetype: 'flac',
+      });
+      // Materialise the new file so save() doesn't see a phantom manifest entry.
+      createFakeAudioFile(mountPoint, newTrack.filePath);
+      adapter.writeSidecar(newTrack, Buffer.from('new-jpeg'));
+      await adapter.save();
+
+      expect(fs.existsSync(coverPath)).toBe(true);
+      expect(fs.readFileSync(coverPath).toString()).toBe('new-jpeg');
+    });
+
+    test('flush-time predicate re-evaluation: re-add via addTrack (no writeSidecar) cancels the queued delete', async () => {
+      // The blocker from the opus review: if the artwork hash matches and
+      // the pipeline skips writeSidecar entirely, the post-remove queue
+      // would still fire and nuke a sidecar a fresh track now needs. The
+      // flush's albumDirStillOccupied re-check is the guard.
+      const adapter = await seedAdapterWithSidecars({
+        'Music/Artist/Album/01.flac': { title: 'One', artist: 'Artist', album: 'Album' },
+      });
+      const coverPath = path.join(mountPoint, 'Music/Artist/Album/cover.jpg');
+
+      adapter.removeTrack(adapter.getTracks()[0]!);
+      const replacement = adapter.addTrack({
+        title: 'Replacement',
+        artist: 'Artist',
+        album: 'Album',
+        filetype: 'flac',
+      });
+      createFakeAudioFile(mountPoint, replacement.filePath);
+      // Crucially: NO writeSidecar call — simulating the hash-match skip.
+
+      await adapter.save();
+
+      expect(fs.existsSync(coverPath)).toBe(true);
+      const manifest = JSON.parse(
+        fs.readFileSync(path.join(mountPoint, PODKIT_DIR, MANIFEST_FILE), 'utf-8')
+      ) as { managedFiles: string[] };
+      expect(manifest.managedFiles).toContain('Music/Artist/Album/cover.jpg');
+    });
+
+    test('ENOENT on the cover.jpg unlink is silent success (legacy data with no on-disk file)', async () => {
+      // A device synced before sidecar writes existed could still have a
+      // manifest entry from a future-podkit's mid-run add-then-remove. The
+      // cleanup must not throw on the missing file — it just needs to drop
+      // the manifest entry.
+      const adapter = await seedAdapterWithSidecars({
+        'Music/Artist/Album/01.flac': { title: 'One', artist: 'Artist', album: 'Album' },
+      });
+      const coverPath = path.join(mountPoint, 'Music/Artist/Album/cover.jpg');
+      // Pre-delete the file behind the adapter's back to simulate the gap.
+      fs.unlinkSync(coverPath);
+
+      adapter.removeTrack(adapter.getTracks()[0]!);
+      await expect(adapter.save()).resolves.toBeUndefined();
+
+      const manifest = JSON.parse(
+        fs.readFileSync(path.join(mountPoint, PODKIT_DIR, MANIFEST_FILE), 'utf-8')
+      ) as { managedFiles: string[] };
+      expect(manifest.managedFiles).not.toContain('Music/Artist/Album/cover.jpg');
+    });
+
+    test('non-ENOENT unlink errors surface as a typed SidecarWriteError', async () => {
+      const adapter = await seedAdapterWithSidecars({
+        'Music/Artist/Album/01.flac': { title: 'One', artist: 'Artist', album: 'Album' },
+      });
+      adapter.removeTrack(adapter.getTracks()[0]!);
+
+      const realUnlink = fs.promises.unlink;
+      (fs.promises as { unlink: typeof fs.promises.unlink }).unlink = () =>
+        Promise.reject(Object.assign(new Error('simulated EACCES'), { code: 'EACCES' }));
+
+      try {
+        const { SidecarWriteError } = await import('./mass-storage-tag-writer.js');
+        let caught: unknown;
+        try {
+          await adapter.save();
+        } catch (err) {
+          caught = err;
+        }
+        expect(caught).toBeInstanceOf(SidecarWriteError);
+        const sidecarErr = caught as InstanceType<typeof SidecarWriteError>;
+        expect(sidecarErr.causes).toHaveLength(1);
+        expect(sidecarErr.causes[0]).toContain('Music/Artist/Album/cover.jpg');
+      } finally {
+        (fs.promises as { unlink: typeof fs.promises.unlink }).unlink = realUnlink;
+      }
+    });
+  });
+
   describe('prunePhantomManifest()', () => {
     /**
      * Write a v1 manifest with the requested rows.

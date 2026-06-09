@@ -569,6 +569,24 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
   private pendingSidecarWrites = new Map<string, Buffer>();
 
   /**
+   * Pending sidecar deletions, keyed by **album directory** (relative to the
+   * mount point). Recorded when {@link removeTrack} drops the last managed
+   * audio from a sidecar-primary album dir, or when {@link relocateTrack}
+   * moves the last track out cross-album. Flushed by {@link save} after the
+   * sidecar-write stage so that a re-add (write + delete queued for the same
+   * dir in one save) leaves the file present.
+   *
+   * The queue-time check is optimistic: it asks "is there any other managed
+   * track in this dir right now?" — but in-flight plan steps may add or move
+   * tracks back into the dir after the delete is queued. The flush stage
+   * re-evaluates the predicate against the final `this.tracks` state and
+   * skips stale entries; the manifest record (sidecar entry in
+   * `managedFiles`) is the source of truth and is restored if a write
+   * superseded the delete.
+   */
+  private pendingSidecarDeletes = new Set<string>();
+
+  /**
    * Pending file moves, keyed by current relative path. Value carries the new
    * relative path plus the track's metadata ref captured at plan time. The ref
    * is captured eagerly (rather than reconstructed from `this.tracks` at flush
@@ -1045,6 +1063,20 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
       this.tracks[index] = relocated;
     }
 
+    // Cross-album relocate: the source dir may have just lost its last
+    // track. Queue a sidecar delete for the old dir; the flush re-evaluates,
+    // so it's a no-op if siblings remain or another move targets the dir.
+    // Same-dir relocates (codec swap, dedupe-suffix) are no-ops since the
+    // source dir still owns the track at the new path. Relocating INTO a
+    // dir already in pendingSidecarDeletes doesn't need an explicit clear:
+    // flushSidecarDeletes re-checks `albumDirStillOccupied(newDir)` and
+    // discovers the new track, then skips the delete.
+    const oldDir = path.dirname(oldPath);
+    const newDir = path.dirname(finalPath);
+    if (oldDir !== newDir) {
+      this.maybeQueueSidecarDelete(oldDir);
+    }
+
     return relocated;
   }
 
@@ -1120,6 +1152,15 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
     }
 
     this.allocatedPaths.delete(track.filePath);
+
+    // Sidecar cleanup: when removing the last managed track from an album
+    // dir on a sidecar-primary device, the peer cover.jpg has no audio to
+    // accompany anymore. Skip when the caller retained the audio file
+    // (`deleteFile: false`) or when the track wasn't podkit-managed — in
+    // both cases the on-disk layout still mirrors a managed-audio dir.
+    if (deleteFile && track.managed) {
+      this.maybeQueueSidecarDelete(path.dirname(track.filePath));
+    }
   }
 
   /**
@@ -1154,11 +1195,12 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
   }
 
   async removeTrackArtwork(_track: MassStorageTrack): Promise<void> {
-    // No-op — mass-storage devices with embedded artwork as their primary
-    // source should never have artwork stripped, since the device needs it.
-    // Sidecar-primary devices could in principle delete `cover.jpg` here, but
-    // the orphan-cleanup path in the doctor handles that case; keeping this
-    // method symmetrically inert preserves today's behaviour.
+    // No-op — embedded-art devices need the picture for playback display, so
+    // never strip. Sidecar-primary devices don't delete `cover.jpg` here
+    // either: sidecars are album-level, not per-track, and the album may
+    // still hold other tracks. Whole-album cleanup is handled at sync time
+    // in {@link removeTrack} / {@link relocateTrack} via
+    // {@link maybeQueueSidecarDelete}, not via per-track art removal.
   }
 
   /**
@@ -1183,8 +1225,54 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
   writeSidecar(track: MassStorageTrack, imageData: Buffer): void {
     const albumDir = path.dirname(track.filePath);
     this.pendingSidecarWrites.set(albumDir, imageData);
+    // A pending delete for the same dir means a previous removeTrack queued
+    // cleanup, then a re-add (or relocate-into) brought the album back. Write
+    // wins — clear the delete so the flush stage doesn't undo the write.
+    this.pendingSidecarDeletes.delete(albumDir);
     const sidecarPath = path.join(albumDir, SIDECAR_FILENAME);
     this.managedFiles.add(sidecarPath);
+  }
+
+  /**
+   * Queue a sidecar (`{albumDir}/cover.jpg`) for deletion when no other
+   * managed audio file remains in the album dir. No-op for non-sidecar
+   * devices and for dirs that still hold managed audio (siblings of the
+   * just-removed track).
+   *
+   * Called by {@link removeTrack} and {@link relocateTrack} after the
+   * track-list mutation has settled, so `this.tracks` reflects the post-op
+   * state. {@link managedFiles} is NOT mutated here — the drop is deferred
+   * to {@link flushSidecarDeletes} which re-evaluates the predicate before
+   * acting. That makes the re-add case (track relocated/added into the dir
+   * AFTER the delete was queued, without going through {@link writeSidecar}
+   * — e.g. artwork hash matched and the pipeline skipped sidecar write)
+   * self-healing: a stale queue entry is simply ignored and the manifest
+   * retains the sidecar.
+   *
+   * The queue-time predicate check is an optimistic gate to avoid the
+   * obvious "remove one of three siblings" no-op enqueue; flush-time is
+   * authoritative.
+   */
+  private maybeQueueSidecarDelete(albumDir: string): void {
+    if (this.artworkSink !== 'sidecar') return;
+    if (this.albumDirStillOccupied(albumDir)) return;
+    this.pendingSidecarDeletes.add(albumDir);
+  }
+
+  /**
+   * True when any managed track currently sits in `albumDir`, OR when a
+   * pending move targets `albumDir` (a track on its way into the dir
+   * should keep the sidecar alive even though `this.tracks` doesn't yet
+   * reflect the destination path).
+   */
+  private albumDirStillOccupied(albumDir: string): boolean {
+    for (const t of this.tracks) {
+      if (path.dirname(t.filePath) === albumDir) return true;
+    }
+    for (const { newPath } of this.pendingMoves.values()) {
+      if (path.dirname(newPath) === albumDir) return true;
+    }
+    return false;
   }
 
   replaceTrackFile(track: MassStorageTrack, newFilePath: string): MassStorageTrack {
@@ -1368,6 +1456,7 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
     await this.flushTagWrites();
     await this.flushPictureWrites();
     await this.flushSidecarWrites();
+    await this.flushSidecarDeletes();
     this.writeManifest();
   }
 
@@ -1576,6 +1665,55 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
       (albumDir) => albumDir,
       SidecarWriteError
     );
+  }
+
+  /**
+   * Sibling of {@link flushSidecarWrites} — runs after writes so a re-add
+   * (write + delete queued for the same dir in one save) leaves the file
+   * present. Each entry's predicate is re-evaluated against the current
+   * `this.tracks` state to catch re-adds that bypassed {@link writeSidecar}
+   * (e.g. hash match → pipeline skipped sidecar transfer).
+   *
+   * ENOENT is silent success: a manifest entry that points at a missing
+   * cover.jpg (legacy data from a podkit version before sidecar writes
+   * existed, or a torn prior save) still needs the entry dropped so the
+   * next sync's symmetric pass doesn't flag it as missing.
+   * Other unlink errors surface as a typed {@link SidecarWriteError} —
+   * symmetric with the write stage; aggregation lets the categorizer pick
+   * a category off the class and surface every failed album in one error.
+   *
+   * `managedFiles` mutation happens here (not at queue time) so a stale
+   * queue entry that fails its flush-time predicate check leaves the
+   * manifest intact — no restore branch needed.
+   */
+  private async flushSidecarDeletes(): Promise<void> {
+    if (this.pendingSidecarDeletes.size === 0) return;
+    const entries = [...this.pendingSidecarDeletes];
+    this.pendingSidecarDeletes.clear();
+
+    const failures: ErrorCause[] = [];
+    for (const albumDir of entries) {
+      // Authoritative re-check: a track relocated/added into this dir after
+      // the queue (without going through writeSidecar) means the sidecar
+      // is still needed. Skip silently — the manifest entry stays.
+      if (this.albumDirStillOccupied(albumDir)) continue;
+
+      const sidecarPath = path.join(albumDir, SIDECAR_FILENAME);
+      const absPath = path.join(this.mountPoint, sidecarPath);
+      try {
+        await fs.promises.unlink(absPath);
+      } catch (err: any) {
+        if (err?.code !== 'ENOENT') {
+          failures.push(toErrorCause(sidecarPath, err));
+          continue;
+        }
+      }
+      this.managedFiles.delete(sidecarPath);
+    }
+
+    if (failures.length > 0) {
+      throw new SidecarWriteError(failures);
+    }
   }
 
   /**

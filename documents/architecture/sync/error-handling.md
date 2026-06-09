@@ -103,7 +103,7 @@ keyword bank required.
 | Class                | Category   | Thrown from                                                | Aggregation |
 |----------------------|------------|------------------------------------------------------------|-------------|
 | `TagWriteError`      | `copy`     | `MassStorageAdapter.save()` — aggregated `writeTags` failures. | per-file |
-| `SidecarWriteError`  | `copy`     | `MassStorageAdapter.save()` — aggregated sidecar `cover.jpg` failures. | per-album |
+| `SidecarWriteError`  | `copy`     | `MassStorageAdapter.save()` — aggregated sidecar `cover.jpg` write OR delete failures. | per-album |
 | `PictureWriteError`  | `copy`     | `MassStorageAdapter.save()` — aggregated embedded-picture failures (OGG/Opus). | per-file |
 | `MoveError`          | `copy`     | `MassStorageAdapter.save()` — file move (`renameSync`) failures, wrapped from raw fs error. | single-cause (throw on first non-ENOENT) |
 | `DatabaseWriteError` | `database` | `IpodAdapter` — wraps libgpod failures in `save()`, `addTrack`, `updateTrack`, `removeTrack`. | single-cause |

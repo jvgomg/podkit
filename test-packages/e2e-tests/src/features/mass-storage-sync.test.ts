@@ -1149,6 +1149,94 @@ device = "echomini"
     }
   }, 120000);
 
+  it('flags and deletes a non-audio orphan (planted cover.jpg) via doctor', async () => {
+    // Doctor's mass-storage walker no longer filters by audio/video
+    // extension. Any unmanaged file in the configured content tree should
+    // surface as an orphan candidate — including stray album art,
+    // playlists, or lyrics dropped on the device outside a sync.
+    interface DoctorCheckOutput {
+      id: string;
+      status: 'pass' | 'fail' | 'warn' | 'skip';
+      repairable: boolean;
+      details?: Record<string, unknown>;
+    }
+    interface DoctorOutput {
+      checks: DoctorCheckOutput[];
+    }
+    interface RepairOutput {
+      success: boolean;
+    }
+
+    const devicePath = await createTempDevice();
+    const configDir = await mkdtemp(join(tmpdir(), 'podkit-ms-config-'));
+    const configPath = join(configDir, 'config.toml');
+
+    try {
+      await writeEchoMiniConfig(configPath, {
+        musicPath: goldbergPath,
+        devicePath,
+        quality: 'low',
+        artwork: false,
+      });
+
+      const { result: syncResult } = await runCliJson<SyncOutput>([
+        '--config',
+        configPath,
+        'sync',
+        '--device',
+        'echomini',
+        '--json',
+      ]);
+      expect(syncResult.exitCode).toBe(0);
+
+      // Plant a user-placed cover.jpg next to a managed audio file.
+      // Echo-mini doesn't read sidecar art (its preset disables it), so
+      // podkit's sync wrote no cover.jpg — anything we drop here is the
+      // user's, surfaced as an orphan by the broadened walker.
+      const managedFiles = await findDeviceAudioFiles(devicePath, '');
+      expect(managedFiles.length).toBeGreaterThan(0);
+      const albumDir = managedFiles[0]!.substring(0, managedFiles[0]!.lastIndexOf('/'));
+      const plantedCover = join(albumDir, 'cover.jpg');
+      await writeFile(plantedCover, Buffer.alloc(1024, 0xcc));
+      expect(existsSync(plantedCover)).toBe(true);
+
+      const { json: doctorJson } = await runCliJson<DoctorOutput>([
+        '--config',
+        configPath,
+        'doctor',
+        '--device',
+        'echomini',
+        '--no-system',
+        '--json',
+      ]);
+      const orphanCheck = doctorJson!.checks.find((c) => c.id === 'orphan-files-mass-storage');
+      expect(orphanCheck).toBeDefined();
+      expect(orphanCheck!.status).toBe('warn');
+      const details = orphanCheck!.details as Record<string, unknown>;
+      const orphans = details.orphans as Array<{ path: string }>;
+      expect(orphans.some((o) => o.path.endsWith('cover.jpg'))).toBe(true);
+
+      const { result: repairResult, json: repairJson } = await runCliJson<RepairOutput>([
+        '--config',
+        configPath,
+        'doctor',
+        '--repair',
+        'orphan-files',
+        '--device',
+        'echomini',
+        '--json',
+      ]);
+      expect(repairResult.exitCode).toBe(0);
+      expect(repairJson!.success).toBe(true);
+      expect(existsSync(plantedCover)).toBe(false);
+      // Managed audio survives the repair.
+      for (const f of managedFiles) expect(existsSync(f)).toBe(true);
+    } finally {
+      await rm(devicePath, { recursive: true, force: true });
+      await rm(configDir, { recursive: true, force: true });
+    }
+  }, 120000);
+
   // ---------------------------------------------------------------------------
   // Album-artist paths: compilation grouping (TASK-263)
   // ---------------------------------------------------------------------------

@@ -137,7 +137,12 @@ describe('orphanFilesMassStorageCheck', () => {
       expect(result.summary).toContain('1 file');
     });
 
-    it('should ignore non-media files', async () => {
+    it('should surface non-audio files as orphans when not in the manifest', async () => {
+      // The walker no longer filters by audio/video extension. Any file in
+      // the content tree that's not in the manifest (and not debris) is an
+      // orphan candidate — sidecar images, playlists, lyrics, stray text
+      // files. Confirmation-gated repair handles user safety; the check's
+      // job is to surface, not to second-guess.
       await createFiles(tempDir, {
         'Music/Artist/Album/01 - Track.m4a': 'audio data',
         'Music/Artist/Album/cover.jpg': 'image data',
@@ -148,7 +153,52 @@ describe('orphanFilesMassStorageCheck', () => {
       const ctx = makeCtx(tempDir, DEFAULT_CONTENT_PATHS);
       const result = await orphanFilesMassStorageCheck.check(ctx);
 
+      expect(result.status).toBe('warn');
+      expect(result.details?.orphanCount).toBe(2);
+      const orphans = result.details!.orphans as Array<{ path: string }>;
+      const orphanPaths = orphans.map((o) => o.path);
+      expect(orphanPaths.some((p) => p.endsWith('cover.jpg'))).toBe(true);
+      expect(orphanPaths.some((p) => p.endsWith('notes.txt'))).toBe(true);
+    });
+
+    it('keeps tracked sidecars (manifest-managed cover.jpg) out of the orphan list', async () => {
+      // On sidecar-primary devices podkit writes cover.jpg next to album
+      // tracks and records the file in the manifest. A correctly managed
+      // sidecar must NOT surface as orphan.
+      await createFiles(tempDir, {
+        'Music/Artist/Album/01 - Track.m4a': 'audio data',
+        'Music/Artist/Album/cover.jpg': 'image data',
+      });
+      await writeManifest(tempDir, [
+        'Music/Artist/Album/01 - Track.m4a',
+        'Music/Artist/Album/cover.jpg',
+      ]);
+
+      const ctx = makeCtx(tempDir, DEFAULT_CONTENT_PATHS);
+      const result = await orphanFilesMassStorageCheck.check(ctx);
+
       expect(result.status).toBe('pass');
+      expect(result.summary).toContain('2 files');
+    });
+
+    it('flags an abandoned sidecar left on disk after its album is gone', async () => {
+      // Sync-time cleanup in MassStorageAdapter usually catches this case,
+      // but a crash mid-save (or a device synced by a podkit version
+      // without sync-time cleanup) can leave a cover.jpg in a dir whose
+      // audio is gone. Doctor is the backstop.
+      await createFiles(tempDir, {
+        'Music/Artist/Other-Album/01 - Track.m4a': 'audio data',
+        'Music/Artist/Abandoned-Album/cover.jpg': 'stale image',
+      });
+      await writeManifest(tempDir, ['Music/Artist/Other-Album/01 - Track.m4a']);
+
+      const ctx = makeCtx(tempDir, DEFAULT_CONTENT_PATHS);
+      const result = await orphanFilesMassStorageCheck.check(ctx);
+
+      expect(result.status).toBe('warn');
+      expect(result.details?.orphanCount).toBe(1);
+      const orphans = result.details?.orphans as Array<{ path: string }>;
+      expect(orphans[0]!.path).toContain('Abandoned-Album/cover.jpg');
     });
 
     it('should handle content directories that do not exist', async () => {

@@ -55,20 +55,22 @@ status enum.
 
 ### `MassStorageAdapter.save()` flush stages
 
-Five stages, in order. Each stage gates the next: if a stage throws,
+Six stages, in order. Each stage gates the next: if a stage throws,
 later stages do not run. Within a stage, all writes settle before the
 typed aggregate is thrown. `save()` is the orchestration shell —
 each stage lives in its own private method (`flushMoves`,
 `flushTagWrites`, `flushPictureWrites`, `flushSidecarWrites`,
-`writeManifest`) so the contract per row reads off the code.
+`flushSidecarDeletes`, `writeManifest`) so the contract per row reads
+off the code.
 
-| Stage             | Pending source            | Shape                                      | Typed error          | Map cleared    |
-|-------------------|---------------------------|--------------------------------------------|----------------------|----------------|
-| 1. File moves     | `pendingMoves`            | for-loop, serial, ENOENT skip emits warning | `MoveError`          | only on success |
-| 2. Tag writes     | `pendingTagWrites`        | `runWithConcurrency` (cap 16), settle-all  | `TagWriteError`      | before throw   |
-| 3. Picture writes | `pendingPictureWrites`    | `runWithConcurrency` (cap 16), settle-all  | `PictureWriteError`  | before throw   |
-| 4. Sidecar writes | `pendingSidecarWrites`    | `runWithConcurrency` (cap 16), settle-all  | `SidecarWriteError`  | before throw   |
-| 5. Manifest       | `manifest` (in-memory)    | atomic write (tmp + rename)                | n/a (throws raw fs)  | n/a            |
+| Stage              | Pending source            | Shape                                      | Typed error          | Map cleared    |
+|--------------------|---------------------------|--------------------------------------------|----------------------|----------------|
+| 1. File moves      | `pendingMoves`            | for-loop, serial, ENOENT skip emits warning | `MoveError`          | only on success |
+| 2. Tag writes      | `pendingTagWrites`        | `runWithConcurrency` (cap 16), settle-all  | `TagWriteError`      | before throw   |
+| 3. Picture writes  | `pendingPictureWrites`    | `runWithConcurrency` (cap 16), settle-all  | `PictureWriteError`  | before throw   |
+| 4. Sidecar writes  | `pendingSidecarWrites`    | `runWithConcurrency` (cap 16), settle-all  | `SidecarWriteError`  | before throw   |
+| 5. Sidecar deletes | `pendingSidecarDeletes`   | for-loop, per-entry predicate re-check, ENOENT silent | `SidecarWriteError` (reused) | before throw   |
+| 6. Manifest        | `manifest` (in-memory)    | atomic write (tmp + rename)                | n/a (throws raw fs)  | n/a            |
 
 Stages 2–4 share a single private helper, `flushPending<K, V>(map, work,
 formatPath, ErrorCtor)`. Each stage's caller is three lines (map +
@@ -78,7 +80,9 @@ clear-before-throw, and the `ErrorCause[]` construction. Adding a new
 flush stage that follows the convention is an Nth line in the table,
 not an Nth copy of the boilerplate.
 
-Stage 5's atomic write means a SIGKILL mid-write leaves either the old
+Stage 5 (sidecar deletes) is bespoke — see §asymmetries below.
+
+Stage 6's atomic write means a SIGKILL mid-write leaves either the old
 manifest or no manifest — `loadManifest` treats an absent or
 unparseable manifest as "empty manifest, rebuild from filesystem walk".
 There is no torn-manifest failure mode.
@@ -193,6 +197,40 @@ cover failed", not "Track 1, Track 2, Track 3 cover failed". This is better
 signal for the repair action (re-examine the album directory or the source
 image, not individual tracks).
 
+#### Asymmetry 3: Sidecar deletes re-evaluate the predicate per entry at flush time
+
+**Source:** `pendingSidecarDeletes` (a `Set<albumDir>`) is populated by
+`removeTrack` (last managed track leaves the dir) and `relocateTrack`
+(cross-album move, source dir loses its last track). The check is
+optimistic at queue time: if the dir is still occupied by a sibling, no
+entry is added. But subsequent plan steps can re-occupy the dir before
+save: a `relocateTrack` whose destination is the same dir, an `addTrack`
+on a new track for that album, even a re-add after a same-cycle remove.
+
+**Behaviour:** `flushSidecarDeletes` re-checks `albumDirStillOccupied`
+per entry against the final `this.tracks` state AND pending-move
+destinations. Stale queue entries (the dir is occupied again) are
+skipped silently — the manifest entry stays. The unlink happens AND
+`managedFiles` is mutated only for entries whose predicate still holds.
+
+The same `SidecarWriteError` class wraps unlink failures (an EACCES /
+EROFS that the user needs to know about) — symmetric with the
+write-side handling. `ENOENT` is silent success: legacy device data
+from before sync-time cleanup existed has manifest entries with no
+on-disk file; the drop-from-manifest happens regardless so the next
+sync's symmetric pass doesn't flag a phantom.
+
+**Contrast:** stages 2–4 act on every queue entry unconditionally
+because the entry IS the source of truth (the bytes to write, the tag
+fields to apply). The delete stage's source of truth is "is this dir
+abandoned NOW?", which the queue entry only optimistically asserts.
+
+**Rationale:** an artwork pipeline that skips `writeSidecar` (e.g. the
+hash matched and no re-write is needed) would otherwise let a stale
+delete kill a cover.jpg the new track depends on. Re-evaluation is the
+clean fix; restoring `managedFiles` from a queue-time mutation would
+require a fragile second-bookkeeping channel.
+
 ---
 
 These are intentional exceptions to the §4 convention on normalizing the
@@ -215,6 +253,7 @@ relies on:
 | Picture write         | File still has the previous embedded picture (or none) | Diff re-detects the missing/stale picture → re-queues                |
 | Move                  | File still at old path                           | Diff sees it at old path → re-queues move if path template still wants it |
 | Sidecar write         | No `cover.jpg` (or stale cover) in album dir      | Sync re-fires `artwork-added`                                       |
+| Sidecar delete        | `cover.jpg` still on disk in an empty album dir; manifest no longer claims it | Orphan check flags it; `podkit doctor --repair orphan-files` cleans |
 
 The cost of "self-healing via rescan" is one extra sync. The win is
 that podkit doesn't have to maintain a write-ahead log or two-phase
@@ -332,6 +371,30 @@ recently — see ADR-018 for the rationale.
   source, queues whatever's missing.
 - **Assumes:** the device-side state after a partial save is "what
   actually landed" — not the manifest's pre-save snapshot.
+
+### Sidecar lifecycle (mass-storage, sidecar-primary)
+
+- **Invariant:** every managed sidecar (`<albumDir>/cover.jpg` recorded
+  in `managedFiles`) has at least one managed audio sibling in the
+  same dir at flush time. Doctor's orphan check is the backstop if the
+  invariant is ever violated by a partial save or by external
+  manipulation.
+- **Sync-time enforcement.** `removeTrack` and `relocateTrack` call
+  `maybeQueueSidecarDelete(albumDir)` when their mutation drops the
+  last managed audio from a dir. The queue-time predicate is
+  optimistic; the authoritative re-check fires in `flushSidecarDeletes`
+  against the final track-list + pending-move destinations.
+- **replaceTrackFile is dir-stable.** Codec swaps regenerate the
+  filename in the same album dir (path = `track.filePath.replace(/\.[^.]+$/, newExt)`,
+  and the dedupe loop only appends `-N` suffixes within the same parent).
+  Sidecar lifecycle is unaffected — no `maybeQueueSidecarDelete` call
+  needed. If a future change makes codec-swap cross dirs, this
+  invariant breaks silently; the contract must be revisited.
+- **Write wins over delete in one save cycle.** `writeSidecar` clears
+  any pending delete for the same dir. Stale queue entries that survive
+  to flush (re-add bypassed `writeSidecar` because the artwork pipeline
+  short-circuited on a hash match) are dropped at flush-time via the
+  predicate re-check.
 
 ### Pre-sync sweep
 

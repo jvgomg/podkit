@@ -133,9 +133,11 @@ podkit eject
 
 ## Repairing Orphan Files
 
-Orphan files are media files on the device that aren't tracked by podkit. On an iPod they're audio/video files in `iPod_Control/Music/` that aren't referenced by the iTunesDB. On a mass-storage device they're files under the configured content directories that aren't in `.podkit/state.json`. Either way, they waste storage but don't cause other problems. They typically accumulate from interrupted syncs, manual file manipulation, or changing content paths in your config.
+Orphan files are files on the device that aren't tracked by podkit. On an iPod they're audio/video files in `iPod_Control/Music/` that aren't referenced by the iTunesDB. On a mass-storage device they're files under the configured content directories that aren't in `.podkit/state.json`. Either way, they waste storage but don't cause other problems. They typically accumulate from interrupted syncs, manual file manipulation, or changing content paths in your config.
 
-A single `--repair orphan-files` flag handles both — doctor dispatches the right walker based on the device.
+On mass-storage devices, the check no longer filters by file extension — any file under your `musicDir`/`moviesDir`/`tvShowsDir` that podkit didn't write is a candidate. That includes album art (`cover.jpg`, `folder.jpg`), lyrics (`.lrc`), playlist files (`.m3u`), and stray documents. Files outside the configured content directories are still ignored.
+
+A single `--repair orphan-files` flag handles both device types — doctor dispatches the right walker based on the device.
 
 ```bash
 # Preview what would be deleted (no -d defaults to your primary iPod)
@@ -147,6 +149,8 @@ podkit doctor --repair orphan-files
 # Mass-storage devices need -d to identify which one
 podkit doctor -d mydevice --repair orphan-files
 ```
+
+The `--dry-run` preview lists every file that would be deleted; review it carefully before running the repair without `--dry-run`. On a rockbox device, an unmanaged `cover.jpg` next to your audio is artwork that podkit did NOT write — deleting it makes the device fall back to the embedded picture (or no art) until the next sync re-issues a managed sidecar.
 
 Files outside the content directories are always ignored — doctor only considers directories that podkit manages. The `--delete` flag during sync respects the same boundary.
 

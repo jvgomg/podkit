@@ -2,20 +2,23 @@
  * Shared walker for mass-storage content directories.
  *
  * Walks the configured content paths once and categorises every file into
- * media (real audio/video), debris (`.podkit-tmp` and adapter-failure
- * extensions), or "missing" — manifest entries with no file on disk. The
+ * content (any non-debris, non-dotfile entry under the configured content
+ * roots), debris (`.podkit-tmp` and adapter-failure extensions), or
+ * "missing" — manifest entries with no file on disk. The
  * `orphan-files-mass-storage` and `debris-files-mass-storage` checks share
  * this walker; the future pre-sync sweep (TASK-398) reaches the same code
  * path via the scanner registry, so no surface walks twice.
+ *
+ * The scope is already bounded by `resolveContentDirs` to
+ * `musicDir`/`moviesDir`/`tvShowsDir`, so anything inside those roots is
+ * fair game for orphan classification — including sidecar images, lyrics
+ * sidecars, playlist files, or stray user documents. The walker does not
+ * gate by extension; orphan repair stays confirmation-gated for safety.
  */
 
 import { readdir, stat } from 'node:fs/promises';
 import { join, relative, extname } from 'node:path';
-import {
-  PODKIT_DIR,
-  isMediaExtension,
-  isDebrisExtension,
-} from '../../device/mass-storage-utils.js';
+import { PODKIT_DIR, isDebrisExtension } from '../../device/mass-storage-utils.js';
 import type { ContentPaths } from '@podkit/devices-mass-storage';
 
 // ── Result types ─────────────────────────────────────────────────────────────
@@ -28,13 +31,13 @@ import type { ContentPaths } from '@podkit/devices-mass-storage';
  * vanished). `debris` is always safe to delete by construction.
  */
 export interface MassStorageScanResult {
-  /** Media files on disk that are not in the manifest. */
+  /** Content files on disk that are not in the manifest. */
   orphans: string[];
   /** Files matching a debris extension (`.podkit-tmp`, `.Audio file`, ...). */
   debris: string[];
   /** Manifest entries whose backing file no longer exists. */
   missingTrackedFiles: string[];
-  /** Unique media files seen on disk (denominator for pass summaries). */
+  /** Unique content files seen on disk (denominator for pass summaries). */
   totalFiles: number;
 }
 
@@ -68,18 +71,24 @@ export async function getFileSizes(
 }
 
 /**
- * Recursively scan a directory and categorise each file as media or
+ * Recursively scan a directory and categorise each file as content or
  * adapter-failure debris (weird-extension residue from aborted syncs).
  *
  * Skips dotfiles (`._*`, `.DS_Store`, etc.), the `.podkit` directory, and any
  * directories listed in `excludeDirs` (absolute paths). One traversal returns
  * both categories so the orphan and debris checks never double-walk.
+ *
+ * "Content" is intentionally broad: any non-debris, non-dotfile file inside
+ * the configured content roots. That includes audio, video, sidecar images
+ * (`cover.jpg`), lyrics (`.lrc`), playlists (`.m3u`), and stray user
+ * documents. The orphan check derives its repair-confidence policy from the
+ * confirmation prompt, not from extension gating.
  */
 async function scanFiles(
   dir: string,
   excludeDirs: Set<string>
-): Promise<{ media: string[]; debris: string[] }> {
-  const media: string[] = [];
+): Promise<{ content: string[]; debris: string[] }> {
+  const content: string[] = [];
   const debris: string[] = [];
 
   async function walk(currentDir: string): Promise<void> {
@@ -101,19 +110,22 @@ async function scanFiles(
         if (excludeDirs.has(fullPath)) continue;
         await walk(fullPath);
       } else if (entry.isFile()) {
+        // Debris extensions are case-sensitive (`.Audio file` is a literal);
+        // extname returns '' for files with no extension, which never matches
+        // the debris set. Everything else (including no-extension files)
+        // lands in content — the orphan check decides what to do with it.
         const ext = extname(entry.name);
-        if (!ext) continue;
-        if (isMediaExtension(ext)) {
-          media.push(fullPath);
-        } else if (isDebrisExtension(ext)) {
+        if (ext && isDebrisExtension(ext)) {
           debris.push(fullPath);
+        } else {
+          content.push(fullPath);
         }
       }
     }
   }
 
   await walk(dir);
-  return { media, debris };
+  return { content, debris };
 }
 
 /**
@@ -188,19 +200,19 @@ export async function walkMassStorageContent(
 ): Promise<MassStorageScanResult> {
   const { scanDirs, excludeDirs } = resolveContentDirs(mountPoint, contentPaths);
 
-  const allMedia: string[] = [];
+  const allContent: string[] = [];
   const allDebris: string[] = [];
   for (const dir of scanDirs) {
-    const { media, debris } = await scanFiles(dir, excludeDirs);
-    allMedia.push(...media);
+    const { content, debris } = await scanFiles(dir, excludeDirs);
+    allContent.push(...content);
     allDebris.push(...debris);
   }
 
   // Deduplicate in case of overlapping scans
-  const uniqueMedia = [...new Set(allMedia)];
+  const uniqueContent = [...new Set(allContent)];
   const uniqueDebris = [...new Set(allDebris)];
 
-  const orphans = uniqueMedia.filter((f) => {
+  const orphans = uniqueContent.filter((f) => {
     // Normalize to NFC — macOS filesystems may return NFD from readdir
     const relativePath = relative(mountPoint, f).normalize('NFC');
     return !managedFiles.has(relativePath);
@@ -224,6 +236,6 @@ export async function walkMassStorageContent(
     orphans,
     debris: uniqueDebris,
     missingTrackedFiles,
-    totalFiles: uniqueMedia.length,
+    totalFiles: uniqueContent.length,
   };
 }
