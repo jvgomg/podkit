@@ -2495,6 +2495,24 @@ export async function ensureSysInfoExtendedAndReassess(
   return { assessment, firmwareWritten: false };
 }
 
+// Identity-signal helpers. The demo always returns a
+// "fully-known" device shape — the demo flow doesn't exercise device-add at
+// all, so we hard-code "not empty" / "no partial signals missing" so the
+// add-path block + warning paths are never triggered when bundled.
+export function isIdentityFullyEmpty(_assessment: any, _userType?: string): boolean {
+  return false;
+}
+
+export function summariseIdentitySignals(_assessment: any, userType?: string): any {
+  return {
+    hasModel: true,
+    hasSysInfoModelNumber: true,
+    hasUsbFingerprint: true,
+    hasSysInfoExtended: true,
+    hasUserType: !!userType,
+  };
+}
+
 export function assessMassStorageDevice(mountPoint: string, opts: any): any {
   return {
     identity: { kind: 'mass-storage', presetId: opts?.presetId ?? 'generic' },

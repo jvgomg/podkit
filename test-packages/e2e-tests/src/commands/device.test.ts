@@ -156,21 +156,27 @@ volumeName = "test"
   });
 
   describe('SysInfoExtended', () => {
-    it('persists the device even when both identity files are absent and USB is unreachable', async () => {
-      await withTarget(async (target) => {
-        // Remove BOTH identity files so cascade has nothing on disk.
-        // The test target has no real USB connection, so the firmware-inquiry
-        // assessment lands in `unwritable` state — device-add proceeds anyway
-        // with cascade-derived (empty) identity rather than blocking.
-        const deviceDir = join(target.path, 'iPod_Control', 'Device');
-        for (const file of ['SysInfo', 'SysInfoExtended']) {
-          try {
-            await rm(join(deviceDir, file));
-          } catch {
-            /* may not exist */
-          }
+    /**
+     * Strip both identity files from the test target so the cascade has
+     * nothing on disk. Combined with the test target's lack of a real USB
+     * connection, the firmware-inquiry assessment lands in `unwritable`
+     * state with no usable USB fingerprint — the device-add empty-identity
+     * gate triggers.
+     */
+    async function stripIdentity(targetPath: string): Promise<void> {
+      const deviceDir = join(targetPath, 'iPod_Control', 'Device');
+      for (const file of ['SysInfo', 'SysInfoExtended']) {
+        try {
+          await rm(join(deviceDir, file));
+        } catch {
+          /* may not exist */
         }
+      }
+    }
 
+    it('refuses to add the device when both identity files are absent and USB is unreachable', async () => {
+      await withTarget(async (target) => {
+        await stripIdentity(target.path);
         await writeFile(configPath, 'version = 2\n');
 
         const result = await runCli([
@@ -185,8 +191,106 @@ volumeName = "test"
           '--yes',
         ]);
 
+        // Refusal: empty-identity gate fires, exit 1, device NOT persisted.
+        expect(result.exitCode).toBe(1);
+        expect(result.stderr).toContain('no identifying signal');
+        expect(result.stderr).toContain('--no-firmware-inquiry');
+        expect(result.stderr).toContain('--force');
+        // Config row was not written.
+        const config = await readFile(configPath, 'utf-8');
+        expect(config).not.toContain('[devices.testipod]');
+      });
+    });
+
+    it('proceeds with --force when identity is empty (warning, exit 0)', async () => {
+      await withTarget(async (target) => {
+        await stripIdentity(target.path);
+        await writeFile(configPath, 'version = 2\n');
+
+        const result = await runCli([
+          '--config',
+          configPath,
+          '--device',
+          'testipod',
+          'device',
+          'add',
+          '--path',
+          target.path,
+          '--yes',
+          '--force',
+        ]);
+
         expect(result.exitCode).toBe(0);
         expect(result.stdout).toContain('Added to config');
+        expect(result.stderr).toContain('empty device identity');
+        const config = await readFile(configPath, 'utf-8');
+        expect(config).toContain('[devices.testipod]');
+      });
+    });
+
+    it('proceeds with --no-firmware-inquiry when identity is empty (preserved behaviour)', async () => {
+      await withTarget(async (target) => {
+        await stripIdentity(target.path);
+        await writeFile(configPath, 'version = 2\n');
+
+        const result = await runCli([
+          '--config',
+          configPath,
+          '--device',
+          'testipod',
+          'device',
+          'add',
+          '--path',
+          target.path,
+          '--yes',
+          '--no-firmware-inquiry',
+        ]);
+
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout).toContain('Added to config');
+        const config = await readFile(configPath, 'utf-8');
+        expect(config).toContain('[devices.testipod]');
+      });
+    });
+
+    it('warns and proceeds when model anchor is missing but other signals exist (partial cascade)', async () => {
+      await withTarget(async (target) => {
+        // Drop SysInfoExtended and SysInfo entirely; the cascade has no model.
+        // But with --type explicitly provided, we have enough signal to proceed
+        // (user's assertion counts as a signal). Partial cascade warns because
+        // the model-identifying anchor is missing.
+        try {
+          await rm(join(target.path, 'iPod_Control', 'Device', 'SysInfoExtended'));
+        } catch {
+          /* may not exist */
+        }
+        try {
+          await rm(join(target.path, 'iPod_Control', 'Device', 'SysInfo'));
+        } catch {
+          /* may not exist */
+        }
+
+        await writeFile(configPath, 'version = 2\n');
+
+        const result = await runCli([
+          '--config',
+          configPath,
+          '--device',
+          'testipod',
+          'device',
+          'add',
+          '--path',
+          target.path,
+          '--type',
+          'ipod',
+          '--yes',
+        ]);
+
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout).toContain('Added to config');
+        expect(result.stderr).toContain('Unable to determine device model');
+        const config = await readFile(configPath, 'utf-8');
+        expect(config).toContain('[devices.testipod]');
       });
     });
   });
@@ -213,6 +317,9 @@ volumeName = "test"
         '--path',
         uninitDir,
         '--yes',
+        // Empty mount point → cascade has no identity signal at all.
+        // Requires explicit `--force` to proceed in this case.
+        '--force',
       ]);
 
       expect(result.exitCode).toBe(0);
@@ -240,6 +347,9 @@ volumeName = "test"
         'add',
         '--path',
         uninitDir,
+        // Empty mount point → cascade has no identity signal at all.
+        // Requires explicit `--force` to proceed.
+        '--force',
       ]);
 
       expect(result.exitCode).toBe(0);

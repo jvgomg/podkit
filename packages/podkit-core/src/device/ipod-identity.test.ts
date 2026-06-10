@@ -14,6 +14,8 @@ import { join } from 'node:path';
 import {
   assessIpodIdentity,
   ensureSysInfoExtendedAndReassess,
+  isIdentityFullyEmpty,
+  summariseIdentitySignals,
   type IpodIdentityAssessment,
 } from './ipod-identity.js';
 import type { CompleteUsbDevice } from './usb-path-resolution.js';
@@ -252,5 +254,144 @@ describe('ensureSysInfoExtendedAndReassess', () => {
       }),
     });
     expect(result.sysInfoWriteError).toBe('unknown error');
+  });
+});
+
+describe('isIdentityFullyEmpty', () => {
+  function makeAssessment(overrides: Partial<IpodIdentityAssessment> = {}): IpodIdentityAssessment {
+    return {
+      model: null,
+      capabilities: null,
+      needsChecksum: false,
+      checksumType: undefined,
+      firmwareInquiry: 'unwritable',
+      existing: null,
+      usbFingerprint: null,
+      sysInfoModelNumber: undefined,
+      ...overrides,
+    };
+  }
+
+  it('returns true when nothing was resolved: unwritable + no model + no USB + no SysInfo + no --type', () => {
+    expect(isIdentityFullyEmpty(makeAssessment())).toBe(true);
+  });
+
+  it('returns true when the assessment itself is null and no --type was given', () => {
+    expect(isIdentityFullyEmpty(null)).toBe(true);
+  });
+
+  it('returns false when assessment is null but --type was given', () => {
+    expect(isIdentityFullyEmpty(null, 'ipod')).toBe(false);
+  });
+
+  it('returns false when a USB fingerprint was resolved (partial cascade)', () => {
+    expect(isIdentityFullyEmpty(makeAssessment({ usbFingerprint: NANO_2G_USB }))).toBe(false);
+  });
+
+  it('returns false when classic SysInfo ModelNumStr was read off disk', () => {
+    expect(isIdentityFullyEmpty(makeAssessment({ sysInfoModelNumber: 'MA147' }))).toBe(false);
+  });
+
+  it('returns false when the cascade resolved a model', () => {
+    expect(
+      isIdentityFullyEmpty(
+        makeAssessment({
+          model: {
+            displayName: 'iPod nano (2nd Generation)',
+            generationId: 'nano_2g',
+            checksumType: 'none',
+            source: 'usb',
+          },
+        })
+      )
+    ).toBe(false);
+  });
+
+  it('returns false when firmwareInquiry is "missing" (USB inquiry possible)', () => {
+    expect(
+      isIdentityFullyEmpty(
+        makeAssessment({ firmwareInquiry: 'missing', usbFingerprint: NANO_2G_USB })
+      )
+    ).toBe(false);
+  });
+
+  it('returns false when firmwareInquiry is "present" (SysInfoExtended on disk)', () => {
+    expect(isIdentityFullyEmpty(makeAssessment({ firmwareInquiry: 'present' }))).toBe(false);
+  });
+
+  it('returns false when --type was supplied, regardless of cascade emptiness', () => {
+    expect(isIdentityFullyEmpty(makeAssessment(), 'ipod')).toBe(false);
+    expect(isIdentityFullyEmpty(makeAssessment(), 'echo-mini')).toBe(false);
+  });
+});
+
+describe('summariseIdentitySignals', () => {
+  it('returns all-false when assessment is null and no --type was given', () => {
+    expect(summariseIdentitySignals(null)).toEqual({
+      hasModel: false,
+      hasSysInfoModelNumber: false,
+      hasUsbFingerprint: false,
+      hasSysInfoExtended: false,
+      hasUserType: false,
+    });
+  });
+
+  it('flips hasUserType when --type is given', () => {
+    expect(summariseIdentitySignals(null, 'ipod').hasUserType).toBe(true);
+  });
+
+  it('correctly identifies present vs missing signals for a partial cascade', () => {
+    const assessment: IpodIdentityAssessment = {
+      model: null,
+      capabilities: null,
+      needsChecksum: false,
+      checksumType: undefined,
+      firmwareInquiry: 'unwritable',
+      existing: null,
+      usbFingerprint: NANO_2G_USB,
+      sysInfoModelNumber: undefined,
+    };
+    const sig = summariseIdentitySignals(assessment);
+    expect(sig.hasUsbFingerprint).toBe(true);
+    expect(sig.hasSysInfoModelNumber).toBe(false);
+    expect(sig.hasSysInfoExtended).toBe(false);
+    expect(sig.hasModel).toBe(false);
+  });
+
+  it('correctly identifies signals for a healthy iPod on re-add with SysInfoExtended but no USB', () => {
+    const assessment: IpodIdentityAssessment = {
+      model: {
+        displayName: 'iPod nano (2nd Generation)',
+        generationId: 'nano_2g',
+        checksumType: 'none',
+        source: 'sysinfo_extended',
+      },
+      capabilities: {
+        artworkSources: ['database'],
+        artworkMaxResolution: 176,
+        supportsVideo: false,
+        videoMaxResolution: undefined,
+      },
+      needsChecksum: false,
+      checksumType: 'none',
+      firmwareInquiry: 'present',
+      existing: {
+        present: true,
+        firewireGuid: '000A27001A0647CB',
+        identity: {
+          modelNumStr: 'MA147',
+          serialNumber: 'ABC123',
+          familyId: 1,
+        },
+        source: 'sysinfo_extended',
+      },
+      usbFingerprint: null,
+      sysInfoModelNumber: undefined,
+    };
+    const sig = summariseIdentitySignals(assessment);
+    expect(sig.hasSysInfoExtended).toBe(true);
+    expect(sig.hasModel).toBe(true);
+    expect(sig.hasUsbFingerprint).toBe(false);
+    expect(sig.hasSysInfoModelNumber).toBe(false);
   });
 });

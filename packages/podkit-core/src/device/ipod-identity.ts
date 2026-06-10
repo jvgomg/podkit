@@ -179,6 +179,83 @@ export async function assessIpodIdentity(
 // ensureSysInfoExtendedAndReassess
 // =============================================================================
 
+// =============================================================================
+// isIdentityFullyEmpty
+// =============================================================================
+
+/**
+ * Description of which identity signals were resolved vs. missing, used by the
+ * CLI to render a precise "partial cascade" warning when only some signals
+ * were available.
+ *
+ * `userType` mirrors the user's explicit `--type` choice. An explicit type is
+ * a deliberate user assertion about the device kind and counts as a signal in
+ * the same sense as `--no-firmware-inquiry`: enough to proceed.
+ */
+export interface IdentitySignalSummary {
+  /** Cascade resolved a known model (display name or generation). */
+  hasModel: boolean;
+  /** Classic SysInfo `ModelNumStr` was read off disk. */
+  hasSysInfoModelNumber: boolean;
+  /** USB fingerprint (productId + vendor info) was resolvable. */
+  hasUsbFingerprint: boolean;
+  /** SysInfoExtended is already present on disk. */
+  hasSysInfoExtended: boolean;
+  /** User passed `--type` (any value). */
+  hasUserType: boolean;
+}
+
+/**
+ * Summarise the identity signals available after the cascade has run. Used
+ * by both the empty-identity block predicate and the partial-cascade warning
+ * formatter — single source of truth so the two stay in sync.
+ */
+export function summariseIdentitySignals(
+  assessment: IpodIdentityAssessment | null,
+  userType?: string | undefined
+): IdentitySignalSummary {
+  return {
+    hasModel: !!assessment?.model,
+    hasSysInfoModelNumber: !!assessment?.sysInfoModelNumber,
+    hasUsbFingerprint: !!assessment?.usbFingerprint,
+    hasSysInfoExtended: assessment?.firmwareInquiry === 'present',
+    hasUserType: !!userType,
+  };
+}
+
+/**
+ * Predicate: is the device identity *fully* empty?
+ *
+ * Returns `true` only when **all** of these hold:
+ *   - firmware inquiry returned `'unwritable'` (no SysInfoExtended path)
+ *   - no classic SysInfo `ModelNumStr` was read off disk
+ *   - no USB fingerprint was resolvable
+ *   - cascade did not yield a model
+ *   - user did not pass `--type`
+ *
+ * Partial signals (e.g., USB gave a product name but firmware inquiry failed)
+ * are NOT fully empty — the CLI should warn and proceed rather than block.
+ *
+ * This is the single source of truth for the device-add empty-identity block.
+ */
+export function isIdentityFullyEmpty(
+  assessment: IpodIdentityAssessment | null,
+  userType?: string | undefined
+): boolean {
+  if (userType) return false;
+  if (!assessment) return true;
+  if (assessment.firmwareInquiry !== 'unwritable') return false;
+  const sig = summariseIdentitySignals(assessment, userType);
+  // hasSysInfoExtended is not checked here because it's guarded by the
+  // 'unwritable' check above — it can only be true when firmware inquiry
+  // is 'present', which already returned false.
+  return !sig.hasModel && !sig.hasSysInfoModelNumber && !sig.hasUsbFingerprint;
+}
+
+// =============================================================================
+// ensureSysInfoExtendedAndReassess
+// =============================================================================
+
 /**
  * Result of {@link ensureSysInfoExtendedAndReassess}.
  *

@@ -695,8 +695,14 @@ export type {
   IpodFirmwareInquiryState,
   EnsureSysInfoExtendedAndReassessResult,
   EnsureSysInfoExtendedAndReassessOptions,
+  IdentitySignalSummary,
 } from './device/index.js';
-export { assessIpodIdentity, ensureSysInfoExtendedAndReassess } from './device/index.js';
+export {
+  assessIpodIdentity,
+  ensureSysInfoExtendedAndReassess,
+  isIdentityFullyEmpty,
+  summariseIdentitySignals,
+} from './device/index.js';
 
 // Mass-storage device assessment (symmetric to assessIpodIdentity)
 export type { MassStorageAssessment, AssessMassStorageDeviceOptions } from './device/index.js';

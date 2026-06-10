@@ -24,9 +24,11 @@ import {
   isFilesystemUnsupportedHere,
   formatHfsplusOnLinuxRefusal,
   makeHfsplusOnLinuxUnsupportedReason,
+  isIdentityFullyEmpty,
+  summariseIdentitySignals,
   DOCS_URLS,
 } from '@podkit/core';
-import type { IpodIdentityAssessment } from '@podkit/core';
+import type { IpodIdentityAssessment, IdentitySignalSummary } from '@podkit/core';
 import {
   isMassStorageDevice,
   getDeviceTypeDisplayName,
@@ -75,6 +77,99 @@ function synthesizeTestVolumeUuid(path: string): string | undefined {
   return `test-${slug}`;
 }
 
+/**
+ * Throw the empty-identity refusal. Triggered when the cascade resolves
+ * nothing at all — no SysInfoExtended access, no classic SysInfo on disk,
+ * no USB fingerprint, no `--type` from the user. Persisting a config row
+ * with empty identity strands later commands; refuse instead.
+ *
+ * Bypass via `--force` (explicit override) or `--no-firmware-inquiry`
+ * (existing explicit consent).
+ */
+function throwEmptyIdentityRefusal(opts: { path: string | undefined }): never {
+  const lines = [
+    'Cannot add this device: no identifying signal is available.',
+    '',
+    '  • SysInfoExtended could not be read from firmware (USB inquiry path is closed).',
+    '  • No classic SysInfo file was found on the device.',
+    '  • USB enumeration did not resolve a product fingerprint.',
+    '',
+    'Persisting a device row with empty identity strands later commands ' +
+      '(`podkit doctor`, `podkit sync`) — they cannot reliably identify the',
+    'device on replug. Try one of:',
+    '',
+    '  • Re-mount the device read-write and check the USB connection, then retry.',
+    '  • Pass --no-firmware-inquiry if you knowingly want to skip the firmware',
+    '    inquiry (cascade-derived identity still applies when present).',
+    '  • Pass --force to add the device anyway — some operations may behave',
+    '    conservatively without identity.',
+  ];
+  throw new CliError({
+    message: lines.join('\n'),
+    code: DeviceErrorCodes.EMPTY_IDENTITY,
+    details: { path: opts.path ?? '(unknown)' },
+  });
+}
+
+/**
+ * Print the partial-cascade warning when the device has some identity signal
+ * but is missing the model-identifying anchor (SysInfoExtended or classic
+ * SysInfo ModelNumStr). Absence of USB fingerprint alone is not actionable
+ * for the user — it's transient and resolved on next assessment with USB.
+ */
+function warnPartialIdentity(out: OutputContext, _signals: IdentitySignalSummary): void {
+  if (!out.isText) return;
+  out.warn(
+    'Unable to determine device model from disk — no SysInfoExtended or classic SysInfo. ' +
+      'Proceeding with USB identity only; some operations may behave conservatively. ' +
+      'Retry with the device re-mounted or re-plugged.'
+  );
+}
+
+/**
+ * Apply the empty-identity gate to the cascade result. Encapsulates the
+ * three-way branch — block / `--force` / `--no-firmware-inquiry` — that
+ * `--path` and scan paths both need, plus the partial-cascade warning.
+ *
+ * Throws `CliError(EMPTY_IDENTITY)` on the block path; otherwise returns,
+ * having emitted any warnings as side effects.
+ *
+ * Single source of truth for the device-add identity policy. Tests pinning
+ * the policy reference `isIdentityFullyEmpty` directly.
+ */
+function enforceIdentityGate(
+  out: OutputContext,
+  assessment: IpodIdentityAssessment | null,
+  options: AddOptions,
+  refusalPath: string | undefined
+): void {
+  const signals = summariseIdentitySignals(assessment, options.type);
+  if (isIdentityFullyEmpty(assessment, options.type)) {
+    if (options.force) {
+      if (out.isText) {
+        out.warn(
+          'Proceeding with empty device identity (--force). ' +
+            'Some operations may not behave correctly.'
+        );
+      }
+      return;
+    }
+    if (options.firmwareInquiry === false) {
+      if (out.isText) {
+        out.warn(
+          'Proceeding with empty device identity (--no-firmware-inquiry). ' +
+            'Some operations may not behave correctly.'
+        );
+      }
+      return;
+    }
+    throwEmptyIdentityRefusal({ path: refusalPath });
+  }
+  if (!signals.hasSysInfoExtended && !signals.hasSysInfoModelNumber) {
+    warnPartialIdentity(out, signals);
+  }
+}
+
 function throwVolumeUuidRequired(opts: {
   path: string | undefined;
   identifier: string;
@@ -119,6 +214,15 @@ interface AddOptions {
    * is a "configure now, repair later" affordance.
    */
   firmwareInquiry?: boolean;
+  /**
+   * Override the empty-identity refusal. When `device add` resolves no
+   * identifying signal (no SysInfoExtended access, no classic SysInfo, no
+   * USB fingerprint), it refuses by default — a config row with empty
+   * identity confuses downstream commands. `--force` records the user's
+   * explicit consent to proceed anyway; expect later commands to behave
+   * conservatively.
+   */
+  force?: boolean;
 }
 
 export const addSubcommand = new Command('add')
@@ -131,6 +235,7 @@ export const addSubcommand = new Command('add')
     '--no-firmware-inquiry',
     'skip writing SysInfoExtended via USB firmware inquiry (iPod only)'
   )
+  .option('--force', 'add the device even when no identifying signal is available (use sparingly)')
   .addOption(
     new Option('--quality <preset>', 'transcoding quality preset').choices([...QUALITY_PRESETS])
   )
@@ -544,6 +649,12 @@ export async function runDeviceAdd(
 
     // Cascade-driven identity assessment (no writes, no prompts).
     let assessment: IpodIdentityAssessment = await assessIdentity(explicitPath);
+
+    // Empty-identity gate. If the cascade resolved literally nothing — no
+    // SysInfoExtended path, no classic SysInfo on disk, no USB fingerprint —
+    // refuse unless the user explicitly opted in via `--force`,
+    // `--no-firmware-inquiry`, or `--type`. Partial cascades warn-and-proceed.
+    enforceIdentityGate(out, assessment, options, explicitPath);
 
     // Known-unsupported generations: warn-and-allow (TASK-317.03). The user
     // gets the canonical message and an explicit Y/n prompt; `--yes` flips
@@ -1024,6 +1135,19 @@ export async function runDeviceAdd(
   if (ipod.isMounted) {
     assessment = await assessIdentity(ipod.mountPoint);
   }
+
+  // Empty-identity gate (mirrors the --path branch above).
+  // The scan branch can still proceed when we identified the iPod via the
+  // OS-level device walk (volume UUID, mount point) even though the cascade
+  // resolved nothing — the user is plainly looking at a recognised iPod —
+  // but persisting a config row without any model/USB/SysInfo signal still
+  // strands downstream commands that depend on identity. Same gate.
+  enforceIdentityGate(
+    out,
+    assessment,
+    options,
+    ipod.isMounted ? ipod.mountPoint : `/dev/${ipod.identifier}`
+  );
 
   // Known-unsupported generations (touch_*, nano_6/7, shuffle_3g/4g, iOS): warn-allow.
   // The cascade-resolved model carries `unsupportedReason`; we surface the
