@@ -186,7 +186,45 @@ renamed (as happened with TASK-397's `orphan-files-mass-storage` →
 
 ---
 
-## 10. References
+## 10. Doctor's non-repair path is read-only
+
+`podkit doctor` (without `--repair`) MUST NOT mutate the device. This is
+enforced by design: the non-repair path never calls `db.save()`, so
+`IpodDatabase.open()` → `itdb_parse()` (read-only) and `close()` →
+`itdb_free()` (in-memory only) leave on-device files unchanged.
+
+**Artwork check status is deterministic:**
+
+The `artwork-rebuild` check routes through these gates in order:
+
+1. No ArtworkDB file → `existsSync` gate → `'skip'`
+2. 0-byte ArtworkDB → `buffer.length === 0` guard → `'skip'`
+3. Non-empty ArtworkDB that fails to parse → `parseArtworkDB` throws → `'warn'`
+4. Non-empty ArtworkDB with 0 images → `parseArtworkDB` + `db.images.length === 0` → `'pass'`
+5. Non-empty ArtworkDB with valid entries → all-offsets-valid → `'pass'`
+6. Non-empty ArtworkDB with out-of-bounds entries → `'fail'`
+
+Each input scenario has exactly one deterministic output. There is no
+"libgpod may rewrite" race — empirically confirmed: the SHA-256 fingerprint
+of the ArtworkDB is identical before and after a `podkit doctor` run.
+
+Note: the default test iPod fixture (model MA147 via `createTestIpod`) ships
+with a valid-but-empty ArtworkDB (944-byte `mhfd` header, 0 entries), so the
+`'reports healthy for iPod with no artwork'` test expects `'pass'`, not `'skip'`.
+The `'skip'` path is exercised by a separate test that truncates the file to 0 bytes.
+
+The hash-stability tests in `test-packages/e2e-tests/src/commands/doctor.test.ts`
+(`'doctor read-only contract (ArtworkDB hash stability)'`) enforce this at the
+binary level: capture SHA-256 before and after a run, assert no change.
+
+**Repair path is the only writer.** `--repair <check-id>` calls `db.save()`
+explicitly and acquires the per-device write lock before doing so. Any future
+doctor check or diagnostic helper that needs to write device state MUST go
+through `--repair`, not the diagnostic path.
+
+---
+
+## 11. References
 
 - [sync/error-handling](./sync/error-handling.md) — the working example of
   these conventions applied to the sync engine.

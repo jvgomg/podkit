@@ -8,10 +8,12 @@
  */
 
 import { describe, it, expect } from 'bun:test';
-import { mkdtemp, rm, copyFile, mkdir } from 'node:fs/promises';
-import { existsSync, writeFileSync } from 'node:fs';
+import { mkdtemp, rm, copyFile } from 'node:fs/promises';
+import { existsSync, writeFileSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { ensureFixturesExist, requireFFmpeg, requireMetaflac } from '@podkit/e2e-shared';
 import { runCli, runCliJson } from '../helpers/cli-runner';
 import { withTarget } from '../targets';
@@ -127,6 +129,30 @@ async function runDoctor(devicePath: string, extraArgs: string[] = []) {
   ]);
 }
 
+/**
+ * Capture a SHA-256 fingerprint of the ArtworkDB slot.
+ *
+ * Returns a string that encodes both the existence and content of the file so
+ * that "didn't exist before, still doesn't exist after" and "existed with
+ * content X, still has content X" are both detectable as "no change".
+ *
+ * We intentionally scope this to the single file rather than hashing the
+ * whole Artwork directory because other files (e.g. .ithmb thumbnails) change
+ * legitimately during a full sync. Doctor's non-repair path must not touch
+ * ArtworkDB — that is the only invariant under test here.
+ */
+function artworkDbFingerprint(ipodPath: string): string {
+  const artworkDbPath = join(ipodPath, 'iPod_Control', 'Artwork', 'ArtworkDB');
+  if (!existsSync(artworkDbPath)) {
+    return 'absent';
+  }
+  const buf = readFileSync(artworkDbPath);
+  if (buf.length === 0) {
+    return 'empty:0bytes';
+  }
+  return createHash('sha256').update(buf).digest('hex');
+}
+
 async function corruptIthmb(ipodPath: string): Promise<void> {
   const artworkDir = join(ipodPath, 'iPod_Control', 'Artwork');
   if (!existsSync(artworkDir)) return;
@@ -216,31 +242,98 @@ describe('podkit doctor', () => {
         expect(json).not.toBeNull();
         expect(json!.healthy).toBe(true);
 
-        // libgpod may initialize an empty ArtworkDB during IpodDatabase.open(),
-        // so the check may return 'skip' (no file) or 'pass' (valid but empty).
+        // The dummy iPod template includes a valid-but-empty ArtworkDB
+        // (944-byte mhfd header, 0 image entries). The artwork check parses
+        // it successfully and returns 'pass' (artwork.ts:83-89).
+        // Doctor's non-repair path never calls db.save() — the hash-stability
+        // tests below confirm the file is unchanged after the run.
         const artworkCheck = json!.checks.find((c) => c.id === 'artwork-rebuild');
         expect(artworkCheck).toBeDefined();
-        expect(['skip', 'pass']).toContain(artworkCheck!.status);
+        expect(artworkCheck!.status).toBe('pass');
       });
     }, 30000);
 
-    it('passes when ArtworkDB exists but has no entries', async () => {
+    it('skips when ArtworkDB exists but is 0 bytes', async () => {
       await withTarget(async (target) => {
-        const artworkDir = join(target.path, 'iPod_Control', 'Artwork');
-        await mkdir(artworkDir, { recursive: true });
-        writeFileSync(join(artworkDir, 'ArtworkDB'), Buffer.alloc(0));
+        // The template already has the Artwork directory; overwrite ArtworkDB
+        // with a 0-byte file to exercise the buffer.length === 0 guard.
+        const artworkDbPath = join(target.path, 'iPod_Control', 'Artwork', 'ArtworkDB');
+        writeFileSync(artworkDbPath, Buffer.alloc(0));
 
         const { json } = await runDoctor(target.path);
 
         expect(json).not.toBeNull();
         expect(json!.healthy).toBe(true);
 
-        // libgpod may rewrite the empty file during IpodDatabase.open(),
-        // producing a valid-but-empty ArtworkDB. Either 'skip' (still empty)
-        // or 'pass' (valid header, no entries) is acceptable.
+        // 0-byte ArtworkDB → artwork.ts buffer.length === 0 guard returns 'skip'.
+        // Doctor's non-repair path never calls db.save(), so the file stays
+        // at 0 bytes throughout the run. See hash-stability test below.
         const artworkCheck = json!.checks.find((c) => c.id === 'artwork-rebuild');
         expect(artworkCheck).toBeDefined();
-        expect(['skip', 'pass']).toContain(artworkCheck!.status);
+        expect(artworkCheck!.status).toBe('skip');
+      });
+    }, 30000);
+  });
+
+  // ===========================================================================
+  // Doctor read-only contract — ArtworkDB hash stability
+  //
+  // Doctor's non-repair path must NOT mutate the device. These tests enforce
+  // that contract empirically: SHA-256 the ArtworkDB slot before and after
+  // `podkit doctor`, then assert the fingerprint is unchanged.
+  //
+  // The fingerprint encodes absence ("absent"), empty content ("empty:0bytes"),
+  // and non-empty content (SHA-256 hex), so all three mutation modes are caught:
+  //   - file created from nothing
+  //   - empty file written with a header
+  //   - existing content overwritten
+  // ===========================================================================
+
+  describe('doctor read-only contract (ArtworkDB hash stability)', () => {
+    it('does not mutate an existing ArtworkDB during a diagnostic run', async () => {
+      // The dummy iPod template ships with a valid-but-empty ArtworkDB.
+      // Capture its fingerprint before and after doctor to confirm no write.
+      await withTarget(async (target) => {
+        const before = artworkDbFingerprint(target.path);
+
+        await runDoctor(target.path);
+
+        const after = artworkDbFingerprint(target.path);
+        expect(after).toBe(before);
+      });
+    }, 30000);
+
+    it('does not modify a 0-byte ArtworkDB during a diagnostic run', async () => {
+      await withTarget(async (target) => {
+        // Replace the template ArtworkDB with a 0-byte file to test the
+        // buffer.length === 0 guard. Doctor must leave it untouched.
+        const artworkDbPath = join(target.path, 'iPod_Control', 'Artwork', 'ArtworkDB');
+        writeFileSync(artworkDbPath, Buffer.alloc(0));
+
+        const before = artworkDbFingerprint(target.path);
+        expect(before).toBe('empty:0bytes');
+
+        await runDoctor(target.path);
+
+        const after = artworkDbFingerprint(target.path);
+        expect(after).toBe('empty:0bytes');
+      });
+    }, 30000);
+
+    it('does not create an ArtworkDB when none exists', async () => {
+      await withTarget(async (target) => {
+        // Remove the template ArtworkDB so the existsSync gate fires. Doctor
+        // must not write a new file to satisfy parsing.
+        const artworkDbPath = join(target.path, 'iPod_Control', 'Artwork', 'ArtworkDB');
+        unlinkSync(artworkDbPath);
+
+        const before = artworkDbFingerprint(target.path);
+        expect(before).toBe('absent');
+
+        await runDoctor(target.path);
+
+        const after = artworkDbFingerprint(target.path);
+        expect(after).toBe('absent');
       });
     }, 30000);
   });
