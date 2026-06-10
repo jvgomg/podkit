@@ -228,17 +228,43 @@ function makeAdapter(tracks: CollectionTrack[]): CollectionAdapter {
   };
 }
 
+/**
+ * Lazily-created temp directory for fake collection tracks. The artwork
+ * repair pipeline runs a per-track source-file validity probe before
+ * consulting the album cache, so the source `filePath` must point at
+ * a real file whose magic bytes match a supported audio container. We write
+ * a 4-byte `fLaC` header plus padding so the probe accepts the file; the
+ * extractArtwork step is mocked or the repair surface is only inspected for
+ * its bucketing/sync-tag side effects, so no real audio data is needed.
+ */
+let collectionFixtureDir: string | null = null;
+
+function getCollectionFixtureDir(): string {
+  if (collectionFixtureDir === null) {
+    collectionFixtureDir = mkdtempSync(join(tmpdir(), 'podkit-artwork-matrix-srcs-'));
+    track(collectionFixtureDir);
+  }
+  return collectionFixtureDir;
+}
+
 function makeCollectionTrack(args: {
   artist: string;
   title: string;
   album: string;
 }): CollectionTrack {
+  const dir = getCollectionFixtureDir();
+  const fileName = `${args.artist}-${args.title}.flac`.replace(/[^A-Za-z0-9._-]+/g, '_');
+  const filePath = join(dir, fileName);
+  // Magic-byte header + padding so the validity probe accepts
+  // the file. The extractArtwork dependency in the repair pipeline is stubbed
+  // or unused in these unit tests, so this stub body is never decoded.
+  writeFileSync(filePath, Buffer.concat([Buffer.from('fLaC'), Buffer.alloc(64, 0)]));
   return makeMockCollectionTrack({
     id: `${args.artist}-${args.title}`,
     title: args.title,
     artist: args.artist,
     album: args.album,
-    filePath: `/music/${args.artist}/${args.title}.flac`,
+    filePath,
   });
 }
 
@@ -262,6 +288,9 @@ afterEach(() => {
       // best-effort
     }
   }
+  // Re-init the lazy collection-fixture dir on the next test so each test
+  // case gets fresh fake source files. (See `makeCollectionTrack`.)
+  collectionFixtureDir = null;
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

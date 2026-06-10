@@ -63,7 +63,13 @@ interface RepairOutput {
     noSource?: number;
     noArtwork?: number;
     errors?: number;
-    errorDetails?: Array<{ artist: string; title: string; error: string }>;
+    errorDetails?: Array<{
+      artist: string;
+      title: string;
+      error: string;
+      path?: string;
+      reason?: 'missing' | 'unreadable' | 'truncated' | 'badMagic';
+    }>;
   };
 }
 
@@ -485,36 +491,71 @@ describe('podkit doctor --repair artwork-rebuild', () => {
   }, 240000);
 
   it('continues repairing remaining tracks when one source file is corrupt', async () => {
+    // Per-track source-file validity now runs BEFORE the album cache
+    // short-circuits inside `rebuildArtworkDatabase`. This e2e
+    // exercises the static-corruption scenario where one source file is
+    // overwritten with garbage between sync and repair.
+    //
+    // ARCHITECTURAL NOTE on the bucket the corrupt file ends up in:
+    //
+    // The directory adapter currently drops parse-failed files from its
+    // source index at scan time (music-metadata throws on an invalid FLAC
+    // preamble; the adapter catches and emits a warning). When the repair
+    // pipeline runs, the corrupt file's iPod track has no matching source
+    // entry — it lands in `noSource`, not `errors`. The validity-probe
+    // gate inside the repair pipeline protects a different class of
+    // issue: source files that ARE in the index but become
+    // invalid between scan and the artwork-extraction step (a Subsonic
+    // download that produces a truncated temp file; a directory file that
+    // was deleted or replaced after scan but before extraction). The unit
+    // tests in `packages/podkit-core/src/artwork/repair.test.ts`
+    // exercise the validity-gate path directly.
+    //
+    // What this test pins for the static-corruption scenario:
+    //   - The repair completes cleanly (no crash on the missing-from-index
+    //     iPod track).
+    //   - Healthy sibling tracks still extract successfully — the album-
+    //     cache speedup is preserved for the two good FLACs.
+    //   - The corrupt file's iPod track is bucketed as `noSource`, and the
+    //     `errors` count stays at 0 in this scenario.
+    //   - All iPod tracks are accounted for (matched + noSource +
+    //     noArtwork + errors === totalTracks).
     await withTarget(async (target) => {
       const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
       let collectionDir: string | undefined;
 
       try {
-        // Sync 3 tracks with artwork
         collectionDir = await createTempCollection(GOLDBERG_TRACKS);
         const configPath = await syncTracksToIpod(collectionDir, configDir, target.path);
 
-        // Corrupt one source file (write garbage to make it unreadable as audio).
-        // The directory adapter reads metadata from files, so a corrupt file may
-        // either fail to scan (becoming noSource) or scan but fail during artwork
-        // extraction (becoming an error or noArtwork via album cache). All 3 tracks
-        // share the same album, so caching effects apply.
+        // Overwrite one source file with garbage. The wrong FLAC preamble
+        // causes music-metadata to throw; the directory adapter drops the
+        // file from its source index. The remaining two healthy siblings
+        // still populate the source index normally.
         const corruptFile = join(collectionDir, Tracks.HARMONY.filename);
         writeFileSync(corruptFile, Buffer.from('NOT_A_VALID_FLAC_FILE'));
 
-        // Run repair — should complete without crashing
         const { json: repairJson } = await runDoctorRepair(configPath, target.path, 'main');
 
         expect(repairJson).not.toBeNull();
         const details = repairJson!.details!;
         expect(details.totalTracks).toBe(3);
-        // All tracks must be accounted for in some category
+
+        // Precise per-bucket counts. The two healthy siblings extract
+        // successfully (album-cache speedup preserved). The corrupt file's
+        // iPod track lands in `noSource`.
+        expect(details.matched).toBe(2);
+        expect(details.noSource).toBe(1);
+        expect(details.noArtwork).toBe(0);
+        expect(details.errors).toBe(0);
+
+        // All iPod tracks accounted for — no track silently disappears.
         const accounted =
           (details.matched ?? 0) +
           (details.noSource ?? 0) +
           (details.noArtwork ?? 0) +
           (details.errors ?? 0);
-        expect(accounted).toBe(3);
+        expect(accounted).toBe(details.totalTracks ?? 0);
       } finally {
         if (collectionDir) await rm(collectionDir, { recursive: true, force: true });
         await rm(configDir, { recursive: true, force: true });

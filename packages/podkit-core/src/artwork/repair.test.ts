@@ -12,6 +12,9 @@
  */
 
 import { describe, it, expect, mock } from 'bun:test';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join as joinPath } from 'node:path';
 import type { IpodTrack, TrackFields } from '../ipod/types.js';
 import type { CollectionAdapter, CollectionTrack, FileAccess } from '../adapters/interface.js';
 import type { RebuildDependencies, RebuildProgress } from './repair.js';
@@ -107,13 +110,20 @@ function makeMockDb(ipodTracks: IpodTrack[]): MockDb {
 function makeDeps(
   db: MockDb,
   adapters: CollectionAdapter[],
-  extractArtworkImpl?: (path: string) => Promise<ExtractedArtwork | null>
+  extractArtworkImpl?: (path: string) => Promise<ExtractedArtwork | null>,
+  overrides: Partial<RebuildDependencies> = {}
 ): RebuildDependencies {
   return {
     db,
     adapters,
     extractArtwork: extractArtworkImpl ?? (async () => MOCK_ARTWORK),
     cleanupAllTempArtwork: async () => {},
+    // Bypass the real fs-touching validity probe in unit tests — source paths
+    // here are fabricated and don't exist on disk. The dedicated
+    // "source-file validity gate" describe block below uses a real probe
+    // against actual temp files to exercise the gate end-to-end.
+    checkSourceFileValidity: () => ({ ok: true }),
+    ...overrides,
   } as unknown as RebuildDependencies;
 }
 
@@ -617,6 +627,142 @@ describe('rebuildArtworkDatabase', () => {
       const [, fields] = lastUpdate as [unknown, { comment: string }];
       expect(fields.comment).toContain('[podkit:v1');
       expect(fields.comment).not.toMatch(/art=/);
+    });
+  });
+
+  // ─── Source-file validity gate ────────────────────────────────────────────
+  describe('source-file validity gate', () => {
+    // The validity probe is real-filesystem (statSync/openSync/readSync), so
+    // these tests write fixtures to a temp directory rather than mocking the
+    // fs. The repair pipeline still uses the test extractArtwork stub so we
+    // can isolate cache + bucketing behaviour from real audio parsing.
+    function withTempCollection<T>(
+      files: Record<string, Buffer>,
+      fn: (dir: string) => Promise<T>
+    ): Promise<T> {
+      const dir = mkdtempSync(joinPath(tmpdir(), 'podkit-repair-validity-'));
+      for (const [name, contents] of Object.entries(files)) {
+        writeFileSync(joinPath(dir, name), contents);
+      }
+      return fn(dir).finally(() => {
+        try {
+          rmSync(dir, { recursive: true, force: true });
+        } catch {
+          // best-effort
+        }
+      });
+    }
+
+    const FLAC_HEAD = Buffer.concat([Buffer.from('fLaC'), Buffer.alloc(64, 0)]);
+
+    it('places a corrupt source file in `errors` even when a sibling on the same album extracts successfully (album-cache cannot rescue it)', async () => {
+      await withTempCollection(
+        {
+          'good-1.flac': FLAC_HEAD,
+          'good-2.flac': FLAC_HEAD,
+          'bad.flac': Buffer.from('NOT_A_VALID_FLAC_FILE'),
+        },
+        async (dir) => {
+          const ipodTracks = [
+            // Good tracks scan first so the album cache populates with a
+            // positive entry before the bad track is visited. Without the
+            // validity gate, the bad track would inherit the cached art and
+            // land in `matched`.
+            makeIpodTrack({ artist: 'Artist', title: 'Good One', album: 'Album' }),
+            makeIpodTrack({ artist: 'Artist', title: 'Good Two', album: 'Album' }),
+            makeIpodTrack({ artist: 'Artist', title: 'Bad', album: 'Album' }),
+          ];
+          const sourceTracks = [
+            makeCollectionTrack({
+              artist: 'Artist',
+              title: 'Good One',
+              album: 'Album',
+              filePath: joinPath(dir, 'good-1.flac'),
+            }),
+            makeCollectionTrack({
+              artist: 'Artist',
+              title: 'Good Two',
+              album: 'Album',
+              filePath: joinPath(dir, 'good-2.flac'),
+            }),
+            makeCollectionTrack({
+              artist: 'Artist',
+              title: 'Bad',
+              album: 'Album',
+              filePath: joinPath(dir, 'bad.flac'),
+            }),
+          ];
+
+          let extractCount = 0;
+          const db = makeMockDb(ipodTracks);
+          const adapter = makeAdapter(sourceTracks);
+          // Use the real validity probe — override the default stub.
+          const result = await rebuildArtworkDatabase(
+            makeDeps(
+              db,
+              [adapter],
+              async () => {
+                extractCount++;
+                return MOCK_ARTWORK;
+              },
+              { checkSourceFileValidity: undefined }
+            )
+          );
+
+          expect(result.totalTracks).toBe(3);
+          expect(result.matched).toBe(2);
+          expect(result.noSource).toBe(0);
+          expect(result.noArtwork).toBe(0);
+          expect(result.errors).toBe(1);
+
+          const detail = result.errorDetails[0]!;
+          expect(detail.artist).toBe('Artist');
+          expect(detail.title).toBe('Bad');
+          expect(detail.path).toBe(joinPath(dir, 'bad.flac'));
+          expect(detail.reason).toBe('badMagic');
+
+          // Album-cache regression check: the two healthy tracks share an
+          // album, so the cache must memoise — only the first healthy track
+          // should hit extractArtwork. (The bad track never reaches extract
+          // because the validity gate stops it earlier.)
+          expect(extractCount).toBe(1);
+        }
+      );
+    });
+
+    it('places a missing source file in `errors` with reason=missing', async () => {
+      // No collection directory — the source track points at a nonexistent
+      // file. The validity gate stat()s the file, gets ENOENT, and emits a
+      // missing-reason error without ever calling extractArtwork.
+      const ipodTracks = [makeIpodTrack({ artist: 'Artist', title: 'Song', album: 'Album' })];
+      const sourceTracks = [
+        makeCollectionTrack({
+          artist: 'Artist',
+          title: 'Song',
+          album: 'Album',
+          filePath: '/this/path/does/not/exist/song.flac',
+        }),
+      ];
+
+      let extractCount = 0;
+      const db = makeMockDb(ipodTracks);
+      const adapter = makeAdapter(sourceTracks);
+      const result = await rebuildArtworkDatabase(
+        makeDeps(
+          db,
+          [adapter],
+          async () => {
+            extractCount++;
+            return MOCK_ARTWORK;
+          },
+          { checkSourceFileValidity: undefined }
+        )
+      );
+
+      expect(result.errors).toBe(1);
+      expect(result.matched).toBe(0);
+      expect(result.errorDetails[0]!.reason).toBe('missing');
+      expect(extractCount).toBe(0); // validity gate short-circuited before extract
     });
   });
 });

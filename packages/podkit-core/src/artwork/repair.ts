@@ -33,6 +33,11 @@ import type { ExtractedArtwork } from './types.js';
 // so it uses the raw sync tag functions instead of adapter.writeSyncTag().
 import { parseSyncTag, writeSyncTag } from '../metadata/sync-tags.js';
 import { AlbumArtworkCache } from './album-cache.js';
+import {
+  checkSourceFileValidity as defaultCheckSourceFileValidity,
+  type SourceValidityReason,
+  type SourceValidityResult,
+} from './source-validity.js';
 import { streamToTempFile, cleanupTempFile } from '../utils/stream.js';
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -72,13 +77,32 @@ export interface RebuildProgress {
   currentTrack?: { artist: string; title: string };
 }
 
+/**
+ * Per-track error detail emitted by {@link rebuildArtworkDatabase}.
+ *
+ * `path` and `reason` are populated for source-file validity failures (the
+ * file is missing, unreadable, truncated, or doesn't match any audio magic).
+ * They're omitted for runtime extraction errors (e.g. ffprobe spawn failed,
+ * adapter download timed out) where there's no single offending source path
+ * to surface — those still populate `error` with the exception message.
+ */
+export interface RebuildErrorDetail {
+  artist: string;
+  title: string;
+  error: string;
+  /** Absolute path of the source file, when the failure was localised to one. */
+  path?: string;
+  /** Validity-probe reason, when the failure was a pre-extraction file check. */
+  reason?: SourceValidityReason;
+}
+
 export interface RebuildResult {
   totalTracks: number;
   matched: number;
   noSource: number;
   noArtwork: number;
   errors: number;
-  errorDetails: Array<{ artist: string; title: string; error: string }>;
+  errorDetails: RebuildErrorDetail[];
 }
 
 export interface RebuildOptions {
@@ -99,6 +123,13 @@ export interface RebuildDependencies {
   extractArtwork?: (filePath: string) => Promise<ExtractedArtwork | null>;
   /** Override temp artwork cleanup (for testing) */
   cleanupAllTempArtwork?: () => Promise<void>;
+  /**
+   * Override the source-file validity probe. Defaults to
+   * {@link defaultCheckSourceFileValidity}, which stat()s + reads the file's
+   * magic bytes. Unit tests that fabricate source paths without writing
+   * actual files can supply `() => ({ ok: true })` to bypass the probe.
+   */
+  checkSourceFileValidity?: (filePath: string) => SourceValidityResult;
 }
 
 // ── Implementation ──────────────────────────────────────────────────────────
@@ -271,6 +302,7 @@ export async function rebuildArtworkDatabase(
 ): Promise<RebuildResult> {
   const { db, adapters } = deps;
   const cleanupAllTempArtwork = deps.cleanupAllTempArtwork ?? defaultCleanupAllTempArtwork;
+  const checkSourceFileValidity = deps.checkSourceFileValidity ?? defaultCheckSourceFileValidity;
   const { dryRun = false, onProgress, signal } = options;
 
   // Album-level artwork cache — deduplicates extraction across tracks on the same album
@@ -346,6 +378,28 @@ export async function rebuildArtworkDatabase(
 
           let cached;
           try {
+            // Per-track source-file validity check. Runs BEFORE the album
+            // cache lookup so a corrupt file always lands in `errors` with
+            // its path + reason, regardless of whether a healthy sibling on
+            // the same album scanned first. Without this, the album cache's
+            // positive memoisation would silently promote a corrupt file
+            // into the `matched` bucket.
+            const validity = checkSourceFileValidity(sourcePath);
+            if (!validity.ok) {
+              // `finally` below releases the temp file; just bucket + skip.
+              clearArtworkSyncTag(db, ipodTrack);
+              progress.errors++;
+              errorDetails.push({
+                artist: ipodTrack.artist,
+                title: ipodTrack.title,
+                error: `Source file ${validity.reason}: ${sourcePath}`,
+                path: sourcePath,
+                reason: validity.reason,
+              });
+              onProgress?.(progress);
+              continue;
+            }
+
             // Consult the source adapter for non-embedded artwork (directory
             // sidecar / Subsonic getCoverArt) when the audio body has no embed.
             // Mirrors the executor's transferArtwork fallback (TASK-142) so a

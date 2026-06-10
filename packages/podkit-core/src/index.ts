@@ -342,10 +342,13 @@ export type {
   ResetOptions,
   RebuildProgress,
   RebuildResult,
+  RebuildErrorDetail,
   RebuildOptions,
   RebuildDependencies,
 } from './artwork/repair.js';
 export { resetArtworkDatabase, rebuildArtworkDatabase } from './artwork/repair.js';
+export type { SourceValidityReason, SourceValidityResult } from './artwork/source-validity.js';
+export { checkSourceFileValidity } from './artwork/source-validity.js';
 
 // Diagnostics (device health checks)
 export type {
