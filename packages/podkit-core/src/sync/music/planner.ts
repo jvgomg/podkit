@@ -360,6 +360,18 @@ export function changesToMetadata(changes: MetadataChange[]): Partial<TrackMetad
       case 'compilation':
         metadata.compilation = change.to === 'true';
         break;
+      case 'bitrate':
+        // Numeric field: propagate when the change carries a parseable value.
+        // The `--force-sync-tags` baseline backfill uses this to populate a
+        // missing iPod bitrate from the source track. Non-numeric `to`
+        // values are dropped silently — the executor leaves the field alone.
+        if (change.to) {
+          const value = Number(change.to);
+          if (!isNaN(value) && value > 0) {
+            metadata.bitrate = value;
+          }
+        }
+        break;
       case 'normalization': {
         // Reconstruct AudioNormalization from the dB string display value.
         // The 'to' field contains a string like "-7.0 dB" or "absent".

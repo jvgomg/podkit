@@ -297,32 +297,18 @@ describe('artwork change detection (Subsonic)', () => {
         console.log(`Initial sync completed: ${syncJson?.result?.completed} tracks`);
 
         // ------------------------------------------------------------------
-        // Step 2: Verify sync tags have artwork hashes (art= field)
-        // Run a second sync to force sync tag writes if the first sync
-        // didn't establish baselines (first sync may add tracks without
-        // baselines, then a --force-sync-tags pass writes them)
+        // Step 2: Confirm the initial sync is already idempotent — no
+        // second --force-sync-tags pass needed to establish baselines.
+        //
+        // Initial-add now writes the artwork-hash baseline directly during
+        // the transfer step when --check-artwork supplies a source hash and
+        // the bytes successfully land on the device. The earlier two-pass
+        // workaround (sync, then --force-sync-tags) is no longer required;
+        // first-run users get artwork-change detection on their next sync.
+        // --force-sync-tags is still honoured for users backfilling
+        // baselines on tracks added before this feature shipped.
         // ------------------------------------------------------------------
-        console.log('Step 2: Establishing artwork hash baselines...');
-        const { result: baselineResult } = await runCliJson<SyncOutput>(
-          [
-            '--config',
-            configPath,
-            'sync',
-            '--device',
-            target.path,
-            '--check-artwork',
-            '--force-sync-tags',
-            '--json',
-          ],
-          {
-            env: { SUBSONIC_PASSWORD: password },
-            timeout: 120000,
-          }
-        );
-
-        expect(baselineResult.exitCode).toBe(0);
-
-        // Verify we're now in sync (no more changes needed)
+        console.log('Step 2: Verifying initial-add baseline is idempotent...');
         const { result: verifyResult, json: verifyJson } = await runCliJson<SyncOutput>(
           [
             '--config',
@@ -342,7 +328,7 @@ describe('artwork change detection (Subsonic)', () => {
 
         expect(verifyResult.exitCode).toBe(0);
         expect(verifyJson?.dryRun).toBe(true);
-        // Baselines are established; the next dry-run shows nothing pending.
+        // Baselines were established during initial add; no further updates.
         expect(verifyJson?.plan?.tracksToUpdate).toBe(0);
 
         // ------------------------------------------------------------------

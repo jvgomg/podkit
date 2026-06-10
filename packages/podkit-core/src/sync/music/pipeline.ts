@@ -1566,6 +1566,14 @@ export class MusicPipeline implements SyncExecutor {
     if (metadata.normalization !== undefined) {
       updateFields.normalization = metadata.normalization;
     }
+    if (metadata.bitrate !== undefined) {
+      // Bitrate is carried on metadata-only updates by the `--force-sync-tags`
+      // baseline backfill in `handler.postProcessBitrateBaseline`. Pre-existing
+      // tracks added before bitrate was persisted (or by a third-party tool)
+      // can pick up `source.bitrate` here so the next sync's `detectUpgrades`
+      // has both sides of the comparison to work with.
+      updateFields.bitrate = metadata.bitrate;
+    }
     // Tell the adapter which transfer mode is in effect so device-specific
     // tag-write policies (iPod portable, etc.) can fire.
     if (ctx.transferMode) {

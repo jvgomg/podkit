@@ -434,6 +434,13 @@ describe('MusicPipeline - basic execution', () => {
     expect(trackInput.compilation).toBe(true);
   });
 
+  // Initial-add bitrate baseline: when a lossy source carries a bitrate,
+  // the copy executor MUST persist it on the iPod track. Without this,
+  // `detectUpgrades`'s `source.bitrate && ipod.bitrate` quality-upgrade gate
+  // silently no-ops on the next sync because the iPod side reads back as 0
+  // (libgpod's missing-bitrate sentinel). Pre-existing tracks that landed
+  // before this guarantee need `--force-sync-tags` to backfill (handled by
+  // postProcessBitrateBaseline in handler.ts); new copies pick it up here.
   it('passes source bitrate to addTrack for copy operation', async () => {
     const executor = new MusicPipeline(deps);
     const plan: SyncPlan = {
@@ -458,6 +465,37 @@ describe('MusicPipeline - basic execution', () => {
     expect(mockAdapter.addTrack.mock.calls.length).toBe(1);
     const trackInput = mockAdapter.addTrack.mock.calls[0]![0] as Record<string, unknown>;
     expect(trackInput.bitrate).toBe(192);
+  });
+
+  // Defensive: when the source bitrate is unknown (some Subsonic adapter
+  // responses omit it), the copy executor MUST leave `bitrate` undefined on
+  // the trackInput rather than fabricating 0. The iPod adapter normalises
+  // missing bitrate to 0 at read time, but writing an explicit 0 here would
+  // be a lie — `--force-sync-tags` can later distinguish "unset" (0 on
+  // read) from "intentional 0" (none of our codecs do this) and backfill.
+  it('omits bitrate from addTrack input when source bitrate is unknown', async () => {
+    const executor = new MusicPipeline(deps);
+    const plan: SyncPlan = {
+      operations: [
+        {
+          type: 'add-direct-copy',
+          source: createCollectionTrack('Artist', 'Song', 'Album', 'mp3', {
+            // no bitrate
+          }),
+        },
+      ],
+      estimatedTime: 1,
+      estimatedSize: 5000000,
+      warnings: [],
+    };
+
+    for await (const _p of executor.execute(plan)) {
+      // consume
+    }
+
+    expect(mockAdapter.addTrack.mock.calls.length).toBe(1);
+    const trackInput = mockAdapter.addTrack.mock.calls[0]![0] as Record<string, unknown>;
+    expect(trackInput.bitrate).toBeUndefined();
   });
 
   it('uses FFmpeg output bitrate (not source bitrate) for transcode operation', async () => {
@@ -2034,6 +2072,46 @@ describe('MusicPipeline - update-metadata operations', () => {
     }
 
     expect(updateCalled).toBe(true);
+  });
+
+  // Bitrate baseline backfill: when --force-sync-tags routes a bitrate-only
+  // metadata update through the executor, the field must propagate to
+  // updateTrack so detectUpgrades has both sides of source.bitrate &&
+  // ipod.bitrate populated on the next sync. Without this, the
+  // postProcessBitrateBaseline pass plans operations the executor silently
+  // drops.
+  it('propagates bitrate from metadata to updateTrack', async () => {
+    let updateFields: Record<string, unknown> | null = null;
+    const deviceTrack = createMockDeviceTrack('Artist', 'Song', 'Album', 'Music/BITRATE.m4a', {
+      update: (fields: Record<string, unknown>) => {
+        updateFields = fields;
+        return deviceTrack;
+      },
+    });
+
+    mockAdapter = createMockDeviceAdapter([deviceTrack]);
+    deps = createDependencies(mockAdapter, mockTranscoder);
+
+    const executor = new MusicPipeline(deps);
+    const plan: SyncPlan = {
+      operations: [
+        {
+          type: 'update-metadata',
+          track: deviceTrack,
+          metadata: { bitrate: 256 },
+        },
+      ],
+      estimatedTime: 0.01,
+      estimatedSize: 0,
+      warnings: [],
+    };
+
+    for await (const _p of executor.execute(plan)) {
+      // iterate
+    }
+
+    expect(updateFields).not.toBeNull();
+    expect(updateFields!.bitrate).toBe(256);
   });
 
   it('throws error when track not found', async () => {
@@ -4247,6 +4325,161 @@ describe('artworkSink: pipeline hands bytes to adapter.setTrackArtwork', () => {
     // noop sink, even though source.artworkHash was supplied. The pipeline
     // still writes the minimal copy sync tag for the addTrack input
     // (quality + transferMode), but the *artworkHash* field stays absent.
+    const syncTagWithHash = db.writeSyncTag.mock.calls.find(
+      ([, update]) => (update as Record<string, unknown>).artworkHash !== undefined
+    );
+    expect(syncTagWithHash).toBeUndefined();
+  });
+
+  // Initial-add baseline contract: when the adapter supplies a source artwork
+  // hash (the `--check-artwork` flow) and artwork bytes successfully land on
+  // the device, the syncTag MUST carry the source's hash from the very first
+  // sync. No second pass with `--force-sync-tags` is required to establish the
+  // baseline. The next sync's `detectUpgrades` compares
+  // `source.artworkHash` against `device.syncTag.artworkHash` to decide
+  // whether artwork changed; without the baseline, no comparison fires and
+  // artwork-change detection is silently disabled until the user opts into
+  // `--force-sync-tags`.
+  it('source.artworkHash + delivering sink → baseline written on initial add (no force-sync-tags)', async () => {
+    const bytes = Buffer.from('cover-bytes-from-adapter');
+    const db = makeDbForSink('database');
+
+    // Source has its own artwork hash (e.g., Subsonic adapter with
+    // --check-artwork on, or directory adapter that hashed embedded art).
+    // Crucially, this hash differs from the bytes the adapter returns —
+    // the assertion verifies the pipeline prefers source.artworkHash over
+    // extractedHash, matching the priority logic in transfer.ts.
+    const sourceHash = 'feedface';
+    const sourceWithHash = createCollectionTrack('Artist', 'Song', 'Album', 'wav', {
+      artworkHash: sourceHash,
+    });
+    const plan: SyncPlan = {
+      ...createEmptyPlan(),
+      operations: [{ type: 'add-direct-copy', source: sourceWithHash } satisfies SyncOperation],
+    };
+
+    const adapter = makeAdapterWithBytes(bytes);
+    const executor = new MusicPipeline(createDependencies(db, transcoder));
+    // Note: no force-sync-tags-equivalent option exists at the pipeline
+    // surface — the gate lives on the handler. This run is the bare
+    // first-sync flow.
+    for await (const _p of executor.execute(plan, {
+      artwork: true,
+      adapter,
+      syncTagConfig: {},
+      transferMode: 'fast',
+    })) {
+      // consume
+    }
+
+    // writeSyncTag must fire with artworkHash === sourceHash. Bytes landed
+    // on the device (database sink), so the hash claim is safe.
+    const syncTagWithHash = db.writeSyncTag.mock.calls.find(
+      ([, update]) => (update as Record<string, unknown>).artworkHash !== undefined
+    );
+    expect(syncTagWithHash).toBeDefined();
+    const writtenHash = (syncTagWithHash![1] as Record<string, unknown>).artworkHash;
+    expect(writtenHash).toBe(sourceHash);
+  });
+
+  // Sibling contract for add-transcode: same guarantee for the lossless-to-
+  // lossy path. The initial syncTag (built from preset/encoding/codec) is
+  // written during addTrack; the artworkHash is appended after the artwork
+  // bytes land. Both writes happen on the first sync with no extra flags.
+  it('source.artworkHash + add-transcode → baseline written on initial add (no force-sync-tags)', async () => {
+    const bytes = Buffer.from('flac-embedded-cover-bytes');
+    const db = makeDbForSink('database');
+    // For add-transcode, transfer.ts builds the syncTag up front and passes
+    // it via trackInput.syncTag. The artworkHash append (line 177 of
+    // transfer.ts) only fires when `track.syncTag` is already populated on
+    // the returned track. Make the mock honour that contract so the test
+    // exercises the realistic addTrack-then-writeSyncTag sequence.
+    db.addTrack = mock(
+      (input: { title: string; artist: string; album?: string; syncTag?: unknown }) => {
+        const track = createMockDeviceTrack(
+          String(input.artist ?? ''),
+          String(input.title),
+          String(input.album ?? ''),
+          `Music/MOCK.m4a`,
+          { artworkSink: 'database' }
+        );
+        // Round-trip the syncTag — real adapters carry the input syncTag
+        // onto the returned track so transfer.ts can detect it exists.
+        return { ...track, syncTag: (input.syncTag as DeviceTrack['syncTag']) ?? null };
+      }
+    );
+
+    const sourceHash = 'cafebabe';
+    const sourceWithHash = createCollectionTrack('Artist', 'Song', 'Album', 'flac', {
+      artworkHash: sourceHash,
+      lossless: true,
+    });
+    const plan: SyncPlan = {
+      ...createEmptyPlan(),
+      operations: [
+        {
+          type: 'add-transcode',
+          source: sourceWithHash,
+          preset: { name: 'high', targetCodec: 'aac' },
+        } satisfies SyncOperation,
+      ],
+    };
+
+    const adapter = makeAdapterWithBytes(bytes);
+    const executor = new MusicPipeline(createDependencies(db, transcoder));
+    for await (const _p of executor.execute(plan, {
+      artwork: true,
+      adapter,
+      syncTagConfig: { encodingMode: 'vbr' },
+      transferMode: 'fast',
+    })) {
+      // consume
+    }
+
+    const syncTagWithHash = db.writeSyncTag.mock.calls.find(
+      ([, update]) => (update as Record<string, unknown>).artworkHash !== undefined
+    );
+    expect(syncTagWithHash).toBeDefined();
+    const writtenHash = (syncTagWithHash![1] as Record<string, unknown>).artworkHash;
+    expect(writtenHash).toBe(sourceHash);
+  });
+
+  // Symmetric negative: source has NO artworkHash (adapter ran without
+  // --check-artwork) and the source has no embedded artwork either —
+  // transferArtwork returns undefined and writeSyncTag must NOT be invoked
+  // with an artworkHash field. This pins the "only baseline when there is
+  // something to baseline" rule, complementing the noop-sink suppression.
+  it('source without artworkHash and no extracted bytes → no baseline written', async () => {
+    const db = makeDbForSink('database');
+
+    const source = createCollectionTrack('Artist', 'Song', 'Album', 'wav');
+    const plan: SyncPlan = {
+      ...createEmptyPlan(),
+      operations: [{ type: 'add-direct-copy', source } satisfies SyncOperation],
+    };
+
+    // Adapter returns null bytes — simulates the "no artwork available" path
+    // (audio file has no embedded art, no sidecar).
+    const adapter: CollectionAdapter<CollectionTrack, TrackFilter> = {
+      name: 'fake',
+      adapterType: 'directory',
+      connect: async () => undefined,
+      disconnect: async () => undefined,
+      getItems: async () => [],
+      getFilteredItems: async () => [],
+      getFileAccess: (track) => ({ type: 'path', path: track.filePath }) as FileAccess,
+      getArtwork: async () => null,
+    };
+    const executor = new MusicPipeline(createDependencies(db, transcoder));
+    for await (const _p of executor.execute(plan, {
+      artwork: true,
+      adapter,
+      syncTagConfig: {},
+      transferMode: 'fast',
+    })) {
+      // consume
+    }
+
     const syncTagWithHash = db.writeSyncTag.mock.calls.find(
       ([, update]) => (update as Record<string, unknown>).artworkHash !== undefined
     );

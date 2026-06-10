@@ -30,6 +30,11 @@ an architecture doc to match a change you're shipping, ask whether the
   works in podkit's device adapters, what survives a partial failure, and
   how the next sync's rescan self-heals. Companion to doc-041's living
   journal.
+- **[sync/upgrades](./sync/upgrades.md)** — How the sync engine decides a
+  track on the device should be re-transferred from the source —
+  format-upgrade vs quality-upgrade gates, why format-upgrade is
+  suppressed under transcoding, and how the bitrate baseline is written
+  on copy + backfilled via `--force-sync-tags`.
 - **[testing/vm-build-orchestration](./testing/vm-build-orchestration.md)** —
   How `bun run test:vm` guarantees a fresh podkit binary lands in the
   device-harness VM and detects baseline drift.
@@ -59,6 +64,7 @@ documents/architecture/
 │   ├── planning.md                   # ✅ landed
 │   ├── execution-pipeline.md         # ⏳ pending
 │   ├── save-transactions.md          # ✅ landed (companion to doc-041 journal)
+│   ├── upgrades.md                   # ✅ landed
 │   ├── content-type-handlers.md      # ⏳ pending
 │   └── transfer-modes.md             # ⏳ pending (settled version of doc-012)
 ├── device/                           # device adapter pattern

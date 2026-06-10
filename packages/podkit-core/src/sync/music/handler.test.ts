@@ -1523,6 +1523,197 @@ describe('MusicHandler', () => {
       expect(diff.existing).toHaveLength(1);
       expect(diff.toUpdate).toHaveLength(0);
     });
+
+    // Rescan-only gate: when an EXISTING (already-on-device) lossy track is
+    // missing its artwork-hash baseline, `--force-sync-tags` is still
+    // required to establish the baseline retroactively. This pins the
+    // documented split: initial-add baselines are written during execution
+    // (transfer.ts); rescans of pre-existing tracks remain opt-in so already
+    // set-up iPods do not silently re-tag their entire library after an
+    // upgrade.
+    test('lossy existing track without baseline is NOT rescanned without forceSyncTags', () => {
+      const h = createMusicHandler(makeConfig({ quality: 'high', encoding: 'vbr' }));
+      const source = makeCollectionTrack({
+        fileType: 'mp3',
+        lossless: false,
+        artworkHash: 'feedface',
+      });
+      // Existing tag has no art= field — the pre-feature state.
+      const device = makeDeviceTrack({
+        filetype: 'MPEG audio file',
+        bitrate: 256,
+        syncTag: parseSyncTag('[podkit:v1 quality=copy]') ?? undefined,
+      });
+      const diff = makeSyncTagDiff(source, device);
+
+      h.postProcessDiff(diff);
+
+      expect(diff.existing).toHaveLength(1);
+      expect(diff.toUpdate).toHaveLength(0);
+    });
+
+    // Companion pin: WITH --force-sync-tags, the same lossy existing track
+    // gains an art= baseline. This proves the gate flips behaviour exactly
+    // as advertised — opt-in backfill, not silent backfill.
+    test('lossy existing track without baseline IS rescanned with forceSyncTags', () => {
+      const h = createMusicHandler(
+        makeConfig({
+          quality: 'high',
+          encoding: 'vbr',
+          forceSyncTags: true,
+        })
+      );
+      const source = makeCollectionTrack({
+        fileType: 'mp3',
+        lossless: false,
+        artworkHash: 'feedface',
+      });
+      const device = makeDeviceTrack({
+        filetype: 'MPEG audio file',
+        bitrate: 256,
+        syncTag: parseSyncTag('[podkit:v1 quality=copy]') ?? undefined,
+      });
+      const diff = makeSyncTagDiff(source, device);
+
+      h.postProcessDiff(diff);
+
+      expect(diff.toUpdate).toHaveLength(1);
+      expect(diff.toUpdate[0]!.reasons[0]).toBe('sync-tag-write');
+      expect(diff.toUpdate[0]!.syncTag?.artworkHash).toBe('feedface');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // postProcessBitrateBaseline (via postProcessDiff)
+  //
+  // Symmetric to postProcessSyncTags's artwork-hash baseline backfill. Gated
+  // on `--force-sync-tags`; emits a metadata-only update carrying the source
+  // bitrate when the iPod track is missing the field (bitrate === 0) and the
+  // source has a bitrate to lend. This unblocks `detectUpgrades`'s
+  // `source.bitrate && ipod.bitrate` quality-upgrade gate for tracks that
+  // landed before the bitrate was persisted on copy.
+  // ---------------------------------------------------------------------------
+
+  describe('postProcessBitrateBaseline', () => {
+    function makeBitrateDiff(
+      source: CollectionTrack,
+      device: DeviceTrack
+    ): UnifiedSyncDiff<CollectionTrack, DeviceTrack> {
+      return {
+        toAdd: [],
+        toRemove: [],
+        existing: [{ source, device }],
+        toUpdate: [],
+      };
+    }
+
+    test('existing track with bitrate=0 + source bitrate IS backfilled with forceSyncTags', () => {
+      const h = createMusicHandler(
+        makeConfig({
+          quality: 'high',
+          encoding: 'vbr',
+          forceSyncTags: true,
+        })
+      );
+      const source = makeCollectionTrack({
+        fileType: 'mp3',
+        lossless: false,
+        bitrate: 256,
+      });
+      const device = makeDeviceTrack({
+        filetype: 'MPEG audio file',
+        bitrate: 0, // pre-feature state: bitrate not persisted on add
+      });
+      const diff = makeBitrateDiff(source, device);
+
+      h.postProcessDiff(diff);
+
+      expect(diff.toUpdate).toHaveLength(1);
+      expect(diff.toUpdate[0]!.reasons).toContain('metadata-changed');
+      const change = diff.toUpdate[0]!.changes?.find((c) => c.field === 'bitrate');
+      expect(change).toBeDefined();
+      expect(change!.to).toBe('256');
+    });
+
+    test('existing track with bitrate=0 is NOT backfilled without forceSyncTags', () => {
+      const h = createMusicHandler(makeConfig({ quality: 'high', encoding: 'vbr' }));
+      const source = makeCollectionTrack({
+        fileType: 'mp3',
+        lossless: false,
+        bitrate: 256,
+      });
+      const device = makeDeviceTrack({
+        filetype: 'MPEG audio file',
+        bitrate: 0,
+      });
+      const diff = makeBitrateDiff(source, device);
+
+      h.postProcessDiff(diff);
+
+      // Without forceSyncTags, the baseline backfill is silent — no rewrite.
+      expect(diff.existing).toHaveLength(1);
+      expect(diff.toUpdate).toHaveLength(0);
+    });
+
+    // Idempotency: a track that already has a non-zero bitrate must not get
+    // a redundant rewrite, even with forceSyncTags on. The pass is a true
+    // baseline-fill, not a "stamp every track" sweep.
+    test('existing track with bitrate set is NOT touched even with forceSyncTags', () => {
+      const h = createMusicHandler(
+        makeConfig({
+          quality: 'high',
+          encoding: 'vbr',
+          forceSyncTags: true,
+        })
+      );
+      const source = makeCollectionTrack({
+        fileType: 'mp3',
+        lossless: false,
+        bitrate: 320,
+      });
+      const device = makeDeviceTrack({
+        filetype: 'MPEG audio file',
+        bitrate: 192,
+      });
+      const diff = makeBitrateDiff(source, device);
+
+      h.postProcessDiff(diff);
+
+      // No bitrate-baseline rewrite: the iPod side is already populated.
+      const hasBitrateChange = diff.toUpdate.some((u) =>
+        u.changes?.some((c) => c.field === 'bitrate' && c.from === '0')
+      );
+      expect(hasBitrateChange).toBe(false);
+    });
+
+    // Defensive: when the source itself lacks a bitrate (some adapter
+    // responses omit it), the backfill MUST NOT fabricate a value — the
+    // pass leaves the track untouched and lets later passes / future syncs
+    // pick up the field when a richer source arrives.
+    test('source without bitrate does NOT trigger backfill even with forceSyncTags', () => {
+      const h = createMusicHandler(
+        makeConfig({
+          quality: 'high',
+          encoding: 'vbr',
+          forceSyncTags: true,
+        })
+      );
+      const source = makeCollectionTrack({
+        fileType: 'mp3',
+        lossless: false,
+        // no bitrate
+      });
+      const device = makeDeviceTrack({
+        filetype: 'MPEG audio file',
+        bitrate: 0,
+      });
+      const diff = makeBitrateDiff(source, device);
+
+      h.postProcessDiff(diff);
+
+      expect(diff.existing).toHaveLength(1);
+      expect(diff.toUpdate).toHaveLength(0);
+    });
   });
 
   // ---------------------------------------------------------------------------

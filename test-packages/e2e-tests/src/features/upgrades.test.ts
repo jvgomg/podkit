@@ -1,21 +1,18 @@
 /**
  * E2E tests for self-healing sync (upgrade detection and application).
  *
- * Tests the complete metadata-correction cycle:
- * 1. Sync FLAC tracks to a dummy iPod
- * 2. Modify source track metadata (genre, year)
- * 3. Re-sync and verify metadata corrections are detected and applied
- * 4. Verify the track count is unchanged (corrections, not adds)
- *
- * Note: We test metadata-correction upgrades rather than format-upgrade or
- * quality-upgrade because:
- * - format-upgrade is suppressed when transcodingActive is true (which is the
- *   expected state when quality != 'lossless')
- * - quality-upgrade requires bitrate to be populated on the iPod track, which
- *   doesn't happen for copied (compatible lossy) files in the current executor
- *
- * Metadata-correction is the most reliable upgrade path to test E2E since
- * it works purely through metadata comparison (genre, year, trackNumber, etc.)
+ * Covers four upgrade paths:
+ * - Metadata correction (genre, year, trackNumber, ...) — purely metadata
+ *   comparison, runs on every adapter.
+ * - Normalization update — soundcheck / ReplayGain re-write when source
+ *   values change.
+ * - Format upgrade (MP3 → FLAC re-routed to transcode) — see
+ *   `documents/architecture/sync/upgrades.md` for why this gate is
+ *   suppressed when the iPod track is already AAC.
+ * - Quality upgrade (MP3 source bitrate rises past the iPod-stored copy) —
+ *   requires both `source.bitrate` and the iPod track's persisted bitrate
+ *   to populate the `detectUpgrades` gate; the second is written on copy
+ *   today, with `--force-sync-tags` backfilling pre-existing tracks.
  */
 
 import { describe, it, expect } from 'bun:test';
@@ -588,6 +585,136 @@ describe('self-healing sync: format upgrade (MP3 → FLAC)', () => {
         // decoder and playback would fail.
         expect(m4aFiles).toHaveLength(1);
         expect(remainingMp3Files).toHaveLength(0);
+      } finally {
+        await rm(collectionDir, { recursive: true, force: true });
+        await rm(configDir, { recursive: true, force: true });
+      }
+    });
+  }, 120000);
+});
+
+// =============================================================================
+// Quality upgrade: MP3 source bitrate rises past the iPod-stored copy.
+//
+// Closes the gap documented at the top of the file: `detectUpgrades`'s
+// quality-upgrade gate compares `source.bitrate && ipod.bitrate`. New copies
+// receive the source bitrate during `transferToIpod` (see
+// `packages/podkit-core/src/sync/music/transfer.ts:toDeviceTrackInput`), so
+// re-syncing a higher-bitrate source file detects the upgrade WITHOUT
+// `--force-sync-tags`.
+//
+// Thresholds (see `packages/podkit-core/src/sync/engine/upgrades.ts`):
+// - `MIN_BITRATE_INCREASE_KBPS` = 64 kbps absolute delta, OR
+// - `MIN_BITRATE_MULTIPLIER`    = 1.5x relative ratio.
+// 96 → 256 kbps passes both gates comfortably.
+// =============================================================================
+
+/**
+ * Generate an MP3 at a specified bitrate (kbps). Used by the quality-upgrade
+ * test to swap a low-bitrate source for a higher-bitrate one.
+ */
+function generateMp3AtBitrate(
+  outputPath: string,
+  metadata: { title: string; artist: string; album: string },
+  bitrateKbps: number
+): void {
+  execSync(
+    `ffmpeg -f lavfi -i "sine=frequency=440:sample_rate=44100:duration=2" ` +
+      `-metadata title="${metadata.title}" ` +
+      `-metadata artist="${metadata.artist}" ` +
+      `-metadata album="${metadata.album}" ` +
+      `-b:a ${bitrateKbps}k -y "${outputPath}"`,
+    { stdio: 'ignore' }
+  );
+}
+
+describe('self-healing sync: quality upgrade (MP3 bitrate increase)', () => {
+  it('replaces the iPod track when source bitrate rises significantly', async () => {
+    requireFFmpeg();
+    await withTarget(async (target) => {
+      const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
+      const collectionDir = await mkdtemp(join(tmpdir(), 'podkit-quality-upgrade-'));
+
+      try {
+        const trackMeta = {
+          title: 'Quality Test',
+          artist: 'Upgrade Artist',
+          album: 'Upgrade Album',
+        };
+
+        // Step 1: Sync the source at 96 kbps. With the persisted bitrate,
+        // the iPod track will carry `bitrate = 96` for the next-sync
+        // comparison.
+        generateMp3AtBitrate(join(collectionDir, 'track.mp3'), trackMeta, 96);
+
+        const configPath = await createConfigFile(configDir, { source: collectionDir });
+
+        const { result: result1, json: json1 } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--json',
+        ]);
+        expect(result1.exitCode).toBe(0);
+        expect(json1?.result?.completed).toBe(1);
+
+        const tracksAfterFirstSync = await target.getTracks();
+        expect(tracksAfterFirstSync).toHaveLength(1);
+        // Pin the bitrate is actually persisted on the iPod side — without
+        // this, the quality-upgrade gate cannot fire. Allow a small VBR
+        // wiggle (FFmpeg may report 96.x kbps as 95 or 97 in libgpod).
+        const initialBitrate = tracksAfterFirstSync[0]!.bitrate;
+        expect(initialBitrate).toBeGreaterThan(0);
+        expect(initialBitrate).toBeLessThan(150);
+
+        // Step 2: Replace source with a 256 kbps re-encode. Same metadata,
+        // same file path — the matcher still considers it the same track.
+        generateMp3AtBitrate(join(collectionDir, 'track.mp3'), trackMeta, 256);
+
+        // Step 3a: Dry-run first to pin the plan reports a quality-upgrade.
+        // Without this assertion, a future regression that silently filtered
+        // out the upgrade (e.g. classifier returning copy instead of upgrade)
+        // could let the test still pass on the bitrate check below if some
+        // unrelated codepath happened to refresh the field.
+        const { json: dryJson } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--dry-run',
+          '--json',
+        ]);
+        expect(dryJson?.plan?.updateBreakdown?.['quality-upgrade']).toBe(1);
+
+        // Step 3: Re-sync WITHOUT `--force-sync-tags`. The expectation
+        // is that the quality-upgrade gate fires now that both sides of
+        // the bitrate comparison are populated.
+        const { result: result2, json: json2 } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--json',
+        ]);
+        expect(result2.exitCode).toBe(0);
+        expect(json2?.success).toBe(true);
+        expect(json2?.result?.completed).toBe(1);
+
+        // Step 4: Track count unchanged — this is an upgrade (file
+        // replacement), not an add.
+        const tracksAfterUpgrade = await target.getTracks();
+        expect(tracksAfterUpgrade).toHaveLength(1);
+
+        // Step 5: The iPod track's bitrate now reflects the upgraded
+        // source. If quality-upgrade had failed to fire, the bitrate
+        // would remain at the original 96 kbps.
+        const upgradedBitrate = tracksAfterUpgrade[0]!.bitrate;
+        expect(upgradedBitrate).toBeGreaterThan(initialBitrate);
+        expect(upgradedBitrate).toBeGreaterThan(200);
       } finally {
         await rm(collectionDir, { recursive: true, force: true });
         await rm(configDir, { recursive: true, force: true });

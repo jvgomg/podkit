@@ -329,6 +329,9 @@ export class MusicHandler implements ContentTypeHandler<
     // Pass 4: Sync tag writing
     this.postProcessSyncTags(diff);
 
+    // Pass 4.5: Bitrate baseline backfill (force-sync-tags only)
+    this.postProcessBitrateBaseline(diff);
+
     // Pass 5: Force metadata rewrite
     this.postProcessForceMetadata(diff);
   }
@@ -657,6 +660,17 @@ export class MusicHandler implements ContentTypeHandler<
    * This establishes the artwork hash baseline so --check-artwork can detect future changes.
    * The baseline assumes the iPod artwork currently matches the source, which is the
    * expected state for a freshly synced collection.
+   *
+   * Scope (deliberate): this pass operates ONLY on `existing` matches — tracks
+   * already on the device. Initial-add baselines are written during execution
+   * by `MusicTransferOps` (see `transfer.ts`): when the source carries an
+   * `artworkHash` (e.g. the directory adapter computed one, or Subsonic was
+   * run with `--check-artwork`) and the artwork bytes successfully land on
+   * the device, the syncTag picks up the hash on the first sync — no extra
+   * flag required. `--force-sync-tags` stays opt-in here so already-set-up
+   * iPods do not silently re-tag their entire library after upgrading to a
+   * podkit version that ships this feature. Backfilling pre-feature tracks
+   * remains an explicit `--force-sync-tags` action.
    */
   private postProcessSyncTags(diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack>): void {
     if (!(this.config.raw.forceSyncTags && this.config.resolvedQuality)) return;
@@ -712,6 +726,51 @@ export class MusicHandler implements ContentTypeHandler<
       }
 
       return { reasons: ['sync-tag-write'], changes: [], syncTag: expectedTag };
+    });
+  }
+
+  /**
+   * Pass 4.5: Bitrate baseline backfill — gated on `--force-sync-tags`.
+   *
+   * New copies have `source.bitrate` written into the iPod track record
+   * during execution (`transfer.ts:toDeviceTrackInput`). Existing iPod tracks
+   * added before that path landed (or by a third-party tool that omitted the
+   * field) carry `bitrate = 0`. With both sides of `detectUpgrades`'s
+   * `source.bitrate && ipod.bitrate` gate populated, quality-upgrade can fire
+   * when the source bitrate later rises significantly above the iPod's stored
+   * value; without the iPod side, the gate silently no-ops.
+   *
+   * This pass is the symmetric counterpart of `postProcessSyncTags`'s
+   * artwork-hash baseline backfill: opt-in (`--force-sync-tags`) so an
+   * already-set-up iPod does not silently re-tag its entire library on the
+   * next sync, and idempotent (only fires when `ipod.bitrate === 0` and
+   * `source.bitrate` is known).
+   *
+   * Emits a `update-metadata` operation carrying the source bitrate. The
+   * pipeline's `executeUpdateMetadata` propagates the field via
+   * `updateTrack`. No file replacement.
+   */
+  private postProcessBitrateBaseline(diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack>): void {
+    if (!this.config.raw.forceSyncTags) return;
+
+    partitionExisting(diff, (match) => {
+      // Only backfill when the iPod side is missing a bitrate AND the source
+      // has one to lend. The 0-vs-undefined distinction matters: the iPod
+      // adapter normalises a missing libgpod bitrate to 0 (it's a `number`,
+      // not optional), so 0 is the "not populated" sentinel.
+      if (match.device.bitrate !== 0) return null;
+      if (!match.source.bitrate) return null;
+
+      return {
+        reasons: ['metadata-changed'],
+        changes: [
+          {
+            field: 'bitrate',
+            from: '0',
+            to: String(match.source.bitrate),
+          },
+        ],
+      };
     });
   }
 

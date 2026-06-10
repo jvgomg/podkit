@@ -278,10 +278,23 @@ export class MusicTransferOps {
     // Replace the audio file (preserves database entry, playlists, play counts)
     foundTrack = this.device.replaceTrackFile(foundTrack, sourcePath);
 
-    // Update technical metadata to reflect the new file
+    // Update technical metadata to reflect the new file.
+    //
+    // Bitrate resolution order:
+    //   1. `prepared.bitrate` — populated by the transcoder (upgrade-transcode
+    //      and upgrade-optimized-copy don't set this today either, but
+    //      future codepaths might). Always preferred when present because
+    //      it reflects the ACTUAL output bytes, not the source's reported
+    //      bitrate.
+    //   2. `source.bitrate` — the upgraded source's reported bitrate.
+    //      Required for `upgrade-direct-copy`: without it, a quality-upgrade
+    //      (e.g. 96 → 256 kbps MP3 source bump) replaces the file but leaves
+    //      the iPod bitrate field at the OLD value, which makes the next
+    //      sync re-detect the same quality-upgrade in an infinite loop.
+    const resolvedBitrate = bitrate ?? source.bitrate;
     const updateFields: import('../../device/adapter.js').DeviceTrackMetadata = {
       filetype,
-      ...(bitrate !== undefined && { bitrate }),
+      ...(resolvedBitrate !== undefined && { bitrate: resolvedBitrate }),
       ...(source.duration !== undefined && { duration: source.duration }),
       ...(source.normalization !== undefined && { normalization: source.normalization }),
     };

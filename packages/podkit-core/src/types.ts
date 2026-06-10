@@ -40,6 +40,15 @@ export interface TrackMetadata {
   discNumber?: number;
   compilation?: boolean;
   duration?: number; // milliseconds
+  /**
+   * Source bitrate in kbps. Carried on metadata-only updates so the
+   * `--force-sync-tags` backfill can populate a missing bitrate on an
+   * existing iPod track (the symmetric counterpart of the artwork-hash
+   * baseline backfill in `postProcessSyncTags`). New copies receive the
+   * bitrate at add time via `transfer.ts`; this field is for the backfill
+   * path only.
+   */
+  bitrate?: number;
   /** Audio normalization data (ReplayGain, Sound Check) */
   normalization?: AudioNormalization;
   /** Comment field */
