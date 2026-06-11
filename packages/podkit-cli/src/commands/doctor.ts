@@ -33,6 +33,8 @@ import { OutputContext } from '../output/index.js';
 import { CliError, runAction, type CliErrorOutput } from '../errors.js';
 import { loadCoreOrFail, type CoreLoaderDeps } from '../handler-deps.js';
 import { withCleanOptions } from '../utils/option-source.js';
+import { shellQuote } from '../utils/shell.js';
+import { formatFailureCopy } from './doctor-failure-copy.js';
 
 /**
  * Error codes emitted by `podkit doctor`.
@@ -210,16 +212,6 @@ interface SuggestedAction {
   reason: string;
   /** Exact command to run, including the user's `-d` argument. */
   command: string;
-}
-
-/**
- * Quote a CLI argument so users can copy-paste the action verbatim. Returns
- * an unquoted token when the value has no whitespace or shell metacharacters,
- * otherwise wraps it in double quotes with embedded `"` and `\` escaped.
- */
-function shellQuote(value: string): string {
-  if (/^[A-Za-z0-9_./:@%+,=-]+$/.test(value)) return value;
-  return `"${value.replace(/(["\\$`])/g, '\\$1')}"`;
 }
 
 /**
@@ -975,47 +967,11 @@ export async function runDoctorDiagnostics(
         if (check.repairOnly || check.scope !== 'database-health') continue;
         if (check.status !== 'fail' && check.status !== 'warn') continue;
 
-        const details: string[] = [];
-
-        // Check-specific failure-explanation copy. Route by check id — the
-        // previous unconditional fall-through made every failing check show
-        // artwork wording (TASK-317.02 Bug 3). Some checks (notably
-        // sysinfo-modelnum-mismatch) surface a `warn` rather than `fail` —
-        // the gate below accepts both and lets the per-id branches decide.
-        if ((check.status === 'fail' || check.status === 'warn') && check.details) {
-          const d = check.details as Record<string, unknown>;
-          if (check.id === 'artwork-rebuild' && check.status === 'fail') {
-            if (d.totalEntries !== undefined) {
-              const total = (d.totalEntries as number).toLocaleString();
-              const corrupt = (d.corruptEntries as number).toLocaleString();
-              const healthyEntries = (d.healthyEntries as number).toLocaleString();
-              const pct = d.corruptPercent;
-              details.push(
-                `Corrupt: ${corrupt} / ${total} entries (${pct}%) reference data beyond ithmb file bounds`
-              );
-              details.push(`Healthy: ${healthyEntries} entries with valid offsets`);
-            }
-            details.push('The artwork database is out of sync with the thumbnail files.');
-            details.push('Affected tracks display wrong or missing artwork on the iPod.');
-          } else if (check.id === 'sysinfo-consistency' && check.status === 'fail') {
-            details.push(
-              "The on-disk SysInfoExtended doesn't match the live device — likely a stale file copied from a different iPod."
-            );
-            details.push(
-              'Run `podkit doctor --repair sysinfo-consistency` to refresh it from USB firmware.'
-            );
-          } else if (check.id === 'sysinfo-modelnum-mismatch') {
-            details.push(
-              'The on-disk SysInfo file claims a different model than the firmware reports.'
-            );
-            details.push(
-              'This usually means SysInfo was manually edited or copied from another iPod.'
-            );
-            details.push(
-              'Run `podkit doctor --repair sysinfo-modelnum-mismatch` to refresh it from firmware.'
-            );
-          }
-        }
+        const details = formatFailureCopy(
+          check.id,
+          check.details as Record<string, unknown> | undefined,
+          check.status
+        );
 
         // Build fix command from actions
         const action = actions.find((a) => a.command.includes(check.id));
