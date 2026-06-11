@@ -1,10 +1,10 @@
 ---
 id: TASK-360.05
 title: Guarantee 'errors' bucket for corrupt files in doctor artwork repair
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-05-28 21:28'
-updated_date: '2026-06-09 23:01'
+updated_date: '2026-06-11 07:43'
 labels:
   - doctor
   - artwork
@@ -36,10 +36,10 @@ Guarantee `errors` bucket for any corrupt file. Users should be able to point at
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Per-track source-file validity check runs before `AlbumArtworkCache` short-circuit applies; corrupt/unreadable files always land in a deterministic bucket (`noSource` when the directory adapter drops them at scan time, `errors` when corruption surfaces between scan and extract)
-- [ ] #2 Tighten `doctor-artwork-repair.test.ts:487-517`: precise per-bucket counts replace the sum-only assertion; static-corruption scenario asserts `matched=2, noSource=1, errors=0` with a comment explaining why static corruption lands in `noSource` (adapter parse-failure semantics)
-- [ ] #3 Performance: album-cache lookup behaviour preserved for healthy tracks (no regression); extra work is bounded to a per-track readability check (stat + 16-byte magic probe)
-- [ ] #4 Doctor JSON output surfaces the corrupt file path + reason taxonomy (`missing | unreadable | truncated | badMagic`) in the per-check details so a user can act on it
+- [x] #1 Per-track source-file validity check runs before `AlbumArtworkCache` short-circuit applies; corrupt/unreadable files always land in a deterministic bucket (`noSource` when the directory adapter drops them at scan time, `errors` when corruption surfaces between scan and extract)
+- [x] #2 Tighten `doctor-artwork-repair.test.ts:487-517`: precise per-bucket counts replace the sum-only assertion; static-corruption scenario asserts `matched=2, noSource=1, errors=0` with a comment explaining why static corruption lands in `noSource` (adapter parse-failure semantics)
+- [x] #3 Performance: album-cache lookup behaviour preserved for healthy tracks (no regression); extra work is bounded to a per-track readability check (stat + 16-byte magic probe)
+- [x] #4 Doctor JSON output surfaces the corrupt file path + reason taxonomy (`missing | unreadable | truncated | badMagic`) in the per-check details so a user can act on it
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -94,3 +94,23 @@ To put the static-corruption scenario into `errors`, the directory adapter would
 
 2026-06-10: Architectural finding accepted — static corruption (file invalid on disk at scan time) is dropped by the directory adapter's `music-metadata` parser and lands in `noSource`, not `errors`. Decision: `noSource` is the correct semantic (file is not a usable source). The validity gate fires for transient corruption (changed between scan and extract, Subsonic stream truncation) and is covered by unit tests. AC#2 wording updated to reflect deterministic-bucket-per-scenario.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Added a per-track source-file validity probe (stat + 16-byte magic-byte header check) that runs before `AlbumArtworkCache` short-circuits. Corrupt or unreadable files lose their non-deterministic "inherit from sibling" cache behaviour and land in a deterministic bucket with a structured reason (`missing | unreadable | truncated | badMagic`).
+
+`details.errorDetails[*]` in doctor's JSON output gains optional `path` and `reason` fields so users can act on specific bad files. Backward-compatible.
+
+Magic-byte set covers FLAC, OGG/Opus, MP3 (ID3 and bare MPEG sync), MP4/M4A/AAC, WAV, AIFF/AIFC — matched against the directory adapter's `DEFAULT_EXTENSIONS`.
+
+Album-cache speedup preserved for healthy tracks. Pinned by `extractCount === 1` across two healthy album siblings in the new test.
+
+Architectural finding (accepted): the static-corruption e2e scenario (file overwritten with garbage on disk before sync) is dropped by the directory adapter's `music-metadata` parser at scan time. The corrupt file never reaches the validity gate — it lands in `noSource`, not `errors`. The team-lead decision was that `noSource` is semantically correct ("no usable source"); the validity gate covers the transient class of corruption (Subsonic stream truncation, files replaced/deleted between scan and extract), unit-tested directly.
+
+E2E test updated to assert the realistic outcome (`matched=2, noSource=1, errors=0`) with a comment explaining the adapter behaviour. AC#2 wording was amended mid-implementation to reflect deterministic-bucket-per-scenario.
+
+Landed in commit `785ad57a`. Changeset: `doctor-source-validity-probe.md` (patch, podkit + @podkit/core).
+
+Follow-up worth noting (not filed): doctor's human-readable output doesn't surface the new `path` / `reason` fields — currently JSON-only. Worth a small task if you want them visible without `--json`.
+<!-- SECTION:FINAL_SUMMARY:END -->

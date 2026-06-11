@@ -1,10 +1,10 @@
 ---
 id: TASK-360.01
 title: Confirm doctor is read-only; tighten test or fix mutation
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-28 21:28'
-updated_date: '2026-06-09 22:43'
+updated_date: '2026-06-11 07:42'
 labels:
   - doctor
   - libgpod
@@ -45,7 +45,7 @@ Verify empirically before assuming. Cheap test: SHA-256 hash the ArtworkDB befor
 <!-- AC:BEGIN -->
 - [x] #1 Add hash-stability test: capture ArtworkDB SHA-256 before and after `podkit doctor` for the no-file and empty-0-byte scenarios
 - [x] #2 If both hashes are stable (expected): tighten `doctor.test.ts:211-244` to a single deterministic status, remove the 'libgpod may rewrite' comments
-- [ ] #3 If a hash changes: locate the write site (libgpod parse, close, or doctor code) and either bypass (e.g. use `@podkit/ipod-db` pure-TS parser for read-only paths) or document the constraint
+- [x] #3 If a hash changes: locate the write site (libgpod parse, close, or doctor code) and either bypass (e.g. use `@podkit/ipod-db` pure-TS parser for read-only paths) or document the constraint
 - [x] #4 Record the doctor read-only contract in `documents/architecture/` (new doctor doc or extend conventions.md)
 <!-- AC:END -->
 
@@ -73,3 +73,15 @@ The audit assumed the dummy iPod target starts with no ArtworkDB. It does not: t
 - `test-packages/e2e-tests/src/commands/doctor.test.ts`
 - `documents/architecture/conventions.md`
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Verified empirically: doctor's non-repair path is read-only. SHA-256 of the ArtworkDB is stable across `podkit doctor` runs in all three scenarios (missing file, 0-byte file, valid 944-byte fixture). AC#3 was conditional on the hash changing; since it didn't, no write-site mitigation was needed.
+
+Tightened `doctor.test.ts:211-244` from `['skip','pass']` hedge to deterministic single statuses (`'pass'` for the fixture, `'skip'` for the truncated case) with three hash-stability tests asserting `before === after`. Documented the read-only contract in `documents/architecture/conventions.md` §10 with the full status-decision tree.
+
+Surprise finding: the original test hedge wasn't paranoia about libgpod mutation — it was masking a fixture quirk. The `createTestIpod()` MA147 template ships with a 944-byte valid-but-empty ArtworkDB, so the "no artwork" scenario exercises the parsed-with-zero-images path (`'pass'`), not the missing-file path (`'skip'`). The §6 §10 contract pins this for future readers.
+
+Landed in commit `2331c7c7`.
+<!-- SECTION:FINAL_SUMMARY:END -->

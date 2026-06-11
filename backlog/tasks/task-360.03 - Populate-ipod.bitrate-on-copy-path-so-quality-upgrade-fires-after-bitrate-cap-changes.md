@@ -3,10 +3,10 @@ id: TASK-360.03
 title: >-
   Populate ipod.bitrate on copy path so quality-upgrade fires after bitrate-cap
   changes
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-05-28 21:28'
-updated_date: '2026-06-09 23:58'
+updated_date: '2026-06-11 07:43'
 labels:
   - sync
   - transcoding
@@ -102,3 +102,21 @@ Untouched. Documented in the new architecture doc as Working As Intended: the ga
 - `bun run build` — clean
 - `bun run lint` — 0 warnings, 0 errors
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Closed a latent infinite-loop bug in the quality-upgrade path. `transferUpgradeToIpod` wrote `bitrate: prepared.bitrate` — undefined for direct-copy upgrades (no transcode) — so a quality-upgrade replaced the file but left the iPod bitrate at the OLD value. The next sync detected the same upgrade and re-fired it indefinitely.
+
+Fix: `bitrate: prepared.bitrate ?? source.bitrate` in `transfer.ts:282-302`. Direct-copy upgrades now carry the source bitrate through; subsequent syncs see matching bitrates and converge.
+
+Also added `postProcessBitrateBaseline` (Pass 4.5) in `handler.ts`, symmetric to the artwork-hash baseline backfill, gated on `--force-sync-tags`. Fires only when `ipod.bitrate === 0` and source bitrate known. Plumbed through `TrackMetadata.bitrate?: number`, `planner.changesToMetadata`'s bitrate handler, and `MusicPipeline.executeUpdateMetadata`.
+
+Format-upgrade gate left as-is and documented as Working As Intended in `documents/architecture/sync/upgrades.md` (new). The transcode subsumes format correction when iPod track is already AAC; firing format-upgrade alongside would re-transcode FLAC→AAC bytes on every sync.
+
+E2E test in `upgrades.test.ts`: source bumped 96→256 kbps, dry-run asserts `quality-upgrade: 1`, post-sync iPod bitrate rises past the original. Pins both the infinite-loop fix and the upgrade behaviour.
+
+Landed in commit `2a644afa`. Changeset: `quality-upgrade-infinite-loop-fix.md` (patch, podkit + @podkit/core).
+
+Follow-up: TASK-419 (bidirectional `quality-change` with downgrade + per-device `bitrate.sync` config) was filed to extend this work to the cap-lowering scenario that the original draft framing assumed.
+<!-- SECTION:FINAL_SUMMARY:END -->

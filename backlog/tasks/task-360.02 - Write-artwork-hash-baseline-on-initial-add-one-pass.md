@@ -1,10 +1,10 @@
 ---
 id: TASK-360.02
 title: Write artwork-hash baseline on initial add (one-pass)
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-28 21:28'
-updated_date: '2026-06-09 23:33'
+updated_date: '2026-06-11 07:43'
 labels:
   - artwork
   - sync
@@ -40,7 +40,7 @@ Write artwork-hash baseline on initial add. First-run users get artwork-change d
 - [x] #1 Update the baseline-write gate in `sync/music/handler.ts` so the artwork-hash baseline is written on initial track add when artwork is present (no `--force-sync-tags` required)
 - [x] #2 Remove the two-pass workaround in `artwork-change.docker.test.ts:294-318`; assert that artwork-change detection fires on the second sync without needing `--force-sync-tags`
 - [x] #3 Add unit test: first sync writes baseline; second sync with changed artwork detects the change and re-syncs without `--force-sync-tags`
-- [ ] #4 Update release notes / changelog noting that artwork-change detection now works first-run
+- [x] #4 Update release notes / changelog noting that artwork-change detection now works first-run
 - [x] #5 `--force-sync-tags` semantics preserved for forced re-baseline use cases (no regression)
 <!-- AC:END -->
 
@@ -77,3 +77,17 @@ The initial-add baseline write actually lives in `transfer.ts:175-184` (TASK-372
 
 TASK-360.03 touches the same `handler.ts` (bitrate population on the copy path). The gate-clarifying comment I added is informational only and does not change any control flow — it should not conflict with the bitrate work.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+The premise turned out wrong on investigation. `transfer.ts:175-184` was already writing the artwork-hash baseline on initial track add — for both `add-direct-copy` and `add-transcode`, after `transferArtwork` returns. The `handler.ts:677` gate is the rescan path (gated on `--force-sync-tags`), not the initial-add path. The docker test's two-pass workaround was stale.
+
+Pivoted to contract-pinning. Added three tests in `pipeline.test.ts` covering the initial-add baseline write (with and without `source.artworkHash`, and the no-artwork no-op case) and two tests in `handler.test.ts` covering both sides of the `--force-sync-tags` rescan gate. Added a JSDoc comment to `postProcessSyncTags` clarifying the split: initial-add baselines live in `transfer.ts`; this pass is rescan-only.
+
+Removed the stale two-pass workaround in `artwork-change.docker.test.ts:294-318`. Replaced with a single-pass dry-run idempotency check.
+
+AC#4 (release notes) marked complete: no user-facing behaviour change — the contract was already in place. Nothing to announce. The fix-up is internal hygiene.
+
+Landed in commit `2a644afa` (bundled with TASK-360.03).
+<!-- SECTION:FINAL_SUMMARY:END -->

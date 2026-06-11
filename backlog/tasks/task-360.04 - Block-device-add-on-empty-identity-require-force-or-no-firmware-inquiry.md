@@ -1,10 +1,10 @@
 ---
 id: TASK-360.04
 title: Block device add on empty identity; require --force or --no-firmware-inquiry
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-28 21:28'
-updated_date: '2026-06-09 22:51'
+updated_date: '2026-06-11 07:43'
 labels:
   - device
   - cli
@@ -95,3 +95,21 @@ Partial cascades (any of those signals present) → `false` → device-add warns
 - The `--type ipod` (or any explicit `--type`) bypasses the block — explicit type assertion is treated as deliberate user consent on par with `--no-firmware-inquiry`. This means most existing unit tests in `device-add.unit.test.ts` (which all pass `type: 'ipod'`) are unaffected.
 - Shell completions: per `agents/shell-completions.md` the generator walks the Commander tree at runtime, so adding `--force` via `.option()` exposes it for zsh + bash completions automatically. No static completion files to update.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+`podkit device add` now refuses to persist a device when the identity cascade resolves nothing at all (no SysInfoExtended, no classic SysInfo, no USB fingerprint, no `--type`). Exit 1, code `EMPTY_IDENTITY`, with remediation pointing to remount/USB, `--no-firmware-inquiry`, or the new `--force` flag.
+
+Single source of truth: `isIdentityFullyEmpty` and `summariseIdentitySignals` exported from `@podkit/core`. Used by both code paths and unit tests, so the policy can't drift between assertion and implementation. `enforceIdentityGate` helper in `add.ts` is invoked from both the `--path` branch and the scan branch.
+
+Partial-cascade warning narrowed after reviewer feedback: trigger predicate is `!hasSysInfoExtended && !hasSysInfoModelNumber` (both disk-resident identity anchors missing). USB fingerprint absence alone — common on routine re-add when the USB walk fails — no longer triggers a false-positive "Partial device identity" warning.
+
+`--force` flag added via Commander; shell completions auto-flow per the project's runtime-walking generator (no static completion files to edit).
+
+11 new unit tests in `ipod-identity.test.ts` cover every branch of the predicate + summary. E2E suite in `device.test.ts` rewrote the silent-persist case as a refusal assertion, added cases for `--force` (warn + proceed), `--no-firmware-inquiry` (preserved behaviour), and partial cascade (warn + proceed).
+
+Two pre-existing `uninitialized device` tests legitimately needed `--force` added — bare empty dirs really do have no identity signal under the new gate.
+
+Landed in commit `59726b1f`. Changeset: `device-add-empty-identity-refuse.md` (minor bump per project convention for CLI behavioural changes).
+<!-- SECTION:FINAL_SUMMARY:END -->
