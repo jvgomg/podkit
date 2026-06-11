@@ -19,7 +19,6 @@ import { validateCapabilityOverrides } from '@podkit/devices-mass-storage';
 import { OutputContext, formatBytes, formatNumber, bold } from '../../output/index.js';
 import {
   assessIpodIdentity,
-  ensureSysInfoExtendedAndReassess,
   assessMassStorageDevice,
   isFilesystemUnsupportedHere,
   formatHfsplusOnLinuxRefusal,
@@ -40,11 +39,8 @@ import { formatIFlashEvidence, formatIFlashMountExplanation, resolveDeviceName }
 import type { DeviceAddOutput } from './output-types.js';
 import { stripDefaultOptionValues } from '../../utils/option-source.js';
 import { confirmUnsupportedDeviceAdd } from './capability-summary.js';
-import {
-  SYSINFO_MISSING_PROMPT_LINES,
-  printIpodDeviceAddSuccess,
-  printMassStorageDeviceAddSuccess,
-} from './add-render.js';
+import { printIpodDeviceAddSuccess, printMassStorageDeviceAddSuccess } from './add-render.js';
+import { offerFirmwareInquiry } from './add-firmware-inquiry.js';
 
 /**
  * Defensive refusal for TASK-317.15: we cannot persist a device that
@@ -773,61 +769,27 @@ export async function runDeviceAdd(
     if (options.encoding) deviceConfig.encoding = options.encoding as any;
     if (options.artwork !== undefined) deviceConfig.artwork = options.artwork;
 
-    // Single combined prompt: config persistence + (optional) firmware inquiry.
-    // Skip the SIE write entirely when persisting an unsupported device — the
-    // user has acknowledged the device won't sync; writing identity files to
-    // it is wasted effort and can fail against synthetic / non-writable paths.
-    const offerFirmwareInquiry =
-      assessment.firmwareInquiry === 'missing' &&
-      options.firmwareInquiry !== false &&
-      !recordUnsupported;
-
-    if (!autoConfirm && out.isText) {
-      if (offerFirmwareInquiry) {
-        out.newline();
-        for (const line of SYSINFO_MISSING_PROMPT_LINES) out.print(line);
-        out.newline();
-      } else {
-        out.newline();
-      }
-      const promptText = offerFirmwareInquiry
-        ? `Add this iPod as "${name}" and write SysInfoExtended?`
-        : `Add this iPod as "${name}"?`;
-      const shouldSave = await confirmFn(promptText);
-      if (!shouldSave) {
-        out.print('Cancelled. No changes made.');
-        return;
-      }
-    } else if (
-      assessment.needsChecksum &&
-      !offerFirmwareInquiry &&
-      options.firmwareInquiry === false
-    ) {
-      if (out.isText) {
-        out.warn(
-          `This iPod's generation requires SysInfoExtended for the iTunesDB checksum. ` +
-            'Skipping firmware inquiry will leave it unsynced. ' +
-            'Run `podkit doctor --repair sysinfo-extended` later.'
-        );
-      }
-    }
-
-    // Perform the firmware inquiry now if opted in. The core helper handles
-    // the write → re-assess lifecycle; we surface a non-fatal warning on
-    // failure and continue (doctor --repair can retry later).
-    let firmwareWritten = false;
-    if (offerFirmwareInquiry) {
-      const r = await ensureSysInfoExtendedAndReassess(explicitPath, assessment, {
+    // Combined confirmation + firmware-inquiry. Helper owns the prompt
+    // copy, the needs-checksum warning, and the inquiry → re-assess
+    // lifecycle. Skips the SIE write entirely when the user already
+    // acknowledged this device as unsupported.
+    const firmwareResult = await offerFirmwareInquiry({
+      assessment,
+      options,
+      autoConfirm,
+      recordUnsupported,
+      out,
+      name,
+      mountPoint: explicitPath,
+      confirmFn,
+      deps: {
         assessIdentity: deps.assessIdentity,
         ensureSysInfoExtended: deps.ensureSysInfoExtended,
-      });
-      assessment = r.assessment;
-      firmwareWritten = r.firmwareWritten;
-      if (r.sysInfoWriteError && out.isText) {
-        out.warn(`Failed to read SysInfoExtended from USB: ${r.sysInfoWriteError}`);
-        out.print('  Run `podkit doctor --repair sysinfo-extended` to retry.');
-      }
-    }
+      },
+    });
+    if (!firmwareResult.proceed) return;
+    assessment = firmwareResult.assessment ?? assessment;
+    const firmwareWritten = firmwareResult.firmwareWritten;
 
     const result = addDevice(name, deviceConfig, { configPath });
 
@@ -1231,68 +1193,27 @@ export async function runDeviceAdd(
   if (options.encoding) deviceConfig.encoding = options.encoding as any;
   if (options.artwork !== undefined) deviceConfig.artwork = options.artwork;
 
-  // Single combined prompt: config persistence + (optional) firmware inquiry.
-  // The firmware inquiry is offered when SysInfoExtended is missing and a
-  // complete USB fingerprint was resolved — see assessIpodIdentity for state.
-  // `--no-firmware-inquiry` opts out of the write while keeping the cascade-derived
-  // identity. `--yes` defaults to the slick path (writes when offered).
-  // Skip entirely when persisting an unsupported device — writing identity
-  // files to a device we've recorded as unsupported is wasted work and can
-  // fail against non-writable / synthetic paths.
-  const offerFirmwareInquiry =
-    !!assessment &&
-    assessment.firmwareInquiry === 'missing' &&
-    options.firmwareInquiry !== false &&
-    !recordUnsupportedScan;
-
-  if (!autoConfirm && out.isText) {
-    if (offerFirmwareInquiry) {
-      out.newline();
-      for (const line of SYSINFO_MISSING_PROMPT_LINES) out.print(line);
-      out.newline();
-    } else {
-      out.newline();
-    }
-    const promptText = offerFirmwareInquiry
-      ? `Add this iPod as "${name}" and write SysInfoExtended?`
-      : `Add this iPod as "${name}"?`;
-    const shouldSave = await confirmFn(promptText);
-    if (!shouldSave) {
-      out.print('Cancelled. No changes made.');
-      return;
-    }
-  } else if (
-    assessment?.needsChecksum &&
-    !offerFirmwareInquiry &&
-    options.firmwareInquiry === false
-  ) {
-    // Hard requirement: hash-based devices won't sync without SysInfoExtended.
-    // Don't silently strand the user — surface this even in non-interactive modes.
-    if (out.isText) {
-      out.warn(
-        `This iPod's generation requires SysInfoExtended for the iTunesDB checksum. ` +
-          'Skipping firmware inquiry will leave it unsynced. ' +
-          'Run `podkit doctor --repair sysinfo-extended` later.'
-      );
-    }
-  }
-
-  // Perform the firmware inquiry now if opted in (or auto-confirmed). The
-  // core helper handles the write → re-assess lifecycle; we surface a
-  // non-fatal warning on failure and continue.
-  let firmwareWritten = false;
-  if (offerFirmwareInquiry && assessment && ipod.isMounted) {
-    const r = await ensureSysInfoExtendedAndReassess(ipod.mountPoint, assessment, {
+  // Combined confirmation + firmware-inquiry — same helper as the
+  // explicit-path branch. The mount-gate above guarantees ipod.isMounted
+  // is true at this point; the ternary just satisfies the discriminated-
+  // union narrowing on PlatformDeviceInfo.
+  const firmwareResult = await offerFirmwareInquiry({
+    assessment,
+    options,
+    autoConfirm,
+    recordUnsupported: recordUnsupportedScan,
+    out,
+    name,
+    mountPoint: ipod.isMounted ? ipod.mountPoint : '',
+    confirmFn,
+    deps: {
       assessIdentity: deps.assessIdentity,
       ensureSysInfoExtended: deps.ensureSysInfoExtended,
-    });
-    assessment = r.assessment;
-    firmwareWritten = r.firmwareWritten;
-    if (r.sysInfoWriteError && out.isText) {
-      out.warn(`Failed to read SysInfoExtended from USB: ${r.sysInfoWriteError}`);
-      out.print('  Run `podkit doctor --repair sysinfo-extended` to retry.');
-    }
-  }
+    },
+  });
+  if (!firmwareResult.proceed) return;
+  assessment = firmwareResult.assessment;
+  const firmwareWritten = firmwareResult.firmwareWritten;
 
   // Save device to config
   const result = addDevice(name, deviceConfig, { configPath });
