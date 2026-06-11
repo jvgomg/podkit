@@ -2808,3 +2808,10 @@ export const DOCS_URLS = {
 // compile-time-stripped surface in packages/podkit-core/src/dev/hooks.ts.
 export const devPause: (key: string) => Promise<void> = async () => {};
 export const devPauseSync: (key: string) => void = () => {};
+
+// Source-file validity — demo never inspects real files, so always pass.
+export type SourceValidityReason = 'missing' | 'unreadable' | 'truncated' | 'badMagic';
+export type SourceValidityResult = { ok: true } | { ok: false; reason: SourceValidityReason };
+export function checkSourceFileValidity(_path: string): SourceValidityResult {
+  return { ok: true };
+}

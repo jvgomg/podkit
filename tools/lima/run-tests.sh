@@ -134,16 +134,16 @@ target="${1:-all}"
 
 case "$target" in
   debian)
-    ensure_vm "podkit-tests-debian-glibc" "$LIMA_DIR/debian.yaml"
+    ensure_vm "podkit-tests-debian-glibc" "$LIMA_DIR/podkit-tests-debian-glibc.yaml"
     run_tests "podkit-tests-debian-glibc"
     ;;
   alpine)
-    ensure_vm "podkit-tests-alpine-musl" "$LIMA_DIR/alpine.yaml"
+    ensure_vm "podkit-tests-alpine-musl" "$LIMA_DIR/podkit-tests-alpine-musl.yaml"
     run_tests "podkit-tests-alpine-musl"
     ;;
   all)
-    ensure_vm "podkit-tests-debian-glibc" "$LIMA_DIR/debian.yaml"
-    ensure_vm "podkit-tests-alpine-musl" "$LIMA_DIR/alpine.yaml"
+    ensure_vm "podkit-tests-debian-glibc" "$LIMA_DIR/podkit-tests-debian-glibc.yaml"
+    ensure_vm "podkit-tests-alpine-musl" "$LIMA_DIR/podkit-tests-alpine-musl.yaml"
     run_tests "podkit-tests-debian-glibc"
     run_tests "podkit-tests-alpine-musl"
     echo ""
