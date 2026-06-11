@@ -7,9 +7,6 @@ import { existsSync, statSync } from '../../utils/fs.js';
 import { getContext } from '../../context.js';
 import { CliError, runAction } from '../../errors.js';
 import {
-  addDevice,
-  setDefaultDevice,
-  DEFAULT_CONFIG_PATH,
   QUALITY_PRESETS,
   VIDEO_QUALITY_PRESETS,
   ENCODING_MODES,
@@ -41,6 +38,11 @@ import { stripDefaultOptionValues } from '../../utils/option-source.js';
 import { confirmUnsupportedDeviceAdd } from './capability-summary.js';
 import { printIpodDeviceAddSuccess, printMassStorageDeviceAddSuccess } from './add-render.js';
 import { offerFirmwareInquiry } from './add-firmware-inquiry.js';
+import {
+  applyCommonDeviceConfigOptions,
+  persistDeviceConfig,
+  resolveIsFirstDeviceAndConfigPath,
+} from './add-persist.js';
 
 /**
  * Defensive refusal for TASK-317.15: we cannot persist a device that
@@ -465,26 +467,22 @@ export async function runDeviceAdd(
       type: deviceType as DeviceConfig['type'],
       path: explicitPath,
     };
-    if (options.quality) deviceConfig.quality = options.quality as any;
-    if (options.audioQuality) deviceConfig.audioQuality = options.audioQuality as any;
-    if (options.videoQuality) deviceConfig.videoQuality = options.videoQuality as any;
-    if (options.encoding) deviceConfig.encoding = options.encoding as any;
-    if (options.artwork !== undefined) deviceConfig.artwork = options.artwork;
+    applyCommonDeviceConfigOptions(deviceConfig, options);
+    // Mass-storage-specific options — not shared with the iPod flows.
     if (options.artworkMaxResolution !== undefined)
       deviceConfig.artworkMaxResolution = parseInt(options.artworkMaxResolution, 10);
     if (options.artworkSources !== undefined)
-      deviceConfig.artworkSources = options.artworkSources as any;
+      deviceConfig.artworkSources = options.artworkSources as DeviceConfig['artworkSources'];
     if (options.supportedAudioCodecs !== undefined)
-      deviceConfig.supportedAudioCodecs = options.supportedAudioCodecs as any;
+      deviceConfig.supportedAudioCodecs =
+        options.supportedAudioCodecs as DeviceConfig['supportedAudioCodecs'];
     if (options.supportsVideo !== undefined) deviceConfig.supportsVideo = options.supportsVideo;
     if (options.musicDir !== undefined) deviceConfig.musicDir = options.musicDir;
     if (options.moviesDir !== undefined) deviceConfig.moviesDir = options.moviesDir;
     if (options.tvShowsDir !== undefined) deviceConfig.tvShowsDir = options.tvShowsDir;
 
     const volumeName = explicitPath.split('/').pop() || name;
-    const deviceCount = Object.keys(existingDevices).length;
-    const isFirstDevice = deviceCount === 0;
-    const configPath = configResult.configPath ?? DEFAULT_CONFIG_PATH;
+    const { isFirstDevice, configPath } = resolveIsFirstDeviceAndConfigPath(configResult);
 
     const deviceInfo = {
       name,
@@ -517,20 +515,13 @@ export async function runDeviceAdd(
       }
     }
 
-    // Save device to config
-    const result = addDevice(name, deviceConfig, { configPath });
-
-    if (!result.success) {
-      throw new CliError({
-        message: `Failed to save config: ${result.error}`,
-        code: DeviceErrorCodes.CONFIG_SAVE_FAILED,
-        details: { device: deviceInfo },
-      });
-    }
-
-    if (isFirstDevice) {
-      setDefaultDevice(name, { configPath });
-    }
+    const { result } = persistDeviceConfig({
+      name,
+      deviceConfig,
+      configPath,
+      isFirstDevice,
+      deviceInfoForErrorDetails: deviceInfo,
+    });
 
     out.result<DeviceAddOutput>(
       {
@@ -753,9 +744,7 @@ export async function runDeviceAdd(
       modelName: identityDisplayName,
     };
 
-    const deviceCount = Object.keys(existingDevices).length;
-    const isFirstDevice = deviceCount === 0;
-    const configPath = configResult.configPath ?? DEFAULT_CONFIG_PATH;
+    const { isFirstDevice, configPath } = resolveIsFirstDeviceAndConfigPath(configResult);
     const deviceConfig: DeviceConfig = { volumeUuid, volumeName };
     if (recordUnsupported) {
       deviceConfig.unsupported = {
@@ -763,11 +752,7 @@ export async function runDeviceAdd(
         confirmedAt: new Date().toISOString(),
       };
     }
-    if (options.quality) deviceConfig.quality = options.quality as any;
-    if (options.audioQuality) deviceConfig.audioQuality = options.audioQuality as any;
-    if (options.videoQuality) deviceConfig.videoQuality = options.videoQuality as any;
-    if (options.encoding) deviceConfig.encoding = options.encoding as any;
-    if (options.artwork !== undefined) deviceConfig.artwork = options.artwork;
+    applyCommonDeviceConfigOptions(deviceConfig, options);
 
     // Combined confirmation + firmware-inquiry. Helper owns the prompt
     // copy, the needs-checksum warning, and the inquiry → re-assess
@@ -791,19 +776,13 @@ export async function runDeviceAdd(
     assessment = firmwareResult.assessment ?? assessment;
     const firmwareWritten = firmwareResult.firmwareWritten;
 
-    const result = addDevice(name, deviceConfig, { configPath });
-
-    if (!result.success) {
-      throw new CliError({
-        message: `Failed to save config: ${result.error}`,
-        code: DeviceErrorCodes.CONFIG_SAVE_FAILED,
-        details: { device: deviceInfo },
-      });
-    }
-
-    if (isFirstDevice) {
-      setDefaultDevice(name, { configPath });
-    }
+    const { result } = persistDeviceConfig({
+      name,
+      deviceConfig,
+      configPath,
+      isFirstDevice,
+      deviceInfoForErrorDetails: deviceInfo,
+    });
 
     const finalDisplayName = assessment.model?.displayName ?? identityDisplayName;
     deviceInfo.modelName = finalDisplayName;
@@ -1174,9 +1153,7 @@ export async function runDeviceAdd(
     modelName: identityDisplayName,
   };
 
-  const deviceCount = Object.keys(existingDevices).length;
-  const isFirstDevice = deviceCount === 0;
-  const configPath = configResult.configPath ?? DEFAULT_CONFIG_PATH;
+  const { isFirstDevice, configPath } = resolveIsFirstDeviceAndConfigPath(configResult);
   const deviceConfig: DeviceConfig = {
     volumeUuid: ipod.volumeUuid,
     volumeName: ipod.volumeName,
@@ -1187,11 +1164,7 @@ export async function runDeviceAdd(
       confirmedAt: new Date().toISOString(),
     };
   }
-  if (options.quality) deviceConfig.quality = options.quality as any;
-  if (options.audioQuality) deviceConfig.audioQuality = options.audioQuality as any;
-  if (options.videoQuality) deviceConfig.videoQuality = options.videoQuality as any;
-  if (options.encoding) deviceConfig.encoding = options.encoding as any;
-  if (options.artwork !== undefined) deviceConfig.artwork = options.artwork;
+  applyCommonDeviceConfigOptions(deviceConfig, options);
 
   // Combined confirmation + firmware-inquiry — same helper as the
   // explicit-path branch. The mount-gate above guarantees ipod.isMounted
@@ -1215,20 +1188,13 @@ export async function runDeviceAdd(
   assessment = firmwareResult.assessment;
   const firmwareWritten = firmwareResult.firmwareWritten;
 
-  // Save device to config
-  const result = addDevice(name, deviceConfig, { configPath });
-
-  if (!result.success) {
-    throw new CliError({
-      message: `Failed to save config: ${result.error}`,
-      code: DeviceErrorCodes.CONFIG_SAVE_FAILED,
-      details: { device: deviceInfo },
-    });
-  }
-
-  if (isFirstDevice) {
-    setDefaultDevice(name, { configPath });
-  }
+  const { result } = persistDeviceConfig({
+    name,
+    deviceConfig,
+    configPath,
+    isFirstDevice,
+    deviceInfoForErrorDetails: deviceInfo,
+  });
 
   const finalModel = assessment?.model;
   const finalCapabilities = assessment?.capabilities;
