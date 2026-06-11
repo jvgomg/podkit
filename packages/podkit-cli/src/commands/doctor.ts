@@ -17,7 +17,7 @@
  * ```
  */
 
-import { basename, dirname } from 'node:path';
+import { basename } from 'node:path';
 import { Command, Option } from 'commander';
 import { getContext } from '../context.js';
 import {
@@ -35,6 +35,13 @@ import { loadCoreOrFail, type CoreLoaderDeps } from '../handler-deps.js';
 import { withCleanOptions } from '../utils/option-source.js';
 import { shellQuote } from '../utils/shell.js';
 import { formatFailureCopy } from './doctor-failure-copy.js';
+import {
+  printGroupedChecks,
+  printOrphanSummary,
+  emitOrphanCsv,
+  formatCheckRow,
+  printSummaryLine,
+} from './doctor-render.js';
 
 /**
  * Error codes emitted by `podkit doctor`.
@@ -76,7 +83,6 @@ import { createShutdownController } from '../shutdown.js';
 import { openDevice, getDeviceTypeDisplayName } from './open-device.js';
 import type { ReadinessResult } from '@podkit/core';
 import { DOCS_URLS } from '@podkit/core';
-import { formatBytes } from '../output/index.js';
 import { resolveDeviceContentPaths } from '../resolvers/content-paths.js';
 import {
   stageMarker,
@@ -553,7 +559,7 @@ export async function runDoctorDiagnostics(
     // shape regardless of whether the underlying check ID is
     // `orphan-files` (iPod) or `orphan-files-mass-storage`.
     if (options.format === 'csv') {
-      emitOrphanCsv(report, out);
+      emitOrphanCsv(out, report);
       return;
     }
 
@@ -597,14 +603,10 @@ export async function runDoctorDiagnostics(
       }
 
       out.newline();
-      if (report.healthy) {
-        out.success('All checks passed.');
-      } else {
-        const issueCount = report.checks.filter(
-          (c) => (c.status === 'fail' || c.status === 'warn') && !c.repairOnly
-        ).length;
-        out.error(`${issueCount || 1} issue${issueCount === 1 ? '' : 's'} found.`);
-      }
+      const msIssueCount = report.checks.filter(
+        (c) => (c.status === 'fail' || c.status === 'warn') && !c.repairOnly
+      ).length;
+      printSummaryLine(out, report.healthy, msIssueCount);
 
       // Issues section
       const msDeviceArg = shellQuote(globalOpts.device ?? devicePath);
@@ -813,7 +815,7 @@ export async function runDoctorDiagnostics(
   // CSV format: dump orphan file list and exit
   if (options.format === 'csv') {
     if (report) {
-      emitOrphanCsv(report, out);
+      emitOrphanCsv(out, report);
     }
     opened?.ipod?.close();
     return;
@@ -875,8 +877,7 @@ export async function runDoctorDiagnostics(
         out.newline();
         out.print('System');
         for (const check of systemChecks) {
-          const sym = stageMarker(check.status);
-          out.print(`  ${sym} ${check.name}    ${check.summary}`);
+          out.print(formatCheckRow(check));
         }
       }
     }
@@ -908,35 +909,29 @@ export async function runDoctorDiagnostics(
         // surfaced by the dedicated readiness pipeline above on the iPod path;
         // system-scope checks render in the "System" section.
         if (check.scope !== 'database-health') continue;
-        const sym = stageMarker(check.status);
-        out.print(`  ${sym} ${check.name}    ${check.summary}`);
+        out.print(formatCheckRow(check));
 
         // Orphan files: verbose summary inline (it's informational, not an error)
         if (check.id === 'orphan-files' && check.status === 'warn' && check.details) {
-          printOrphanSummary(check.details as Record<string, unknown>, out);
+          printOrphanSummary(out, check.details as Record<string, unknown>);
         }
       }
     }
 
     // ── Summary line ──
     out.newline();
-    if (healthy) {
-      out.success('All checks passed.');
-    } else {
-      let issueCount = 0;
-      if (readinessResult) {
-        issueCount += readinessResult.stages.filter(
-          (s) => s.status === 'fail' || s.status === 'warn'
-        ).length;
-      }
-      if (report) {
-        issueCount += report.checks.filter(
-          (c) => (c.status === 'fail' || c.status === 'warn') && !c.repairOnly
-        ).length;
-      }
-      if (issueCount === 0) issueCount = 1;
-      out.error(`${issueCount} issue${issueCount === 1 ? '' : 's'} found.`);
+    let issueCount = 0;
+    if (readinessResult) {
+      issueCount += readinessResult.stages.filter(
+        (s) => s.status === 'fail' || s.status === 'warn'
+      ).length;
     }
+    if (report) {
+      issueCount += report.checks.filter(
+        (c) => (c.status === 'fail' || c.status === 'warn') && !c.repairOnly
+      ).length;
+    }
+    printSummaryLine(out, healthy, issueCount);
 
     // ── Issues section (detailed) ──
     const allIssues: ReadinessIssue[] = [];
@@ -1073,20 +1068,15 @@ export async function runSystemOnlyDoctor(
       out.newline();
       out.print('System');
       for (const check of report.checks) {
-        const sym = stageMarker(check.status);
-        out.print(`  ${sym} ${check.name}    ${check.summary}`);
+        out.print(formatCheckRow(check));
       }
     }
 
     out.newline();
-    if (healthy) {
-      out.success('All checks passed.');
-    } else {
-      const issueCount = report.checks.filter(
-        (c) => c.status === 'fail' || c.status === 'warn'
-      ).length;
-      out.error(`${issueCount || 1} issue${issueCount === 1 ? '' : 's'} found.`);
-    }
+    const issueCount = report.checks.filter(
+      (c) => c.status === 'fail' || c.status === 'warn'
+    ).length;
+    printSummaryLine(out, healthy, issueCount);
 
     const issues: ReadinessIssue[] = [];
     for (const check of report.checks) {
@@ -1604,172 +1594,4 @@ async function runMassStorageRepair(
       out.success('Repair complete. Run `podkit doctor` to verify.');
     }
   });
-}
-
-// ── Grouped check rendering ─────────────────────────────────────────────────
-
-/**
- * Shape of a check the grouped renderer expects. Compatible with both
- * `DiagnosticReport['checks'][number]` and `DoctorCheckOutput`.
- */
-interface GroupedRenderableCheck {
-  id: string;
-  name: string;
-  status: 'pass' | 'fail' | 'warn' | 'skip';
-  summary: string;
-  scope: 'system' | 'device-readiness' | 'database-health';
-  repairOnly?: boolean;
-  details?: Record<string, unknown>;
-}
-
-/**
- * Render checks under the unified `System` / `Device Readiness` / `Database Health`
- * structure. Empty sections are omitted.
- *
- * Categorisation is a direct branch on `scope`, with no defaulting:
- * - `scope === 'system'` → "System".
- * - `scope === 'device-readiness'` → "Device Readiness".
- * - `scope === 'database-health'` → "Database Health".
- *
- * Used directly by the mass-storage doctor path; the iPod path renders
- * "Device Readiness" from its dedicated readiness-stage pipeline and
- * delegates "System" + "Database Health" inline (so it can interleave
- * extra orphan-summary detail). The categorisation rules above stay
- * consistent across both paths.
- */
-export function printGroupedChecks(
-  out: OutputContext,
-  checks: ReadonlyArray<GroupedRenderableCheck>
-): void {
-  const systemChecks = checks.filter((c) => !c.repairOnly && c.scope === 'system');
-  const readinessChecks = checks.filter((c) => !c.repairOnly && c.scope === 'device-readiness');
-  const databaseChecks = checks.filter((c) => !c.repairOnly && c.scope === 'database-health');
-
-  if (systemChecks.length > 0) {
-    out.newline();
-    out.print('System');
-    for (const check of systemChecks) {
-      const sym = stageMarker(check.status);
-      out.print(`  ${sym} ${check.name}    ${check.summary}`);
-    }
-  }
-
-  if (readinessChecks.length > 0) {
-    out.newline();
-    out.print('Device Readiness');
-    for (const check of readinessChecks) {
-      const sym = stageMarker(check.status);
-      out.print(`  ${sym} ${check.name}    ${check.summary}`);
-    }
-  }
-
-  if (databaseChecks.length > 0) {
-    out.newline();
-    out.print('Database Health');
-    for (const check of databaseChecks) {
-      const sym = stageMarker(check.status);
-      out.print(`  ${sym} ${check.name}    ${check.summary}`);
-    }
-  }
-}
-
-// ── Orphan file helpers ────────────────────────────────────────────────────
-
-/**
- * Print a verbose summary of orphan files: breakdown by directory and extension,
- * plus the 10 largest files.
- */
-function printOrphanSummary(details: Record<string, unknown>, out: OutputContext): void {
-  const orphans = details.orphans as Array<{ path: string; size: number }> | undefined;
-  if (!orphans || orphans.length === 0) return;
-
-  // Breakdown by F* directory
-  const byDir = new Map<string, { count: number; size: number }>();
-  for (const o of orphans) {
-    const dir = basename(dirname(o.path));
-    const entry = byDir.get(dir) ?? { count: 0, size: 0 };
-    entry.count++;
-    entry.size += o.size;
-    byDir.set(dir, entry);
-  }
-
-  out.newline();
-  out.verbose1('    By directory:');
-  const sortedDirs = [...byDir.entries()].sort((a, b) => b[1].size - a[1].size);
-  for (const [dir, { count, size }] of sortedDirs) {
-    out.verbose1(
-      `      ${dir.padEnd(5)} ${String(count).padStart(5)} files  ${formatBytes(size).padStart(10)}`
-    );
-  }
-
-  // Breakdown by extension
-  const byExt = new Map<string, { count: number; size: number }>();
-  for (const o of orphans) {
-    const name = basename(o.path);
-    const dotIdx = name.lastIndexOf('.');
-    const ext = dotIdx >= 0 ? name.slice(dotIdx).toLowerCase() : '(none)';
-    const entry = byExt.get(ext) ?? { count: 0, size: 0 };
-    entry.count++;
-    entry.size += o.size;
-    byExt.set(ext, entry);
-  }
-
-  out.verbose1('    By extension:');
-  const sortedExts = [...byExt.entries()].sort((a, b) => b[1].size - a[1].size);
-  for (const [ext, { count, size }] of sortedExts) {
-    out.verbose1(
-      `      ${ext.padEnd(8)} ${String(count).padStart(5)} files  ${formatBytes(size).padStart(10)}`
-    );
-  }
-
-  // Top 10 largest files
-  const sorted = [...orphans].sort((a, b) => b.size - a.size);
-  const top = sorted.slice(0, 10);
-  out.verbose1('    Largest orphans:');
-  for (const o of top) {
-    const rel = o.path.replace(/.*iPod_Control\/Music\//, '');
-    out.verbose1(`      ${formatBytes(o.size).padStart(10)}  ${rel}`);
-  }
-
-  out.verbose1(`    Use --format csv to export the full list.`);
-}
-
-function escapeCsvField(value: string): string {
-  if (value.includes(',') || value.includes('"') || value.includes('\n')) {
-    return `"${value.replace(/"/g, '""')}"`;
-  }
-  return value;
-}
-
-/**
- * Emit the orphan-file list from a diagnostic report as CSV.
- *
- * Walks both possible check IDs — iPod (`orphan-files`) and mass-storage
- * (`orphan-files-mass-storage`) — so the CSV export works regardless of
- * the device type that produced the report. Both checks expose the same
- * `details.orphans: Array<{ path; size }>` shape so the row format is
- * identical.
- *
- * Emits a header row when at least one orphan is present; otherwise emits
- * nothing (caller's responsibility to leave stdout empty rather than
- * print a lone header). This matches the pre-fix iPod-only behaviour
- * that the doctor-flag-matrix tests pin.
- */
-function emitOrphanCsv(
-  report: { checks: ReadonlyArray<{ id: string; details?: Record<string, unknown> | undefined }> },
-  out: OutputContext
-): void {
-  // Try iPod variant first, then mass-storage. Only one check fires per
-  // device type so the second find() is cheap and never returns a duplicate.
-  const orphanCheck =
-    report.checks.find((c) => c.id === 'orphan-files') ??
-    report.checks.find((c) => c.id === 'orphan-files-mass-storage');
-  const orphans = (orphanCheck?.details as Record<string, unknown> | undefined)?.orphans as
-    | Array<{ path: string; size: number }>
-    | undefined;
-  if (!orphans || orphans.length === 0) return;
-  out.stdout('path,size');
-  for (const o of orphans) {
-    out.stdout(`${escapeCsvField(o.path)},${o.size}`);
-  }
 }

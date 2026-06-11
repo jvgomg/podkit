@@ -11,7 +11,7 @@
  */
 
 import { describe, it, expect } from 'bun:test';
-import { printGroupedChecks } from './doctor.js';
+import { printGroupedChecks } from './doctor-render.js';
 import { OutputContext, BufferExitCodeSink } from '../output/index.js';
 import { BufferSink } from '../test-utils/buffer-sink.js';
 

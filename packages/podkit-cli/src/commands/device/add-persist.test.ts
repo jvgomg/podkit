@@ -15,15 +15,15 @@ describe('applyCommonDeviceConfigOptions', () => {
     const cfg: DeviceConfig = {};
     applyCommonDeviceConfigOptions(cfg, {
       quality: 'high',
-      audioQuality: 'best',
-      videoQuality: 'h264-480p',
+      audioQuality: 'medium',
+      videoQuality: 'low',
       encoding: 'cbr',
       artwork: true,
     });
     expect(cfg).toEqual({
       quality: 'high',
-      audioQuality: 'best',
-      videoQuality: 'h264-480p',
+      audioQuality: 'medium',
+      videoQuality: 'low',
       encoding: 'cbr',
       artwork: true,
     });
@@ -113,7 +113,7 @@ describe('persistDeviceConfig — integration against a real config file', () =>
   it('writes the device to the config file and returns the save result', () => {
     const { result } = persistDeviceConfig({
       name: 'mypod',
-      deviceConfig: { volumeUuid: 'abc-123', quality: 'good' },
+      deviceConfig: { volumeUuid: 'abc-123', quality: 'high' },
       configPath,
       isFirstDevice: true,
       deviceInfoForErrorDetails: {},
