@@ -39,13 +39,12 @@ import { DeviceErrorCodes } from './error-codes.js';
 import { formatIFlashEvidence, formatIFlashMountExplanation, resolveDeviceName } from './shared.js';
 import type { DeviceAddOutput } from './output-types.js';
 import { stripDefaultOptionValues } from '../../utils/option-source.js';
-import { printCapabilitySummary, confirmUnsupportedDeviceAdd } from './capability-summary.js';
-
-const SYSINFO_MISSING_PROMPT_LINES = [
-  'SysInfo/SysInfoExtended is missing — required for syncing this iPod.',
-  'podkit can read it from the device firmware over USB.',
-  'Learn more: https://jvgomg.github.io/podkit/devices/supported-devices/',
-] as const;
+import { confirmUnsupportedDeviceAdd } from './capability-summary.js';
+import {
+  SYSINFO_MISSING_PROMPT_LINES,
+  printIpodDeviceAddSuccess,
+  printMassStorageDeviceAddSuccess,
+} from './add-render.js';
 
 /**
  * Defensive refusal for TASK-317.15: we cannot persist a device that
@@ -545,27 +544,13 @@ export async function runDeviceAdd(
         configPath: result.configPath,
         isDefault: isFirstDevice,
       },
-      () => {
-        out.newline();
-        out.print(
-          result.created
-            ? `Created config file: ${result.configPath}`
-            : `Updated config file: ${result.configPath}`
-        );
-        out.newline();
-        out.print(
-          `Device "${name}" added to config (${getDeviceTypeDisplayName({ type: deviceType })}).`
-        );
-        if (isFirstDevice) {
-          out.print(`Set as default device.`);
-        }
-        out.newline();
-        out.print('Next steps:');
-        out.print(
-          '  podkit collection add -t music -c <name> --path <path>   # Add your music library'
-        );
-        out.print(`  podkit sync                    # Sync to this device`);
-      }
+      () =>
+        printMassStorageDeviceAddSuccess(out, {
+          name,
+          deviceType: deviceType as NonNullable<DeviceConfig['type']>,
+          configResult: { created: result.created ?? false, configPath: result.configPath ?? '' },
+          isFirstDevice,
+        })
     );
     return;
   }
@@ -870,28 +855,15 @@ export async function runDeviceAdd(
         configPath: result.configPath,
         isDefault: isFirstDevice,
       },
-      () => {
-        out.newline();
-        if (firmwareWritten) {
-          out.print('  ✓ SysInfoExtended written');
-        }
-        out.print('  ✓ Added to config');
-        if (isFirstDevice) {
-          out.print('  ✓ Set as default device');
-        }
-        if (initialized) {
-          out.print(`  ✓ Database initialized (${finalDisplayName})`);
-        }
-        if (assessment.capabilities) {
-          out.newline();
-          printCapabilitySummary(out, assessment.capabilities, {
-            kind: 'ipod',
-            modelDisplay: finalDisplayName,
-          });
-        }
-        out.newline();
-        out.print(`Done. Try: podkit sync -d ${name} --dry-run`);
-      }
+      () =>
+        printIpodDeviceAddSuccess(out, {
+          name,
+          modelDisplay: finalDisplayName,
+          capabilities: assessment.capabilities,
+          firmwareWritten,
+          isFirstDevice,
+          initialized,
+        })
     );
     return;
   }
@@ -1353,27 +1325,14 @@ export async function runDeviceAdd(
       configPath: result.configPath,
       isDefault: isFirstDevice,
     },
-    () => {
-      out.newline();
-      if (firmwareWritten) {
-        out.print('  ✓ SysInfoExtended written');
-      }
-      out.print('  ✓ Added to config');
-      if (isFirstDevice) {
-        out.print('  ✓ Set as default device');
-      }
-      if (initialized) {
-        out.print(`  ✓ Database initialized (${finalDisplayName})`);
-      }
-      if (finalCapabilities) {
-        out.newline();
-        printCapabilitySummary(out, finalCapabilities, {
-          kind: 'ipod',
-          modelDisplay: finalDisplayName,
-        });
-      }
-      out.newline();
-      out.print(`Done. Try: podkit sync -d ${name} --dry-run`);
-    }
+    () =>
+      printIpodDeviceAddSuccess(out, {
+        name,
+        modelDisplay: finalDisplayName,
+        capabilities: finalCapabilities,
+        firmwareWritten,
+        isFirstDevice,
+        initialized,
+      })
   );
 }
