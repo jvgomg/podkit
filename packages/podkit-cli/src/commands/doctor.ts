@@ -42,6 +42,7 @@ import {
   formatCheckRow,
   printSummaryLine,
 } from './doctor-render.js';
+import { runRepairPipeline } from './doctor-repair.js';
 
 /**
  * Error codes emitted by `podkit doctor`.
@@ -79,7 +80,6 @@ export type DoctorErrorCode = (typeof DoctorErrorCodes)[keyof typeof DoctorError
 export type DoctorErrorOutput = CliErrorOutput & { code: DoctorErrorCode };
 import { existsSync } from '../utils/fs.js';
 import { createMusicAdapter } from '../utils/source-adapter.js';
-import { createShutdownController } from '../shutdown.js';
 import { openDevice, getDeviceTypeDisplayName } from './open-device.js';
 import type { ReadinessResult } from '@podkit/core';
 import { DOCS_URLS } from '@podkit/core';
@@ -137,14 +137,6 @@ interface DoctorOutput {
     unsupported?: import('@podkit/core').ReadinessUnsupportedReason;
   };
   checks: DoctorCheckOutput[];
-}
-
-interface RepairOutput {
-  success: true;
-  summary: string;
-  checkId: string;
-  dryRun: boolean;
-  details?: Record<string, unknown>;
 }
 
 /**
@@ -1112,10 +1104,8 @@ async function runSystemRepair(
   options: DoctorOptions,
   out: OutputContext
 ): Promise<void> {
-  const repair = check.repair!;
-  const dryRun = options.dryRun ?? false;
-  // Tests can invoke this helper directly without bootstrapping the CLI
-  // context — read verbose defensively so we don't break that surface.
+  // Verbose defensively read so direct test invocation (no CLI context)
+  // doesn't break the surface.
   let verbose = 0;
   try {
     verbose = getContext().globalOpts.verbose ?? 0;
@@ -1123,56 +1113,14 @@ async function runSystemRepair(
     /* no CLI context (test path) — default to 0 */
   }
 
-  if (!dryRun) {
-    out.print(`Repairing ${check.id}: ${repair.description}...`);
-    out.newline();
-  } else {
-    out.print(`Dry run: ${repair.description}...`);
-    out.newline();
-  }
-
-  // System repairs receive a minimal stub context (no real device needed).
-  const stubCtx = {
-    mountPoint: '',
-    deviceType: 'ipod' as const,
-    adapters: [],
-  };
-
-  let result: Awaited<ReturnType<typeof repair.run>>;
-  try {
-    result = await repair.run(stubCtx, { dryRun, verbose });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    throw new CliError({
-      message: `Repair failed: ${message}`,
-      code: DoctorErrorCodes.REPAIR_FAILED,
-      details: { checkId: check.id },
-    });
-  }
-
-  if (!result.success) {
-    throw new CliError({
-      message: result.summary,
-      code: DoctorErrorCodes.REPAIR_FAILED,
-      details: { checkId: check.id, dryRun, ...result.details },
-    });
-  }
-
-  const output: RepairOutput = {
-    success: true,
-    summary: result.summary,
-    checkId: check.id,
-    dryRun,
-    details: result.details,
-  };
-
-  out.result<RepairOutput>(output, () => {
-    out.print(result.summary);
-
-    if (!dryRun) {
-      out.newline();
-      out.success('Repair complete.');
-    }
+  await runRepairPipeline({
+    check,
+    ctx: { mountPoint: '', deviceType: 'ipod', adapters: [] },
+    dryRun: options.dryRun ?? false,
+    verbose,
+    out,
+    withoutShutdown: true,
+    successLine: 'Repair complete.',
   });
 }
 
@@ -1192,8 +1140,8 @@ export async function runRepair(
 ): Promise<void> {
   const repair = check.repair!;
   const dryRun = options.dryRun ?? false;
-  // Tests construct an ad-hoc `runRepair` call without bootstrapping the CLI
-  // context. Read verbose defensively so the test surface stays unchanged.
+  // Verbose defensively read — tests invoke this helper without
+  // bootstrapping the CLI context.
   let verbose = 0;
   try {
     verbose = getContext().globalOpts.verbose ?? 0;
@@ -1211,46 +1159,10 @@ export async function runRepair(
     });
   }
 
-  // TASK-317.03: refuse mutating repairs on cascade-unsupported devices.
-  // Even when the user explicitly typed `--repair sysinfo-extended -d ...`,
-  // applying state-mutating repairs to a generation podkit does not support
-  // (hashAB nano 6/7, shuffle 3/4, iOS) risks corrupting on-device state —
-  // particularly the SQLite-based generations where libgpod's writes are
-  // not safe.
-  try {
-    const refusalAssessment = await core.assessIpodIdentity(devicePath);
-    const refusalReason = refusalAssessment?.model?.unsupportedReason;
-    if (refusalReason) {
-      throw new CliError({
-        message: refusalReason.headline,
-        code: DoctorErrorCodes.INCOMPATIBLE_DEVICE_TYPE,
-        details: {
-          checkId: check.id,
-          unsupported: refusalReason,
-          ...(refusalAssessment?.model?.generationId
-            ? { generation: refusalAssessment.model.generationId }
-            : {}),
-        },
-        printText: (o) => {
-          o.error(refusalReason.headline);
-          if (refusalReason.details) {
-            for (const line of refusalReason.details) o.print(`  ${line}`);
-          }
-          o.print(`See: ${refusalReason.docsUrl ?? core.DOCS_URLS.supportedDevices}`);
-        },
-      });
-    }
-  } catch (err) {
-    // Re-throw the CliError above; swallow only the best-effort assessment
-    // I/O errors so we don't block repair on transient disk reads.
-    if (err instanceof CliError) throw err;
-  }
-
   // Open the iPod database only when this repair declares it needs it.
   // Repairs that populate identity (sysinfo-extended, sysinfo-consistency)
   // must run on freshly-formatted iPods that have no database yet — gating
-  // them behind IpodDatabase.open() created the chicken-and-egg failure
-  // surfaced as "Failed to open database: Couldn't find an iPod database".
+  // them behind IpodDatabase.open() would create a chicken-and-egg failure.
   const needsDatabase = repair.requirements.includes('database');
   let db: Awaited<ReturnType<typeof core.IpodDatabase.open>> | undefined;
   if (needsDatabase) {
@@ -1267,9 +1179,8 @@ export async function runRepair(
   const adapters: import('@podkit/core').CollectionAdapter[] = [];
 
   try {
-    // Resolve source collection adapters if needed
+    // Resolve source collection adapters if needed.
     const needsSource = repair.requirements.includes('source-collection');
-
     if (needsSource && options.collection) {
       const allMusic = config.music ?? {};
       const found = allMusic[options.collection];
@@ -1285,12 +1196,8 @@ export async function runRepair(
           details: { collection: options.collection, available },
         });
       }
-
       try {
-        const adapter = createMusicAdapter({
-          config: found,
-          name: options.collection,
-        });
+        const adapter = createMusicAdapter({ config: found, name: options.collection });
         await adapter.connect();
         adapters.push(adapter);
       } catch (err) {
@@ -1303,88 +1210,17 @@ export async function runRepair(
       }
     }
 
-    if (!dryRun) {
-      out.print(`Repairing ${check.id}: ${repair.description}...`);
-      out.newline();
-    } else {
-      out.print(`Dry run: ${repair.description}...`);
-      out.newline();
-    }
-
-    const shutdown = createShutdownController();
-    shutdown.install();
-
-    let result: Awaited<ReturnType<typeof repair.run>>;
-    try {
-      const ctx: import('@podkit/core').RepairContext = {
+    await runRepairPipeline({
+      check,
+      ctx: {
         mountPoint: devicePath,
         deviceType: 'ipod',
         adapters,
         ...(db ? { db } : {}),
-      };
-      result = await repair.run(ctx, {
-        dryRun,
-        verbose,
-        signal: shutdown.signal,
-        onProgress: (progress) => {
-          if (!out.isText) return;
-          const p = progress as Record<string, unknown>;
-          if (typeof p.current === 'number' && typeof p.total === 'number') {
-            const pct = Math.round((p.current / p.total) * 100);
-            let line = `\r  ${p.current} / ${p.total}  (${pct}%)`;
-            // Append check-specific counters when present
-            if (typeof p.matched === 'number') line += `  Matched: ${p.matched}`;
-            if (typeof p.noSource === 'number') line += `  No source: ${p.noSource}`;
-            if (typeof p.noArtwork === 'number') line += `  No artwork: ${p.noArtwork}`;
-            process.stderr.write(line);
-          } else if (typeof p.message === 'string') {
-            process.stderr.write(`\r  ${p.message}`);
-          }
-        },
-      });
-    } catch (err) {
-      // Clear progress line before bubbling
-      if (out.isText) {
-        process.stderr.write('\r' + ' '.repeat(100) + '\r');
-      }
-      const message = err instanceof Error ? err.message : String(err);
-      throw new CliError({
-        message: `Repair failed: ${message}`,
-        code: DoctorErrorCodes.REPAIR_FAILED,
-        details: { checkId: check.id },
-      });
-    } finally {
-      shutdown.uninstall();
-    }
-
-    // Clear progress line
-    if (out.isText) {
-      process.stderr.write('\r' + ' '.repeat(100) + '\r');
-    }
-
-    if (!result.success) {
-      throw new CliError({
-        message: result.summary,
-        code: DoctorErrorCodes.REPAIR_FAILED,
-        details: { checkId: check.id, dryRun, ...result.details },
-      });
-    }
-
-    const output: RepairOutput = {
-      success: true,
-      summary: result.summary,
-      checkId: check.id,
+      },
       dryRun,
-      details: result.details,
-    };
-
-    out.result<RepairOutput>(output, () => {
-      out.print(result.summary);
-
-      if (!dryRun) {
-        out.newline();
-        out.success('Repair complete. Run `podkit doctor` to verify.');
-      }
+      verbose,
+      out,
     });
   } finally {
     for (const adapter of adapters) {
@@ -1512,86 +1348,17 @@ async function runMassStorageRepair(
   out: OutputContext,
   config: ReturnType<typeof getContext>['config']
 ): Promise<void> {
-  const repair = check.repair!;
-  const dryRun = options.dryRun ?? false;
-
-  const contentPaths = resolveDeviceContentPaths(deviceConfig, config.deviceDefaults);
-
-  if (!dryRun) {
-    out.print(`Repairing ${check.id}: ${repair.description}...`);
-    out.newline();
-  } else {
-    out.print(`Dry run: ${repair.description}...`);
-    out.newline();
-  }
-
-  const shutdown = createShutdownController();
-  shutdown.install();
-
-  let result: Awaited<ReturnType<typeof repair.run>>;
-  try {
-    result = await repair.run(
-      {
-        mountPoint: devicePath,
-        deviceType: 'mass-storage',
-        contentPaths,
-        adapters: [],
-      },
-      {
-        dryRun,
-        signal: shutdown.signal,
-        onProgress: (progress) => {
-          if (!out.isText) return;
-          const p = progress as Record<string, number>;
-          if (p.current !== undefined && p.total !== undefined) {
-            const pct = Math.round((p.current / p.total) * 100);
-            process.stderr.write(`\r  ${p.current} / ${p.total}  (${pct}%)`);
-          }
-        },
-      }
-    );
-  } catch (err) {
-    // Clear progress line before bubbling
-    if (out.isText) {
-      process.stderr.write('\r' + ' '.repeat(80) + '\r');
-    }
-    const message = err instanceof Error ? err.message : String(err);
-    throw new CliError({
-      message: `Repair failed: ${message}`,
-      code: DoctorErrorCodes.REPAIR_FAILED,
-      details: { checkId: check.id },
-    });
-  } finally {
-    shutdown.uninstall();
-  }
-
-  // Clear progress line
-  if (out.isText) {
-    process.stderr.write('\r' + ' '.repeat(80) + '\r');
-  }
-
-  if (!result.success) {
-    throw new CliError({
-      message: result.summary,
-      code: DoctorErrorCodes.REPAIR_FAILED,
-      details: { checkId: check.id, dryRun, ...result.details },
-    });
-  }
-
-  const output: RepairOutput = {
-    success: true,
-    summary: result.summary,
-    checkId: check.id,
-    dryRun,
-    details: result.details,
-  };
-
-  out.result<RepairOutput>(output, () => {
-    out.print(result.summary);
-
-    if (!dryRun) {
-      out.newline();
-      out.success('Repair complete. Run `podkit doctor` to verify.');
-    }
+  await runRepairPipeline({
+    check,
+    ctx: {
+      mountPoint: devicePath,
+      deviceType: 'mass-storage',
+      contentPaths: resolveDeviceContentPaths(deviceConfig, config.deviceDefaults),
+      adapters: [],
+    },
+    dryRun: options.dryRun ?? false,
+    verbose: 0,
+    out,
+    compactProgress: true,
   });
 }
