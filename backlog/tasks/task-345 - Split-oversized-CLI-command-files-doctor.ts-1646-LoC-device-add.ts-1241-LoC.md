@@ -1,10 +1,10 @@
 ---
 id: TASK-345
 title: Refactor doctor.ts + device/add.ts via shared primitives (no LoC target)
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-05-17 10:54'
-updated_date: '2026-06-11 20:54'
+updated_date: '2026-06-11 21:13'
 labels:
   - tech-debt
   - refactor
@@ -203,3 +203,88 @@ Fix:
 
 Verified: typecheck/lint/test:unit (3164 pass)/test:integration (69 pass) all clean.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+All 19 acceptance criteria met across 13 commits on `main`.
+
+## Surface
+
+CLI helpers extracted (new files):
+- `commands/doctor-render.ts` — `formatCheckRow`, `printGroupedChecks` (with `inlineDetails` hook), `printOrphanSummary`, `emitOrphanCsv`, `printSummaryLine`
+- `commands/doctor-failure-copy.ts` — per-check-id failure-copy registry (open/closed)
+- `commands/doctor-repair.ts` — `runRepairPipeline`, `preflightCascadeRefusal`
+- `commands/device/add-render.ts` — `printIpodDeviceAddSuccess`, `printMassStorageDeviceAddSuccess`, `SYSINFO_MISSING_PROMPT_LINES`
+- `commands/device/add-firmware-inquiry.ts` — `offerFirmwareInquiry`
+- `commands/device/add-persist.ts` — `applyCommonDeviceConfigOptions`, `persistDeviceConfig`, `resolveIsFirstDeviceAndConfigPath`
+- `resolvers/content-paths.ts` — `resolveDeviceContentPaths` (used by doctor + open-device)
+- `utils/shell.ts` — `shellQuote`
+
+Core surface additions (`@podkit/core`):
+- `runDiagnosticRepair(check, ctx, opts, deps)` — typed `RepairExecutionResult` (refused / ok / failed); never throws on refusal
+- `assessRepairRefusal(ctx, deps)` — pure preflight; returns reason or null
+- `RunDiagnosticRepairDeps.skipPreflight` — opt-out for callers that already preflighted
+
+New tests:
+- `repair-dispatch.test.ts` — typed-refusal contract, skipPreflight, assess-throw best-effort, model:null fall-through
+- `doctor-repair.test.ts` — `preflightCascadeRefusal` shape + the load-bearing "refusal NEVER calls IpodDatabase.open" pin
+- `doctor-orphan-summary.test.ts` — by-dir/by-ext/top-10 sections, path trimming, CSV hint, verbose gating
+- `doctor-failure-copy-routing.test.ts` — per-check id renders only its own copy (TASK-317.02 Bug 3 regression hook)
+- `content-paths.test.ts` — preset/defaults/device cascade for both doctor + open-device callers
+- `add-render.test.ts`, `add-firmware-inquiry.test.ts`, `add-persist.test.ts`, `shell.test.ts`
+
+## Regression caught + fixed
+
+Writing AC #14 surfaced a real regression introduced by PR 2: the cascade-unsupported preflight had been running AFTER `IpodDatabase.open` (was opposite order pre-refactor). Opening libgpod against SQLite-based unsupported generations (hashAB nano 6/7, shuffle 3/4, iOS) risks corrupting on-device state.
+
+Fix (commit `5119bdbc`): `preflightCascadeRefusal` now runs BEFORE `IpodDatabase.open` in `runRepair`. The pipeline's own preflight stays as defence-in-depth, controlled via `refusalPreflightedByCaller` → `skipPreflight` so the success path doesn't double-fetch the assessment. The new "openCalls === 0 on refused device" test pins the contract going forward.
+
+## Pre-existing breakages cleared
+
+Three independent bugs exposed by the verification gauntlet were fixed in commit `ef3bca82`:
+- `packages/podkit-core/src/device/ipod-identity.test.ts` — stale field values (`'sysinfo_extended'` → `'sysinfo'` / `'existing'`; removed nonexistent `videoMaxResolution`; added missing required `DeviceCapabilities` fields)
+- `packages/demo/src/mock-core.ts` — missing `checkSourceFileValidity` + `SourceValidity*` types (parity check enforcement)
+- `tools/lima/run-tests.sh` — referenced `debian.yaml`/`alpine.yaml` instead of the actual `podkit-tests-debian-glibc.yaml`/`podkit-tests-alpine-musl.yaml`
+
+## Sibling tasks filed
+
+- **TASK-420** — `sync.ts` refactor (1658 LoC, same archetype; depends on TASK-345 primitives)
+- **TASK-421** — Route CLI progress writes through `OutputContext` (convention §2 fix; multiple commands bypass `OutputContext` with direct `process.stderr.write` for `\r`-progress)
+
+## Commits
+
+PR 1 (Phase A — strictly additive):
+- `09f3daba` refactor: dedupe content-paths + typed repair refusal
+- `b0153a33` chore(backlog): file TASK-420 + TASK-421
+
+PR 2 (Phases B + C + A2 wiring):
+- `a6d0e4d3` refactor(cli): extract shellQuote + per-check failure-copy registry
+- `801813fa` refactor(cli): extract device-add render to add-render.ts
+- `022b585f` refactor(cli): extract offerFirmwareInquiry helper
+- `bcbbca04` refactor(cli): extract device-add persist helpers
+- `6935659f` refactor(cli): extract doctor render primitives to doctor-render.ts
+- `bc4cc9de` refactor(cli): extract runRepairPipeline + wire core typed refusal
+
+Follow-up (deferred ACs + regression fix + pre-existing breakages):
+- `ef3bca82` fix: clear three pre-existing breakages (ipod-identity, demo mock-core, lima yaml refs)
+- `5119bdbc` fix(cli): preflight cascade-refusal BEFORE IpodDatabase.open + close ACs
+
+## Final verification
+
+Full gauntlet green (post all fixes):
+- `bun run typecheck` — clean monorepo-wide
+- `bun run lint` — 0 warnings, 0 errors (945 files)
+- `bun run test:unit` — 3164+ pass, 0 fail
+- `bun run test:integration` — 69 pass, 0 fail
+- `bun run test:e2e` — 33 pass, 0 fail (8m41s)
+- `bun run test:e2e:docker` — 5 pass, 0 fail (1m43s)
+- `bun run test:vm` (Lima dummy-hcd) — 184 pass, 42 skip, 0 fail (6m28s)
+- CLI smoke: `podkit doctor --scope system` renders through the new primitives
+
+Net code shape:
+- `doctor.ts` shrunk meaningfully (preflight inlined → helper; ~180 LoC of render moved to doctor-render.ts; three repair runners now thin wrappers around `runRepairPipeline`).
+- `device/add.ts` shrunk (success-render extracted; firmware-inquiry block deduped; persist helpers consolidated).
+- Net new primitives: 11 modules, all single-purpose, individually tested.
+- Net core surface additions: 2 functions + 1 deps field; all backward-compatible.
+<!-- SECTION:FINAL_SUMMARY:END -->
