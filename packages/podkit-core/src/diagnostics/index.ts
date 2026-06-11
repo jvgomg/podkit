@@ -56,6 +56,7 @@ export {
   getRepairCheck,
   getRepairCheckForValidation,
   runDiagnosticRepair,
+  assessRepairRefusal,
   type RepairExecutionResult,
   type RunDiagnosticRepairDeps,
 } from './repair-dispatch.js';

@@ -23,11 +23,12 @@
 
 import type {
   DiagnosticCheck,
+  DiagnosticDeviceType,
   RepairContext,
   RepairExecutionResult,
   RunDiagnosticRepairDeps,
 } from '@podkit/core';
-import { runDiagnosticRepair, DOCS_URLS } from '@podkit/core';
+import { runDiagnosticRepair, assessRepairRefusal, DOCS_URLS } from '@podkit/core';
 import type { OutputContext } from '../output/index.js';
 import { CliError } from '../errors.js';
 import { createShutdownController } from '../shutdown.js';
@@ -53,6 +54,42 @@ export interface RepairOutput {
   checkId: string;
   dryRun: boolean;
   details?: Record<string, unknown>;
+}
+
+/**
+ * Refuse a mutating repair on a cascade-unsupported iPod BEFORE the
+ * caller opens any device-side handle. Wraps core's `assessRepairRefusal`
+ * with the CLI's `CliError(INCOMPATIBLE_DEVICE_TYPE)` shape.
+ *
+ * The CLI's iPod `--repair` path opens the iTunesDB when the repair
+ * declares `'database'` in its requirements. Opening libgpod against
+ * SQLite-based unsupported generations (hashAB nano 6/7, shuffle 3/4,
+ * iOS) risks corrupting on-device state — so the refusal must happen
+ * BEFORE the open call. The pipeline's `runDiagnosticRepair` would catch
+ * the same refusal AFTER `IpodDatabase.open`, which is too late.
+ *
+ * Returns silently on non-iPod ctx, empty mountPoint, or supported
+ * devices. Throws `CliError(INCOMPATIBLE_DEVICE_TYPE)` otherwise.
+ */
+export async function preflightCascadeRefusal(
+  check: DiagnosticCheck,
+  ctx: { deviceType: DiagnosticDeviceType; mountPoint: string },
+  deps?: { assessIpodIdentity?: RunDiagnosticRepairDeps['assessIpodIdentity'] }
+): Promise<void> {
+  const reason = await assessRepairRefusal(ctx, deps ?? {});
+  if (!reason) return;
+  throw new CliError({
+    message: reason.headline,
+    code: REPAIR_PIPELINE_ERROR_CODES.INCOMPATIBLE_DEVICE_TYPE,
+    details: { checkId: check.id, unsupported: reason },
+    printText: (o) => {
+      o.error(reason.headline);
+      if (reason.details) {
+        for (const line of reason.details) o.print(`  ${line}`);
+      }
+      o.print(`See: ${reason.docsUrl ?? DOCS_URLS.supportedDevices}`);
+    },
+  });
 }
 
 /**
@@ -101,6 +138,13 @@ export interface RunRepairPipelineArgs {
   /** Override the cascade-unsupported pre-flight assessor (tests). */
   deps?: RunDiagnosticRepairDeps;
   /**
+   * Set `true` when the caller has already run `preflightCascadeRefusal`
+   * against the same `(check, ctx)`. The pipeline forwards this to core
+   * via `RunDiagnosticRepairDeps.skipPreflight`, avoiding a redundant
+   * `assessIpodIdentity` fetch on the success path.
+   */
+  refusalPreflightedByCaller?: boolean;
+  /**
    * Optional success-line override. iPod + mass-storage print
    * "Repair complete. Run `podkit doctor` to verify."; system repairs
    * print "Repair complete." (no verify-on-device hint).
@@ -146,7 +190,10 @@ export async function runRepairPipeline(args: RunRepairPipelineArgs): Promise<vo
           ? {}
           : { onProgress: makeProgressHandler(out, { extended: !args.compactProgress }) }),
       },
-      args.deps ?? {}
+      {
+        ...args.deps,
+        ...(args.refusalPreflightedByCaller ? { skipPreflight: true } : {}),
+      }
     );
   } catch (err) {
     clearProgressLine(out, progressWidth);

@@ -370,6 +370,7 @@ export {
   getRepairCheck,
   getRepairCheckForValidation,
   runDiagnosticRepair,
+  assessRepairRefusal,
 } from './diagnostics/index.js';
 export type { RepairExecutionResult, RunDiagnosticRepairDeps } from './diagnostics/index.js';
 

@@ -2713,6 +2713,9 @@ export async function runDiagnosticRepair(
 ): Promise<any> {
   return { status: 'ok', checkId: '', summary: '' };
 }
+export async function assessRepairRefusal(_ctx: any, _deps?: any): Promise<any> {
+  return null;
+}
 
 // Pre-sync sweep — stubs; demo skips real sweeps.
 export async function runPreSyncSweep(_input: any): Promise<any> {

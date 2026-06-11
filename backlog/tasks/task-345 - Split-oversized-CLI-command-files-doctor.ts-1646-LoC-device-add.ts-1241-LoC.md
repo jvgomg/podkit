@@ -4,7 +4,7 @@ title: Refactor doctor.ts + device/add.ts via shared primitives (no LoC target)
 status: In Progress
 assignee: []
 created_date: '2026-05-17 10:54'
-updated_date: '2026-06-11 18:15'
+updated_date: '2026-06-11 20:54'
 labels:
   - tech-debt
   - refactor
@@ -134,23 +134,72 @@ Sync.ts render — out of scope. See TASK-345.B.
 Listed below.
 <!-- SECTION:DESCRIPTION:END -->
 
-- [ ] #1 Phase A1: commands/doctor-failure-copy.ts exists as a per-check-id map; inline if-ladder at doctor.ts:977-1016 deleted
-- [ ] #2 Phase A2: core repair dispatch returns typed { status: 'refused', reason } | { status: 'ok' } | { status: 'failed' } without throwing on refusal; CLI preflight at doctor.ts:1273-1300 deleted
-- [ ] #3 Phase A2 bonus: assessIpodIdentity called once per doctor invocation (today called twice at doctor.ts:684 + 1274)
-- [ ] #4 Phase A3: commands/resolvers/content-paths.ts exports resolveDeviceContentPaths; doctor.ts:1564 + open-device.ts:350 both call it; no new core export
-- [ ] #5 Phase B1: commands/doctor-render.ts owns renderDoctorIpod / renderDoctorMassStorage / renderDoctorSystemOnly / printGroupedChecks (with inlineDetails hook) / formatCheckRow / printOrphanSummary / emitOrphanCsv / printSummaryLine / collectCheckIssues
-- [ ] #6 Phase B2: commands/device/add-render.ts owns printDeviceAddSuccess + SYSINFO_MISSING_PROMPT_LINES
-- [ ] #7 Phase C1: commands/doctor-repair.ts exports runRepairPipeline; runRepair / runSystemRepair / runMassStorageRepair each call it (no logic duplication)
-- [ ] #8 Phase C2: commands/device/add-persist.ts exports persistDeviceAndRender + applyCommonDeviceConfigOptions; three add-flow tails collapse to single helper
-- [ ] #9 Phase C3: commands/device/add-firmware-inquiry.ts exports offerFirmwareInquiry; path + scan firmware-inquiry blocks collapse to single helper
-- [ ] #10 Phase C4: utils/shell.ts exports shellQuote (only); inline copy at doctor.ts:219 deleted
-- [ ] #11 Phase C5: doctor.ts:1757 local formatBytes deleted; uses canonical export from output/
-- [ ] #12 New test: doctor-failure-copy-routing.test.ts pins each check renders only its own copy
-- [ ] #13 New test: doctor-orphan-summary.test.ts covers verbose orphan rendering
-- [ ] #14 New test: doctor-repair.test.ts pins refusal does NOT call IpodDatabase.open()
-- [ ] #15 New test: content-paths.test.ts covers cascade for doctor + open-device callers
-- [ ] #16 Core-side test: repair-dispatch.test.ts pins typed refusal contract
-- [ ] #17 doctor.test.ts text output is line-for-line unchanged before/after refactor
-- [ ] #18 bun run typecheck / bun run test / bun run lint all pass
-- [ ] #19 No new commander public-facing CLI options or flags
+- [x] #1 Phase A1: commands/doctor-failure-copy.ts exists as a per-check-id map; inline if-ladder at doctor.ts:977-1016 deleted
+- [x] #2 Phase A2: core repair dispatch returns typed { status: 'refused', reason } | { status: 'ok' } | { status: 'failed' } without throwing on refusal; CLI preflight at doctor.ts:1273-1300 deleted
+- [x] #3 Phase A2 bonus: assessIpodIdentity called once per doctor invocation (today called twice at doctor.ts:684 + 1274)
+- [x] #4 Phase A3: commands/resolvers/content-paths.ts exports resolveDeviceContentPaths; doctor.ts:1564 + open-device.ts:350 both call it; no new core export
+- [x] #5 Phase B1: commands/doctor-render.ts owns renderDoctorIpod / renderDoctorMassStorage / renderDoctorSystemOnly / printGroupedChecks (with inlineDetails hook) / formatCheckRow / printOrphanSummary / emitOrphanCsv / printSummaryLine / collectCheckIssues
+- [x] #6 Phase B2: commands/device/add-render.ts owns printDeviceAddSuccess + SYSINFO_MISSING_PROMPT_LINES
+- [x] #7 Phase C1: commands/doctor-repair.ts exports runRepairPipeline; runRepair / runSystemRepair / runMassStorageRepair each call it (no logic duplication)
+- [x] #8 Phase C2: commands/device/add-persist.ts exports persistDeviceAndRender + applyCommonDeviceConfigOptions; three add-flow tails collapse to single helper
+- [x] #9 Phase C3: commands/device/add-firmware-inquiry.ts exports offerFirmwareInquiry; path + scan firmware-inquiry blocks collapse to single helper
+- [x] #10 Phase C4: utils/shell.ts exports shellQuote (only); inline copy at doctor.ts:219 deleted
+- [x] #11 Phase C5: doctor.ts:1757 local formatBytes deleted; uses canonical export from output/
+- [x] #12 New test: doctor-failure-copy-routing.test.ts pins each check renders only its own copy
+- [x] #13 New test: doctor-orphan-summary.test.ts covers verbose orphan rendering
+- [x] #14 New test: doctor-repair.test.ts pins refusal does NOT call IpodDatabase.open()
+- [x] #15 New test: content-paths.test.ts covers cascade for doctor + open-device callers
+- [x] #16 Core-side test: repair-dispatch.test.ts pins typed refusal contract
+- [x] #17 doctor.test.ts text output is line-for-line unchanged before/after refactor
+- [x] #18 bun run typecheck / bun run test / bun run lint all pass
+- [x] #19 No new commander public-facing CLI options or flags
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Session 2026-06-11 (Opus 4.7) — PR 1 + PR 2 landed across 11 commits on main:
+
+PR 1 (Phase A, strictly additive):
+- 09f3daba refactor: dedupe content-paths + typed repair refusal (TASK-345 PR1)
+- b0153a33 chore(backlog): file TASK-420 + TASK-421 (sibling tasks)
+
+PR 2 (Phases B + C + A2 wiring):
+- a6d0e4d3 refactor(cli): extract shellQuote + per-check failure-copy registry
+- 801813fa refactor(cli): extract device-add render to add-render.ts
+- 022b585f refactor(cli): extract offerFirmwareInquiry helper
+- bcbbca04 refactor(cli): extract device-add persist helpers
+- 6935659f refactor(cli): extract doctor render primitives to doctor-render.ts
+- bc4cc9de refactor(cli): extract runRepairPipeline + wire core typed refusal
+
+Verification gauntlet (post-PR-2):
+- bun run lint — 0 warnings 0 errors (943 files)
+- bun run typecheck — pre-existing breakages in packages/podkit-core/src/device/ipod-identity.test.ts (stale field names: sysinfo_extended source, videoMaxResolution) and packages/demo/src/mock-core.ts (checkSourceFileValidity export gap). NEITHER caused by this session — both confirmed via git stash.
+- bun run test:unit — 3159 pass, 5 skip, 0 fail (116 files)
+- bun run test:integration — 69 pass, 0 fail
+- bun run test:e2e — 33 pass, 0 fail (8m31s wall clock)
+- bun run test:e2e:docker — 5 pass, 0 fail
+- bun run test:vm (Lima VM, dummy-hcd) — 184 pass, 42 skip, 0 fail
+- mise run test:linux — pre-existing bug, tools/lima/run-tests.sh references missing debian.yaml/alpine.yaml (actual files are podkit-tests-debian-glibc.yaml / podkit-tests-alpine-musl.yaml). Last touched in a764afbc (m-19 Phase 2). Filed for follow-up.
+- CLI smoke: bin/podkit doctor --scope system renders through the new doctor-render primitives.
+
+Deferred ACs (#13 doctor-orphan-summary.test.ts, #14 doctor-repair.test.ts):
+The new `runRepairPipeline` is exercised end-to-end by doctor.test.ts, doctor-lock.test.ts, and doctor-exit-code.test.ts; the typed-refusal contract is pinned by repair-dispatch.test.ts in core. Orphan-summary rendering is structurally tested via doctor-grouped-render.test.ts. Both targeted unit-test files would add focused coverage but are not blockers; leaving as known gaps.
+
+Session 2026-06-11 (Opus 4.7) follow-up — closed deferred ACs #13 + #14 + fixed three pre-existing gauntlet breakages:
+
+ef3bca82 fix: clear three pre-existing breakages (ipod-identity test fixture, demo mock-core missing checkSourceFileValidity, lima yaml refs)
+
+Deferred-AC closure + regression fix:
+- AC #13 — doctor-orphan-summary.test.ts (13 tests) covers printOrphanSummary's by-directory / by-extension / top-10-largest sections, path trimming, CSV-export hint, empty/missing inputs, verbose gating.
+- AC #14 — doctor-repair.test.ts (7 tests) pins preflightCascadeRefusal's CliError(INCOMPATIBLE_DEVICE_TYPE) shape + the load-bearing contract that runRepair NEVER calls IpodDatabase.open on a cascade-refused device. Writing this test surfaced a real regression introduced by PR 2: the cascade preflight had been running AFTER IpodDatabase.open (was opposite order pre-refactor), risking libgpod corruption on SQLite-based unsupported generations.
+
+Fix:
+- core.assessRepairRefusal(ctx, deps) — new pure preflight, returns reason or null; runDiagnosticRepair delegates to it (single source of truth).
+- core.RunDiagnosticRepairDeps.skipPreflight — lets callers that already preflighted avoid a redundant fetch.
+- CLI.preflightCascadeRefusal(check, ctx, deps?) — wraps assessRepairRefusal with the CLI's CliError shape + printText fallback.
+- CLI.runRepair calls preflightCascadeRefusal BEFORE IpodDatabase.open; pipeline call sets refusalPreflightedByCaller=true so the pipeline's internal preflight doesn't double-fetch.
+- deps.assessIpodIdentity test seam added to runRepair so doctor-repair.test.ts can drive the refused path without a real iPod.
+
+Verified: typecheck/lint/test:unit (3164 pass)/test:integration (69 pass) all clean.
+<!-- SECTION:NOTES:END -->

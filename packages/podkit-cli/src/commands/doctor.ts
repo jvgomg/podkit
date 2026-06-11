@@ -42,7 +42,7 @@ import {
   formatCheckRow,
   printSummaryLine,
 } from './doctor-render.js';
-import { runRepairPipeline } from './doctor-repair.js';
+import { preflightCascadeRefusal, runRepairPipeline } from './doctor-repair.js';
 
 /**
  * Error codes emitted by `podkit doctor`.
@@ -1136,7 +1136,11 @@ export async function runRepair(
   options: DoctorOptions,
   out: OutputContext,
   config: ReturnType<typeof getContext>['config'],
-  deps: { loadCore?: () => Promise<typeof import('@podkit/core')> } = {}
+  deps: {
+    loadCore?: () => Promise<typeof import('@podkit/core')>;
+    /** Override the cascade-unsupported preflight assessor (tests). */
+    assessIpodIdentity?: typeof import('@podkit/core').assessIpodIdentity;
+  } = {}
 ): Promise<void> {
   const repair = check.repair!;
   const dryRun = options.dryRun ?? false;
@@ -1158,6 +1162,17 @@ export async function runRepair(
       code: DoctorErrorCodes.CORE_LOAD_FAILED,
     });
   }
+
+  // Refuse mutating repair on cascade-unsupported devices BEFORE opening
+  // the iPod database. Opening libgpod against SQLite-based unsupported
+  // generations (hashAB nano 6/7, shuffle 3/4, iOS) risks corrupting
+  // on-device state — the preflight must run before any device handle is
+  // acquired, so we can't rely on the pipeline's own internal preflight.
+  await preflightCascadeRefusal(
+    check,
+    { deviceType: 'ipod', mountPoint: devicePath },
+    { assessIpodIdentity: deps.assessIpodIdentity ?? core.assessIpodIdentity }
+  );
 
   // Open the iPod database only when this repair declares it needs it.
   // Repairs that populate identity (sysinfo-extended, sysinfo-consistency)
@@ -1221,6 +1236,9 @@ export async function runRepair(
       dryRun,
       verbose,
       out,
+      // CLI did the cascade-unsupported preflight before db.open;
+      // tell the pipeline to skip its own (avoids a redundant fetch).
+      refusalPreflightedByCaller: true,
     });
   } finally {
     for (const adapter of adapters) {

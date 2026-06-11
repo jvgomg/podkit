@@ -15,6 +15,7 @@ import {
   getRepairCheck,
   getRepairCheckForValidation,
   runDiagnosticRepair,
+  assessRepairRefusal,
 } from './repair-dispatch.js';
 import type { DiagnosticCheck, RepairContext, RepairResult } from './types.js';
 import type { IpodIdentityAssessment } from '../device/ipod-identity.js';
@@ -368,6 +369,99 @@ describe('runDiagnosticRepair — result wrapping', () => {
   it('propagates exceptions thrown by repair.run (unexpected execution failure)', async () => {
     const check = makeFakeCheck({ throwInsteadOfReturning: new Error('boom') });
     await expect(runDiagnosticRepair(check, massStorageCtx())).rejects.toThrow('boom');
+  });
+});
+
+describe('assessRepairRefusal', () => {
+  it('returns the reason when assessment carries unsupportedReason', async () => {
+    const reason = await assessRepairRefusal(ipodCtx(), {
+      assessIpodIdentity: async () =>
+        ({
+          model: { unsupportedReason: UNSUPPORTED_REASON },
+        }) as unknown as IpodIdentityAssessment,
+    });
+    expect(reason).toEqual(UNSUPPORTED_REASON);
+  });
+
+  it('returns null for supported devices', async () => {
+    const reason = await assessRepairRefusal(ipodCtx(), {
+      assessIpodIdentity: async () =>
+        ({ model: { unsupportedReason: undefined } }) as unknown as IpodIdentityAssessment,
+    });
+    expect(reason).toBeNull();
+  });
+
+  it('returns null for model: null (unidentified)', async () => {
+    const reason = await assessRepairRefusal(ipodCtx(), {
+      assessIpodIdentity: async () => ({ model: null }) as unknown as IpodIdentityAssessment,
+    });
+    expect(reason).toBeNull();
+  });
+
+  it('returns null for mass-storage ctx without consulting the assessor', async () => {
+    let calls = 0;
+    const reason = await assessRepairRefusal(massStorageCtx(), {
+      assessIpodIdentity: async () => {
+        calls++;
+        return {} as IpodIdentityAssessment;
+      },
+    });
+    expect(reason).toBeNull();
+    expect(calls).toBe(0);
+  });
+
+  it('returns null for empty mountPoint without consulting the assessor', async () => {
+    let calls = 0;
+    const reason = await assessRepairRefusal(
+      { deviceType: 'ipod', mountPoint: '' },
+      {
+        assessIpodIdentity: async () => {
+          calls++;
+          return {} as IpodIdentityAssessment;
+        },
+      }
+    );
+    expect(reason).toBeNull();
+    expect(calls).toBe(0);
+  });
+
+  it('returns null on assessor throw (best-effort)', async () => {
+    const reason = await assessRepairRefusal(ipodCtx(), {
+      assessIpodIdentity: async () => {
+        throw new Error('USB unavailable');
+      },
+    });
+    expect(reason).toBeNull();
+  });
+});
+
+describe('runDiagnosticRepair — skipPreflight', () => {
+  it('skips the assess call when deps.skipPreflight is true', async () => {
+    let assessCalls = 0;
+    const check = makeFakeCheck({});
+    const result = await runDiagnosticRepair(check, ipodCtx(), undefined, {
+      assessIpodIdentity: async () => {
+        assessCalls++;
+        return {
+          model: { unsupportedReason: UNSUPPORTED_REASON },
+        } as unknown as IpodIdentityAssessment;
+      },
+      skipPreflight: true,
+    });
+    expect(assessCalls).toBe(0);
+    expect(result.status).toBe('ok');
+  });
+
+  it('still runs the assess call when skipPreflight is omitted/false', async () => {
+    let assessCalls = 0;
+    const check = makeFakeCheck({});
+    await runDiagnosticRepair(check, ipodCtx(), undefined, {
+      assessIpodIdentity: async () => {
+        assessCalls++;
+        return { model: null } as unknown as IpodIdentityAssessment;
+      },
+    });
+    expect(assessCalls).toBe(1);
   });
 });
 

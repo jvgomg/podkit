@@ -137,6 +137,43 @@ export type RepairExecutionResult =
 export interface RunDiagnosticRepairDeps {
   /** Override the identity assessment used for the unsupported-device pre-flight (tests). */
   assessIpodIdentity?: (mountPoint: string) => Promise<IpodIdentityAssessment>;
+  /**
+   * Skip the cascade-unsupported pre-flight entirely. Set by callers that
+   * already ran `assessRepairRefusal` against the same `(check, ctx)` and
+   * want to avoid a redundant assessment fetch — primarily the CLI
+   * `--repair` flow, which must refuse BEFORE opening the iPod database
+   * to avoid libgpod opens against unsupported generations. Defaults to
+   * `false`.
+   */
+  skipPreflight?: boolean;
+}
+
+/**
+ * Run the cascade-unsupported pre-flight in isolation. Returns the
+ * refusal reason on a refused device, otherwise `null`. Never throws —
+ * transient I/O failures fall through to `null`, matching the best-effort
+ * semantics of `runDiagnosticRepair`'s internal pre-flight.
+ *
+ * Pre-flight is iPod-scoped: returns `null` immediately for mass-storage
+ * or empty mountPoint inputs.
+ *
+ * Callers that need to refuse BEFORE opening a device handle use this to
+ * gate the open call; the CLI's iPod `--repair` flow does exactly that,
+ * since opening libgpod against SQLite-based unsupported generations
+ * (hashAB nano 6/7, shuffle 3/4, iOS) can corrupt on-device state.
+ */
+export async function assessRepairRefusal(
+  ctx: { deviceType: DiagnosticDeviceType; mountPoint: string },
+  deps: { assessIpodIdentity?: (mountPoint: string) => Promise<IpodIdentityAssessment> } = {}
+): Promise<ReadinessUnsupportedReason | null> {
+  if (ctx.deviceType !== 'ipod' || !ctx.mountPoint) return null;
+  const assess = deps.assessIpodIdentity ?? defaultAssessIpodIdentity;
+  try {
+    const assessment = await assess(ctx.mountPoint);
+    return assessment?.model?.unsupportedReason ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -168,17 +205,10 @@ export async function runDiagnosticRepair(
     throw new Error(`Check "${check.id}" has no repair defined`);
   }
 
-  if (ctx.deviceType === 'ipod' && ctx.mountPoint) {
-    const assess = deps.assessIpodIdentity ?? defaultAssessIpodIdentity;
-    try {
-      const assessment = await assess(ctx.mountPoint);
-      const reason = assessment?.model?.unsupportedReason;
-      if (reason) {
-        return { status: 'refused', checkId: check.id, reason };
-      }
-    } catch {
-      // Best-effort: transient assessment failures (USB resolution, disk
-      // reads) fall through to the repair itself.
+  if (!deps.skipPreflight) {
+    const reason = await assessRepairRefusal(ctx, deps);
+    if (reason) {
+      return { status: 'refused', checkId: check.id, reason };
     }
   }
 
