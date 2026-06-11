@@ -21,8 +21,18 @@
  * don't appear in the dispatch table at all.
  */
 
-import type { DiagnosticCheck, DiagnosticDeviceType } from './types.js';
+import type {
+  DiagnosticCheck,
+  DiagnosticDeviceType,
+  RepairContext,
+  RepairRunOptions,
+} from './types.js';
 import { getDiagnosticCheck } from './index.js';
+import {
+  assessIpodIdentity as defaultAssessIpodIdentity,
+  type IpodIdentityAssessment,
+} from '../device/ipod-identity.js';
+import type { ReadinessUnsupportedReason } from '@podkit/device-types';
 
 /**
  * For a public ID, returns the internal check ID for the given device type.
@@ -99,4 +109,91 @@ export function getRepairCheck(
  */
 export function getRepairCheckForValidation(publicId: string): DiagnosticCheck | undefined {
   return getRepairCheck(publicId, 'ipod') ?? getRepairCheck(publicId, 'mass-storage');
+}
+
+// ── Typed repair execution ────────────────────────────────────────────────
+
+/**
+ * Result of executing a diagnostic repair through `runDiagnosticRepair`.
+ *
+ * Three disjoint outcomes:
+ *  - `'refused'` — pre-flight identity assessment surfaced a cascade-known
+ *    unsupported iPod generation (hashAB nano 6/7, shuffle 3/4, iOS, …).
+ *    The repair was not executed. `reason` carries the typed payload the
+ *    presenter renders.
+ *  - `'ok'` — the repair ran and its `RepairResult.success` was `true`.
+ *  - `'failed'` — the repair ran and its `RepairResult.success` was `false`.
+ *
+ * The dispatcher does NOT throw on refusal. Callers decide exit code and
+ * rendering — keeps the core surface presentation-agnostic. Underlying
+ * exceptions from `check.repair.run` still propagate; they represent
+ * unexpected execution failures distinct from a structured `failed` result.
+ */
+export type RepairExecutionResult =
+  | { status: 'refused'; checkId: string; reason: ReadinessUnsupportedReason }
+  | { status: 'ok'; checkId: string; summary: string; details?: Record<string, unknown> }
+  | { status: 'failed'; checkId: string; summary: string; details?: Record<string, unknown> };
+
+export interface RunDiagnosticRepairDeps {
+  /** Override the identity assessment used for the unsupported-device pre-flight (tests). */
+  assessIpodIdentity?: (mountPoint: string) => Promise<IpodIdentityAssessment>;
+}
+
+/**
+ * Execute a diagnostic repair with the cascade-unsupported pre-flight applied.
+ *
+ * Before invoking `check.repair.run`, this resolves the iPod identity for the
+ * mount point and refuses if the cascade flagged the device as a known
+ * unsupported generation — even if the user explicitly asked for the repair.
+ * Applying mutating repairs to refused generations risks corrupting on-device
+ * state (notably the SQLite-based generations where libgpod writes are not
+ * safe).
+ *
+ * Pre-flight is iPod-scoped: mass-storage and system-scope repairs skip it
+ * (no cascade applies). The pre-flight is best-effort — transient I/O errors
+ * during assessment fall through to `repair.run`, which surfaces any genuine
+ * device-side problems with its own error path.
+ *
+ * Existing direct callers of `check.repair.run` are unaffected — this is a
+ * strictly additive entry point for consumers (CLI, future web/GUI) that
+ * want the refusal semantics centralised in core.
+ */
+export async function runDiagnosticRepair(
+  check: DiagnosticCheck,
+  ctx: RepairContext,
+  options: RepairRunOptions = {},
+  deps: RunDiagnosticRepairDeps = {}
+): Promise<RepairExecutionResult> {
+  if (!check.repair) {
+    throw new Error(`Check "${check.id}" has no repair defined`);
+  }
+
+  if (ctx.deviceType === 'ipod' && ctx.mountPoint) {
+    const assess = deps.assessIpodIdentity ?? defaultAssessIpodIdentity;
+    try {
+      const assessment = await assess(ctx.mountPoint);
+      const reason = assessment?.model?.unsupportedReason;
+      if (reason) {
+        return { status: 'refused', checkId: check.id, reason };
+      }
+    } catch {
+      // Best-effort: transient assessment failures (USB resolution, disk
+      // reads) fall through to the repair itself.
+    }
+  }
+
+  const result = await check.repair.run(ctx, options);
+  return result.success
+    ? {
+        status: 'ok',
+        checkId: check.id,
+        summary: result.summary,
+        ...(result.details !== undefined ? { details: result.details } : {}),
+      }
+    : {
+        status: 'failed',
+        checkId: check.id,
+        summary: result.summary,
+        ...(result.details !== undefined ? { details: result.details } : {}),
+      };
 }

@@ -74,7 +74,8 @@ import { createShutdownController } from '../shutdown.js';
 import { openDevice, getDeviceTypeDisplayName } from './open-device.js';
 import type { ReadinessResult } from '@podkit/core';
 import { DOCS_URLS } from '@podkit/core';
-import { BUILT_IN_PRESETS } from '@podkit/devices-mass-storage';
+import { formatBytes } from '../output/index.js';
+import { resolveDeviceContentPaths } from '../resolvers/content-paths.js';
 import {
   stageMarker,
   printReadinessSummary,
@@ -543,7 +544,7 @@ export async function runDoctorDiagnostics(
   if (isMassStorage) {
     const label = getDeviceTypeDisplayName(deviceConfig);
 
-    const contentPaths = resolveMassStorageContentPaths(deviceConfig!, config.deviceDefaults, core);
+    const contentPaths = resolveDeviceContentPaths(deviceConfig, config.deviceDefaults);
 
     const report = await core.runDiagnostics({
       mountPoint: devicePath,
@@ -1557,32 +1558,6 @@ export async function withDeviceWriteLock<T>(
 
 // ── Mass-storage helpers ─────────────────────────────────────────────────
 
-/**
- * Resolve content paths for a mass-storage device from the config chain:
- * preset defaults < global deviceDefaults < per-device config.
- */
-function resolveMassStorageContentPaths(
-  deviceConfig: DeviceConfig,
-  globalDefaults: ReturnType<typeof getContext>['config']['deviceDefaults'],
-  core: typeof import('@podkit/core')
-): import('@podkit/core').ContentPaths {
-  const presetId = (deviceConfig.type ?? 'generic') as keyof typeof BUILT_IN_PRESETS;
-  const builtInPreset = BUILT_IN_PRESETS[presetId];
-  const presetDefaults = builtInPreset?.contentPaths;
-  const overrides: Partial<import('@podkit/core').ContentPaths> = {};
-  if (globalDefaults?.musicDir !== undefined) overrides.musicDir = globalDefaults.musicDir;
-  if (globalDefaults?.moviesDir !== undefined) overrides.moviesDir = globalDefaults.moviesDir;
-  if (globalDefaults?.tvShowsDir !== undefined) overrides.tvShowsDir = globalDefaults.tvShowsDir;
-  if (deviceConfig.musicDir !== undefined) overrides.musicDir = deviceConfig.musicDir;
-  if (deviceConfig.moviesDir !== undefined) overrides.moviesDir = deviceConfig.moviesDir;
-  if (deviceConfig.tvShowsDir !== undefined) overrides.tvShowsDir = deviceConfig.tvShowsDir;
-
-  const hasOverrides = Object.keys(overrides).length > 0;
-  return hasOverrides || presetDefaults
-    ? core.normalizeContentPaths(overrides, presetDefaults)
-    : core.normalizeContentPaths({});
-}
-
 async function runMassStorageRepair(
   devicePath: string,
   deviceConfig: DeviceConfig,
@@ -1594,17 +1569,7 @@ async function runMassStorageRepair(
   const repair = check.repair!;
   const dryRun = options.dryRun ?? false;
 
-  let core: typeof import('@podkit/core');
-  try {
-    core = await import('@podkit/core');
-  } catch (err) {
-    throw new CliError({
-      message: err instanceof Error ? err.message : 'Failed to load podkit-core',
-      code: DoctorErrorCodes.CORE_LOAD_FAILED,
-    });
-  }
-
-  const contentPaths = resolveMassStorageContentPaths(deviceConfig, config.deviceDefaults, core);
+  const contentPaths = resolveDeviceContentPaths(deviceConfig, config.deviceDefaults);
 
   if (!dryRun) {
     out.print(`Repairing ${check.id}: ${repair.description}...`);
@@ -1753,13 +1718,6 @@ export function printGroupedChecks(
 }
 
 // ── Orphan file helpers ────────────────────────────────────────────────────
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-}
 
 /**
  * Print a verbose summary of orphan files: breakdown by directory and extension,

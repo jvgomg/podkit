@@ -2705,6 +2705,14 @@ export function getRepairCheck(_publicId: string, _deviceType: any): any {
 export function getRepairCheckForValidation(_publicId: string): any {
   return undefined;
 }
+export async function runDiagnosticRepair(
+  _check: any,
+  _ctx: any,
+  _options?: any,
+  _deps?: any
+): Promise<any> {
+  return { status: 'ok', checkId: '', summary: '' };
+}
 
 // Pre-sync sweep — stubs; demo skips real sweeps.
 export async function runPreSyncSweep(_input: any): Promise<any> {

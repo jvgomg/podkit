@@ -55,6 +55,9 @@ export {
   resolvePublicRepairId,
   getRepairCheck,
   getRepairCheckForValidation,
+  runDiagnosticRepair,
+  type RepairExecutionResult,
+  type RunDiagnosticRepairDeps,
 } from './repair-dispatch.js';
 
 // ── Registry ────────────────────────────────────────────────────────────────

@@ -19,6 +19,7 @@ import {
   type BuiltInPresetId,
 } from '@podkit/devices-mass-storage';
 import type { DeviceConfig, PodkitConfig } from '../config/types.js';
+import { resolveDeviceContentPaths } from '../resolvers/content-paths.js';
 
 // =============================================================================
 // Types
@@ -347,38 +348,20 @@ export async function openDevice(
     throw new Error(`Unknown device type: ${deviceType}`);
   }
 
-  // Resolve content paths: preset defaults < global deviceDefaults < per-device config
-  const { BUILT_IN_PRESETS } = await import('@podkit/devices-mass-storage');
-  const builtInPreset = BUILT_IN_PRESETS[deviceType! as keyof typeof BUILT_IN_PRESETS];
-  const presetDefaults = builtInPreset?.contentPaths;
-  const contentPathOverrides: Partial<import('@podkit/core').ContentPaths> = {};
-  // Apply global deviceDefaults as fallback
-  if (deviceDefaults?.musicDir !== undefined)
-    contentPathOverrides.musicDir = deviceDefaults.musicDir;
-  if (deviceDefaults?.moviesDir !== undefined)
-    contentPathOverrides.moviesDir = deviceDefaults.moviesDir;
-  if (deviceDefaults?.tvShowsDir !== undefined)
-    contentPathOverrides.tvShowsDir = deviceDefaults.tvShowsDir;
-  // Apply per-device config (highest priority)
-  if (deviceConfig?.musicDir !== undefined) contentPathOverrides.musicDir = deviceConfig.musicDir;
-  if (deviceConfig?.moviesDir !== undefined)
-    contentPathOverrides.moviesDir = deviceConfig.moviesDir;
-  if (deviceConfig?.tvShowsDir !== undefined)
-    contentPathOverrides.tvShowsDir = deviceConfig.tvShowsDir;
-
-  const hasOverrides = Object.keys(contentPathOverrides).length > 0;
-  const contentPaths =
-    hasOverrides || presetDefaults
-      ? core.normalizeContentPaths(contentPathOverrides, presetDefaults)
-      : undefined;
+  // Resolve content paths: preset defaults < global deviceDefaults < per-device config.
+  // Always returns a fully-normalised ContentPaths; previously this branch
+  // returned `undefined` when no overrides applied, which let the adapter
+  // fall back to DEFAULT_CONTENT_PATHS internally — equivalent to the
+  // normalised form we now pass explicitly.
+  const contentPaths = resolveDeviceContentPaths(deviceConfig, deviceDefaults);
 
   // Resolve pathTemplate: per-device config > global deviceDefaults > adapter default
   const pathTemplate = deviceConfig?.pathTemplate ?? deviceDefaults?.pathTemplate;
 
-  const adapterOptions =
-    contentPaths || pathTemplate !== undefined
-      ? { ...(contentPaths ? { contentPaths } : {}), ...(pathTemplate ? { pathTemplate } : {}) }
-      : undefined;
+  const adapterOptions = {
+    contentPaths,
+    ...(pathTemplate ? { pathTemplate } : {}),
+  };
   const adapter = await core.MassStorageAdapter.open(path, resolvedCaps, adapterOptions);
 
   // Use the adapter's view of capabilities so downstream config + classifier

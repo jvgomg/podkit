@@ -14,7 +14,11 @@ import {
   resolvePublicRepairId,
   getRepairCheck,
   getRepairCheckForValidation,
+  runDiagnosticRepair,
 } from './repair-dispatch.js';
+import type { DiagnosticCheck, RepairContext, RepairResult } from './types.js';
+import type { IpodIdentityAssessment } from '../device/ipod-identity.js';
+import type { ReadinessUnsupportedReason } from '@podkit/device-types';
 
 describe('PUBLIC_REPAIR_IDS', () => {
   it('lists every public ID the CLI advertises', () => {
@@ -159,5 +163,224 @@ describe('getRepairCheckForValidation', () => {
     // Both share the CLI-visible signals: neither needs source-collection.
     expect(ipod?.repair?.requirements).not.toContain('source-collection');
     expect(ms?.repair?.requirements).not.toContain('source-collection');
+  });
+});
+
+// ── runDiagnosticRepair ───────────────────────────────────────────────────
+
+/**
+ * Build a fake check whose repair.run is observable, so refusal-skip and
+ * ok/failed branches can be asserted on whether (and with what) repair.run
+ * was invoked.
+ */
+function makeFakeCheck(opts: {
+  id?: string;
+  result?: RepairResult;
+  throwInsteadOfReturning?: Error;
+  recordCallsInto?: Array<{ ctx: RepairContext }>;
+}): DiagnosticCheck {
+  const id = opts.id ?? 'fake-check';
+  return {
+    id,
+    name: 'Fake Check',
+    scope: 'database-health',
+    applicableTo: ['ipod'],
+    check: async () => ({ status: 'pass', summary: 'fake pass', repairable: true }),
+    repair: {
+      description: 'fake repair',
+      requirements: [],
+      run: async (ctx) => {
+        opts.recordCallsInto?.push({ ctx });
+        if (opts.throwInsteadOfReturning) throw opts.throwInsteadOfReturning;
+        return opts.result ?? { success: true, summary: 'fake done' };
+      },
+    },
+  };
+}
+
+const UNSUPPORTED_REASON: ReadinessUnsupportedReason = {
+  kind: 'ios-device',
+  headline: 'iOS device not supported by podkit.',
+  details: ['Use Apple Music / Finder to sync this device.'],
+  docsUrl: 'https://example.test/docs/supported-devices',
+};
+
+function ipodCtx(mountPoint = '/Volumes/iPod'): RepairContext {
+  return { mountPoint, deviceType: 'ipod', adapters: [] };
+}
+
+function massStorageCtx(mountPoint = '/Volumes/EchoMini'): RepairContext {
+  return { mountPoint, deviceType: 'mass-storage', adapters: [] };
+}
+
+describe('runDiagnosticRepair — refusal pre-flight', () => {
+  it('returns { status: refused, reason } when assessment carries unsupportedReason', async () => {
+    const check = makeFakeCheck({});
+    const result = await runDiagnosticRepair(check, ipodCtx(), undefined, {
+      assessIpodIdentity: async () =>
+        ({
+          model: { unsupportedReason: UNSUPPORTED_REASON },
+        }) as unknown as IpodIdentityAssessment,
+    });
+
+    expect(result.status).toBe('refused');
+    if (result.status === 'refused') {
+      expect(result.checkId).toBe('fake-check');
+      expect(result.reason).toEqual(UNSUPPORTED_REASON);
+    }
+  });
+
+  it('does NOT call check.repair.run on refusal', async () => {
+    // Critical contract: pinned because a stray re-order or future refactor
+    // could re-enable the call. doctor.ts:1308 today gates IpodDatabase.open
+    // on the same refusal — leak-by-drift here would silently re-open the
+    // database against a refused device.
+    const calls: Array<{ ctx: RepairContext }> = [];
+    const check = makeFakeCheck({ recordCallsInto: calls });
+    await runDiagnosticRepair(check, ipodCtx(), undefined, {
+      assessIpodIdentity: async () =>
+        ({
+          model: { unsupportedReason: UNSUPPORTED_REASON },
+        }) as unknown as IpodIdentityAssessment,
+    });
+
+    expect(calls).toHaveLength(0);
+  });
+
+  it('skips the pre-flight for mass-storage devices (no cascade applies)', async () => {
+    let assessCalls = 0;
+    const check = makeFakeCheck({});
+    const result = await runDiagnosticRepair(check, massStorageCtx(), undefined, {
+      assessIpodIdentity: async () => {
+        assessCalls++;
+        return {} as IpodIdentityAssessment;
+      },
+    });
+
+    expect(assessCalls).toBe(0);
+    expect(result.status).toBe('ok');
+  });
+
+  it('skips the pre-flight when mountPoint is empty (system-scope repairs)', async () => {
+    let assessCalls = 0;
+    const check = makeFakeCheck({});
+    const result = await runDiagnosticRepair(
+      check,
+      { mountPoint: '', deviceType: 'ipod', adapters: [] },
+      undefined,
+      {
+        assessIpodIdentity: async () => {
+          assessCalls++;
+          return {} as IpodIdentityAssessment;
+        },
+      }
+    );
+
+    expect(assessCalls).toBe(0);
+    expect(result.status).toBe('ok');
+  });
+
+  it('falls through to repair.run when assessment throws (best-effort pre-flight)', async () => {
+    const calls: Array<{ ctx: RepairContext }> = [];
+    const check = makeFakeCheck({ recordCallsInto: calls });
+    const result = await runDiagnosticRepair(check, ipodCtx(), undefined, {
+      assessIpodIdentity: async () => {
+        throw new Error('USB resolution unavailable');
+      },
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(result.status).toBe('ok');
+  });
+
+  it('falls through to repair.run when assessment returns no unsupportedReason', async () => {
+    const calls: Array<{ ctx: RepairContext }> = [];
+    const check = makeFakeCheck({ recordCallsInto: calls });
+    const result = await runDiagnosticRepair(check, ipodCtx(), undefined, {
+      assessIpodIdentity: async () =>
+        ({
+          model: { unsupportedReason: undefined },
+        }) as unknown as IpodIdentityAssessment,
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(result.status).toBe('ok');
+  });
+
+  it('falls through when assessment returns model: null (unidentified device)', async () => {
+    // assessIpodIdentity resolves to `model: null` when neither USB nor disk
+    // identifiers yield a match. The optional-chain on `assessment.model`
+    // must short-circuit cleanly to `reason === undefined` rather than
+    // crash — pinned so a future edit that drops the `?.` (e.g.
+    // `assessment.model.unsupportedReason`) would fail loudly here instead
+    // of being swallowed by the best-effort catch.
+    const calls: Array<{ ctx: RepairContext }> = [];
+    const check = makeFakeCheck({ recordCallsInto: calls });
+    const result = await runDiagnosticRepair(check, ipodCtx(), undefined, {
+      assessIpodIdentity: async () => ({ model: null }) as unknown as IpodIdentityAssessment,
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(result.status).toBe('ok');
+  });
+});
+
+describe('runDiagnosticRepair — result wrapping', () => {
+  it('wraps RepairResult.success=true into { status: ok, summary, details }', async () => {
+    const check = makeFakeCheck({
+      result: { success: true, summary: 'repaired 12 entries', details: { fixed: 12 } },
+    });
+    const result = await runDiagnosticRepair(check, massStorageCtx());
+
+    expect(result).toEqual({
+      status: 'ok',
+      checkId: 'fake-check',
+      summary: 'repaired 12 entries',
+      details: { fixed: 12 },
+    });
+  });
+
+  it('wraps RepairResult.success=false into { status: failed, summary, details }', async () => {
+    const check = makeFakeCheck({
+      result: { success: false, summary: 'could not open database', details: { reason: 'locked' } },
+    });
+    const result = await runDiagnosticRepair(check, massStorageCtx());
+
+    expect(result).toEqual({
+      status: 'failed',
+      checkId: 'fake-check',
+      summary: 'could not open database',
+      details: { reason: 'locked' },
+    });
+  });
+
+  it('omits details from the wrapped result when RepairResult.details is undefined', async () => {
+    const check = makeFakeCheck({ result: { success: true, summary: 'done' } });
+    const result = await runDiagnosticRepair(check, massStorageCtx());
+
+    expect(result).toEqual({
+      status: 'ok',
+      checkId: 'fake-check',
+      summary: 'done',
+    });
+  });
+
+  it('propagates exceptions thrown by repair.run (unexpected execution failure)', async () => {
+    const check = makeFakeCheck({ throwInsteadOfReturning: new Error('boom') });
+    await expect(runDiagnosticRepair(check, massStorageCtx())).rejects.toThrow('boom');
+  });
+});
+
+describe('runDiagnosticRepair — guard', () => {
+  it('throws if the check has no repair defined', async () => {
+    const checkWithoutRepair: DiagnosticCheck = {
+      id: 'no-repair',
+      name: 'No Repair Check',
+      scope: 'system',
+      check: async () => ({ status: 'pass', summary: '', repairable: false }),
+    };
+    await expect(runDiagnosticRepair(checkWithoutRepair, ipodCtx())).rejects.toThrow(
+      'Check "no-repair" has no repair defined'
+    );
   });
 });

@@ -85,3 +85,6 @@ export {
   getAllCollections,
   type CollectionInfo,
 } from './collection.js';
+
+// Content path resolution (mass-storage)
+export { resolveDeviceContentPaths } from './content-paths.js';
