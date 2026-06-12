@@ -353,10 +353,17 @@ recently — see ADR-018 for the rationale.
 - **Never:** logs to console, retries internally, decides next-run
   recovery — the rescan contract owns recovery.
 
-### Pipeline / executor
+### Engine executor
 
-- **Awaits:** `save()` at the executor's chosen save checkpoint
-  (e.g. `MusicPipeline` saves every `saveInterval` ops + once at end).
+- **Awaits:** `save()` at the engine's checkpoint (every `saveInterval`
+  completed operations, default 10) and once at end of run. The engine
+  owns checkpoint cadence and final-save coordination uniformly across
+  music and video — pipelines and per-op handlers no longer call
+  `device.save()` directly. See [ADR-019](../../../adr/adr-019-music-pipeline-engine-symmetry.md).
+- **Skips save on abort:** the final save is gated on `!aborted`. The
+  pipeline signals abort by throwing the typed `AbortError`
+  (`engine/errors.ts`); the engine's catch sets `aborted=true` so the
+  guard skips the save and `ExecuteResult.aborted` is honest.
 - **Catches:** typed errors → reads category → applies retry policy
   per [error-handling §2.5](./error-handling.md#retry-policy).
 - **Accumulates:** warnings into `ExecuteResult.warnings`.

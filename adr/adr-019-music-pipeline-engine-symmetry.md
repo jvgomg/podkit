@@ -9,7 +9,7 @@ sidebar:
 
 ## Status
 
-**Proposed**
+**Accepted** — P1 complete (all phases landed). P2 deferred until a second pipelined-execution handler appears.
 
 ## Context
 
@@ -85,15 +85,13 @@ The transitional `ContentTypeHandler.savesInternally?: boolean` flag introduced 
 - **Contract change for `executeMusicPlan`** (library convenience that bypasses the engine): it now has no checkpoint cadence — only the existing final save fires. Library callers that need checkpoint behaviour should use `createSyncExecutor(createMusicHandler(...))` directly.
 - New integration test `engine fires checkpoint save every saveInterval completed operations` (`pipeline.integration.test.ts`) pins the cadence at the engine boundary: 5 tracks at `saveInterval=2` produces 3 saves (2 checkpoints + 1 final).
 
-**Phase 4 — Audit + lift remaining engine-vs-pipeline duplication.**
-- Warning sink: pipeline uses `WarningSink` already, drained by `MusicHandler.executeBatch` into `ctx.warningSink`. ✓
-- Abort handling: **DONE.** Pipeline previously threw `new Error('Sync aborted')` after draining its three-stage queues; the engine's batch-path catch (`executor.ts:414`) converted that to a synthetic per-operation failure and never set `ExecuteResult.aborted`. The bug was masked because `music-presenter.ts:850` independently checked `signal?.aborted` and overrode the interrupt state in its own return — three layers, each compensating for the next layer's broken contract. Phase 4b replaced the bare throw with a typed `AbortError` (new class in `engine/errors.ts`), and the engine's batch + per-op catch blocks now recognise `AbortError` (and `signal?.aborted`) and set `aborted = true` instead of recording a failure. Final save guard correctly observes the flag; `ExecuteResult.aborted` is honest. Music presenter's signal checks stay as belt-and-suspenders. New integration test `routes abort through engine: result.aborted=true on signal abort` pins the contract end-to-end.
-- Error categorisation: `engine/error-handling.ts` already exports `categorizeError`. Pipeline imports + uses it (via `getRetriesForCategory` adapter shim that converts pipeline's 4-field `RetryConfig` to engine's 7-category `SharedRetryConfig`). ✓
-- Retry config: pipeline owns its own `RetryConfig` shape and per-error-class counts (`MUSIC_RETRY_CONFIG` at `pipeline.ts:124`). The engine had a `retryConfig?: RetryConfig` field on `SyncExecuteOptions` that was declared but never read by any execution path — dead surface — **REMOVED**. Music's retry policy stays handler-owned via `MusicSyncConfig.retryConfig`, which is the only path that any production caller ever wired up. A future "engine owns retry" unification can reintroduce the option when it has a functional implementation behind it; until then, no speculative API.
+**Phase 4 — DONE.** Audit + lift remaining engine-vs-pipeline duplication. Sub-phases 4a/4b/4c landed independently.
+- Warning sink (4a): pipeline uses `WarningSink` already, drained by `MusicHandler.executeBatch` into `ctx.warningSink`. ✓ (verified shared; no code change).
+- Abort handling (4b): **DONE.** Pipeline previously threw `new Error('Sync aborted')` after draining its three-stage queues; the engine's batch-path catch (`executor.ts:414`) converted that to a synthetic per-operation failure and never set `ExecuteResult.aborted`. The bug was masked because `music-presenter.ts:850` independently checked `signal?.aborted` and overrode the interrupt state in its own return — three layers, each compensating for the next layer's broken contract. Phase 4b replaced the bare throw with a typed `AbortError` (new class in `engine/errors.ts`), and the engine's batch + per-op catch blocks now recognise `AbortError` (and `signal?.aborted`) and set `aborted = true` instead of recording a failure. Final save guard correctly observes the flag; `ExecuteResult.aborted` is honest. Music presenter's signal checks stay as belt-and-suspenders. New integration test `routes abort through engine: result.aborted=true on signal abort` pins the contract end-to-end.
+- Error categorisation: `engine/error-handling.ts` already exports `categorizeError`. Pipeline imports + uses it (via `getRetriesForCategory` adapter shim that converts pipeline's 4-field `RetryConfig` to engine's 7-category `SharedRetryConfig`). ✓ (verified shared; no code change).
+- Retry config (4c): pipeline owns its own `RetryConfig` shape and per-error-class counts (`MUSIC_RETRY_CONFIG` at `pipeline.ts:124`). The engine had a `retryConfig?: RetryConfig` field on `SyncExecuteOptions` that was declared but never read by any execution path — dead surface — **REMOVED**. Music's retry policy stays handler-owned via `MusicSyncConfig.retryConfig`, which is the only path that any production caller ever wired up. A future "engine owns retry" unification can reintroduce the option when it has a functional implementation behind it; until then, no speculative API.
 
-Phase 4 is the largest of P1 phases but each lift is bounded.
-
-**Phase 5 — `savesInternally` flag deletion.** Once Phase 2-4 land, the flag has no purpose. Remove it from `ContentTypeHandler` + `MusicHandler`. This is the "done" marker for P1.
+**Phase 5 — N/A.** The original plan called for deleting a transitional `ContentTypeHandler.savesInternally?: boolean` flag once the lifts were done. Phase 1+2 inlined that lift before merging, so the flag was never present in the codebase — there is nothing to delete. P1's "done" marker is `MusicPipeline.execute` no longer calling `device.save` directly, which has been true since Phase 3.
 
 ### P2 (deferred)
 
@@ -105,17 +103,19 @@ P2's design is out of scope for this ADR; file a separate ADR when triggered.
 
 ### Positive
 
-- Music and video end-of-sync save semantics become identical once Phase 2 lands. The engine owns the contract; handlers stop reimplementing it.
-- `MusicPipeline` shrinks by 50-100 lines (the save coordination block + 'updating-db' yield + checkpoint logic). The 3-stage queue machinery — the actual valuable part — stays put.
-- Tests scope correctly: pipeline tests assert on pipeline behaviour (transcoding, transferring), engine tests assert on save coordination. Currently the boundary is muddled.
-- `savesInternally` flag is a documented short-term contract with a clear deletion criterion (Phase 5). It will not become permanent technical debt.
-- Future content types (podcast, audiobook) start from the engine contract directly, without needing to reimplement save coordination.
+- Music and video end-of-sync save semantics are identical. The engine owns the contract (final save, checkpoint cadence, abort guard); handlers no longer reimplement it.
+- `MusicPipeline` shrunk by ~30 lines (final save + `'updating-db'` yield + checkpoint block + orphan `saveInterval` plumbing). The 3-stage queue machinery — the actual valuable part — stays put.
+- Tests scope correctly: pipeline tests assert on pipeline behaviour (transcoding, transferring), engine tests assert on save coordination. Pre-Phase-1 the boundary was muddled.
+- Phase 4b uncovered and fixed a silent contract violation: `ExecuteResult.aborted` was `false` after music sync abort, masked by `music-presenter.ts` reading `signal.aborted` directly. Now honest end-to-end via the typed `AbortError` protocol.
+- No transitional `savesInternally` flag was ever merged — the lift was inlined when the audit confirmed the bounded scope, so there is zero residual technical debt from the migration scaffold.
+- Future content types (podcast, audiobook) start from the engine contract directly, without needing to reimplement save coordination or abort handling.
 
 ### Negative
 
-- Phase 2-4 each require pipeline test updates. The pipeline test file is large (~3000 lines); updating assertions is mechanical but tedious.
-- Phase 3's saveInterval plumbing is a small public-surface change (`MusicPresenter.executeSync` → engine options). Reviewable but visible.
-- Until P2 lands, video can never benefit from download-overlap. If a video collection adapter for remote sources appears, that's the trigger for P2.
+- Phase 2 + 3 each required pipeline test updates. The pipeline test file is large (~3000 lines); updating assertions was mechanical but tedious.
+- Music's checkpoint cadence changed from `saveInterval=50` (pipeline default) to `saveInterval=10` (engine default). Behaviourally: 5× more saves on a long sync. Not benchmarked. If a user later reports DB-rewrite overhead during sync, the override path is `MusicSyncConfig.retryConfig`-style — but adding a config knob isn't done.
+- `executeMusicPlan` (library convenience that bypasses the engine) lost pipeline-internal checkpoint cadence. Only the final save fires on that path. Documented in JSDoc and ADR; library callers wanting checkpoints should use `createSyncExecutor(createMusicHandler(...))` directly.
+- Until P2 lands, video cannot benefit from download-overlap. If a video collection adapter for remote sources appears, that's the trigger for P2.
 
 ### Neutral
 
@@ -137,10 +137,12 @@ Move the final save back to the CLI orchestrator (`sync.ts`). Rejected: undoes a
 
 ## Implementation Plan
 
-- **Phase 1 + 2 — DONE in this commit**: see the "Decision" section. Music's final save now flows through the engine.
-- **Phase 3 — DONE**: dropped the per-track checkpoint save and the orphan `saveInterval` plumbing in `pipeline.ts`. Music now inherits the engine's `saveInterval=10` default (rather than preserving the pipeline's historical 50, which was never benchmarked). Engine checkpoint logic gains the music path with no further changes. `executeMusicPlan` library convenience loses pipeline-internal checkpoint cadence — documented above.
-- **Phase 4**: separate task per lift (warning sink — already shared; abort handling — has parallel impls; retry config — pipeline has bespoke counts). Each one is small. Aggregate ETA: ~3-4 hours.
-- **Phase 5**: no flag to delete (it was inlined; engine just owns the save unconditionally). The "done" marker is when `MusicPipeline.execute` no longer calls `device.save` directly.
+- **Phase 1 + 2 — DONE** (commit `bddb2406`): engine owns the music final save. Pipeline's `'updating-db'` yield + final `await this.device.save()` deleted.
+- **Phase 3 — DONE** (commit `45a21b8e`): engine owns the music checkpoint save. Pipeline's per-track checkpoint block + orphan `saveInterval` plumbing deleted. Music inherits engine's `saveInterval=10` default. `executeMusicPlan` library convenience loses pipeline-internal checkpoint cadence (final save preserved).
+- **Phase 4a — DONE (verification only)**: warning sink already shared via `MusicHandler.executeBatch` draining `executor.getWarnings()` into `ctx.warningSink`. No code change.
+- **Phase 4b — DONE** (commit `e49db159`): typed `AbortError` class added to `engine/errors.ts`. Pipeline throws it after queue drain on signal abort. Engine batch + per-op catch blocks recognise it and set `aborted=true` (instead of converting to a synthetic per-op failure). Concurrent-failure case preserved: a non-AbortError thrown while `signal.aborted` is true is still recorded in `result.errors` AND sets `aborted=true` — diagnostic info survives.
+- **Phase 4c — DONE** (commit `0f6f386a`): removed dead `SyncExecuteOptions.retryConfig` field — declared, never read. Music retry policy stays handler-owned via `MusicSyncConfig.retryConfig`.
+- **Phase 5 — N/A**: no `savesInternally` flag was merged; the lift was inlined during Phase 1+2 once the audit confirmed bounded scope.
 - **P2 (deferred)**: trigger is a second pipelined-execution handler.
 
 ## Cross-References
@@ -150,4 +152,5 @@ Move the final save back to the CLI orchestrator (`sync.ts`). Rejected: undoes a
 - `packages/podkit-core/src/sync/music/pipeline.ts:691` — MusicPipeline
 - `packages/podkit-core/src/sync/music/handler.ts:1009` — MusicHandler.executeBatch (the bridge)
 - `packages/podkit-core/src/sync/video/handler.ts:420` — VideoHandler.executeBatch (the symmetric counterpart)
-- `documents/architecture/sync/save-transactions.md` — companion architecture doc; should be updated once Phase 2 lands.
+- `documents/architecture/sync/save-transactions.md` — companion architecture doc, updated alongside Phase 4b to reflect engine-owned save coordination for both content types.
+- `packages/podkit-core/src/sync/engine/errors.ts` — `AbortError` class (Phase 4b).
