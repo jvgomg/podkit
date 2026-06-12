@@ -8,6 +8,7 @@
 
 import { describe, expect, it } from 'bun:test';
 import { SyncExecutor, createSyncExecutor } from './executor.js';
+import { AbortError } from './errors.js';
 import type { ContentTypeHandler, ExecutionContext, OperationProgress } from './content-type.js';
 import type {
   SyncOperation,
@@ -739,6 +740,37 @@ describe('SyncExecutor', () => {
 
       expect(result.aborted).toBe(true);
       expect(result.completed).toBe(1);
+    });
+
+    it('treats AbortError thrown by handler as abort, not failure', async () => {
+      // Pins the ADR-019 Phase 4b contract: the music pipeline throws
+      // AbortError after draining queues post-signal-abort. The engine must
+      // recognise it and set result.aborted=true rather than recording a
+      // synthetic per-operation failure (which would lie about result.aborted
+      // and pollute result.errors / result.failed).
+      const controller = new AbortController();
+
+      const handler = createMockHandler({
+        async *executeBatch(operations: SyncOperation[]): AsyncGenerator<OperationProgress> {
+          // Yield one complete then throw AbortError (pipeline's post-drain
+          // pattern: stages have already finished cleanly).
+          yield { operation: operations[0]!, phase: 'starting' };
+          yield { operation: operations[0]!, phase: 'complete' };
+          controller.abort();
+          throw new AbortError();
+        },
+      });
+
+      const executor = new SyncExecutor(handler);
+      const plan = makePlan([makeCopyOp('a.mp3'), makeCopyOp('b.mp3')]);
+
+      const { result } = await consumeExecutor(
+        executor.execute(plan, { device: mockDevice(), signal: controller.signal })
+      );
+
+      expect(result.aborted).toBe(true);
+      expect(result.failed).toBe(0);
+      expect(result.errors).toHaveLength(0);
     });
   });
 

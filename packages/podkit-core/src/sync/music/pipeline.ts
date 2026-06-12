@@ -46,6 +46,7 @@ import {
   createCategorizedError as sharedCreateCategorizedError,
   type RetryConfig as SharedRetryConfig,
 } from '../engine/error-handling.js';
+import { AbortError } from '../engine/errors.js';
 
 import type { CollectionTrack, CollectionAdapter } from '../../adapters/interface.js';
 import type { AudioFileType } from '../../types.js';
@@ -1305,9 +1306,11 @@ export class MusicPipeline implements SyncExecutor {
     // Wait for all stages to finish
     await Promise.all([downloaderPromise, preparerPromise]);
 
-    // If aborted, throw after draining (we finished transferring queued files)
+    // If aborted, throw after draining (we finished transferring queued files).
+    // The engine's executor catches AbortError, sets result.aborted=true, and
+    // skips the final save. See ADR-019 Phase 4b.
     if (signal?.aborted) {
-      throw new Error('Sync aborted');
+      throw new AbortError();
     }
 
     // If a stage had a fatal error, throw it

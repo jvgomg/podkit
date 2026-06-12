@@ -175,6 +175,7 @@ export {
   CategorizedSyncError,
   DatabaseWriteError,
   InsufficientSpaceAfterCleanup,
+  AbortError,
 } from './sync/engine/errors.js';
 export {
   TagWriteError,

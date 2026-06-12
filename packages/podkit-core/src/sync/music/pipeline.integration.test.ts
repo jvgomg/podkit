@@ -608,6 +608,86 @@ describe('SyncExecutor integration', () => {
         await testIpod.cleanup();
       }
     });
+
+    it('routes abort through engine: result.aborted=true on signal abort', async () => {
+      // Pins the ADR-019 Phase 4b contract: when music sync is aborted, the
+      // pipeline throws AbortError after draining queues and the engine sets
+      // result.aborted=true. Pre-Phase-4b, the engine caught the throw as a
+      // synthetic per-op failure (result.aborted=false, result.failed=1) — a
+      // silent lie covered up by music-presenter.ts reading signal directly.
+      const testIpod = await createTestIpod();
+
+      try {
+        const mp3Paths = await Promise.all(
+          [0, 1, 2, 3, 4].map(async (i) => {
+            const p = join(testDir, `test-abort-${i}.mp3`);
+            await generateTestMP3(p);
+            return p;
+          })
+        );
+
+        const db = await IpodDatabase.open(testIpod.path);
+
+        try {
+          const adapter = new IpodDeviceAdapter(db, capsForGeneration('classic_7g'));
+          const realSave = adapter.save.bind(adapter);
+          let saveCount = 0;
+          adapter.save = async () => {
+            saveCount++;
+            await realSave();
+          };
+
+          const handler = createMusicHandler({ quality: 'high', transcoder });
+          const executor = createSyncExecutor(handler);
+          const controller = new AbortController();
+
+          const plan: SyncPlan<MusicOperation> = {
+            operations: mp3Paths.map((path, i) => ({
+              type: 'add-direct-copy',
+              source: createCollectionTrack(
+                'Abort Artist',
+                `Abort Song ${i}`,
+                'Album',
+                path,
+                'mp3'
+              ),
+            })),
+            estimatedTime: 5,
+            estimatedSize: 250000,
+            warnings: [],
+          };
+
+          // Pre-abort guarantees the pipeline observes signal.aborted on first
+          // stage entry, throws AbortError after draining (empty) queues, and
+          // never completes any track. No race with sync duration.
+          controller.abort();
+
+          const generator = executor.execute(plan, {
+            device: adapter,
+            signal: controller.signal,
+          });
+          let result;
+          for (;;) {
+            const next = await generator.next();
+            if (next.done) {
+              result = next.value;
+              break;
+            }
+          }
+
+          expect(result.aborted).toBe(true);
+          expect(result.failed).toBe(0);
+          expect(result.errors).toHaveLength(0);
+          // Final save skipped on abort; no tracks completed → no checkpoint
+          // saves. saveCount = 0.
+          expect(saveCount).toBe(0);
+        } finally {
+          db.close();
+        }
+      } finally {
+        await testIpod.cleanup();
+      }
+    });
   });
 
   describe('dry-run mode', () => {

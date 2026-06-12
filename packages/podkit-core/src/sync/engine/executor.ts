@@ -25,6 +25,7 @@ import type {
 import type { TranscodeProgress } from '../../transcode/types.js';
 import type { ContentTypeHandler, ExecutionContext, OperationProgress } from './content-type.js';
 import { categorizeError, createCategorizedError } from './error-handling.js';
+import { AbortError } from './errors.js';
 import { runPreliminariesPreFlight, assertSpaceAfterSweep } from './pre-sync-sweep.js';
 
 // =============================================================================
@@ -270,6 +271,13 @@ export class SyncExecutor<TSource, TDevice, TOp extends BaseOperation = SyncOper
           await device.save();
         }
       } catch (err) {
+        // AbortError is an explicit cancellation signal — not a per-op
+        // failure. Set aborted=true (skips final save) and exit without
+        // polluting result.errors. See ADR-019 Phase 4b.
+        if (err instanceof AbortError) {
+          aborted = true;
+          break;
+        }
         const error = err instanceof Error ? err : new Error(String(err));
         const category = categorizeError(error, operation.type);
         const catError = createCategorizedError(error, category, displayName, 0, false);
@@ -292,6 +300,16 @@ export class SyncExecutor<TSource, TDevice, TOp extends BaseOperation = SyncOper
           error,
           categorizedError: catError,
         } as ExecutorProgress<TOp>;
+
+        // If the signal was aborted concurrently with this op's failure,
+        // mark the run aborted (skips final save) while preserving the
+        // error record above so diagnostic information is not silently
+        // dropped — a transcode/copy error firing inside the abort window
+        // would otherwise vanish into the catch.
+        if (signal?.aborted) {
+          aborted = true;
+          break;
+        }
 
         if (!continueOnError) {
           break;
@@ -412,28 +430,45 @@ export class SyncExecutor<TSource, TDevice, TOp extends BaseOperation = SyncOper
         );
       }
     } catch (err) {
-      // Batch generator threw — treat as failure of current operation
-      const error = err instanceof Error ? err : new Error(String(err));
-      const operation = plan.operations[operationIndex] ?? plan.operations[0]!;
-      const displayName = this.handler.getDisplayName(operation);
-      const category = categorizeError(error, operation.type);
-      const catError = createCategorizedError(error, category, displayName, 0, false);
+      // AbortError is an explicit cancellation signal — not a per-op
+      // failure. Set aborted=true (skips final save) without polluting
+      // result.errors. Until ADR-019 Phase 4b, MusicPipeline's
+      // `throw new Error('Sync aborted')` was caught here and converted to
+      // a synthetic per-op failure, silently lying about
+      // `ExecuteResult.aborted`.
+      if (err instanceof AbortError) {
+        aborted = true;
+      } else {
+        // Batch generator threw — treat as failure of current operation
+        const error = err instanceof Error ? err : new Error(String(err));
+        const operation = plan.operations[operationIndex] ?? plan.operations[0]!;
+        const displayName = this.handler.getDisplayName(operation);
+        const category = categorizeError(error, operation.type);
+        const catError = createCategorizedError(error, category, displayName, 0, false);
 
-      failed++;
-      errors.push({ operation, error });
-      categorizedErrors.push(catError);
+        failed++;
+        errors.push({ operation, error });
+        categorizedErrors.push(catError);
 
-      yield buildExecutorProgress(
-        { operation, phase: 'failed', error },
-        operationIndex,
-        total,
-        displayName,
-        completed + failed + skipped,
-        {
-          bytesTotal: plan.estimatedSize,
-          categorizedError: catError,
+        yield buildExecutorProgress(
+          { operation, phase: 'failed', error },
+          operationIndex,
+          total,
+          displayName,
+          completed + failed + skipped,
+          {
+            bytesTotal: plan.estimatedSize,
+            categorizedError: catError,
+          }
+        );
+
+        // If the signal was aborted concurrently with this failure, mark
+        // the run aborted (skips final save) while preserving the failure
+        // record above so diagnostic information is not silently dropped.
+        if (signal?.aborted) {
+          aborted = true;
         }
-      );
+      }
     }
 
     // Final save — see the per-operation path for the rationale. Batch

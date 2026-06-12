@@ -28,6 +28,7 @@ import {
   type ExecutorDependencies,
   type ExecutorProgress,
 } from './pipeline.js';
+import { AbortError } from '../engine/errors.js';
 import { resolveFileExtension } from '../../device/mass-storage-adapter.js';
 import type { CollectionTrack, CollectionAdapter, FileAccess } from '../../adapters/interface.js';
 import type { AudioFileType, TrackFilter } from '../../types.js';
@@ -1045,7 +1046,7 @@ describe('MusicPipeline - abort signal', () => {
       }
     } catch (err) {
       errorThrown = true;
-      expect((err as Error).message).toBe('Sync aborted');
+      expect(err).toBeInstanceOf(AbortError);
     }
 
     expect(errorThrown).toBe(true);
@@ -1072,7 +1073,7 @@ describe('MusicPipeline - abort signal', () => {
       }
     } catch (err) {
       errorThrown = true;
-      expect((err as Error).message).toBe('Sync aborted');
+      expect(err).toBeInstanceOf(AbortError);
     }
 
     expect(errorThrown).toBe(true);
@@ -3042,8 +3043,7 @@ describe('MusicPipeline - prefetch pipeline (ADR-011)', () => {
         // consume
       }
     } catch (error) {
-      // Expected: 'Sync aborted'
-      expect((error as Error).message).toBe('Sync aborted');
+      expect(error).toBeInstanceOf(AbortError);
     }
 
     // Pipeline should have been aborted — not all operations completed

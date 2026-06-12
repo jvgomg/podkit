@@ -165,3 +165,26 @@ export class InsufficientSpaceAfterCleanup extends CategorizedSyncError {
     );
   }
 }
+
+/**
+ * User-cancelled sync. Distinct from {@link CategorizedSyncError} — abort is
+ * a sync-level state change (the user pressed Ctrl-C / called
+ * `controller.abort()`), not a per-operation failure with a category and
+ * retry policy.
+ *
+ * Thrown from handlers when they detect `signal?.aborted` and need to unwind
+ * the stack to the engine. The engine's batch- and per-operation catch
+ * blocks recognise this class and set `ExecuteResult.aborted = true` instead
+ * of recording a synthetic per-operation failure.
+ *
+ * Carrying its own class (rather than reusing a generic `Error` with a
+ * message check) lets the engine distinguish cancellation from genuine
+ * handler failures without scraping the message body. See ADR-019 Phase 4b.
+ */
+export class AbortError extends Error {
+  override readonly name = 'AbortError' as const;
+
+  constructor(message = 'Sync aborted') {
+    super(message);
+  }
+}
