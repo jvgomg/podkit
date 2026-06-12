@@ -32,7 +32,7 @@ import type {
   VideoContentConfig,
 } from './sync-presenter.js';
 import { formatDuration, formatVideoTransformsConfig } from './sync-presenter.js';
-import type { MusicCollectionConfig } from '../config/index.js';
+import type { MusicCollectionConfig, VideoCollectionConfig } from '../config/index.js';
 
 /**
  * Resolved collection information (matches the type in sync.ts)
@@ -40,7 +40,7 @@ import type { MusicCollectionConfig } from '../config/index.js';
 interface ResolvedCollection {
   name: string;
   type: 'music' | 'video';
-  config: MusicCollectionConfig | import('../config/index.js').VideoCollectionConfig;
+  config: MusicCollectionConfig | VideoCollectionConfig;
 }
 
 /**
@@ -50,6 +50,14 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, Dev
   readonly type = 'video' as const;
   readonly itemNoun = 'videos';
   readonly sectionTitle = 'Video';
+
+  getSourcePath(collection: ResolvedCollection): string {
+    return (collection.config as VideoCollectionConfig).path;
+  }
+
+  getInterruptedSuffix(): string {
+    return 'Video sync interrupted.';
+  }
 
   createAdapter(
     out: OutputContext,

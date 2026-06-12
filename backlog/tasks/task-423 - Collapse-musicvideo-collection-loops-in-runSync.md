@@ -1,10 +1,10 @@
 ---
 id: TASK-423
 title: Collapse music+video collection loops in runSync
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-06-12 10:55'
-updated_date: '2026-06-12 10:59'
+updated_date: '2026-06-12 16:20'
 labels:
   - tech-debt
   - refactor
@@ -14,6 +14,13 @@ dependencies:
   - TASK-420
 references:
   - packages/podkit-cli/src/commands/sync.ts
+  - packages/podkit-cli/src/commands/music-presenter.ts
+  - packages/podkit-cli/src/commands/video-presenter.ts
+modified_files:
+  - packages/podkit-cli/src/commands/sync.ts
+  - packages/podkit-cli/src/commands/sync-collection-phase.ts
+  - packages/podkit-cli/src/commands/sync-collection-phase.test.ts
+  - packages/podkit-cli/src/commands/sync-presenter.ts
   - packages/podkit-cli/src/commands/music-presenter.ts
   - packages/podkit-cli/src/commands/video-presenter.ts
 ordinal: 138000
@@ -181,16 +188,61 @@ This task and TASK-422 are complementary. **TASK-423 first is preferred** so TAS
 Listed below.
 <!-- SECTION:DESCRIPTION:END -->
 
-- [ ] #1 A single runCollectionPhase helper exists (in sync.ts, sync-collection-phase.ts, or wherever fits the current sync.ts structure) and both music + video phases delegate to it
-- [ ] #2 Music + video divergent fields (kind, presenter, contentConfig, interrupted-message variant) are inputs to the helper, not duplicated logic in the helper body
-- [ ] #3 Music's artworkMissingBaseline and transferModeMismatch accumulators are tracked via a discriminated-union result type (CollectionPhaseResult with `kind: 'music' | 'video'`), not via a loose Record<string, number>
-- [ ] #4 The supportsVideo gate stays at the call site, not inside the helper (it's a precondition for entering the video phase at all)
-- [ ] #5 Per-collection headers '=== Music: NAME ===' and '=== Video: NAME ===' render byte-identically to before — verified by sync.test.ts diff or a new focused test in the helper's test file
-- [ ] #6 Interrupted-flow messages 'Sync interrupted.' (music) and 'Video sync interrupted.' (video) render byte-identically to before — verified by sync.test.ts diff or a new focused test
-- [ ] #7 Focused unit test for runCollectionPhase covers: empty collections array, single collection happy path, interrupt mid-loop, and error-accumulation path
-- [ ] #8 The preliminariesConsumed one-shot flag is handled correctly: the first iteration receives PlanPreliminaries, subsequent iterations (within the helper's own loop AND across music→video calls) receive undefined
-- [ ] #9 sync.test.ts text + JSON output is line-for-line unchanged before/after the refactor
+- [x] #1 A single runCollectionPhase helper exists (in sync.ts, sync-collection-phase.ts, or wherever fits the current sync.ts structure) and both music + video phases delegate to it
+- [x] #2 Music + video divergent fields (kind, presenter, contentConfig, interrupted-message variant) are inputs to the helper, not duplicated logic in the helper body
+- [x] #3 Music's artworkMissingBaseline and transferModeMismatch accumulators are tracked via a discriminated-union result type (CollectionPhaseResult with `kind: 'music' | 'video'`), not via a loose Record<string, number>
+- [x] #4 The supportsVideo gate stays at the call site, not inside the helper (it's a precondition for entering the video phase at all)
+- [x] #5 Per-collection headers '=== Music: NAME ===' and '=== Video: NAME ===' render byte-identically to before — verified by sync.test.ts diff or a new focused test in the helper's test file
+- [x] #6 Interrupted-flow messages 'Sync interrupted.' (music) and 'Video sync interrupted.' (video) render byte-identically to before — verified by sync.test.ts diff or a new focused test
+- [x] #7 Focused unit test for runCollectionPhase covers: empty collections array, single collection happy path, interrupt mid-loop, and error-accumulation path
+- [x] #8 The preliminariesConsumed one-shot flag is handled correctly: the first iteration receives PlanPreliminaries, subsequent iterations (within the helper's own loop AND across music→video calls) receive undefined
+- [x] #9 sync.test.ts text + JSON output is line-for-line unchanged before/after the refactor
 <!-- AC:END -->
 
-- [ ] #10 bun run typecheck / bun run test / bun run lint all pass
-<!-- AC:END -->
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Music + video collection loops in `runSync` collapsed into a single `runCollectionPhase` helper. Behaviour-preserving; 1520 → 1536 unit tests; integration suite still 69/69; typecheck + lint green.
+
+## What changed
+
+**New helper** (`packages/podkit-cli/src/commands/sync-collection-phase.ts`):
+
+- Encapsulates the per-content loop (iteration → header → `genericSyncCollection` → JSON envelope → accumulators → interrupt handling).
+- Discriminated `CollectionPhaseResult` (`kind: 'music' | 'video'`) so music's `artworkMissingBaseline` / `transferModeMismatch` accumulators stay typed, not stringly-keyed (AC #3). Return type is narrowed at the call site via two overloads keyed on `presenter.type`, so callers read music-only fields without runtime checks.
+- `priorPhaseCompleted` input feeds the interrupt-flow save gate — caller passes `totalCompleted` snapshot so the cross-phase invariant ("any device write across the run gates the save") is preserved. (This was a bug catch during extraction: a naïve helper-local accumulator would have lost music→video carry-over.)
+- `syncOne` injection point on `CollectionPhaseDeps` (default = `genericSyncCollection`) is the testability seam. Marked `@internal`; production callers never override.
+
+**Presenter dispatch** (`sync-presenter.ts` + concrete classes):
+
+- Two new methods on `ContentTypePresenter`: `getSourcePath(collection)` (kills the music subsonic `.url!` / video `.path` divergence) and `getInterruptedSuffix()` (`"Sync interrupted."` vs `"Video sync interrupted."`).
+- Helper stays content-agnostic — all divergence flows through the presenter, not a `kind` switch inside the helper.
+
+**`runSync` cleanup** (`sync.ts`):
+
+- Hoisted `resolvedForDecisions`, `decisions`, `musicConfig`, and `lastDecisions = decisions` out of the music for-loop — these are device-wide, not per-collection. The original task description claimed they were already outside; they were inside. Now actually outside.
+- Music + video loop bodies both collapse to ~10-line `runCollectionPhase(input, deps)` calls. Net diff in `sync.ts`: −182 / +145.
+- `supportsVideo` gate (AC #4) stays at the call site; the helper never sees the precondition.
+- Music header conditional (`musicCollections.length > 1`) preserved (AC #5) by passing `renderPerCollectionHeader: musicCollections.length > 1` from the caller. Video passes `true`. Asymmetry now visible at the call site (good for future alignment).
+- Comment added at the post-video `adapter.save()` clarifying its relationship to the interrupt-path save inside the helper.
+
+## Verification
+
+- 16 focused unit tests in `sync-collection-phase.test.ts` cover: empty collections (+ with non-undefined preliminaries), single + multi happy paths, interrupt with cross-phase save gate, dry-run interrupt (no save), zero-total interrupt (no save), error accumulation (single + multi consecutive failures), preliminaries one-shot (consumed + already-consumed), caller-driven header rendering.
+- Byte-identical assertions pin `=== Music: NAME ===` / `=== Video: NAME ===` and `Database saved. {Sync interrupted. | Video sync interrupted.}` (AC #5, #6).
+- Full quality gate: `bunx turbo run typecheck test:unit lint test:integration --filter podkit` → 1536/1536 unit + 69/69 integration pass (AC #9).
+
+## Design decisions that diverged from the original task description
+
+1. **Used presenter-method dispatch instead of `kind: 'music' | 'video'` in the helper input.** The `ContentTypePresenter` pattern already exists for content-type divergence; adding a `kind` switch inside the helper would have reintroduced the dispatch the presenter abstraction was built to remove. The `kind` discriminant survives on the *result type* (per AC #3) where it's needed for typed accumulators.
+2. **Did not convert `genericSyncCollection`'s 14 positional args to an options object.** Task said "must not change". Considered touching it for the helper-readability benefit but the blast radius (7 test call sites in `sync-empty-source.test.ts`) was disproportionate to TASK-423's scope. Helper contains the 14-arg awkwardness to one site. Filed as future cleanup candidate.
+3. **Preserved music header gating (`length > 1`) inside TASK-423** rather than aligning to video's unconditional rendering. The gate is user-visible — its alignment debate belongs in a separate task with a changeset entry.
+
+## Asymmetries surfaced but deferred
+
+- **Music has its own bespoke `MusicPipeline` (2094 LoC) while video uses the shared `engine/executor.ts` (168 LoC).** The biggest remaining music/video drift; deserves its own ADR-track migration task.
+- **Video has a post-loop `await adapter.save()`; music does not.** Likely covered by internal pipeline saves (`music/pipeline.ts:1245-1247, 1349-1351`) but the asymmetry is undocumented. Candidate for engine-layer consolidation: move the final save into `engine/executor.ts`.
+- **`video/planner.ts` (154 LoC) is misnamed — it's estimation utilities, not a planner.** Cheap rename to `video/estimation.ts` would match `engine/estimation.ts` and remove a misleading filename.
+
+Each of these is a separate-task candidate; none belong inside TASK-423 (behaviour-preserving refactor).
+<!-- SECTION:FINAL_SUMMARY:END -->

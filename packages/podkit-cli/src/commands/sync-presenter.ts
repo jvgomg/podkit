@@ -251,6 +251,22 @@ export interface ContentTypePresenter<TSource, TDevice> {
   /** Section title (e.g., 'Music', 'Video') */
   readonly sectionTitle: string;
 
+  /**
+   * Resolve the source path for a collection. Music collections may carry
+   * either a filesystem `path` or a subsonic `url`; video collections are
+   * always filesystem paths. Returning the right string is the presenter's
+   * job so the orchestrator stays content-type-agnostic.
+   */
+  getSourcePath(collection: ResolvedCollection): string;
+
+  /**
+   * Suffix printed after `Database saved. ` when a sync is interrupted
+   * mid-collection. Music returns `Sync interrupted.`; video returns
+   * `Video sync interrupted.` (preserved byte-identical from the
+   * pre-helper-extraction prints).
+   */
+  getInterruptedSuffix(): string;
+
   /** Create the source adapter and set up spinner + scan warnings collector */
   createAdapter(
     out: OutputContext,

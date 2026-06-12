@@ -113,6 +113,15 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
   private handler?: MusicHandler;
   private sourceAdapter?: CollectionAdapter;
 
+  getSourcePath(collection: ResolvedCollection): string {
+    const config = collection.config as MusicCollectionConfig;
+    return config.type === 'subsonic' ? config.url! : config.path;
+  }
+
+  getInterruptedSuffix(): string {
+    return 'Sync interrupted.';
+  }
+
   createAdapter(
     out: OutputContext,
     collection: ResolvedCollection,

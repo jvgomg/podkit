@@ -97,6 +97,7 @@ import {
   type VideoContentConfig,
   type GenericSyncResult,
 } from './sync-presenter.js';
+import { runCollectionPhase } from './sync-collection-phase.js';
 import { buildSyncDecisions } from './sync-decisions.js';
 import { printInterruptedSummary, printSuccessSummary } from './sync-summary-render.js';
 import {
@@ -1040,135 +1041,101 @@ export async function runSync(
 
     // ----- Sync Music Collections -----
     if (hasMusicToSync) {
-      for (const collection of musicCollections) {
-        const musicCollectionConfig = collection.config as MusicCollectionConfig;
-        const sourcePath =
-          musicCollectionConfig.type === 'subsonic'
-            ? musicCollectionConfig.url!
-            : musicCollectionConfig.path;
+      // Decision provenance + music content config are device-wide, not
+      // per-collection — hoisted out of the loop so they're built once
+      // per sync regardless of collection count.
+      //
+      // The `''` second arg is the device-name slot in the resolver.
+      // It populates `resolvedForDecisions.name` only, which we don't
+      // read here (we only consume `.transferMode`, `.audio`,
+      // `.checkArtwork`), so the empty string is safe.
+      const resolvedForDecisions = resolveDeviceSettings(
+        config,
+        '',
+        deviceConfig ?? {},
+        null,
+        false,
+        false
+      );
+      // The lossless stack may be the literal string 'source' (pass-through
+      // sentinel). Normalise to null for the JSON shape — `null` means "no
+      // lossless transcode target chosen". The preference array itself
+      // preserves 'source' as the first entry for assertion purposes.
+      const firstLossless = losslessStack[0];
+      const resolvedLossless =
+        firstLossless === 'source' || firstLossless === undefined ? null : firstLossless;
+      const decisions = buildSyncDecisions({
+        resolved: {
+          transferMode: resolvedForDecisions.transferMode,
+          audio: resolvedForDecisions.audio,
+          checkArtwork: resolvedForDecisions.checkArtwork,
+        },
+        overrides: {
+          transferMode: options.transferMode,
+          quality: options.quality,
+          audioQuality: options.audioQuality,
+          checkArtwork: options.checkArtwork,
+        },
+        resolvedLossyCodec,
+        resolvedLosslessCodec: resolvedLossless,
+        lossyPreference: lossyStack,
+        losslessPreference: losslessStack,
+        // Per-key codec source attribution — see `lossyCodecSource` /
+        // `losslessCodecSource` above. Treats key presence as "user
+        // configured" (presence, not length) so `[codec] lossy = []` still
+        // attributes to global.
+        lossyCodecSource,
+        losslessCodecSource,
+      });
+      lastDecisions = decisions;
 
-        if (musicCollections.length > 1) {
-          out.newline();
-          out.print(`=== Music: ${collection.name} ===`);
-        }
+      const musicConfig: MusicContentConfig = {
+        type: 'music',
+        effectiveTransforms,
+        cleanArtistsResolutionReason,
+        transformWarnings,
+        effectiveQuality,
+        effectiveEncoding,
+        effectiveTransferMode,
+        effectiveCustomBitrate,
+        effectiveBitrateTolerance,
+        deviceSupportsAlac,
+        effectiveArtwork,
+        skipUpgrades: effectiveSkipUpgrades,
+        forceTranscode: options.forceTranscode ?? config.forceTranscode ?? false,
+        forceTransferMode: options.forceTransferMode ?? config.forceTransferMode ?? false,
+        forceSyncTags: options.forceSyncTags ?? config.forceSyncTags ?? false,
+        forceMetadata: options.forceMetadata ?? false,
+        checkArtwork: decisions.checkArtwork.value,
+        transcoder,
+        capabilities: deviceCapabilities,
+        effectiveCodecPreference,
+        resolvedLossyCodec,
+        lossyPreferenceStack: [...lossyStack],
+        transcoderCapabilities,
+        decisions,
+      };
 
-        // Resolve once for both checkArtwork value and decisions provenance.
-        const resolvedForDecisions = resolveDeviceSettings(
-          config,
-          '',
-          deviceConfig ?? {},
-          null,
-          false,
-          false
-        );
-        // The lossless stack may be the literal string 'source' (pass-through
-        // sentinel). Normalise to null for the JSON shape — `null` means "no
-        // lossless transcode target chosen". The preference array itself
-        // preserves 'source' as the first entry for assertion purposes.
-        const firstLossless = losslessStack[0];
-        const resolvedLossless =
-          firstLossless === 'source' || firstLossless === undefined ? null : firstLossless;
-        const decisions = buildSyncDecisions({
-          resolved: {
-            transferMode: resolvedForDecisions.transferMode,
-            audio: resolvedForDecisions.audio,
-            checkArtwork: resolvedForDecisions.checkArtwork,
-          },
-          overrides: {
-            transferMode: options.transferMode,
-            quality: options.quality,
-            audioQuality: options.audioQuality,
-            checkArtwork: options.checkArtwork,
-          },
-          resolvedLossyCodec,
-          resolvedLosslessCodec: resolvedLossless,
-          lossyPreference: lossyStack,
-          losslessPreference: losslessStack,
-          // Per-key codec source attribution — see `lossyCodecSource` /
-          // `losslessCodecSource` above. Treats key presence as "user
-          // configured" (presence, not length) so `[codec] lossy = []` still
-          // attributes to global.
-          lossyCodecSource,
-          losslessCodecSource,
-        });
-        // Capture for the aggregate non-dry-run JSON emitted after all
-        // collections complete (sync.ts further down). Decisions are
-        // device-wide — the last collection's decisions are equivalent.
-        lastDecisions = decisions;
+      const musicResult = await runCollectionPhase(
+        {
+          presenter: new MusicPresenter(),
+          collections: musicCollections,
+          contentConfig: musicConfig,
+          renderPerCollectionHeader: musicCollections.length > 1,
+          preSyncPreliminaries: preliminariesConsumed ? undefined : preSyncPreliminaries,
+          priorPhaseCompleted: totalCompleted,
+        },
+        { out, adapter, core, shutdown, dryRun, removeOrphans, devicePath }
+      );
 
-        const musicConfig: MusicContentConfig = {
-          type: 'music',
-          effectiveTransforms,
-          cleanArtistsResolutionReason,
-          transformWarnings,
-          effectiveQuality,
-          effectiveEncoding,
-          effectiveTransferMode,
-          effectiveCustomBitrate,
-          effectiveBitrateTolerance,
-          deviceSupportsAlac,
-          effectiveArtwork,
-          skipUpgrades: effectiveSkipUpgrades,
-          forceTranscode: options.forceTranscode ?? config.forceTranscode ?? false,
-          forceTransferMode: options.forceTransferMode ?? config.forceTransferMode ?? false,
-          forceSyncTags: options.forceSyncTags ?? config.forceSyncTags ?? false,
-          forceMetadata: options.forceMetadata ?? false,
-          checkArtwork: decisions.checkArtwork.value,
-          transcoder,
-          capabilities: deviceCapabilities,
-          effectiveCodecPreference,
-          resolvedLossyCodec,
-          lossyPreferenceStack: [...lossyStack],
-          transcoderCapabilities,
-          decisions,
-        };
-        const musicPreliminaries = preliminariesConsumed ? undefined : preSyncPreliminaries;
-        preliminariesConsumed = true;
-        const result = await genericSyncCollection(
-          new MusicPresenter(),
-          out,
-          collection,
-          sourcePath,
-          devicePath,
-          dryRun,
-          removeOrphans,
-          musicConfig,
-          adapter,
-          core,
-          shutdown.signal,
-          shutdown,
-          undefined,
-          musicPreliminaries
-        );
-
-        if (result.jsonOutput && out.isJson) {
-          out.json(result.jsonOutput);
-        }
-
-        totalCompleted += result.completed;
-        totalFailed += result.failed;
-        totalArtworkMissingBaseline += result.artworkMissingBaseline ?? 0;
-        totalTransferModeMismatch += result.transferModeMismatch ?? 0;
-        if (result.warnings && result.warnings.length > 0) {
-          allWarnings.push(...result.warnings);
-        }
-        if (result.collectedErrors && result.collectedErrors.length > 0) {
-          allErrors.push(...result.collectedErrors);
-        }
-        if (!result.success) {
-          anyError = true;
-        }
-
-        if (result.interrupted) {
-          if (!dryRun && totalCompleted > 0) {
-            out.print('Saving device database...');
-            await adapter.save();
-            out.print('Database saved. Sync interrupted.');
-          }
-          out.setExitCode(130);
-          break;
-        }
-      }
+      if (musicResult.consumedPreliminaries) preliminariesConsumed = true;
+      totalCompleted += musicResult.completed;
+      totalFailed += musicResult.failed;
+      totalArtworkMissingBaseline += musicResult.artworkMissingBaseline;
+      totalTransferModeMismatch += musicResult.transferModeMismatch;
+      allWarnings.push(...musicResult.warnings);
+      allErrors.push(...musicResult.errors);
+      if (musicResult.anyError) anyError = true;
     }
 
     // ----- Sync Video Collections -----
@@ -1183,66 +1150,39 @@ export async function runSync(
           out.print('Skipping video: device does not support video playback.');
         }
       } else {
-        for (const collection of videoCollections) {
-          const sourcePath = (collection.config as VideoCollectionConfig).path;
+        const videoConfig: VideoContentConfig = {
+          type: 'video',
+          effectiveVideoQuality,
+          effectiveVideoTransforms,
+          effectiveTransferMode,
+          forceMetadata: options.forceMetadata ?? false,
+        };
 
-          out.newline();
-          out.print(`=== Video: ${collection.name} ===`);
+        const videoResult = await runCollectionPhase(
+          {
+            presenter: new VideoPresenter(),
+            collections: videoCollections,
+            contentConfig: videoConfig,
+            renderPerCollectionHeader: true,
+            preSyncPreliminaries: preliminariesConsumed ? undefined : preSyncPreliminaries,
+            priorPhaseCompleted: totalCompleted,
+          },
+          { out, adapter, core, shutdown, dryRun, removeOrphans, devicePath }
+        );
 
-          const videoConfig: VideoContentConfig = {
-            type: 'video',
-            effectiveVideoQuality,
-            effectiveVideoTransforms,
-            effectiveTransferMode,
-            forceMetadata: options.forceMetadata ?? false,
-          };
-          const videoPreliminaries = preliminariesConsumed ? undefined : preSyncPreliminaries;
-          preliminariesConsumed = true;
-          const result = await genericSyncCollection(
-            new VideoPresenter(),
-            out,
-            collection,
-            sourcePath,
-            devicePath,
-            dryRun,
-            removeOrphans,
-            videoConfig,
-            adapter,
-            core,
-            shutdown.signal,
-            shutdown,
-            undefined,
-            videoPreliminaries
-          );
+        if (videoResult.consumedPreliminaries) preliminariesConsumed = true;
+        totalCompleted += videoResult.completed;
+        totalFailed += videoResult.failed;
+        allWarnings.push(...videoResult.warnings);
+        allErrors.push(...videoResult.errors);
+        if (videoResult.anyError) anyError = true;
 
-          if (result.jsonOutput && out.isJson) {
-            out.json(result.jsonOutput);
-          }
-
-          totalCompleted += result.completed;
-          totalFailed += result.failed;
-          if (result.warnings && result.warnings.length > 0) {
-            allWarnings.push(...result.warnings);
-          }
-          if (result.collectedErrors && result.collectedErrors.length > 0) {
-            allErrors.push(...result.collectedErrors);
-          }
-          if (!result.success) {
-            anyError = true;
-          }
-
-          if (result.interrupted) {
-            if (!dryRun && totalCompleted > 0) {
-              out.print('Saving device database...');
-              await adapter.save();
-              out.print('Database saved. Video sync interrupted.');
-            }
-            out.setExitCode(130);
-            break;
-          }
-        }
-
-        // Save database after video sync (not in dry-run)
+        // Post-phase save for the success path. The interrupt path's
+        // save lives inside `runCollectionPhase` (gated on `priorPhase +
+        // completed > 0`); this one fires only when no interrupt
+        // happened — `!shutdown.isShuttingDown` excludes the case
+        // where the helper already set exit code 130 and may or may
+        // not have saved.
         if (!dryRun && !shutdown.isShuttingDown) {
           await adapter.save();
         }
