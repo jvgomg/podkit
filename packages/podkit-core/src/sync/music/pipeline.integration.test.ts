@@ -28,6 +28,8 @@ import {
   type ExecutorProgress,
   type ExecutorDependencies,
 } from './pipeline.js';
+import { createMusicHandler } from './handler.js';
+import { createSyncExecutor } from '../engine/executor.js';
 import { FFmpegTranscoder } from '../../transcode/ffmpeg.js';
 import { IpodDatabase } from '../../ipod/database.js';
 import { IpodDeviceAdapter } from '../../device/ipod-adapter.js';
@@ -36,6 +38,7 @@ import { identifyCapabilities } from '../../device/resolve-capabilities.js';
 import type { DeviceCapabilities } from '@podkit/device-types';
 import type { CollectionTrack } from '../../adapters/interface.js';
 import type { SyncPlan } from '../engine/types.js';
+import type { MusicOperation } from './types.js';
 
 requireFFmpeg();
 requireGpodTool();
@@ -462,12 +465,78 @@ describe('SyncExecutor integration', () => {
             progress.push(p);
           }
 
-          // Should have copying, updating-db, and complete phases
-          // (preparing phase was removed in the pipelined architecture)
+          // Should have copying and complete phases. 'updating-db' was
+          // removed in ADR-019 — save coordination moved to the
+          // engine, no separate progress event marks it on the pipeline
+          // side anymore.
           const phases = progress.map((p) => p.phase);
           expect(phases).toContain('copying');
-          expect(phases).toContain('updating-db');
           expect(phases).toContain('complete');
+        } finally {
+          db.close();
+        }
+      } finally {
+        await testIpod.cleanup();
+      }
+    });
+  });
+
+  describe('engine save coordination', () => {
+    it('routes save through engine: exactly one save per music sync end-to-end', async () => {
+      // Pin the ADR-019 contract: music save coordination lives in the
+      // engine SyncExecutor wrapping MusicPipeline. With saveInterval=0
+      // (no checkpoint saves) and pipeline-internal saves removed, the
+      // only save that fires per run is the engine's final save.
+      const testIpod = await createTestIpod();
+
+      try {
+        const mp3Path = join(testDir, 'test-engine-save.mp3');
+        await generateTestMP3(mp3Path);
+
+        const db = await IpodDatabase.open(testIpod.path);
+
+        try {
+          const adapter = new IpodDeviceAdapter(db, capsForGeneration('classic_7g'));
+          const realSave = adapter.save.bind(adapter);
+          let saveCount = 0;
+          adapter.save = async () => {
+            saveCount++;
+            await realSave();
+          };
+
+          const handler = createMusicHandler({ quality: 'high', transcoder });
+          const executor = createSyncExecutor(handler);
+
+          const plan: SyncPlan<MusicOperation> = {
+            operations: [
+              {
+                type: 'add-direct-copy',
+                source: createCollectionTrack(
+                  'Save Test Artist',
+                  'Save Test Song',
+                  'Album',
+                  mp3Path,
+                  'mp3'
+                ),
+              },
+            ],
+            estimatedTime: 1,
+            estimatedSize: 50000,
+            warnings: [],
+          };
+
+          // saveInterval=0 disables checkpoint saves; final save is the
+          // only emitter.
+          for await (const _ of executor.execute(plan, {
+            device: adapter,
+            saveInterval: 0,
+          })) {
+            // drain
+          }
+
+          expect(saveCount).toBe(1);
+          // Track was committed.
+          expect(db.trackCount).toBe(1);
         } finally {
           db.close();
         }

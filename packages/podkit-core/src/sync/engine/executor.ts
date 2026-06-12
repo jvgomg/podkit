@@ -301,12 +301,10 @@ export class SyncExecutor<TSource, TDevice, TOp extends BaseOperation = SyncOper
       }
     }
 
-    // Final save: flush anything since the last checkpoint. Matches the
-    // music pipeline's post-loop save (`sync/music/pipeline.ts:1349`)
-    // so the orchestrator doesn't need to know about save timing per
-    // content type. Skipped on dry-run (no writes), abort (the abort
-    // path is owned by the orchestrator), and empty/skip-only plans
-    // (no state to flush).
+    // Final save: flush anything since the last checkpoint. The engine
+    // owns end-of-run save for every content type (ADR-019). Skipped on
+    // dry-run (no writes), abort (the abort path is owned by the
+    // orchestrator), and empty/skip-only plans (no state to flush).
     if (!dryRun && !aborted && device && (completed > 0 || failed > 0)) {
       await device.save();
     }

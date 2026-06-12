@@ -1333,23 +1333,11 @@ export class MusicPipeline implements SyncExecutor {
       throw fatalError;
     }
 
-    // Save database after all operations
-    if (completed > 0 || inlineCompleted > 0 || failed > 0) {
-      const lastOp = plan.operations[plan.operations.length - 1]!;
-      yield {
-        phase: 'updating-db',
-        operation: lastOp,
-        index: plan.operations.length - 1,
-        current: plan.operations.length - 1,
-        total,
-        currentTrack: 'Saving device database',
-        bytesProcessed,
-        bytesTotal: totalBytes,
-        completedCount: completed + failed + inlineCompleted,
-      };
-
-      await this.device.save();
-    }
+    // The engine SyncExecutor owns the final `device.save()` now — see
+    // engine/executor.ts and ADR-019. The previous pipeline-internal save
+    // (plus the 'updating-db' yield that paired with it) lived here and
+    // was redundant once music started running through the engine path
+    // via MusicHandler.executeBatch.
 
     // Emit completion
     if (plan.operations.length > 0) {
@@ -2081,6 +2069,14 @@ export async function executeMusicPlan(
 
   // Collect warnings from the executor
   const warnings = executor.getWarnings();
+
+  // `executeMusicPlan` is the library-level convenience that bypasses the
+  // engine SyncExecutor; preserve the historic "fully persisted" contract
+  // by saving here. Inside the CLI path, save is owned by the engine
+  // (ADR-019) so the pipeline itself does not save.
+  if (!options.dryRun && (completed > 0 || failed > 0)) {
+    await deps.device.save();
+  }
 
   return {
     completed,

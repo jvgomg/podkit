@@ -405,7 +405,7 @@ describe('MusicPipeline - basic execution', () => {
 
     // Should have called addTrack (which returns a track with copyFile method)
     expect(mockAdapter.addTrack.mock.calls.length).toBe(1);
-    expect(mockAdapter.save.mock.calls.length).toBe(1);
+    expect(mockAdapter.save.mock.calls.length).toBe(0); // ADR-019: engine owns save now
   });
 
   it('passes compilation flag to addTrack', async () => {
@@ -561,7 +561,7 @@ describe('MusicPipeline - basic execution', () => {
     // Should have called transcoder and addTrack (which returns a track with copyFile method)
     expect(mockTranscoder.transcode.mock.calls.length).toBe(1);
     expect(mockAdapter.addTrack.mock.calls.length).toBe(1);
-    expect(mockAdapter.save.mock.calls.length).toBe(1);
+    expect(mockAdapter.save.mock.calls.length).toBe(0); // ADR-019: engine owns save now
   });
 
   it('executes remove operation', async () => {
@@ -597,7 +597,7 @@ describe('MusicPipeline - basic execution', () => {
 
     // Should have called the track's remove method
     expect(removed).toBe(true);
-    expect(mockAdapter.save.mock.calls.length).toBe(1);
+    expect(mockAdapter.save.mock.calls.length).toBe(0); // ADR-019: engine owns save now
   });
 
   it('executes multiple operations in order', async () => {
@@ -643,7 +643,7 @@ describe('MusicPipeline - basic execution', () => {
     expect(removed).toBe(true);
     expect(mockAdapter.addTrack.mock.calls.length).toBe(2);
     expect(mockTranscoder.transcode.mock.calls.length).toBe(1);
-    expect(mockAdapter.save.mock.calls.length).toBe(1);
+    expect(mockAdapter.save.mock.calls.length).toBe(0); // ADR-019: engine owns save now
   });
 });
 
@@ -768,25 +768,9 @@ describe('MusicPipeline - progress reporting', () => {
     expect(completeEvent!.bytesProcessed).toBeGreaterThan(0);
   });
 
-  it('emits updating-db phase before save', async () => {
-    const executor = new MusicPipeline(deps);
-    const plan: SyncPlan = {
-      operations: [
-        { type: 'add-direct-copy', source: createCollectionTrack('A', 'S', 'Album', 'mp3') },
-      ],
-      estimatedTime: 1,
-      estimatedSize: 5000000,
-      warnings: [],
-    };
-
-    const progress: ExecutorProgress[] = [];
-    for await (const p of executor.execute(plan)) {
-      progress.push(p);
-    }
-
-    const dbUpdateEvents = progress.filter((p) => p.phase === 'updating-db');
-    expect(dbUpdateEvents.length).toBe(1);
-  });
+  // 'updating-db' yield + pipeline-internal final save were removed per
+  // ADR-019. Save is now owned by the engine SyncExecutor wrapping
+  // this pipeline; testing that contract lives in executor.test.ts.
 
   it('emits complete phase at end', async () => {
     const executor = new MusicPipeline(deps);
@@ -1997,7 +1981,7 @@ describe('MusicPipeline - update-metadata operations', () => {
     expect(updateFields).not.toBeNull();
     expect(updateFields!.artist).toBe('Artist');
     expect(updateFields!.title).toBe('Song (feat. B)');
-    expect(mockAdapter.save.mock.calls.length).toBe(1);
+    expect(mockAdapter.save.mock.calls.length).toBe(0); // ADR-019: engine owns save now
   });
 
   it('finds track by filePath for update', async () => {
@@ -2151,34 +2135,8 @@ describe('MusicPipeline - update-metadata operations', () => {
     expect(errorThrown).toBe(true);
   });
 
-  it('reports updating-db phase for update-metadata operations', async () => {
-    const deviceTrack = createMockDeviceTrack('Artist', 'Song', 'Album', 'Music/UPDATE.m4a');
-    mockAdapter = createMockDeviceAdapter([deviceTrack]);
-    deps = createDependencies(mockAdapter, mockTranscoder);
-
-    const executor = new MusicPipeline(deps);
-    const plan: SyncPlan = {
-      operations: [
-        {
-          type: 'update-metadata',
-          track: deviceTrack,
-          metadata: { artist: 'New Artist' },
-        },
-      ],
-      estimatedTime: 0.01,
-      estimatedSize: 0,
-      warnings: [],
-    };
-
-    const progress: ExecutorProgress[] = [];
-    for await (const p of executor.execute(plan)) {
-      progress.push(p);
-    }
-
-    // Should have updating-db phase (that's what getPhaseForOperation returns for update-metadata)
-    const dbEvents = progress.filter((p) => p.phase === 'updating-db');
-    expect(dbEvents.length).toBeGreaterThan(0);
-  });
+  // 'updating-db' phase yield was removed per ADR-019. Engine
+  // ownership of save means this event no longer surfaces from the pipeline.
 
   it('does not transfer bytes for update-metadata', async () => {
     const deviceTrack = createMockDeviceTrack('Artist', 'Song', 'Album', 'Music/UPDATE.m4a');
@@ -2467,8 +2425,8 @@ describe('upgrade operations - execution', () => {
     expect(db.addTrack).not.toHaveBeenCalled();
     expect(replaceTrackFile).toHaveBeenCalledTimes(1);
 
-    // Should have saved the database
-    expect(db.save).toHaveBeenCalledTimes(1);
+    // Save is owned by the engine wrapping the pipeline (ADR-019).
+    expect(db.save).not.toHaveBeenCalled();
 
     // Should report upgrading phase
     const upgradeProgress = progress.find((p) => p.phase === 'upgrading');
@@ -2808,8 +2766,8 @@ describe('MusicPipeline - prefetch pipeline (ADR-011)', () => {
     const errors = progress.filter((p) => p.error);
     expect(errors.length).toBe(0);
 
-    // Database should have been saved
-    expect(db.save).toHaveBeenCalled();
+    // Save is owned by the engine wrapping the pipeline (ADR-019).
+    expect(db.save).not.toHaveBeenCalled();
     // Both tracks should have been added
     expect(db.addTrack).toHaveBeenCalledTimes(2);
   });
@@ -3027,8 +2985,8 @@ describe('MusicPipeline - prefetch pipeline (ADR-011)', () => {
     expect(trackRemoved).toBe(true);
     // Two tracks should have been added
     expect(db.addTrack).toHaveBeenCalledTimes(2);
-    // Database should have been saved
-    expect(db.save).toHaveBeenCalled();
+    // Save is owned by the engine wrapping the pipeline (ADR-019).
+    expect(db.save).not.toHaveBeenCalled();
     // No errors
     const errors = progress.filter((p) => p.error);
     expect(errors.length).toBe(0);

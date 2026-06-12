@@ -26,6 +26,7 @@ This section contains Architecture Decision Records (ADRs) documenting significa
 | [ADR-013](/developers/adr/adr-013-ipod-artwork-corruption-diagnosis-and-repair) | iPod Artwork Corruption — Diagnosis and Repair | Draft | 2026-03-20 |
 | [ADR-014](/developers/adr/adr-014-device-capability-architecture) | Device Capability Architecture (m-18) | Accepted | 2026-05-06 |
 | [ADR-015](/developers/adr/adr-015-cli-error-output-shape) | CLI Error Output Shape | Accepted | 2026-05-09 |
+| [ADR-019](/developers/adr/adr-019-music-pipeline-engine-symmetry) | MusicPipeline ↔ engine/executor Symmetry | Proposed | 2026-06-12 |
 
 ## What is an ADR?
 

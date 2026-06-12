@@ -1042,8 +1042,9 @@ export class MusicHandler implements ContentTypeHandler<
         sidecarResize: this.config.sidecarResize,
         audioNormalization: this.config.audioNormalization,
       })) {
-        // Filter out batch-level events that don't map to per-operation progress
-        if (progress.phase === 'updating-db' || progress.phase === 'complete') {
+        // Filter out the batch-level 'complete' event — it's a synthetic
+        // "all done" marker, not a per-operation progress signal.
+        if (progress.phase === 'complete') {
           continue;
         }
 
