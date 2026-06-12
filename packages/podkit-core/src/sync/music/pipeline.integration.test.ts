@@ -544,6 +544,70 @@ describe('SyncExecutor integration', () => {
         await testIpod.cleanup();
       }
     });
+
+    it('engine fires checkpoint save every saveInterval completed operations', async () => {
+      // Pin the ADR-019 contract: with the pipeline's per-track checkpoint
+      // removed, all checkpoint cadence comes from the engine. 5 tracks at
+      // saveInterval=2 → checkpoint at completed=2 and completed=4 (2 saves)
+      // + 1 final save = 3 total.
+      const testIpod = await createTestIpod();
+
+      try {
+        const mp3Paths = await Promise.all(
+          [0, 1, 2, 3, 4].map(async (i) => {
+            const p = join(testDir, `test-checkpoint-${i}.mp3`);
+            await generateTestMP3(p);
+            return p;
+          })
+        );
+
+        const db = await IpodDatabase.open(testIpod.path);
+
+        try {
+          const adapter = new IpodDeviceAdapter(db, capsForGeneration('classic_7g'));
+          const realSave = adapter.save.bind(adapter);
+          let saveCount = 0;
+          adapter.save = async () => {
+            saveCount++;
+            await realSave();
+          };
+
+          const handler = createMusicHandler({ quality: 'high', transcoder });
+          const executor = createSyncExecutor(handler);
+
+          const plan: SyncPlan<MusicOperation> = {
+            operations: mp3Paths.map((path, i) => ({
+              type: 'add-direct-copy',
+              source: createCollectionTrack(
+                'Checkpoint Artist',
+                `Checkpoint Song ${i}`,
+                'Album',
+                path,
+                'mp3'
+              ),
+            })),
+            estimatedTime: 5,
+            estimatedSize: 250000,
+            warnings: [],
+          };
+
+          for await (const _ of executor.execute(plan, {
+            device: adapter,
+            saveInterval: 2,
+          })) {
+            // drain
+          }
+
+          // 2 checkpoints (at completed=2, completed=4) + 1 final save
+          expect(saveCount).toBe(3);
+          expect(db.trackCount).toBe(5);
+        } finally {
+          db.close();
+        }
+      } finally {
+        await testIpod.cleanup();
+      }
+    });
   });
 
   describe('dry-run mode', () => {

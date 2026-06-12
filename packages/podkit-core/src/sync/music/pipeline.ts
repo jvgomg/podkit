@@ -171,15 +171,6 @@ export interface ExtendedExecuteOptions extends ExecuteOptions {
    */
   transferMode?: TransferMode;
   /**
-   * Save the iPod database every N completed track operations.
-   *
-   * Reduces data loss if the process is killed, at the cost of triggering
-   * libgpod's ithmb compaction more frequently. Set to 0 to disable.
-   *
-   * @default 50
-   */
-  saveInterval?: number;
-  /**
    * Resize embedded artwork to this maximum dimension (pixels, square).
    *
    * When set, embedded artwork is resized during transcode and optimized-copy
@@ -836,7 +827,6 @@ export class MusicPipeline implements SyncExecutor {
       artworkResize,
       sidecarResize,
       audioNormalization,
-      saveInterval = 50,
     } = options;
 
     // Build the per-execute context. All option-derived state lives here
@@ -946,7 +936,6 @@ export class MusicPipeline implements SyncExecutor {
         mergedRetryConfig,
         continueOnError,
         signal,
-        saveInterval,
         ctx
       );
     } finally {
@@ -1032,7 +1021,6 @@ export class MusicPipeline implements SyncExecutor {
     retryConfig: Required<RetryConfig>,
     continueOnError: boolean,
     signal: AbortSignal | undefined,
-    saveInterval: number,
     ctx: ExecutionContext
   ): AsyncIterable<ExecutorProgress> {
     const total = plan.operations.length;
@@ -1239,12 +1227,6 @@ export class MusicPipeline implements SyncExecutor {
             // Include retry attempt if there were retries
             ...(totalRetries > 0 ? { retryAttempt: totalRetries } : {}),
           };
-
-          // Checkpoint save: persist completed tracks periodically to reduce
-          // data loss if the process is killed (force quit, SIGKILL, power loss)
-          if (saveInterval > 0 && completed % saveInterval === 0) {
-            await this.device.save();
-          }
         } else {
           // Transfer failed after retries
           failed++;
@@ -2031,6 +2013,13 @@ export function createMusicPipeline(deps: ExecutorDependencies): SyncExecutor {
  *
  * This is a convenience function that collects all progress events
  * and returns a final result.
+ *
+ * @remarks
+ * Bypasses the engine `SyncExecutor`. Only a single final save fires at
+ * end-of-run — there is no checkpoint cadence on this path. Callers that
+ * need per-N-track checkpoint saves (crash resilience during long syncs)
+ * should drive `MusicPipeline` through `createSyncExecutor(createMusicHandler(...))`
+ * and pass `saveInterval` in the engine options. See ADR-019.
  */
 export async function executeMusicPlan(
   plan: SyncPlan,

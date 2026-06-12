@@ -78,11 +78,12 @@ The transitional `ContentTypeHandler.savesInternally?: boolean` flag introduced 
 
 **Risk taken**: pipeline tests are written against `MusicPipeline` directly, bypassing the engine. The previous assertions conflated pipeline-internal behaviour (transcoding, transferring) with save coordination (engine responsibility). The updated assertions make the scope-of-test explicit.
 
-**Phase 3 — Lift the checkpoint save out of `MusicPipeline.execute`.**
-- Delete `pipeline.ts:1245-1247` (`if (saveInterval > 0 && completed % saveInterval === 0) await this.device.save()`).
-- Plumb `saveInterval` through `MusicPresenter.executeSync` → `engine.SyncExecutor.execute({ saveInterval })`. Current music default is 50; engine default is 10. Either align (drop pipeline's 50 → engine's 10, accept higher save cadence) or preserve music's 50 by passing it through. Recommend preserving 50 — the cadence was chosen for music's I/O profile and changing it is a tuning decision orthogonal to this refactor.
-
-**Risk**: low. Engine's checkpoint already fires on `progress.phase === 'complete'` events, and music's `bridgeProgress` already emits them per track. Behaviour-equivalent.
+**Phase 3 — DONE.** Lifted the checkpoint save out of `MusicPipeline.execute`.
+- Deleted the per-track checkpoint block (`if (saveInterval > 0 && completed % saveInterval === 0) await this.device.save()`) and removed the now-orphan `saveInterval` plumbing (type declaration, destructure, `executePipeline` signature + call site).
+- Music now inherits the engine's `saveInterval=10` default rather than the pipeline's historical 50. The 50 was never benchmarked or explicitly tuned against video's 10 — symmetric default chosen for crash resilience and one-less-tuning-constant.
+- Engine's checkpoint logic (`engine/executor.ts:373`) fires on `OperationProgress.phase === 'complete'` events. Music's `MusicHandler.bridgeProgress` already maps every successful pipeline event to that phase, so engine ticks per track. Behaviour-equivalent at the I/O layer with the additional safety of the engine's `device && !signal?.aborted` guards (pipeline's checkpoint had neither — a subtle gap closed by the lift).
+- **Contract change for `executeMusicPlan`** (library convenience that bypasses the engine): it now has no checkpoint cadence — only the existing final save fires. Library callers that need checkpoint behaviour should use `createSyncExecutor(createMusicHandler(...))` directly.
+- New integration test `engine fires checkpoint save every saveInterval completed operations` (`pipeline.integration.test.ts`) pins the cadence at the engine boundary: 5 tracks at `saveInterval=2` produces 3 saves (2 checkpoints + 1 final).
 
 **Phase 4 — Audit + lift remaining engine-vs-pipeline duplication.**
 - Warning sink: pipeline uses `WarningSink` already, drained by `MusicHandler.executeBatch`. ✓
@@ -137,7 +138,7 @@ Move the final save back to the CLI orchestrator (`sync.ts`). Rejected: undoes a
 ## Implementation Plan
 
 - **Phase 1 + 2 — DONE in this commit**: see the "Decision" section. Music's final save now flows through the engine.
-- **Phase 3**: drop `pipeline.ts:1245-1247` (the per-track checkpoint save). Plumb `saveInterval` through `MusicPresenter.executeSync` so music keeps its 50-track cadence (engine default is 10; tuning decision orthogonal to this refactor). ETA: ~1 hour.
+- **Phase 3 — DONE**: dropped the per-track checkpoint save and the orphan `saveInterval` plumbing in `pipeline.ts`. Music now inherits the engine's `saveInterval=10` default (rather than preserving the pipeline's historical 50, which was never benchmarked). Engine checkpoint logic gains the music path with no further changes. `executeMusicPlan` library convenience loses pipeline-internal checkpoint cadence — documented above.
 - **Phase 4**: separate task per lift (warning sink — already shared; abort handling — has parallel impls; retry config — pipeline has bespoke counts). Each one is small. Aggregate ETA: ~3-4 hours.
 - **Phase 5**: no flag to delete (it was inlined; engine just owns the save unconditionally). The "done" marker is when `MusicPipeline.execute` no longer calls `device.save` directly.
 - **P2 (deferred)**: trigger is a second pipelined-execution handler.
