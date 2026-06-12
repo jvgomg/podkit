@@ -342,6 +342,18 @@
       ],
       "outputs": ["bin/gpod-tool-linux-*"]
     },
+    "//#lint": {
+      "inputs": [
+        "**/*.ts",
+        "**/*.tsx",
+        "**/*.js",
+        "**/*.jsx",
+        "**/*.mjs",
+        "**/*.cjs",
+        "oxlint.json"
+      ],
+      "outputs": []
+    },
     "clean": {
       "cache": false
     }

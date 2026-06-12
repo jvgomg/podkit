@@ -62,6 +62,7 @@ bun run test:perf                # Run *.perf.test.ts performance benchmarks (ma
 bun run test:e2e                 # Run E2E tests (dummy iPod, no Docker)
 bun run test:e2e:docker              # Run Docker-gated E2E tests (Subsonic / Navidrome)
 bun run test --filter podkit-core # Run tests for specific package
+bun run quality                  # Full quality gate: lint+typecheck+build (parallel) → test → test:e2e → test:e2e:docker → test:vm (serial)
 mise run test:linux               # Run tests on Debian + Alpine Linux VMs
 
 # Device-harness VM lifecycle (macOS dev; Lima)

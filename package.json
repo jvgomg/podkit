@@ -21,6 +21,7 @@
     "test:e2e": "turbo run test:e2e",
     "test:e2e:docker": "turbo run test:e2e:docker",
     "test:vm": "turbo run test:vm",
+    "quality": "turbo run //#lint typecheck build && turbo run test && turbo run test:e2e && turbo run test:e2e:docker && turbo run test:vm",
     "harness:create": "bun run --cwd test-packages/device-testing harness:create",
     "harness:start": "bun run --cwd test-packages/device-testing harness:start",
     "harness:stop": "bun run --cwd test-packages/device-testing harness:stop",
