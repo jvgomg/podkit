@@ -301,6 +301,16 @@ export class SyncExecutor<TSource, TDevice, TOp extends BaseOperation = SyncOper
       }
     }
 
+    // Final save: flush anything since the last checkpoint. Matches the
+    // music pipeline's post-loop save (`sync/music/pipeline.ts:1349`)
+    // so the orchestrator doesn't need to know about save timing per
+    // content type. Skipped on dry-run (no writes), abort (the abort
+    // path is owned by the orchestrator), and empty/skip-only plans
+    // (no state to flush).
+    if (!dryRun && !aborted && device && (completed > 0 || failed > 0)) {
+      await device.save();
+    }
+
     return {
       completed,
       failed,
@@ -428,6 +438,13 @@ export class SyncExecutor<TSource, TDevice, TOp extends BaseOperation = SyncOper
           categorizedError: catError,
         }
       );
+    }
+
+    // Final save — see the per-operation path for the rationale. Batch
+    // path is non-dry-run by construction (path 1 of `execute` only fires
+    // when `!dryRun && executeBatch`), so the dry-run gate is structural.
+    if (!aborted && device && (completed > 0 || failed > 0)) {
+      await device.save();
     }
 
     return {

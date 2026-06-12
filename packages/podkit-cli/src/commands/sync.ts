@@ -1176,16 +1176,10 @@ export async function runSync(
         allWarnings.push(...videoResult.warnings);
         allErrors.push(...videoResult.errors);
         if (videoResult.anyError) anyError = true;
-
-        // Post-phase save for the success path. The interrupt path's
-        // save lives inside `runCollectionPhase` (gated on `priorPhase +
-        // completed > 0`); this one fires only when no interrupt
-        // happened — `!shutdown.isShuttingDown` excludes the case
-        // where the helper already set exit code 130 and may or may
-        // not have saved.
-        if (!dryRun && !shutdown.isShuttingDown) {
-          await adapter.save();
-        }
+        // Final save lives inside the engine executor now
+        // (`sync/engine/executor.ts` — matches the music pipeline's
+        // post-loop save at `sync/music/pipeline.ts:1349`). The
+        // interrupt-path save lives in `runCollectionPhase`.
       }
     }
 
