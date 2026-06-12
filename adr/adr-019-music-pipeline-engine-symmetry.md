@@ -86,10 +86,10 @@ The transitional `ContentTypeHandler.savesInternally?: boolean` flag introduced 
 - New integration test `engine fires checkpoint save every saveInterval completed operations` (`pipeline.integration.test.ts`) pins the cadence at the engine boundary: 5 tracks at `saveInterval=2` produces 3 saves (2 checkpoints + 1 final).
 
 **Phase 4 — Audit + lift remaining engine-vs-pipeline duplication.**
-- Warning sink: pipeline uses `WarningSink` already, drained by `MusicHandler.executeBatch`. ✓
-- Abort handling: pipeline checks `signal?.aborted` independently of engine. Same primitive, parallel implementations. Lift into engine.
-- Error categorisation: `engine/error-handling.ts` already exports `categorizeError`. Pipeline imports + uses it. ✓
-- Retry config: pipeline has its own retry counts per error class. Engine has `RetryConfig` in `SyncExecuteOptions`. Currently pipeline uses its own. Plumb engine's through.
+- Warning sink: pipeline uses `WarningSink` already, drained by `MusicHandler.executeBatch` into `ctx.warningSink`. ✓
+- Abort handling: pipeline checks `signal?.aborted` independently of engine. Same primitive, parallel implementations. Lift into engine. **PENDING — medium risk; the three-stage queue coordination makes abort propagation subtle.**
+- Error categorisation: `engine/error-handling.ts` already exports `categorizeError`. Pipeline imports + uses it (via `getRetriesForCategory` adapter shim that converts pipeline's 4-field `RetryConfig` to engine's 7-category `SharedRetryConfig`). ✓
+- Retry config: pipeline owns its own `RetryConfig` shape and per-error-class counts (`MUSIC_RETRY_CONFIG` at `pipeline.ts:124`). The engine had a `retryConfig?: RetryConfig` field on `SyncExecuteOptions` that was declared but never read by any execution path — dead surface — **REMOVED**. Music's retry policy stays handler-owned via `MusicSyncConfig.retryConfig`, which is the only path that any production caller ever wired up. A future "engine owns retry" unification can reintroduce the option when it has a functional implementation behind it; until then, no speculative API.
 
 Phase 4 is the largest of P1 phases but each lift is bounded.
 

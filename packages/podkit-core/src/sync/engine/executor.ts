@@ -24,7 +24,7 @@ import type {
 } from './types.js';
 import type { TranscodeProgress } from '../../transcode/types.js';
 import type { ContentTypeHandler, ExecutionContext, OperationProgress } from './content-type.js';
-import { categorizeError, createCategorizedError, type RetryConfig } from './error-handling.js';
+import { categorizeError, createCategorizedError } from './error-handling.js';
 import { runPreliminariesPreFlight, assertSpaceAfterSweep } from './pre-sync-sweep.js';
 
 // =============================================================================
@@ -51,8 +51,6 @@ export interface SyncExecuteOptions {
    * @default 10
    */
   saveInterval?: number;
-  /** Retry configuration (passed through, not used by executor directly) */
-  retryConfig?: RetryConfig;
 }
 
 // =============================================================================
