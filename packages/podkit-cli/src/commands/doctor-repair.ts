@@ -133,13 +133,6 @@ export interface RunRepairPipelineArgs {
   /** Override the cascade-unsupported pre-flight assessor (tests). */
   deps?: RunDiagnosticRepairDeps;
   /**
-   * Set `true` when the caller has already run `preflightCascadeRefusal`
-   * against the same `(check, ctx)`. The pipeline forwards this to core
-   * via `RunDiagnosticRepairDeps.skipPreflight`, avoiding a redundant
-   * `assessIpodIdentity` fetch on the success path.
-   */
-  refusalPreflightedByCaller?: boolean;
-  /**
    * Optional success-line override. iPod + mass-storage print
    * "Repair complete. Run `podkit doctor` to verify."; system repairs
    * print "Repair complete." (no verify-on-device hint).
@@ -184,10 +177,7 @@ export async function runRepairPipeline(args: RunRepairPipelineArgs): Promise<vo
           ? {}
           : { onProgress: makeProgressHandler(out, { extended: !args.compactProgress }) }),
       },
-      {
-        ...args.deps,
-        ...(args.refusalPreflightedByCaller ? { skipPreflight: true } : {}),
-      }
+      args.deps ?? {}
     );
   } catch (err) {
     out.clearProgress();

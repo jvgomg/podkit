@@ -1236,9 +1236,6 @@ export async function runRepair(
       dryRun,
       verbose,
       out,
-      // CLI did the cascade-unsupported preflight before db.open;
-      // tell the pipeline to skip its own (avoids a redundant fetch).
-      refusalPreflightedByCaller: true,
     });
   } finally {
     for (const adapter of adapters) {

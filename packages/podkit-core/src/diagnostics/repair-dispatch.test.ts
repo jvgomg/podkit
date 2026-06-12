@@ -435,36 +435,6 @@ describe('assessRepairRefusal', () => {
   });
 });
 
-describe('runDiagnosticRepair — skipPreflight', () => {
-  it('skips the assess call when deps.skipPreflight is true', async () => {
-    let assessCalls = 0;
-    const check = makeFakeCheck({});
-    const result = await runDiagnosticRepair(check, ipodCtx(), undefined, {
-      assessIpodIdentity: async () => {
-        assessCalls++;
-        return {
-          model: { unsupportedReason: UNSUPPORTED_REASON },
-        } as unknown as IpodIdentityAssessment;
-      },
-      skipPreflight: true,
-    });
-    expect(assessCalls).toBe(0);
-    expect(result.status).toBe('ok');
-  });
-
-  it('still runs the assess call when skipPreflight is omitted/false', async () => {
-    let assessCalls = 0;
-    const check = makeFakeCheck({});
-    await runDiagnosticRepair(check, ipodCtx(), undefined, {
-      assessIpodIdentity: async () => {
-        assessCalls++;
-        return { model: null } as unknown as IpodIdentityAssessment;
-      },
-    });
-    expect(assessCalls).toBe(1);
-  });
-});
-
 describe('runDiagnosticRepair — guard', () => {
   it('throws if the check has no repair defined', async () => {
     const checkWithoutRepair: DiagnosticCheck = {

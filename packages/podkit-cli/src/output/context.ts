@@ -34,7 +34,12 @@ import type { TipContext } from './tips.js';
 import { collectTips, formatTips } from './tips.js';
 
 /**
- * Simple spinner for CLI progress
+ * Simple spinner for CLI progress.
+ *
+ * Writes through the supplied `OutputSink` (typically the parent
+ * `OutputContext`'s err sink) so buffer-sink test harnesses can capture
+ * the frames and tests don't have to spy on `process.stderr.write`.
+ * Matches the `OutputContext.progress` convention introduced for §2a.
  */
 class Spinner implements SpinnerControl {
   private frames = ['|', '/', '-', '\\'];
@@ -42,11 +47,13 @@ class Spinner implements SpinnerControl {
   private interval: ReturnType<typeof setInterval> | null = null;
   private message = '';
 
+  constructor(private readonly sink: OutputSink) {}
+
   start(message: string): void {
     this.message = message;
     this.interval = setInterval(() => {
       // \x1b[K clears from cursor to end of line to prevent remnant characters
-      process.stderr.write(`\r\x1b[K${this.frames[this.current]} ${this.message}`);
+      this.sink.write(`\r\x1b[K${this.frames[this.current]} ${this.message}`);
       this.current = (this.current + 1) % this.frames.length;
     }, 100);
   }
@@ -62,9 +69,9 @@ class Spinner implements SpinnerControl {
     }
     // \x1b[K clears from cursor to end of line to prevent remnant characters
     if (finalMessage) {
-      process.stderr.write(`\r\x1b[K${finalMessage}\n`);
+      this.sink.write(`\r\x1b[K${finalMessage}\n`);
     } else {
-      process.stderr.write('\r\x1b[K');
+      this.sink.write('\r\x1b[K');
     }
   }
 }
@@ -370,7 +377,7 @@ export class OutputContext {
       return nullSpinner;
     }
 
-    const spinner = new Spinner();
+    const spinner = new Spinner(this.err);
     spinner.start(message);
     return spinner;
   }

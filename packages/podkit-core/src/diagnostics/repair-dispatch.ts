@@ -137,15 +137,6 @@ export type RepairExecutionResult =
 export interface RunDiagnosticRepairDeps {
   /** Override the identity assessment used for the unsupported-device pre-flight (tests). */
   assessIpodIdentity?: (mountPoint: string) => Promise<IpodIdentityAssessment>;
-  /**
-   * Skip the cascade-unsupported pre-flight entirely. Set by callers that
-   * already ran `assessRepairRefusal` against the same `(check, ctx)` and
-   * want to avoid a redundant assessment fetch — primarily the CLI
-   * `--repair` flow, which must refuse BEFORE opening the iPod database
-   * to avoid libgpod opens against unsupported generations. Defaults to
-   * `false`.
-   */
-  skipPreflight?: boolean;
 }
 
 /**
@@ -205,11 +196,9 @@ export async function runDiagnosticRepair(
     throw new Error(`Check "${check.id}" has no repair defined`);
   }
 
-  if (!deps.skipPreflight) {
-    const reason = await assessRepairRefusal(ctx, deps);
-    if (reason) {
-      return { status: 'refused', checkId: check.id, reason };
-    }
+  const reason = await assessRepairRefusal(ctx, deps);
+  if (reason) {
+    return { status: 'refused', checkId: check.id, reason };
   }
 
   const result = await check.repair.run(ctx, options);

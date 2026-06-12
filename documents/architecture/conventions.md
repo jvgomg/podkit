@@ -70,8 +70,6 @@ against captured progress output.
   registered before any command's `OutputContext` exists.
 - `packages/podkit-cli/src/shutdown.ts` — signal-handler write with an
   explicit `_writeStderr` test seam.
-- `packages/podkit-cli/src/output/context.ts` — `OutputContext`'s own
-  internal spinner writes (privileged: it owns the sink).
 - `packages/podkit-cli/src/commands/migrate.ts` — interactive flow whose
   prompt copy is paired with `readline`, which binds to a writable
   `process.stderr` directly (not an `OutputSink`).
@@ -79,6 +77,13 @@ against captured progress output.
 Every other direct stderr write in `packages/podkit-cli/src/commands/`
 should route through `OutputContext`. Any new carve-out lands here with
 its reason, not silently.
+
+**Enforcement.** `scripts/check-cli-stderr-writes.mjs` greps the CLI
+command tree for `process.stdout.write` / `process.stderr.write` and
+fails (exit 1) on any match outside its `ALLOW` set. The check runs as
+part of `bun run lint` (and standalone via `bun run lint:conventions`).
+A new carve-out must be added to BOTH this section AND the script's
+`ALLOW` set.
 
 ---
 
