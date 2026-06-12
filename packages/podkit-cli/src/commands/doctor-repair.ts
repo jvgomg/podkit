@@ -98,31 +98,26 @@ export async function preflightCascadeRefusal(
  * matched/no-source/no-artwork counters when present. Mass-storage
  * repairs use a stripped variant with just current/total.
  *
- * NB: Direct `process.stderr.write` violates the OutputContext
- * convention; routing through `out.progress`/`out.clearProgress` is
- * tracked in TASK-421. Same observable behaviour preserved here.
+ * Routes through `out.progress` so the line flows through the
+ * OutputContext sink — captured by buffer-sink test harnesses, gated
+ * by JSON / quiet modes, switched between `\r`-overwrite and history
+ * mode based on `tty` (convention §2).
  */
 function makeProgressHandler(out: OutputContext, opts: { extended: boolean }) {
   return (progress: Record<string, unknown>) => {
-    if (!out.isText) return;
     if (typeof progress.current === 'number' && typeof progress.total === 'number') {
       const pct = Math.round((progress.current / progress.total) * 100);
-      let line = `\r  ${progress.current} / ${progress.total}  (${pct}%)`;
+      let line = `  ${progress.current} / ${progress.total}  (${pct}%)`;
       if (opts.extended) {
         if (typeof progress.matched === 'number') line += `  Matched: ${progress.matched}`;
         if (typeof progress.noSource === 'number') line += `  No source: ${progress.noSource}`;
         if (typeof progress.noArtwork === 'number') line += `  No artwork: ${progress.noArtwork}`;
       }
-      process.stderr.write(line);
+      out.progress(line);
     } else if (typeof progress.message === 'string') {
-      process.stderr.write(`\r  ${progress.message}`);
+      out.progress(`  ${progress.message}`);
     }
   };
-}
-
-function clearProgressLine(out: OutputContext, width: number): void {
-  if (!out.isText) return;
-  process.stderr.write('\r' + ' '.repeat(width) + '\r');
 }
 
 export interface RunRepairPipelineArgs {
@@ -175,7 +170,6 @@ export async function runRepairPipeline(args: RunRepairPipelineArgs): Promise<vo
 
   const shutdown = args.withoutShutdown ? null : createShutdownController();
   shutdown?.install();
-  const progressWidth = args.compactProgress ? 80 : 100;
 
   let result: RepairExecutionResult;
   try {
@@ -196,7 +190,7 @@ export async function runRepairPipeline(args: RunRepairPipelineArgs): Promise<vo
       }
     );
   } catch (err) {
-    clearProgressLine(out, progressWidth);
+    out.clearProgress();
     if (err instanceof CliError) throw err;
     const message = err instanceof Error ? err.message : String(err);
     throw new CliError({
@@ -208,7 +202,7 @@ export async function runRepairPipeline(args: RunRepairPipelineArgs): Promise<vo
     shutdown?.uninstall();
   }
 
-  clearProgressLine(out, progressWidth);
+  out.clearProgress();
 
   if (result.status === 'refused') {
     throw new CliError({

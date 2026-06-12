@@ -174,6 +174,12 @@ function createMigrationContext(dryRun: boolean): MigrationContext {
           input: process.stdin,
           output: process.stderr,
         });
+        // Direct stderr writes are intentional here: they're paired with
+        // the readline interface above, which binds to `process.stderr`
+        // by design (readline takes a writable stream, not an OutputSink).
+        // Routing the prompt copy through OutputContext while readline
+        // still owns the actual TTY would split the interactive flow
+        // across two channels. See conventions.md §2 carve-out.
         process.stderr.write(`${message}\n`);
         choices.forEach((c, i) => {
           process.stderr.write(`  ${i + 1}) ${c.label}`);
@@ -205,6 +211,9 @@ function createMigrationContext(dryRun: boolean): MigrationContext {
           });
         });
       },
+      // info/warn write to stderr alongside the readline-coupled prompts
+      // above so the interactive flow stays on one channel. Same carve-out
+      // as `choose` / `text` — see conventions.md §2.
       info: (message) => process.stderr.write(`  ${message}\n`),
       warn: (message) => process.stderr.write(`  Warning: ${message}\n`),
     },

@@ -240,3 +240,145 @@ describe('OutputContext TTY detection', () => {
     });
   });
 });
+
+// =============================================================================
+// progress() / clearProgress()
+// =============================================================================
+
+describe('OutputContext.progress / clearProgress', () => {
+  // Import BufferSink inside the describe so tests can construct fresh sinks
+  // per-case without polluting the TTY-suite's global mocks.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { BufferSink } =
+    require('../test-utils/buffer-sink.js') as typeof import('../test-utils/buffer-sink.js');
+
+  function makeOut(
+    opts: {
+      mode?: 'json' | 'text';
+      quiet?: boolean;
+      tty?: boolean;
+    } = {}
+  ): {
+    out: OutputContext;
+    stdout: InstanceType<typeof BufferSink>;
+    stderr: InstanceType<typeof BufferSink>;
+  } {
+    const stdout = new BufferSink();
+    const stderr = new BufferSink();
+    const out = new OutputContext({
+      mode: opts.mode ?? 'text',
+      quiet: opts.quiet ?? false,
+      verbose: 0,
+      color: false,
+      tips: false,
+      tty: opts.tty ?? true,
+      stdout,
+      stderr,
+    });
+    return { out, stdout, stderr };
+  }
+
+  describe('TTY text mode', () => {
+    it('writes "\\r<line>" to stderr', () => {
+      const { out, stderr } = makeOut({ tty: true });
+      out.progress('  1 / 10  (10%)');
+      expect(stderr.text()).toBe('\r  1 / 10  (10%)');
+    });
+
+    it('overwrites the previous progress line on subsequent calls', () => {
+      const { out, stderr } = makeOut({ tty: true });
+      out.progress('aaa');
+      out.progress('bbb');
+      // Each progress write prepends \r and the new line; the terminal
+      // overwrites visually. The sink just records both writes verbatim.
+      expect(stderr.text()).toBe('\raaa\rbbb');
+    });
+
+    it('clearProgress writes \\r + spaces sized to the widest line + \\r', () => {
+      const { out, stderr } = makeOut({ tty: true });
+      out.progress('short');
+      out.progress('a much longer progress line here');
+      out.clearProgress();
+      expect(stderr.text()).toBe(
+        '\rshort' +
+          '\ra much longer progress line here' +
+          '\r' +
+          ' '.repeat('a much longer progress line here'.length) +
+          '\r'
+      );
+    });
+
+    it('clearProgress is a no-op when no progress has been emitted', () => {
+      const { out, stderr } = makeOut({ tty: true });
+      out.clearProgress();
+      expect(stderr.text()).toBe('');
+    });
+
+    it('clearProgress is idempotent (second call is a no-op)', () => {
+      const { out, stderr } = makeOut({ tty: true });
+      out.progress('line');
+      out.clearProgress();
+      const after = stderr.text();
+      out.clearProgress();
+      expect(stderr.text()).toBe(after);
+    });
+  });
+
+  describe('non-TTY text mode', () => {
+    it('writes "<line>\\n" to stderr (history-preserving)', () => {
+      const { out, stderr } = makeOut({ tty: false });
+      out.progress('1 / 10');
+      out.progress('2 / 10');
+      expect(stderr.text()).toBe('1 / 10\n2 / 10\n');
+    });
+
+    it('clearProgress is a no-op (nothing to clear in scroll history)', () => {
+      const { out, stderr } = makeOut({ tty: false });
+      out.progress('line');
+      const before = stderr.text();
+      out.clearProgress();
+      expect(stderr.text()).toBe(before);
+    });
+  });
+
+  describe('JSON mode', () => {
+    it('progress is a no-op', () => {
+      const { out, stdout, stderr } = makeOut({ mode: 'json' });
+      out.progress('1 / 10');
+      expect(stdout.text()).toBe('');
+      expect(stderr.text()).toBe('');
+    });
+
+    it('clearProgress is a no-op', () => {
+      const { out, stdout, stderr } = makeOut({ mode: 'json' });
+      out.progress('1 / 10');
+      out.clearProgress();
+      expect(stdout.text()).toBe('');
+      expect(stderr.text()).toBe('');
+    });
+  });
+
+  describe('quiet mode', () => {
+    it('progress is a no-op even in TTY text mode', () => {
+      const { out, stderr } = makeOut({ quiet: true, tty: true });
+      out.progress('1 / 10');
+      expect(stderr.text()).toBe('');
+    });
+
+    it('clearProgress is a no-op', () => {
+      const { out, stderr } = makeOut({ quiet: true, tty: true });
+      out.clearProgress();
+      expect(stderr.text()).toBe('');
+    });
+  });
+
+  describe('sink capture (test harness)', () => {
+    it('routes through the stderr OutputSink, not process.stderr', () => {
+      // Pins the convention §2 fix: progress lines flow through the
+      // configured sink so buffer-sink test harnesses capture them.
+      const { out, stderr } = makeOut({ tty: true });
+      out.progress('captured');
+      expect(stderr.text()).toContain('captured');
+    });
+  });
+});

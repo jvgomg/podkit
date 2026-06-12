@@ -83,6 +83,13 @@ export class OutputContext {
   private readonly out: OutputSink;
   private readonly err: OutputSink;
   private readonly exitCode: ExitCodeSink;
+  /**
+   * Width (chars) of the most recent `progress(line)` write. `clearProgress`
+   * uses this to size its blank-space overwrite — sized to the actual line
+   * rather than a wide guess so we don't waste bandwidth or eat too many
+   * cells under unusual terminal widths.
+   */
+  private lastProgressWidth = 0;
 
   constructor(config: OutputContextConfig) {
     this.mode = config.mode;
@@ -249,6 +256,47 @@ export class OutputContext {
     if (this.isText && !this.quiet) {
       this.out.write(message + '\n');
     }
+  }
+
+  /**
+   * Emit a transient progress line.
+   *
+   * Behaviour by mode:
+   *  - JSON or quiet → no-op. Structured output never carries progress;
+   *    callers expecting status should consume the final JSON envelope.
+   *  - Text + TTY → `\r${line}` to the stderr sink, overwriting the
+   *    previous progress line. The caller is responsible for the line's
+   *    leading whitespace / indent — the helper does not prefix.
+   *  - Text + non-TTY → `${line}\n` to stderr. Cleared lines become
+   *    history; CI logs and `tee`d pipes still see the progress trail
+   *    instead of a jumble of `\r` codes.
+   *
+   * Tracks the line width so a subsequent `clearProgress()` knows how
+   * many cells to blank out.
+   */
+  progress(line: string): void {
+    if (!this.isText || this.quiet) return;
+    if (this.tty) {
+      this.err.write('\r' + line);
+      this.lastProgressWidth = Math.max(this.lastProgressWidth, line.length);
+    } else {
+      this.err.write(line + '\n');
+    }
+  }
+
+  /**
+   * Clear the current progress line (if any).
+   *
+   * TTY text mode only — non-TTY progress writes are committed to the
+   * scroll buffer with trailing newlines and nothing to clear. Idempotent:
+   * safe to call when no progress line is active or after a previous
+   * clear.
+   */
+  clearProgress(): void {
+    if (!this.isText || this.quiet || !this.tty) return;
+    if (this.lastProgressWidth === 0) return;
+    this.err.write('\r' + ' '.repeat(this.lastProgressWidth) + '\r');
+    this.lastProgressWidth = 0;
   }
 
   /**

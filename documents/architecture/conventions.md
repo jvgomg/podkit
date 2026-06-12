@@ -48,6 +48,38 @@ see — that only works if there's one output path.
 `packages/podkit-cli/` and other end-user packages may use `console.*` via
 the CLI's `OutputContext`, but core may not.
 
+### 2a. CLI output flows through `OutputContext`
+
+Inside `packages/podkit-cli/src/commands/`, every text/JSON write goes
+through the command's `OutputContext` — `out.print`, `out.error`,
+`out.warn`, `out.success`, `out.result`, `out.progress`, `out.clearProgress`,
+etc. Direct `process.stdout.write` / `process.stderr.write` from a command
+file is a convention violation: it bypasses JSON-mode no-op, `--quiet`
+suppression, the buffer-sink test harness, and the TTY/non-TTY progress
+switch.
+
+For `\r`-progress lines specifically, use `out.progress(line)` +
+`out.clearProgress()`. The helper handles the TTY (`\r`-overwrite) vs.
+non-TTY (newline history) split, no-ops cleanly in JSON / quiet modes,
+and threads through the configured stderr sink so tests can assert
+against captured progress output.
+
+**Carve-outs** (intentional direct `process.stderr.write`):
+
+- `packages/podkit-cli/src/main.ts` — bootstrap-time diagnostic forwarder
+  registered before any command's `OutputContext` exists.
+- `packages/podkit-cli/src/shutdown.ts` — signal-handler write with an
+  explicit `_writeStderr` test seam.
+- `packages/podkit-cli/src/output/context.ts` — `OutputContext`'s own
+  internal spinner writes (privileged: it owns the sink).
+- `packages/podkit-cli/src/commands/migrate.ts` — interactive flow whose
+  prompt copy is paired with `readline`, which binds to a writable
+  `process.stderr` directly (not an `OutputSink`).
+
+Every other direct stderr write in `packages/podkit-cli/src/commands/`
+should route through `OutputContext`. Any new carve-out lands here with
+its reason, not silently.
+
 ---
 
 ## 3. Typed errors carry their category — no string matching

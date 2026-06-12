@@ -60,7 +60,7 @@ export function getTerminalWidth(): number {
  * track name, the name is omitted entirely.
  *
  * @param options - Progress line formatting options
- * @returns Formatted progress line ready for `process.stdout.write()`
+ * @returns Formatted progress line (with leading `\r\x1b[K`) ready to hand to `OutputContext.progress()`
  */
 export function formatProgressLine({
   bar,
