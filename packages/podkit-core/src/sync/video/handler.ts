@@ -22,7 +22,7 @@ import { MediaType } from '../../ipod/constants.js';
 import { transcodeVideo as realTranscodeVideo } from '../../video/transcode.js';
 import { probeVideo as realProbeVideo } from '../../video/probe.js';
 import { generateVideoMatchKey, type DeviceVideo, type VideoOperation } from './types.js';
-import { calculateVideoOperationSize, calculateVideoOperationTime } from './planner.js';
+import { calculateVideoOperationSize, calculateVideoOperationTime } from './estimation.js';
 import { getVideoOperationDisplayName } from './executor.js';
 import { buildVideoSyncTag, syncTagMatchesConfig } from '../../metadata/sync-tags.js';
 import { detectBitratePresetMismatch } from '../engine/upgrades.js';

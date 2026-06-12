@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from 'bun:test';
-import { estimateTranscodedSize, estimatePassthroughSize } from './planner.js';
+import { estimateTranscodedSize, estimatePassthroughSize } from './estimation.js';
 import type { CollectionVideo } from '../../video/directory-adapter.js';
 
 // =============================================================================

@@ -37,7 +37,7 @@ each content type's planner:
             ┌─────────────┴──────────────┐    ┌───────────┴──────────┐
             ▼                            ▼    ▼                      ▼
   calculateMusicOperationSize  calculateVideoOperationSize  estimateTransferTime
-  (sync/music/planner.ts)      (sync/video/planner.ts)      (sync/engine/estimation.ts)
+  (sync/music/planner.ts)      (sync/video/estimation.ts)      (sync/engine/estimation.ts)
             │                            │                      ▲
             ├─ estimateCopySize          ├─ inline bitrate ×    │ shared by both
             │  ├─ estimateTranscodedSize │  duration math       │ content types
@@ -136,7 +136,7 @@ exercises this gap concretely — see §6.
 
 ### Video: `calculateVideoOperationSize(operation)` → bytes
 
-Located in `sync/video/planner.ts:80-113`. Inlines the bitrate ×
+Located in `sync/video/estimation.ts:80-113`. Inlines the bitrate ×
 duration math per operation type:
 
 | Operation              | Size formula                                                    |
@@ -299,7 +299,7 @@ Two invariants the layout enforces:
     `calculateMusicOperationSize`, the typical-bitrate table.
   - `packages/podkit-core/src/sync/music/handler.ts:841-851` —
     `MusicHandler.estimateSize` / `estimateTime` facades.
-  - `packages/podkit-core/src/sync/video/planner.ts` —
+  - `packages/podkit-core/src/sync/video/estimation.ts` —
     `calculateVideoOperationSize` / `calculateVideoOperationTime`
     plus the unused `estimateTranscodedSize` /
     `estimatePassthroughSize` helpers.

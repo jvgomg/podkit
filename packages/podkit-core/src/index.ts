@@ -565,7 +565,7 @@ export {
   estimatePassthroughSize,
   calculateVideoOperationSize,
   calculateVideoOperationTime,
-} from './sync/video/planner.js';
+} from './sync/video/estimation.js';
 
 // Video sync executor
 export type {

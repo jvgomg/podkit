@@ -183,7 +183,7 @@ a per-operation calculator:
   - `remove`, `update-metadata`, `update-sync-tag`, `relocate`
     return `0` (these don't add bytes; removes free bytes but the
     estimator doesn't net them).
-- **Video** (`sync/video/planner.ts:80-113`): per-operation
+- **Video** (`sync/video/estimation.ts:80-113`): per-operation
   `calculateVideoOperationSize` using a similar bitrate-times-duration
   model. The time-side companion (`calculateVideoOperationTime`)
   feeds `plan.estimatedTime`, which is orthogonal to free-space.
