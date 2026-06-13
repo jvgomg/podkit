@@ -35,6 +35,7 @@ import type {
   ScanWarningInfo,
   TransformInfo,
   UpdateBreakdown,
+  ResolvedCollection,
 } from './sync.js';
 import type {
   ContentTypePresenter,
@@ -91,15 +92,6 @@ function resolveLosslessCodecForDisplay(config: MusicContentConfig): string | un
     }
   }
   return config.deviceSupportsAlac ? 'alac' : undefined;
-}
-
-/**
- * Resolved collection information (matches the type in sync.ts)
- */
-interface ResolvedCollection {
-  name: string;
-  type: 'music' | 'video';
-  config: MusicCollectionConfig | import('../config/index.js').VideoCollectionConfig;
 }
 
 /**

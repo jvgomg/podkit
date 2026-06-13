@@ -25,23 +25,14 @@ import {
   formatCurrentLineText,
   DualProgressDisplay,
 } from '../utils/progress.js';
-import type { SyncOutput } from './sync.js';
+import type { SyncOutput, ResolvedCollection } from './sync.js';
 import type {
   ContentTypePresenter,
   MusicContentConfig,
   VideoContentConfig,
 } from './sync-presenter.js';
 import { formatDuration, formatVideoTransformsConfig } from './sync-presenter.js';
-import type { MusicCollectionConfig, VideoCollectionConfig } from '../config/index.js';
-
-/**
- * Resolved collection information (matches the type in sync.ts)
- */
-interface ResolvedCollection {
-  name: string;
-  type: 'music' | 'video';
-  config: MusicCollectionConfig | VideoCollectionConfig;
-}
+import type { VideoCollectionConfig } from '../config/index.js';
 
 /**
  * Presenter for video content type.

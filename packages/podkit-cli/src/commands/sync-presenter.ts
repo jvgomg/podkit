@@ -13,12 +13,11 @@ import type {
   TransformsConfig,
   VideoQualityPreset,
   VideoTransformsConfig,
-  MusicCollectionConfig,
 } from '../config/index.js';
 import type { EncodingMode, TransferMode } from '@podkit/core';
 import type { OutputContext, CollectedError } from '../output/index.js';
 import { formatBytes } from '../output/index.js';
-import type { SyncOutput, ErrorInfo } from './sync.js';
+import type { SyncOutput, ErrorInfo, ResolvedCollection } from './sync.js';
 
 // =============================================================================
 // Free-space JSON envelope helpers (TASK-378 AC #8)
@@ -73,15 +72,6 @@ export function buildPostSweepSpaceErrorInfo(detail: {
 // =============================================================================
 // Types
 // =============================================================================
-
-/**
- * Resolved collection information (matches the type in sync.ts)
- */
-interface ResolvedCollection {
-  name: string;
-  type: 'music' | 'video';
-  config: MusicCollectionConfig | import('../config/index.js').VideoCollectionConfig;
-}
 
 /**
  * Music-specific configuration passed through the presenter context
