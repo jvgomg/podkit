@@ -211,7 +211,7 @@ describe('runCollectionPhase', () => {
       expect(ctx.stdout.text()).toContain('=== Music: archive ===');
     });
 
-    it('video: header always renders, byte-identical', async () => {
+    it('video: header renders when caller passes true, byte-identical', async () => {
       const { deps, ctx } = makeDeps(async () => successResult());
 
       await runCollectionPhase(
@@ -219,7 +219,7 @@ describe('runCollectionPhase', () => {
           presenter: videoPresenter as unknown as ContentTypePresenter<unknown, unknown> & {
             type: 'video';
           },
-          collections: [collection('movies')],
+          collections: [collection('movies'), collection('shows')],
           contentConfig: videoConfigStub,
           renderPerCollectionHeader: true,
           preSyncPreliminaries: undefined,
@@ -228,8 +228,9 @@ describe('runCollectionPhase', () => {
         deps
       );
 
-      // Byte-identical header pin: '=== Video: NAME ===' (AC #5).
+      // Byte-identical header pin.
       expect(ctx.stdout.text()).toContain('=== Video: movies ===');
+      expect(ctx.stdout.text()).toContain('=== Video: shows ===');
     });
 
     it('music: extras (artworkMissingBaseline, transferModeMismatch) accumulate', async () => {
@@ -399,9 +400,9 @@ describe('runCollectionPhase', () => {
   // ─── Helper renders header when caller says so, even for one collection ──
   describe('header rendering is caller-driven', () => {
     it('music: single collection with renderPerCollectionHeader=true does render', async () => {
-      // Caller (sync.ts) suppresses for music when length===1, but the
-      // helper itself stays content-agnostic — if the caller passes true,
-      // the header renders. Documents the boundary.
+      // Caller (sync.ts) suppresses for both music and video when length===1,
+      // but the helper itself stays content-agnostic — if the caller passes
+      // true, the header renders. Documents the boundary.
       const { deps, ctx } = makeDeps(async () => successResult());
 
       await runCollectionPhase(
@@ -419,6 +420,72 @@ describe('runCollectionPhase', () => {
       );
 
       expect(ctx.stdout.text()).toContain('=== Music: only ===');
+    });
+
+    it('video: single collection with renderPerCollectionHeader=false suppresses', async () => {
+      // Symmetric pin: caller (sync.ts) now suppresses the video header on
+      // single-collection runs to match music's behaviour. The helper itself
+      // honours the flag.
+      const { deps, ctx } = makeDeps(async () => successResult());
+
+      await runCollectionPhase(
+        {
+          presenter: videoPresenter as unknown as ContentTypePresenter<unknown, unknown> & {
+            type: 'video';
+          },
+          collections: [collection('only')],
+          contentConfig: videoConfigStub,
+          renderPerCollectionHeader: false,
+          preSyncPreliminaries: undefined,
+          priorPhaseCompleted: 0,
+        },
+        deps
+      );
+
+      expect(ctx.stdout.text()).not.toContain('=== Video: only ===');
+    });
+
+    it('mixed-single (1 music + 1 video, both suppressed): no content-type boundary emitted', async () => {
+      // Documents the accepted UX gap from the Q1 alignment: when sync.ts
+      // runs both music and video phases with a single collection each, no
+      // `=== Music:` or `=== Video:` boundary marker appears between them.
+      // This is intentional — the per-collection header earns its keep as
+      // a per-collection distinction, not a phase boundary. If a future
+      // change adds a phase-level header, update this test to pin the new
+      // boundary instead of removing it.
+      const { deps, ctx } = makeDeps(async () => successResult());
+
+      await runCollectionPhase(
+        {
+          presenter: musicPresenter as unknown as ContentTypePresenter<unknown, unknown> & {
+            type: 'music';
+          },
+          collections: [collection('main')],
+          contentConfig: musicConfigStub,
+          renderPerCollectionHeader: false,
+          preSyncPreliminaries: undefined,
+          priorPhaseCompleted: 0,
+        },
+        deps
+      );
+
+      await runCollectionPhase(
+        {
+          presenter: videoPresenter as unknown as ContentTypePresenter<unknown, unknown> & {
+            type: 'video';
+          },
+          collections: [collection('movies')],
+          contentConfig: videoConfigStub,
+          renderPerCollectionHeader: false,
+          preSyncPreliminaries: undefined,
+          priorPhaseCompleted: 0,
+        },
+        deps
+      );
+
+      const out = ctx.stdout.text();
+      expect(out).not.toContain('=== Music:');
+      expect(out).not.toContain('=== Video:');
     });
   });
 
@@ -507,8 +574,8 @@ describe('runCollectionPhase', () => {
   describe('preliminaries one-shot', () => {
     it('first iteration receives preliminaries, second receives undefined', async () => {
       const received: Array<unknown> = [];
-      const { deps } = makeDeps(async (...args) => {
-        received.push(args[13]); // 14th positional = preliminaries
+      const { deps } = makeDeps(async (args) => {
+        received.push(args.preliminaries);
         return successResult();
       });
 
@@ -568,8 +635,8 @@ describe('runCollectionPhase', () => {
 
     it('caller-already-consumed: passes undefined everywhere, consumedPreliminaries=false', async () => {
       const received: Array<unknown> = [];
-      const { deps } = makeDeps(async (...args) => {
-        received.push(args[13]);
+      const { deps } = makeDeps(async (args) => {
+        received.push(args.preliminaries);
         return successResult();
       });
 

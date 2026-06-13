@@ -44,8 +44,10 @@ export interface CollectionPhaseInput {
   contentConfig: MusicContentConfig | VideoContentConfig;
   /**
    * Whether to render the `=== {Section}: {name} ===` header for each
-   * collection. Music suppresses when there's only one collection; video
-   * always renders. Caller decides; the helper is content-agnostic.
+   * collection. Both music and video suppress when there's only one
+   * collection — the header earns its keep as a per-collection boundary
+   * marker in scrollback, redundant when there's nothing to distinguish.
+   * Caller decides; the helper is content-agnostic.
    */
   renderPerCollectionHeader: boolean;
   /**
@@ -178,7 +180,7 @@ export async function runCollectionPhase(
     }
     nextPreliminaries = undefined;
 
-    const result = await syncOne(
+    const result = await syncOne({
       presenter,
       out,
       collection,
@@ -187,13 +189,12 @@ export async function runCollectionPhase(
       dryRun,
       removeOrphans,
       contentConfig,
-      adapter,
+      ipod: adapter,
       core,
-      shutdown.signal,
+      signal: shutdown.signal,
       shutdown,
-      undefined,
-      preliminariesForThisCall
-    );
+      preliminaries: preliminariesForThisCall,
+    });
 
     if (result.jsonOutput && out.isJson) {
       out.json(result.jsonOutput);

@@ -72,6 +72,16 @@ function artworkContainerRank(filePath: string): number {
  * One instance per {@link MusicPipeline}. The caches survive across
  * sequential `execute()` calls (the pipeline calls `clearCaches()` at the
  * start of each run), matching the pre-refactor instance-scoped lifetime.
+ *
+ * **Scope is collection-local by design.** A fresh `MusicPipeline` (and
+ * therefore a fresh `MusicArtworkManager`) is constructed per collection by
+ * `MusicHandler.executeBatch`. Two collections that share albums will
+ * re-extract artwork for those albums. This is intentional: lifting caches to
+ * executor / `SyncSession` scope would grow memory linearly with total album
+ * count across a multi-collection sync (album bytes are non-trivial), and
+ * collections are typically disjoint slices of a source — the common case
+ * gains nothing while the worst case pays unbounded RSS. Do not lift this
+ * scope without source-identity-keyed sharing and an eviction policy.
  */
 export class MusicArtworkManager {
   /** Album-level artwork cache — deduplicates extraction across tracks on the same album */

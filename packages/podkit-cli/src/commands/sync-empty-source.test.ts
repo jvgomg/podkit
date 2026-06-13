@@ -36,9 +36,12 @@ function createMockVideoAdapter() {
 }
 
 /**
- * Create args for genericSyncCollection with VideoPresenter that returns zero videos.
+ * Build a complete args bag for `genericSyncCollection` plus the mock
+ * adapter handle so tests can assert on its calls. Return type inferred so
+ * `args.presenter` carries `VideoPresenter`'s concrete generics — no cast
+ * needed at the `genericSyncCollection(args)` call site.
  */
-function createVideoSyncArgs(
+function buildVideoSyncCall(
   overrides: Partial<{
     collectionName: string;
     sourcePath: string;
@@ -47,14 +50,6 @@ function createVideoSyncArgs(
   }> = {}
 ) {
   const mockVideoAdapter = createMockVideoAdapter();
-  const out = createTestOutput(overrides.mode ?? 'text');
-  const collection = {
-    name: overrides.collectionName ?? 'movies',
-    type: 'video' as const,
-    config: { path: overrides.sourcePath ?? '/fake/videos' },
-  };
-  const sourcePath = overrides.sourcePath ?? '/fake/videos';
-  const devicePath = overrides.devicePath ?? '/fake/ipod';
   const videoConfig: VideoContentConfig = {
     type: 'video',
     effectiveVideoQuality: 'high' as const,
@@ -64,18 +59,27 @@ function createVideoSyncArgs(
     effectiveTransferMode: undefined,
     forceMetadata: false,
   };
-  const core = {
-    createVideoDirectoryAdapter: () => mockVideoAdapter,
-    createVideoHandler: () => ({ getDeviceItems: () => [] }),
-  } as never;
 
   return {
-    out,
-    collection,
-    sourcePath,
-    devicePath,
-    videoConfig,
-    core,
+    args: {
+      presenter: new VideoPresenter(),
+      out: createTestOutput(overrides.mode ?? 'text'),
+      collection: {
+        name: overrides.collectionName ?? 'movies',
+        type: 'video' as const,
+        config: { path: overrides.sourcePath ?? '/fake/videos' },
+      },
+      sourcePath: overrides.sourcePath ?? '/fake/videos',
+      devicePath: overrides.devicePath ?? '/fake/ipod',
+      dryRun: false,
+      removeOrphans: false,
+      contentConfig: videoConfig,
+      ipod: null as never,
+      core: {
+        createVideoDirectoryAdapter: () => mockVideoAdapter,
+        createVideoHandler: () => ({ getDeviceItems: () => [] }),
+      } as never,
+    },
     mockVideoAdapter,
   };
 }
@@ -83,19 +87,8 @@ function createVideoSyncArgs(
 describe('empty source abort', () => {
   describe('video collection with zero tracks (genericSyncCollection)', () => {
     it('returns failure when adapter returns zero videos', async () => {
-      const args = createVideoSyncArgs();
-      const result = await genericSyncCollection(
-        new VideoPresenter(),
-        args.out,
-        args.collection,
-        args.sourcePath,
-        args.devicePath,
-        false,
-        false,
-        args.videoConfig,
-        null as never,
-        args.core
-      );
+      const { args } = buildVideoSyncCall();
+      const result = await genericSyncCollection(args);
 
       expect(result.success).toBe(false);
       expect(result.completed).toBe(0);
@@ -103,19 +96,8 @@ describe('empty source abort', () => {
     });
 
     it('error message includes collection name', async () => {
-      const args = createVideoSyncArgs({ collectionName: 'tv-shows', mode: 'json' });
-      const result = await genericSyncCollection(
-        new VideoPresenter(),
-        args.out,
-        args.collection,
-        args.sourcePath,
-        args.devicePath,
-        false,
-        false,
-        args.videoConfig,
-        null as never,
-        args.core
-      );
+      const { args } = buildVideoSyncCall({ collectionName: 'tv-shows', mode: 'json' });
+      const result = await genericSyncCollection(args);
 
       expect(result.success).toBe(false);
       expect(result.jsonOutput).toBeDefined();
@@ -126,97 +108,42 @@ describe('empty source abort', () => {
     });
 
     it('includes source and device in JSON output', async () => {
-      const args = createVideoSyncArgs({
+      const { args } = buildVideoSyncCall({
         sourcePath: '/videos/collection',
         devicePath: '/Volumes/iPod',
         mode: 'json',
       });
-      const result = await genericSyncCollection(
-        new VideoPresenter(),
-        args.out,
-        args.collection,
-        args.sourcePath,
-        args.devicePath,
-        false,
-        false,
-        args.videoConfig,
-        null as never,
-        args.core
-      );
+      const result = await genericSyncCollection(args);
 
       expect(result.jsonOutput!.source).toBe('/videos/collection');
       expect(result.jsonOutput!.device).toBe('/Volumes/iPod');
     });
 
     it('returns no JSON output in text mode', async () => {
-      const args = createVideoSyncArgs({ mode: 'text' });
-      const result = await genericSyncCollection(
-        new VideoPresenter(),
-        args.out,
-        args.collection,
-        args.sourcePath,
-        args.devicePath,
-        false,
-        false,
-        args.videoConfig,
-        null as never,
-        args.core
-      );
+      const { args } = buildVideoSyncCall({ mode: 'text' });
+      const result = await genericSyncCollection(args);
 
       expect(result.success).toBe(false);
       expect(result.jsonOutput).toBeUndefined();
     });
 
     it('disconnects adapter after zero-track abort (text mode)', async () => {
-      const args = createVideoSyncArgs({ mode: 'text' });
-      await genericSyncCollection(
-        new VideoPresenter(),
-        args.out,
-        args.collection,
-        args.sourcePath,
-        args.devicePath,
-        false,
-        false,
-        args.videoConfig,
-        null as never,
-        args.core
-      );
+      const { args, mockVideoAdapter } = buildVideoSyncCall({ mode: 'text' });
+      await genericSyncCollection(args);
 
-      expect(args.mockVideoAdapter.disconnect).toHaveBeenCalled();
+      expect(mockVideoAdapter.disconnect).toHaveBeenCalled();
     });
 
     it('disconnects adapter after zero-track abort (JSON mode)', async () => {
-      const args = createVideoSyncArgs({ mode: 'json' });
-      await genericSyncCollection(
-        new VideoPresenter(),
-        args.out,
-        args.collection,
-        args.sourcePath,
-        args.devicePath,
-        false,
-        false,
-        args.videoConfig,
-        null as never,
-        args.core
-      );
+      const { args, mockVideoAdapter } = buildVideoSyncCall({ mode: 'json' });
+      await genericSyncCollection(args);
 
-      expect(args.mockVideoAdapter.disconnect).toHaveBeenCalled();
+      expect(mockVideoAdapter.disconnect).toHaveBeenCalled();
     });
 
     it('JSON output has correct structure', async () => {
-      const args = createVideoSyncArgs({ collectionName: 'main', mode: 'json' });
-      const result = await genericSyncCollection(
-        new VideoPresenter(),
-        args.out,
-        args.collection,
-        args.sourcePath,
-        args.devicePath,
-        false,
-        false,
-        args.videoConfig,
-        null as never,
-        args.core
-      );
+      const { args } = buildVideoSyncCall({ collectionName: 'main', mode: 'json' });
+      const result = await genericSyncCollection(args);
 
       const json = result.jsonOutput!;
       expect(json).toEqual(

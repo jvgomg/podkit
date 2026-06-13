@@ -1163,7 +1163,7 @@ export async function runSync(
             presenter: new VideoPresenter(),
             collections: videoCollections,
             contentConfig: videoConfig,
-            renderPerCollectionHeader: true,
+            renderPerCollectionHeader: videoCollections.length > 1,
             preSyncPreliminaries: preliminariesConsumed ? undefined : preSyncPreliminaries,
             priorPhaseCompleted: totalCompleted,
           },

@@ -467,6 +467,35 @@ describe('SyncExecutor', () => {
       expect(result.completed).toBe(1);
       expect(result.aborted).toBe(true);
     });
+
+    it('treats AbortError thrown by handler as abort, not failure', async () => {
+      // Mirrors the batch-path AbortError test below. A per-op handler that
+      // throws AbortError must be recognised as cancellation, not recorded as
+      // a synthetic per-operation failure (which would lie about result.aborted
+      // and pollute result.errors / result.failed).
+      //
+      // No AbortController is wired up: the engine's per-op catch recognises
+      // typed AbortError independent of signal state, and pinning the
+      // `instanceof AbortError` branch is the point of this test — leaving
+      // the signal absent isolates that guard from the `signal.aborted`
+      // guard the batch-path test exercises.
+      const handler = createMockHandler({
+        async *execute(op: SyncOperation): AsyncGenerator<OperationProgress> {
+          yield { operation: op, phase: 'starting' };
+          throw new AbortError();
+        },
+      });
+
+      const executor = new SyncExecutor(handler);
+      const plan = makePlan([makeCopyOp('a.mp3'), makeCopyOp('b.mp3')]);
+
+      const { result } = await consumeExecutor(executor.execute(plan, { device: mockDevice() }));
+
+      expect(result.aborted).toBe(true);
+      expect(result.failed).toBe(0);
+      expect(result.errors).toHaveLength(0);
+      expect(result.completed).toBe(0);
+    });
   });
 
   describe('dry-run mode', () => {
