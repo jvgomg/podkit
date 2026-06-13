@@ -321,8 +321,53 @@ export class SyncExecutor<TSource, TDevice, TOp extends BaseOperation = SyncOper
     // owns end-of-run save for every content type (ADR-019). Skipped on
     // dry-run (no writes), abort (the abort path is owned by the
     // orchestrator), and empty/skip-only plans (no state to flush).
+    //
+    // `device.save()` can throw a typed CategorizedSyncError subclass
+    // (TagWriteError / MoveError / SidecarWriteError / PictureWriteError
+    // from the mass-storage adapter, DatabaseWriteError from the iPod
+    // adapter — see documents/architecture/sync/save-transactions.md §3).
+    // Catch the throw, attribute it to the last operation as a synthetic
+    // per-op failure, and yield a `phase: 'failed'` progress so the
+    // presenter records it in `collectedErrors` and the formatter emits
+    // the standard `[category] message` per-track block. The categorizer
+    // reads `category` off the typed class, so the user-visible category
+    // matches the throw site (copy / database / space).
     if (!dryRun && !aborted && device && (completed > 0 || failed > 0)) {
-      await device.save();
+      try {
+        await device.save();
+      } catch (err) {
+        if (err instanceof AbortError) {
+          aborted = true;
+        } else {
+          const error = err instanceof Error ? err : new Error(String(err));
+          const lastOp = plan.operations[plan.operations.length - 1]!;
+          const displayName = this.handler.getDisplayName(lastOp);
+          const category = categorizeError(error, lastOp.type);
+          const catError = createCategorizedError(error, category, displayName, 0, false);
+          failed++;
+          errors.push({ operation: lastOp, error });
+          categorizedErrors.push(catError);
+          // Clamp `completedCount` to `total`: the synthetic save-failure
+          // is bookkeeping for a flush that aggregated work already
+          // counted in `completed`. Without the clamp, a single-track plan
+          // whose track succeeds (`completed = 1`) and whose save then
+          // throws (`failed = 1`) reports `completedCount = 2 / total = 1`
+          // — the progress bar overshoots 100%.
+          yield {
+            phase: getDefaultPhaseForOperation(lastOp.type),
+            operation: lastOp,
+            index: plan.operations.length - 1,
+            current: plan.operations.length - 1,
+            total,
+            currentTrack: displayName,
+            bytesProcessed: 0,
+            bytesTotal: plan.estimatedSize,
+            completedCount: Math.min(completed + failed + skipped, total),
+            error,
+            categorizedError: catError,
+          } as ExecutorProgress<TOp>;
+        }
+      }
     }
 
     return {
@@ -471,11 +516,46 @@ export class SyncExecutor<TSource, TDevice, TOp extends BaseOperation = SyncOper
       }
     }
 
-    // Final save — see the per-operation path for the rationale. Batch
-    // path is non-dry-run by construction (path 1 of `execute` only fires
-    // when `!dryRun && executeBatch`), so the dry-run gate is structural.
+    // Final save — see the per-operation path for the rationale (and for
+    // the typed-error handling that the catch implements). Batch path is
+    // non-dry-run by construction (path 1 of `execute` only fires when
+    // `!dryRun && executeBatch`), so the dry-run gate is structural.
     if (!aborted && device && (completed > 0 || failed > 0)) {
-      await device.save();
+      try {
+        await device.save();
+      } catch (err) {
+        if (err instanceof AbortError) {
+          aborted = true;
+        } else {
+          const error = err instanceof Error ? err : new Error(String(err));
+          const lastOp = plan.operations[plan.operations.length - 1]!;
+          const displayName = this.handler.getDisplayName(lastOp);
+          const category = categorizeError(error, lastOp.type);
+          const catError = createCategorizedError(error, category, displayName, 0, false);
+          failed++;
+          errors.push({ operation: lastOp, error });
+          categorizedErrors.push(catError);
+          // Clamp `completedCount` to `total`: the synthetic save-failure
+          // is bookkeeping for a flush that aggregated work already
+          // counted in `completed`. Without the clamp, a single-track plan
+          // whose track succeeds (`completed = 1`) and whose save then
+          // throws (`failed = 1`) reports `completedCount = 2 / total = 1`
+          // — the progress bar overshoots 100%.
+          yield {
+            phase: getDefaultPhaseForOperation(lastOp.type),
+            operation: lastOp,
+            index: plan.operations.length - 1,
+            current: plan.operations.length - 1,
+            total,
+            currentTrack: displayName,
+            bytesProcessed: 0,
+            bytesTotal: plan.estimatedSize,
+            completedCount: Math.min(completed + failed + skipped, total),
+            error,
+            categorizedError: catError,
+          } as ExecutorProgress<TOp>;
+        }
+      }
     }
 
     return {

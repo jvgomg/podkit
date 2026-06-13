@@ -1059,10 +1059,19 @@ export class MusicHandler implements ContentTypeHandler<
       // ExecuteResult.warnings or SyncOutput.warnings[]. Drain in `finally`
       // so an early break (e.g. fatal stage error) still surfaces what fired
       // before the throw.
+      //
+      // The pipeline overwrites `device.warningSink` with its own
+      // accumulator inside `execute()`. After the pipeline returns, the
+      // engine's outer batch loop still calls `device.save()` (ADR-019
+      // Phase 1+2) — emissions inside save() (e.g. iPod portable's
+      // tag-write soft signal) would otherwise land in the now-orphaned
+      // pipeline sink. Rewire to the engine's sink so end-of-run save
+      // warnings reach the executor's accumulator directly.
       if (ctx.warningSink) {
         for (const w of executor.getWarnings()) {
           ctx.warningSink.emit(w);
         }
+        ctx.device.setWarningSink?.(ctx.warningSink);
       }
     }
   }

@@ -366,6 +366,11 @@ recently — see ADR-018 for the rationale.
   guard skips the save and `ExecuteResult.aborted` is honest.
 - **Catches:** typed errors → reads category → applies retry policy
   per [error-handling §2.5](./error-handling.md#retry-policy).
+  Per-op execute throws AND end-of-run save throws are caught at the
+  same layer; the save throw is attributed to the last operation as a
+  synthetic per-op failure and yielded as `phase: 'failed'` so the
+  presenter's existing failed-track block formats it. See
+  [error-handling §4.5](./error-handling.md#45-final-save-error-attribution).
 - **Accumulates:** warnings into `ExecuteResult.warnings`.
 - **Never:** opens the manifest, infers what landed on disk, looks
   inside the typed error's `causes`.

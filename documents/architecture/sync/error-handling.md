@@ -295,16 +295,101 @@ Drawing the line between layers:
 ### Engine executor (`SyncExecutor`)
 
 - **Knows:** retry policy (per-op path), warning accumulation, progress
-  event shape.
+  event shape, final-save error attribution.
 - **Builds the outer `WarningSink`** once per `execute()` call and
   threads it through `ExecutionContext.warningSink`.
 - **Catches:** typed errors → reads category → consults retry config →
-  decides retry vs. surface.
+  decides retry vs. surface. The catch covers per-op execute throws AND
+  the engine's end-of-run `device.save()` throw — see [§4.5](#45-final-save-error-attribution).
 - **Accumulates:** warnings into `this.warnings`; surfaces them on
   `ExecuteResult.warnings` (for callers reading the generator return
   value) AND on the typed `executor.getWarnings()` method (for callers
   iterating the progress stream and discarding the return value, e.g.
   the CLI presenters).
+
+### 4.5 Final-save error attribution
+
+The engine owns the end-of-run `device.save()` call (ADR-019) and
+therefore owns its error contract too. A typed throw from `save()` —
+`TagWriteError` / `MoveError` / `SidecarWriteError` / `PictureWriteError`
+from the mass-storage adapter, `DatabaseWriteError` from the iPod adapter
+— is caught by the executor at the end-of-run save site (the same
+contract applies to both the per-op path and the batch path).
+
+On catch, the engine:
+
+1. Categorises the error via the standard `categorizeError` path. Typed
+   subclasses carry `category` on the class, so the user-visible category
+   matches the throw site exactly (`copy` for tag/move/sidecar/picture,
+   `database` for iTunesDB, `space` when any cause carries `ENOSPC`).
+2. Attributes the failure to the **last operation in the plan** as a
+   synthetic per-op failure. The save aggregates work across the whole
+   plan, so there is no single "true" owning operation; the last op is a
+   stable, predictable handle that lets the presenter render the failure
+   through the standard per-track block.
+3. Pushes the synthetic failure into `ExecuteResult.errors[]` /
+   `categorizedErrors[]`, increments `failed`, and yields a
+   `phase: 'failed'` `ExecutorProgress` so the CLI presenter (and any
+   other consumer iterating the generator) records it in
+   `collectedErrors` and emits the `Failed: N tracks` + `[category] message`
+   block through the existing failed-track formatter. No special-case
+   path for save errors at the presenter or orchestrator level.
+
+The synthetic-failure attribution is intentionally minimal: a single
+entry per save throw, attached to the last op. The aggregate's `causes`
+array carries the per-entry detail (e.g. `MoveError` with two relocates
+failing → `causes.length === 2`), preserved verbatim in the `--json`
+envelope's `errors[].causes`. Consumers needing fan-out (one failed
+track per cause) read `causes`.
+
+Two known imprecisions in the last-op attribution, documented rather
+than hidden:
+
+- **`continueOnError: false` early break.** The per-op path breaks on
+  first failure, so if op[0] fails and the save then also fails, the
+  synthetic failure is attributed to `plan.operations[N-1]` — an op the
+  loop never reached. Consumers should treat the attribution as a stable
+  handle for presenter rendering, not as ground truth about which op the
+  save was "for".
+- **`MoveError` throw-on-first.** The mass-storage move stage throws on
+  the first failing rename (`causes.length === 1` even when N relocates
+  were queued). The single cause names the failing source path, which is
+  often a different op than the synthetic-failure attribution (which is
+  always the last op). The `causes[0].path` is authoritative for "what
+  failed"; the attribution is only the rendering handle.
+
+In both cases the contract is "attribution is a stable rendering handle,
+not a forensic trace." A consumer that wants the forensic trace reads
+`causes`.
+
+`AbortError` is exempt: it is a cancellation signal, not a per-op
+failure, so the catch sets `aborted = true` and skips the synthetic
+yield — same treatment as the per-op catch (see ADR-019 Phase 4b).
+
+The contract has a knock-on effect for the presenter / orchestrator
+catches: `MusicPresenter.executeSync` and `genericSyncCollection` no
+longer need to handle typed save throws — by the time the executor's
+generator returns, the throw has been folded into the result. The one
+remaining presenter-level catch — `InsufficientSpaceAfterCleanup` at
+`sync-presenter.ts:724` — is structurally different: it fires from
+inside the engine's pre-flight assert (before any save runs) and
+escapes the executor entirely, so the presenter still owns its
+JSON-envelope shape.
+
+**Soft signals from the end-of-run save reach the engine's sink too.**
+The engine's save throw routes to `errors[]` via the catch above; non-
+throwing soft signals (e.g. iPod portable's "failed to write file
+tags" `Warning`) route to `ExecuteResult.warnings` and the typed
+`getWarnings()` surface. Wiring detail: `MusicPipeline.execute()`
+overwrites `device.warningSink` with its own per-pipeline accumulator
+during per-op execution. The pipeline returns BEFORE the engine's
+end-of-run save fires, so emissions inside `save()` would otherwise
+land in the now-orphaned pipeline sink. `MusicHandler.executeBatch`'s
+`finally` block rewires `device.setWarningSink(ctx.warningSink)` after
+draining pipeline warnings, so any subsequent emission lands in the
+engine accumulator directly. The wiring is `finally`-block-resident so
+an early break (fatal stage error) still installs the engine sink
+before the engine's save runs.
 
 ### CLI
 

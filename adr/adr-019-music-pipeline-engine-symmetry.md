@@ -142,8 +142,21 @@ Move the final save back to the CLI orchestrator (`sync.ts`). Rejected: undoes a
 - **Phase 4a — DONE (verification only)**: warning sink already shared via `MusicHandler.executeBatch` draining `executor.getWarnings()` into `ctx.warningSink`. No code change.
 - **Phase 4b — DONE** (commit `e49db159`): typed `AbortError` class added to `engine/errors.ts`. Pipeline throws it after queue drain on signal abort. Engine batch + per-op catch blocks recognise it and set `aborted=true` (instead of converting to a synthetic per-op failure). Concurrent-failure case preserved: a non-AbortError thrown while `signal.aborted` is true is still recorded in `result.errors` AND sets `aborted=true` — diagnostic info survives.
 - **Phase 4c — DONE** (commit `0f6f386a`): removed dead `SyncExecuteOptions.retryConfig` field — declared, never read. Music retry policy stays handler-owned via `MusicSyncConfig.retryConfig`.
+- **Phase 4d — DONE**: engine owns final-save error attribution. When `device.save()` throws at the end of run, the engine catches the typed `CategorizedSyncError` subclass (`TagWriteError` / `MoveError` / `SidecarWriteError` / `PictureWriteError` from `MassStorageAdapter.save`; `DatabaseWriteError` from `IpodDeviceAdapter.save`), attributes it to the last operation as a synthetic per-op failure, pushes it into `ExecuteResult.errors[]` / `categorizedErrors[]`, and yields a `phase: 'failed'` `ExecutorProgress` so the presenter's existing failed-track block formats it. Closes the regression where Phase 1+2 + commit `3ff70a17` moved the save call out of the executor's batch-loop catch — the throw used to be absorbed by `executor.executeBatch`'s outer `try/catch` via generator unwind from `MusicPipeline`'s internal save; post-lift the save lives after the for-await closes and was uncaught, crashing the command instead of surfacing as a categorised per-track failure. See [error-handling §4.5](../documents/architecture/sync/error-handling.md#45-final-save-error-attribution) for the contract.
 - **Phase 5 — N/A**: no `savesInternally` flag was merged; the lift was inlined during Phase 1+2 once the audit confirmed bounded scope.
 - **P2 (deferred)**: trigger is a second pipelined-execution handler.
+
+### Failure modes the engine catch covers
+
+| Throw site | Typed class | Category | Failure cause |
+|------------|-------------|----------|---------------|
+| `MassStorageAdapter.save` → `flushTagWrites` | `TagWriteError` | `copy` (or `space` if ENOSPC) | atomic tag-write rename failed for one or more managed audio files |
+| `MassStorageAdapter.save` → `flushMoves` | `MoveError` | `copy` (or `space` if ENOSPC) | `renameSync` failed for one or more queued relocates (throw-on-first: `causes.length === 1`) |
+| `MassStorageAdapter.save` → `flushSidecarWrites` | `SidecarWriteError` | `copy` (or `space` if ENOSPC) | atomic sidecar tmp+rename failed for one or more album dirs |
+| `MassStorageAdapter.save` → `flushPictureWrites` | `PictureWriteError` | `copy` (or `space` if ENOSPC) | embedded-picture write failed for one or more files |
+| `IpodDeviceAdapter.save` → libgpod | `DatabaseWriteError` | `database` | iTunesDB tmp+rename failed (e.g. read-only `iPod_Control/iTunes/`) |
+
+The aggregate's `causes[]` carries the per-entry detail (e.g. a `TagWriteError` with three failed file inodes → three entries). The engine's synthetic per-op failure is a single attribution (the last op), not a fan-out. Consumers needing per-cause fan-out read `causes`.
 
 ## Cross-References
 
