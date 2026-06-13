@@ -58,3 +58,16 @@ branding/
 
 # Locally-built native bindings (published via prebuild.yml CI, never committed)
 packages/libgpod-node/prebuilds/
+# Python tooling
+.venv/
+__pycache__/
+*.pyc
+uv.lock
+
+
+# graphify
+graphify-out/cost.json
+graphify-out/cache/
+
+# ignore full for now
+graphify-out/
