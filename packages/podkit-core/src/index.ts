@@ -199,7 +199,6 @@ export {
   MusicPipeline,
   PipelineBusyError,
   createMusicPipeline,
-  executeMusicPlan,
   getMusicOperationDisplayName,
   categorizeError,
   createCategorizedError,

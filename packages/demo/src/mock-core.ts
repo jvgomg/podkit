@@ -1024,29 +1024,6 @@ export function createMusicPipeline(deps: any) {
   return new MusicPipeline(deps);
 }
 
-export async function executeMusicPlan(plan: any, deps: any, options: any = {}) {
-  const executor = new MusicPipeline(deps);
-  let completed = 0;
-  let failed = 0;
-  let skipped = 0;
-
-  for await (const progress of executor.execute(plan, options)) {
-    if (progress.skipped) skipped++;
-    else if (progress.error) failed++;
-    else if (progress.phase !== 'complete') completed++;
-  }
-
-  return {
-    completed,
-    failed,
-    skipped,
-    errors: [],
-    categorizedErrors: [],
-    warnings: [],
-    bytesTransferred: plan.estimatedSize || 0,
-  };
-}
-
 export function getMusicOperationDisplayName(operation: any): string {
   switch (operation.type) {
     case 'add-transcode':

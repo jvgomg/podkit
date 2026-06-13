@@ -24,7 +24,8 @@ import { requireFFmpeg, requireGpodTool } from '@podkit/test-fixtures';
 import { requireLibgpodNode } from '@podkit/libgpod-node';
 import {
   MusicPipeline,
-  executeMusicPlan,
+  createCategorizedError,
+  type CategorizedError,
   type ExecutorProgress,
   type ExecutorDependencies,
 } from './pipeline.js';
@@ -58,6 +59,52 @@ function capsForGeneration(id: IpodGenerationId): DeviceCapabilities {
 // =============================================================================
 // Test Helpers
 // =============================================================================
+
+/**
+ * Local replacement for the deleted `executeMusicPlan` public API.
+ * Iterates the pipeline and aggregates progress events into an ExecuteResult
+ * shape, mirroring the previous library convenience contract — no final
+ * save, since these tests assert at the pipeline boundary, not the
+ * engine-owned save layer.
+ */
+async function runMusicPlan(
+  plan: SyncPlan,
+  deps: ExecutorDependencies,
+  options: import('./pipeline.js').ExtendedExecuteOptions = {}
+) {
+  const executor = new MusicPipeline(deps);
+  let completed = 0;
+  let failed = 0;
+  let skipped = 0;
+  let bytesTransferred = 0;
+  const errors: Array<{ operation: import('../engine/types.js').SyncOperation; error: Error }> = [];
+  const categorizedErrors: CategorizedError[] = [];
+
+  for await (const progress of executor.execute(plan, options)) {
+    if (progress.error) {
+      failed++;
+      errors.push({ operation: progress.operation, error: progress.error });
+      categorizedErrors.push(
+        progress.categorizedError ??
+          createCategorizedError(progress.error, progress.operation, 0, false)
+      );
+    } else if (progress.skipped) {
+      skipped++;
+    }
+    completed = progress.completedCount - failed - skipped;
+    bytesTransferred = progress.bytesProcessed;
+  }
+
+  return {
+    completed,
+    failed,
+    skipped,
+    errors,
+    categorizedErrors,
+    warnings: executor.getWarnings(),
+    bytesTransferred,
+  };
+}
 
 let testDir: string;
 let transcoder: FFmpegTranscoder;
@@ -227,7 +274,7 @@ describe('SyncExecutor integration', () => {
             warnings: [],
           };
 
-          const result = await executeMusicPlan(plan, deps);
+          const result = await runMusicPlan(plan, deps);
 
           expect(result.completed).toBe(1);
           expect(result.failed).toBe(0);
@@ -286,7 +333,7 @@ describe('SyncExecutor integration', () => {
             warnings: [],
           };
 
-          const result = await executeMusicPlan(plan, deps);
+          const result = await runMusicPlan(plan, deps);
 
           expect(result.completed).toBe(1);
           expect(result.failed).toBe(0);
@@ -349,7 +396,7 @@ describe('SyncExecutor integration', () => {
             warnings: [],
           };
 
-          const result = await executeMusicPlan(plan, deps);
+          const result = await runMusicPlan(plan, deps);
 
           expect(result.completed).toBe(1);
           expect(result.failed).toBe(0);
@@ -410,7 +457,7 @@ describe('SyncExecutor integration', () => {
             warnings: [],
           };
 
-          const result = await executeMusicPlan(plan, deps);
+          const result = await runMusicPlan(plan, deps);
 
           expect(result.completed).toBe(3);
           expect(result.failed).toBe(0);
@@ -726,7 +773,7 @@ describe('SyncExecutor integration', () => {
             warnings: [],
           };
 
-          const result = await executeMusicPlan(plan, deps, { dryRun: true });
+          const result = await runMusicPlan(plan, deps, { dryRun: true });
 
           expect(result.skipped).toBe(1);
           expect(result.completed).toBe(0);

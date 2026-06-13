@@ -18,13 +18,14 @@ import {
   MusicPipeline,
   PipelineBusyError,
   createMusicPipeline,
-  executeMusicPlan,
   getFileTypeLabel,
   getFileTypeLabelForFileType,
   getMusicOperationDisplayName,
   categorizeError,
+  createCategorizedError,
   getRetriesForCategory,
   MUSIC_RETRY_CONFIG,
+  type CategorizedError,
   type ExecutorDependencies,
   type ExecutorProgress,
 } from './pipeline.js';
@@ -35,6 +36,59 @@ import type { AudioFileType, TrackFilter } from '../../types.js';
 import type { DeviceTrack, SyncOperation, SyncPlan } from '../engine/types.js';
 import { Readable } from 'node:stream';
 import { writeFileSync } from 'node:fs';
+
+// =============================================================================
+// Test helper — local replacement for the deleted `executeMusicPlan` public
+// API. Aggregates pipeline progress events into an ExecuteResult shape so
+// the existing assertions read naturally.
+// =============================================================================
+
+async function runMusicPlan(
+  plan: SyncPlan,
+  deps: ExecutorDependencies,
+  options: import('./pipeline.js').ExtendedExecuteOptions = {}
+): Promise<{
+  completed: number;
+  failed: number;
+  skipped: number;
+  errors: Array<{ operation: SyncOperation; error: Error }>;
+  categorizedErrors: CategorizedError[];
+  warnings: import('./pipeline.js').Warning[];
+  bytesTransferred: number;
+}> {
+  const executor = new MusicPipeline(deps);
+  let completed = 0;
+  let failed = 0;
+  let skipped = 0;
+  let bytesTransferred = 0;
+  const errors: Array<{ operation: SyncOperation; error: Error }> = [];
+  const categorizedErrors: CategorizedError[] = [];
+
+  for await (const progress of executor.execute(plan, options)) {
+    if (progress.error) {
+      failed++;
+      errors.push({ operation: progress.operation, error: progress.error });
+      categorizedErrors.push(
+        progress.categorizedError ??
+          createCategorizedError(progress.error, progress.operation, 0, false)
+      );
+    } else if (progress.skipped) {
+      skipped++;
+    }
+    completed = progress.completedCount - failed - skipped;
+    bytesTransferred = progress.bytesProcessed;
+  }
+
+  return {
+    completed,
+    failed,
+    skipped,
+    errors,
+    categorizedErrors,
+    warnings: executor.getWarnings(),
+    bytesTransferred,
+  };
+}
 
 // =============================================================================
 // Mock Types
@@ -1098,7 +1152,7 @@ describe('createMusicPipeline', () => {
   });
 });
 
-describe('executeMusicPlan', () => {
+describe('plan execution aggregation', () => {
   it('returns execution result', async () => {
     const mockAdapter = createMockDeviceAdapter();
     const mockTranscoder = createMockTranscoder();
@@ -1114,7 +1168,7 @@ describe('executeMusicPlan', () => {
       warnings: [],
     };
 
-    const result = await executeMusicPlan(plan, deps);
+    const result = await runMusicPlan(plan, deps);
 
     expect(result.completed).toBe(2);
     expect(result.failed).toBe(0);
@@ -1137,10 +1191,31 @@ describe('executeMusicPlan', () => {
       warnings: [],
     };
 
-    const result = await executeMusicPlan(plan, deps, { dryRun: true });
+    const result = await runMusicPlan(plan, deps, { dryRun: true });
 
     expect(result.completed).toBe(0);
     expect(result.skipped).toBe(2);
+  });
+
+  it('dry-run emits no warnings (no adapter calls = no soft signals)', async () => {
+    const mockAdapter = createMockDeviceAdapter();
+    const mockTranscoder = createMockTranscoder();
+    const deps = createDependencies(mockAdapter, mockTranscoder);
+
+    const plan: SyncPlan = {
+      operations: [
+        { type: 'add-direct-copy', source: createCollectionTrack('A', 'S1', 'Album', 'mp3') },
+      ],
+      estimatedTime: 1,
+      estimatedSize: 5000000,
+      warnings: [],
+    };
+
+    const result = await runMusicPlan(plan, deps, { dryRun: true });
+
+    expect(result.warnings).toHaveLength(0);
+    expect(mockAdapter.addTrack).not.toHaveBeenCalled();
+    expect(mockAdapter.save).not.toHaveBeenCalled();
   });
 
   it('collects errors when continueOnError is true', async () => {
@@ -1173,7 +1248,7 @@ describe('executeMusicPlan', () => {
       warnings: [],
     };
 
-    const result = await executeMusicPlan(plan, deps, {
+    const result = await runMusicPlan(plan, deps, {
       continueOnError: true,
       retryConfig: { retryDelayMs: 0 },
     });
@@ -1878,10 +1953,10 @@ describe('MusicPipeline - retry logic', () => {
 });
 
 // =============================================================================
-// executeMusicPlan with categorized errors Tests
+// plan execution aggregation — categorized errors
 // =============================================================================
 
-describe('executeMusicPlan - categorized errors', () => {
+describe('plan execution aggregation — categorized errors', () => {
   it('collects categorized errors in result', async () => {
     const mockAdapter = createMockDeviceAdapter();
     const mockTranscoder = createMockTranscoder();
@@ -1907,7 +1982,7 @@ describe('executeMusicPlan - categorized errors', () => {
       warnings: [],
     };
 
-    const result = await executeMusicPlan(plan, deps, {
+    const result = await runMusicPlan(plan, deps, {
       continueOnError: true,
       retryConfig: { retryDelayMs: 0 },
     });
