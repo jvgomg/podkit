@@ -429,6 +429,13 @@ export class InsufficientSpaceAfterCleanup extends CategorizedSyncError {
   }
 }
 
+export class AbortError extends Error {
+  override readonly name = 'AbortError' as const;
+  constructor(message = 'Sync aborted') {
+    super(message);
+  }
+}
+
 // =============================================================================
 // Mock IpodTrack implementation
 // =============================================================================
