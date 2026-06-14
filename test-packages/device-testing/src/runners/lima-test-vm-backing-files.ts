@@ -8,10 +8,15 @@
  * time. No host file is materialised — there is nothing to commit, nothing to
  * gitignore, and no host disk cost.
  *
- * Personas with `filesystem: 'HFS+'` follow the same pipeline but use
- * `mkfs.hfsplus -v <label>` instead. HFS+ has no `--invariant` equivalent
- * so the image is NOT byte-stable across runs — the only consumer (HFS+-on-Linux
- * refusal scenario; TASK-341 AC #1) checks `lsblk` fstype, not bytes.
+ * Personas with `filesystem: 'HFS+'` take a different path: the image is
+ * built on the HOST via the pure-TS Volume Header writer in
+ * `hfsplus-image-writer.ts` and `limactl copy`'d into the VM. `hfsprogs`
+ * is unpackaged on arm64 in Debian bookworm, so an in-VM `mkfs.hfsplus`
+ * is impossible on Apple-Silicon hosts. The only consumer of these
+ * images (the HFS+-on-Linux refusal scenario) reads the volume header
+ * via blkid and never mounts, so a minimal sparse file with valid
+ * volume-header magic is sufficient. See `synthesiseHfsplusBackingFile`
+ * below + `documents/architecture/testing/vm-testing.md` §5.6.
  *
  * Why in-VM (vs host then `limactl copy`):
  *
