@@ -22,7 +22,7 @@
  *
  * # Persona
  *
- * `ipod-video-5g-modelnum-mismatch` mirrors TERAPOD (`0x05ac:0x1209`,
+ * `ipod-5g-modelnum-mismatch` mirrors TERAPOD (`0x05ac:0x1209`,
  * V9M-suffix SIE → generation `video_5_5g`) but seeds
  * `iPod_Control/Device/SysInfo` with `ModelNumStr: MA147` (resolves to
  * `video_5g`). The check should flag the disagreement; the repair should
