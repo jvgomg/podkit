@@ -26,7 +26,7 @@ import systemProfilerJson from './raw/system-profiler.json' with { type: 'json' 
 export const sonyNwA1000: DevicePersona = {
   id: 'sony-nw-a1000',
   description:
-    'Sony Walkman NW-A1000 (6GB HDD, NO NAME) — SonicStage-era OpenMG/ATRAC device. Enumerates as FAT32 mass storage but content layer is proprietary.',
+    'Sony Walkman NW-A1000 (6GB HDD) — SonicStage/OpenMG/ATRAC. FAT32 mass storage, proprietary content.',
   schemaVersion: 3,
 
   usbDescriptor: {

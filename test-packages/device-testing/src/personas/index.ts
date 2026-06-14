@@ -5,10 +5,19 @@
  * Entries are listed in chronological capture order so the registry mirrors
  * the order provenance docs were written — useful when scanning recent work.
  *
+ * Every entry passes through {@link validatePersona} and
+ * {@link validateInitialContentExists} before being added to the map —
+ * load-time surfacing of the mechanical constraints documented at
+ * `documents/architecture/testing/vm-testing.md` §5. A persona that violates
+ * the id/description/sourceFixture rules throws here rather than at the
+ * EOVERFLOW/ENAMETOOLONG syscall inside the VM, which was historically the
+ * symptom (see TASK-426 for context).
+ *
  * @module
  */
 
 import type { DevicePersona } from './types.js';
+import { validatePersona } from './validator.js';
 
 import { ipodMini2gPink } from './ipod-mini-2g-pink/persona.js';
 import { ipodNano3gBlack } from './ipod-nano-3g-black/persona.js';
@@ -56,29 +65,56 @@ export { echoMiniPopulated } from './echo-mini-populated/persona.js';
 export { ipod5gModelnumMismatch } from './ipod-5g-modelnum-mismatch/persona.js';
 export { ipod5gStaleGuid } from './ipod-5g-stale-guid/persona.js';
 
-/** Registry of device personas, keyed by `DevicePersona.id`. */
-export const personas = new Map<string, DevicePersona>([
-  [ipodMini2gPink.id, ipodMini2gPink],
-  [ipodNano3gBlack.id, ipodNano3gBlack],
-  [ipodNano4gBlack.id, ipodNano4gBlack],
-  [ipodNano2gGreen.id, ipodNano2gGreen],
-  [ipodNano7gBlue.id, ipodNano7gBlue],
-  [ipodNano7gSpaceGray.id, ipodNano7gSpaceGray],
-  [ipodVideo5gIflash1tb.id, ipodVideo5gIflash1tb],
-  [ipodTouch5gUnsupported.id, ipodTouch5gUnsupported],
-  [echoMini.id, echoMini],
-  [sonyNwzE384.id, sonyNwzE384],
-  [sonyNwA1000.id, sonyNwA1000],
-  [sonyNwA3000.id, sonyNwA3000],
-  [sonyNwA1200.id, sonyNwA1200],
-  [sonyNwHd5.id, sonyNwHd5],
+const ALL_PERSONAS: readonly DevicePersona[] = [
+  ipodMini2gPink,
+  ipodNano3gBlack,
+  ipodNano4gBlack,
+  ipodNano2gGreen,
+  ipodNano7gBlue,
+  ipodNano7gSpaceGray,
+  ipodVideo5gIflash1tb,
+  ipodTouch5gUnsupported,
+  echoMini,
+  sonyNwzE384,
+  sonyNwA1000,
+  sonyNwA3000,
+  sonyNwA1200,
+  sonyNwHd5,
   // TASK-324 Phase 5 — synthesised rejection / error-path personas.
-  [ipodShuffleNotSupported.id, ipodShuffleNotSupported],
-  [nonIpodUsbDisk.id, nonIpodUsbDisk],
-  [malformedSysinfo.id, malformedSysinfo],
+  ipodShuffleNotSupported,
+  nonIpodUsbDisk,
+  malformedSysinfo,
   // TASK-324 Phase 5 AC #1 — state-variant personas (synthesised).
-  [ipodVideo5gCorruptDb.id, ipodVideo5gCorruptDb],
-  [echoMiniPopulated.id, echoMiniPopulated],
-  [ipod5gModelnumMismatch.id, ipod5gModelnumMismatch],
-  [ipod5gStaleGuid.id, ipod5gStaleGuid],
-]);
+  ipodVideo5gCorruptDb,
+  echoMiniPopulated,
+  ipod5gModelnumMismatch,
+  ipod5gStaleGuid,
+];
+
+/**
+ * Build the registry, validating each persona before insertion. Duplicate
+ * ids fail loudly here instead of silently overwriting in `Map.set`.
+ *
+ * Only the pure `validatePersona` rules run at load time — the fs-side
+ * `validateInitialContentExists` check is opt-in for callers that own a
+ * persona-directory anchor (the harness preflight + unit tests). The
+ * registry import path must remain fs-free to satisfy `no-fs-at-load`
+ * (raw/ fixtures don't exist next to the bundled `dist/index.js`).
+ */
+function buildPersonaRegistry(entries: readonly DevicePersona[]): Map<string, DevicePersona> {
+  const map = new Map<string, DevicePersona>();
+  for (const persona of entries) {
+    validatePersona(persona);
+    if (map.has(persona.id)) {
+      throw new Error(
+        `Persona registry: duplicate id "${persona.id}". ` +
+          `Each persona id must be unique — collisions silently overwrite.`
+      );
+    }
+    map.set(persona.id, persona);
+  }
+  return map;
+}
+
+/** Registry of device personas, keyed by `DevicePersona.id`. */
+export const personas: Map<string, DevicePersona> = buildPersonaRegistry(ALL_PERSONAS);

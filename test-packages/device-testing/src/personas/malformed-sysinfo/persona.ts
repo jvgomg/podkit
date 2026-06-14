@@ -38,7 +38,7 @@ import sysInfoExtendedXml from './raw/sysinfo-extended.xml' with { type: 'text' 
 export const malformedSysinfo: DevicePersona = {
   id: 'malformed-sysinfo',
   description:
-    'Synthesised SIE-parser error-path fixture — real iPod 5G USB identity (0x05ac:0x1209) with deliberately-truncated SysInfoExtended XML.',
+    'SIE-parser error fixture — iPod 5G USB identity (0x05ac:0x1209) with truncated SysInfoExtended XML.',
   schemaVersion: 3,
 
   usbDescriptor: {

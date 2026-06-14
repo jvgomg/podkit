@@ -32,7 +32,7 @@ import lsblkJson from '../echo-mini/raw/lsblk-lun0.json' with { type: 'json' };
 export const echoMiniPopulated: DevicePersona = {
   id: 'echo-mini-populated',
   description:
-    'FiiO Snowsky Echo Mini (populated) — synthesised state-variant with 5 synthetic track files in Music/. Sibling of echo-mini (empty state).',
+    'FiiO Snowsky Echo Mini (populated) — state-variant with 5 tracks in Music/. Sibling of echo-mini.',
   schemaVersion: 3,
 
   usbDescriptor: {

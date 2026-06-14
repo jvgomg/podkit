@@ -34,7 +34,7 @@ import systemProfilerJson from './raw/system-profiler.json' with { type: 'json' 
 export const sonyNwA3000: DevicePersona = {
   id: 'sony-nw-a3000',
   description:
-    'Sony Walkman NW-A3000 (20GB HDD, NO NAME) — SonicStage-era OpenMG v2.0 database. Sibling of NW-A1000 with newer DB format + DRM artefacts.',
+    'Sony Walkman NW-A3000 (20GB HDD) — SonicStage/OpenMG v2.0. NW-A1000 sibling with newer DB + DRM.',
   schemaVersion: 3,
 
   usbDescriptor: {

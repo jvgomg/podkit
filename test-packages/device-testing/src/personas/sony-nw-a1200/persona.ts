@@ -36,7 +36,7 @@ import systemProfilerJson from './raw/system-profiler.json' with { type: 'json' 
 export const sonyNwA1200: DevicePersona = {
   id: 'sony-nw-a1200',
   description:
-    'Sony Walkman NW-A1200 (8GB HDD, NO NAME) — identical hardware to NW-A1000 except HDD capacity. This unit synced via Media Go on Windows, so carries DB v2.0 + MEDIAGO/ + Windows artefacts.',
+    'Sony Walkman NW-A1200 (8GB HDD) — NW-A1000 sibling. Synced via Media Go on Windows; DB v2.0 + MEDIAGO/.',
   schemaVersion: 3,
 
   usbDescriptor: {

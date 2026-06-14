@@ -53,7 +53,7 @@ corruptItunesDb[3] = 0x64; // 'd'
 export const ipodVideo5gCorruptDb: DevicePersona = {
   id: 'ipod-video-5g-corrupt-db',
   description:
-    'iPod 5G Video (corrupt-db) — synthesised state-variant: same USB identity as TERAPOD, iTunesDB truncated to 512 bytes (mhbd magic + zeros). Parser throws "mhbd header too small".',
+    'iPod 5G Video (corrupt-db) — TERAPOD USB identity, iTunesDB truncated to 512 bytes (mhbd header only).',
   schemaVersion: 3,
 
   usbDescriptor: {

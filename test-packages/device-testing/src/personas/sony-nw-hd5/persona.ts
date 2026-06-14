@@ -36,7 +36,7 @@ import systemProfilerJson from './raw/system-profiler.json' with { type: 'json' 
 export const sonyNwHd5: DevicePersona = {
   id: 'sony-nw-hd5',
   description:
-    'Sony Walkman NW-HD5 (20GB HDD, NO NAME) — original Network Walkman, pre-NW-A rebrand. ATRAC HDD descriptor; OpenMG v1.1 + MACLIST DRM + JPG sidecar artwork.',
+    'Sony Walkman NW-HD5 (20GB HDD) — pre-NW-A Network Walkman. ATRAC HDD, OpenMG v1.1 + MACLIST + JPG art.',
   schemaVersion: 3,
 
   usbDescriptor: {

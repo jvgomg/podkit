@@ -31,7 +31,7 @@ import lsblkJson from './raw/lsblk.json' with { type: 'json' };
 export const nonIpodUsbDisk: DevicePersona = {
   id: 'non-ipod-usb-disk',
   description:
-    'Generic non-Apple USB flash drive (SanDisk Cruzer Blade, 0x0781:0x5567) — synthesised rejection case for the no-preset vendor path.',
+    'SanDisk Cruzer Blade USB flash (0x0781:0x5567) — rejection case for no-preset vendor path.',
   schemaVersion: 3,
 
   usbDescriptor: {
