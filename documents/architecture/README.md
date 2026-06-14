@@ -38,6 +38,11 @@ an architecture doc to match a change you're shipping, ask whether the
 - **[testing/vm-build-orchestration](./testing/vm-build-orchestration.md)** —
   How `bun run test:vm` guarantees a fresh podkit binary lands in the
   device-harness VM and detects baseline drift.
+- **[testing/vm-testing](./testing/vm-testing.md)** — How to author a
+  Tier-3 end-to-end test against a synthesised iPod inside the VM:
+  personas, system states, FunctionFS daemon, mount lifecycle, and the
+  mechanical constraints (USB descriptor cap, configfs path cap, mount
+  uid/gid, SCSI VPD gap) that bite test authors.
 - **[dev-builds](./dev-builds.md)** — Compile-time-stripped dev hooks:
   why `bin/podkit` and `bin/podkit-debug` exist side by side, the
   `__PODKIT_DEV_HOOKS__` strip pattern, and the e2e wiring that opts
@@ -91,7 +96,8 @@ documents/architecture/
 │   ├── decisions-and-provenance.md   # ⏳ pending
 │   └── shell-completions.md          # ⏳ pending
 └── testing/                          # testing infrastructure
-    └── vm-build-orchestration.md     # ✅ landed
+    ├── vm-build-orchestration.md     # ✅ landed
+    └── vm-testing.md                 # ✅ landed
 ```
 
 This list is **a planning artefact, not a contract.** Folders are added

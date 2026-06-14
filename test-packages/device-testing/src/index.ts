@@ -45,6 +45,8 @@ export {
   ipodVideo5gCorruptDb,
   corruptItunesDb,
   echoMiniPopulated,
+  ipod5gModelnumMismatch,
+  ipod5gStaleGuid,
 } from './personas/index.js';
 export { buildEnumeratedUsbDevice } from './personas/builders.js';
 
@@ -192,6 +194,9 @@ export {
   waitForScsiGenericEnumeration,
   runJsonCommand,
 } from './vm/persona-fixture.js';
+
+export type { MountPersonaOpts, UnmountAndStopOpts } from './vm/mount-persona.js';
+export { buildScsiSdDiscoveryScript, mountPersona, unmountAndStop } from './vm/mount-persona.js';
 
 // Auto-register built-in runners on first import.
 registerRunner(localLinuxRunner);

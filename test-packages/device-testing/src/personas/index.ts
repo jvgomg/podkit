@@ -29,6 +29,8 @@ import { nonIpodUsbDisk } from './non-ipod-usb-disk/persona.js';
 import { malformedSysinfo } from './malformed-sysinfo/persona.js';
 import { ipodVideo5gCorruptDb } from './ipod-video-5g-corrupt-db/persona.js';
 import { echoMiniPopulated } from './echo-mini-populated/persona.js';
+import { ipod5gModelnumMismatch } from './ipod-5g-modelnum-mismatch/persona.js';
+import { ipod5gStaleGuid } from './ipod-5g-stale-guid/persona.js';
 
 export type { DevicePersona } from './types.js';
 
@@ -51,6 +53,8 @@ export { nonIpodUsbDisk } from './non-ipod-usb-disk/persona.js';
 export { malformedSysinfo } from './malformed-sysinfo/persona.js';
 export { ipodVideo5gCorruptDb, corruptItunesDb } from './ipod-video-5g-corrupt-db/persona.js';
 export { echoMiniPopulated } from './echo-mini-populated/persona.js';
+export { ipod5gModelnumMismatch } from './ipod-5g-modelnum-mismatch/persona.js';
+export { ipod5gStaleGuid } from './ipod-5g-stale-guid/persona.js';
 
 /** Registry of device personas, keyed by `DevicePersona.id`. */
 export const personas = new Map<string, DevicePersona>([
@@ -75,4 +79,6 @@ export const personas = new Map<string, DevicePersona>([
   // TASK-324 Phase 5 AC #1 — state-variant personas (synthesised).
   [ipodVideo5gCorruptDb.id, ipodVideo5gCorruptDb],
   [echoMiniPopulated.id, echoMiniPopulated],
+  [ipod5gModelnumMismatch.id, ipod5gModelnumMismatch],
+  [ipod5gStaleGuid.id, ipod5gStaleGuid],
 ]);

@@ -4,7 +4,7 @@ title: Linux VM test coverage for m-18 hygiene cluster (TASK-317.*)
 status: Done
 assignee: []
 created_date: '2026-05-16 22:30'
-updated_date: '2026-05-23 21:06'
+updated_date: '2026-06-14 07:39'
 labels:
   - device-capability-architecture
   - vm-testing
@@ -102,7 +102,7 @@ Existing persona registry at `packages/device-testing/src/personas/` already cov
 - [x] #3 TASK-317.13 (udev USB rule): no-rule + install + replug + legacy-cleanup scenarios covered.
 - [ ] #4 TASK-317.14 (orchestrator EACCES messaging): both-EACCES, USB-EACCES-SCSI-success, plain-success, -vv verbose scenarios covered.
 - [x] #5 TASK-317.15 (volumeUuid defensive): missing-UUID + stale-manual-prefix + normal-FAT32 scenarios covered.
-- [ ] #6 TASK-317.04 (sysinfo modelnum mismatch): TERAPOD detection + repair + healthy regression scenarios covered.
+- [x] #6 TASK-317.04 (sysinfo modelnum mismatch): TERAPOD detection + repair + healthy regression scenarios covered.
 - [ ] #7 TASK-317.02 (doctor repair correctness): all 4 bugs covered (force-rewrite, DB-gate, failure-text routing, unparseable status).
 - [x] #8 TASK-317.03 (unsupported cascade): device-add warn-allow (decline/accept/--yes), iOS path, scan label, sync refuse, sync identity cascade, device-info displayName, doctor suppress, doctor direct --repair refusal — all covered.
 - [x] #9 TASK-317.08 (doctor consistent sections): iPod 3-section, mass-storage 2-section, --no-system, --scope system scenarios covered.
@@ -141,4 +141,27 @@ Persona reuse only — no new personas. Used `ipodNano3gBlack`, `ipodNano4gBlack
 Reviewer-pass nits applied directly: `disown` removed from smoke test, sysfs depth guard, journalctl-on-timeout in `waitForScsiGenericEnumeration`.
 
 Closing as Done — 4 deferred ACs are infra-blocked, not test-design issues. Follow-up tasks own the unblock work.
+
+**2026-06-13 — additional Tier-3 coverage landed via TASK-350 closure.**
+
+AC #6 fully covered by `test-packages/e2e-vm-tests/src/doctor-sysinfo-modelnum-mismatch.e2e.test.ts` (detect → repair → re-detect cycle against `ipod-5g-modelnum-mismatch` persona).
+
+AC #7 partially covered by `test-packages/e2e-vm-tests/src/doctor-sysinfo-repair.e2e.test.ts`:
+- Bug 3 (failure-copy correctness): GREEN — human output names `SysInfoExtended`, does not contain artwork-database copy.
+- Bug 4 (truncated readiness flag): GREEN — readiness `details.sysInfoExtendedUnparseable === true`.
+- Bug 1 (`--repair sysinfo-consistency` overwrites stale FireWireGUID): `it.skip` — blocked on daemon SCSI VPD 0xC0 scaffold (CHECK CONDITION). Unit-pinned at `sysinfo-consistency-repair.test.ts`.
+- Bug 2 (`--repair sysinfo-extended` succeeds with no DB): `it.skip` — same daemon gap. Unit-pinned at `sysinfo-extended.test.ts:57-66`.
+
+AC #7 will fully light up when the daemon VPD scaffold lands.
+
+**2026-06-14 — follow-up tasks filed.**
+
+The remaining 2 of 4 sub-bugs in AC #7 (Bug 1 stale FireWireGUID, Bug 2 fresh-no-DB) are blocked on daemon SCSI VPD page 0xC0 support — both repair flows query `inquireViaOrchestrator()` via SCSI generic transport which `dummy-hcd-daemon` does not yet implement.
+
+Follow-up chain (newest tasks):
+- **TASK-424** — implement SCSI VPD page 0xC0 inquiry in `dummy-hcd-daemon`. Blocks TASK-425.
+- **TASK-425** — un-skip + fill in the two `it.skip` blocks in `test-packages/e2e-vm-tests/src/doctor-sysinfo-repair.e2e.test.ts`. Depends on TASK-424. Closes AC #7 fully.
+- **TASK-426** — pre-flight validator for persona description / id length, so future authors don't hit the same EOVERFLOW / ENAMETOOLONG cryptic-error path TASK-350 burned time on.
+
+Architecture doc: `documents/architecture/testing/vm-testing.md` (landed 2026-06-14) documents the mechanical constraints, the SCSI VPD gap, and the open follow-up tasks.
 <!-- SECTION:NOTES:END -->
