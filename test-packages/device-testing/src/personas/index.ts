@@ -25,6 +25,7 @@ import { ipodNano4gBlack } from './ipod-nano-4g-black/persona.js';
 import { ipodNano2gGreen } from './ipod-nano-2g-green/persona.js';
 import { ipodNano7gBlue } from './ipod-nano-7g-blue/persona.js';
 import { ipodNano7gSpaceGray } from './ipod-nano-7g-space-gray/persona.js';
+import { ipodNano7gHfsplus } from './ipod-nano-7g-hfsplus/persona.js';
 import { ipodVideo5gIflash1tb } from './ipod-video-5g-iflash-1tb/persona.js';
 import { ipodTouch5gUnsupported } from './ipod-touch-5g-unsupported/persona.js';
 import { echoMini } from './echo-mini/persona.js';
@@ -49,6 +50,7 @@ export { ipodNano4gBlack } from './ipod-nano-4g-black/persona.js';
 export { ipodNano2gGreen } from './ipod-nano-2g-green/persona.js';
 export { ipodNano7gBlue } from './ipod-nano-7g-blue/persona.js';
 export { ipodNano7gSpaceGray } from './ipod-nano-7g-space-gray/persona.js';
+export { ipodNano7gHfsplus } from './ipod-nano-7g-hfsplus/persona.js';
 export { ipodVideo5gIflash1tb } from './ipod-video-5g-iflash-1tb/persona.js';
 export { ipodTouch5gUnsupported } from './ipod-touch-5g-unsupported/persona.js';
 export { echoMini } from './echo-mini/persona.js';
@@ -72,6 +74,7 @@ const ALL_PERSONAS: readonly DevicePersona[] = [
   ipodNano2gGreen,
   ipodNano7gBlue,
   ipodNano7gSpaceGray,
+  ipodNano7gHfsplus,
   ipodVideo5gIflash1tb,
   ipodTouch5gUnsupported,
   echoMini,

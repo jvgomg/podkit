@@ -8,6 +8,11 @@
  * time. No host file is materialised — there is nothing to commit, nothing to
  * gitignore, and no host disk cost.
  *
+ * Personas with `filesystem: 'HFS+'` follow the same pipeline but use
+ * `mkfs.hfsplus -v <label>` instead. HFS+ has no `--invariant` equivalent
+ * so the image is NOT byte-stable across runs — the only consumer (HFS+-on-Linux
+ * refusal scenario; TASK-341 AC #1) checks `lsblk` fstype, not bytes.
+ *
  * Why in-VM (vs host then `limactl copy`):
  *
  *   - `mkfs.vfat` exists on the test VM already (provisioned by
@@ -34,11 +39,14 @@
  * @module
  */
 
+import { createHash, randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 
 import type { DevicePersona } from '../personas/types.js';
 import { defaultSubprocessRunner, type SubprocessRunner } from '../subprocess.js';
+import { writeMinimalHfsplusImage } from './hfsplus-image-writer.js';
 import { limactlError, runLimactl, shellQuote } from './lima-limactl.js';
 import { devTestingPackageRoot } from './paths.js';
 
@@ -115,10 +123,10 @@ export async function ensureBackingFile(
     );
   }
   const { sizeMiB, filesystem, label } = backing.synthesis;
-  if (filesystem !== 'FAT32') {
+  if (filesystem !== 'FAT32' && filesystem !== 'HFS+') {
     throw new Error(
-      `ensureBackingFile: persona '${opts.persona.id}' synthesis.filesystem must be 'FAT32' ` +
-        `(got '${filesystem}'). FAT16 + future filesystems are not yet wired up.`
+      `ensureBackingFile: persona '${opts.persona.id}' synthesis.filesystem must be 'FAT32' or 'HFS+' ` +
+        `(got '${filesystem}'). FAT16 + other future filesystems are not yet wired up.`
     );
   }
   if (!Number.isInteger(sizeMiB) || sizeMiB <= 0) {
@@ -126,9 +134,43 @@ export async function ensureBackingFile(
       `ensureBackingFile: persona '${opts.persona.id}' synthesis.sizeMiB must be a positive integer (got ${String(sizeMiB)}).`
     );
   }
-  validateFatLabel(label, opts.persona.id);
+  // FAT label rules (11-char uppercase) only apply to mkfs.vfat. The HFS+
+  // writer doesn't embed the label anywhere (label lives in the catalog
+  // file we don't synthesise), so validating against FAT rules for an HFS+
+  // persona would produce a misleading rejection for a legitimate HFS+
+  // name like 'My iPod'. Skip the check on HFS+.
+  if (filesystem === 'FAT32') {
+    validateFatLabel(label, opts.persona.id);
+  }
+
+  // HFS+ rejects seeding outright — the mtools path is FAT-only. Check before
+  // resolveSeedEntries so a HFS+ persona declaring initialContent fails with
+  // an HFS+-specific message instead of a generic "fixture not readable" one.
+  if (filesystem === 'HFS+' && (backing.synthesis.initialContent?.length ?? 0) > 0) {
+    throw new Error(
+      `ensureBackingFile: persona '${opts.persona.id}' has initialContent but ` +
+        `filesystem='HFS+'. Seeding is only implemented for FAT32 (mtools); ` +
+        `HFS+ images are used by the refusal scenarios that never mount.`
+    );
+  }
 
   const vmPath = vmPathForPersona(opts.persona.id);
+
+  // HFS+ takes a separate host-side path: hfsprogs isn't packaged for arm64
+  // in Debian bookworm, so we cannot shell out to `mkfs.hfsplus` inside the
+  // VM. Instead we build a sparse image on the host via a pure-TS volume-
+  // header writer and limactl-copy it in. The refusal scenario only needs
+  // blkid to identify `fstype: 'hfsplus'`, which the on-disk volume header
+  // magic provides on its own — no real mkfs is required.
+  if (filesystem === 'HFS+') {
+    return synthesiseHfsplusBackingFile({
+      vmName: opts.vmName,
+      personaId: opts.persona.id,
+      vmPath,
+      sizeMiB,
+      subprocess,
+    });
+  }
 
   // Resolve + validate `initialContent` host paths up front so a bad fixture
   // surfaces before we touch the VM. Returns empty when no seeding is needed.
@@ -187,15 +229,15 @@ export async function ensureBackingFile(
   // (mktemp would be cleaner but its template rules require the X-run to be
   // the trailing characters — `${vmPath}.XXXXXX.tmp` is invalid, and
   // suffix-flag variants differ between BSD and GNU mktemp.)
+  // mkfs.vfat: `--invariant` fixes the volume ID + creation timestamps, `-I`
+  // suppresses the "you are formatting a whole block device" check, both
+  // stderr-noisy. Output deterministic across runs.
   const buildScript = [
     'set -e',
     `sudo mkdir -p ${shellQuote(BACKING_FILES_VM_DIR)}`,
     `TMP=${shellQuote(`${vmPath}.tmp.`)}$$`,
     'sudo rm -f "$TMP"',
     `sudo truncate -s ${sizeMiB}M "$TMP"`,
-    // mkfs.vfat emits informational warnings on stderr (e.g. "Number of
-    // clusters for 32 bit FAT is less then suggested minimum") that we do
-    // NOT want surfacing as test noise — drop stderr.
     `sudo mkfs.vfat --invariant -F 32 -n ${shellQuote(label)} -I "$TMP" >/dev/null 2>&1`,
     ...buildSeedCommands({ stageDir, tmpVar: '"$TMP"', entries: seedEntries }),
     `sudo mv "$TMP" ${shellQuote(vmPath)}`,
@@ -266,6 +308,139 @@ export async function ensureBackingFile(
     sha256,
     wasAlreadyIdentical: existingSha === sha256,
   };
+}
+
+/**
+ * HFS+ branch of {@link ensureBackingFile}. Builds the image on the HOST
+ * via the pure-TS volume-header writer, then `limactl copy`s it into the
+ * VM and installs it at {@link vmPathForPersona}.
+ *
+ * The image is a sparse file of declared `sizeMiB`; only the 512-byte
+ * volume header is actual content. blkid identifies it as `hfsplus` from
+ * the on-disk magic — no kernel hfsplus driver or `hfsprogs` userspace
+ * required, which is what makes this approach portable across the arm64
+ * test VM (where hfsprogs is unpackaged).
+ *
+ * Idempotency: sha256 the just-written host image, probe the VM-side
+ * file's sha256, skip the copy on match. `wasAlreadyIdentical` is set the
+ * same way as the FAT32 path so callers can treat both symmetrically.
+ */
+interface SynthesiseHfsplusBackingFileOpts {
+  vmName: string;
+  personaId: string;
+  vmPath: string;
+  sizeMiB: number;
+  subprocess: SubprocessRunner;
+}
+
+async function synthesiseHfsplusBackingFile(
+  opts: SynthesiseHfsplusBackingFileOpts
+): Promise<EnsureBackingFileResult> {
+  const hostTmp = path.join(os.tmpdir(), `podkit-hfsplus-${randomUUID()}.img`);
+  writeMinimalHfsplusImage(hostTmp, { sizeMiB: opts.sizeMiB });
+  try {
+    // sha256 the synthesised image by streaming — the file is sparse on disk
+    // but `read()` returns zero-filled bytes for holes, so the digest is
+    // over the full logical content.
+    const sha256 = sha256HostFile(hostTmp);
+
+    // Probe — skip the limactl copy if the VM already has a byte-identical
+    // image. Without skip, every `prepare()` re-uploads the full sizeMiB.
+    const probe = await runLimactl(opts.subprocess, [
+      'shell',
+      opts.vmName,
+      '--',
+      'sh',
+      '-c',
+      `if [ -f ${shellQuote(opts.vmPath)} ]; then sha256sum ${shellQuote(opts.vmPath)} | awk '{print $1}'; else echo absent; fi`,
+    ]);
+    if (probe.exitCode !== 0) {
+      throw limactlError(`failed to probe backing file at ${opts.vmName}:${opts.vmPath}`, probe);
+    }
+    const wasAlreadyIdentical = probe.stdout.trim() === sha256;
+    if (wasAlreadyIdentical) {
+      return { personaId: opts.personaId, vmPath: opts.vmPath, sha256, wasAlreadyIdentical };
+    }
+
+    // Ensure target directory exists. `mkdir -p` is idempotent.
+    const ensureDir = await runLimactl(opts.subprocess, [
+      'shell',
+      opts.vmName,
+      '--',
+      'sudo',
+      'mkdir',
+      '-p',
+      BACKING_FILES_VM_DIR,
+    ]);
+    if (ensureDir.exitCode !== 0) {
+      throw limactlError(`failed to ensure ${BACKING_FILES_VM_DIR} in ${opts.vmName}`, ensureDir);
+    }
+
+    // limactl copy into /tmp (no sudo needed; tmpfs), then `sudo install`
+    // to the canonical path. `install -D -m 0644` is atomic (rename within
+    // the same fs) and sets mode in one step.
+    const vmTmp = `/tmp/hfsplus-${randomUUID()}.img`;
+    const copy = await runLimactl(opts.subprocess, ['copy', hostTmp, `${opts.vmName}:${vmTmp}`]);
+    if (copy.exitCode !== 0) {
+      throw limactlError(
+        `limactl copy failed sending HFS+ backing image to ${opts.vmName}:${vmTmp}`,
+        copy
+      );
+    }
+    const install = await runLimactl(opts.subprocess, [
+      'shell',
+      opts.vmName,
+      '--',
+      'sudo',
+      'install',
+      '-D',
+      '-m',
+      '0644',
+      vmTmp,
+      opts.vmPath,
+    ]);
+    if (install.exitCode !== 0) {
+      // Best-effort cleanup of the staging file before propagating.
+      await runLimactl(opts.subprocess, ['shell', opts.vmName, '--', 'rm', '-f', vmTmp]).catch(
+        () => undefined
+      );
+      throw limactlError(
+        `sudo install failed promoting ${vmTmp} → ${opts.vmPath} in ${opts.vmName}`,
+        install
+      );
+    }
+    await runLimactl(opts.subprocess, ['shell', opts.vmName, '--', 'rm', '-f', vmTmp]).catch(
+      () => undefined
+    );
+
+    return { personaId: opts.personaId, vmPath: opts.vmPath, sha256, wasAlreadyIdentical: false };
+  } finally {
+    try {
+      fs.unlinkSync(hostTmp);
+    } catch {
+      // Best-effort: a stuck file in os.tmpdir() does no harm.
+    }
+  }
+}
+
+/**
+ * sha256 a regular file on the host by streaming 64 KiB chunks. Sparse
+ * regions read back as zeros, so the digest is over the full logical
+ * content — matches what `sha256sum` returns inside the VM.
+ */
+function sha256HostFile(filePath: string): string {
+  const hash = createHash('sha256');
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    const chunk = Buffer.alloc(64 * 1024);
+    let bytesRead = 0;
+    while ((bytesRead = fs.readSync(fd, chunk, 0, chunk.length, null)) > 0) {
+      hash.update(chunk.subarray(0, bytesRead));
+    }
+  } finally {
+    fs.closeSync(fd);
+  }
+  return hash.digest('hex');
 }
 
 /** Options for {@link ensureBackingFilesForPersonas}. */

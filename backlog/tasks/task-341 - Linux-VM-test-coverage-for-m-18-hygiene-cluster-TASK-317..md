@@ -4,7 +4,7 @@ title: Linux VM test coverage for m-18 hygiene cluster (TASK-317.*)
 status: Done
 assignee: []
 created_date: '2026-05-16 22:30'
-updated_date: '2026-06-14 07:39'
+updated_date: '2026-06-14 11:24'
 labels:
   - device-capability-architecture
   - vm-testing
@@ -97,7 +97,7 @@ Existing persona registry at `packages/device-testing/src/personas/` already cov
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 TASK-317.12 (HFS+ refusal): device add + device scan + FAT32 regression scenarios covered as Linux VM tests.
+- [x] #1 TASK-317.12 (HFS+ refusal): device add + device scan + FAT32 regression scenarios covered as Linux VM tests.
 - [x] #2 TASK-317.11 (discovery reconciliation): single + dual + replug + USB-only-alongside scenarios covered.
 - [x] #3 TASK-317.13 (udev USB rule): no-rule + install + replug + legacy-cleanup scenarios covered.
 - [ ] #4 TASK-317.14 (orchestrator EACCES messaging): both-EACCES, USB-EACCES-SCSI-success, plain-success, -vv verbose scenarios covered.
@@ -164,4 +164,16 @@ Follow-up chain (newest tasks):
 - **TASK-426** — pre-flight validator for persona description / id length, so future authors don't hit the same EOVERFLOW / ENAMETOOLONG cryptic-error path TASK-350 burned time on.
 
 Architecture doc: `documents/architecture/testing/vm-testing.md` (landed 2026-06-14) documents the mechanical constraints, the SCSI VPD gap, and the open follow-up tasks.
+
+**2026-06-14 — AC #1 (HFS+ refusal) landed via TASK-349.**
+
+Tier-3 coverage now lives at `test-packages/e2e-vm-tests/src/hfsplus-refusal.e2e.test.ts`. Three scenarios:
+
+1. `device scan --json` against the HFS+ iPod (persona `ipod-nano-7g-hfsplus`) → `readiness.level: 'unsupported'`, `unsupportedReason.kind: 'filesystem-unsupported-on-linux'`, headline mentioning HFS+, no `mount` / `sysinfo` / `database` placeholder stage rows.
+2. `device add -d <name> --yes --json` → exit non-zero, `code: 'UNSUPPORTED_FILESYSTEM_ON_LINUX'`, `details.filesystem: 'hfsplus'`, docs URL surfaced, refusal text mentions HFS+ + FAT32 reformat remediation.
+3. Regression control against the FAT32 sibling (`ipod-nano-7g-space-gray`) → MUST NOT raise the refusal code. The empty FAT32 image legitimately fails the readiness pipeline downstream (no iTunesDB), but the failure envelope must not carry the HFS+-specific code.
+
+Backing-image synthesis was extended in `lima-test-vm-backing-files.ts` to support `filesystem: 'HFS+'` via `mkfs.hfsplus -v <label>` (after enabling `contrib` + installing `hfsprogs` in the test VM — see TASK-349). The refusal property tested here is **independent of host HFS+ support** by design: kernel blkid reads the volume-header magic without needing `hfsplus.ko` or `hfsprogs` userspace at the *consumer* side. See vm-testing architecture doc §5.6 for the rationale.
+
+Flips AC #1 from deferred to covered. Tier-3 GREEN verification on VM is pending re-provisioning per TASK-349 AC #4.
 <!-- SECTION:NOTES:END -->

@@ -69,7 +69,7 @@ Required fields a new persona must populate:
 | `sysInfoExtendedXml` | XML payload the FunctionFS daemon serves over the vendor control-transfer protocol |
 | `lsblkJson` / `systemProfilerJson` / `diskutilPlist` | host probe payloads — `null` for synthesised personas that aren't exercising the host probe path |
 | `partitionLayout` | declared partition table; the synthesised backing file may or may not realise the firmware partition (it doesn't today) |
-| `massStorageBackingFile` | `null` for FunctionFS-only personas; an object with `synthesis` + `resetStrategy` for personas with FAT32 backing |
+| `massStorageBackingFile` | `null` for FunctionFS-only personas; an object with `synthesis` + `resetStrategy` for personas with FAT32 or HFS+ backing |
 | `provenance` | source attribution + path to a `provenance.md` next to the persona |
 
 The registry lives in
@@ -143,7 +143,8 @@ JSON envelope on a failure exit MUST use this helper, not raw
 | Authoring a new device shape (USB descriptor, SIE, partitions) | `test-packages/device-testing/src/personas/<id>/persona.ts` |
 | Seeding files into the FAT32 backing at synthesis time | `massStorageBackingFile.synthesis.initialContent` on the persona |
 | Serving USB descriptors + vendor control transfers (SIE) | `dummy-hcd-daemon` (`tools/device-testing/dummy-hcd/`) |
-| Building the FAT32 image inside the VM (`mkfs.vfat --invariant` + mtools) | `lima-test-vm-backing-files.ts` |
+| Building the FAT32 backing image inside the VM (`mkfs.vfat --invariant` + mtools) | `lima-test-vm-backing-files.ts` |
+| Building the HFS+ backing image on the HOST (pure-TS Volume Header writer; limactl-copied into the VM) | `hfsplus-image-writer.ts` + `lima-test-vm-backing-files.ts` (HFS+ branch) |
 | Starting/stopping the daemon for a persona | `withPersona` or `mountPersona` |
 | Mounting the FAT32 with the right uid/gid | `mountPersona` |
 | Bootstrapping a valid iPod DB at runtime (SysInfo + iTunesDB + dirs) | `gpod-tool init <mount> --model <ModelNum>` inside the VM |
@@ -173,10 +174,14 @@ paths (the "independent readers" pattern from
    ASCII chars to be safe).
 3. Synthesised personas: clone an existing real-hardware persona's
    USB descriptor + SIE XML, change only `id`, `description`,
-   `deviceSerial`, and `massStorageBackingFile`. Reuse the original
+   `deviceSerial`, `partitionLayout` (when the variant is filesystem-
+   specific), and `massStorageBackingFile`. Reuse the original
    SIE XML by importing it relatively (`'../<sibling>/raw/...'` is
    allowed in TS imports, but not in `initialContent.sourceFixture` —
-   see [§5.3](#53-no--in-sourcefixture-paths)).
+   see [§5.3](#53-no--in-sourcefixture-paths)). `ipod-nano-7g-hfsplus`
+   is the canonical example — it imports USB + SIE + macOS host probes
+   from `ipod-nano-7g-space-gray` and only deltas the filesystem-shape
+   fields.
 4. `initialContent.sourceFixture` paths must live in the persona's
    own `raw/` directory — `..` segments are rejected by
    `resolveSeedEntries()`. Copy fixtures across personas rather than
@@ -384,7 +389,47 @@ writes SysInfo + an empty iTunesDB + the `iPod_Control/*` dir tree.
 Override individual files at runtime to produce the specific failure
 shape the test pins.
 
-### 5.6 SCSI VPD page 0xC0 — open scaffold gap
+### 5.6 HFS+ refusal — built on the host, not in the VM
+
+The HFS+-on-Linux refusal scenario (persona `ipod-nano-7g-hfsplus`,
+test `hfsplus-refusal.e2e.test.ts`) triggers off the `lsblk` fstype
+string `"hfsplus"`. That string comes from kernel-side `blkid` reading
+the on-disk Volume Header magic at offset 1024. **No HFS+ userspace
+tool runs at refusal time, and no `hfsplus.ko` kernel module is
+required** — refusal fires before any mount attempt.
+
+The HFS+ backing image cannot be built inside the test VM: `hfsprogs`
+(which provides `mkfs.hfsplus`) is unpackaged on arm64 in Debian
+bookworm — the source-package's `Architecture: amd64 i386 …` clause
+predates the arm64 port. Apple-Silicon hosts run the test VM as arm64,
+so an in-VM `mkfs.hfsplus` is impossible.
+
+Instead, the runner uses a pure-TypeScript HFS+ Volume Header writer
+at
+`test-packages/device-testing/src/runners/hfsplus-image-writer.ts`.
+Apple TN1150 documents the format; the implementation is ≤100 LOC,
+sets the minimum-viable fields (`signature = 'H+'`, `version = 4`,
+`blockSize = 4096`, `totalBlocks`), and zeroes the rest. The output
+is a sparse file — ~4 KiB on-disk for a declared 32 MiB image — that
+`writeMinimalHfsplusImage()` writes to a host temp path, after which
+the existing `limactl copy` + `sudo install` machinery stages it at
+the canonical `vmPathForPersona()` location.
+
+Properties this approach gives us:
+
+- **portability** — works on any host architecture; no apt repo / no
+  Docker / no committed binary fixture.
+- **decoupling** — end-user Linux hosts without `hfsprogs` or
+  `hfsplus.ko` still hit the same refusal. The unit suite at
+  `packages/podkit-core/src/device/filesystem-policy.test.ts` mocks
+  `process.platform` and exercises the policy without any fs touch;
+  the Tier-3 scenario exercises the lsblk → readiness → CLI wiring.
+- **`initialContent` is unimplemented for HFS+** by design — the only
+  consumer (the refusal path) reads the volume header, never the data
+  area. Adding file seeding would mean implementing the HFS+ catalog
+  file from scratch, which is enormous for zero refusal-test value.
+
+### 5.7 SCSI VPD page 0xC0 — open scaffold gap
 
 The dummy-hcd daemon implements SIE inquiry via the **USB vendor
 control transfer protocol** (`bmRequestType=0xC0, bRequest=0x40,
@@ -502,7 +547,9 @@ grows:
 - `test-packages/device-testing/src/runners/lima-test-vm.ts` — `limaTestVmRunner`.
 - `test-packages/device-testing/src/vm/persona-fixture.ts` — `withPersona`, `runJsonCommand`.
 - `test-packages/device-testing/src/vm/mount-persona.ts` — `mountPersona`, `unmountAndStop`.
-- `test-packages/device-testing/src/runners/lima-test-vm-backing-files.ts` — FAT32 synthesis + `initialContent`.
+- `test-packages/device-testing/src/runners/lima-test-vm-backing-files.ts` — FAT32 synthesis (in-VM `mkfs.vfat`) + `initialContent` (FAT32-only) + HFS+ branch (host-side; delegates to the TS writer).
+- `test-packages/device-testing/src/runners/hfsplus-image-writer.ts` — pure-TS HFS+ Volume Header writer (Apple TN1150).
+- `packages/podkit-core/src/device/filesystem-policy.ts` — HFS+-on-Linux refusal policy; exercised end-to-end by `hfsplus-refusal.e2e.test.ts`.
 - `tools/device-testing/dummy-hcd/` — daemon source.
 - `test-packages/e2e-vm-tests/src/*.e2e.test.ts` — feature-side tests.
 - `test-packages/device-testing/src/vm/*.e2e.test.ts` — harness self-tests.

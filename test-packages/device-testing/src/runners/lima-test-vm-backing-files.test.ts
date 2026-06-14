@@ -194,7 +194,7 @@ describe('ensureBackingFile', () => {
     ).rejects.toThrow(/has no synthesis recipe/);
   });
 
-  it('rejects FAT16 (only FAT32 is wired up)', async () => {
+  it('rejects FAT16 (only FAT32 + HFS+ are wired up)', async () => {
     const { runner } = makeScriptedRunner([]);
     await expect(
       ensureBackingFile({
@@ -207,7 +207,130 @@ describe('ensureBackingFile', () => {
         }),
         subprocess: runner,
       })
-    ).rejects.toThrow(/FAT32/);
+    ).rejects.toThrow(/FAT32.*HFS\+/);
+  });
+
+  it('synthesises HFS+ on the HOST + limactl-copies into the VM (no in-VM mkfs)', async () => {
+    // 5 scripted calls on the "absent → copy" path:
+    //   1. probe sha256 → 'absent'
+    //   2. mkdir BACKING_FILES_VM_DIR
+    //   3. limactl copy host → vm /tmp staging file
+    //   4. sudo install staging → canonical vmPath
+    //   5. rm staging (best-effort, no throw on failure)
+    const { runner, calls } = makeScriptedRunner([ok('absent\n'), ok(''), ok(''), ok(''), ok('')]);
+    const result = await ensureBackingFile({
+      vmName: 'podkit-device-harness',
+      persona: makePersona({
+        id: 'ipod-hfsplus',
+        massStorageBackingFile: {
+          synthesis: { sizeMiB: 1, filesystem: 'HFS+', label: 'IPOD_HFS' },
+          resetStrategy: 'copy',
+        },
+      }),
+      subprocess: runner,
+    });
+    expect(result.personaId).toBe('ipod-hfsplus');
+    // sha256 is computed on the host over the just-written image — assert
+    // it's a real digest, not anything synthesised by the scripted runner.
+    expect(result.sha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(result.wasAlreadyIdentical).toBe(false);
+
+    // No call carries mkfs.hfsplus / mkfs.vfat — the HFS+ branch never
+    // invokes a userspace mkfs; the volume header is written from TS.
+    for (const call of calls) {
+      const joined = call.args.join(' ');
+      expect(joined).not.toContain('mkfs.hfsplus');
+      expect(joined).not.toContain('mkfs.vfat');
+    }
+    // The copy call (call #3) carries the host→VM transfer.
+    expect(calls[2]!.args[0]).toBe('copy');
+    expect(calls[2]!.args[2]).toContain('podkit-device-harness:/tmp/hfsplus-');
+  });
+
+  it('skips the limactl copy when the VM already has the byte-identical HFS+ image', async () => {
+    // First scripted call returns the same sha256 the host-side writer will
+    // produce. We can't pre-compute that here without coupling the test to
+    // implementation; instead, run the helper twice: the first call seeds
+    // the cache, the second call short-circuits.
+    const { runner: firstRunner } = makeScriptedRunner([
+      ok('absent\n'),
+      ok(''),
+      ok(''),
+      ok(''),
+      ok(''),
+    ]);
+    const first = await ensureBackingFile({
+      vmName: 'podkit-device-harness',
+      persona: makePersona({
+        id: 'ipod-hfsplus-cache',
+        massStorageBackingFile: {
+          synthesis: { sizeMiB: 1, filesystem: 'HFS+', label: 'X' },
+          resetStrategy: 'copy',
+        },
+      }),
+      subprocess: firstRunner,
+    });
+
+    // Second invocation — probe returns the matching sha256, so the helper
+    // must NOT issue mkdir / copy / install / rm. Single scripted response.
+    const { runner: secondRunner, calls: secondCalls } = makeScriptedRunner([
+      ok(first.sha256 + '\n'),
+    ]);
+    const second = await ensureBackingFile({
+      vmName: 'podkit-device-harness',
+      persona: makePersona({
+        id: 'ipod-hfsplus-cache',
+        massStorageBackingFile: {
+          synthesis: { sizeMiB: 1, filesystem: 'HFS+', label: 'X' },
+          resetStrategy: 'copy',
+        },
+      }),
+      subprocess: secondRunner,
+    });
+    expect(second.sha256).toBe(first.sha256);
+    expect(second.wasAlreadyIdentical).toBe(true);
+    expect(secondCalls.length).toBe(1);
+  });
+
+  it('accepts non-FAT-safe labels on HFS+ personas (the HFS+ writer ignores label)', async () => {
+    // FAT requires uppercase A-Z / digits / underscore / hyphen — `'My iPod'`
+    // contains a space and lowercase letters and would be rejected by
+    // validateFatLabel. HFS+ has no such constraint and the writer ignores
+    // the label entirely, so the FAT validator must not fire here.
+    const { runner } = makeScriptedRunner([ok('absent\n'), ok(''), ok(''), ok(''), ok('')]);
+    const result = await ensureBackingFile({
+      vmName: 'podkit-device-harness',
+      persona: makePersona({
+        id: 'ipod-hfsplus-spaced-label',
+        massStorageBackingFile: {
+          synthesis: { sizeMiB: 1, filesystem: 'HFS+', label: 'My iPod' },
+          resetStrategy: 'copy',
+        },
+      }),
+      subprocess: runner,
+    });
+    expect(result.personaId).toBe('ipod-hfsplus-spaced-label');
+  });
+
+  it('rejects HFS+ + initialContent (seeding is FAT-only via mtools)', async () => {
+    const { runner } = makeScriptedRunner([]);
+    await expect(
+      ensureBackingFile({
+        vmName: 'podkit-device-harness',
+        persona: makePersona({
+          massStorageBackingFile: {
+            synthesis: {
+              sizeMiB: 32,
+              filesystem: 'HFS+',
+              label: 'IPOD_HFS',
+              initialContent: [{ path: 'foo', sourceFixture: './raw/foo' }],
+            },
+            resetStrategy: 'copy',
+          },
+        }),
+        subprocess: runner,
+      })
+    ).rejects.toThrow(/HFS\+/);
   });
 
   it('rejects non-positive sizeMiB', async () => {

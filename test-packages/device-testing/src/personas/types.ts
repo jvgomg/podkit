@@ -242,15 +242,37 @@ export interface LunPartitionLayout {
  * byte-deterministic across runs against the same `(sizeMiB, label,
  * initialContent)` triple.
  *
+ * # HFS+ synthesis (`filesystem: 'HFS+'`)
+ *
+ * Used by the HFS+-on-Linux refusal scenario. The image is built on the
+ * HOST via a pure-TypeScript HFS+ Volume Header writer
+ * (`runners/hfsplus-image-writer.ts`) and `limactl copy`'d into the VM —
+ * `hfsprogs` is unpackaged on arm64 in Debian bookworm, so an in-VM
+ * `mkfs.hfsplus` path is impossible. Output is a sparse file (~4 KiB
+ * on-disk for a declared 32 MiB image); the only on-disk content is the
+ * 512-byte Volume Header at offset 1024. blkid identifies it as
+ * `hfsplus` from the on-disk magic alone — no mount, no userspace tool,
+ * no kernel module. `initialContent` is rejected for HFS+ (the only
+ * consumer reads the volume header, never the data area); the `label`
+ * field is accepted for schema-symmetry with FAT32 but is unused — the
+ * HFS+ writer does not embed a volume name.
+ *
  * See `test-packages/device-testing/scripts/build-backing-file.ts`.
  */
 export interface MassStorageBackingFileRecipe {
   sizeMiB: number;
-  filesystem: 'FAT32' | 'FAT16';
+  filesystem: 'FAT32' | 'FAT16' | 'HFS+';
   /**
-   * FAT volume label (up to 11 chars, ASCII, conventionally uppercase).
-   * Passed to `mkfs.vfat -n <label>` during synthesis. Required because
-   * the label is part of what makes the image byte-deterministic.
+   * Volume label.
+   *
+   * - FAT32 / FAT16: up to 11 chars, ASCII, uppercase. Passed to
+   *   `mkfs.vfat -n <label>` during synthesis. Required because the label
+   *   is part of what makes the image byte-deterministic.
+   * - HFS+: accepted for schema symmetry but UNUSED. The host-side TS
+   *   writer only writes the HFS+ Volume Header; the volume name lives in
+   *   the catalog file, which we don't synthesise. The validator does NOT
+   *   enforce FAT label rules on HFS+ personas — any label (including
+   *   spaces / Unicode / longer strings) is accepted.
    */
   label: string;
   initialContent?: Array<{ path: string; sourceFixture: string }>;

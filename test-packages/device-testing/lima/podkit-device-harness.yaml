@@ -111,6 +111,16 @@ provision:
       #                         loop-mounting (no root, no kernel mount; deterministic
       #                         output via SOURCE_DATE_EPOCH).
       # NO build-essential, NO pkg-config, NO any -dev packages.
+      #
+      # NOTE: HFS+ backing images for the HFS+-on-Linux refusal Tier-3 tests are
+      # NOT generated in the VM. `hfsprogs` (which provides `mkfs.hfsplus`) is
+      # packaged for amd64 only in Debian bookworm — not arm64. The HFS+
+      # backing image is therefore built on the HOST via a pure-TS volume-
+      # header writer and limactl-copied into the VM. The VM only needs to
+      # READ the image, which kernel-side blkid does from the on-disk magic
+      # without any HFS+ userspace tools or `hfsplus.ko` kernel module.
+      # See `test-packages/device-testing/src/runners/hfsplus-image-writer.ts`
+      # and `documents/architecture/testing/vm-testing.md` §5.6.
       apt-get install -y --no-install-recommends \
         ffmpeg \
         libgpod4 \
