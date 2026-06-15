@@ -1,9 +1,10 @@
 ---
 id: TASK-317.07
 title: 'Mass-storage preset: add display metadata (manufacturer, productName, id)'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-09 15:55'
+updated_date: '2026-06-15 22:27'
 labels:
   - mass-storage
   - ux

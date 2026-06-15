@@ -1,9 +1,10 @@
 ---
 id: TASK-342
 title: macOS regression coverage for m-18 hygiene cluster (TASK-317.*)
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-16 22:31'
+updated_date: '2026-06-15 23:00'
 labels:
   - device-capability-architecture
   - macos

@@ -1,10 +1,10 @@
 ---
 id: TASK-429
 title: Fix shortenIpodLabel pass-through for `iPod Video (5.5th Generation)`
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-06-15 21:53'
-updated_date: '2026-06-15 21:54'
+updated_date: '2026-06-15 22:29'
 labels:
   - devices-ipod
   - follow-up
