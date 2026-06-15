@@ -4,13 +4,13 @@ title: 'Tier-3: light up doctor SIE repair tests when daemon VPD lands'
 status: To Do
 assignee: []
 created_date: '2026-06-14 07:38'
-updated_date: '2026-06-14 07:39'
+updated_date: '2026-06-15 10:26'
 labels:
   - testing
   - vm-coverage
   - tier-3
   - follow-up
-milestone: m-19
+milestone: m-20
 dependencies:
   - TASK-424
 references:

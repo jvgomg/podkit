@@ -4,7 +4,7 @@ title: 'dummy-hcd-daemon: implement SCSI VPD page 0xC0 inquiry'
 status: To Do
 assignee: []
 created_date: '2026-06-14 07:37'
-updated_date: '2026-06-14 07:39'
+updated_date: '2026-06-15 10:26'
 labels:
   - testing
   - vm-coverage
@@ -12,7 +12,7 @@ labels:
   - functionfs
   - scsi
   - follow-up
-milestone: m-19
+milestone: m-20
 dependencies: []
 references:
   - tools/device-testing/dummy-hcd/src/functionfs.ts

@@ -4,12 +4,13 @@ title: Capture ipod-classic-rockbox persona (Rockbox install required — HITL)
 status: To Do
 assignee: []
 created_date: '2026-05-17 14:41'
+updated_date: '2026-06-15 10:26'
 labels:
   - vm-testing
   - fixtures
   - hardware-required
   - deferred
-milestone: m-19
+milestone: m-20
 dependencies: []
 priority: low
 ordinal: 9000

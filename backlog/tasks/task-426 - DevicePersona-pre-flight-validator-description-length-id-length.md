@@ -1,10 +1,10 @@
 ---
 id: TASK-426
 title: 'DevicePersona: pre-flight validator (description length + id length)'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-06-14 07:38'
-updated_date: '2026-06-14 07:39'
+updated_date: '2026-06-15 10:26'
 labels:
   - testing
   - tier-3
@@ -66,9 +66,19 @@ Validation failures should throw at module load with a descriptive error naming 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 `personas/index.ts` import-time validation throws a descriptive error for any persona whose `description` would overflow the USB string descriptor `bLength` field
-- [ ] #2 `personas/index.ts` import-time validation throws for any persona whose `id` exceeds 32 ASCII chars or doesn't match `/^[a-z0-9-]+$/`
-- [ ] #3 Failure messages name the persona id (so the dev knows which to fix) and the constraint (so they know what to change)
-- [ ] #4 Existing personas all pass validation (no false positives on the current registry)
-- [ ] #5 Unit tests at `personas/validator.test.ts` cover at least: too-long description, too-long id, illegal chars in id, valid persona shape
+- [x] #1 `personas/index.ts` import-time validation throws a descriptive error for any persona whose `description` would overflow the USB string descriptor `bLength` field
+- [x] #2 `personas/index.ts` import-time validation throws for any persona whose `id` exceeds 32 ASCII chars or doesn't match `/^[a-z0-9-]+$/`
+- [x] #3 Failure messages name the persona id (so the dev knows which to fix) and the constraint (so they know what to change)
+- [x] #4 Existing personas all pass validation (no false positives on the current registry)
+- [x] #5 Unit tests at `personas/validator.test.ts` cover at least: too-long description, too-long id, illegal chars in id, valid persona shape
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Landed in commit 6047f465 (`test(personas): load-time validator for description/id/sourceFixture constraints`).
+
+- `test-packages/device-testing/src/personas/validator.ts` — pure validator: `validateDescription` (UTF-16-LE ≤ 252 bytes), `validateId` (≤ 32 chars + `/^[a-z0-9-]+$/`), `validateInitialContentPaths` (no `..`, non-empty); failure messages name the persona id + cite the relevant `documents/architecture/testing/vm-testing.md` section.
+- `test-packages/device-testing/src/personas/validator.test.ts` — unit coverage for too-long description, too-long id, illegal id chars, valid persona shape, sourceFixture edge cases.
+- Wired into `personas/index.ts` Map build loop; existing registry passes (no false positives).
+<!-- SECTION:FINAL_SUMMARY:END -->
