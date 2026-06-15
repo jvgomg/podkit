@@ -4,8 +4,9 @@ title: 'PRD: offline device capability caching for pre-transcoding'
 status: To Do
 assignee: []
 created_date: '2026-05-02 15:45'
+updated_date: '2026-06-15 10:44'
 labels: []
-milestone: m-18
+milestone: m-21
 dependencies: []
 documentation:
   - documents/device-identification.md#generation-tables-authority-vs-fallback

@@ -4,12 +4,12 @@ title: SCSI inquiry in podkit-docker + podkit-daemon
 status: To Do
 assignee: []
 created_date: '2026-05-03 12:46'
-updated_date: '2026-05-03 15:57'
+updated_date: '2026-06-15 10:44'
 labels:
   - device-capability-architecture
   - docker
   - daemon
-milestone: m-18
+milestone: m-22
 dependencies:
   - TASK-292
 documentation:
