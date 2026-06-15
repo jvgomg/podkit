@@ -1,10 +1,10 @@
 ---
 id: TASK-349
 title: 'Test VM: HFS+ refusal Tier-3 backing-image synthesis (closes TASK-341 AC #1)'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-05-23 15:52'
-updated_date: '2026-06-14 11:40'
+updated_date: '2026-06-15 10:22'
 labels:
   - vm-testing
   - tier-3
@@ -54,7 +54,7 @@ Build the HFS+ backing image on the HOST via a pure-TypeScript Volume Header wri
 - [x] #4 TASK-341 AC #1 Tier-3 tests landed: device scan unsupported envelope, device add UNSUPPORTED_FILESYSTEM_ON_LINUX, FAT32 sibling regression
 - [x] #5 Architecture doc `documents/architecture/testing/vm-testing.md` updated (§3 ownership table, §5.6 HFS+ section, §8 references)
 - [x] #6 podkit-device-harness.yaml NO LONGER references contrib repo / hfsprogs; FAT32 personas still synthesise correctly in the VM
-- [ ] #7 Tier-3 baseline remains GREEN after changes
+- [x] #7 Tier-3 baseline remains GREEN after changes
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -110,3 +110,42 @@ Manually reinstalled `dosfstools mtools` to restore FAT32 capability + reverted 
 
 AC #7 (Tier-3 baseline GREEN) waits on the user's VM re-provisioning. Flip to Done once that lands.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+**Done 2026-06-15.** Tier-3 baseline GREEN — `hfsplus-refusal.e2e.test.ts` passes all 3 scenarios on the device-harness VM.
+
+## Shipped
+
+The HFS+-on-Linux refusal path is now exercised end-to-end against a synthesised USB block device with a real partitioned HFS+ filesystem that blkid identifies + carries a UUID. The persona drives `device scan` through the discriminated `filesystem-unsupported-on-linux` reason payload and `device add` through the `UNSUPPORTED_FILESYSTEM_ON_LINUX` envelope.
+
+## Three pivots along the way
+
+The original plan (enable Debian `contrib` + install `hfsprogs`) ran into reality:
+
+1. **arm64 unpackaged.** `hfsprogs` has no arm64 candidate in bookworm — the source-package architecture clause predates the arm64 port. apt's all-or-nothing transaction caused `dosfstools` + `mtools` rollback when the install line listed `hfsprogs`, silently breaking FAT32 personas VM-wide on the first re-provision. Replaced by a pure-TypeScript HFS+ Volume Header writer (Apple TN1150) at `test-packages/device-testing/src/runners/hfsplus-image-writer.ts`. yaml reverted.
+
+2. **Whole-disk vs partitioned.** A whole-disk-fstype image is dropped by `walk()` in `linux.ts` (requires children-with-uuid). Pivoted writer to emit an MBR-wrapped HFS+ image with a single partition (type 0xAF, LBA start 2048). blkid's HFS+ probe synthesises a UUID from `finderInfo[6..7]`; without a non-zero seed, the partition has no UUID and `walk()` still drops it. Both the partition table AND the UUID seed are load-bearing.
+
+3. **PID classification short-circuit.** Nano 7G PID `0x1267` classifies as `hashAB`/unsupported by the USB cascade — readiness short-circuits at stage 1 before the filesystem stage runs. Persona base swapped to nano 4G PID `0x1263` (hash58/supported — the same PID the unsupported-cascade Tier-3 test uses as its regression control). USB stage now passes; readiness reaches the filesystem stage where the HFS+ refusal lives.
+
+## Production bug surfaced (now fixed)
+
+`findUsbIdentity()` in `packages/podkit-core/src/device/platforms/linux.ts` walked up the sysfs tree with `path.resolve('/sys/block/<dev>/device', '..')`, which is string-based — it ascended the LOGICAL parents (back to `/sys/block`, `/sys`) instead of the symlink target's real parents (`/sys/devices/.../usb<N>/<port>`). The walk never reached the USB device's `idVendor` / `idProduct`, silently dropping the USB join for every iPod that didn't fast-track via the volume-name heuristic (`IPOD`/`POD`). Fixed by `realpathSync(deviceLink)` before the walk loop. This was the actual blocker behind every test run showing "USB only" for block-device-backed personas.
+
+## Coverage
+
+- **Unit (40 tests):** writer offsets (MBR partition entry, HFS+ signature/version/blockSize/totalBlocks/finderInfo seed), idempotency, sparse-file write, FAT32-only label validation.
+- **Tier-3 (3 scenarios):** scan emits `filesystem-unsupported-on-linux` reason with HFS+ headline + docs URL; add returns `UNSUPPORTED_FILESYSTEM_ON_LINUX` with `details.filesystem: 'hfsplus'`; sibling persona regression confirms refusal is HFS+-specific.
+
+## Architecture doc
+
+`documents/architecture/testing/vm-testing.md` §5.6 documents the host-side MBR-wrapped writer, the arm64 hfsprogs gap, the finderInfo UUID seed rationale, and the cross-arch portability. §3 ownership table + §4 persona authoring example + §8 references updated.
+
+## Commits
+
+- `eab48b69` initial Tier-3 scaffolding (whole-disk writer)
+- `804f68b9` stale-docstring fixup
+- `2a638000` MBR pivot + sysfs symlink production fix + nano 4G base swap
+<!-- SECTION:FINAL_SUMMARY:END -->
