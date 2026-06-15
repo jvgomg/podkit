@@ -8,13 +8,19 @@ import { runAction } from '../../errors.js';
 import { loadCoreOrFail, type CoreLoaderDeps } from '../../handler-deps.js';
 import { OutputContext, formatBytes, formatNumber, bold } from '../../output/index.js';
 import type { DeviceConfig } from '../../config/index.js';
-import type { PlatformDeviceInfo, ReadinessResult, ReadinessUnsupportedReason } from '@podkit/core';
+import type {
+  DiscoveredDevice,
+  DiscoveredDeviceIpod,
+  PlatformDeviceInfo,
+  ReadinessResult,
+  ReadinessUnsupportedReason,
+} from '@podkit/core';
 import { STAGE_DISPLAY_NAMES } from '@podkit/core';
 import { stageMarker, formatReadinessLevel } from '../readiness-display.js';
 import {
   renderDeviceScan,
   type DeviceScanInput,
-  type DeviceScanIpodRow,
+  type DiscoveredDeviceRow,
 } from '../device-scan-render.js';
 import { DeviceErrorCodes } from './error-codes.js';
 import {
@@ -185,6 +191,20 @@ interface DeviceScanOptions {
 export interface DeviceScanDeps extends CoreLoaderDeps {
   getDeviceManager?: () => import('@podkit/core').DeviceManager;
   confirm?: (msg: string) => Promise<boolean>;
+  /**
+   * Override for USB enumeration inside `discoverConnectedDevices`. Test seam:
+   * allows injecting a fake USB device list without stubbing the full discovery
+   * orchestrator.
+   */
+  enumerate?: () => Promise<import('@podkit/core').EnumeratedUsbDevice[]>;
+  /**
+   * Override for USB classification inside `discoverConnectedDevices`. Test seam:
+   * allows injecting fake classified devices without stubbing the full discovery
+   * orchestrator.
+   */
+  classify?: (
+    devices: import('@podkit/core').EnumeratedUsbDevice[]
+  ) => import('@podkit/core').ClassifiedUsbDevice[];
 }
 
 export const scanSubcommand = new Command('scan')
@@ -208,89 +228,35 @@ export async function runDeviceScan(
   const confirmFn = deps.confirm ?? confirm;
 
   const core = await loadCoreOrFail(deps, DeviceErrorCodes.CORE_LOAD_FAILED);
-  const {
-    checkReadiness,
-    enumerateUsb,
-    classifyUsbDevices,
-    createUsbOnlyReadinessResult,
-    reconcileIpodDiscovery,
-  } = core;
+  const { checkReadiness, createUsbOnlyReadinessResult, discoverConnectedDevices } = core;
   const manager = (deps.getDeviceManager ?? core.getDeviceManager)();
 
-  // Enumerate the USB bus and classify the result. `enumerateUsb` returns
-  // EVERY USB device on the bus (mice, hubs, docks, …); `classifyUsbDevices`
-  // drops everything that is not a recognised iPod or mass-storage DAP, so
-  // the rest of `device scan` only ever sees real music players.
-  type ClassifiedUsbDevice = Awaited<ReturnType<typeof classifyUsbDevices>>[number];
-  type IpodRecognized = Extract<ClassifiedUsbDevice, { kind: 'ipod' }>;
-  type MassStorageRecognized = Extract<ClassifiedUsbDevice, { kind: 'mass-storage' }>;
-  type UnsupportedRecognized = Extract<ClassifiedUsbDevice, { kind: 'unsupported' }>;
+  // Discover all connected devices — USB + block-device pipelines reconciled
+  // into one record per physical device. Returns [] on unsupported platforms.
+  // Test seams for `enumerate` and `classify` are threaded through so unit
+  // tests can inject fake USB device lists without stubbing the full orchestrator.
+  const discovered = await discoverConnectedDevices({
+    deviceManager: manager,
+    ...(deps.enumerate ? { enumerate: deps.enumerate } : {}),
+    ...(deps.classify ? { classify: deps.classify } : {}),
+  });
 
-  let ipods: Awaited<ReturnType<typeof manager.findIpodDevices>> = [];
-  let recognizedDevices: ClassifiedUsbDevice[] = [];
-  if (manager.isSupported) {
-    const [foundIpods, enumerated] = await Promise.all([manager.findIpodDevices(), enumerateUsb()]);
-    ipods = foundIpods;
-    recognizedDevices = classifyUsbDevices(enumerated);
-  }
+  // Extract the block-side iPod records for the mount-handling pipeline and
+  // readiness checks. These are the iPods that have a block-device entry and
+  // may need mounting or readiness evaluation.
+  const blockIpods: Array<{ device: DiscoveredDeviceIpod; block: PlatformDeviceInfo }> = discovered
+    .filter((d): d is DiscoveredDeviceIpod => d.kind === 'ipod' && d.matchedBy !== 'usb-only')
+    .map((d) => ({ device: d, block: d.block! }));
 
-  // Split the classified-USB stream by kind. Only the iPod-shaped entries
-  // feed into reconciliation against the block-device side; mass-storage
-  // entries render as their own scan group, and vendor-recognised-but-rejected
-  // entries surface as USB-only rows with `level: 'unsupported'`.
-  const ipodRecognizedList = recognizedDevices.filter(
-    (d): d is IpodRecognized => d.kind === 'ipod'
-  );
-  const massStorageList = recognizedDevices.filter(
-    (d): d is MassStorageRecognized => d.kind === 'mass-storage'
-  );
-  // Vendor-recognised but no preset (Sony Walkman, …). Surfaced as USB-only
-  // entries with `level: 'unsupported'` so the user gets a clear rejection
-  // message instead of the device silently vanishing from the scan.
-  const unsupportedRecognizedList = recognizedDevices.filter(
-    (d): d is UnsupportedRecognized => d.kind === 'unsupported'
-  );
-
-  // Reconcile the two pipelines into one record per physical iPod. The
-  // primitive is pure (no I/O, no platform branches) — block-side
-  // `usbFingerprint` is populated by Linux's `findIpodDevices` from sysfs,
-  // USB-side `diskIdentifier` is populated by both macOS (system_profiler
-  // `bsd_name`) and Linux. Match priority: serial number → whole-disk
-  // identifier (partition suffix stripped on both sides) → emit-separate.
-  // Pre-fix, the ad-hoc disk-name correlation here produced a double-entry
-  // on Linux (linka repro): the same iPod rendered as both a mounted row
-  // and a phantom "USB only" row claiming the device needed partitioning.
-  const reconciled = reconcileIpodDiscovery(ipods, ipodRecognizedList);
-
-  // Per-block-record matched USB classification, indexed by block-device
-  // index for the readiness pipeline and the JSON envelope. Records without
-  // a `block` side are USB-only iPods rendered separately.
-  const matchedUsbByBlockIndex = new Map<number, IpodRecognized>();
-  for (let i = 0; i < ipods.length; i++) {
-    const record = reconciled.find((r) => r.block === ipods[i]);
-    if (record?.usb) matchedUsbByBlockIndex.set(i, record.usb);
-  }
-  const usbOnlyIpods: IpodRecognized[] = reconciled
-    .filter((r) => r.matchedBy === 'usb-only' && r.usb)
-    .map((r) => r.usb!);
-
-  function findMatchingUsbIpod(blockIndex: number): IpodRecognized | undefined {
-    return matchedUsbByBlockIndex.get(blockIndex);
-  }
-
-  // Gather configured devices not found in the scan
-  const detectedUuids = new Set(ipods.map((d) => d.volumeUuid?.toUpperCase()).filter(Boolean));
-  const configuredDevices = findUndetectedDevices(detectedUuids, config.devices ?? {});
-
-  // Run readiness pipeline on each iPod (only on supported platforms)
+  // Run readiness pipeline on each block-side iPod (only on supported platforms).
+  // The readiness result array is indexed in parallel with blockIpods.
   const readinessResults: ReadinessResult[] = [];
   if (manager.isSupported) {
-    for (let i = 0; i < ipods.length; i++) {
-      const ipod = ipods[i]!;
-      const matchedUsb = findMatchingUsbIpod(i);
+    for (const { device, block } of blockIpods) {
+      const matchedUsb = device.usb;
       readinessResults.push(
         await checkReadiness({
-          device: ipod,
+          device: block,
           usbConnection: matchedUsb?.device,
           usbModel: matchedUsb?.model,
           // Thread the rejection reason so the readiness cascade returns
@@ -310,16 +276,16 @@ export async function runDeviceScan(
   // Handle unmounted devices: prompt or auto-mount
   if (manager.isSupported) {
     const { interpretError } = core;
-    for (let i = 0; i < ipods.length; i++) {
-      const ipod = ipods[i]!;
-      if (ipod.isMounted) continue;
+    for (let i = 0; i < blockIpods.length; i++) {
+      const { device: ipodDevice, block } = blockIpods[i]!;
+      if (block.isMounted) continue;
 
       const readiness = readinessResults[i];
       const mountStage = readiness?.stages.find((s) => s.stage === 'mount');
       if (!mountStage || mountStage.status !== 'fail') continue;
       if (mountStage.details?.isMounted !== false) continue;
 
-      const label = ipod.volumeName || '(unnamed)';
+      const label = block.volumeName || '(unnamed)';
       let shouldMount = false;
 
       if (scanOptions.mount) {
@@ -332,16 +298,16 @@ export async function runDeviceScan(
 
       if (shouldMount) {
         try {
-          const result = await manager.mount(ipod.identifier);
+          const result = await manager.mount(block.identifier);
           if (result.success && result.mountPoint) {
-            // Update the ipod entry with new mount info. The discriminated
+            // Update the block entry with new mount info. The discriminated
             // mount-state union forbids partial mutation — build a new
             // record with `isMounted: true` + `mountPoint` and replace the
             // slot.
-            // Spread of an unmounted `ipod` carries `isMounted: false` in
+            // Spread of an unmounted `block` carries `isMounted: false` in
             // its inferred type; rebuild from identity + storage + usb so
             // the discriminated mount-state union narrows correctly.
-            const { identifier, volumeName, volumeUuid, storage, usb, mediaType } = ipod;
+            const { identifier, volumeName, volumeUuid, storage, usb, mediaType } = block;
             const mounted: PlatformDeviceInfo = {
               identifier,
               volumeName,
@@ -352,7 +318,7 @@ export async function runDeviceScan(
               ...(usb ? { usb } : {}),
               ...(mediaType ? { mediaType } : {}),
             };
-            ipods[i] = mounted;
+            blockIpods[i] = { device: ipodDevice, block: mounted };
             // Re-run readiness to get full picture
             readinessResults[i] = await checkReadiness({ device: mounted });
             out.verbose1(`Mounted ${label} at ${result.mountPoint}`);
@@ -381,18 +347,35 @@ export async function runDeviceScan(
     }
   }
 
-  const blockDevices: DeviceScanDeviceEntry[] = ipods.map((d, i) => {
+  // Rebuild the discovered list with updated block records (post-mount).
+  // We replace DiscoveredDeviceIpod entries that had their block updated.
+  const discoveredWithMounts: DiscoveredDevice[] = discovered.map((d) => {
+    if (d.kind !== 'ipod' || d.matchedBy === 'usb-only') return d;
+    const idx = blockIpods.findIndex((bi) => bi.block.identifier === d.block?.identifier);
+    if (idx === -1) return d;
+    return { ...d, block: blockIpods[idx]!.block } as DiscoveredDeviceIpod;
+  });
+
+  // Gather configured devices not found in the scan
+  const detectedUuids = new Set(
+    blockIpods.map((bi) => bi.block.volumeUuid?.toUpperCase()).filter(Boolean) as string[]
+  );
+  const configuredDevices = findUndetectedDevices(detectedUuids, config.devices ?? {});
+
+  // Build the JSON output envelope (unchanged shape from before).
+  // Block-side iPods with readiness data.
+  const blockDevices: DeviceScanDeviceEntry[] = blockIpods.map(({ device, block }, i) => {
     const readiness = readinessResults[i];
-    const configuredAs = findConfiguredDeviceName(d, config.devices ?? {});
+    const configuredAs = findConfiguredDeviceName(block, config.devices ?? {});
     const bestModel = readiness?.deviceModel ?? readiness?.usbModel;
-    const matchedUsb = findMatchingUsbIpod(i);
+    const matchedUsb = device.usb;
     return {
-      volumeName: d.volumeName,
-      volumeUuid: d.volumeUuid,
-      identifier: d.identifier,
-      size: d.storage.sizeBytes,
-      isMounted: d.isMounted,
-      ...(d.isMounted ? { mountPoint: d.mountPoint } : {}),
+      volumeName: block.volumeName,
+      volumeUuid: block.volumeUuid,
+      identifier: block.identifier,
+      size: block.storage.sizeBytes,
+      isMounted: block.isMounted,
+      ...(block.isMounted ? { mountPoint: block.mountPoint } : {}),
       ...(configuredAs ? { configuredAs } : {}),
       ...(bestModel ? { model: bestModel } : {}),
       ...(matchedUsb
@@ -423,16 +406,14 @@ export async function runDeviceScan(
     };
   });
 
-  // USB-only iPods: Apple-vendor USB descriptors with no joinable lsblk entry.
-  // These appear for personas synthesised inside the test VM that have no
-  // block device (massStorageBackingFile: null) and for iPods in restore mode
-  // (6G in particular). They share the same JSON shape as block-device-bound
-  // entries, but with `usbOnly: true`, no `mountPoint`, and empty string
-  // identifier/volumeUuid (size 0). The render layer continues to use the
-  // separate `usbOnlyIpods` list — only the JSON envelope is unified here.
-  const usbOnlyDevices: DeviceScanDeviceEntry[] = usbOnlyIpods.map((r) => {
-    const usbReadiness = manager.isSupported ? createUsbOnlyReadinessResult(r) : undefined;
-    const modelDisplayName = r.model?.displayName;
+  // USB-only iPods: Apple-vendor USB descriptors with no joinable block entry.
+  const usbOnlyIpodDevices = discoveredWithMounts.filter(
+    (d): d is DiscoveredDeviceIpod => d.kind === 'ipod' && d.matchedBy === 'usb-only'
+  );
+  const usbOnlyDevices: DeviceScanDeviceEntry[] = usbOnlyIpodDevices.map((r) => {
+    const usbReadiness =
+      manager.isSupported && r.usb ? createUsbOnlyReadinessResult(r.usb) : undefined;
+    const modelDisplayName = r.usb?.model?.displayName;
     return {
       volumeName: modelDisplayName ?? '',
       volumeUuid: '',
@@ -440,13 +421,17 @@ export async function runDeviceScan(
       size: 0,
       isMounted: false,
       usbOnly: true,
-      usbDescriptor: {
-        vendorId: r.device.vendorId,
-        productId: r.device.productId,
-        ...(r.device.serialNumber ? { serialNumber: r.device.serialNumber } : {}),
-      },
-      ...(r.model ? { model: r.model } : {}),
-      ...(r.unsupportedReason ? { unsupportedReason: r.unsupportedReason } : {}),
+      ...(r.usb
+        ? {
+            usbDescriptor: {
+              vendorId: r.usb.device.vendorId,
+              productId: r.usb.device.productId,
+              ...(r.usb.device.serialNumber ? { serialNumber: r.usb.device.serialNumber } : {}),
+            },
+          }
+        : {}),
+      ...(r.usb?.model ? { model: r.usb.model } : {}),
+      ...(r.usb?.unsupportedReason ? { unsupportedReason: r.usb.unsupportedReason } : {}),
       ...(usbReadiness
         ? {
             readiness: {
@@ -466,35 +451,39 @@ export async function runDeviceScan(
 
   // Vendor-recognised, no-preset devices (Sony Walkman, …) — rendered as
   // USB-only entries with an `unsupported` readiness level + canonical reason.
-  const unsupportedDevices: DeviceScanDeviceEntry[] = unsupportedRecognizedList.map((r) => ({
-    volumeName: r.family ?? '',
-    volumeUuid: '',
-    identifier: '',
-    size: 0,
-    isMounted: false,
-    usbOnly: true,
-    usbDescriptor: {
-      vendorId: r.device.vendorId,
-      productId: r.device.productId,
-      ...(r.device.serialNumber ? { serialNumber: r.device.serialNumber } : {}),
-    },
-    unsupportedReason: { kind: 'unsupported-preset', headline: r.reason },
-    readiness: {
-      level: 'unsupported',
-      stages: [
-        {
-          stage: 'usb',
-          status: 'fail',
-          summary: 'Device not supported',
-          details: {
-            vendorId: r.device.vendorId,
-            productId: r.device.productId,
-            unsupported: { kind: 'unsupported-preset', headline: r.reason },
+  const unsupportedDevices: DeviceScanDeviceEntry[] = discoveredWithMounts
+    .filter(
+      (d): d is import('@podkit/core').DiscoveredDeviceUnsupported => d.kind === 'unsupported'
+    )
+    .map((r) => ({
+      volumeName: r.usb.family ?? '',
+      volumeUuid: '',
+      identifier: '',
+      size: 0,
+      isMounted: false,
+      usbOnly: true,
+      usbDescriptor: {
+        vendorId: r.usb.device.vendorId,
+        productId: r.usb.device.productId,
+        ...(r.usb.device.serialNumber ? { serialNumber: r.usb.device.serialNumber } : {}),
+      },
+      unsupportedReason: { kind: 'unsupported-preset', headline: r.usb.reason },
+      readiness: {
+        level: 'unsupported',
+        stages: [
+          {
+            stage: 'usb',
+            status: 'fail',
+            summary: 'Device not supported',
+            details: {
+              vendorId: r.usb.device.vendorId,
+              productId: r.usb.device.productId,
+              unsupported: { kind: 'unsupported-preset', headline: r.usb.reason },
+            },
           },
-        },
-      ],
-    },
-  }));
+        ],
+      },
+    }));
 
   const devices: DeviceScanDeviceEntry[] = [
     ...blockDevices,
@@ -502,28 +491,41 @@ export async function runDeviceScan(
     ...unsupportedDevices,
   ];
 
-  const hasAnyDevices =
-    ipods.length > 0 ||
-    usbOnlyIpods.length > 0 ||
-    massStorageList.length > 0 ||
-    unsupportedRecognizedList.length > 0 ||
-    configuredDevices.length > 0;
+  const massStorageDevices = discoveredWithMounts.filter(
+    (d): d is import('@podkit/core').DiscoveredDeviceMassStorage => d.kind === 'mass-storage'
+  );
+
+  const hasAnyDevices = discovered.length > 0 || configuredDevices.length > 0;
 
   // Handle --report flag: generate diagnostic report instead of normal output
   if (scanOptions.report) {
-    // cliVersion comes from the runner argument; default 'unknown' if not supplied.
+    // Derive the flat lists that generateDiagnosticReport expects from discoveredWithMounts.
+    const reportIpods = blockIpods.map(({ block }) => ({
+      volumeName: block.volumeName,
+      volumeUuid: block.volumeUuid,
+      identifier: block.identifier,
+      isMounted: block.isMounted,
+      ...(block.isMounted ? { mountPoint: block.mountPoint } : {}),
+    }));
+
+    const reportUsbOnlyIpods = usbOnlyIpodDevices.map((r) => ({
+      modelName: r.usb?.model?.displayName,
+      supported: r.usb?.supported,
+      ...(r.usb?.unsupportedReason ? { unsupportedReason: r.usb.unsupportedReason } : {}),
+    }));
+
+    const reportMassStorage = massStorageDevices
+      .filter((d) => d.usb !== undefined)
+      .map((d) => ({
+        presetId: d.usb!.presetId,
+        diskIdentifier: d.usb!.device.diskIdentifier,
+      }));
+
     const report = await generateDiagnosticReport(
-      ipods,
+      reportIpods,
       readinessResults,
-      usbOnlyIpods.map((r) => ({
-        modelName: r.model?.displayName,
-        supported: r.supported,
-        ...(r.unsupportedReason ? { unsupportedReason: r.unsupportedReason } : {}),
-      })),
-      massStorageList.map((r) => ({
-        presetId: r.presetId,
-        diskIdentifier: r.device.diskIdentifier,
-      })),
+      reportUsbOnlyIpods,
+      reportMassStorage,
       configuredDevices,
       config,
       cliVersion
@@ -532,37 +534,41 @@ export async function runDeviceScan(
     return;
   }
 
-  const ipodRows: DeviceScanIpodRow[] = ipods.map((device, i) => {
-    const readiness = readinessResults[i];
-    const matchedUsb = findMatchingUsbIpod(i);
-    const configuredName = findConfiguredDeviceName(device, config.devices ?? {});
-    // Type narrowing on `isMounted` makes `mountPoint` non-nullable below
-    // — no need for `device.mountPoint ? {...} : {}` spread guards.
-    return {
-      device: {
-        volumeName: device.volumeName,
-        volumeUuid: device.volumeUuid,
-        identifier: device.identifier,
-        storage: { sizeBytes: device.storage.sizeBytes },
-        isMounted: device.isMounted,
-        ...(device.isMounted ? { mountPoint: device.mountPoint } : {}),
-      },
-      ...(readiness ? { readiness } : {}),
-      ...(configuredName ? { configuredName } : {}),
-      ...(matchedUsb?.model?.displayName
-        ? { fallbackUsbModelDisplayName: matchedUsb.model.displayName }
-        : {}),
-    };
+  // Build render rows — one DiscoveredDeviceRow per discovered device,
+  // with readiness pre-computed by the caller (pure renderer has no async).
+  const discoveredRows: DiscoveredDeviceRow[] = discoveredWithMounts.map((d) => {
+    if (d.kind === 'ipod' && d.matchedBy !== 'usb-only') {
+      // Block-side iPod: look up readiness by block identifier.
+      const idx = blockIpods.findIndex((bi) => bi.block.identifier === d.block?.identifier);
+      const readiness = idx !== -1 ? readinessResults[idx] : undefined;
+      const configuredName = d.block
+        ? findConfiguredDeviceName(d.block, config.devices ?? {})
+        : undefined;
+      return {
+        device: d,
+        ...(readiness ? { readiness } : {}),
+        ...(configuredName ? { configuredName } : {}),
+      };
+    }
+
+    if (d.kind === 'ipod' && d.matchedBy === 'usb-only') {
+      // USB-only iPod: compute synthetic readiness result from USB classification.
+      const readiness =
+        manager.isSupported && d.usb ? createUsbOnlyReadinessResult(d.usb) : undefined;
+      return {
+        device: d,
+        ...(readiness ? { readiness } : {}),
+      };
+    }
+
+    // Mass-storage and unsupported: no readiness, no configured name.
+    return { device: d };
   });
 
   const renderInput: DeviceScanInput = {
-    ipods: ipodRows,
-    usbOnlyIpods,
-    massStorageDevices: massStorageList,
-    unsupportedDevices: unsupportedRecognizedList,
+    discovered: discoveredRows,
     configuredDevices,
     isSupportedPlatform: manager.isSupported,
-    createUsbOnlyReadinessResult,
   };
 
   const writeRender = () => {

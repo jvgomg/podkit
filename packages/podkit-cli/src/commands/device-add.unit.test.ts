@@ -412,14 +412,14 @@ describe('runDeviceAdd: iPod flow', () => {
     const { out, stdout, exitCode } = makeOut();
     const deps: DeviceAddDeps = {
       getDeviceManager: () => fakeManager({ isSupported: true }),
-      // Stub core so enumerateUsb returns no devices — the iOS-unsupported
-      // detection path stays inert and the legacy "no iPod found" path runs.
+      // Stub core so discoverConnectedDevices returns no devices — the
+      // iOS-unsupported detection path stays inert and the legacy
+      // "no iPod found" path runs.
       loadCore: async () => {
         const real = await import('@podkit/core');
         return {
           ...real,
-          enumerateUsb: async () => [],
-          classifyUsbDevices: () => [],
+          discoverConnectedDevices: async () => [],
         } as typeof real;
       },
     };
@@ -437,10 +437,17 @@ describe('runDeviceAdd: iPod flow', () => {
       getDeviceManager: () => fakeManager({ isSupported: true, findIpodDevices: async () => [] }),
       loadCore: async () => {
         const real = await import('@podkit/core');
-        // Real classifier handles the iPod touch 5G PID 0x12a0 path.
+        // Route discoverConnectedDevices through the real orchestrator
+        // pieces, but with an injected USB walk so the iPod touch 5G
+        // (PID 0x12a0) appears on the bus. This exercises the actual
+        // classifier path that produces `usb.supported === false`.
         return {
           ...real,
-          enumerateUsb: async () => [{ vendorId: '05ac', productId: '12a0' }] as never,
+          discoverConnectedDevices: (opts) =>
+            real.discoverConnectedDevices({
+              ...opts,
+              enumerate: async () => [{ vendorId: '05ac', productId: '12a0' }] as never,
+            }),
         } as typeof real;
       },
     };

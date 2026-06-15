@@ -823,37 +823,38 @@ export async function runDeviceAdd(
 
   if (ipods.length === 0) {
     // Disk scan found nothing. Before the generic "no iPod found" message,
-    // enrich the surface by consulting the USB bus directly: an iPod touch
-    // (or any iOS device) has no mass-storage mount, so disk scan never sees
-    // it. The USB classifier maps Apple-vendor unsupported PIDs to the
-    // canonical reason payload — surface that instead of leaving the user
-    // staring at "make sure your iPod is connected".
+    // enrich the surface by consulting the discovery orchestrator: an iPod
+    // touch (or any iOS device) has no mass-storage mount, so disk scan
+    // never sees it. `discoverConnectedDevices` returns one record per
+    // physical device — an iOS device surfaces as a `DiscoveredDeviceIpod`
+    // with `usb.supported === false` carrying the canonical reason payload.
     let iosUnsupportedReason: import('@podkit/core').ReadinessUnsupportedReason | undefined;
     let iosUnsupportedDisplay: string | undefined;
     try {
       const coreMod = await loadCore();
-      const enumerated = await coreMod.enumerateUsb();
-      const classified = coreMod.classifyUsbDevices(enumerated);
-      const unsupportedIpod = classified.find(
-        (c): c is Extract<typeof c, { kind: 'ipod' }> => c.kind === 'ipod' && c.supported === false
+      const discovered = await coreMod.discoverConnectedDevices({ deviceManager: manager });
+      const unsupportedIpod = discovered.find(
+        (d): d is import('@podkit/core').DiscoveredDeviceIpod =>
+          d.kind === 'ipod' && d.usb?.supported === false
       );
-      if (unsupportedIpod) {
-        const pid = parseInt(unsupportedIpod.device.productId.replace(/^0x/i, ''), 16);
+      if (unsupportedIpod?.usb) {
+        const usb = unsupportedIpod.usb;
+        const pid = parseInt(usb.device.productId.replace(/^0x/i, ''), 16);
         const isIosRange = Number.isFinite(pid) && pid >= 0x1290 && pid <= 0x12af;
         iosUnsupportedDisplay =
-          unsupportedIpod.model?.displayName ?? (isIosRange ? 'iOS device' : 'Unsupported iPod');
+          usb.model?.displayName ?? (isIosRange ? 'iOS device' : 'Unsupported iPod');
         // `classifyAsIpod` already attaches the canonical typed payload.
         // Fall back to a synthesised reason only when the classifier somehow
         // returned `supported: false` without one (defensive — currently
         // unreachable on the iPod cascade path).
-        iosUnsupportedReason = unsupportedIpod.unsupportedReason ?? {
+        iosUnsupportedReason = usb.unsupportedReason ?? {
           kind: isIosRange ? 'ios-device' : 'unsupported-device',
           headline: `${iosUnsupportedDisplay} is not supported by podkit.`,
           docsUrl: DOCS_URLS.supportedDevices,
         };
       }
     } catch {
-      // USB enumeration is best-effort; fall through.
+      // Discovery is best-effort; fall through.
     }
 
     if (iosUnsupportedReason) {

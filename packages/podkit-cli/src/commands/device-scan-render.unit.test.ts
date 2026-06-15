@@ -16,14 +16,24 @@ import {
   classifyAsMassStorage,
   type MassStorageClassification,
 } from '@podkit/devices-mass-storage';
-import type { EnumeratedUsbDevice, ReadinessResult, ReadinessStageResult } from '@podkit/core';
+import type {
+  DiscoveredDevice,
+  DiscoveredDeviceIpod,
+  EnumeratedUsbDevice,
+  ReadinessResult,
+  ReadinessStageResult,
+} from '@podkit/core';
 import {
   buildEnumeratedUsbDevice,
   ipodVideo5gIflash1tb as personaIpodVideo5g,
   ipodTouch5gUnsupported as personaIpodTouch5g,
   echoMini as personaEchoMini,
 } from '@podkit/device-testing';
-import { renderDeviceScan, type DeviceScanInput } from './device-scan-render.js';
+import {
+  renderDeviceScan,
+  type DeviceScanInput,
+  type DiscoveredDeviceRow,
+} from './device-scan-render.js';
 
 // Strip ANSI escape sequences so substring assertions don't break depending on
 // whether the test runner inherits a TTY (which toggles the renderer's `bold()`
@@ -35,14 +45,14 @@ function stripAnsi(s: string): string {
   return s.replace(/\x1b\[[0-9;]*m/g, '');
 }
 
-// ── Fake injectables ─────────────────────────────────────────────────────────
+// ── Fake readiness builders ──────────────────────────────────────────────────
 
 /**
- * A minimal stand-in for `createUsbOnlyReadinessResult` used by the
- * renderer when a USB-only iPod is supported and needs partitioning.
- * The real implementation lives in `@podkit/core`; we don't import it
- * here because the renderer is purposefully decoupled from core to keep
- * these tests synchronous and zero-I/O.
+ * A minimal stand-in for `createUsbOnlyReadinessResult` used by test
+ * fixtures when a USB-only iPod is supported and needs partitioning.
+ * The real implementation lives in `@podkit/core`; we call it here in the
+ * fixture builder (not the renderer) because the renderer is purposefully
+ * decoupled from core — readiness is pre-computed by the caller.
  */
 function fakeCreateUsbOnlyReadinessResult(
   classification: IpodClassification<EnumeratedUsbDevice>
@@ -70,14 +80,71 @@ function fakeCreateUsbOnlyReadinessResult(
   };
 }
 
+// ── Row builder helpers ──────────────────────────────────────────────────────
+
+/**
+ * Wrap a USB-only IpodClassification as a DiscoveredDeviceRow with
+ * pre-computed readiness (supported → fakeCreateUsbOnlyReadinessResult;
+ * unsupported → no readiness, renderer shows the unsupportedReason instead).
+ */
+function usbOnlyIpodRow(
+  classification: IpodClassification<EnumeratedUsbDevice>
+): DiscoveredDeviceRow {
+  const device: DiscoveredDeviceIpod = {
+    kind: 'ipod',
+    usb: classification,
+    matchedBy: 'usb-only',
+  };
+  const readiness = classification.supported
+    ? fakeCreateUsbOnlyReadinessResult(classification)
+    : undefined;
+  return { device, ...(readiness ? { readiness } : {}) };
+}
+
+/**
+ * Wrap a block-only iPod (matched by block-only path, no USB classification)
+ * as a DiscoveredDeviceRow. Exercises the render path where `displayFor`
+ * returns `source: 'usb-fingerprint'` and the guard suppresses the volume
+ * name from the model-label position.
+ */
+function blockOnlyIpodRow(
+  opts: { volumeName?: string; identifier?: string } = {}
+): DiscoveredDeviceRow {
+  const device: DiscoveredDeviceIpod = {
+    kind: 'ipod',
+    block: {
+      volumeName: opts.volumeName ?? 'IPOD',
+      volumeUuid: '0000-0000',
+      identifier: opts.identifier ?? 'sdc1',
+      storage: { sizeBytes: 8_000_000_000 },
+      isMounted: true,
+      mountPoint: '/media/ipod',
+    },
+    matchedBy: 'block-only',
+  };
+  return { device };
+}
+
+/**
+ * Wrap a MassStorageClassification as a DiscoveredDeviceRow.
+ * Mass-storage devices have no readiness in the scan output.
+ */
+function massStorageRow(
+  classification: MassStorageClassification<EnumeratedUsbDevice>
+): DiscoveredDeviceRow {
+  const device: DiscoveredDevice = {
+    kind: 'mass-storage',
+    usb: classification,
+    matchedBy: 'usb-only',
+  };
+  return { device };
+}
+
 function emptyInput(overrides: Partial<DeviceScanInput> = {}): DeviceScanInput {
   return {
-    ipods: [],
-    usbOnlyIpods: [],
-    massStorageDevices: [],
+    discovered: [],
     configuredDevices: [],
     isSupportedPlatform: true,
-    createUsbOnlyReadinessResult: fakeCreateUsbOnlyReadinessResult,
     ...overrides,
   };
 }
@@ -151,8 +218,16 @@ describe('renderDeviceScan', () => {
     // 1 iOS device (iPod touch 5G, PID 12aa) — recognised, supported: false.
     // 1 configured-but-not-detected device.
 
-    const mountedIpod = {
-      device: {
+    const mountedIpodModel: IpodModel = {
+      displayName: 'iPod 5G Video',
+      generationId: 'video_5g',
+      checksumType: 'none',
+      source: 'usb',
+    };
+
+    const mountedIpodDevice: DiscoveredDeviceIpod = {
+      kind: 'ipod',
+      block: {
         volumeName: 'TERAPOD',
         volumeUuid: 'AAAA-BBBB',
         identifier: 'disk5s2',
@@ -160,12 +235,12 @@ describe('renderDeviceScan', () => {
         isMounted: true,
         mountPoint: '/Volumes/TERAPOD',
       },
-      readiness: readyReadiness({
-        displayName: 'iPod 5G Video',
-        generationId: 'video_5g',
-        checksumType: 'none',
-        source: 'usb',
-      } as IpodModel),
+      matchedBy: 'disk-identifier',
+    };
+
+    const mountedIpodRow: DiscoveredDeviceRow = {
+      device: mountedIpodDevice,
+      readiness: readyReadiness(mountedIpodModel),
       configuredName: 'terapod',
     };
 
@@ -181,9 +256,12 @@ describe('renderDeviceScan', () => {
     );
 
     const input: DeviceScanInput = emptyInput({
-      ipods: [mountedIpod],
-      usbOnlyIpods: [usbOnlySupported, usbOnlyUnsupported],
-      massStorageDevices: [echoMini],
+      discovered: [
+        mountedIpodRow,
+        usbOnlyIpodRow(usbOnlySupported),
+        usbOnlyIpodRow(usbOnlyUnsupported),
+        massStorageRow(echoMini),
+      ],
       configuredDevices: [{ name: 'spare', type: 'ipod' }],
     });
 
@@ -261,7 +339,7 @@ describe('renderDeviceScan', () => {
         device: { vendorId: '05ac', productId: '0000' },
         supported: true,
       };
-      const lines = renderDeviceScan(emptyInput({ usbOnlyIpods: [synthetic] }));
+      const lines = renderDeviceScan(emptyInput({ discovered: [usbOnlyIpodRow(synthetic)] }));
       expect(stripAnsi(lines.join('\n'))).toContain('Unknown iPod (USB only)');
     });
 
@@ -281,7 +359,7 @@ describe('renderDeviceScan', () => {
             "iOS device (iPhone, iPad, or iPod touch) uses Apple's proprietary sync protocol.",
         },
       };
-      const lines = renderDeviceScan(emptyInput({ usbOnlyIpods: [synthetic] }));
+      const lines = renderDeviceScan(emptyInput({ discovered: [usbOnlyIpodRow(synthetic)] }));
       const output = stripAnsi(lines.join('\n'));
       expect(output).toContain('iOS device (USB only)');
       expect(output).not.toContain('Unknown iPod (USB only)');
@@ -293,10 +371,26 @@ describe('renderDeviceScan', () => {
       // surface that name verbatim, not "Unknown iPod".
       const usbOnly = classifyIpod({ vendorId: '05ac', productId: '12a0' });
       const output = stripAnsi(
-        renderDeviceScan(emptyInput({ usbOnlyIpods: [usbOnly] })).join('\n')
+        renderDeviceScan(emptyInput({ discovered: [usbOnlyIpodRow(usbOnly)] })).join('\n')
       );
       expect(output).toContain(`${usbOnly.model!.displayName} (USB only)`);
       expect(output).not.toContain('Unknown iPod (USB only)');
+    });
+  });
+
+  describe('block-only iPod (no USB classification, no readiness)', () => {
+    it('renders header with volume name + identifier and no model-label suffix', () => {
+      const lines = renderDeviceScan(
+        emptyInput({ discovered: [blockOnlyIpodRow({ volumeName: 'MUSIC', identifier: 'sdc1' })] })
+      );
+      const output = stripAnsi(lines.join('\n'));
+      expect(output).toContain('MUSIC');
+      expect(output).toContain('(sdc1)');
+      // Block-only iPod has no USB classification → no `(USB only)` suffix,
+      // and the volume-name fallback from `displayFor` must NOT appear as a
+      // model label (would duplicate the header label).
+      expect(output).not.toContain('MUSIC  MUSIC');
+      expect(output).not.toContain('(USB only)');
     });
   });
 
@@ -312,7 +406,9 @@ describe('renderDeviceScan', () => {
         vendorId: '05ac',
         productId: '1209',
       });
-      const output = renderDeviceScan(emptyInput({ usbOnlyIpods: [usbOnly] })).join('\n');
+      const output = renderDeviceScan(emptyInput({ discovered: [usbOnlyIpodRow(usbOnly)] })).join(
+        '\n'
+      );
       expect(output).toContain(
         'No mountable partition detected — see: https://jvgomg.github.io/podkit/devices/troubleshooting'
       );

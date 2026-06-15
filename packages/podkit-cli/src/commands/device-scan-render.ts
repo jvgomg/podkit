@@ -20,13 +20,12 @@
  */
 
 import type {
-  EnumeratedUsbDevice,
-  IpodClassification,
+  DiscoveredDevice,
+  DiscoveredDeviceIpod,
   ReadinessResult,
   ReadinessStageResult,
-  ClassifiedUsbDevice,
-  UnsupportedDeviceClassification,
 } from '@podkit/core';
+import { displayFor } from '@podkit/core';
 
 import { bold, formatBytes, formatNumber } from '../output/index.js';
 import { getDeviceTypeDisplayName } from './open-device.js';
@@ -40,26 +39,17 @@ import {
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-type IpodRecognized = Extract<ClassifiedUsbDevice, { kind: 'ipod' }>;
-type MassStorageRecognized = Extract<ClassifiedUsbDevice, { kind: 'mass-storage' }>;
-
 /**
- * A mounted iPod row, pre-resolved with its readiness, configured-name,
- * and a fallback USB model display name (used when readiness is unavailable
- * — e.g. unsupported platforms).
+ * One row in the scan output — a discovered device with the per-row context
+ * the renderer needs but which doesn't belong on the pure `DiscoveredDevice`
+ * data type itself.
  */
-export interface DeviceScanIpodRow {
-  device: {
-    volumeName: string;
-    volumeUuid: string;
-    identifier: string;
-    storage: { sizeBytes: number };
-    isMounted: boolean;
-    mountPoint?: string;
-  };
+export interface DiscoveredDeviceRow {
+  device: DiscoveredDevice;
+  /** Readiness result. Only populated for iPod-arm devices (mass-storage + unsupported don't run readiness). */
   readiness?: ReadinessResult;
+  /** Name from the user's config when this device matches a configured entry by volumeUuid. */
   configuredName?: string;
-  fallbackUsbModelDisplayName?: string;
 }
 
 export interface ConfiguredDeviceSummary {
@@ -79,29 +69,12 @@ export interface ConfiguredDeviceSummary {
  * the USB bus.
  */
 export interface DeviceScanInput {
-  /** Mounted iPods, paired with readiness and config metadata. */
-  ipods: DeviceScanIpodRow[];
-  /** USB-only iPods (recognised by `classifyAsIpod`, no matching disk). */
-  usbOnlyIpods: IpodClassification<EnumeratedUsbDevice>[];
-  /** Mass-storage devices recognised by `classifyAsMassStorage`. */
-  massStorageDevices: MassStorageRecognized[];
-  /**
-   * Vendor-recognised but no preset registered (Sony Walkman, …). Rendered
-   * as USB-only entries with `level: 'unsupported'` + the canonical reason.
-   * Optional for backwards compatibility with older callers; new callers
-   * should pass through any `kind: 'unsupported'` classifications from
-   * `classifyUsbDevices`.
-   */
-  unsupportedDevices?: UnsupportedDeviceClassification<EnumeratedUsbDevice>[];
+  /** All discovered devices, pre-computed with per-row readiness and config metadata. */
+  discovered: DiscoveredDeviceRow[];
   /** Devices in the user's config that were NOT seen during the scan. */
   configuredDevices: ConfiguredDeviceSummary[];
   /** Whether the platform's device manager supports enumeration. */
   isSupportedPlatform: boolean;
-  /**
-   * Build the stage list for a USB-only iPod. Injected so this module stays
-   * synchronous and free of dynamic imports.
-   */
-  createUsbOnlyReadinessResult: (classification: IpodRecognized) => ReadinessResult;
 }
 
 // ── Renderer ─────────────────────────────────────────────────────────────────
@@ -115,24 +88,9 @@ export interface DeviceScanInput {
  * Pure — same input always produces the same output, no I/O, no side effects.
  */
 export function renderDeviceScan(input: DeviceScanInput): string[] {
-  const {
-    ipods,
-    usbOnlyIpods,
-    massStorageDevices,
-    unsupportedDevices,
-    configuredDevices,
-    isSupportedPlatform,
-    createUsbOnlyReadinessResult,
-  } = input;
+  const { discovered, configuredDevices, isSupportedPlatform } = input;
 
-  const unsupportedList = unsupportedDevices ?? [];
-
-  const hasAnyDevices =
-    ipods.length > 0 ||
-    usbOnlyIpods.length > 0 ||
-    massStorageDevices.length > 0 ||
-    unsupportedList.length > 0 ||
-    configuredDevices.length > 0;
+  const hasAnyDevices = discovered.length > 0 || configuredDevices.length > 0;
 
   if (!hasAnyDevices) {
     return [
@@ -144,35 +102,13 @@ export function renderDeviceScan(input: DeviceScanInput): string[] {
 
   const lines: string[] = [];
 
-  // Mounted iPods with readiness
-  for (const row of ipods) {
-    pushIpodRow(lines, row);
-  }
-
-  // USB-only iPods (no disk representation)
-  for (const recognised of usbOnlyIpods) {
-    pushUsbOnlyIpodRow(lines, recognised, createUsbOnlyReadinessResult);
-  }
-
-  // Mass-storage DAPs (Echo Mini, etc.)
-  for (const recognised of massStorageDevices) {
-    pushMassStorageRow(lines, recognised);
-  }
-
-  // Recognised-but-unsupported (Sony Walkman, …).
-  for (const recognised of unsupportedList) {
-    pushUnsupportedRow(lines, recognised);
+  for (const row of discovered) {
+    pushDeviceRow(lines, row);
   }
 
   // No-detected-devices footer (only when configured devices exist alongside
   // an otherwise-empty bus, on a supported platform).
-  if (
-    ipods.length === 0 &&
-    usbOnlyIpods.length === 0 &&
-    massStorageDevices.length === 0 &&
-    unsupportedList.length === 0 &&
-    isSupportedPlatform
-  ) {
+  if (discovered.length === 0 && isSupportedPlatform) {
     lines.push('No iPod devices found.');
     lines.push('');
   }
@@ -190,15 +126,75 @@ export function renderDeviceScan(input: DeviceScanInput): string[] {
   return lines;
 }
 
-// ── Group renderers ──────────────────────────────────────────────────────────
+// ── Single dispatcher ────────────────────────────────────────────────────────
 
-function pushIpodRow(lines: string[], row: DeviceScanIpodRow): void {
-  const { device, readiness, configuredName, fallbackUsbModelDisplayName } = row;
-  const label = device.volumeName || '(unnamed)';
-  const identifier = device.identifier ? ` (${device.identifier})` : '';
+function pushDeviceRow(lines: string[], row: DiscoveredDeviceRow): void {
+  switch (row.device.kind) {
+    case 'ipod':
+      pushIpodRow(lines, row, row.device);
+      break;
+    case 'mass-storage':
+      pushMassStorageRow(lines, row.device);
+      break;
+    case 'unsupported':
+      pushUnsupportedRow(lines, row.device);
+      break;
+  }
+}
 
+// ── Per-kind renderers ───────────────────────────────────────────────────────
+
+function pushIpodRow(
+  lines: string[],
+  row: DiscoveredDeviceRow,
+  device: DiscoveredDeviceIpod
+): void {
+  const { readiness, configuredName } = row;
+
+  if (device.matchedBy === 'usb-only') {
+    // USB-only iPod (no block-device representation).
+    //
+    // Header label preference (TASK-317.03 sub-behaviour #4):
+    //   1. resolved cascade model name (`iPod touch 5th generation`, …)
+    //   2. friendly fallback for iOS-range PIDs not in IPOD_USB_IDS
+    //      (modern iPhone/iPad PIDs that classify as "iOS device")
+    //   3. defensive `Unknown iPod`
+    // No PID-only "Unknown iPod" rows when the classifier already knows
+    // enough to call it an iOS device.
+    const label = device.usb?.model?.displayName ?? deriveUsbOnlyLabel(device);
+    lines.push(`  ${bold(label)} (USB only)`);
+    lines.push('');
+
+    if (device.usb && !device.usb.supported) {
+      lines.push('  This device is not supported by podkit.');
+      if (device.usb.unsupportedReason) {
+        lines.push(`  ${device.usb.unsupportedReason.headline}`);
+      }
+    } else if (readiness) {
+      pushReadinessBlock(lines, readiness.stages, readiness, label);
+    }
+    lines.push('');
+    return;
+  }
+
+  // Block-side iPod (mounted or block-only). `block` is guaranteed present
+  // for every `matchedBy` value except `'usb-only'`, which returned above.
+  const block = device.block!;
+  const label = block.volumeName || '(unnamed)';
+  const identifier = block.identifier ? ` (${block.identifier})` : '';
+
+  // Model label: prefer readiness-resolved model (sysinfo cascade), then
+  // displayFor(device).rich as fallback (USB model name from classification).
+  // The `source === 'ipod-generation'` guard suppresses the volume-name
+  // fallback (`source: 'usb-fingerprint'`) — for block-only iPods, the volume
+  // name is already the header `label`, so re-emitting it here would duplicate.
   const displayModel = readiness?.deviceModel ?? readiness?.usbModel;
-  const modelLabel = displayModel?.displayName ?? fallbackUsbModelDisplayName;
+  const modelLabel =
+    displayModel?.displayName ??
+    (() => {
+      const d = displayFor(device);
+      return d.source === 'ipod-generation' ? d.rich : undefined;
+    })();
   const modelSource = displayModel?.source === 'usb' ? ' (USB)' : '';
   if (modelLabel) {
     lines.push(`  ${bold(label)}${identifier}  ${modelLabel}${modelSource}`);
@@ -216,44 +212,16 @@ function pushIpodRow(lines: string[], row: DeviceScanIpodRow): void {
   lines.push('');
 
   if (readiness) {
-    const cmdId = configuredName ?? device.mountPoint ?? label;
+    const cmdId = configuredName ?? (block.isMounted ? block.mountPoint : undefined) ?? label;
     pushReadinessBlock(lines, readiness.stages, readiness, cmdId);
   } else {
-    lines.push(`    Volume UUID:  ${device.volumeUuid || '(unknown)'}`);
-    lines.push(`    Size:         ${formatBytes(device.storage.sizeBytes)}`);
-    if (device.isMounted && device.mountPoint) {
-      lines.push(`    Mounted:      ${device.mountPoint}`);
+    lines.push(`    Volume UUID:  ${block.volumeUuid || '(unknown)'}`);
+    lines.push(`    Size:         ${formatBytes(block.storage.sizeBytes)}`);
+    if (block.isMounted && block.mountPoint) {
+      lines.push(`    Mounted:      ${block.mountPoint}`);
     } else {
       lines.push(`    Mounted:      no`);
     }
-  }
-  lines.push('');
-}
-
-function pushUsbOnlyIpodRow(
-  lines: string[],
-  recognised: IpodRecognized,
-  createUsbOnlyReadinessResult: (classification: IpodRecognized) => ReadinessResult
-): void {
-  // Header label preference (TASK-317.03 sub-behaviour #4):
-  //   1. resolved cascade model name (`iPod touch 5th generation`, …)
-  //   2. friendly fallback for iOS-range PIDs not in IPOD_USB_IDS
-  //      (modern iPhone/iPad PIDs that classify as "iOS device")
-  //   3. defensive `Unknown iPod`
-  // No PID-only "Unknown iPod" rows when the classifier already knows
-  // enough to call it an iOS device.
-  const label = recognised.model?.displayName ?? deriveUsbOnlyLabel(recognised);
-  lines.push(`  ${bold(label)} (USB only)`);
-  lines.push('');
-
-  if (!recognised.supported) {
-    lines.push('  This device is not supported by podkit.');
-    if (recognised.unsupportedReason) {
-      lines.push(`  ${recognised.unsupportedReason.headline}`);
-    }
-  } else {
-    const readiness = createUsbOnlyReadinessResult(recognised);
-    pushReadinessBlock(lines, readiness.stages, readiness, label);
   }
   lines.push('');
 }
@@ -264,38 +232,51 @@ function pushUsbOnlyIpodRow(
  * range (0x1290–0x12af) catch-all — render them as `iOS device` rather than
  * `Unknown iPod`.
  */
-function deriveUsbOnlyLabel(recognised: IpodRecognized): string {
-  const pid = parseInt(recognised.device.productId.replace(/^0x/i, ''), 16);
-  if (Number.isFinite(pid) && pid >= 0x1290 && pid <= 0x12af) {
-    return 'iOS device';
+function deriveUsbOnlyLabel(device: DiscoveredDeviceIpod): string {
+  const productId = device.usb?.device.productId;
+  if (productId) {
+    const pid = parseInt(productId.replace(/^0x/i, ''), 16);
+    if (Number.isFinite(pid) && pid >= 0x1290 && pid <= 0x12af) {
+      return 'iOS device';
+    }
   }
   return 'Unknown iPod';
 }
 
 function pushUnsupportedRow(
   lines: string[],
-  recognised: UnsupportedDeviceClassification<EnumeratedUsbDevice>
+  device: import('@podkit/core').DiscoveredDeviceUnsupported
 ): void {
-  const label = recognised.family ?? 'Unsupported device';
-  const vid = recognised.device.vendorId;
-  const pid = recognised.device.productId;
+  const label = device.usb.family ?? 'Unsupported device';
+  const vid = device.usb.device.vendorId;
+  const pid = device.usb.device.productId;
   lines.push(`  ${bold(label)} (USB ${vid}:${pid})`);
   lines.push('');
   lines.push('  This device is not supported by podkit.');
-  lines.push(`  ${recognised.reason}`);
+  lines.push(`  ${device.usb.reason}`);
   lines.push('');
 }
 
-function pushMassStorageRow(lines: string[], recognised: MassStorageRecognized): void {
+function pushMassStorageRow(
+  lines: string[],
+  device: import('@podkit/core').DiscoveredDeviceMassStorage
+): void {
+  if (!device.usb) {
+    // Block-only mass-storage: no preset metadata. Use displayFor fallback.
+    const display = displayFor(device);
+    lines.push(`  ${bold(display.rich)} — no USB descriptor`);
+    lines.push('');
+    return;
+  }
   // Pre-add scan — no user-supplied display overrides yet, only the
   // preset's defaults shown to confirm what `device add` will store.
-  const presetDisplayName = getDeviceTypeDisplayName({ type: recognised.presetId });
-  if (recognised.device.diskIdentifier) {
+  const presetDisplayName = getDeviceTypeDisplayName({ type: device.usb.presetId });
+  if (device.usb.device.diskIdentifier) {
     lines.push(
-      `  ${bold(presetDisplayName)} (${recognised.presetId}) — disk: ${recognised.device.diskIdentifier}`
+      `  ${bold(presetDisplayName)} (${device.usb.presetId}) — disk: ${device.usb.device.diskIdentifier}`
     );
   } else {
-    lines.push(`  ${bold(presetDisplayName)} (${recognised.presetId}) — no volume mounted`);
+    lines.push(`  ${bold(presetDisplayName)} (${device.usb.presetId}) — no volume mounted`);
   }
   lines.push('');
 }

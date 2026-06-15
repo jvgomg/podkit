@@ -13,7 +13,7 @@ import type {
   IpodClassification,
   PlatformDeviceInfo,
 } from '@podkit/core';
-import { reconcileIpodDiscovery } from '@podkit/core';
+import { discoverConnectedDevices } from '@podkit/core';
 import {
   runDeviceScan,
   type DeviceScanDeps,
@@ -95,14 +95,13 @@ const fakeCore = (
 ): typeof import('@podkit/core') =>
   ({
     checkReadiness: async () => ({ level: 'ready', stages: [] }),
-    enumerateUsb: async () => [],
-    classifyUsbDevices: () => [],
     createUsbOnlyReadinessResult: () => ({ level: 'unknown', stages: [] }),
     interpretError: () => ({ explanation: 'stub' }),
-    // The runner reads the real reconcile primitive off the loaded core. The
-    // primitive is pure, so passing it through unstubbed gives unit tests the
-    // real merge behaviour while keeping every other dep injectable.
-    reconcileIpodDiscovery,
+    // Pass the real discoverConnectedDevices so tests that inject
+    // `deps.enumerate` / `deps.classify` seams exercise the real reconcile
+    // logic while keeping every other dep injectable. Tests that need full
+    // control over the discovered list override this in their own fakeCore call.
+    discoverConnectedDevices,
     ...overrides,
   }) as typeof import('@podkit/core');
 
@@ -144,21 +143,21 @@ describe('runDeviceScan', () => {
     const ctx = makeContext();
     const { out, stdout, exitCode } = makeOut();
 
-    let enumerateUsbCalled = false;
+    let discoverCalled = false;
     const deps: DeviceScanDeps = {
       loadCore: async () =>
         fakeCore({
-          enumerateUsb: (async () => {
-            enumerateUsbCalled = true;
+          discoverConnectedDevices: (async () => {
+            discoverCalled = true;
             return [];
-          }) as typeof import('@podkit/core').enumerateUsb,
+          }) as typeof import('@podkit/core').discoverConnectedDevices,
         }),
       getDeviceManager: () => fakeManager({ isSupported: true }),
     };
 
     await runScan(ctx, {}, out, deps);
     expect(exitCode.get()).toBeUndefined();
-    expect(enumerateUsbCalled).toBe(true);
+    expect(discoverCalled).toBe(true);
     const result = stdout.json<DeviceScanOutput>();
     expect(result.success).toBe(true);
     if (result.success) {
@@ -171,15 +170,13 @@ describe('runDeviceScan', () => {
     const { out, stdout, exitCode } = makeOut();
 
     let findIpodCalled = false;
-    let enumerateUsbCalled = false;
+    let enumerateCalled = false;
     const deps: DeviceScanDeps = {
-      loadCore: async () =>
-        fakeCore({
-          enumerateUsb: (async () => {
-            enumerateUsbCalled = true;
-            return [];
-          }) as typeof import('@podkit/core').enumerateUsb,
-        }),
+      loadCore: async () => fakeCore(),
+      enumerate: async () => {
+        enumerateCalled = true;
+        return [];
+      },
       getDeviceManager: () =>
         fakeManager({
           isSupported: false,
@@ -193,9 +190,10 @@ describe('runDeviceScan', () => {
 
     await runScan(ctx, {}, out, deps);
     expect(exitCode.get()).toBeUndefined();
-    // The runner short-circuits both USB walks on unsupported platforms.
+    // discoverConnectedDevices short-circuits on unsupported platforms —
+    // neither the USB enumerate nor findIpodDevices are called.
     expect(findIpodCalled).toBe(false);
-    expect(enumerateUsbCalled).toBe(false);
+    expect(enumerateCalled).toBe(false);
     const result = stdout.json<DeviceScanOutput>();
     expect(result.success).toBe(true);
   });
@@ -205,6 +203,7 @@ describe('runDeviceScan', () => {
     const { out, stdout, exitCode } = makeOut();
     const deps: DeviceScanDeps = {
       loadCore: async () => fakeCore(),
+      enumerate: async () => [],
       getDeviceManager: () => fakeManager({ isSupported: true }),
     };
 
@@ -261,16 +260,14 @@ describe('runDeviceScan', () => {
     const deps: DeviceScanDeps = {
       loadCore: async () =>
         fakeCore({
-          enumerateUsb: (async () => [fakeDevice]) as typeof import('@podkit/core').enumerateUsb,
-          classifyUsbDevices: (() => [
-            fakeClassification,
-          ]) as typeof import('@podkit/core').classifyUsbDevices,
           createUsbOnlyReadinessResult: (() => ({
             level: 'unknown',
             stages: [],
             usbModel: fakeIpodModel,
           })) as typeof import('@podkit/core').createUsbOnlyReadinessResult,
         }),
+      enumerate: async () => [fakeDevice],
+      classify: () => [fakeClassification],
       getDeviceManager: () =>
         fakeManager({
           isSupported: true,
@@ -346,12 +343,6 @@ describe('runDeviceScan', () => {
       const deps: DeviceScanDeps = {
         loadCore: async () =>
           fakeCore({
-            enumerateUsb: (async () => [
-              NANO_3G_USB.device,
-            ]) as typeof import('@podkit/core').enumerateUsb,
-            classifyUsbDevices: (() => [
-              NANO_3G_USB,
-            ]) as typeof import('@podkit/core').classifyUsbDevices,
             checkReadiness: (async () => ({
               level: 'ready',
               stages: [
@@ -366,6 +357,8 @@ describe('runDeviceScan', () => {
               deviceModel: NANO_3G_USB.model,
             })) as typeof import('@podkit/core').checkReadiness,
           }),
+        enumerate: async () => [NANO_3G_USB.device],
+        classify: () => [NANO_3G_USB],
         getDeviceManager: () =>
           fakeManager({
             isSupported: true,
@@ -413,15 +406,9 @@ describe('runDeviceScan', () => {
       };
 
       const deps: DeviceScanDeps = {
-        loadCore: async () =>
-          fakeCore({
-            enumerateUsb: (async () => [
-              usbOnlyTouch.device,
-            ]) as typeof import('@podkit/core').enumerateUsb,
-            classifyUsbDevices: (() => [
-              usbOnlyTouch,
-            ]) as typeof import('@podkit/core').classifyUsbDevices,
-          }),
+        loadCore: async () => fakeCore(),
+        enumerate: async () => [usbOnlyTouch.device],
+        classify: () => [usbOnlyTouch],
         getDeviceManager: () => fakeManager({ isSupported: true, findIpodDevices: async () => [] }),
       };
 
