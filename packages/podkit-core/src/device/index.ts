@@ -224,14 +224,8 @@ export type {
   UnsupportedDeviceClassification,
 } from '@podkit/devices-mass-storage';
 
-// Discovery reconciliation — folds USB-inquiry + block-device records into
-// a single record per physical iPod for `device scan` rendering.
-export type { ReconciledIpodRecord } from './reconcile.js';
-export { reconcileIpodDiscovery } from './reconcile.js';
-
 // Unified discovery — the new tagged union covering iPod + mass-storage +
-// unsupported in one shape. Supersedes `ReconciledIpodRecord` (T6 will
-// delete the old type after the migration completes).
+// unsupported in one shape.
 export type {
   DiscoveredDevice,
   DiscoveredDeviceIpod,

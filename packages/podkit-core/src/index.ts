@@ -674,11 +674,7 @@ export type {
 } from './device/index.js';
 export { classifyUsbDevices } from './device/index.js';
 
-// Discovery reconciliation (USB-inquiry + block-device → one record per iPod)
-export type { ReconciledIpodRecord } from './device/index.js';
-export { reconcileIpodDiscovery } from './device/index.js';
-
-// Unified discovery — DiscoveredDevice union (supersedes ReconciledIpodRecord)
+// Unified discovery — DiscoveredDevice union
 export type {
   DiscoveredDevice,
   DiscoveredDeviceIpod,

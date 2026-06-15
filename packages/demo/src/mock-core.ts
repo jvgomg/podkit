@@ -2676,11 +2676,6 @@ export const defaultSubprocessRunner = {
   },
 };
 
-// reconcileIpodDiscovery — stub; demo never calls real device enumeration.
-export function reconcileIpodDiscovery(_blockDevices: any[], _usbClassified: any[]): any[] {
-  return [];
-}
-
 // DiscoveredDevice union + sidecar — stubs; demo never calls real discovery.
 export function reconcileDiscoveredDevices(_blockDevices: any[], _classified: any[]): any[] {
   return [];

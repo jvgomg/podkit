@@ -297,8 +297,6 @@ function shortenIpodLabel(displayName: string): string {
 
 // ── Reconciliation ──────────────────────────────────────────────────────────
 
-// Duplicated from reconcile.ts; both copies disappear when reconcile.ts is
-// deleted in T6 (after T3/T4/T5 consumer migration completes).
 function nonEmpty(s: string | undefined | null): s is string {
   return typeof s === 'string' && s.length > 0;
 }
