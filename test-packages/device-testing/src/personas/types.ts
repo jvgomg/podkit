@@ -55,6 +55,8 @@
  * @module
  */
 
+import type { PlatformDeviceInfo } from '@podkit/core';
+
 /**
  * USB endpoint descriptor — `struct usb_endpoint_descriptor` (USB 2.0 §9.6.6).
  *
@@ -344,6 +346,20 @@ export interface DevicePersona {
   systemProfilerJson: object | null;
   /** Canned output of `diskutil list -plist` (macOS). */
   diskutilPlist: string | null;
+
+  /**
+   * macOS-side parsed {@link PlatformDeviceInfo} records this persona would
+   * yield through `MacOSDeviceManager.findIpodDevices()`. Materialises what
+   * the diskutil + system_profiler parsers would emit so unit tests can feed
+   * mock managers without re-parsing raw probes on every run.
+   *
+   * One entry per partition record. Multi-LUN devices (Echo Mini) emit
+   * multiple entries; single-LUN iPods emit one. Absent when the persona has
+   * not yet been materialised on the macOS side — populate on demand as
+   * tests need it (`null` carries the same semantic if a persona explicitly
+   * has no macOS representation, e.g. iOS devices invisible to diskutil).
+   */
+  platformDeviceInfoDarwin?: PlatformDeviceInfo[] | null;
 
   // --- Filesystem ------------------------------------------------------------
 

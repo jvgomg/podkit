@@ -1322,4 +1322,23 @@ describe('runDeviceAdd: nano 2G slick-flow (cascade + combined prompt)', () => {
     // Confirm the kind comes from the assessment (ios-device, not the fallback).
     expect(text).not.toContain('unsupported = true');
   });
+
+  it('loadConfigFile round-trips the unsupported rich shape written by addDevice', async () => {
+    const { addDevice, loadConfigFile } = await import('../config/index.js');
+    const isoDate = '2026-01-15T10:00:00.000Z';
+    const deviceName = 'toucheck';
+
+    addDevice(
+      deviceName,
+      { type: 'ipod', unsupported: { kind: 'unsupported-preset', confirmedAt: isoDate } },
+      { configPath: tempConfig, createIfMissing: true }
+    );
+
+    const parsed = loadConfigFile(tempConfig);
+    const dev = parsed?.devices?.[deviceName];
+    expect(typeof dev?.unsupported).toBe('object');
+    const u = dev?.unsupported as { kind?: string; confirmedAt?: string };
+    expect(u.kind).toBe('unsupported-preset');
+    expect(u.confirmedAt).toBe(isoDate);
+  });
 });

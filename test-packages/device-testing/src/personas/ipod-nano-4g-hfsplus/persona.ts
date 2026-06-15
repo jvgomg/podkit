@@ -45,6 +45,7 @@
  */
 
 import type { DevicePersona } from '../types.js';
+import { ipodMacosPlatformInfo } from '../builders.js';
 import sysInfoExtendedXml from '../ipod-nano-4g-black/raw/sysinfo-extended.xml' with { type: 'text' };
 import diskutilPlist from '../ipod-nano-4g-black/raw/diskutil.plist' with { type: 'text' };
 import systemProfilerJson from '../ipod-nano-4g-black/raw/system-profiler.json' with { type: 'json' };
@@ -118,6 +119,21 @@ export const ipodNano4gHfsplus: DevicePersona = {
   lsblkJson: null,
   systemProfilerJson,
   diskutilPlist,
+
+  // macOS supports HFS+ iPods (only Linux refuses them). Records what the
+  // macOS findIpodDevices pipeline would surface for the synthesised HFS+
+  // partition; placeholder UUID/identifier — tighten when a later AC pins
+  // the parsed-plist comparison.
+  platformDeviceInfoDarwin: [
+    ipodMacosPlatformInfo({
+      identifier: 'disk3s2',
+      volumeName: 'IPOD',
+      volumeUuid: '11111111-2222-3333-4444-555555555555',
+      mountPoint: '/Volumes/IPOD',
+      sizeMiB: 7601,
+      filesystem: 'Apple_HFS',
+    }),
+  ],
 
   partitionLayout: {
     // Mirrors the FAT32-shaped sibling's layout. `partitions[].type` is

@@ -211,6 +211,68 @@ describe('runRepair — refusal short-circuits IpodDatabase.open', () => {
     expect(openCalls).toBe(0);
   });
 
+  it('never invokes the repair pipeline for a non-database check on a cascade-refused device (darwin)', async () => {
+    // Gap: the IpodDatabase.open sentinel only catches db-requiring repairs.
+    // A check with no 'database' requirement (e.g. sysinfo-consistency) would
+    // skip db.open entirely and reach runRepairPipeline unchecked.
+    // This test uses requirements:[] and tracks repair.run directly — proving
+    // preflightCascadeRefusal fires before runRepairPipeline regardless of
+    // whether a database is needed.
+    let repairRunCalls = 0;
+    const check: ReturnType<typeof makeFakeCheck> = {
+      id: 'sysinfo-no-db',
+      name: 'Sysinfo No DB',
+      scope: 'database-health',
+      applicableTo: ['ipod'],
+      check: async () => ({ status: 'pass', summary: '', repairable: true }),
+      repair: {
+        description: 'no-db repair',
+        requirements: [], // No 'database' — IpodDatabase.open is never a candidate.
+        run: async () => {
+          repairRunCalls++;
+          return { success: true, summary: 'done' };
+        },
+      },
+    };
+
+    const fakeCore = {
+      IpodDatabase: {
+        open: async () => {
+          throw new Error('IpodDatabase.open must not be called');
+        },
+      },
+      DOCS_URLS: { supportedDevices: 'https://example.test/supported-devices' },
+    };
+
+    const { out } = makeOut();
+    let thrown: CliError | undefined;
+    try {
+      await runRepair(
+        '/Volumes/iPod',
+        check as unknown as NonNullable<
+          ReturnType<typeof import('@podkit/core').getDiagnosticCheck>
+        >,
+        { dryRun: false },
+        out,
+        { music: {} } as ReturnType<typeof import('../context.js').getContext>['config'],
+        {
+          loadCore: async () => fakeCore as unknown as typeof import('@podkit/core'),
+          assessIpodIdentity: async () =>
+            ({
+              model: { unsupportedReason: UNSUPPORTED_REASON },
+            }) as unknown as IpodIdentityAssessment,
+        }
+      );
+    } catch (err) {
+      thrown = err as CliError;
+    }
+
+    expect(thrown).toBeInstanceOf(CliError);
+    expect(thrown?.code).toBe('INCOMPATIBLE_DEVICE_TYPE');
+    // The repair.run must never have been reached — the preflight threw first.
+    expect(repairRunCalls).toBe(0);
+  });
+
   it('still calls IpodDatabase.open when the device is supported', async () => {
     let openCalls = 0;
     const check = makeFakeCheck();

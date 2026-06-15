@@ -423,5 +423,39 @@ describe('runDeviceScan', () => {
       expect(result.devices![0]!.usbOnly).toBe(true);
       expect(result.devices![0]!.usbDescriptor?.productId).toBe('12aa');
     });
+
+    it('JSON output for an iOS USB-only device has unsupportedReason.kind but no category key', async () => {
+      const ctx = makeContext();
+      const { out, stdout, exitCode } = makeOut();
+
+      const usbOnlyIos: IpodClassification<EnumeratedUsbDevice> = {
+        kind: 'ipod',
+        device: { vendorId: '05ac', productId: '12aa' },
+        supported: false,
+        unsupportedReason: {
+          kind: 'ios-device',
+          headline: 'iPod touch uses a proprietary sync protocol',
+        },
+      };
+
+      const deps: DeviceScanDeps = {
+        loadCore: async () => fakeCore(),
+        enumerate: async () => [usbOnlyIos.device],
+        classify: () => [usbOnlyIos],
+        getDeviceManager: () =>
+          fakeManager({ platform: 'darwin', isSupported: true, findIpodDevices: async () => [] }),
+      };
+
+      await runScan(ctx, {}, out, deps);
+      expect(exitCode.get()).toBeUndefined();
+      const result = stdout.json<DeviceScanOutput>();
+      expect(result.success).toBe(true);
+      if (!result.success) return;
+      expect(result.devices).toHaveLength(1);
+      const device = result.devices![0]!;
+      expect(device.unsupportedReason?.kind).toBe('ios-device');
+      expect('category' in device).toBe(false);
+      expect('category' in result).toBe(false);
+    });
   });
 });

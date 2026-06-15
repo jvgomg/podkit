@@ -14,6 +14,7 @@
  */
 
 import type { DevicePersona } from '../types.js';
+import { ipodMacosPlatformInfo } from '../builders.js';
 import sysInfoExtendedXml from './raw/sysinfo-extended.xml' with { type: 'text' };
 import diskutilPlist from './raw/diskutil.plist' with { type: 'text' };
 import systemProfilerJson from './raw/system-profiler.json' with { type: 'json' };
@@ -89,6 +90,21 @@ export const ipodMini2gPink: DevicePersona = {
   lsblkJson: null,
   systemProfilerJson,
   diskutilPlist,
+
+  // Synthesised from the FAT32 single-partition layout. Real capture-time
+  // identifier/volumeUuid live in `raw/diskutil.plist`; placeholder values
+  // here are good enough for shape-level assertions until a later AC needs
+  // to compare against the parsed plist directly.
+  platformDeviceInfoDarwin: [
+    ipodMacosPlatformInfo({
+      identifier: 'disk3s2',
+      volumeName: 'SALLYS IPOD',
+      volumeUuid: '53C5-7A1C',
+      mountPoint: '/Volumes/SALLYS IPOD',
+      sizeMiB: 3859,
+      filesystem: 'MS-DOS FAT32',
+    }),
+  ],
 
   partitionLayout: {
     // MBR has a single FAT32 entry starting at sector 80325. Sectors 0..80324

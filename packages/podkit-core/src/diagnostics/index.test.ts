@@ -201,3 +201,45 @@ describe('runDiagnostics — db-open guard', () => {
     expect(report.deviceModel).toBe('Unknown');
   });
 });
+
+// ---------------------------------------------------------------------------
+// sysinfo-modelnum-mismatch: framework smoke (AC #3, TASK-342)
+//
+// Pins that runDiagnostics drives sysinfo-modelnum-mismatch when the
+// database-health scope is requested for an iPod device. The check is
+// platform-agnostic (reads on-disk SysInfo + SysInfoExtended; no platform
+// branch), so this assertion is sufficient cross-platform evidence that the
+// macOS-platform diagnostic framework fires the check. A non-existent mount
+// means all filesystem reads return absent → the check skips cleanly, but
+// the framework must still have scheduled and executed it.
+// ---------------------------------------------------------------------------
+
+describe('runDiagnostics — sysinfo-modelnum-mismatch framework smoke', () => {
+  it('schedules sysinfo-modelnum-mismatch when scopes=[database-health] and deviceType=ipod', async () => {
+    const report = await runDiagnostics({
+      mountPoint: '/nonexistent/mount/point',
+      deviceType: 'ipod',
+      db: makeStubDb(),
+      scopes: ['database-health'],
+    });
+
+    const checkIds = report.checks.map((c) => c.id);
+    expect(checkIds).toContain('sysinfo-modelnum-mismatch');
+  });
+
+  it('sysinfo-modelnum-mismatch result has a valid CheckResult shape when filesystem is absent', async () => {
+    const report = await runDiagnostics({
+      mountPoint: '/nonexistent/mount/point',
+      deviceType: 'ipod',
+      db: makeStubDb(),
+      scopes: ['database-health'],
+    });
+
+    const entry = report.checks.find((c) => c.id === 'sysinfo-modelnum-mismatch');
+    expect(entry).toBeDefined();
+    // With no SysInfo on disk the check skips — but the shape must be valid.
+    expect(['pass', 'warn', 'fail', 'skip']).toContain(entry!.status);
+    expect(typeof entry!.summary).toBe('string');
+    expect(typeof entry!.repairable).toBe('boolean');
+  });
+});

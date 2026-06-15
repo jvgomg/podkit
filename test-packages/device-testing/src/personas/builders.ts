@@ -15,7 +15,7 @@
  * @module
  */
 
-import type { EnumeratedUsbDevice } from '@podkit/core';
+import type { EnumeratedUsbDevice, PlatformDeviceInfo } from '@podkit/core';
 import type { DevicePersona } from './types.js';
 
 /**
@@ -52,5 +52,52 @@ export function buildEnumeratedUsbDevice(
       ? { serialNumber: persona.usbDescriptor.deviceSerial }
       : {}),
     ...overrides,
+  };
+}
+
+/**
+ * Synthesise a {@link PlatformDeviceInfo} record for an iPod under macOS —
+ * the shape `MacOSDeviceManager.findIpodDevices()` would yield for a single
+ * mounted iPod partition.
+ *
+ * `mediaType` is always `"iPod"` (the diskutil string `findIpodDevices`
+ * filters on). `blockSizeBytes` defaults to `512` (stock iPod hard drive);
+ * pass `2048` for iFlash-modded devices.
+ *
+ * Persona files import this so the materialised macOS-side record stays
+ * shape-consistent with what the live parser emits, without each persona
+ * hand-rolling the discriminated mount-state union.
+ *
+ * For FAT32-formatted iPods, `filesystem` is `'MS-DOS FAT32'` and
+ * `volumeUuid` is the 8-char short serial (e.g. `'53C5-7A1C'`). For HFS+
+ * iPods, `filesystem` is `'Apple_HFS'` and `volumeUuid` is the standard
+ * 36-char dash-separated GUID.
+ */
+export interface IpodMacosPlatformInfoOpts {
+  identifier: string;
+  volumeName: string;
+  volumeUuid: string;
+  mountPoint: string;
+  /** Partition size in MiB. Converted to `storage.sizeBytes` (×1024×1024). */
+  sizeMiB: number;
+  /** macOS diskutil filesystem string (`'MS-DOS FAT32'` / `'Apple_HFS'` / `'ExFAT'`). */
+  filesystem: string;
+  /** Defaults to `512` (stock iPod hard drive). Pass `2048` for iFlash. */
+  blockSizeBytes?: number;
+}
+
+export function ipodMacosPlatformInfo(opts: IpodMacosPlatformInfoOpts): PlatformDeviceInfo {
+  return {
+    identifier: opts.identifier,
+    volumeName: opts.volumeName,
+    volumeUuid: opts.volumeUuid,
+    mediaType: 'iPod',
+    storage: {
+      sizeBytes: opts.sizeMiB * 1024 * 1024,
+      blockSizeBytes: opts.blockSizeBytes ?? 512,
+      filesystem: opts.filesystem,
+    },
+    isMounted: true,
+    mountPoint: opts.mountPoint,
   };
 }

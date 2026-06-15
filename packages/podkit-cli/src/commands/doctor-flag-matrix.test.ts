@@ -1453,6 +1453,7 @@ describe('AC #17: --scope device requires -d; --scope system runs without -d', (
     expect(payload.healthy).toBe(true);
     expect(payload.checks.map((c) => c.id)).toEqual(['codec-encoders']);
     expect(exitCode.get()).toBeUndefined();
+    expect('category' in payload).toBe(false);
   });
 });
 
@@ -1736,5 +1737,222 @@ describe('--system-only flag (sugar for --scope system)', () => {
     );
 
     expect(exitCode.get() ?? 0).toBe(0);
+  });
+});
+
+// ── TASK-342 AC #5: macOS persona shape ────────────────────────────────────
+
+describe('runDoctor — macOS persona shape (TASK-342 AC #5)', () => {
+  it('iPod on darwin: text-mode renders System → Device Readiness → Database Health in order', async () => {
+    const ctx = makeContext({ device: 'ipod', json: false });
+    const { out, stdout } = makeOut('text');
+
+    const fakeCore = makeFakeCore({
+      report: {
+        checks: [
+          {
+            id: 'codec-encoders',
+            name: 'Codec Encoders',
+            status: 'pass',
+            summary: 'AAC + libx264',
+            repairable: false,
+            hasRepair: false,
+            repairOnly: false,
+            scope: 'system',
+          },
+          {
+            id: 'artwork-rebuild',
+            name: 'Artwork DB',
+            status: 'pass',
+            summary: 'ok',
+            repairable: false,
+            hasRepair: false,
+            repairOnly: false,
+            scope: 'database-health',
+          },
+        ],
+      },
+    });
+
+    await runWithContext(ctx, () =>
+      runAction(out, () =>
+        runDoctorDiagnostics(
+          '/tmp/ipod-darwin-ac5a',
+          undefined,
+          out,
+          {},
+          {
+            loadCore: async () => fakeCore as typeof import('@podkit/core'),
+            getDeviceManager: () => fakeManager({ platform: 'darwin' }),
+          }
+        )
+      )
+    );
+
+    const text = stdout.text();
+    expect(text).toContain('System');
+    expect(text).toContain('Device Readiness');
+    expect(text).toContain('Database Health');
+    // Assert ordering: System before Device Readiness before Database Health.
+    expect(text.indexOf('System')).toBeLessThan(text.indexOf('Device Readiness'));
+    expect(text.indexOf('Device Readiness')).toBeLessThan(text.indexOf('Database Health'));
+  });
+
+  it('echo-mini on darwin: text-mode renders System + Database Health, no Device Readiness, iPod-only checks absent', async () => {
+    const tmpDevice = mkdtempSync(join(tmpdir(), 'podkit-doctor-darwin-ms-'));
+    try {
+      const ctx = makeContext({ device: 'echo', json: false });
+      ctx.config.devices = { echo: { type: 'echo-mini', path: tmpDevice } };
+      const { out, stdout } = makeOut('text');
+
+      const fakeCore = makeFakeCore({
+        report: {
+          checks: [
+            {
+              id: 'codec-encoders',
+              name: 'Codec Encoders',
+              status: 'pass',
+              summary: 'AAC ok',
+              repairable: false,
+              hasRepair: false,
+              repairOnly: false,
+              scope: 'system',
+            },
+            {
+              id: 'video-encoder',
+              name: 'Video Encoder',
+              status: 'pass',
+              summary: 'libx264 ok',
+              repairable: false,
+              hasRepair: false,
+              repairOnly: false,
+              scope: 'system',
+            },
+            {
+              id: 'orphan-files-mass-storage',
+              name: 'Orphan Files (Mass Storage)',
+              status: 'pass',
+              summary: 'No orphan files',
+              repairable: false,
+              hasRepair: false,
+              repairOnly: false,
+              scope: 'database-health',
+            },
+          ],
+        },
+      });
+
+      await runWithContext(ctx, () =>
+        runAction(out, () =>
+          runDoctorDiagnostics(
+            tmpDevice,
+            { type: 'echo-mini', path: tmpDevice },
+            out,
+            {},
+            {
+              loadCore: async () => fakeCore as typeof import('@podkit/core'),
+              getDeviceManager: () => fakeManager({ platform: 'darwin' }),
+            }
+          )
+        )
+      );
+
+      const text = stdout.text();
+      expect(text).toContain('System');
+      expect(text).toContain('Codec Encoders');
+      expect(text).toContain('Video Encoder');
+      expect(text).toContain('Database Health');
+      expect(text).toContain('Orphan Files (Mass Storage)');
+      expect(text).not.toContain('Device Readiness');
+      expect(text).not.toContain('iPod Firmware Inquiry Methods');
+    } finally {
+      rmSync(tmpDevice, { recursive: true, force: true });
+    }
+  });
+
+  it('iPod on darwin with --no-system: only device sections render', async () => {
+    const ctx = makeContext({ device: 'ipod', json: false });
+    const { out, stdout } = makeOut('text');
+
+    const fakeCore = makeFakeCore({
+      report: {
+        checks: [
+          {
+            id: 'codec-encoders',
+            name: 'Codec Encoders',
+            status: 'pass',
+            summary: 'ok',
+            repairable: false,
+            hasRepair: false,
+            repairOnly: false,
+            scope: 'system',
+          },
+          {
+            id: 'artwork-rebuild',
+            name: 'Artwork DB',
+            status: 'pass',
+            summary: 'ok',
+            repairable: false,
+            hasRepair: false,
+            repairOnly: false,
+            scope: 'database-health',
+          },
+        ],
+      },
+    });
+
+    await runWithContext(ctx, () =>
+      runAction(out, () =>
+        runDoctorDiagnostics(
+          '/tmp/ipod-darwin-ac5c',
+          undefined,
+          out,
+          { system: false },
+          {
+            loadCore: async () => fakeCore as typeof import('@podkit/core'),
+            getDeviceManager: () => fakeManager({ platform: 'darwin' }),
+          }
+        )
+      )
+    );
+
+    const text = stdout.text();
+    expect(text).toContain('Device Readiness');
+    expect(text).toContain('Database Health');
+    expect(text).not.toContain('System');
+  });
+
+  it('iPod on darwin with --scope system: only System renders', async () => {
+    const ctx = makeContext({ device: undefined, json: false });
+    const { out, stdout } = makeOut('text');
+
+    const fakeCore = makeFakeCore({
+      report: {
+        checks: [
+          {
+            id: 'codec-encoders',
+            name: 'Codec Encoders',
+            status: 'pass',
+            summary: 'ok',
+            repairable: false,
+            hasRepair: false,
+            repairOnly: false,
+            scope: 'system',
+          },
+        ],
+      },
+    });
+
+    await runAction1(ctx, out, () =>
+      runDoctorAction({ scope: 'system' }, out, {
+        loadCore: async () => fakeCore as typeof import('@podkit/core'),
+        getDeviceManager: () => fakeManager({ platform: 'darwin' }),
+      })
+    );
+
+    const text = stdout.text();
+    expect(text).toContain('System');
+    expect(text).not.toContain('Device Readiness');
+    expect(text).not.toContain('Database Health');
   });
 });
