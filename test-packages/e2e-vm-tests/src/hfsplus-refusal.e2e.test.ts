@@ -35,11 +35,12 @@
  *     `details.filesystem: 'hfsplus'`, headline mentioning the docs URL,
  *     and no config write.
  *
- *   - Regression: `device add` against the FAT32 nano 7G sibling
- *     (`ipod-nano-7g-space-gray`) → MUST NOT emit
+ *   - Regression: `device add` against the supported nano 4G sibling
+ *     (`ipod-nano-4g-black`, USB-only, no backing) → MUST NOT emit
  *     `UNSUPPORTED_FILESYSTEM_ON_LINUX`. The refusal is HFS+-specific;
- *     other filesystems must take their normal paths through readiness
- *     even if those paths happen to fail downstream.
+ *     other personas must take their normal paths through readiness
+ *     even if those paths happen to fail downstream (e.g. NO_IPOD when
+ *     no block device is present).
  *
  * @see packages/podkit-core/src/device/filesystem-policy.ts
  * @see packages/podkit-cli/src/commands/device/add.ts
@@ -55,8 +56,8 @@ import {
   withPersona,
   runJsonCommand,
   healthy,
-  ipodNano7gHfsplus,
-  ipodNano7gSpaceGray,
+  ipodNano4gHfsplus,
+  ipodNano4gBlack,
 } from '@podkit/device-testing';
 
 interface FilesystemStageDetails {
@@ -121,7 +122,7 @@ describe('VM: HFS+-on-Linux filesystem refusal', () => {
     it(
       'device scan flags the HFS+ iPod as unsupported with a filesystem-unsupported-on-linux reason',
       async () => {
-        const invocation = await withPersona({ persona: ipodNano7gHfsplus }, () =>
+        const invocation = await withPersona({ persona: ipodNano4gHfsplus }, () =>
           runJsonCommand(
             limaTestVmRunner,
             '/usr/local/bin/podkit device scan --json',
@@ -133,7 +134,7 @@ describe('VM: HFS+-on-Linux filesystem refusal', () => {
         const entry = parsed.devices.find(
           (d) =>
             d.usbDescriptor?.productId?.toLowerCase() ===
-            hex(ipodNano7gHfsplus.usbDescriptor.productId)
+            hex(ipodNano4gHfsplus.usbDescriptor.productId)
         );
         expect(entry).toBeDefined();
         expect(entry!.readiness?.level).toBe('unsupported');
@@ -176,7 +177,7 @@ describe('VM: HFS+-on-Linux filesystem refusal', () => {
     it(
       'device add against the HFS+ iPod refuses with UNSUPPORTED_FILESYSTEM_ON_LINUX before any mount attempt',
       async () => {
-        const invocation = await withPersona({ persona: ipodNano7gHfsplus }, () =>
+        const invocation = await withPersona({ persona: ipodNano4gHfsplus }, () =>
           runJsonCommand(
             limaTestVmRunner,
             '/usr/local/bin/podkit device add -d hfsplus-nano --yes --json',
@@ -209,13 +210,13 @@ describe('VM: HFS+-on-Linux filesystem refusal', () => {
     );
 
     it(
-      'device add against the FAT32 nano 7G sibling does NOT raise UNSUPPORTED_FILESYSTEM_ON_LINUX (regression control)',
+      'device add against the supported nano 4G sibling does NOT raise UNSUPPORTED_FILESYSTEM_ON_LINUX (regression control)',
       async () => {
         // Pair with the previous test: the refusal must be HFS+-specific.
-        // FAT32 iPods on Linux follow the normal device-add path; the add
-        // may fail for unrelated reasons (no iTunesDB on the synthesised
-        // empty image), but it must never surface the HFS+ refusal code.
-        const invocation = await withPersona({ persona: ipodNano7gSpaceGray }, () =>
+        // A supported non-HFS+ persona may fail for unrelated reasons (no
+        // block device, no iTunesDB) but must never surface the HFS+
+        // refusal code.
+        const invocation = await withPersona({ persona: ipodNano4gBlack }, () =>
           runJsonCommand(
             limaTestVmRunner,
             '/usr/local/bin/podkit device add -d fat32-nano --yes --json',

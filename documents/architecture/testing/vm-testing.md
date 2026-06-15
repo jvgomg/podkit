@@ -389,14 +389,13 @@ writes SysInfo + an empty iTunesDB + the `iPod_Control/*` dir tree.
 Override individual files at runtime to produce the specific failure
 shape the test pins.
 
-### 5.6 HFS+ refusal — built on the host, not in the VM
+### 5.6 HFS+ refusal — MBR-wrapped image built on the host
 
 The HFS+-on-Linux refusal scenario (persona `ipod-nano-7g-hfsplus`,
-test `hfsplus-refusal.e2e.test.ts`) triggers off the `lsblk` fstype
-string `"hfsplus"`. That string comes from kernel-side `blkid` reading
-the on-disk Volume Header magic at offset 1024. **No HFS+ userspace
-tool runs at refusal time, and no `hfsplus.ko` kernel module is
-required** — refusal fires before any mount attempt.
+test `hfsplus-refusal.e2e.test.ts`) drives podkit through the same
+discovery + readiness path a real Mac-formatted iPod takes on a Linux
+host. Refusal fires once `findIpodDevices()` returns an `hfsplus`
+partition; the policy itself short-circuits before any mount attempt.
 
 The HFS+ backing image cannot be built inside the test VM: `hfsprogs`
 (which provides `mkfs.hfsplus`) is unpackaged on arm64 in Debian
@@ -404,16 +403,40 @@ bookworm — the source-package's `Architecture: amd64 i386 …` clause
 predates the arm64 port. Apple-Silicon hosts run the test VM as arm64,
 so an in-VM `mkfs.hfsplus` is impossible.
 
-Instead, the runner uses a pure-TypeScript HFS+ Volume Header writer
-at
+Instead, the runner uses a pure-TypeScript MBR-wrapped HFS+ image
+writer at
 `test-packages/device-testing/src/runners/hfsplus-image-writer.ts`.
-Apple TN1150 documents the format; the implementation is ≤100 LOC,
-sets the minimum-viable fields (`signature = 'H+'`, `version = 4`,
-`blockSize = 4096`, `totalBlocks`), and zeroes the rest. The output
-is a sparse file — ~4 KiB on-disk for a declared 32 MiB image — that
-`writeMinimalHfsplusImage()` writes to a host temp path, after which
-the existing `limactl copy` + `sudo install` machinery stages it at
-the canonical `vmPathForPersona()` location.
+The on-disk shape:
+
+```text
+offset 0           MBR sector (512 B)
+  offset 446         partition entry 1 — type 0xAF (HFS), LBA start=2048
+  offset 510         boot signature 0x55 0xAA
+offset 512..1 MiB  sparse zeros (1 MiB alignment convention)
+offset 1 MiB       start of HFS+ partition (LBA 2048)
+  offset 1 MiB + 1024  HFS+ Volume Header (512 B)
+    signature='H+', version=4, blockSize=4096, totalBlocks=<rest>,
+    finderInfo[6..7] = non-zero seed → blkid synthesises UUID
+```
+
+Apple TN1150 documents the Volume Header format; MBR is older still.
+The writer is ~200 LOC, populates the minimum-viable subset, and
+produces a sparse file — only the 512-byte MBR + 512-byte Volume
+Header physically land on disk regardless of declared size.
+
+**The finderInfo UUID seed is load-bearing.** Without it, blkid
+returns no UUID for the partition. The Linux platform's `walk()` at
+`packages/podkit-core/src/device/platforms/linux.ts:199` filters out
+partitions without a UUID — they never reach `listDevices()`, so the
+readiness pipeline never runs, and the HFS+ refusal in
+`add.ts:953` never fires. Seeding `finderInfo[6..7]` with a stable
+non-zero value gives blkid the 8 bytes it MD5-hashes into a
+synthesised UUID, which keeps the device visible.
+
+This MBR wrapping matches what a real Mac-formatted iPod presents on
+a Linux host (modulo APM-vs-MBR — APM would be more authentic but
+adds significant complexity for zero refusal-test value; the platform
+code keys on `fstype`, not partition-table flavour).
 
 Properties this approach gives us:
 
@@ -423,8 +446,13 @@ Properties this approach gives us:
   `hfsplus.ko` still hit the same refusal. The unit suite at
   `packages/podkit-core/src/device/filesystem-policy.test.ts` mocks
   `process.platform` and exercises the policy without any fs touch;
-  the Tier-3 scenario exercises the lsblk → readiness → CLI wiring.
-- **`initialContent` is unimplemented for HFS+** by design — the only
+  the Tier-3 scenario exercises the full lsblk → blkid → walk() →
+  readiness → CLI wiring.
+- **production-shaped** — unlike the previous whole-disk-fstype
+  approach (where `walk()` would have dropped the device for lack of
+  partition table), the MBR-wrapped image exercises the same
+  `listDevices()` shape a real iPod hits.
+- **`initialContent` unimplemented for HFS+** by design — the only
   consumer (the refusal path) reads the volume header, never the data
   area. Adding file seeding would mean implementing the HFS+ catalog
   file from scratch, which is enormous for zero refusal-test value.

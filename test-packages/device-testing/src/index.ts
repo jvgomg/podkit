@@ -31,7 +31,7 @@ export {
   ipodNano2gGreen,
   ipodNano7gBlue,
   ipodNano7gSpaceGray,
-  ipodNano7gHfsplus,
+  ipodNano4gHfsplus,
   ipodVideo5gIflash1tb,
   ipodTouch5gUnsupported,
   echoMini,

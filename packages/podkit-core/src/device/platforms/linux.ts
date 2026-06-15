@@ -20,7 +20,7 @@
  * the USB walk reads `system_profiler` output.
  */
 
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type {
   DeviceManager,
@@ -321,8 +321,18 @@ function findUsbIdentity(blockDeviceName: string): UsbFingerprint | undefined {
     const deviceLink = `/sys/block/${baseName}/device`;
     if (!existsSync(deviceLink)) return undefined;
 
-    // Walk up the sysfs tree to find the USB device with idVendor/idProduct
-    let sysPath = resolve(`/sys/block/${baseName}/device`);
+    // Resolve the symlink to the real sysfs path so `resolve(p, '..')` walks
+    // up the REAL device chain (`/sys/devices/.../usb<N>/<port>`) rather
+    // than the logical path (`/sys/block/<dev>`). Without realpathSync, the
+    // walk would go `/sys/block/<dev>/device` → `/sys/block/<dev>` → `/sys`
+    // and never reach the USB device's `idVendor` — silently dropping every
+    // iPod that doesn't fast-track via the volume-name heuristic later.
+    let sysPath: string;
+    try {
+      sysPath = realpathSync(deviceLink);
+    } catch {
+      return undefined;
+    }
 
     // Walk up to 10 levels to find the USB device attributes
     for (let i = 0; i < 10; i++) {

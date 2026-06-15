@@ -223,7 +223,7 @@ describe('ensureBackingFile', () => {
       persona: makePersona({
         id: 'ipod-hfsplus',
         massStorageBackingFile: {
-          synthesis: { sizeMiB: 1, filesystem: 'HFS+', label: 'IPOD_HFS' },
+          synthesis: { sizeMiB: 2, filesystem: 'HFS+', label: 'IPOD_HFS' },
           resetStrategy: 'copy',
         },
       }),
@@ -264,7 +264,7 @@ describe('ensureBackingFile', () => {
       persona: makePersona({
         id: 'ipod-hfsplus-cache',
         massStorageBackingFile: {
-          synthesis: { sizeMiB: 1, filesystem: 'HFS+', label: 'X' },
+          synthesis: { sizeMiB: 2, filesystem: 'HFS+', label: 'X' },
           resetStrategy: 'copy',
         },
       }),
@@ -281,7 +281,7 @@ describe('ensureBackingFile', () => {
       persona: makePersona({
         id: 'ipod-hfsplus-cache',
         massStorageBackingFile: {
-          synthesis: { sizeMiB: 1, filesystem: 'HFS+', label: 'X' },
+          synthesis: { sizeMiB: 2, filesystem: 'HFS+', label: 'X' },
           resetStrategy: 'copy',
         },
       }),
@@ -303,7 +303,7 @@ describe('ensureBackingFile', () => {
       persona: makePersona({
         id: 'ipod-hfsplus-spaced-label',
         massStorageBackingFile: {
-          synthesis: { sizeMiB: 1, filesystem: 'HFS+', label: 'My iPod' },
+          synthesis: { sizeMiB: 2, filesystem: 'HFS+', label: 'My iPod' },
           resetStrategy: 'copy',
         },
       }),

@@ -9,14 +9,16 @@
  * gitignore, and no host disk cost.
  *
  * Personas with `filesystem: 'HFS+'` take a different path: the image is
- * built on the HOST via the pure-TS Volume Header writer in
+ * built on the HOST via the MBR-wrapped HFS+ writer in
  * `hfsplus-image-writer.ts` and `limactl copy`'d into the VM. `hfsprogs`
  * is unpackaged on arm64 in Debian bookworm, so an in-VM `mkfs.hfsplus`
- * is impossible on Apple-Silicon hosts. The only consumer of these
- * images (the HFS+-on-Linux refusal scenario) reads the volume header
- * via blkid and never mounts, so a minimal sparse file with valid
- * volume-header magic is sufficient. See `synthesiseHfsplusBackingFile`
- * below + `documents/architecture/testing/vm-testing.md` §5.6.
+ * is impossible on Apple-Silicon hosts. The image is a sparse file with
+ * an MBR partition table + HFS+ Volume Header (signature + finderInfo
+ * UUID seed) — enough for the kernel + blkid to surface the partition
+ * as `fstype=hfsplus` with a UUID, which is what the Linux platform's
+ * `findIpodDevices` needs to include it. See
+ * `synthesiseHfsplusBackingFile` below + the architecture doc
+ * `documents/architecture/testing/vm-testing.md` §5.6.
  *
  * Why in-VM (vs host then `limactl copy`):
  *
@@ -51,7 +53,7 @@ import * as path from 'node:path';
 
 import type { DevicePersona } from '../personas/types.js';
 import { defaultSubprocessRunner, type SubprocessRunner } from '../subprocess.js';
-import { writeMinimalHfsplusImage } from './hfsplus-image-writer.js';
+import { writeMbrWrappedHfsplusImage } from './hfsplus-image-writer.js';
 import { limactlError, runLimactl, shellQuote } from './lima-limactl.js';
 import { devTestingPackageRoot } from './paths.js';
 
@@ -342,7 +344,7 @@ async function synthesiseHfsplusBackingFile(
   opts: SynthesiseHfsplusBackingFileOpts
 ): Promise<EnsureBackingFileResult> {
   const hostTmp = path.join(os.tmpdir(), `podkit-hfsplus-${randomUUID()}.img`);
-  writeMinimalHfsplusImage(hostTmp, { sizeMiB: opts.sizeMiB });
+  writeMbrWrappedHfsplusImage(hostTmp, { sizeMiB: opts.sizeMiB });
   try {
     // sha256 the synthesised image by streaming — the file is sparse on disk
     // but `read()` returns zero-filled bytes for holes, so the digest is

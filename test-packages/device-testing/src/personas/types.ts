@@ -245,17 +245,21 @@ export interface LunPartitionLayout {
  * # HFS+ synthesis (`filesystem: 'HFS+'`)
  *
  * Used by the HFS+-on-Linux refusal scenario. The image is built on the
- * HOST via a pure-TypeScript HFS+ Volume Header writer
- * (`runners/hfsplus-image-writer.ts`) and `limactl copy`'d into the VM —
- * `hfsprogs` is unpackaged on arm64 in Debian bookworm, so an in-VM
- * `mkfs.hfsplus` path is impossible. Output is a sparse file (~4 KiB
- * on-disk for a declared 32 MiB image); the only on-disk content is the
- * 512-byte Volume Header at offset 1024. blkid identifies it as
- * `hfsplus` from the on-disk magic alone — no mount, no userspace tool,
- * no kernel module. `initialContent` is rejected for HFS+ (the only
- * consumer reads the volume header, never the data area); the `label`
- * field is accepted for schema-symmetry with FAT32 but is unused — the
- * HFS+ writer does not embed a volume name.
+ * HOST via a pure-TypeScript MBR-wrapped HFS+ image writer
+ * (`runners/hfsplus-image-writer.ts`) and `limactl copy`'d into the VM
+ * — `hfsprogs` is unpackaged on arm64 in Debian bookworm, so an in-VM
+ * `mkfs.hfsplus` path is impossible. Output is a sparse file (~1 KiB
+ * on-disk for a declared 32 MiB image); on-disk content is a 512-byte
+ * MBR (single partition type 0xAF starting at LBA 2048) plus a 512-byte
+ * HFS+ Volume Header at the partition's offset 1024. The volume
+ * header seeds `finderInfo[6..7]` with a non-zero value so blkid
+ * synthesises a UUID — without one, the Linux platform's
+ * `findIpodDevices` filter drops the partition and refusal never
+ * fires (see `documents/architecture/testing/vm-testing.md` §5.6).
+ * `initialContent` is rejected for HFS+ (the only consumer reads the
+ * volume header, never the data area); the `label` field is accepted
+ * for schema symmetry but unused — the HFS+ writer does not embed a
+ * volume name.
  *
  * See `test-packages/device-testing/scripts/build-backing-file.ts`.
  */
