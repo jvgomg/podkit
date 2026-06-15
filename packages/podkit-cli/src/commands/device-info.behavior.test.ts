@@ -96,6 +96,7 @@ function fakeCore(): typeof import('@podkit/core') {
       level: 'ready' as const,
       stages: [],
     }),
+    ipodFromBlock: (block: unknown) => ({ kind: 'ipod', block, matchedBy: 'block-only' }),
     IpodError: class IpodError extends Error {},
   } as unknown as typeof import('@podkit/core');
 }

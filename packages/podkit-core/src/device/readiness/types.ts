@@ -60,40 +60,54 @@ export interface ReadinessResult {
 
 // ── Pipeline input ───────────────────────────────────────────────────────────
 
-import type { PlatformDeviceInfo } from '../types.js';
-import type { DeviceAssessment } from '../assessment.js';
-import type { UsbFingerprint } from '@podkit/device-types';
+import type { DiscoveredDevice } from '../discovery.js';
 import type { IpodDatabase } from '../../ipod/database.js';
 
+/**
+ * Input to {@link checkReadiness}.
+ *
+ * The pipeline dispatches on `device.kind` (and on `device.block` presence
+ * within the `'ipod'` arm) — there is exactly one entry point. The CLI no
+ * longer needs to choose between "call this for full iPods", "call that for
+ * USB-only iPods", or "call the other one for unsupported devices".
+ *
+ * Per-arm semantics:
+ * - `kind: 'ipod'` with `block`: runs the full 6-stage pipeline
+ *   (usb → partition → filesystem → mount → sysinfo → database). USB
+ *   context (`usbConnection`, `usbModel`) is read from `device.usb`. If
+ *   `device.usb.supported === false`, the unsupported short-circuit fires
+ *   using `device.usb.unsupportedReason`.
+ * - `kind: 'ipod'` with no `block` (USB-only): synthesises a 2-stage
+ *   result (usb pass + partition fail, remaining stages skipped) with
+ *   `level: 'needs-partition'`. If `device.usb.supported === false`, the
+ *   unsupported short-circuit fires instead.
+ * - `kind: 'mass-storage'`: returns a `'ready'` (block present) or
+ *   `'needs-partition'` (USB-only) marker result — mass-storage devices
+ *   don't run iPod readiness checks; the result is a structural placeholder
+ *   so JSON consumers see a consistent shape.
+ * - `kind: 'unsupported'`: short-circuits with `level: 'unsupported'`
+ *   and a typed reason synthesised from `device.usb.reason`.
+ */
 export interface ReadinessInput {
-  device: PlatformDeviceInfo;
-  assessment?: DeviceAssessment;
-  /** USB connection data */
-  usbConnection?: UsbFingerprint;
-  /** iPod model from USB discovery */
-  usbModel?: IpodModel;
+  device: DiscoveredDevice;
   /**
    * Pre-opened iPod database. Skips the redundant libgpod open in the
    * `database` stage when the caller already has a handle. Caller owns
    * the handle's lifecycle — readiness will not close it.
+   *
+   * Ignored when `device.kind !== 'ipod'`, when the iPod arm has no `block`
+   * (USB-only iPods can't have a database), or when the pipeline short-circuits
+   * to `level: 'unsupported'` before reaching the database stage (USB-arm
+   * rejection or post-sysinfo unsupported check).
    */
   ipod?: IpodDatabase;
-  /**
-   * Optional rejection signal threaded from the iPod / mass-storage
-   * classifier when the device was recognised but is explicitly not
-   * supported by podkit (Apple unsupported-PID table, iOS range fallback,
-   * non-Apple USB with no preset). Sets `level = 'unsupported'` short-circuit
-   * and surfaces the structured reason on the result.
-   *
-   * Accepts either the structured payload directly or a bare headline
-   * string (legacy callers — wrapped to `kind: 'unsupported-device'`).
-   */
-  unsupported?: ReadinessUnsupportedReason | string;
   /**
    * Platform override for filesystem-policy checks (TASK-317.12). Defaults to
    * `process.platform`. Production code never sets this — it exists so tests
    * can exercise the HFS+-on-Linux refusal from a macOS or Linux runner
    * without mutating `process.platform`.
+   *
+   * Only consulted for the iPod-with-block arm; other arms ignore it.
    */
   platform?: NodeJS.Platform | string;
 }

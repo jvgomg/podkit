@@ -38,14 +38,14 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 
-import { checkReadiness } from '../index.js';
+import { checkReadiness, ipodFromBlock } from '../index.js';
 import { determineLevel } from '../determine-level.js';
-import { createUsbOnlyReadinessResult } from '../index.js';
 import { STAGE_ORDER, STAGE_DISPLAY_NAMES } from '../types.js';
 import type { ReadinessLevel, ReadinessResult, ReadinessStageResult } from '../types.js';
 import type { PlatformDeviceInfo } from '../../types.js';
-import type { IpodModel } from '@podkit/devices-ipod';
+import type { IpodModel, IpodClassification } from '@podkit/devices-ipod';
 import type { EnumeratedUsbDevice } from '../../usb-enumeration.js';
+import type { DiscoveredDeviceIpod } from '../../discovery.js';
 
 /**
  * Stage-status marker characters used by the text renderer in
@@ -148,6 +148,40 @@ function makeIpodModel(): IpodModel {
   };
 }
 
+/**
+ * Build a USB-only `DiscoveredDeviceIpod` carrying a happy-path classification.
+ * Used to drive the formerly-separate `createUsbOnlyReadinessResult` test
+ * paths through the unified `checkReadiness` dispatch (T5).
+ */
+function makeUsbOnlyIpod(
+  classificationOverrides: Partial<IpodClassification<EnumeratedUsbDevice>> = {}
+): DiscoveredDeviceIpod {
+  const usb: IpodClassification<EnumeratedUsbDevice> = {
+    kind: 'ipod',
+    device: makeEnumeratedUsbDevice(),
+    model: makeIpodModel(),
+    supported: true,
+    ...classificationOverrides,
+  };
+  return { kind: 'ipod', usb, matchedBy: 'usb-only' };
+}
+
+/**
+ * Wrap a `PlatformDeviceInfo` plus optional USB classification into a
+ * `DiscoveredDeviceIpod` for the iPod-with-block readiness arm.
+ */
+function makeBlockIpod(
+  block: PlatformDeviceInfo,
+  usb?: IpodClassification<EnumeratedUsbDevice>
+): DiscoveredDeviceIpod {
+  return {
+    kind: 'ipod',
+    block,
+    ...(usb ? { usb } : {}),
+    matchedBy: usb ? 'serial' : 'block-only',
+  };
+}
+
 // ── Stage 1 — usb ────────────────────────────────────────────────────────────
 
 describe('readiness pipeline — usb stage (ACs #1–#3)', () => {
@@ -168,9 +202,12 @@ describe('readiness pipeline — usb stage (ACs #1–#3)', () => {
     // the same information regardless of which branch fired.
     const usbModel = makeIpodModel();
     const result = await checkReadiness({
-      device: makeDevice({ mountPoint: dir }),
-      usbModel,
-      usbConnection: { productId: '0x1207', vendorId: '0x05ac' },
+      device: makeBlockIpod(makeDevice({ mountPoint: dir }), {
+        kind: 'ipod',
+        device: { productId: '0x1207', vendorId: '0x05ac' } as EnumeratedUsbDevice,
+        model: usbModel,
+        supported: true,
+      }),
     });
     const usb = result.stages.find((s) => s.stage === 'usb');
     expect(usb?.status).toBe('pass');
@@ -186,7 +223,7 @@ describe('readiness pipeline — usb stage (ACs #1–#3)', () => {
     // upstream USB data (e.g. legacy callers, doctor running on a
     // mounted-only volume). Stage details should fall back to identifier-only
     // and not emit `undefined` placeholders.
-    const result = await checkReadiness({ device: makeDevice({ mountPoint: dir }) });
+    const result = await checkReadiness({ device: ipodFromBlock(makeDevice({ mountPoint: dir })) });
     const usb = result.stages.find((s) => s.stage === 'usb');
     expect(usb?.status).toBe('pass');
     expect(usb?.details?.identifier).toBe('disk6s2');
@@ -195,13 +232,17 @@ describe('readiness pipeline — usb stage (ACs #1–#3)', () => {
     expect(usb?.details).not.toHaveProperty('usbModel');
   });
 
-  it('#2 usb fails (and downstream stages skip) when caller threads unsupported', async () => {
+  it('#2 usb fails (and downstream stages skip) when USB classifier marks the device unsupported', async () => {
     // The pipeline does not probe USB itself — discovery happens upstream.
     // The only failure path is the unsupported short-circuit (TASK-331).
     const headline = 'iPod touch (5th generation) uses Apple’s proprietary sync protocol.';
     const result = await checkReadiness({
-      device: makeDevice({ mountPoint: dir }),
-      unsupported: { kind: 'ios-device', headline },
+      device: makeBlockIpod(makeDevice({ mountPoint: dir }), {
+        kind: 'ipod',
+        device: makeEnumeratedUsbDevice(),
+        supported: false,
+        unsupportedReason: { kind: 'ios-device', headline },
+      }),
     });
     const usb = result.stages.find((s) => s.stage === 'usb');
     expect(usb?.status).toBe('fail');
@@ -218,16 +259,11 @@ describe('readiness pipeline — usb stage (ACs #1–#3)', () => {
     // layer (no `PlatformDeviceManager` is registered for the OS). When
     // there is no device, there is no readiness call to run.
     //
-    // Closest stage-level analogue: callers that synthesise a
-    // ReadinessResult for the unreachable case use
-    // `createUsbOnlyReadinessResult` with partition.fail — the usb stage
-    // still passes ("device visible") and partition reports the absence.
-    const result = createUsbOnlyReadinessResult({
-      kind: 'ipod',
-      device: makeEnumeratedUsbDevice(),
-      model: makeIpodModel(),
-      supported: true,
-    });
+    // Closest stage-level analogue: callers that pass a USB-only
+    // `DiscoveredDeviceIpod` (no `block`) route through the same
+    // `checkReadiness` dispatch — the usb stage passes ("device visible")
+    // and partition reports the absence.
+    const result = await checkReadiness({ device: makeUsbOnlyIpod() });
     const usb = result.stages.find((s) => s.stage === 'usb');
     expect(usb?.status).toBe('pass');
     expect(usb?.details?.vendorId).toBe('05ac');
@@ -253,25 +289,27 @@ describe('readiness pipeline — partition stage (ACs #4–#5)', () => {
     // platform probe upstream; the partition stage threads it into details
     // verbatim without re-probing.
     const result = await checkReadiness({
-      device: makeDevice({
-        mountPoint: dir,
-        identifier: 'sda1',
-        storage: {
-          sizeBytes: 120 * 1024 * 1024 * 1024,
-          partitionLayout: {
-            partitionCount: 1,
-            partitions: [
-              {
-                index: 1,
-                filesystem: 'vfat',
-                sizeBytes: 32 * 1024 * 1024 * 1024,
-                identifier: 'sda1',
-                volumeUuid: 'ABCD-EF01',
-              },
-            ],
+      device: ipodFromBlock(
+        makeDevice({
+          mountPoint: dir,
+          identifier: 'sda1',
+          storage: {
+            sizeBytes: 120 * 1024 * 1024 * 1024,
+            partitionLayout: {
+              partitionCount: 1,
+              partitions: [
+                {
+                  index: 1,
+                  filesystem: 'vfat',
+                  sizeBytes: 32 * 1024 * 1024 * 1024,
+                  identifier: 'sda1',
+                  volumeUuid: 'ABCD-EF01',
+                },
+              ],
+            },
           },
-        },
-      }),
+        })
+      ),
     });
     const partition = result.stages.find((s) => s.stage === 'partition');
     expect(partition?.status).toBe('pass');
@@ -293,26 +331,28 @@ describe('readiness pipeline — partition stage (ACs #4–#5)', () => {
     // `partitionLayout.partitions` even though only the second has a UUID;
     // the kernel still reports the firmware slice.
     const result = await checkReadiness({
-      device: makeDevice({
-        mountPoint: dir,
-        identifier: 'disk6s2',
-        storage: {
-          sizeBytes: 120 * 1024 * 1024 * 1024,
-          partitionLayout: {
-            partitionCount: 2,
-            partitions: [
-              { index: 1, filesystem: null, sizeBytes: 80 * 1024 * 1024, identifier: 'disk6s1' },
-              {
-                index: 2,
-                filesystem: 'MS-DOS FAT32',
-                sizeBytes: 30 * 1024 * 1024 * 1024,
-                identifier: 'disk6s2',
-                volumeUuid: 'ABC-123-UUID',
-              },
-            ],
+      device: ipodFromBlock(
+        makeDevice({
+          mountPoint: dir,
+          identifier: 'disk6s2',
+          storage: {
+            sizeBytes: 120 * 1024 * 1024 * 1024,
+            partitionLayout: {
+              partitionCount: 2,
+              partitions: [
+                { index: 1, filesystem: null, sizeBytes: 80 * 1024 * 1024, identifier: 'disk6s1' },
+                {
+                  index: 2,
+                  filesystem: 'MS-DOS FAT32',
+                  sizeBytes: 30 * 1024 * 1024 * 1024,
+                  identifier: 'disk6s2',
+                  volumeUuid: 'ABC-123-UUID',
+                },
+              ],
+            },
           },
-        },
-      }),
+        })
+      ),
     });
     const partition = result.stages.find((s) => s.stage === 'partition');
     expect(partition?.status).toBe('pass');
@@ -341,24 +381,19 @@ describe('readiness pipeline — partition stage (ACs #4–#5)', () => {
     // `{ identifier }` shape so existing JSON consumers don't see a sudden
     // schema break.
     const result = await checkReadiness({
-      device: makeDevice({ mountPoint: dir, identifier: 'sda1' }),
+      device: ipodFromBlock(makeDevice({ mountPoint: dir, identifier: 'sda1' })),
     });
     const partition = result.stages.find((s) => s.stage === 'partition');
     expect(partition?.status).toBe('pass');
     expect(partition?.details).toEqual({ identifier: 'sda1' });
   });
 
-  it('#5 partition fails (and yields needs-partition) via createUsbOnlyReadinessResult when no disk representation exists', () => {
-    // The "no partition table at all" path is owned by
-    // createUsbOnlyReadinessResult — the device was visible on USB but
-    // never produced a disk. The main checkReadiness cascade never sees
-    // such a device.
-    const result = createUsbOnlyReadinessResult({
-      kind: 'ipod',
-      device: makeEnumeratedUsbDevice(),
-      model: makeIpodModel(),
-      supported: true,
-    });
+  it('#5 partition fails (and yields needs-partition) for USB-only iPods (no block) routed through the unified dispatch', async () => {
+    // The "no partition table at all" path is the USB-only iPod arm —
+    // device was visible on USB but never produced a disk. Post-T5 it
+    // routes through the unified `checkReadiness` dispatch alongside the
+    // full block-device pipeline.
+    const result = await checkReadiness({ device: makeUsbOnlyIpod() });
     const partition = result.stages.find((s) => s.stage === 'partition');
     expect(partition?.status).toBe('fail');
     expect(result.level).toBe('needs-partition');
@@ -378,7 +413,7 @@ describe('readiness pipeline — filesystem stage (ACs #6–#7)', () => {
 
   it('#6 filesystem passes for FAT32 (volumeName "TERAPOD"); details echo the volume name', async () => {
     const result = await checkReadiness({
-      device: makeDevice({ mountPoint: dir, volumeName: 'TERAPOD' }),
+      device: ipodFromBlock(makeDevice({ mountPoint: dir, volumeName: 'TERAPOD' })),
     });
     const fs1 = result.stages.find((s) => s.stage === 'filesystem');
     expect(fs1?.status).toBe('pass');
@@ -388,14 +423,14 @@ describe('readiness pipeline — filesystem stage (ACs #6–#7)', () => {
 
   it('#6 filesystem passes for HFS+ (volumeName "iPod")', async () => {
     const result = await checkReadiness({
-      device: makeDevice({ mountPoint: dir, volumeName: 'iPod' }),
+      device: ipodFromBlock(makeDevice({ mountPoint: dir, volumeName: 'iPod' })),
     });
     expect(result.stages.find((s) => s.stage === 'filesystem')?.status).toBe('pass');
   });
 
   it('#7 filesystem fails with needs-format level when no recognised filesystem (empty volumeName)', async () => {
     const result = await checkReadiness({
-      device: makeDevice({ mountPoint: dir, volumeName: '' }),
+      device: ipodFromBlock(makeDevice({ mountPoint: dir, volumeName: '' })),
     });
     const fs1 = result.stages.find((s) => s.stage === 'filesystem');
     expect(fs1?.status).toBe('fail');
@@ -416,7 +451,7 @@ describe('readiness pipeline — mount stage (ACs #8–#9)', () => {
   it('#8 mount passes when iPod_Control directory is present at the mount point', async () => {
     createIpodStructure(dir);
     writeSysInfoExtended(dir, makeSysInfoExtendedXml());
-    const result = await checkReadiness({ device: makeDevice({ mountPoint: dir }) });
+    const result = await checkReadiness({ device: ipodFromBlock(makeDevice({ mountPoint: dir })) });
     const mount = result.stages.find((s) => s.stage === 'mount');
     expect(mount?.status).toBe('pass');
     expect(mount?.details?.mountPoint).toBe(dir);
@@ -424,7 +459,7 @@ describe('readiness pipeline — mount stage (ACs #8–#9)', () => {
 
   it('#9 mount fails with needs-init level when iPod_Control is missing', async () => {
     // tmp dir exists (mount live) but has no iPod_Control directory.
-    const result = await checkReadiness({ device: makeDevice({ mountPoint: dir }) });
+    const result = await checkReadiness({ device: ipodFromBlock(makeDevice({ mountPoint: dir })) });
     const mount = result.stages.find((s) => s.stage === 'mount');
     expect(mount?.status).toBe('fail');
     expect(mount?.details?.ipodControlExists).toBe(false);
@@ -445,9 +480,12 @@ describe('readiness pipeline — sysinfo stage (ACs #10–#13)', () => {
   it('#10 sysinfo passes when SysInfoExtended parses; details include usbModelName + resolved deviceModel', async () => {
     writeSysInfoExtended(dir, makeSysInfoExtendedXml());
     const result = await checkReadiness({
-      device: makeDevice({ mountPoint: dir }),
-      usbConnection: { productId: '0x1208', vendorId: '0x05ac' },
-      usbModel: makeIpodModel(),
+      device: makeBlockIpod(makeDevice({ mountPoint: dir }), {
+        kind: 'ipod',
+        device: { productId: '0x1208', vendorId: '0x05ac' } as EnumeratedUsbDevice,
+        model: makeIpodModel(),
+        supported: true,
+      }),
     });
     const sysinfo = result.stages.find((s) => s.stage === 'sysinfo');
     expect(sysinfo?.status).toBe('pass');
@@ -460,7 +498,7 @@ describe('readiness pipeline — sysinfo stage (ACs #10–#13)', () => {
 
   it('#11 sysinfo passes when SysInfo is missing but SysInfoExtended resolves a model', async () => {
     writeSysInfoExtended(dir, makeSysInfoExtendedXml());
-    const result = await checkReadiness({ device: makeDevice({ mountPoint: dir }) });
+    const result = await checkReadiness({ device: ipodFromBlock(makeDevice({ mountPoint: dir })) });
     const sysinfo = result.stages.find((s) => s.stage === 'sysinfo');
     expect(sysinfo?.status).toBe('pass');
     expect(sysinfo?.details?.sysInfoExtendedExists).toBe(true);
@@ -469,7 +507,7 @@ describe('readiness pipeline — sysinfo stage (ACs #10–#13)', () => {
   it('#11 sysinfo passes when SysInfoExtended is missing but classic SysInfo resolves a no-checksum model', async () => {
     // MA147 = video_5g, checksumType 'none'. Classic SysInfo alone is fine.
     writeSysInfo(dir, 'ModelNumStr: MA147\nFirewireGuid: 0001234');
-    const result = await checkReadiness({ device: makeDevice({ mountPoint: dir }) });
+    const result = await checkReadiness({ device: ipodFromBlock(makeDevice({ mountPoint: dir })) });
     const sysinfo = result.stages.find((s) => s.stage === 'sysinfo');
     expect(sysinfo?.status).toBe('pass');
     expect(sysinfo?.details?.modelName).toContain('iPod');
@@ -477,7 +515,7 @@ describe('readiness pipeline — sysinfo stage (ACs #10–#13)', () => {
 
   it('#12 sysinfo fails with needs-repair level when both SysInfo and SysInfoExtended are missing', async () => {
     writeITunesDb(dir);
-    const result = await checkReadiness({ device: makeDevice({ mountPoint: dir }) });
+    const result = await checkReadiness({ device: ipodFromBlock(makeDevice({ mountPoint: dir })) });
     const sysinfo = result.stages.find((s) => s.stage === 'sysinfo');
     expect(sysinfo?.status).toBe('fail');
     expect(sysinfo?.summary).toContain('not found');
@@ -493,7 +531,7 @@ describe('readiness pipeline — sysinfo stage (ACs #10–#13)', () => {
     // SysInfo with no ModelNumStr key at all — identify() has nothing to work with.
     writeSysInfo(dir, 'FirewireGuid: 0001234\nOther: stuff');
     writeITunesDb(dir);
-    const result = await checkReadiness({ device: makeDevice({ mountPoint: dir }) });
+    const result = await checkReadiness({ device: ipodFromBlock(makeDevice({ mountPoint: dir })) });
     const sysinfo = result.stages.find((s) => s.stage === 'sysinfo');
     expect(sysinfo?.status).toBe('fail');
     expect(sysinfo?.summary).toContain('ModelNumStr not found');
@@ -523,7 +561,7 @@ describe('readiness pipeline — database stage (ACs #14–#16)', () => {
   });
 
   it('#15 database fails with needs-init level when iTunesDB is missing', async () => {
-    const result = await checkReadiness({ device: makeDevice({ mountPoint: dir }) });
+    const result = await checkReadiness({ device: ipodFromBlock(makeDevice({ mountPoint: dir })) });
     const db = result.stages.find((s) => s.stage === 'database');
     expect(db?.status).toBe('fail');
     expect(db?.details?.exists).toBe(false);
@@ -532,7 +570,7 @@ describe('readiness pipeline — database stage (ACs #14–#16)', () => {
 
   it('#16 database fails (needs-repair) when iTunesDB is present but corrupt', async () => {
     writeITunesDb(dir, 'not a valid iTunesDB binary');
-    const result = await checkReadiness({ device: makeDevice({ mountPoint: dir }) });
+    const result = await checkReadiness({ device: ipodFromBlock(makeDevice({ mountPoint: dir })) });
     const db = result.stages.find((s) => s.stage === 'database');
     expect(db?.status).toBe('fail');
     expect(db?.details?.exists).toBe(true);
@@ -571,13 +609,22 @@ describe('readiness pipeline — downstream skip cascade (ACs #17–#19)', () =>
       failsAt: 'usb',
       expectSkipped: ['partition', 'filesystem', 'mount', 'sysinfo', 'database'],
       expectRan: [],
+      // Post-T5: the unsupported signal rides on the iPod arm's `usb`
+      // classification (the classifier set `supported: false` + the typed
+      // reason). The block is still present — what's being asserted is the
+      // short-circuit firing before any disk-mode probe runs.
       build: () => ({
         input: {
-          device: makeDevice(),
-          unsupported: {
-            kind: 'unsupported-preset' as const,
-            headline: 'Sony Walkman is not yet supported by podkit.',
-          },
+          device: makeBlockIpod(makeDevice(), {
+            kind: 'ipod',
+            device: makeEnumeratedUsbDevice(),
+            model: makeIpodModel(),
+            supported: false,
+            unsupportedReason: {
+              kind: 'unsupported-preset' as const,
+              headline: 'Sony Walkman is not yet supported by podkit.',
+            },
+          }),
         },
       }),
     },
@@ -586,14 +633,16 @@ describe('readiness pipeline — downstream skip cascade (ACs #17–#19)', () =>
       failsAt: 'filesystem',
       expectSkipped: ['mount', 'sysinfo', 'database'],
       expectRan: ['usb', 'partition'],
-      build: (d) => ({ input: { device: makeDevice({ volumeName: '', mountPoint: d }) } }),
+      build: (d) => ({
+        input: { device: ipodFromBlock(makeDevice({ volumeName: '', mountPoint: d })) },
+      }),
     },
     {
       label: '#18 mount fail → sysinfo + database skip',
       failsAt: 'mount',
       expectSkipped: ['sysinfo', 'database'],
       expectRan: ['usb', 'partition', 'filesystem'],
-      build: (d) => ({ input: { device: makeDevice({ mountPoint: d }) } }),
+      build: (d) => ({ input: { device: ipodFromBlock(makeDevice({ mountPoint: d })) } }),
     },
     {
       label: '#19 sysinfo fail (missing files) but mount passed → database STILL runs',
@@ -603,7 +652,7 @@ describe('readiness pipeline — downstream skip cascade (ACs #17–#19)', () =>
       build: (d) => {
         createIpodStructure(d);
         writeITunesDb(d, 'not a valid iTunesDB');
-        return { input: { device: makeDevice({ mountPoint: d }) } };
+        return { input: { device: ipodFromBlock(makeDevice({ mountPoint: d })) } };
       },
     },
   ];
@@ -765,30 +814,34 @@ describe('readiness pipeline — format parity (AC #21)', () => {
     createIpodStructure(dir);
     writeSysInfoExtended(dir, makeSysInfoExtendedXml());
     writeITunesDb(dir);
-    const result = await checkReadiness({ device: makeDevice({ mountPoint: dir }) });
+    const result = await checkReadiness({ device: ipodFromBlock(makeDevice({ mountPoint: dir })) });
     assertParity(result);
   });
 
   it('parity: mount-fail fixture (downstream stages skipped)', async () => {
     // tmpDir exists but has no iPod_Control.
-    const result = await checkReadiness({ device: makeDevice({ mountPoint: dir }) });
+    const result = await checkReadiness({ device: ipodFromBlock(makeDevice({ mountPoint: dir })) });
     assertParity(result);
   });
 
   it('parity: filesystem-fail fixture (most stages skipped)', async () => {
     const result = await checkReadiness({
-      device: makeDevice({ mountPoint: dir, volumeName: '' }),
+      device: ipodFromBlock(makeDevice({ mountPoint: dir, volumeName: '' })),
     });
     assertParity(result);
   });
 
   it('parity: unsupported short-circuit (every downstream stage skipped)', async () => {
     const result = await checkReadiness({
-      device: makeDevice({ mountPoint: dir }),
-      unsupported: {
-        kind: 'ios-device',
-        headline: 'iPod touch (5th generation) uses proprietary sync.',
-      },
+      device: makeBlockIpod(makeDevice({ mountPoint: dir }), {
+        kind: 'ipod',
+        device: makeEnumeratedUsbDevice(),
+        supported: false,
+        unsupportedReason: {
+          kind: 'ios-device',
+          headline: 'iPod touch (5th generation) uses proprietary sync.',
+        },
+      }),
     });
     assertParity(result);
   });

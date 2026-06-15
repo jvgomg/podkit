@@ -228,7 +228,7 @@ export async function runDeviceScan(
   const confirmFn = deps.confirm ?? confirm;
 
   const core = await loadCoreOrFail(deps, DeviceErrorCodes.CORE_LOAD_FAILED);
-  const { checkReadiness, createUsbOnlyReadinessResult, discoverConnectedDevices } = core;
+  const { checkReadiness, discoverConnectedDevices } = core;
   const manager = (deps.getDeviceManager ?? core.getDeviceManager)();
 
   // Discover all connected devices — USB + block-device pipelines reconciled
@@ -250,26 +250,13 @@ export async function runDeviceScan(
 
   // Run readiness pipeline on each block-side iPod (only on supported platforms).
   // The readiness result array is indexed in parallel with blockIpods.
+  // `checkReadiness` reads usbConnection / usbModel / unsupportedReason off
+  // the `DiscoveredDeviceIpod` arm internally — the scan no longer has to
+  // unpack the USB classification by hand.
   const readinessResults: ReadinessResult[] = [];
   if (manager.isSupported) {
-    for (const { device, block } of blockIpods) {
-      const matchedUsb = device.usb;
-      readinessResults.push(
-        await checkReadiness({
-          device: block,
-          usbConnection: matchedUsb?.device,
-          usbModel: matchedUsb?.model,
-          // Thread the rejection reason so the readiness cascade returns
-          // `level: 'unsupported'` for recognised-but-rejected iPods (touch,
-          // iPhone, nano 6G/7G, …) rather than running the rest of the
-          // pipeline against a device that will never mount in disk mode.
-          // `classifyAsIpod` already produced the typed payload via
-          // `lookupUnsupportedReadinessReason`, so it threads through verbatim.
-          ...(matchedUsb && matchedUsb.supported === false && matchedUsb.unsupportedReason
-            ? { unsupported: matchedUsb.unsupportedReason }
-            : {}),
-        })
-      );
+    for (const { device } of blockIpods) {
+      readinessResults.push(await checkReadiness({ device }));
     }
   }
 
@@ -318,9 +305,16 @@ export async function runDeviceScan(
               ...(usb ? { usb } : {}),
               ...(mediaType ? { mediaType } : {}),
             };
-            blockIpods[i] = { device: ipodDevice, block: mounted };
+            // Build a fresh DiscoveredDeviceIpod with the mounted block so
+            // checkReadiness sees the post-mount state without losing the
+            // USB classification context.
+            const remounted: DiscoveredDeviceIpod = {
+              ...ipodDevice,
+              block: mounted,
+            };
+            blockIpods[i] = { device: remounted, block: mounted };
             // Re-run readiness to get full picture
-            readinessResults[i] = await checkReadiness({ device: mounted });
+            readinessResults[i] = await checkReadiness({ device: remounted });
             out.verbose1(`Mounted ${label} at ${result.mountPoint}`);
           } else if (result.requiresSudo) {
             const assessment = result.assessment;
@@ -410,9 +404,15 @@ export async function runDeviceScan(
   const usbOnlyIpodDevices = discoveredWithMounts.filter(
     (d): d is DiscoveredDeviceIpod => d.kind === 'ipod' && d.matchedBy === 'usb-only'
   );
-  const usbOnlyDevices: DeviceScanDeviceEntry[] = usbOnlyIpodDevices.map((r) => {
-    const usbReadiness =
-      manager.isSupported && r.usb ? createUsbOnlyReadinessResult(r.usb) : undefined;
+  // Pre-compute readiness once per USB-only iPod so the render pass below can
+  // reuse the same result without re-running the dispatch.
+  const readinessByUsbOnlyIpod: Array<ReadinessResult | undefined> = await Promise.all(
+    usbOnlyIpodDevices.map(async (r) =>
+      manager.isSupported && r.usb ? await checkReadiness({ device: r }) : undefined
+    )
+  );
+  const usbOnlyDevices: DeviceScanDeviceEntry[] = usbOnlyIpodDevices.map((r, i) => {
+    const usbReadiness = readinessByUsbOnlyIpod[i];
     const modelDisplayName = r.usb?.model?.displayName;
     return {
       volumeName: modelDisplayName ?? '',
@@ -552,9 +552,11 @@ export async function runDeviceScan(
     }
 
     if (d.kind === 'ipod' && d.matchedBy === 'usb-only') {
-      // USB-only iPod: compute synthetic readiness result from USB classification.
+      // USB-only iPod: look up the readiness already computed above via the
+      // unified `checkReadiness({ device })` dispatch.
+      const usbReadinessIdx = usbOnlyIpodDevices.indexOf(d);
       const readiness =
-        manager.isSupported && d.usb ? createUsbOnlyReadinessResult(d.usb) : undefined;
+        usbReadinessIdx !== -1 ? readinessByUsbOnlyIpod[usbReadinessIdx] : undefined;
       return {
         device: d,
         ...(readiness ? { readiness } : {}),

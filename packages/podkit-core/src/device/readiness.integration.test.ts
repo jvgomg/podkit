@@ -12,7 +12,7 @@ import { withTestIpod } from '@podkit/gpod-testing';
 import { requireGpodTool } from '@podkit/test-fixtures';
 import { requireLibgpodNode } from '@podkit/libgpod-node';
 import { IpodDatabase } from '../ipod/database.js';
-import { checkDatabase, checkReadiness } from './readiness.js';
+import { checkDatabase, checkReadiness, ipodFromBlock } from './readiness.js';
 import type { PlatformDeviceInfo } from './types.js';
 
 requireGpodTool();
@@ -65,7 +65,7 @@ describe('checkReadiness with pre-opened ipod (integration)', () => {
       const ipod = await IpodDatabase.open(testIpod.path);
       try {
         const result = await checkReadiness({
-          device: deviceInfoFor(testIpod.path),
+          device: ipodFromBlock(deviceInfoFor(testIpod.path)),
           ipod,
         });
         expect(result.level).toBe('ready');
@@ -84,7 +84,7 @@ describe('checkReadiness with pre-opened ipod (integration)', () => {
   it('opens its own database when no ipod handle is provided', async () => {
     await withTestIpod(async (testIpod) => {
       const result = await checkReadiness({
-        device: deviceInfoFor(testIpod.path),
+        device: ipodFromBlock(deviceInfoFor(testIpod.path)),
       });
       expect(result.level).toBe('ready');
       const dbStage = result.stages.find((s) => s.stage === 'database');

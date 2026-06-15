@@ -152,7 +152,7 @@ export {
   checkIpodStructure,
   checkSysInfo,
   checkDatabase,
-  createUsbOnlyReadinessResult,
+  ipodFromBlock,
   STAGE_DISPLAY_NAMES,
 } from './readiness.js';
 

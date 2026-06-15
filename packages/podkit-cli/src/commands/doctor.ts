@@ -635,23 +635,32 @@ export async function runDoctorDiagnostics(
 
   // ── Phase 1: Readiness checks ──────────────────────────────────────────
 
-  // Build a PlatformDeviceInfo for the readiness pipeline.
-  // Try to find the real device info from the platform device manager first,
-  // fall back to a minimal constructed info if not found.
+  // Locate the device's `DiscoveredDevice` record. After T5, the readiness
+  // pipeline consumes the unified union directly — going through
+  // `discoverConnectedDevices` gives us the iPod arm with its full
+  // reconciled USB context (vendorId/productId/usb classification with the
+  // unsupported reason already attached when applicable).
   const manager = (deps.getDeviceManager ?? core.getDeviceManager)();
-  let deviceInfo: import('@podkit/core').PlatformDeviceInfo | undefined;
+  let discoveredIpod: import('@podkit/core').DiscoveredDeviceIpod | undefined;
 
   if (manager.isSupported) {
     try {
-      const ipods = await manager.findIpodDevices();
-      deviceInfo = ipods.find((d) => d.mountPoint === devicePath);
+      const discovered = await core.discoverConnectedDevices({ deviceManager: manager });
+      discoveredIpod = discovered.find(
+        (d): d is import('@podkit/core').DiscoveredDeviceIpod =>
+          d.kind === 'ipod' && d.block?.mountPoint === devicePath
+      );
     } catch {
-      // Platform scanning not available — fall back to constructed info
+      // Platform scanning not available — fall back to constructed info below.
     }
   }
 
-  if (!deviceInfo) {
-    deviceInfo = {
+  if (!discoveredIpod) {
+    // Fallback: device path is known but doesn't correspond to a discovered
+    // record (path-mode doctor against a directory; unsupported platform;
+    // discovery threw). Synthesise a minimal block-side iPod arm so
+    // readiness still runs.
+    const syntheticBlock: import('@podkit/core').PlatformDeviceInfo = {
       identifier: 'unknown',
       volumeName: basename(devicePath),
       volumeUuid: '',
@@ -659,27 +668,12 @@ export async function runDoctorDiagnostics(
       mountPoint: devicePath,
       storage: { sizeBytes: 0 },
     };
-  }
-
-  // Thread the cascade-derived unsupported reason into the readiness call
-  // so `runDoctor` short-circuits with `level: 'unsupported'` for
-  // recognised-but-rejected generations (touch_*, nano 6/7, shuffle 3/4, iOS).
-  // Pre-TASK-317.03 readiness would happily traverse the rest of the pipeline
-  // for these devices and then suggest mutating repairs against them.
-  let readinessUnsupported: import('@podkit/core').ReadinessUnsupportedReason | undefined;
-  try {
-    const doctorAssessment = await core.assessIpodIdentity(devicePath);
-    readinessUnsupported = doctorAssessment?.model?.unsupportedReason;
-  } catch {
-    // Assessment is best-effort — readiness still runs without the gate.
+    discoveredIpod = core.ipodFromBlock(syntheticBlock);
   }
 
   let readinessResult: ReadinessResult | undefined;
   try {
-    readinessResult = await core.checkReadiness({
-      device: deviceInfo,
-      ...(readinessUnsupported ? { unsupported: readinessUnsupported } : {}),
-    });
+    readinessResult = await core.checkReadiness({ device: discoveredIpod });
   } catch {
     // Readiness check failed — proceed without it
   }

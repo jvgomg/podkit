@@ -48,11 +48,11 @@ function stripAnsi(s: string): string {
 // ── Fake readiness builders ──────────────────────────────────────────────────
 
 /**
- * A minimal stand-in for `createUsbOnlyReadinessResult` used by test
- * fixtures when a USB-only iPod is supported and needs partitioning.
- * The real implementation lives in `@podkit/core`; we call it here in the
- * fixture builder (not the renderer) because the renderer is purposefully
- * decoupled from core — readiness is pre-computed by the caller.
+ * A minimal stand-in for the USB-only iPod arm of `checkReadiness` (the
+ * branch that fires when `device.kind === 'ipod' && !device.block`). Used
+ * by renderer tests to pre-compute a `'needs-partition'` readiness result
+ * without booting the real core dispatch — the renderer is purposefully
+ * decoupled from core (readiness is pre-computed by the caller).
  */
 function fakeCreateUsbOnlyReadinessResult(
   classification: IpodClassification<EnumeratedUsbDevice>

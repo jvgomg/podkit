@@ -100,13 +100,19 @@ export async function runDeviceInit(
     });
   }
 
-  // Run readiness check to determine device state
+  // Run readiness check to determine device state. After T5, the readiness
+  // pipeline consumes a `DiscoveredDevice`, so we go through
+  // `discoverConnectedDevices` to get the iPod arm with its full reconciled
+  // USB context (rather than driving readiness off a bare PlatformDeviceInfo).
   let readinessLevel: ReadinessLevel | undefined;
   let readinessUnsupported: ReadinessUnsupportedReason | undefined;
   if (manager.isSupported) {
     try {
-      const ipods = await manager.findIpodDevices();
-      const matchingIpod = ipods.find((d) => d.mountPoint === devicePath);
+      const discovered = await core.discoverConnectedDevices({ deviceManager: manager });
+      const matchingIpod = discovered.find(
+        (d): d is import('@podkit/core').DiscoveredDeviceIpod =>
+          d.kind === 'ipod' && d.block?.mountPoint === devicePath
+      );
       if (matchingIpod) {
         const readiness = await checkReadiness({ device: matchingIpod });
         readinessLevel = readiness.level;

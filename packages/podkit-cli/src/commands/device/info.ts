@@ -216,14 +216,16 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
           // mode we synthesize the PlatformDeviceInfo from data we already
           // have rather than calling manager.findIpodDevices() — that's a
           // full disk enumeration which on macOS dispatches diskutil
-          // subprocesses per attached disk.
+          // subprocesses per attached disk. We then lift it through
+          // `ipodFromBlock` so the readiness dispatch sees a uniform
+          // DiscoveredDevice shape.
           if (liveStatus?.mounted && !isMassStorageDevice(device?.type) && manager.isSupported) {
             try {
-              const matchingIpod =
+              const matchingBlock =
                 resolveResult.deviceInfo ??
                 synthesizePathModeDeviceInfo(resolveResult.path, liveStatus.volumeUuid);
               const readiness = await core.checkReadiness({
-                device: matchingIpod,
+                device: core.ipodFromBlock(matchingBlock),
                 ipod: openedDeviceResult?.ipod,
               });
               const bestModel = readiness.deviceModel ?? readiness.usbModel;

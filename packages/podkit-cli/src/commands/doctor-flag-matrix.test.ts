@@ -240,6 +240,11 @@ function makeFakeCore(opts: FakeCoreOptions = {}): unknown {
 
   return {
     getDeviceManager: () => fakeManager(),
+    // Post-T5: doctor calls discoverConnectedDevices to get a DiscoveredDevice
+    // before driving checkReadiness. The fake returns empty so doctor falls
+    // back to its synthetic ipodFromBlock path.
+    discoverConnectedDevices: async () => [],
+    ipodFromBlock: (block: unknown) => ({ kind: 'ipod', block, matchedBy: 'block-only' }),
     checkReadiness: async () =>
       opts.readiness ?? {
         level: 'ready',

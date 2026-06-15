@@ -2548,8 +2548,8 @@ export function identify(_input: any): any {
   return undefined;
 }
 
-export function createUsbOnlyReadinessResult(_device: any): any {
-  return { level: 'needs-partition', stages: [] };
+export function ipodFromBlock(block: any): any {
+  return { kind: 'ipod', block, matchedBy: 'block-only' };
 }
 
 export function interpretError(error: Error | string): any {

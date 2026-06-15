@@ -129,6 +129,11 @@ describe('runDeviceInfo', () => {
             isMusicMediaType: () => true,
             isVideoMediaType: () => false,
             checkReadiness: async () => ({ level: 'unknown', stages: [] }),
+            ipodFromBlock: (block: unknown) => ({
+              kind: 'ipod',
+              block,
+              matchedBy: 'block-only',
+            }),
             IpodError: class IpodError extends Error {},
             getDeviceManager: () => fakeManager(),
           }) as unknown as typeof import('@podkit/core'),
@@ -193,6 +198,11 @@ describe('runDeviceInfo', () => {
                 { stage: 'usb', status: 'pass', summary: 'connected' },
                 { stage: 'database', status: 'pass', summary: 'ok' },
               ],
+            }),
+            ipodFromBlock: (block: unknown) => ({
+              kind: 'ipod',
+              block,
+              matchedBy: 'block-only',
             }),
             IpodError: class IpodError extends Error {},
             getDeviceManager: () => fakeManager(),

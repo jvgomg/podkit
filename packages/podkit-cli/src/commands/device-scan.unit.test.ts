@@ -95,7 +95,6 @@ const fakeCore = (
 ): typeof import('@podkit/core') =>
   ({
     checkReadiness: async () => ({ level: 'ready', stages: [] }),
-    createUsbOnlyReadinessResult: () => ({ level: 'unknown', stages: [] }),
     interpretError: () => ({ explanation: 'stub' }),
     // Pass the real discoverConnectedDevices so tests that inject
     // `deps.enumerate` / `deps.classify` seams exercise the real reconcile
@@ -260,11 +259,14 @@ describe('runDeviceScan', () => {
     const deps: DeviceScanDeps = {
       loadCore: async () =>
         fakeCore({
-          createUsbOnlyReadinessResult: (() => ({
-            level: 'unknown',
+          // USB-only iPods route through the unified `checkReadiness`
+          // dispatch since T5; return a synthetic 'needs-partition' result
+          // that mirrors the historical createUsbOnlyReadinessResult output.
+          checkReadiness: (async () => ({
+            level: 'needs-partition',
             stages: [],
             usbModel: fakeIpodModel,
-          })) as typeof import('@podkit/core').createUsbOnlyReadinessResult,
+          })) as typeof import('@podkit/core').checkReadiness,
         }),
       enumerate: async () => [fakeDevice],
       classify: () => [fakeClassification],

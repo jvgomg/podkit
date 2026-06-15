@@ -8,6 +8,7 @@ import {
   checkIpodStructure,
   checkSysInfo,
   checkDatabase,
+  ipodFromBlock,
   type ReadinessStage,
 } from './readiness.js';
 
@@ -392,7 +393,7 @@ describe('checkReadiness', () => {
   it('produces 6 stages in correct order', async () => {
     createIpodStructure(tmpDir);
     const device = createDevice({ mountPoint: tmpDir });
-    const result = await checkReadiness({ device });
+    const result = await checkReadiness({ device: ipodFromBlock(device) });
     expect(result.stages).toHaveLength(6);
     expect(result.stages.map((s) => s.stage)).toEqual([
       'usb',
@@ -407,7 +408,7 @@ describe('checkReadiness', () => {
   it('produces stages in correct order', async () => {
     // Use a filesystem-fail scenario to produce all 6 stages (4 real + 2 skipped)
     const device = createDevice({ volumeName: '', mountPoint: tmpDir });
-    const result = await checkReadiness({ device });
+    const result = await checkReadiness({ device: ipodFromBlock(device) });
     const expectedOrder: ReadinessStage[] = [
       'usb',
       'partition',
@@ -422,7 +423,7 @@ describe('checkReadiness', () => {
   describe('cascade behavior', () => {
     it('skips mount/sysinfo/database when filesystem fails', async () => {
       const device = createDevice({ volumeName: '', mountPoint: tmpDir });
-      const result = await checkReadiness({ device });
+      const result = await checkReadiness({ device: ipodFromBlock(device) });
       expect(result.stages[2]!.status).toBe('fail'); // filesystem
       expect(result.stages[3]!.status).toBe('skip'); // mount
       expect(result.stages[4]!.status).toBe('skip'); // sysinfo
@@ -431,7 +432,7 @@ describe('checkReadiness', () => {
 
     it('skips sysinfo/database when device is not mounted', async () => {
       const device = createDevice({ isMounted: false, mountPoint: undefined });
-      const result = await checkReadiness({ device });
+      const result = await checkReadiness({ device: ipodFromBlock(device) });
       expect(result.stages[3]!.status).toBe('fail'); // mount
       expect(result.stages[4]!.status).toBe('skip'); // sysinfo
       expect(result.stages[5]!.status).toBe('skip'); // database
@@ -440,7 +441,7 @@ describe('checkReadiness', () => {
     it('skips sysinfo/database when iPod_Control is missing', async () => {
       // tmpDir exists but has no iPod_Control
       const device = createDevice({ mountPoint: tmpDir });
-      const result = await checkReadiness({ device });
+      const result = await checkReadiness({ device: ipodFromBlock(device) });
       expect(result.stages[3]!.status).toBe('fail'); // mount — no iPod_Control
       expect(result.stages[4]!.status).toBe('skip'); // sysinfo
       expect(result.stages[5]!.status).toBe('skip'); // database
@@ -450,26 +451,26 @@ describe('checkReadiness', () => {
   describe('level determination', () => {
     it('returns needs-init when iPod_Control is missing', async () => {
       const device = createDevice({ mountPoint: tmpDir });
-      const result = await checkReadiness({ device });
+      const result = await checkReadiness({ device: ipodFromBlock(device) });
       expect(result.level).toBe('needs-init');
     });
 
     it('returns needs-init when iPod_Control exists but no iTunesDB', async () => {
       createIpodStructure(tmpDir);
       const device = createDevice({ mountPoint: tmpDir });
-      const result = await checkReadiness({ device });
+      const result = await checkReadiness({ device: ipodFromBlock(device) });
       expect(result.level).toBe('needs-init');
     });
 
     it('returns needs-format when filesystem is unrecognized', async () => {
       const device = createDevice({ volumeName: '' });
-      const result = await checkReadiness({ device });
+      const result = await checkReadiness({ device: ipodFromBlock(device) });
       expect(result.level).toBe('needs-format');
     });
 
     it('returns needs-init when device is not mounted', async () => {
       const device = createDevice({ isMounted: false, mountPoint: undefined });
-      const result = await checkReadiness({ device });
+      const result = await checkReadiness({ device: ipodFromBlock(device) });
       // Unmounted device with valid filesystem → needs-init (can't check further)
       expect(result.level).toBe('needs-init');
     });
@@ -477,7 +478,7 @@ describe('checkReadiness', () => {
     it('returns hardware-error for stale mount point', async () => {
       const fakePath = '/tmp/nonexistent-podkit-readiness-' + Date.now();
       const device = createDevice({ mountPoint: fakePath });
-      const result = await checkReadiness({ device });
+      const result = await checkReadiness({ device: ipodFromBlock(device) });
       expect(result.level).toBe('hardware-error');
     });
   });
@@ -488,7 +489,7 @@ describe('checkReadiness', () => {
         mountPoint: tmpDir,
         storage: { sizeBytes: 120 * 1024 * 1024 * 1024, filesystem: 'hfsplus' },
       });
-      const result = await checkReadiness({ device, platform: 'linux' });
+      const result = await checkReadiness({ device: ipodFromBlock(device), platform: 'linux' });
       expect(result.level).toBe('unsupported');
       // Discriminated-union payload — kind + headline + details + docsUrl +
       // filesystem + path. Headline carries the canonical refusal wording.
@@ -509,7 +510,7 @@ describe('checkReadiness', () => {
         mountPoint: tmpDir,
         storage: { sizeBytes: 120 * 1024 * 1024 * 1024, filesystem: 'hfsplus' },
       });
-      const result = await checkReadiness({ device, platform: 'linux' });
+      const result = await checkReadiness({ device: ipodFromBlock(device), platform: 'linux' });
       // Should have only usb + partition + filesystem (the latter as fail).
       // Critically, no `mount`/`sysinfo`/`database` skip rows — those would
       // render as misleading "Skipped — previous check failed" lines.
@@ -529,7 +530,7 @@ describe('checkReadiness', () => {
         mountPoint: tmpDir,
         storage: { sizeBytes: 120 * 1024 * 1024 * 1024, filesystem: 'hfsplus' },
       });
-      const result = await checkReadiness({ device, platform: 'darwin' });
+      const result = await checkReadiness({ device: ipodFromBlock(device), platform: 'darwin' });
       // Pipeline runs to completion as if filesystem were absent — no
       // `unsupported` short-circuit fires.
       expect(result.level).not.toBe('unsupported');
@@ -543,7 +544,7 @@ describe('checkReadiness', () => {
         mountPoint: tmpDir,
         storage: { sizeBytes: 120 * 1024 * 1024 * 1024, filesystem: 'vfat' },
       });
-      const result = await checkReadiness({ device, platform: 'linux' });
+      const result = await checkReadiness({ device: ipodFromBlock(device), platform: 'linux' });
       expect(result.level).not.toBe('unsupported');
       expect(result.unsupported).toBeUndefined();
     });
@@ -553,7 +554,7 @@ describe('checkReadiness', () => {
     it('fails for missing SysInfo and SysInfoExtended but continues to database check (non-blocking)', async () => {
       createIpodStructure(tmpDir);
       const device = createDevice({ mountPoint: tmpDir });
-      const result = await checkReadiness({ device });
+      const result = await checkReadiness({ device: ipodFromBlock(device) });
 
       const sysinfo = result.stages.find((s) => s.stage === 'sysinfo');
       const database = result.stages.find((s) => s.stage === 'database');
@@ -565,7 +566,7 @@ describe('checkReadiness', () => {
       createIpodStructure(tmpDir);
       writeSysInfo(tmpDir, 'FirewireGuid: 0001234');
       const device = createDevice({ mountPoint: tmpDir });
-      const result = await checkReadiness({ device });
+      const result = await checkReadiness({ device: ipodFromBlock(device) });
 
       const sysinfo = result.stages.find((s) => s.stage === 'sysinfo');
       const database = result.stages.find((s) => s.stage === 'database');
@@ -578,7 +579,7 @@ describe('checkReadiness', () => {
       createIpodStructure(tmpDir);
       writeSysInfo(tmpDir, 'ModelNumStr: XX999\nFirewireGuid: 0001234');
       const device = createDevice({ mountPoint: tmpDir });
-      const result = await checkReadiness({ device });
+      const result = await checkReadiness({ device: ipodFromBlock(device) });
 
       const sysinfo = result.stages.find((s) => s.stage === 'sysinfo');
       expect(sysinfo?.status).toBe('warn');
@@ -591,7 +592,7 @@ describe('checkReadiness', () => {
       // SysInfoExtended is optional for non-hash devices.
       writeSysInfo(tmpDir, 'ModelNumStr: MA147\nFirewireGuid: 0001234');
       const device = createDevice({ mountPoint: tmpDir });
-      const result = await checkReadiness({ device });
+      const result = await checkReadiness({ device: ipodFromBlock(device) });
 
       const sysinfo = result.stages.find((s) => s.stage === 'sysinfo');
       expect(sysinfo?.status).toBe('pass');
@@ -602,7 +603,7 @@ describe('checkReadiness', () => {
       createIpodStructure(tmpDir);
       writeSysInfoExtended(tmpDir, makeSysInfoExtendedXml());
       const device = createDevice({ mountPoint: tmpDir });
-      const result = await checkReadiness({ device });
+      const result = await checkReadiness({ device: ipodFromBlock(device) });
 
       const sysinfo = result.stages.find((s) => s.stage === 'sysinfo');
       expect(sysinfo?.status).toBe('pass');
@@ -616,7 +617,7 @@ describe('checkReadiness', () => {
       const dbPath = path.join(tmpDir, 'iPod_Control', 'iTunes', 'iTunesDB');
       fs.writeFileSync(dbPath, 'not a valid database');
       const device = createDevice({ mountPoint: tmpDir });
-      const result = await checkReadiness({ device });
+      const result = await checkReadiness({ device: ipodFromBlock(device) });
 
       const sysinfo = result.stages.find((s) => s.stage === 'sysinfo');
       expect(sysinfo?.status).toBe('fail');
@@ -628,7 +629,7 @@ describe('checkReadiness', () => {
     it('always passes usb and partition for discovered devices', async () => {
       createIpodStructure(tmpDir);
       const device = createDevice({ mountPoint: tmpDir });
-      const result = await checkReadiness({ device });
+      const result = await checkReadiness({ device: ipodFromBlock(device) });
 
       expect(result.stages[0]!.status).toBe('pass');
       expect(result.stages[0]!.stage).toBe('usb');
@@ -640,7 +641,7 @@ describe('checkReadiness', () => {
   describe('summary', () => {
     it('does not include summary for non-ready devices', async () => {
       const device = createDevice({ mountPoint: tmpDir });
-      const result = await checkReadiness({ device });
+      const result = await checkReadiness({ device: ipodFromBlock(device) });
       expect(result.level).not.toBe('ready');
       expect(result.summary).toBeUndefined();
     });
@@ -682,7 +683,7 @@ describe('checkReadiness', () => {
       fs.writeFileSync(dbPath, 'not a valid database');
 
       const device = createDevice({ mountPoint: tmpDir });
-      const result = await checkReadiness({ device });
+      const result = await checkReadiness({ device: ipodFromBlock(device) });
       expect(result.level).toBe('needs-repair');
     });
   });

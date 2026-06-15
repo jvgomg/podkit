@@ -216,6 +216,8 @@ function makeFakeCore(opts: {
   }
   return {
     getDeviceManager: () => fakeManager(),
+    discoverConnectedDevices: async () => [],
+    ipodFromBlock: (block: unknown) => ({ kind: 'ipod', block, matchedBy: 'block-only' }),
     checkReadiness: async () => ({
       level: 'ready',
       stages: [
