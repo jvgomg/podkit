@@ -2681,6 +2681,17 @@ export function reconcileIpodDiscovery(_blockDevices: any[], _usbClassified: any
   return [];
 }
 
+// DiscoveredDevice union + sidecar — stubs; demo never calls real discovery.
+export function reconcileDiscoveredDevices(_blockDevices: any[], _classified: any[]): any[] {
+  return [];
+}
+export async function discoverConnectedDevices(_opts: any): Promise<any[]> {
+  return [];
+}
+export function displayFor(_d: any): any {
+  return { short: '', rich: '', source: 'unsupported-fallback' };
+}
+
 // Repair dispatch — stubs; demo never runs diagnostic repairs.
 export const PUBLIC_REPAIR_IDS: readonly string[] = [];
 export function getRepairCheck(_publicId: string, _deviceType: any): any {

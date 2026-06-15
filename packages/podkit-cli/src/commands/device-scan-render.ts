@@ -24,7 +24,7 @@ import type {
   IpodClassification,
   ReadinessResult,
   ReadinessStageResult,
-  RecognizedDevice,
+  ClassifiedUsbDevice,
   UnsupportedDeviceClassification,
 } from '@podkit/core';
 
@@ -40,8 +40,8 @@ import {
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-type IpodRecognized = Extract<RecognizedDevice, { kind: 'ipod' }>;
-type MassStorageRecognized = Extract<RecognizedDevice, { kind: 'mass-storage' }>;
+type IpodRecognized = Extract<ClassifiedUsbDevice, { kind: 'ipod' }>;
+type MassStorageRecognized = Extract<ClassifiedUsbDevice, { kind: 'mass-storage' }>;
 
 /**
  * A mounted iPod row, pre-resolved with its readiness, configured-name,

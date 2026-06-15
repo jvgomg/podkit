@@ -666,7 +666,7 @@ export { resolveUsbDeviceFromPath, hasCompleteUsbFingerprint } from './device/in
 
 // USB device classification
 export type {
-  RecognizedDevice,
+  ClassifiedUsbDevice,
   ClassifyUsbDevicesOptions,
   IpodClassification,
   MassStorageClassification,
@@ -677,6 +677,21 @@ export { classifyUsbDevices } from './device/index.js';
 // Discovery reconciliation (USB-inquiry + block-device → one record per iPod)
 export type { ReconciledIpodRecord } from './device/index.js';
 export { reconcileIpodDiscovery } from './device/index.js';
+
+// Unified discovery — DiscoveredDevice union (supersedes ReconciledIpodRecord)
+export type {
+  DiscoveredDevice,
+  DiscoveredDeviceIpod,
+  DiscoveredDeviceMassStorage,
+  DiscoveredDeviceUnsupported,
+  DiscoverConnectedDevicesOptions,
+  DeviceDisplay,
+} from './device/index.js';
+export {
+  reconcileDiscoveredDevices,
+  discoverConnectedDevices,
+  displayFor,
+} from './device/index.js';
 
 // Device enumeration framework
 export type { EnumeratedDevice, EnumerateOptions } from './device/index.js';

@@ -221,13 +221,13 @@ export async function runDeviceScan(
   // EVERY USB device on the bus (mice, hubs, docks, …); `classifyUsbDevices`
   // drops everything that is not a recognised iPod or mass-storage DAP, so
   // the rest of `device scan` only ever sees real music players.
-  type RecognizedDevice = Awaited<ReturnType<typeof classifyUsbDevices>>[number];
-  type IpodRecognized = Extract<RecognizedDevice, { kind: 'ipod' }>;
-  type MassStorageRecognized = Extract<RecognizedDevice, { kind: 'mass-storage' }>;
-  type UnsupportedRecognized = Extract<RecognizedDevice, { kind: 'unsupported' }>;
+  type ClassifiedUsbDevice = Awaited<ReturnType<typeof classifyUsbDevices>>[number];
+  type IpodRecognized = Extract<ClassifiedUsbDevice, { kind: 'ipod' }>;
+  type MassStorageRecognized = Extract<ClassifiedUsbDevice, { kind: 'mass-storage' }>;
+  type UnsupportedRecognized = Extract<ClassifiedUsbDevice, { kind: 'unsupported' }>;
 
   let ipods: Awaited<ReturnType<typeof manager.findIpodDevices>> = [];
-  let recognizedDevices: RecognizedDevice[] = [];
+  let recognizedDevices: ClassifiedUsbDevice[] = [];
   if (manager.isSupported) {
     const [foundIpods, enumerated] = await Promise.all([manager.findIpodDevices(), enumerateUsb()]);
     ipods = foundIpods;

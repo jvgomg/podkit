@@ -216,7 +216,7 @@ export type { ResolvedUsbDevice, CompleteUsbDevice } from './usb-path-resolution
 export { resolveUsbDeviceFromPath, hasCompleteUsbFingerprint } from './usb-path-resolution.js';
 
 // USB device classification (composes per-domain classifiers)
-export type { RecognizedDevice, ClassifyUsbDevicesOptions } from './classify.js';
+export type { ClassifiedUsbDevice, ClassifyUsbDevicesOptions } from './classify.js';
 export { classifyUsbDevices } from './classify.js';
 export type { IpodClassification } from '@podkit/devices-ipod';
 export type {
@@ -228,6 +228,19 @@ export type {
 // a single record per physical iPod for `device scan` rendering.
 export type { ReconciledIpodRecord } from './reconcile.js';
 export { reconcileIpodDiscovery } from './reconcile.js';
+
+// Unified discovery — the new tagged union covering iPod + mass-storage +
+// unsupported in one shape. Supersedes `ReconciledIpodRecord` (T6 will
+// delete the old type after the migration completes).
+export type {
+  DiscoveredDevice,
+  DiscoveredDeviceIpod,
+  DiscoveredDeviceMassStorage,
+  DiscoveredDeviceUnsupported,
+  DiscoverConnectedDevicesOptions,
+  DeviceDisplay,
+} from './discovery.js';
+export { reconcileDiscoveredDevices, discoverConnectedDevices, displayFor } from './discovery.js';
 
 // Device enumeration framework (provider-based)
 export type { EnumeratedDevice, EnumerateOptions } from './enumeration.js';

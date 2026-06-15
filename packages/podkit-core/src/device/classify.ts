@@ -26,13 +26,15 @@ import type { EnumeratedUsbDevice } from './usb-enumeration.js';
 // ── Types ────────────────────────────────────────────────────────────────────
 
 /**
- * A USB device recognised by one of the per-domain classifiers.
+ * A USB device classified into one of the supported categories by
+ * {@link classifyUsbDevices}.
  *
- * The `kind` discriminator is forwarded from the matching classifier
- * (`'ipod'`, `'mass-storage'`, or `'unsupported'`); narrow on it to access
- * kind-specific fields.
+ * This is the output of the USB-classification layer — a per-USB-device
+ * observation that has been classified into one of `'ipod' | 'mass-storage' | 'unsupported'`.
+ * The `kind` discriminator is forwarded from the matching classifier;
+ * narrow on it to access kind-specific fields.
  */
-export type RecognizedDevice =
+export type ClassifiedUsbDevice =
   | IpodClassification<EnumeratedUsbDevice>
   | MassStorageClassification<EnumeratedUsbDevice>
   | UnsupportedDeviceClassification<EnumeratedUsbDevice>;
@@ -69,8 +71,8 @@ export interface ClassifyUsbDevicesOptions {
 export function classifyUsbDevices(
   devices: EnumeratedUsbDevice[],
   options: ClassifyUsbDevicesOptions = {}
-): RecognizedDevice[] {
-  const results: RecognizedDevice[] = [];
+): ClassifiedUsbDevice[] {
+  const results: ClassifiedUsbDevice[] = [];
   for (const device of devices) {
     const ipod = classifyAsIpod(device);
     if (ipod) {

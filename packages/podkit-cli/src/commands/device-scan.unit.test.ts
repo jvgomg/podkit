@@ -235,7 +235,7 @@ describe('runDeviceScan', () => {
     type EnumeratedUsbDevice = Parameters<
       typeof import('@podkit/core').classifyUsbDevices
     >[0][number];
-    type RecognizedDevice = ReturnType<typeof import('@podkit/core').classifyUsbDevices>[number];
+    type ClassifiedUsbDevice = ReturnType<typeof import('@podkit/core').classifyUsbDevices>[number];
 
     const fakeDevice: EnumeratedUsbDevice = {
       vendorId: '05ac',
@@ -251,12 +251,12 @@ describe('runDeviceScan', () => {
       source: 'usb',
     } as const;
 
-    const fakeClassification: RecognizedDevice = {
+    const fakeClassification: ClassifiedUsbDevice = {
       kind: 'ipod',
       device: fakeDevice,
       model: fakeIpodModel,
       supported: true,
-    } as unknown as RecognizedDevice;
+    } as unknown as ClassifiedUsbDevice;
 
     const deps: DeviceScanDeps = {
       loadCore: async () =>
