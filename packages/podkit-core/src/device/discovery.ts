@@ -261,33 +261,31 @@ function displayForUnsupported(d: DiscoveredDeviceUnsupported): DeviceDisplay {
  *   form from `GENERATIONS[…].displayName`: `'iPod nano 4GB Silver (2nd Generation)'`
  *   or `'iPod (5th Generation)'`.
  *
- * Both compress to `'iPod nano 3G'` / `'iPod nano 2G'` / `'iPod 5G'`. The
- * family is whatever leads the string up to the generation marker; the gen
- * number is the integer between `Nth` and `generation`.
+ * Both compress to `'iPod nano 3G'` / `'iPod nano 2G'` / `'iPod 5G'`. Decimal
+ * ordinals like `5.5th` carry through: `'iPod Video (5.5th Generation)'` →
+ * `'iPod Video 5.5G'`. The family is whatever leads the string up to the
+ * generation marker; the gen number is whatever sits between `Nth` and
+ * `generation`.
  *
  * Inputs that don't match either pattern (`'iPod Photo'`, `'iPod'`) pass
- * through unchanged. Known pass-through: `'iPod Video (5.5th Generation)'`
- * — the `.5` decimal ordinal isn't matched by either regex and the full
- * string surfaces in the short cell. Acceptable today; tracked for upstream
- * consolidation alongside the broader `IPOD_USB_IDS` / `GENERATIONS`
- * displayName-format inconsistency that motivates this shortener's existence.
+ * through unchanged.
  *
  * @internal
  */
 function shortenIpodLabel(displayName: string): string {
   // Lowercase USB-source form: `iPod nano 3rd generation` (no parens).
-  // Family is `iPod <model>` or just `iPod`; followed by a digit + ordinal
-  // suffix + `generation`. Everything between the family and the generation
-  // marker (capacity, color) is dropped.
+  // Family is `iPod <model>` or just `iPod`; followed by a digit (optionally
+  // with a decimal fraction) + ordinal suffix + `generation`. Everything
+  // between the family and the generation marker (capacity, color) is dropped.
   const lower = displayName.match(
-    /^(iPod(?:\s+[A-Za-z]+)?)\s+(?:.*\s+)?(\d+)(?:st|nd|rd|th)\s+generation\b/i
+    /^(iPod(?:\s+[A-Za-z]+)?)\s+(?:.*\s+)?(\d+(?:\.\d+)?)(?:st|nd|rd|th)\s+generation\b/i
   );
   if (lower) {
     return `${lower[1]!} ${lower[2]!}G`;
   }
   // Parenthetical form: `iPod nano 4GB Silver (2nd Generation)`.
   const paren = displayName.match(
-    /^(iPod(?:\s+[A-Za-z]+)?).*?\((\d+)(?:st|nd|rd|th)\s+Generation\)/i
+    /^(iPod(?:\s+[A-Za-z]+)?).*?\((\d+(?:\.\d+)?)(?:st|nd|rd|th)\s+Generation\)/i
   );
   if (paren) {
     return `${paren[1]!} ${paren[2]!}G`;

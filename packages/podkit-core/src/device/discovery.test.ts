@@ -175,6 +175,23 @@ describe('reconcileDiscoveredDevices — iPod arm', () => {
     expect((orphan as DiscoveredDeviceIpod).usb).toBe(usbByDisk);
   });
 
+  it('strips partition suffix on BOTH sides for macOS bsd_name disk-identifier match', () => {
+    // Regression: an early implementation stripped only the block side.
+    // If `diskIdentifier` itself carries a partition suffix (e.g. `disk5s2`
+    // reported by system_profiler), the match must still fold to one entry.
+    const b = block({ identifier: 'disk5s2' });
+    const u = ipodUsb({ diskIdentifier: 'disk5s2' });
+
+    const result = reconcileDiscoveredDevices([b], [u]);
+
+    expect(result).toHaveLength(1);
+    const r = result[0] as DiscoveredDeviceIpod;
+    expect(r.kind).toBe('ipod');
+    expect(r.matchedBy).toBe('disk-identifier');
+    expect(r.block).toBe(b);
+    expect(r.usb).toBe(u);
+  });
+
   it('treats empty serials as no-match', () => {
     const b = block({
       identifier: 'sdc1',
@@ -370,12 +387,27 @@ describe('displayFor', () => {
     expect(display.source).toBe('ipod-generation');
   });
 
-  it('passes through the 5.5G iPod Video displayName unchanged (known shortener gap)', () => {
-    // The `IPOD_USB_IDS` / `GENERATIONS` displayName formats use an integer
-    // ordinal (`3rd`, `5th`). The 5.5G iPod Video uses a decimal ordinal
-    // (`5.5th`) which neither regex in `shortenIpodLabel` matches. Pin the
-    // pass-through behaviour so the gap is documented + a future fix is
-    // attributable.
+  it.each([['iPod Photo'], ['iPod']])(
+    'passes unrecognised displayName %p through the shortener unchanged',
+    (displayName) => {
+      const u = {
+        kind: 'ipod' as const,
+        device: { vendorId: '05ac', productId: '0000' } as EnumeratedUsbDevice,
+        identity: {},
+        model: { displayName },
+      };
+      const d: DiscoveredDeviceIpod = {
+        kind: 'ipod',
+        // biome-ignore lint/suspicious/noExplicitAny: synthetic classification shape — only `model.displayName` is read.
+        usb: u as any,
+        matchedBy: 'usb-only',
+      };
+
+      expect(displayFor(d).short).toBe(displayName);
+    }
+  );
+
+  it('shortens the 5.5G iPod Video displayName via decimal-ordinal regex', () => {
     const u = {
       kind: 'ipod' as const,
       device: { vendorId: '05ac', productId: '0000' } as EnumeratedUsbDevice,
@@ -389,7 +421,7 @@ describe('displayFor', () => {
       matchedBy: 'usb-only',
     };
 
-    expect(displayFor(d).short).toBe('iPod Video (5.5th Generation)');
+    expect(displayFor(d).short).toBe('iPod Video 5.5G');
   });
 
   it('renders an unsupported Sony Walkman with the canonical refusal reason', () => {
