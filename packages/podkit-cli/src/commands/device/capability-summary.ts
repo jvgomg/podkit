@@ -16,9 +16,11 @@
  */
 
 import type { DeviceCapabilities, IpodIdentityAssessment } from '@podkit/core';
+import type { ResolvedDeviceCapabilities } from '@podkit/device-types';
 import { DOCS_URLS } from '@podkit/core';
 import { CliError } from '../../errors.js';
 import type { OutputContext } from '../../output/index.js';
+import { formatResolved, formatValue } from '../../config/resolve.js';
 import { DeviceErrorCodes } from './error-codes.js';
 
 // =============================================================================
@@ -42,8 +44,15 @@ export type CapabilityRenderContext =
   | { kind: 'mass-storage' };
 
 export interface PrintCapabilitySummaryOptions {
-  /** Outer indent for the "Capabilities:" header. Default `''`. */
+  /** Outer indent for the section. Default `''`. */
   indent?: string;
+  /**
+   * Override the section header. Default `'Capabilities:'`. Callers pass a
+   * richer string like `'Capabilities (from echo-mini preset)'` or
+   * `'Capabilities (from iPod nano 3G)'` to anchor the section to the
+   * derivation source.
+   */
+  sectionTitle?: string;
   /**
    * Mass-storage-only: unfiltered "device firmware can play" view. When this
    * is a strict superset of `capabilities.supportedAudioCodecs`, the renderer
@@ -52,6 +61,15 @@ export interface PrintCapabilitySummaryOptions {
    * line. Ignored on the iPod variant.
    */
   firmwareCapabilities?: DeviceCapabilities;
+  /**
+   * Mass-storage-only: provenance-aware capabilities view. When supplied,
+   * the renderer surfaces `[bracketed]` markers for fields inherited from
+   * the preset and bare values for per-device overrides — matching the
+   * `device list` vocabulary. When omitted, falls back to plain rendering
+   * (no inheritance markers); used by `add-render` which doesn't have a
+   * config-cascade view available at add time.
+   */
+  resolved?: ResolvedDeviceCapabilities;
 }
 
 /**
@@ -92,7 +110,7 @@ export function printCapabilitySummary(
 ): void {
   const indent = opts.indent ?? '';
   const inner = `${indent}  `;
-  out.print(`${indent}Capabilities:`);
+  out.print(`${indent}${opts.sectionTitle ?? 'Capabilities:'}`);
 
   if (ctx.kind === 'ipod') {
     out.print(`${inner}+ Music`);
@@ -119,7 +137,12 @@ export function printCapabilitySummary(
     return;
   }
 
-  // mass-storage — tabular layout
+  // mass-storage — tabular layout. When `opts.resolved` is supplied, every
+  // boolean / value row is rendered through `formatResolved` so per-device
+  // overrides surface as bare values and preset-inherited values surface as
+  // `[bracketed]`. Without `opts.resolved` the renderer falls back to plain
+  // values for backward compat (add-render call path; no cascade context).
+  const r = opts.resolved;
   const operationalCodecs = capabilities.supportedAudioCodecs;
   const firmwareCodecs = opts.firmwareCapabilities?.supportedAudioCodecs;
   const transcoded = getTranscodedCodecs(firmwareCodecs, operationalCodecs);
@@ -132,14 +155,43 @@ export function printCapabilitySummary(
     out.print(`${inner}  Podkit:     ${operationalCodecs.join(', ') || 'none'}`);
     out.print(`${inner}              (${transcoded.join(', ')} transcoded before transfer)`);
   } else {
-    out.print(`${inner}Audio Codecs:    ${operationalCodecs.join(', ')}`);
+    out.print(
+      `${inner}Audio Codecs:    ${fmt(operationalCodecs.join(', '), r?.supportedAudioCodecs.source)}`
+    );
   }
+  const artworkSourcesStr = capabilities.artworkSources.join(', ') || 'none';
+  const artworkSuffix = capabilities.artworkMaxResolution
+    ? ` (max ${capabilities.artworkMaxResolution}px)`
+    : '';
   out.print(
-    `${inner}Artwork:         ${capabilities.artworkSources.join(', ')} (max ${capabilities.artworkMaxResolution}px)`
+    `${inner}Artwork:         ${fmt(artworkSourcesStr, r?.artworkSources.source)}${artworkSuffix}`
   );
-  out.print(`${inner}Video:           ${capabilities.supportsVideo ? 'yes' : 'no'}`);
-  out.print(`${inner}Normalization:   ${capabilities.audioNormalization}`);
-  out.print(`${inner}Album Artist:    ${capabilities.supportsAlbumArtistBrowsing ? 'yes' : 'no'}`);
+  out.print(`${inner}Video:           ${fmt(capabilities.supportsVideo, r?.supportsVideo.source)}`);
+  out.print(
+    `${inner}Normalization:   ${fmt(capabilities.audioNormalization, r?.audioNormalization.source)}`
+  );
+  out.print(
+    `${inner}Album Artist:    ${fmt(capabilities.supportsAlbumArtistBrowsing, r?.supportsAlbumArtistBrowsing.source)}`
+  );
+}
+
+/**
+ * Render one capability value with vocabulary unified across the renderer.
+ *
+ * - When `source` is supplied (caller threaded `opts.resolved`), forward to
+ *   `formatResolved` so per-field inheritance markers (`[bracketed]`) and
+ *   unsupported / unknown symbols come from the shared helper.
+ * - When `source` is absent (caller has no cascade context — e.g.
+ *   `add-render` showing preset baselines before any device exists),
+ *   short-circuit through `formatResolvedBareValue` so we still emit
+ *   `on`/`off` for booleans without falsely tagging the value as a
+ *   `'device-config'` override. Avoids semantic drift if a future caller
+ *   passes a genuinely-inherited value with no source — they get plain
+ *   rendering, not a false explicit-override marker.
+ */
+function fmt(value: unknown, source: string | undefined): string {
+  if (source === undefined) return formatValue(value);
+  return formatResolved({ value, source });
 }
 
 // =============================================================================

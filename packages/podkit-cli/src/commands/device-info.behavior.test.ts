@@ -98,12 +98,49 @@ function fakeCore(): typeof import('@podkit/core') {
     }),
     ipodFromBlock: (block: unknown) => ({ kind: 'ipod', block, matchedBy: 'block-only' }),
     IpodError: class IpodError extends Error {},
+    getDeviceManager: () => fakeManager(),
+    discoverConnectedDevices: async () => [],
+    // Stub the provenance resolver so the Settings section's capability
+    // sub-block populates. Returns every field with `source: 'preset'` —
+    // matches the real shape closely enough for the renderer assertions
+    // here. Tests that need per-field provenance should override.
+    resolveCapabilitiesResolved: () => ({
+      supportedAudioCodecs: { value: ['aac'], source: 'preset' },
+      artworkSources: { value: ['embedded'], source: 'preset' },
+      artworkMaxResolution: { value: 127, source: 'preset' },
+      supportsVideo: { value: false, source: 'preset' },
+      audioNormalization: { value: 'none', source: 'preset' },
+      supportsAlbumArtistBrowsing: { value: true, source: 'preset' },
+    }),
   } as unknown as typeof import('@podkit/core');
 }
 
 interface InfoJson {
   success: true;
-  device?: { name: string };
+  device?: {
+    name: string;
+    // Breaking minor: the legacy top-level config fields below MUST stay
+    // undefined on the JSON shape. Asserted in 'omits legacy top-level
+    // config fields' below — consumers migrate to `settings.audio.value`
+    // etc per the changeset.
+    quality?: undefined;
+    audioQuality?: undefined;
+    videoQuality?: undefined;
+    artwork?: undefined;
+  };
+  settings?: {
+    quality: { value: string; source: string };
+    audio: { value: string; source: string };
+    video: { value: string | null; source: string };
+    artwork: { value: boolean | null; source: string };
+    manufacturer?: { value: string; source: string };
+    productName?: { value: string; source: string };
+    capabilities?: {
+      supportedAudioCodecs: { value: string[]; source: string };
+      supportsVideo: { value: boolean; source: string };
+      audioNormalization: { value: string; source: string };
+    };
+  };
   status?: {
     mounted: boolean;
     mountPoint?: string;
@@ -223,6 +260,200 @@ describe('runDeviceInfo: behaviour past openDevice', () => {
       'wav',
       'aiff',
     ]);
+  });
+
+  // ── settings block — TASK-317.09 redesign ───────────────────────────────
+  //
+  // The new `settings` block at the top of the JSON envelope replaces the
+  // legacy top-level `device.quality` / `device.audioQuality` /
+  // `device.videoQuality` / `device.artwork` fields. Every value carries
+  // `{ value, source }` provenance so consumers can render inheritance
+  // markers without re-running the resolver.
+
+  function makeContextWithDevice(
+    deviceName: string,
+    devicePath: string,
+    deviceOverrides: Record<string, unknown> = {}
+  ): CliContext {
+    const config: PodkitConfig = {
+      quality: 'medium',
+      artwork: true,
+      tips: true,
+      transforms: DEFAULT_TRANSFORMS_CONFIG,
+      videoTransforms: DEFAULT_VIDEO_TRANSFORMS_CONFIG,
+      devices: {
+        [deviceName]: {
+          type: 'generic',
+          path: devicePath,
+          ...deviceOverrides,
+        },
+      },
+      music: {},
+      video: {},
+    };
+    const globalOpts: GlobalOptions = {
+      json: true,
+      quiet: false,
+      verbose: 0,
+      color: false,
+      tips: false,
+      tty: false,
+      device: deviceName,
+    };
+    const configResult: LoadConfigResult = {
+      config,
+      configPath: undefined,
+      configFileExists: false,
+    };
+    return { config, globalOpts, configResult };
+  }
+
+  it('emits a settings block carrying resolved cascade values + provenance', async () => {
+    const ctx = makeContextWithDevice('mp3player', mount, { audioQuality: 'max' });
+    const { out, stdout, exitCode } = makeOut();
+
+    const deps: DeviceInfoDeps = {
+      loadCore: async () => fakeCore(),
+      getDeviceManager: () => fakeManager(),
+      openDevice: async () =>
+        makeFakeOpenDeviceResult({
+          tracks: [],
+          isIpodDevice: false,
+          capabilities: { supportedAudioCodecs: ['aac'] },
+        }),
+    };
+
+    await runWithContext(ctx, () => runAction(out, () => runDeviceInfo(out, deps)));
+    expect(exitCode.get()).toBeUndefined();
+
+    const result = stdout.json<InfoJson>();
+    expect(result.settings).toBeDefined();
+    // Device-level audioQuality override → source 'device'.
+    expect(result.settings?.audio.value).toBe('max');
+    expect(result.settings?.audio.source).toBe('device');
+    // Quality inherited from the global quality cascade ('medium' set in
+    // makeContextWithDevice). Device doesn't set its own `quality`, so the
+    // resolver labels the source `'global-quality'` — the inherited-from-
+    // global-quality marker used elsewhere in the cascade.
+    expect(result.settings?.quality.value).toBe('medium');
+    expect(result.settings?.quality.source).toBe('global-quality');
+    // Mass-storage capabilities cascade through with preset / device-config
+    // provenance.
+    expect(result.settings?.capabilities).toBeDefined();
+  });
+
+  it('iPod device emits settings WITHOUT capabilities sub-block or manufacturer/productName', async () => {
+    // iPod devices have no preset display labels (manufacturer/productName
+    // are mass-storage-only), and the capability cascade is mass-storage-only
+    // too — the iPod side surfaces capabilities through libgpod separately.
+    // Regression for round-2 reviewer finding: settings shape should narrow
+    // correctly for iPod, not just mass-storage.
+    const config: PodkitConfig = {
+      quality: 'medium',
+      artwork: true,
+      tips: true,
+      transforms: DEFAULT_TRANSFORMS_CONFIG,
+      videoTransforms: DEFAULT_VIDEO_TRANSFORMS_CONFIG,
+      devices: {
+        terapod: {
+          type: 'ipod',
+          path: mount,
+          volumeUuid: '5U851AEH3R0',
+        },
+      },
+      music: {},
+      video: {},
+    };
+    const globalOpts: GlobalOptions = {
+      json: true,
+      quiet: false,
+      verbose: 0,
+      color: false,
+      tips: false,
+      tty: false,
+      device: 'terapod',
+    };
+    const ctx: CliContext = {
+      config,
+      globalOpts,
+      configResult: { config, configPath: undefined, configFileExists: false },
+    };
+    const { out, stdout, exitCode } = makeOut();
+
+    const deps: DeviceInfoDeps = {
+      loadCore: async () => fakeCore(),
+      getDeviceManager: () => fakeManager(),
+      openDevice: async () =>
+        makeFakeOpenDeviceResult({
+          tracks: [],
+          isIpodDevice: true,
+          capabilities: { supportedAudioCodecs: ['aac', 'mp3'] },
+        }),
+    };
+
+    await runWithContext(ctx, () => runAction(out, () => runDeviceInfo(out, deps)));
+    expect(exitCode.get()).toBeUndefined();
+
+    const result = stdout.json<InfoJson>();
+    expect(result.settings).toBeDefined();
+    expect(result.settings?.manufacturer).toBeUndefined();
+    expect(result.settings?.productName).toBeUndefined();
+    expect(result.settings?.capabilities).toBeUndefined();
+  });
+
+  it('path mode (--device /Volumes/Foo with no config match) emits NO settings block', async () => {
+    // When info is invoked with a raw path that doesn't resolve to any
+    // configured device, `device` is undefined and there's no cascade to
+    // resolve. The settings block must be absent — otherwise `settings.*`
+    // would carry nonsense for a one-off path-mode peek.
+    const ctx = makeContext(mount); // makeContext gives `devices: {}`
+    const { out, stdout, exitCode } = makeOut();
+
+    const deps: DeviceInfoDeps = {
+      loadCore: async () => fakeCore(),
+      getDeviceManager: () => fakeManager(),
+      openDevice: async () =>
+        makeFakeOpenDeviceResult({
+          tracks: [],
+          isIpodDevice: false,
+          capabilities: { supportedAudioCodecs: ['aac'] },
+        }),
+    };
+
+    await runWithContext(ctx, () => runAction(out, () => runDeviceInfo(out, deps)));
+    expect(exitCode.get()).toBeUndefined();
+
+    const result = stdout.json<InfoJson>();
+    expect(result.settings).toBeUndefined();
+    expect(result.device).toBeUndefined();
+  });
+
+  it('omits legacy top-level config fields (breaking minor — consumers migrate to settings.*)', async () => {
+    const ctx = makeContextWithDevice('mp3player', mount);
+    const { out, stdout, exitCode } = makeOut();
+
+    const deps: DeviceInfoDeps = {
+      loadCore: async () => fakeCore(),
+      getDeviceManager: () => fakeManager(),
+      openDevice: async () =>
+        makeFakeOpenDeviceResult({
+          tracks: [],
+          isIpodDevice: false,
+          capabilities: { supportedAudioCodecs: ['aac'] },
+        }),
+    };
+
+    await runWithContext(ctx, () => runAction(out, () => runDeviceInfo(out, deps)));
+    expect(exitCode.get()).toBeUndefined();
+
+    const result = stdout.json<InfoJson>();
+    // Explicitly check the legacy fields are gone — a regression that
+    // re-introduces them (silently shadowing settings.*.value) would slip
+    // through every other test.
+    expect(result.device?.quality).toBeUndefined();
+    expect(result.device?.audioQuality).toBeUndefined();
+    expect(result.device?.videoQuality).toBeUndefined();
+    expect(result.device?.artwork).toBeUndefined();
   });
 
   it('demotes openDevice failure to status.databaseError (no thrown CliError)', async () => {

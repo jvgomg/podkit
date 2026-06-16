@@ -7,7 +7,19 @@
  */
 import type { CliErrorOutput } from '../../errors.js';
 import type { ReadinessUnsupportedReason } from '@podkit/core';
+import type { CapabilitySource } from '@podkit/device-types';
+import type { ConfigSource } from '../../config/resolve.js';
 import type { DeviceErrorCode } from './error-codes.js';
+
+/**
+ * Union of every cascade-source literal that can appear in a
+ * `DeviceInfoResolvedValue.source` field. Spans the CLI config cascade
+ * (`ConfigSource` — `device`, `global`, `default`, etc.) and the
+ * capability cascade (`CapabilitySource` — `preset`, `device-config`,
+ * `firmware`, etc.). Tightening from `string` catches typos in test
+ * assertions and downstream consumers at compile time.
+ */
+export type DeviceInfoSource = ConfigSource | CapabilitySource;
 
 /** Serialised iPod model identity for JSON output */
 export interface DeviceModelOutput {
@@ -83,19 +95,57 @@ export type DeviceRemoveOutput = DeviceRemoveSuccess | DeviceRemoveErrorOutput;
 
 // ── info ────────────────────────────────────────────────────────────────────
 
+/**
+ * Cascade-resolved value with provenance — `{ value, source }` shape
+ * mirrors `ResolvedValue<T>` (CLI ConfigSource) and `Resolved<T,
+ * CapabilitySource>` (device-types CapabilitySource) at the JSON layer.
+ *
+ * `source` is the `DeviceInfoSource` union (`ConfigSource | CapabilitySource`)
+ * — tight enough to catch consumer typos at compile time, wide enough to
+ * span both cascades. JSON consumers can still switch on the string at
+ * runtime since TypeScript erases unions to strings.
+ */
+export interface DeviceInfoResolvedValue<T> {
+  value: T;
+  source: DeviceInfoSource;
+}
+
 export interface DeviceInfoSuccess {
   success: true;
   device?: {
     name: string;
     volumeUuid?: string;
     volumeName?: string;
-    quality?: string;
-    audioQuality?: string;
-    videoQuality?: string;
-    artwork?: boolean;
     transforms?: Record<string, unknown>;
     transformWarnings?: Array<{ type: string; message: string }>;
     isDefault: boolean;
+  };
+  /**
+   * Resolved config + capability cascade for this device. Replaces the
+   * top-level `quality` / `audioQuality` / `videoQuality` / `artwork`
+   * fields on `device` (removed; consumers read `settings.audio.value`
+   * etc instead). The optional `capabilities` sub-block carries the
+   * mass-storage capability cascade; omitted for iPods.
+   */
+  settings?: {
+    quality: DeviceInfoResolvedValue<string>;
+    audio: DeviceInfoResolvedValue<string>;
+    video: DeviceInfoResolvedValue<string | null>;
+    artwork: DeviceInfoResolvedValue<boolean | null>;
+    checkArtwork: DeviceInfoResolvedValue<boolean>;
+    skipUpgrades: DeviceInfoResolvedValue<boolean>;
+    encoding: DeviceInfoResolvedValue<string | undefined>;
+    transferMode: DeviceInfoResolvedValue<string>;
+    manufacturer?: DeviceInfoResolvedValue<string>;
+    productName?: DeviceInfoResolvedValue<string>;
+    capabilities?: {
+      supportedAudioCodecs: DeviceInfoResolvedValue<string[]>;
+      artworkSources: DeviceInfoResolvedValue<string[]>;
+      artworkMaxResolution: DeviceInfoResolvedValue<number | null>;
+      supportsVideo: DeviceInfoResolvedValue<boolean>;
+      audioNormalization: DeviceInfoResolvedValue<string>;
+      supportsAlbumArtistBrowsing: DeviceInfoResolvedValue<boolean>;
+    };
   };
   status?: {
     mounted: boolean;

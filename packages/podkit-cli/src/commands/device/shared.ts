@@ -20,7 +20,7 @@ import {
   escapeCsv,
 } from '../display-utils.js';
 import { formatNumber } from '../../output/index.js';
-import type { DeviceTrack, DeviceAssessment, IFlashEvidence } from '@podkit/core';
+import type { DeviceTrack, DeviceAssessment, IFlashEvidence, DiscoveredDevice } from '@podkit/core';
 import type { DeviceConfig } from '../../config/index.js';
 import type { CoreLoaderDeps, IpodDatabaseStub } from '../../handler-deps.js';
 
@@ -402,6 +402,121 @@ export function synthesizePathModeDeviceInfo(
 // =============================================================================
 // Scan/list helpers (shared across multiple subcommands)
 // =============================================================================
+
+/**
+ * Extract the capability-override subset of a `DeviceConfig` into the
+ * `Partial<DeviceCapabilities>` shape the core capability resolvers
+ * (`resolveCapabilities`, `resolveCapabilitiesResolved`) accept as
+ * `overrides` / `deviceConfigOverrides`. Centralised so `device info`,
+ * `device list`, and any future consumer agree on which fields count as
+ * capability overrides (`musicDir` / `moviesDir` / `tvShowsDir` are NOT
+ * capabilities — they're content paths and live in a different resolver).
+ */
+export function pickCapabilityOverrides(
+  deviceConfig: DeviceConfig
+): Partial<import('@podkit/core').DeviceCapabilities> {
+  const overrides: Partial<import('@podkit/core').DeviceCapabilities> = {};
+  if (deviceConfig.artworkMaxResolution !== undefined) {
+    overrides.artworkMaxResolution = deviceConfig.artworkMaxResolution;
+  }
+  if (deviceConfig.artworkSources !== undefined) {
+    overrides.artworkSources = deviceConfig.artworkSources;
+  }
+  if (deviceConfig.supportedAudioCodecs !== undefined) {
+    overrides.supportedAudioCodecs = deviceConfig.supportedAudioCodecs;
+  }
+  if (deviceConfig.supportsVideo !== undefined) {
+    overrides.supportsVideo = deviceConfig.supportsVideo;
+  }
+  if (deviceConfig.audioNormalization !== undefined) {
+    overrides.audioNormalization = deviceConfig.audioNormalization;
+  }
+  if (deviceConfig.supportsAlbumArtistBrowsing !== undefined) {
+    overrides.supportsAlbumArtistBrowsing = deviceConfig.supportsAlbumArtistBrowsing;
+  }
+  return overrides;
+}
+
+/**
+ * Match a configured device to its `DiscoveredDevice` entry from a
+ * `discoverConnectedDevices` enumeration. Returns `undefined` when no entry
+ * matches — the device is offline or wasn't surfaced by the discovery pass.
+ *
+ * Match priority (first hit wins):
+ *
+ *   1. **Volume UUID** — `deviceConfig.volumeUuid` vs `block.volumeUuid`
+ *      (case-insensitive). Survives replug; canonical match for iPods.
+ *   2. **Mount path** — `deviceConfig.path` vs `block.mountPoint` (exact
+ *      string compare). Used for mass-storage devices configured by path
+ *      and for iPod path mode (`-d /Volumes/IPOD`).
+ *   3. **USB serial** — `deviceConfig.volumeUuid` (iPod-side, when the iPod
+ *      stores its serial as the volumeUuid surrogate) vs USB-side
+ *      `usb.serialNumber`. Catches USB-only entries (powered iPod with no
+ *      mounted volume) where the block side is absent.
+ *   4. **Sole-match by preset id** — for mass-storage devices configured
+ *      WITHOUT a UUID OR path, when exactly one discovered entry has
+ *      `kind === 'mass-storage'` with a matching `usb.presetId`, attribute
+ *      it to the config. Gated on the absence of stronger signals: if the
+ *      config carried a UUID or path that just didn't match, we MUST NOT
+ *      silently re-attribute the device to it (two echo-minis, one
+ *      disconnected, would otherwise misroute commands to the wrong
+ *      config). Strong identity beats preset-class identity.
+ */
+export function matchConfiguredDeviceToDiscovered(
+  deviceConfig: DeviceConfig,
+  discovered: readonly DiscoveredDevice[]
+): DiscoveredDevice | undefined {
+  const configUuid = deviceConfig.volumeUuid?.toUpperCase();
+  const configPath = deviceConfig.path;
+
+  // 1. Volume UUID match
+  if (configUuid) {
+    for (const d of discovered) {
+      const blockUuid = d.block?.volumeUuid;
+      if (blockUuid && blockUuid.toUpperCase() === configUuid) return d;
+    }
+  }
+
+  // 2. Mount path match
+  if (configPath) {
+    for (const d of discovered) {
+      if (d.block?.isMounted && d.block.mountPoint === configPath) return d;
+    }
+  }
+
+  // 3. USB serial match (USB-only entries). Only meaningful when configUuid
+  // is populated — for iPods, the stored UUID can be the device's serial
+  // surrogate (Apple serial reused as volume UUID), so a USB-only iPod's
+  // classification carries a matching serialNumber. configUuid undefined →
+  // nothing to compare against; skip.
+  if (configUuid) {
+    for (const d of discovered) {
+      // discovery.ts: ipod/mass-storage `.usb` is an `IpodClassification` /
+      // `MassStorageClassification`; the underlying `EnumeratedUsbDevice` (which
+      // carries `serialNumber`) is `.usb.device`. Unsupported variants are
+      // skipped — they go through the dedicated unsupported-message UI.
+      if (d.kind === 'unsupported') continue;
+      const serial = d.usb?.device.serialNumber;
+      if (serial && serial.toUpperCase() === configUuid) return d;
+    }
+  }
+
+  // 4. Sole-match by preset id (mass-storage). ONLY when no stronger signal
+  // was attempted — if the config had a UUID or path and neither matched,
+  // refuse the fallback. Otherwise two echo-minis with UUIDs A and B, only
+  // one connected (UUID A), would both resolve to the same discovered
+  // device when looking up the other config (the unmatched one falls
+  // through to the sole-match and grabs the connected one).
+  const presetId = deviceConfig.type;
+  if (presetId && presetId !== 'ipod' && !configUuid && !configPath) {
+    const matches = discovered.filter(
+      (d) => d.kind === 'mass-storage' && d.usb?.presetId === presetId
+    );
+    if (matches.length === 1) return matches[0];
+  }
+
+  return undefined;
+}
 
 /**
  * Find the configured device name for a discovered device by matching UUID.

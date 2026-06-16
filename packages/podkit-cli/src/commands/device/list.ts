@@ -8,7 +8,7 @@ import type { CoreLoaderDeps } from '../../handler-deps.js';
 import { isMassStorageDevice, getDeviceTypeDisplayName } from '../open-device.js';
 import { mergedPresets } from '../../config/preset-registry.js';
 import { OutputContext } from '../../output/index.js';
-import { sortDevicesForDisplay, getDevicePrefix } from './shared.js';
+import { sortDevicesForDisplay, getDevicePrefix, pickCapabilityOverrides } from './shared.js';
 import type { DeviceListOutput } from './output-types.js';
 
 /**
@@ -99,7 +99,7 @@ export async function runDeviceList(out: OutputContext, deps: DeviceListDeps = {
   }
 
   // Resolve capabilities and settings for each device
-  const { resolveGlobalConfig, resolveDeviceSettings, formatResolved, formatGlobalResolved } =
+  const { resolveGlobalConfig, resolveDeviceSettings, formatResolved, GLOBAL_EXPLICIT_SOURCES } =
     await import('../../config/resolve.js');
   const resolveCapabilities = coreOrNull?.resolveCapabilities;
   const identifyCapabilities = coreOrNull?.identifyCapabilities;
@@ -164,31 +164,10 @@ export async function runDeviceList(out: OutputContext, deps: DeviceListDeps = {
       };
       if (resolveCapabilities) {
         try {
-          // Extract only the capability-relevant subset; casting the
-          // whole DeviceConfig used to silently include non-capability
-          // fields (and now also the new display fields
-          // manufacturer/productName which the resolver ignores) in
-          // the override blob.
-          const overrides: Partial<import('@podkit/core').DeviceCapabilities> = {};
-          if (deviceConfig.artworkMaxResolution !== undefined) {
-            overrides.artworkMaxResolution = deviceConfig.artworkMaxResolution;
-          }
-          if (deviceConfig.artworkSources !== undefined) {
-            overrides.artworkSources = deviceConfig.artworkSources;
-          }
-          if (deviceConfig.supportedAudioCodecs !== undefined) {
-            overrides.supportedAudioCodecs = deviceConfig.supportedAudioCodecs;
-          }
-          if (deviceConfig.supportsVideo !== undefined) {
-            overrides.supportsVideo = deviceConfig.supportsVideo;
-          }
-          if (deviceConfig.audioNormalization !== undefined) {
-            overrides.audioNormalization = deviceConfig.audioNormalization;
-          }
-          if (deviceConfig.supportsAlbumArtistBrowsing !== undefined) {
-            overrides.supportsAlbumArtistBrowsing = deviceConfig.supportsAlbumArtistBrowsing;
-          }
-          capabilities = resolveCapabilities(massStorageIdentity, { presets, overrides });
+          capabilities = resolveCapabilities(massStorageIdentity, {
+            presets,
+            overrides: pickCapabilityOverrides(deviceConfig),
+          });
         } catch {
           capabilities = null;
         }
@@ -246,11 +225,13 @@ export async function runDeviceList(out: OutputContext, deps: DeviceListDeps = {
 
   out.result<DeviceListOutput>({ success: true, devices: deviceList, defaultDevice }, () => {
     // Global config line
+    const fmtGlobal = (r: { value: unknown; source: string }) =>
+      formatResolved(r, { explicitSources: GLOBAL_EXPLICIT_SOURCES });
     out.print(
-      `Global: quality=${formatGlobalResolved(globalResolved.quality)}` +
-        `  audio=${formatGlobalResolved(globalResolved.audio)}` +
-        `  video=${formatGlobalResolved(globalResolved.video)}` +
-        `  artwork=${formatGlobalResolved(globalResolved.artwork)}`
+      `Global: quality=${fmtGlobal(globalResolved.quality)}` +
+        `  audio=${fmtGlobal(globalResolved.audio)}` +
+        `  video=${fmtGlobal(globalResolved.video)}` +
+        `  artwork=${fmtGlobal(globalResolved.artwork)}`
     );
     out.newline();
 

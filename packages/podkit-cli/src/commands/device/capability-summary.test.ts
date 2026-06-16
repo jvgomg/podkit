@@ -162,9 +162,9 @@ describe('printCapabilitySummary — mass-storage', () => {
       'Capabilities:',
       '  Audio Codecs:    aac, flac, mp3',
       '  Artwork:         database, embedded (max 320px)',
-      '  Video:           no',
+      '  Video:           off',
       '  Normalization:   replaygain',
-      '  Album Artist:    yes',
+      '  Album Artist:    on',
     ]);
   });
 
@@ -199,9 +199,9 @@ describe('printCapabilitySummary — mass-storage', () => {
       '    Podkit:     aac, alac, mp3, flac, vorbis, opus',
       '                (wav, aiff transcoded before transfer)',
       '  Artwork:         database, embedded (max 320px)',
-      '  Video:           no',
+      '  Video:           off',
       '  Normalization:   replaygain',
-      '  Album Artist:    yes',
+      '  Album Artist:    on',
     ]);
   });
 
@@ -217,9 +217,9 @@ describe('printCapabilitySummary — mass-storage', () => {
       'Capabilities:',
       '  Audio Codecs:    aac, flac, mp3',
       '  Artwork:         database, embedded (max 320px)',
-      '  Video:           no',
+      '  Video:           off',
       '  Normalization:   replaygain',
-      '  Album Artist:    yes',
+      '  Album Artist:    on',
     ]);
   });
 });

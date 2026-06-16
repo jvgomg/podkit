@@ -6,7 +6,7 @@ import {
   resolveGlobalConfig,
   resolveDeviceSettings,
   formatResolved,
-  formatGlobalResolved,
+  GLOBAL_EXPLICIT_SOURCES,
 } from './resolve.js';
 
 // =============================================================================
@@ -535,21 +535,38 @@ describe('formatResolved', () => {
 });
 
 // =============================================================================
-// formatGlobalResolved
+// formatResolved with GLOBAL_EXPLICIT_SOURCES (replaces the deleted
+// formatGlobalResolved — same semantics via the explicitSources option)
 // =============================================================================
 
-describe('formatGlobalResolved', () => {
+describe('formatResolved with GLOBAL_EXPLICIT_SOURCES', () => {
+  const opts = { explicitSources: GLOBAL_EXPLICIT_SOURCES };
+
   it('shows value without brackets for global source', () => {
-    expect(formatGlobalResolved({ value: 'max', source: 'global' })).toBe('max');
+    expect(formatResolved({ value: 'max', source: 'global' }, opts)).toBe('max');
   });
 
   it('wraps inherited values in brackets', () => {
-    expect(formatGlobalResolved({ value: 'high', source: 'global-quality' })).toBe('[high]');
-    expect(formatGlobalResolved({ value: 'high', source: 'default' })).toBe('[high]');
+    expect(formatResolved({ value: 'high', source: 'global-quality' }, opts)).toBe('[high]');
+    expect(formatResolved({ value: 'high', source: 'default' }, opts)).toBe('[high]');
   });
 
   it('formats boolean values', () => {
-    expect(formatGlobalResolved({ value: true, source: 'global' })).toBe('on');
-    expect(formatGlobalResolved({ value: false, source: 'global' })).toBe('off');
+    expect(formatResolved({ value: true, source: 'global' }, opts)).toBe('on');
+    expect(formatResolved({ value: false, source: 'global' }, opts)).toBe('off');
+  });
+
+  it('treats device-config as inherited at the global boundary', () => {
+    expect(formatResolved({ value: 'FiiO', source: 'device-config' }, opts)).toBe('[FiiO]');
+  });
+});
+
+describe('formatResolved with device-config explicit (default)', () => {
+  it('treats device-config as explicit (no brackets) — capability-cascade per-device override', () => {
+    expect(formatResolved({ value: 'AliExpress', source: 'device-config' })).toBe('AliExpress');
+  });
+
+  it('treats preset as inherited (brackets)', () => {
+    expect(formatResolved({ value: 'FiiO', source: 'preset' })).toBe('[FiiO]');
   });
 });

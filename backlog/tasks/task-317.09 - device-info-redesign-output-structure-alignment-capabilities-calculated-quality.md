@@ -3,9 +3,10 @@ id: TASK-317.09
 title: >-
   device info: redesign output structure (alignment, capabilities, calculated
   quality)
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-09 16:15'
+updated_date: '2026-06-16 22:13'
 labels:
   - cli
   - ux
@@ -87,15 +88,75 @@ Use the `device list` inheritance convention (`[bracketed]` for inherited values
 See AC list.
 <!-- SECTION:DESCRIPTION:END -->
 
-- [ ] #1 Column alignment is consistent across all rows in the device info block. No row has more or fewer spaces between label and value than its siblings.
-- [ ] #2 Capabilities is a first-class section with its own header, distinct from Device metadata and from Settings.
-- [ ] #3 Capabilities section is anchored: shows the preset name (mass-storage) or the iPod model name (iPod) as the source from which capabilities were derived.
-- [ ] #4 Settings section shows resolved (effective) values for quality, artwork, etc., with inheritance markers matching the `[bracketed]` convention from `device list`. No `(not set)` strings.
-- [ ] #5 Music quality and video quality shown separately when both are applicable; one or the other dimmed/marked as N/A when the device doesn't support video.
-- [ ] #6 Boolean / availability values use a consistent vocabulary across the block (e.g., ✓ supported / ✗ not supported, OR yes / no, OR another consistent choice — pick one, apply everywhere).
-- [ ] #7 Duplicate `Audio Codecs:` and `Codecs:` lines disambiguated: rename so it's obvious which is the device's supported set vs the per-device output choice (e.g., `Supported codecs:` vs `Output codec:`).
-- [ ] #8 Identity composition uses the cascade primitive (per TASK-317.03 AC #8) — no libgpod-derived identity in this output path.
-- [ ] #9 Unit + integration tests added: one snapshot per device class (mass-storage, supported iPod, unsupported iPod), confirming the new output shape.
+- [x] #1 Column alignment is consistent across all rows in the device info block. No row has more or fewer spaces between label and value than its siblings.
+- [x] #2 Capabilities is a first-class section with its own header, distinct from Device metadata and from Settings.
+- [x] #3 Capabilities section is anchored: shows the preset name (mass-storage) or the iPod model name (iPod) as the source from which capabilities were derived.
+- [x] #4 Settings section shows resolved (effective) values for quality, artwork, etc., with inheritance markers matching the `[bracketed]` convention from `device list`. No `(not set)` strings.
+- [x] #5 Music quality and video quality shown separately when both are applicable; one or the other dimmed/marked as N/A when the device doesn't support video.
+- [x] #6 Boolean / availability values use a consistent vocabulary across the block (e.g., ✓ supported / ✗ not supported, OR yes / no, OR another consistent choice — pick one, apply everywhere).
+- [x] #7 Duplicate `Audio Codecs:` and `Codecs:` lines disambiguated: rename so it's obvious which is the device's supported set vs the per-device output choice (e.g., `Supported codecs:` vs `Output codec:`).
+- [x] #8 Identity composition uses the cascade primitive (per TASK-317.03 AC #8) — no libgpod-derived identity in this output path.
+- [x] #9 Unit + integration tests added: one snapshot per device class (mass-storage, supported iPod, unsupported iPod), confirming the new output shape.
 - [ ] #10 Real-hardware verification: `device info` on Echo Mini, mini 2G, nano 4G, nano 7G #1 (unsupported) — confirm new shape is consistent and readable across all four. Capture the outputs in the task's final summary.
-- [ ] #11 JSON-mode output (`--json`) updated to reflect the new structure: separate `capabilities` block, separate `settings` block with effective values + inheritance metadata.
+- [x] #11 JSON-mode output (`--json`) updated to reflect the new structure: separate `capabilities` block, separate `settings` block with effective values + inheritance metadata.
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Redesigned `podkit device info` Settings + Capabilities sections by composing the existing cascade resolvers + display dispatcher rather than re-implementing inheritance / vocabulary in the renderer. Two opus review rounds, all findings addressed.
+
+**Cohesion stack now consumed by `device info`**:
+
+- `resolveDeviceSettings()` (CLI `config/resolve.ts`) — config cascade with provenance per field.
+- `resolveCapabilitiesResolved()` (`@podkit/core`) — capability cascade with provenance per field.
+- `formatResolved()` (CLI `config/resolve.ts`) — single helper for `[bracketed]` inheritance markers, `✗` / `?` symbols, `on`/`off` booleans. Used to be paired with `formatGlobalResolved`; that's gone, one signature with `{ explicitSources }` opt now.
+- `formatValue()` (newly exported from `config/resolve.ts`) — bare-value vocabulary, shared with `capability-summary`'s provenance-less fallback path so `yes`/`no` vs `on`/`off` can't drift.
+- `displayFor()` (`@podkit/core` discovery) — single label dispatcher for header anchor + Capabilities section title; same one `device scan` and `device add` use.
+- `matchConfiguredDeviceToDiscovered()` (new in CLI `shared.ts`) — matches a `DeviceConfig` to a `DiscoveredDevice` via volumeUuid → mount path → USB serial → sole-preset-match. Sole-preset gated on `!configUuid && !configPath` so two echo-minis with mismatched UUIDs don't mis-attribute.
+- `pickCapabilityOverrides()` (new in CLI `shared.ts`) — single helper consumed by both `device info` and `device list` for the 6-field `Partial<DeviceCapabilities>` extraction.
+
+**New CLI files**:
+
+- `commands/device/info-render.ts` — `SUMMARY_LABEL_WIDTH`, `printSummaryRow`, `printSectionHeader`, `printSettingsZone`, `buildSettingsRows`, module-private `formatResolvedRow` + `formatProvenanceTail`.
+- Tests: `info-render.test.ts` (10), `shared.test.ts` matcher coverage (+11), `device-info.behavior.test.ts` JSON shape coverage (+4 across mass-storage / iPod / path-mode / legacy-field-removal).
+
+**Render contract** (text mode):
+
+```
+ipodterapod (default)  —  iPod (5.5th Generation)
+  Status:         Mounted at /private/tmp/podkit-TERAPOD
+  Model:          iPod (5.5th Generation)
+  Readiness:      Ready
+
+Capabilities (from iPod 5.5G)
+  + Music
+  + Artwork (max 320px)
+  + Video
+  + Podcasts
+
+Settings (resolved; [brackets] = inherited)
+  Music quality:  [high]  from global quality
+  Output codecs:  aac, mp3, alac  from global
+  Artwork:        [on]  from global
+```
+
+Mass-storage with per-device override surfaces the override bare and the inherited preset value `[bracketed]`. Unsupported / unknown collapse to `✗` / `?` from the same helper.
+
+**JSON envelope** (`podkit device info --json`):
+
+- New `settings` block with `{ value, source }` per field plus an optional `capabilities` sub-block for mass-storage.
+- `source` typed as `DeviceInfoSource = ConfigSource | CapabilitySource` so consumer typos fail at compile time.
+- Top-level `device.quality` / `device.audioQuality` / `device.videoQuality` / `device.artwork` REMOVED. Breaking minor — see `.changeset/device-info-resolved-cascade.md`; consumers read `settings.<field>.value`.
+- `status.massStorageCapabilities` unchanged.
+
+**Performance**:
+
+- `discoverConnectedDevices` invoked LAZILY only when no cheap anchor is available (cascade-name for mounted iPod; preset rich-name for configured mass-storage). USB walk skipped on the happy path; saves ~200-800ms macOS / removes libusb permission noise in headless Linux/CI/Docker.
+
+**ACs satisfied**: 1, 2, 3, 4, 5, 6, 7, 8, 9, 11. AC #10 (real-hardware) DEFERRED — user opted to skip the hardware verification pass; will fold into a follow-up sweep when convenient (Echo Mini + TERAPOD + nano 7G inventory).
+
+**Quality gates**: 1608 unit tests / 67 integration / build all green.
+
+**Changeset**: `.changeset/device-info-resolved-cascade.md` — minor bump with migration notes for the breaking JSON shape removal.
+<!-- SECTION:FINAL_SUMMARY:END -->

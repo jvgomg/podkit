@@ -380,34 +380,46 @@ function resolveSimple<T>(
  * - Unsupported capabilities: ✗
  * - Unknown capabilities: ?
  */
-export function formatResolved(resolved: ResolvedValue<unknown>): string {
+export function formatResolved(
+  resolved: { value: unknown; source: string },
+  opts: { explicitSources?: readonly string[] } = {}
+): string {
   if (resolved.source === 'unsupported') return '\u2717'; // ✗
   if (resolved.source === 'unknown') return '?';
 
   const display = formatValue(resolved.value);
-
-  if (resolved.source === 'device') return display;
-
-  // Everything else is inherited — wrap in brackets
-  return `[${display}]`;
+  const explicit = opts.explicitSources ?? DEFAULT_EXPLICIT_SOURCES;
+  return explicit.includes(resolved.source) ? display : `[${display}]`;
 }
 
 /**
- * Format a resolved value for the global config line.
+ * Sources `formatResolved` treats as "explicit at this level" (no brackets)
+ * by default.
  *
- * - Values explicitly set: shown as-is
- * - Values inherited from unified quality or defaults: wrapped in [brackets]
+ * - `'device'` — per-device override on a `ResolvedValue<…>` (ConfigSource).
+ * - `'device-config'` — per-device override on a capability `Resolved<…>`
+ *   (CapabilitySource — see `@podkit/device-types`). Mass-storage capability
+ *   fields use this label; semantically the same as `'device'` for the
+ *   inheritance-marker logic.
  */
-export function formatGlobalResolved(resolved: ResolvedValue<unknown>): string {
-  const display = formatValue(resolved.value);
+export const DEFAULT_EXPLICIT_SOURCES: readonly string[] = ['device', 'device-config'];
 
-  if (resolved.source === 'global') return display;
+/**
+ * Sources to pass via `formatResolved(r, { explicitSources: GLOBAL_EXPLICIT_SOURCES })`
+ * when rendering the `device list` global row.
+ */
+export const GLOBAL_EXPLICIT_SOURCES: readonly string[] = ['global'];
 
-  // Inherited from quality or default — wrap in brackets
-  return `[${display}]`;
-}
-
-function formatValue(value: unknown): string {
+/**
+ * Render a bare cascade value with the canonical CLI vocabulary
+ * (`true → 'on'`, `false → 'off'`, everything else `String(value)`).
+ *
+ * Single source of truth for value-side rendering. Used both internally by
+ * `formatResolved` and externally by `capability-summary.ts`'s
+ * provenance-less fallback render path so the two surfaces can't disagree
+ * on how booleans display.
+ */
+export function formatValue(value: unknown): string {
   if (typeof value === 'boolean') return value ? 'on' : 'off';
   return String(value);
 }

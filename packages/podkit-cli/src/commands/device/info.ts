@@ -9,24 +9,35 @@ import { type CoreLoaderDeps, type OpenDeviceFn } from '../../handler-deps.js';
 import { resolveDevicePath, getDeviceIdentity } from '../../device-resolver.js';
 import { OutputContext, formatBytes, formatNumber } from '../../output/index.js';
 import {
+  displayFor as displayForCore,
   formatGeneration,
   validateDevice,
   DEFAULT_LOSSY_STACK,
   DEFAULT_LOSSLESS_STACK,
 } from '@podkit/core';
-import type { ReadinessLevel } from '@podkit/core';
-import { openDevice, isMassStorageDevice, getDeviceTypeDisplayName } from '../open-device.js';
+import type { DiscoveredDevice, ReadinessLevel } from '@podkit/core';
+import type { ResolvedDeviceCapabilities } from '@podkit/device-types';
+import { openDevice, isMassStorageDevice, getDeviceTypeRichDisplayName } from '../open-device.js';
 import { mergedPresets } from '../../config/preset-registry.js';
 import { formatReadinessLevel, collectReadinessIssues, printIssues } from '../readiness-display.js';
+import { resolveDeviceSettings, type ResolvedDeviceSettings } from '../../config/resolve.js';
 import { DeviceErrorCodes } from './error-codes.js';
 import {
   resolveDeviceArg,
   getStorageInfo,
   formatSyncTagSummary,
   synthesizePathModeDeviceInfo,
+  matchConfiguredDeviceToDiscovered,
+  pickCapabilityOverrides,
 } from './shared.js';
 import type { DeviceInfoOutput, DeviceInfoSuccess } from './output-types.js';
 import { printCapabilitySummary, getTranscodedCodecs } from './capability-summary.js';
+import {
+  SUMMARY_LABEL_WIDTH,
+  buildSettingsRows,
+  printSettingsZone,
+  printSummaryRow,
+} from './info-render.js';
 
 export interface DeviceInfoDeps extends CoreLoaderDeps {
   getDeviceManager?: () => import('@podkit/core').DeviceManager;
@@ -262,6 +273,102 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
     databaseErrorIsUnexpected = true;
   }
 
+  // ── Discovery + resolved settings/capabilities ───────────────────────────
+  //
+  // Compose two cascades for the new Settings + Capabilities sections:
+  //   1. `resolveDeviceSettings` — config-cascade with provenance
+  //      (device → device-quality → global → global-quality → default).
+  //   2. `resolveCapabilitiesResolved` — capability-cascade with provenance
+  //      (device-config → device-defaults → firmware → preset/generation).
+  //
+  // Discovery (`discoverConnectedDevices`) is deferred to a LAZY lookup
+  // only invoked when the cheap header-anchor paths return undefined — the
+  // mounted-iPod / known-preset paths already give us a label equivalent
+  // to `displayFor(d).rich`, so the USB walk would be pure overhead on the
+  // common case (and noisy on Linux without udev permissions). Discovery
+  // fires only for cases where the rich anchor needs USB-side context:
+  // USB-only iPod (powered up, no mounted volume), iPod in restore mode,
+  // an Echo Mini whose firmware hasn't switched to mass-storage mode, or
+  // a configured device whose preset id is unknown to us.
+  let resolvedSettings: ResolvedDeviceSettings | undefined;
+  let resolvedCaps: ResolvedDeviceCapabilities | undefined;
+  let lookupDiscoveredDevice: (() => Promise<DiscoveredDevice | undefined>) | undefined;
+  if (device && deviceName) {
+    try {
+      const core = await loadCore();
+      const manager = (deps.getDeviceManager ?? core.getDeviceManager)();
+
+      // Lazy discovery factory — memoised inside so multiple anchor probes
+      // share one walk. Returns `undefined` when discovery is unsupported
+      // (Windows) or throws (libusb permission denial, missing /sys, …).
+      let discoveryRun: Promise<DiscoveredDevice | undefined> | undefined;
+      lookupDiscoveredDevice = () => {
+        if (!discoveryRun) {
+          discoveryRun = (async () => {
+            if (!manager.isSupported) return undefined;
+            try {
+              const discovered = await core.discoverConnectedDevices({
+                deviceManager: manager,
+              });
+              return matchConfiguredDeviceToDiscovered(device, discovered);
+            } catch {
+              return undefined;
+            }
+          })();
+        }
+        return discoveryRun;
+      };
+
+      const presets = mergedPresets(podkitConfig);
+      const presetDisplay = (() => {
+        if (!device.type || device.type === 'ipod') return undefined;
+        const preset = presets[device.type];
+        return preset
+          ? { manufacturer: preset.manufacturer, productName: preset.productName }
+          : undefined;
+      })();
+      resolvedSettings = resolveDeviceSettings(
+        podkitConfig,
+        deviceName,
+        device,
+        resolvedDeviceCapabilities ?? null,
+        liveStatus?.mounted === true,
+        isDefault,
+        presetDisplay
+      );
+
+      if (isMassStorageDevice(device.type) && device.type) {
+        try {
+          resolvedCaps = core.resolveCapabilitiesResolved(
+            { kind: 'mass-storage', presetId: device.type },
+            { presets, deviceConfigOverrides: pickCapabilityOverrides(device) }
+          );
+        } catch {
+          // Resolver failure (e.g. unknown preset id) — Settings section
+          // still renders config-side fields without capability rows.
+        }
+      }
+    } catch {
+      // Core unavailable — fall through to legacy rendering paths.
+    }
+  }
+
+  // Resolve the discovered device ONLY when we need a header anchor the
+  // cheap paths couldn't provide. Mounted iPods get their model via
+  // `liveStatus.model.name` (cascade-resolved); configured mass-storage
+  // devices get theirs via `getDeviceTypeRichDisplayName`. Both cover the
+  // common case without a USB walk.
+  let discoveredDevice: DiscoveredDevice | undefined;
+  if (lookupDiscoveredDevice && device) {
+    const isMassStorage = isMassStorageDevice(device.type);
+    const havePresetAnchor =
+      isMassStorage && device.type && mergedPresets(podkitConfig)[device.type] !== undefined;
+    const haveCascadeAnchor = !isMassStorage && Boolean(liveStatus?.model?.name);
+    if (!havePresetAnchor && !haveCascadeAnchor) {
+      discoveredDevice = await lookupDiscoveredDevice();
+    }
+  }
+
   // Compute transform warnings for JSON output
   let deviceTransformWarnings: Array<{ type: string; message: string }> | undefined;
   if (
@@ -297,6 +404,40 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
     }
   }
 
+  // JSON envelope: top-level `quality` / `audioQuality` / `videoQuality` /
+  // `artwork` removed in favour of the structured `settings` block — every
+  // field carries its `{ value, source }` provenance there, matching the
+  // shape `device list` already emits per row. Breaking change for JSON
+  // consumers; see the changeset for migration notes (read `settings.audio.value`
+  // instead of `audioQuality`, etc).
+  const settingsJson =
+    resolvedSettings && device
+      ? {
+          quality: resolvedSettings.quality,
+          audio: resolvedSettings.audio,
+          video: resolvedSettings.video,
+          artwork: resolvedSettings.artwork,
+          checkArtwork: resolvedSettings.checkArtwork,
+          skipUpgrades: resolvedSettings.skipUpgrades,
+          encoding: resolvedSettings.encoding,
+          transferMode: resolvedSettings.transferMode,
+          ...(resolvedSettings.manufacturer ? { manufacturer: resolvedSettings.manufacturer } : {}),
+          ...(resolvedSettings.productName ? { productName: resolvedSettings.productName } : {}),
+          ...(resolvedCaps
+            ? {
+                capabilities: {
+                  supportedAudioCodecs: resolvedCaps.supportedAudioCodecs,
+                  artworkSources: resolvedCaps.artworkSources,
+                  artworkMaxResolution: resolvedCaps.artworkMaxResolution,
+                  supportsVideo: resolvedCaps.supportsVideo,
+                  audioNormalization: resolvedCaps.audioNormalization,
+                  supportsAlbumArtistBrowsing: resolvedCaps.supportsAlbumArtistBrowsing,
+                },
+              }
+            : {}),
+        }
+      : undefined;
+
   out.result<DeviceInfoOutput>(
     {
       success: true,
@@ -305,15 +446,12 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
             name: deviceName!,
             volumeUuid: device.volumeUuid,
             volumeName: device.volumeName,
-            quality: device.quality,
-            audioQuality: device.audioQuality,
-            videoQuality: device.videoQuality,
-            artwork: device.artwork,
             transforms: device.transforms as unknown as Record<string, unknown> | undefined,
             transformWarnings: deviceTransformWarnings,
             isDefault,
           }
         : undefined,
+      ...(settingsJson ? { settings: settingsJson } : {}),
       status: liveStatus,
       readiness: readinessData,
     },
@@ -324,47 +462,58 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
       const cmdTarget = deviceName || cliPath || 'device';
 
       // ── Summary zone ──────────────────────────────────────────────
+      //
+      // Header anchor: <name>[ (default)]  —  <rich display>. The rich
+      // display comes from `displayFor(discoveredDevice).rich` when discovery
+      // matched a live device — same dispatcher `device scan` / `device add`
+      // use, so labels stay consistent across commands. Falls back to the
+      // legacy display helpers for disconnected / path-mode cases. The cheap
+      // anchor sources (cascade name from `assessIpodIdentity`, preset rich
+      // name) are tried first to avoid a USB walk; discovery is only
+      // consulted when neither produced a label.
       if (device) {
-        out.print(`Device: ${deviceName}${isDefault ? ' (default)' : ''}`);
-        if (isMassStorage) {
-          // The display helper reads manufacturer/productName off the
-          // device config directly, so an AliExpress override on a
-          // `generic` device shows the user's label instead of the
-          // preset default.
-          out.print(
-            `  Type:          ${getDeviceTypeDisplayName(device, mergedPresets(podkitConfig))}`
-          );
+        const presets = mergedPresets(podkitConfig);
+        const anchor = (() => {
+          if (discoveredDevice) return displayForCore(discoveredDevice).rich;
+          if (isMassStorage) return getDeviceTypeRichDisplayName(device, presets);
+          return liveStatus?.model?.name;
+        })();
+        const defaultMarker = isDefault ? ' (default)' : '';
+        if (anchor) {
+          out.print(`${deviceName}${defaultMarker}  —  ${anchor}`);
+        } else {
+          out.print(`Device: ${deviceName}${defaultMarker}`);
         }
         if (device.volumeUuid) {
-          out.print(`  Volume UUID:   ${device.volumeUuid}`);
+          printSummaryRow(out, 'Volume UUID', device.volumeUuid);
         }
         if (device.volumeName) {
-          out.print(`  Volume Name:   ${device.volumeName}`);
+          printSummaryRow(out, 'Volume Name', device.volumeName);
         }
       } else if (cliPath) {
         out.print(`Device: ${cliPath} (path mode)`);
         if (liveStatus?.volumeUuid) {
-          out.print(`  Volume UUID:   ${liveStatus.volumeUuid}`);
+          printSummaryRow(out, 'Volume UUID', liveStatus.volumeUuid);
         }
       }
 
       if (liveStatus) {
         if (liveStatus.mounted && liveStatus.mountPoint) {
-          out.print(`  Status:        Mounted at ${liveStatus.mountPoint}`);
+          printSummaryRow(out, 'Status', `Mounted at ${liveStatus.mountPoint}`);
         } else if (liveStatus.mounted === false) {
-          out.print(`  Status:        Not mounted`);
+          printSummaryRow(out, 'Status', 'Not mounted');
         }
 
         // Model line — prefer IpodModel (has color) over database model
         if (!isMassStorage && readinessData?.model) {
-          out.print(`  Model:         ${readinessData.model.displayName}`);
+          printSummaryRow(out, 'Model', readinessData.model.displayName);
         } else if (!isMassStorage && liveStatus.model) {
           const capacityStr =
             liveStatus.model.capacity > 0 ? ` (${liveStatus.model.capacity}GB)` : '';
           const genStr = formatGeneration(liveStatus.model.generation);
-          out.print(`  Model:         ${liveStatus.model.name}${capacityStr} - ${genStr}`);
+          printSummaryRow(out, 'Model', `${liveStatus.model.name}${capacityStr} - ${genStr}`);
         } else if (!isMassStorage && !liveStatus.model && liveStatus.mounted) {
-          out.print('  Model:         Unknown \u2014 SysInfo missing');
+          printSummaryRow(out, 'Model', 'Unknown \u2014 SysInfo missing');
         }
 
         // Readiness line — short status only
@@ -373,15 +522,21 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
             readinessData.level === 'ready'
               ? 'Ready'
               : formatReadinessLevel(readinessData.level as ReadinessLevel, cmdTarget);
-          out.print(`  Readiness:     ${levelLabel}`);
+          printSummaryRow(out, 'Readiness', levelLabel);
 
           // Surface the canonical rejection reason inline so the user does
           // not have to dig into Issues for the most important detail.
           if (readinessData.level === 'unsupported' && readinessData.unsupported) {
-            out.print(`  Reason:        ${readinessData.unsupported.headline}`);
+            printSummaryRow(out, 'Reason', readinessData.unsupported.headline);
             if (readinessData.unsupported.details) {
+              // Continuation lines align to the value column established by
+              // `printSummaryRow` (2 leading spaces + SUMMARY_LABEL_WIDTH + 2
+              // padding). Hand-rolling the indent here used to drift —
+              // compute it from the same constant to keep the columns lined
+              // up if SUMMARY_LABEL_WIDTH ever changes.
+              const indent = ' '.repeat(2 + SUMMARY_LABEL_WIDTH + 2);
               for (const line of readinessData.unsupported.details) {
-                out.print(`                 ${line}`);
+                out.print(`${indent}${line}`);
               }
             }
           }
@@ -407,9 +562,23 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
           }
         }
 
-        // Capabilities — compact, unified through the device-level helper.
-        // Podcasts support comes from libgpod (legacy boolean shape) and is
-        // not modelled in DeviceCapabilities, so we pass it through ctx.
+        // ── Capabilities section ─────────────────────────────────
+        //
+        // First-class section with its own anchored header — `displayFor`
+        // dispatches on the matched DiscoveredDevice's kind so iPod / mass-
+        // storage / unsupported all read consistently. Falls back to plain
+        // `Capabilities:` when no DiscoveredDevice is present (path mode,
+        // disconnected). Section break is emitted as a real `out.newline()`
+        // before the print, not embedded in the title string — `\n` inside
+        // a single `print` doesn't compose cleanly across output sinks.
+        const isCapsPeerSection = Boolean(discoveredDevice);
+        const capsSectionTitle = (() => {
+          if (!discoveredDevice) return 'Capabilities:';
+          const display = displayForCore(discoveredDevice);
+          const suffix = display.source === 'preset' ? ' preset' : '';
+          return `Capabilities (from ${display.short}${suffix})`;
+        })();
+        if (isCapsPeerSection) out.newline();
         if (
           !isMassStorage &&
           resolvedDeviceCapabilities &&
@@ -424,35 +593,21 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
               modelDisplay: formatGeneration(liveStatus.model.generation),
               supportsPodcast: liveStatus.capabilities.podcast,
             },
-            { indent: '  ' }
+            { sectionTitle: capsSectionTitle }
           );
         } else if (!isMassStorage && !liveStatus.model && liveStatus.mounted) {
-          out.print('  Capabilities:  Music only (model unknown)');
+          printSummaryRow(out, 'Capabilities', 'Music only (model unknown)');
         } else if (isMassStorage && resolvedDeviceCapabilities) {
           printCapabilitySummary(
             out,
             resolvedDeviceCapabilities,
             { kind: 'mass-storage' },
-            { indent: '  ', firmwareCapabilities: firmwareDeviceCapabilities }
+            {
+              sectionTitle: capsSectionTitle,
+              firmwareCapabilities: firmwareDeviceCapabilities,
+              resolved: resolvedCaps,
+            }
           );
-        }
-
-        // Codec display
-        if (resolvedDeviceCapabilities) {
-          const deviceCodecs = new Set<string>(resolvedDeviceCapabilities.supportedAudioCodecs);
-          const codecConfig = device?.codec ?? podkitConfig.codec;
-          const lossyStack = codecConfig?.lossy ?? DEFAULT_LOSSY_STACK;
-          const losslessStack = codecConfig?.lossless ?? DEFAULT_LOSSLESS_STACK;
-
-          const allStacks = [...lossyStack, ...losslessStack];
-          const seen = new Set<string>();
-          const supportedCodecs = allStacks.filter((c) => {
-            if (c === 'source' || seen.has(c)) return false;
-            seen.add(c);
-            return deviceCodecs.has(c);
-          });
-
-          out.print(`  Codecs:          ${supportedCodecs.join(', ') || 'none'}`);
         }
 
         if (liveStatus.storage) {
@@ -490,34 +645,52 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
         }
       }
 
-      if (device) {
-        out.print(`  Quality:       ${device.quality || '(not set)'}`);
-        if (device.audioQuality) {
-          out.print(`  Audio Quality: ${device.audioQuality}`);
-        }
-        if (device.videoQuality) {
-          out.print(`  Video Quality: ${device.videoQuality}`);
-        }
-        out.print(
-          `  Artwork:       ${device.artwork === true ? 'yes' : device.artwork === false ? 'no' : '(not set)'}`
+      // ── Settings section ──────────────────────────────────────
+      //
+      // Every row goes through `formatResolvedRow` (via `printSettingsZone`),
+      // so inheritance markers (`[bracketed]`), unsupported / unknown symbols,
+      // and the `from <provenance>` tail are uniform across the section. The
+      // old hand-rolled rows (`Quality: (not set)`, raw mass-storage override
+      // lines with `(override)` suffix) collapse into one loop driven by the
+      // resolver's `Resolved<…>` outputs.
+      if (device && resolvedSettings) {
+        // Output-codec stack — intersection of the configured codec stack
+        // with the device's supported codecs. Sourced from device-level
+        // `codec` override when present; otherwise the global stack.
+        const outputCodecSource = device.codec ? 'device' : 'global';
+        const codecConfig = device.codec ?? podkitConfig.codec;
+        const lossyStack = codecConfig?.lossy ?? DEFAULT_LOSSY_STACK;
+        const losslessStack = codecConfig?.lossless ?? DEFAULT_LOSSLESS_STACK;
+        const deviceCodecs = new Set<string>(
+          resolvedDeviceCapabilities?.supportedAudioCodecs ?? []
         );
+        const seen = new Set<string>();
+        const supportedCodecs = [...lossyStack, ...losslessStack].filter((c) => {
+          if (c === 'source' || seen.has(c)) return false;
+          seen.add(c);
+          return deviceCodecs.has(c);
+        });
+        const outputCodecRow = {
+          value: supportedCodecs.join(', ') || 'none',
+          source: outputCodecSource,
+        };
 
+        const rows = buildSettingsRows(resolvedSettings, resolvedCaps, outputCodecRow);
+        printSettingsZone(out, rows);
+
+        // Transforms block kept separate — runtime toggles, not capabilities;
+        // `enabled` / `disabled` vocabulary is correct here.
         if (device.transforms) {
-          out.print('  Transforms:');
+          out.newline();
+          out.print('Transforms');
           for (const [transformName, transformConfig] of Object.entries(device.transforms)) {
             const cfg = transformConfig as Record<string, unknown>;
             const enabled = cfg.enabled !== false;
             const details: string[] = [];
-
-            if ('format' in cfg && cfg.format) {
-              details.push(`format: "${cfg.format}"`);
-            }
-            if ('drop' in cfg && cfg.drop === true) {
-              details.push('drop');
-            }
-
+            if ('format' in cfg && cfg.format) details.push(`format: "${cfg.format}"`);
+            if ('drop' in cfg && cfg.drop === true) details.push('drop');
             const detailStr = details.length > 0 ? ` (${details.join(', ')})` : '';
-            out.print(`    ${transformName}: ${enabled ? 'enabled' : 'disabled'}${detailStr}`);
+            out.print(`  ${transformName}: ${enabled ? 'enabled' : 'disabled'}${detailStr}`);
           }
         }
 
@@ -530,49 +703,6 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
               summary: warning.message,
               details: [],
             });
-          }
-        }
-
-        // Show mass-storage-specific config overrides
-        if (isMassStorage) {
-          const overrides: string[] = [];
-          if (device.artworkMaxResolution !== undefined) {
-            overrides.push(`  Artwork Resolution: ${device.artworkMaxResolution}px (override)`);
-          }
-          if (device.artworkSources !== undefined) {
-            overrides.push(`  Artwork Sources:    ${device.artworkSources.join(', ')} (override)`);
-          }
-          if (device.supportedAudioCodecs !== undefined) {
-            overrides.push(
-              `  Audio Codecs:       ${device.supportedAudioCodecs.join(', ')} (override)`
-            );
-          }
-          if (device.supportsVideo !== undefined) {
-            overrides.push(
-              `  Video Support:      ${device.supportsVideo ? 'yes' : 'no'} (override)`
-            );
-          }
-          if (device.audioNormalization !== undefined) {
-            overrides.push(`  Normalization:      ${device.audioNormalization} (override)`);
-          }
-          if (device.supportsAlbumArtistBrowsing !== undefined) {
-            overrides.push(
-              `  Album Artist:       ${device.supportsAlbumArtistBrowsing ? 'yes' : 'no'} (override)`
-            );
-          }
-          if (device.musicDir !== undefined) {
-            overrides.push(`  Music Directory:    ${device.musicDir}`);
-          }
-          if (device.moviesDir !== undefined) {
-            overrides.push(`  Movies Directory:   ${device.moviesDir}`);
-          }
-          if (device.tvShowsDir !== undefined) {
-            overrides.push(`  TV Shows Directory: ${device.tvShowsDir}`);
-          }
-          if (overrides.length > 0) {
-            for (const line of overrides) {
-              out.print(line);
-            }
           }
         }
       }

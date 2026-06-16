@@ -1,10 +1,10 @@
 ---
 id: TASK-325
 title: CLI support for user-defined mass-storage presets via config + --type
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-12 17:34'
-updated_date: '2026-05-13 08:39'
+updated_date: '2026-06-16 19:29'
 labels:
   - device-capability-architecture
   - cli
@@ -50,17 +50,20 @@ User running `podkit device add --type my-walkman --path /mnt` gets: `error: opt
 7. Document in CLI docs + README example. Add to `docs/users/devices/` if appropriate.
 
 ## Acceptance Criteria
-- [ ] Config schema accepts a `presets:` section with valid `PresetDefinition` entries
-- [ ] Invalid preset definitions (bad id, dangling extends) fail config load with a friendly error
-- [ ] `podkit device add --type my-walkman --path /mnt` succeeds when `my-walkman` is defined in config
-- [ ] `podkit device add --type unknown-id` fails with a friendly error listing built-ins + user presets
-- [ ] Built-in `--type` values continue to work unchanged (no regression)
-- [ ] Capability resolution for a user-preset-typed device produces the expected `DeviceCapabilities` (inheritance from extends; overrides win)
-- [ ] Two devices configured with the same user preset id resolve independently (shared definition, distinct device config overrides)
-- [ ] Per-device config `type` field accepts arbitrary preset ids (type system + runtime)
-- [ ] Doctor's mass-storage checks operate against user-preset content paths
-- [ ] Documentation example added showing how to define + use a custom preset
+<!-- AC:BEGIN -->
+- [x] #1 Config schema accepts a `presets:` section with valid `PresetDefinition` entries
+- [x] #2 Invalid preset definitions (bad id, dangling extends) fail config load with a friendly error
+- [x] #3 `podkit device add --type my-walkman --path /mnt` succeeds when `my-walkman` is defined in config
+- [x] #4 `podkit device add --type unknown-id` fails with a friendly error listing built-ins + user presets
+- [x] #5 Built-in `--type` values continue to work unchanged (no regression)
+- [x] #6 Capability resolution for a user-preset-typed device produces the expected `DeviceCapabilities` (inheritance from extends; overrides win)
+- [x] #7 Two devices configured with the same user preset id resolve independently (shared definition, distinct device config overrides)
+- [x] #8 Per-device config `type` field accepts arbitrary preset ids (type system + runtime)
+- [x] #9 Doctor's mass-storage checks operate against user-preset content paths
+- [x] #10 Documentation example added showing how to define + use a custom preset
 <!-- SECTION:DESCRIPTION:END -->
+
+<!-- AC:END -->
 
 ## Implementation Notes
 
@@ -80,3 +83,30 @@ When user-defined presets become a thing via this task, their `supportedAudioCod
 
 Rationale: keeping presets as the source of device truth (firmware capability) while podkit consistently refuses to manage wav/aiff is a stable contract; user-defined presets must honour it. The warning is the user's signal that the codec is recorded for posterity but won't drive direct-copy decisions.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Shipped in commit 72fd2c85 — `feat(cli): user-defined mass-storage presets via [presets.X] config`.
+
+**Wiring**
+- `DeviceType` opens to `BuiltInDeviceType | (string & {})` — runtime accepts user preset ids, autocomplete keeps working for built-ins.
+- `parsePresets` topo-sorts the `extends` graph; cycles, self-cycles, dangling extends → friendly errors naming the preset.
+- Shared `parseCapabilityFields` validates codec / artwork / normalization / numeric-range fields for both `[devices.X]` and `[presets.X]` blocks. wav/aiff in `supportedAudioCodecs` warns at preset-definition time, symmetric with the per-device override path.
+- `mergedPresets(config)` returns a frozen object — accidental mutation of built-in entries throws.
+- `getDeviceTypeDisplayName`, `getDeviceTypeRichDisplayName`, `getDeviceLabel`, `openDevice`, `resolveDeviceContentPaths`, `renderDeviceScan` require the merged registry — no default fallback to `BUILT_IN_PRESETS`. All command entry points (sync, doctor, device add/list/info/scan/eject/mount/music/video) thread `mergedPresets(config)`.
+
+**Tests**
+- `preset-registry.test.ts` (160 LOC) — merge registry, freeze contract, mutation rejection.
+- `loader.test.ts` (+315 LOC) — preset parsing (extends chains, cycles, collisions, codec warnings).
+- `device-add.unit.test.ts` (+90 LOC) — `--type` validation (rejects unknown ids; error lists built-ins + user presets).
+- `device-list.unit.test.ts`, `device-scan-render.user-presets.test.ts` — display-fn threading; scan render + list text mode surface the preset productName.
+
+**Docs**
+- `docs/reference/config-file.md` — Custom Mass-Storage Presets section with worked example.
+- `documents/architecture/device/capabilities.md` — new settled per-subsystem doc covering preset sourcing, resolution cascade, and the threading convention CLI consumers follow.
+
+**Changeset**: `.changeset/user-defined-mass-storage-presets.md` — minor bump.
+
+All 10 ACs satisfied + codec-warning addendum from TASK-327 follow-up.
+<!-- SECTION:FINAL_SUMMARY:END -->

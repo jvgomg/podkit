@@ -3,10 +3,10 @@ id: TASK-427
 title: >-
   Consolidate dual discovery frameworks: enumerateConnectedDevices vs
   discoverConnectedDevices
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-06-15 21:52'
-updated_date: '2026-06-15 21:54'
+updated_date: '2026-06-16 22:17'
 labels:
   - device-capability-architecture
   - follow-up
