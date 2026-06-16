@@ -301,6 +301,28 @@ bun run clean
 
 Note: builds and tests are orchestrated with [Turborepo](https://turbo.build/repo) for caching and parallelism.
 
+## Quality Gate
+
+`bun run quality` runs the full pre-merge pipeline through a single `turbo run qa` invocation. Phases are sequenced via Turborepo's `dependsOn` DAG, not bash `&&`:
+
+```
+qa:fast     → //#lint, typecheck, build           (parallel within phase)
+qa:test     → qa:fast, test
+qa:e2e      → qa:test, test:e2e
+qa:docker   → qa:e2e, test:e2e:docker
+qa          → qa:docker, test:vm
+```
+
+Each `qa:*` node is a no-op gate task in `turbo.json` (`cache: false`, no script). Exists purely to enforce ordering: nothing in phase N starts until every dep in phase N-1 finishes cleanly. A lint failure short-circuits before touching e2e or VM tests. Underlying tasks (`test:unit`, `test:e2e`, etc.) keep their own caches; re-runs stay fast.
+
+Why one turbo invocation, not five:
+
+- **Flag passthrough** — `bun run quality --force` reaches turbo and invalidates caches across every phase. Bash-chained `&&` ate flags.
+- **Signal handling** — Ctrl-C kills one turbo process tree. Chained subshells could leave orphan tasks.
+- **Cache awareness** — turbo decides what to skip across the whole graph in one pass.
+
+To add a new phase (e.g. `qa:perf` between `qa:test` and `qa:e2e`), add a transit task in `turbo.json` with `dependsOn: [<previous gate>, <real task>]` and rewire the next gate to depend on it. No package script needed — turbo treats it as a dependency-only node. New cross-workspace task names (like `test:vm`) also need a bare entry in `turbo.json` so turbo recognizes them outside their scoped `pkg#task` declarations.
+
 ## Project Structure
 
 ```

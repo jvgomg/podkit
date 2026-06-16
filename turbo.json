@@ -89,6 +89,18 @@
       "outputs": [],
       "cache": false
     },
+    "test:e2e": {
+      "dependsOn": [],
+      "outputs": []
+    },
+    "test:e2e:docker": {
+      "dependsOn": [],
+      "outputs": []
+    },
+    "test:vm": {
+      "dependsOn": [],
+      "outputs": []
+    },
     "@podkit/e2e-tests#test:e2e": {
       "dependsOn": [
         "^build",
@@ -353,6 +365,26 @@
         "oxlint.json"
       ],
       "outputs": []
+    },
+    "qa:fast": {
+      "dependsOn": ["//#lint", "typecheck", "build"],
+      "cache": false
+    },
+    "qa:test": {
+      "dependsOn": ["qa:fast", "test"],
+      "cache": false
+    },
+    "qa:e2e": {
+      "dependsOn": ["qa:test", "test:e2e"],
+      "cache": false
+    },
+    "qa:docker": {
+      "dependsOn": ["qa:e2e", "test:e2e:docker"],
+      "cache": false
+    },
+    "qa": {
+      "dependsOn": ["qa:docker", "test:vm"],
+      "cache": false
     },
     "clean": {
       "cache": false
