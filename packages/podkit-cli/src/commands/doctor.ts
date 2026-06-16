@@ -647,7 +647,10 @@ export async function runDoctorDiagnostics(
 
   if (manager.isSupported) {
     try {
-      const discovered = await core.discoverConnectedDevices({ deviceManager: manager });
+      const discovered = await core.discoverConnectedDevices({
+        deviceManager: manager,
+        massStoragePresets: mergedPresets(config),
+      });
       discoveredIpod = discovered.find(
         (d): d is import('@podkit/core').DiscoveredDeviceIpod =>
           d.kind === 'ipod' && d.block?.mountPoint === devicePath

@@ -3,7 +3,8 @@
  *
  * Provides built-in preset data (Echo Mini, Rockbox, generic DAPs), the
  * `MassStoragePreset` interface, USB hint matching, capability resolution,
- * and a `DeviceProvider` factory for the podkit device-capability system.
+ * and the `MassStorageClassification` / `classifyAsMassStorage` primitives
+ * the core discovery layer consumes.
  *
  * @module
  */
@@ -47,9 +48,6 @@ export {
   UNSUPPORTED_VENDORS,
   type UnsupportedDeviceClassification,
 } from './unsupported.js';
-
-// Provider
-export { createMassStorageProvider } from './provider.js';
 
 // Capability override validation
 export { validateCapabilityOverrides, MASS_STORAGE_CAPABILITY_KEYS } from './validate-overrides.js';

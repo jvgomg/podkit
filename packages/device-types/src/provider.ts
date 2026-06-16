@@ -1,63 +1,49 @@
 /**
- * Device provider interface
+ * Add-intent shape returned by `@podkit/core`'s `describeAddIntent`
+ * dispatcher.
  *
- * A `DeviceProvider` is responsible for detecting and identifying a specific
- * class of device from a raw USB fingerprint. Providers are registered in the
- * podkit-core device enumeration layer and tried in priority order.
+ * Lives in `@podkit/device-types` so consumers (CLI render, core, future
+ * device packages) can refer to the shape without depending on
+ * `@podkit/core`'s runtime surface.
  *
- * Optionally, providers can also describe how a detected device would be
- * added to the user's config via the CLI — see {@link DeviceProvider.describeAddIntent}
- * and {@link DeviceAddIntent}. The CLI consumes these intents when it cannot
- * find a configured device but does see one attached via USB ("you have an
- * Echo Mini plugged in — add it with this command").
+ * Pre-TASK-427 this file also hosted the `DeviceProvider` interface +
+ * `DiscoveredContext` for the now-deleted provider-driven enumeration
+ * framework. Both removed: the per-kind dispatcher in
+ * `@podkit/core/discovery` (`describeAddIntent(d: DiscoveredDevice)`)
+ * supersedes the runtime-registered provider list.
  *
  * @module
  */
 
-import type { DeviceIdentity } from './identity.js';
 import type { UsbFingerprint } from './identity.js';
 
 export type { UsbFingerprint };
 
-// =============================================================================
-// describeAddIntent — provider-driven CLI add-hint
-// =============================================================================
-
 /**
- * Subset of the discovery context relevant to building an add-intent.
+ * Per-kind hint describing how a detected device would be added to the
+ * user's config via the CLI.
  *
- * Defined here (in `@podkit/device-types`) so the `DeviceProvider` contract
- * stays self-contained and doesn't reach into `@podkit/podkit-core` (where
- * `EnumeratedUsbDevice` lives). Callers — typically `podkit-core`'s enumerate
- * helper — pass the relevant fields through.
- */
-export interface DiscoveredContext {
-  /**
-   * OS-level disk identifier (e.g. macOS BSD name `disk5`) when the device
-   * exposes a mass-storage volume. Absent for USB-only devices.
-   */
-  diskIdentifier?: string;
-}
-
-/**
- * Provider-produced hint describing how a detected device would be added to
- * the user's config via the CLI.
- *
- * The CLI assembles the user-visible command from the provider's hint:
+ * The CLI assembles the user-visible command from this shape:
  *   `podkit device add -d <name> <addArgs.join(' ')>`
  *
- * Providers do not know the device name the user will choose, so the CLI
- * is responsible for prepending `-d <name>`. Providers contribute only the
- * `--type` / `--path` / preset-id pieces (`addArgs`), an identifier (`kind`)
- * suitable for human display, and any clarifying `notes`.
+ * The dispatcher does not know the device name the user will choose, so
+ * the CLI is responsible for prepending `-d <name>`. The dispatcher
+ * contributes only the `--type` / `--path` / preset-id pieces (`addArgs`),
+ * an identifier (`kind`) suitable for human display, and any clarifying
+ * `notes`.
  */
 export interface DeviceAddIntent {
-  /** Provider id that produced this intent — echoes the owning provider's `id`. */
+  /**
+   * String tag identifying which arm of the `DiscoveredDevice` union
+   * produced this intent — `'ipod'` / `'mass-storage'` / `'unsupported'`.
+   * Carries the same vocabulary `DeviceProvider.id` used pre-TASK-427 so
+   * existing CLI consumers can keep branching on it unchanged.
+   */
   providerId: string;
   /**
-   * Device-kind identifier the provider recognises — e.g. preset id
-   * `'echo-mini'` for mass-storage, generation id `'nano_5g'` for iPod.
-   * The CLI may render this through a display-name lookup.
+   * Device-kind identifier the dispatcher recognises — e.g. preset id
+   * `'echo-mini'` for mass-storage, `'ipod'` for the iPod arm. The CLI may
+   * render this through a display-name lookup.
    */
   kind: string;
   /**
@@ -72,37 +58,4 @@ export interface DeviceAddIntent {
    * device-specific notes such as "mount it first" or "disk: disk5".
    */
   notes?: readonly string[];
-}
-
-// =============================================================================
-// DeviceProvider
-// =============================================================================
-
-/**
- * A provider that can detect and identify a specific class of connected device.
- *
- * @typeParam TIdentity - The identity variant this provider produces.
- *   Defaults to `DeviceIdentity` for generic providers.
- */
-export interface DeviceProvider<TIdentity extends DeviceIdentity = DeviceIdentity> {
-  /** Unique provider identifier, e.g. `"ipod"` or `"mass-storage"`. */
-  readonly id: string;
-  /**
-   * Attempt to identify the device described by `fp`.
-   *
-   * @returns The resolved identity, or `null` if this provider does not
-   *   recognise the device.
-   */
-  detect(fp: UsbFingerprint): Promise<TIdentity | null>;
-  /**
-   * Build an "add this device" hint for a detected identity. Optional —
-   * providers that cannot produce a meaningful add hint (e.g. for an iPod
-   * detected via USB but requiring a mounted volume to add) may omit this
-   * method and the CLI's hint helper will skip them.
-   *
-   * @param identity - The identity this provider returned from `detect()`.
-   * @param discovered - Discovery context (carries `diskIdentifier` when the
-   *   device exposes a mass-storage volume). May be empty for USB-only.
-   */
-  describeAddIntent?(identity: TIdentity, discovered: DiscoveredContext): DeviceAddIntent | null;
 }

@@ -99,7 +99,7 @@ export interface ResolveCapabilitiesResolvedOptions {
  * - `'mass-storage'` → preset-based resolution via `@podkit/devices-mass-storage`,
  *                      with built-in presets as default and per-call overrides.
  *
- * @param identity - Device identity from a `DeviceProvider` or built synthetically.
+ * @param identity - Device identity from a discovery classifier or built synthetically.
  * @param opts     - Optional firmware overlay (iPod), preset map, and overrides.
  * @returns Capabilities suitable for the sync engine and transcoding pipeline.
  * @throws {Error} If `identity.kind` is not a recognised value.

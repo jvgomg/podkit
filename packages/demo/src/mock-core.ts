@@ -2434,10 +2434,6 @@ export function classifyUsbDevices(_devices: any[]): any[] {
   return [];
 }
 
-export async function enumerateConnectedDevices(_opts: any): Promise<any[]> {
-  return [];
-}
-
 export async function resolveUsbDeviceFromPath(_mountPath: string): Promise<any> {
   return null;
 }
@@ -2685,6 +2681,9 @@ export async function discoverConnectedDevices(_opts: any): Promise<any[]> {
 }
 export function displayFor(_d: any): any {
   return { short: '', rich: '', source: 'unsupported-fallback' };
+}
+export function describeAddIntent(_d: any): any {
+  return null;
 }
 
 // Repair dispatch — stubs; demo never runs diagnostic repairs.

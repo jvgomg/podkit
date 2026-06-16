@@ -550,6 +550,53 @@ describe('discoverConnectedDevices', () => {
     });
     expect(result).toEqual([]);
   });
+
+  // ── massStoragePresets data-flow regression test ─────────────────────────
+  //
+  // TASK-427 added `massStoragePresets` to `DiscoverConnectedDevicesOptions`
+  // so the four CLI surfaces (`device scan` / `device info` / `device init` /
+  // `doctor`) recognise user-defined `[presets.X]` DAPs alongside built-ins.
+  // The option is OPTIONAL — TypeScript won't catch a future regression that
+  // drops it from a callsite. These tests pin the data flow:
+  // `DiscoverConnectedDevicesOptions.massStoragePresets` → `classifyUsbDevices`
+  // → `classifyAsMassStorage(device, presets)`. The real classifier runs (no
+  // `classify` seam) so any future short-circuit that bypasses the preset
+  // arg would surface here.
+
+  it('threads massStoragePresets through to classifyUsbDevices (recognises Echo Mini with built-in registry)', async () => {
+    const echoMini: EnumeratedUsbDevice = {
+      vendorId: '071b',
+      productId: '3203',
+    };
+    const { BUILT_IN_PRESETS } = await import('@podkit/devices-mass-storage');
+    const result = await discoverConnectedDevices({
+      deviceManager: fakeDeviceManager([]),
+      massStoragePresets: BUILT_IN_PRESETS,
+      enumerate: async () => [echoMini],
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0]!.kind).toBe('mass-storage');
+    if (result[0]!.kind === 'mass-storage') {
+      expect(result[0]!.usb?.presetId).toBe('echo-mini');
+    }
+  });
+
+  it('threading is real: empty preset registry drops the would-be mass-storage match', async () => {
+    // If `massStoragePresets` were silently ignored (e.g. a future refactor
+    // overrode it with `BUILT_IN_PRESETS`), this Echo Mini would still
+    // classify and the test would fail. Empty map → classifier returns
+    // `null` for the mass-storage path → device is dropped entirely.
+    const echoMini: EnumeratedUsbDevice = {
+      vendorId: '071b',
+      productId: '3203',
+    };
+    const result = await discoverConnectedDevices({
+      deviceManager: fakeDeviceManager([]),
+      massStoragePresets: {},
+      enumerate: async () => [echoMini],
+    });
+    expect(result).toEqual([]);
+  });
 });
 
 // Type-level smoke: the union must be exhaustive — each `kind` value

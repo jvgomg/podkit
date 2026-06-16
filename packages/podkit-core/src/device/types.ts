@@ -32,7 +32,7 @@ import type { DeviceAssessment } from './assessment.js';
  * - **USB** (`usb?: UsbFingerprint`) — present on Linux (sysfs walk attached
  *   in `findIpodDevices`). Absent on macOS, which reconciles via
  *   `diskIdentifier` against the USB-inquiry stream in
- *   `reconcileIpodDiscovery`.
+ *   `reconcileDiscoveredDevices`.
  * - **Media type** (`mediaType?: string`) — top-level; populated by macOS only.
  *
  * **Migration note (v1 → v2, TASK-340).** Pre-v2 PDI had flat fields:
@@ -60,7 +60,7 @@ export type PlatformDeviceInfo = PlatformDeviceIdentity &
      * Populated by the Linux device manager (read from sysfs alongside the
      * partition info that produces this record). Absent on macOS, which
      * relies on `diskIdentifier` matching against the USB enumeration
-     * stream for reconciliation. Used by `reconcileIpodDiscovery` to fold
+     * stream for reconciliation. Used by `reconcileDiscoveredDevices` to fold
      * a single physical iPod's block-device + USB-inquiry records into one
      * entry.
      */

@@ -5,6 +5,7 @@ import { Command } from 'commander';
 import { confirmNo } from '../../utils/confirm.js';
 import { existsSync } from '../../utils/fs.js';
 import { getContext } from '../../context.js';
+import { mergedPresets } from '../../config/preset-registry.js';
 import { CliError, runAction } from '../../errors.js';
 import { loadCoreOrFail } from '../../handler-deps.js';
 import {
@@ -40,7 +41,7 @@ export async function runDeviceInit(
   out: OutputContext,
   deps: DeviceOpDeps = {}
 ): Promise<void> {
-  const { globalOpts } = getContext();
+  const { globalOpts, config } = getContext();
   const autoConfirm = options.yes ?? false;
   const confirmFn = deps.confirm ?? confirmNo;
 
@@ -108,7 +109,10 @@ export async function runDeviceInit(
   let readinessUnsupported: ReadinessUnsupportedReason | undefined;
   if (manager.isSupported) {
     try {
-      const discovered = await core.discoverConnectedDevices({ deviceManager: manager });
+      const discovered = await core.discoverConnectedDevices({
+        deviceManager: manager,
+        massStoragePresets: mergedPresets(config),
+      });
       const matchingIpod = discovered.find(
         (d): d is import('@podkit/core').DiscoveredDeviceIpod =>
           d.kind === 'ipod' && d.block?.mountPoint === devicePath

@@ -840,16 +840,29 @@ export async function runDeviceAdd(
 
   if (ipods.length === 0) {
     // Disk scan found nothing. Before the generic "no iPod found" message,
-    // enrich the surface by consulting the discovery orchestrator: an iPod
-    // touch (or any iOS device) has no mass-storage mount, so disk scan
-    // never sees it. `discoverConnectedDevices` returns one record per
-    // physical device — an iOS device surfaces as a `DiscoveredDeviceIpod`
-    // with `usb.supported === false` carrying the canonical reason payload.
-    let iosUnsupportedReason: import('@podkit/core').ReadinessUnsupportedReason | undefined;
-    let iosUnsupportedDisplay: string | undefined;
+    // enrich the surface by consulting the discovery orchestrator. A single
+    // walk handles three "we saw something podkit refuses to add" cases:
+    //
+    //   1. iPod touch / iOS device — `DiscoveredDeviceIpod` with
+    //      `usb.supported === false` (no mass-storage mount so disk scan
+    //      never sees it).
+    //   2. Vendor-recognised non-iPod that podkit explicitly refuses to
+    //      manage — `DiscoveredDeviceUnsupported` (Sony Walkman, generic
+    //      SanDisk USB, …).
+    //   3. Supported device attached but unmounted — handled below via
+    //      `suggestAddIntents` so the user gets a `device add` hint.
+    //
+    // Both refusal flows surface `UNSUPPORTED_DEVICE` with the canonical
+    // reason; the hint flow surfaces `DETECTED_MASS_STORAGE` with an add
+    // suggestion.
+    let earlyUnsupportedReason: import('@podkit/core').ReadinessUnsupportedReason | undefined;
+    let earlyUnsupportedDisplay: string | undefined;
     try {
       const coreMod = await loadCore();
-      const discovered = await coreMod.discoverConnectedDevices({ deviceManager: manager });
+      const discovered = await coreMod.discoverConnectedDevices({
+        deviceManager: manager,
+        massStoragePresets: mergedPresets(configResult.config),
+      });
       const unsupportedIpod = discovered.find(
         (d): d is import('@podkit/core').DiscoveredDeviceIpod =>
           d.kind === 'ipod' && d.usb?.supported === false
@@ -858,49 +871,71 @@ export async function runDeviceAdd(
         const usb = unsupportedIpod.usb;
         const pid = parseInt(usb.device.productId.replace(/^0x/i, ''), 16);
         const isIosRange = Number.isFinite(pid) && pid >= 0x1290 && pid <= 0x12af;
-        iosUnsupportedDisplay =
+        earlyUnsupportedDisplay =
           usb.model?.displayName ?? (isIosRange ? 'iOS device' : 'Unsupported iPod');
         // `classifyAsIpod` already attaches the canonical typed payload.
         // Fall back to a synthesised reason only when the classifier somehow
         // returned `supported: false` without one (defensive — currently
         // unreachable on the iPod cascade path).
-        iosUnsupportedReason = usb.unsupportedReason ?? {
+        earlyUnsupportedReason = usb.unsupportedReason ?? {
           kind: isIosRange ? 'ios-device' : 'unsupported-device',
-          headline: `${iosUnsupportedDisplay} is not supported by podkit.`,
+          headline: `${earlyUnsupportedDisplay} is not supported by podkit.`,
           docsUrl: DOCS_URLS.supportedDevices,
         };
+      } else {
+        // No unsupported-iPod hit — check for a vendor-recognised non-iPod
+        // refusal (Sony Walkman, SanDisk, …). Pre-TASK-427 these never
+        // surfaced via the provider framework (no provider claimed them),
+        // so device add fell through to `NO_IPOD`. Post-TASK-427 the
+        // dispatcher emits an intent; surface it cleanly here instead of
+        // letting the suggestAddIntents path render it as "Detected iPod
+        // via USB" via the type-display fallback.
+        const unsupportedKind = discovered.find(
+          (d): d is import('@podkit/core').DiscoveredDeviceUnsupported => d.kind === 'unsupported'
+        );
+        if (unsupportedKind) {
+          earlyUnsupportedDisplay = unsupportedKind.usb.family ?? 'Unsupported device';
+          earlyUnsupportedReason = {
+            kind: 'unsupported-device',
+            headline: unsupportedKind.usb.reason,
+            docsUrl: DOCS_URLS.supportedDevices,
+          };
+        }
       }
     } catch {
       // Discovery is best-effort; fall through.
     }
 
-    if (iosUnsupportedReason) {
-      const lines = [iosUnsupportedReason.headline];
-      if (iosUnsupportedReason.details) lines.push(...iosUnsupportedReason.details);
-      lines.push(`  See: ${iosUnsupportedReason.docsUrl ?? DOCS_URLS.supportedDevices}`);
+    if (earlyUnsupportedReason) {
+      const lines = [earlyUnsupportedReason.headline];
+      if (earlyUnsupportedReason.details) lines.push(...earlyUnsupportedReason.details);
+      lines.push(`  See: ${earlyUnsupportedReason.docsUrl ?? DOCS_URLS.supportedDevices}`);
       throw new CliError({
         message: lines.join('\n'),
         code: DeviceErrorCodes.UNSUPPORTED_DEVICE,
         details: {
-          model: iosUnsupportedDisplay,
-          unsupported: iosUnsupportedReason,
+          model: earlyUnsupportedDisplay,
+          unsupported: earlyUnsupportedReason,
         },
       });
     }
 
-    // No iPod found via the manager. Ask each device provider whether it sees
-    // an attached device it can describe an "add me" hint for — currently only
-    // mass-storage providers implement describeAddIntent, but the contract is
-    // open so any future provider (e.g. iPod USB-only) plugs in here.
+    // No iPod found via the manager and no refusal-class device. Walk the
+    // USB bus once more via `suggestAddIntents` so the user sees a
+    // "Detected X via USB — add with …" hint for supported devices the
+    // disk scan missed (e.g. an Echo Mini whose SD card hasn't mounted yet,
+    // a user-defined preset that disk scan can't classify). The dispatcher
+    // never emits `providerId: 'unsupported'` intents here because the
+    // refusal branch above caught those — but the filter stays as a
+    // belt-and-braces guard against future kinds.
     let suggestedIntent: import('@podkit/core').DeviceAddIntent | undefined;
     try {
-      const { suggestAddIntents } = await loadCore();
-      const { ipodProvider } = await import('@podkit/devices-ipod');
-      const { createMassStorageProvider } = await import('@podkit/devices-mass-storage');
-      const intents = await suggestAddIntents({
-        providers: [ipodProvider, createMassStorageProvider(mergedPresets(configResult.config))],
+      const core = await loadCore();
+      const intents = await core.suggestAddIntents({
+        deviceManager: manager,
+        massStoragePresets: mergedPresets(configResult.config),
       });
-      suggestedIntent = intents[0];
+      suggestedIntent = intents.find((i) => i.providerId !== 'unsupported');
     } catch {
       // Enumeration is best-effort: if it fails (e.g. USB walk errors),
       // fall through to the original "no iPod found" error path.

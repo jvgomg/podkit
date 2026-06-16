@@ -13,9 +13,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createMassStorageProvider, BUILT_IN_PRESETS } from '@podkit/devices-mass-storage';
-import { enumerateConnectedDevices } from '@podkit/core';
-import type { EnumeratedUsbDevice, DeviceManager } from '@podkit/core';
+import type { DeviceManager } from '@podkit/core';
 import { runDeviceAdd, type DeviceAddDeps } from './device.js';
 import { BufferExitCodeSink, OutputContext } from '../output/index.js';
 import type {
@@ -550,6 +548,48 @@ describe('runDeviceAdd: iPod flow', () => {
     expect(err.error.toLowerCase()).toContain('proprietary sync protocol');
     expect(err.details?.unsupported?.kind).toBe('ios-device');
   });
+
+  it('surfaces UNSUPPORTED_DEVICE (not DETECTED_MASS_STORAGE) when only a refused-vendor device is on the bus (TASK-427 sev-1 regression)', async () => {
+    // Pre-refactor `enumerateConnectedDevices` produced no intent for a
+    // Sony Walkman, so `device add` fell through to `NO_IPOD`.
+    // Post-refactor `discoverConnectedDevices` emits a
+    // `DiscoveredDeviceUnsupported` arm and `describeAddIntent` always
+    // returns a non-null intent — `device add` must NOT render that as
+    // "Detected iPod via USB" (the type-display fallback) with code
+    // `DETECTED_MASS_STORAGE`. Branch on the unsupported intent and
+    // surface the refusal cleanly instead.
+    const ctx = makeContext({ device: 'd' });
+    const { out, stdout, exitCode } = makeOut();
+    const deps: DeviceAddDeps = {
+      getDeviceManager: () => fakeManager({ isSupported: true, findIpodDevices: async () => [] }),
+      loadCore: async () => {
+        const real = await import('@podkit/core');
+        return {
+          ...real,
+          discoverConnectedDevices: (opts) =>
+            real.discoverConnectedDevices({
+              ...opts,
+              // Sony vendor (054c) — `classifyAsUnsupportedDevice`
+              // catches it via UNSUPPORTED_VENDORS and emits an
+              // `unsupported` kind.
+              enumerate: async () => [{ vendorId: '054c', productId: '0000' }] as never,
+            }),
+        } as typeof real;
+      },
+    };
+    await runAdd(ctx, { type: 'ipod' }, out, deps);
+    expect(exitCode.get()).toBe(1);
+    const err = stdout.json<AddOutputError>();
+    expect(err.code).toBe('UNSUPPORTED_DEVICE');
+    // The canonical refusal reason from `classifyAsUnsupportedDevice`
+    // surfaces verbatim — names the vendor, not the generic 'unsupported'.
+    expect(err.error.toLowerCase()).toContain('sony walkman');
+    expect(err.error.toLowerCase()).toContain('not yet supported');
+    // Must NOT pretend it's an iPod or a mass-storage device the user
+    // could add — both would be misleading.
+    expect(err.error.toLowerCase()).not.toContain('detected ipod via usb');
+    expect(err.error.toLowerCase()).not.toContain('to add it');
+  });
 });
 
 // =============================================================================
@@ -978,74 +1018,12 @@ describe('runDeviceAdd: missing volumeUuid refusal (TASK-317.15)', () => {
 });
 
 // =============================================================================
-// AC #1 + #5: enumeration with mocked USB walk (verbatim from prior file)
-// =============================================================================
-
-describe('enumerateConnectedDevices with real providers and mocked USB walk (AC #1, #5)', () => {
-  const echoMiniDiscovered: EnumeratedUsbDevice = {
-    vendorId: '0x071b',
-    productId: '0x3203',
-    serialNumber: 'EM-SERIAL-001',
-  };
-
-  it('detects Echo Mini via VID/PID 0x071b/0x3203 using built-in presets', async () => {
-    const massStorageProvider = createMassStorageProvider(BUILT_IN_PRESETS);
-
-    const result = await enumerateConnectedDevices({
-      providers: [massStorageProvider],
-      walk: () => Promise.resolve([echoMiniDiscovered]),
-    });
-
-    expect(result).toHaveLength(1);
-    expect(result[0]!.matchedProviderId).toBe('mass-storage');
-    expect(result[0]!.identity?.kind).toBe('mass-storage');
-    if (result[0]!.identity?.kind === 'mass-storage') {
-      expect(result[0]!.identity.presetId).toBe('echo-mini');
-    }
-  });
-
-  it('reports no identity for an unrecognised VID/PID with mass-storage provider only', async () => {
-    const massStorageProvider = createMassStorageProvider(BUILT_IN_PRESETS);
-    const unknownDevice: EnumeratedUsbDevice = {
-      vendorId: '0xdead',
-      productId: '0xbeef',
-    };
-
-    const result = await enumerateConnectedDevices({
-      providers: [massStorageProvider],
-      walk: () => Promise.resolve([unknownDevice]),
-    });
-
-    expect(result).toHaveLength(1);
-    expect(result[0]!.matchedProviderId).toBeUndefined();
-    expect(result[0]!.identity).toBeUndefined();
-  });
-
-  it('returns Echo Mini presetId in identity when serialNumber is present', async () => {
-    const massStorageProvider = createMassStorageProvider(BUILT_IN_PRESETS);
-
-    const result = await enumerateConnectedDevices({
-      providers: [massStorageProvider],
-      walk: () =>
-        Promise.resolve([
-          {
-            vendorId: '0x071b',
-            productId: '0x3203',
-            serialNumber: 'MY-ECHO-123',
-          } as EnumeratedUsbDevice,
-        ]),
-    });
-
-    expect(result).toHaveLength(1);
-    const identity = result[0]!.identity;
-    expect(identity?.kind).toBe('mass-storage');
-    if (identity?.kind === 'mass-storage') {
-      expect(identity.presetId).toBe('echo-mini');
-      expect(identity.serialNumber).toBe('MY-ECHO-123');
-    }
-  });
-});
-
+// (TASK-427) enumeration-via-providers tests removed — replaced by
+// `add-intent.test.ts` (`describeAddIntent` per-kind dispatcher +
+// `suggestAddIntents` composition) and `discovery.test.ts` (the union
+// reconciliation). The `enumerateConnectedDevices` + `DeviceProvider`
+// surface is gone; `device add` now uses `suggestAddIntents` against
+// the same `DiscoveredDevice` union the rest of the CLI consumes.
 // =============================================================================
 // runDeviceAdd: cascade-resolved identity + single combined prompt (nano 2G case)
 // =============================================================================

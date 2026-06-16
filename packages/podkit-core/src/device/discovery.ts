@@ -2,13 +2,9 @@
  * Discovered-device union — a single tagged record per physical device,
  * reconciled across the block-device pipeline ({@link PlatformDeviceInfo}
  * from `DeviceManager.listDevices` / `findIpodDevices`) and the USB-inquiry
- * pipeline ({@link ClassifiedUsbDevice} from `classifyUsbDevices`).
- *
- * This module supersedes the iPod-only {@link ReconciledIpodRecord}
- * (`reconcile.ts`): there is one union type, three arms (iPod / mass-storage
- * / unsupported), each carrying its own per-arm `matchedBy` enum. The old
- * type stays in place during T2 — callers migrate in T3/T4/T5; the old
- * reconciler is deleted in T6.
+ * pipeline ({@link ClassifiedUsbDevice} from `classifyUsbDevices`). One
+ * union type, three arms (iPod / mass-storage / unsupported), each carrying
+ * its own per-arm `matchedBy` enum.
  *
  * Why a per-arm `matchedBy` enum rather than a base type?
  * - **iPod** can match by `serial`, `disk-identifier`, `block-only`, or `usb-only`.
@@ -30,11 +26,13 @@
  * @module
  */
 
+import type { DeviceAddIntent } from '@podkit/device-types';
 import type { IpodClassification } from '@podkit/devices-ipod';
 import {
   formatPresetDisplay,
   formatPresetShortDisplay,
   type MassStorageClassification,
+  type MassStoragePreset,
   type UnsupportedDeviceClassification,
 } from '@podkit/devices-mass-storage';
 import { stripPartitionSuffix } from './platforms/linux.js';
@@ -250,6 +248,100 @@ function displayForUnsupported(d: DiscoveredDeviceUnsupported): DeviceDisplay {
   return { short, rich: d.usb.reason, source: 'unsupported-fallback' };
 }
 
+// ── describeAddIntent dispatcher ────────────────────────────────────────────
+
+/**
+ * Build a CLI add-intent describing how the user would register this
+ * device with `podkit device add`. Returns `null` when the device kind
+ * can't be turned into an actionable suggestion (e.g. mass-storage with
+ * no preset id, or any case where the user simply needs the standard
+ * `device add` flow).
+ *
+ * Sibling to {@link displayFor} — same dispatch shape, per-kind helpers
+ * below. Hosted here (next to the union and its display surface) so a
+ * new device kind only needs one new function instead of a runtime-
+ * registered provider in a separate package.
+ *
+ * The behaviour mirrors the pre-TASK-427 `DeviceProvider.describeAddIntent`
+ * implementations in `@podkit/devices-ipod/src/provider.ts` and
+ * `@podkit/devices-mass-storage/src/provider.ts` — lifted verbatim into
+ * the discovery layer.
+ */
+export function describeAddIntent(d: DiscoveredDevice): DeviceAddIntent | null {
+  switch (d.kind) {
+    case 'ipod':
+      return describeAddIntentForIpod(d);
+    case 'mass-storage':
+      return describeAddIntentForMassStorage(d);
+    case 'unsupported':
+      return describeAddIntentForUnsupported(d);
+  }
+}
+
+function describeAddIntentForIpod(d: DiscoveredDeviceIpod): DeviceAddIntent | null {
+  // Unsupported iPod (Touch / nano 6 / shuffle 3G/4G / iOS device): surface
+  // the reason as a note. No add-command to suggest — but the user benefits
+  // from knowing the device was *recognised*, just not supported.
+  const reason = d.usb?.unsupportedReason;
+  if (reason) {
+    const { headline, docsUrl } = reason;
+    return {
+      providerId: 'ipod',
+      kind: 'ipod',
+      addArgs: [],
+      notes: docsUrl ? [headline, `See: ${docsUrl}`] : [headline],
+    };
+  }
+  // Supported iPod recognised via USB. The user's add command was the right
+  // one; they just need to mount the device first (or check the USB
+  // connection).
+  if (d.usb) {
+    return {
+      providerId: 'ipod',
+      kind: 'ipod',
+      addArgs: [],
+      notes: [
+        '(iPod detected via USB but no mounted disk — try `podkit device mount` first, then re-run this command)',
+      ],
+    };
+  }
+  // Block-only iPod (no USB classification). Nothing actionable to suggest;
+  // the device is presumably already mountable and the standard `device
+  // add` flow will find it.
+  return null;
+}
+
+function describeAddIntentForMassStorage(d: DiscoveredDeviceMassStorage): DeviceAddIntent | null {
+  // Without a preset id there's nothing actionable to suggest — the CLI
+  // would have nothing to pass to `--type`.
+  const presetId = d.usb?.presetId;
+  if (!presetId) return null;
+
+  const addArgs: string[] = ['--type', presetId, '--path', '<mount-point>'];
+  const notes: string[] = [];
+  const diskIdentifier = d.usb?.device.diskIdentifier;
+  if (diskIdentifier) {
+    notes.push(`(disk: ${diskIdentifier} — mount it first if not already mounted)`);
+  }
+  const intent: DeviceAddIntent = {
+    providerId: 'mass-storage',
+    kind: presetId,
+    addArgs,
+  };
+  return notes.length > 0 ? { ...intent, notes } : intent;
+}
+
+function describeAddIntentForUnsupported(d: DiscoveredDeviceUnsupported): DeviceAddIntent | null {
+  // Surface the canonical refusal so the user knows the device was seen
+  // but explicitly rejected. No addArgs — there's nothing to do.
+  return {
+    providerId: 'unsupported',
+    kind: 'unsupported',
+    addArgs: [],
+    notes: [d.usb.reason],
+  };
+}
+
 /**
  * Trim the long-form generation suffix from an iPod `displayName` to
  * produce a short label suitable for table cells.
@@ -359,10 +451,6 @@ function blockLooksLikeIpod(block: PlatformDeviceInfo): boolean {
  *
  * Each USB entry matches at most one block record (the first by input order);
  * each block record matches at most one USB entry.
- *
- * Replaces {@link reconcileIpodDiscovery}, which handled only the iPod arm.
- * The old function remains for the duration of the migration (T2–T5);
- * T6 deletes it.
  */
 export function reconcileDiscoveredDevices(
   blockDevices: PlatformDeviceInfo[],
@@ -485,6 +573,13 @@ export interface DiscoverConnectedDevicesOptions {
    */
   deviceManager: DeviceManager;
   /**
+   * Mass-storage presets in scope. Forwarded to `classifyUsbDevices` so the
+   * USB-classification step recognises user-defined `[presets.X]` DAPs in
+   * addition to the built-in set. When omitted, only built-in presets are
+   * matched. CLI consumers should pass `mergedPresets(config)`.
+   */
+  massStoragePresets?: Record<string, MassStoragePreset>;
+  /**
    * Override for the USB enumeration step. Defaults to the package-level
    * {@link enumerateUsb}. Test seam.
    */
@@ -510,8 +605,7 @@ export interface DiscoverConnectedDevicesOptions {
  * is therefore an iPod — the {@link blockLooksLikeIpod} fallback in
  * {@link reconcileDiscoveredDevices} is defensive only for callers that
  * supply the full `listDevices` output. The reconciler is the more general
- * primitive; this orchestrator preserves today's iPod-centric behaviour
- * to keep T2 a strict generalisation rather than a behaviour change.
+ * primitive; this orchestrator preserves today's iPod-centric behaviour.
  */
 export async function discoverConnectedDevices(
   opts: DiscoverConnectedDevicesOptions
@@ -520,8 +614,11 @@ export async function discoverConnectedDevices(
   const enumerate = opts.enumerate ?? enumerateUsb;
   // Arrow-wrap so the seam type takes only `EnumeratedUsbDevice[]` — the
   // real `classifyUsbDevices` takes an optional second `options` arg the
-  // seam doesn't expose.
-  const classify = opts.classify ?? ((devices) => classifyUsbDevices(devices));
+  // seam doesn't expose. Threads `massStoragePresets` through so user-
+  // defined `[presets.X]` DAPs are recognised at classification time.
+  const classify =
+    opts.classify ??
+    ((devices) => classifyUsbDevices(devices, { massStoragePresets: opts.massStoragePresets }));
 
   if (!deviceManager.isSupported) return [];
 

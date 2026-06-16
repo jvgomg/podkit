@@ -238,6 +238,10 @@ export async function runDeviceScan(
   // tests can inject fake USB device lists without stubbing the full orchestrator.
   const discovered = await discoverConnectedDevices({
     deviceManager: manager,
+    // User-defined `[presets.X]` DAPs surface alongside built-ins so a
+    // scan recognises them just like `device add` would (post-TASK-427:
+    // both paths consume the same merged registry).
+    massStoragePresets: mergedPresets(config),
     ...(deps.enumerate ? { enumerate: deps.enumerate } : {}),
     ...(deps.classify ? { classify: deps.classify } : {}),
   });

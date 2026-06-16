@@ -189,8 +189,8 @@ export { assessMassStorageDevice } from './mass-storage-identity.js';
 // Cross-provider add-intent helper (drives the CLI's "you have X attached" hint)
 export type { SuggestAddIntentsOptions } from './add-intent.js';
 export { suggestAddIntents } from './add-intent.js';
-// Re-export the contract types for callers that consume the helper's return shape.
-export type { DeviceAddIntent, DiscoveredContext } from '@podkit/device-types';
+// Re-export the contract type for callers that consume the helper's return shape.
+export type { DeviceAddIntent } from '@podkit/device-types';
 
 // SysInfoExtended orchestrator (imported directly from @podkit/ipod-firmware)
 export type {
@@ -234,11 +234,12 @@ export type {
   DiscoverConnectedDevicesOptions,
   DeviceDisplay,
 } from './discovery.js';
-export { reconcileDiscoveredDevices, discoverConnectedDevices, displayFor } from './discovery.js';
-
-// Device enumeration framework (provider-based)
-export type { EnumeratedDevice, EnumerateOptions } from './enumeration.js';
-export { enumerateConnectedDevices } from './enumeration.js';
+export {
+  reconcileDiscoveredDevices,
+  discoverConnectedDevices,
+  displayFor,
+  describeAddIntent,
+} from './discovery.js';
 
 // OS error code interpreter
 export type { InterpretedError } from './error-codes.js';

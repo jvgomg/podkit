@@ -687,11 +687,8 @@ export {
   reconcileDiscoveredDevices,
   discoverConnectedDevices,
   displayFor,
+  describeAddIntent,
 } from './device/index.js';
-
-// Device enumeration framework
-export type { EnumeratedDevice, EnumerateOptions } from './device/index.js';
-export { enumerateConnectedDevices } from './device/index.js';
 
 // SysInfoExtended (device identity from USB firmware)
 export type { SysInfoExtendedResult, EnsureSysInfoExtendedOptions } from './device/index.js';
@@ -722,12 +719,8 @@ export {
 export type { MassStorageAssessment, AssessMassStorageDeviceOptions } from './device/index.js';
 export { assessMassStorageDevice } from './device/index.js';
 
-// Cross-provider add-intent helper
-export type {
-  SuggestAddIntentsOptions,
-  DeviceAddIntent,
-  DiscoveredContext,
-} from './device/index.js';
+// Add-intent helper (per-kind dispatcher composed atop discoverConnectedDevices)
+export type { SuggestAddIntentsOptions, DeviceAddIntent } from './device/index.js';
 export { suggestAddIntents } from './device/index.js';
 
 // iPod model lookup and resolver

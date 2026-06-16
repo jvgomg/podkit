@@ -3,7 +3,7 @@
  *
  * Foundational type definitions used across the podkit ecosystem.
  * Canonical home for `DeviceCapabilities`, `UsbFingerprint`, `DeviceIdentity`,
- * `ParsedFirmware`, and the `DeviceProvider` interface.
+ * `ParsedFirmware`, and the `DeviceAddIntent` CLI hint shape.
  *
  * @module
  */
@@ -31,7 +31,7 @@ export type {
 
 export type { FirmwareCapabilities, ParsedFirmware } from './firmware.js';
 
-export type { DeviceProvider, DeviceAddIntent, DiscoveredContext } from './provider.js';
+export type { DeviceAddIntent } from './provider.js';
 
 export type {
   IpodChecksumType,

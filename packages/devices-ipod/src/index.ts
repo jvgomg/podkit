@@ -88,10 +88,6 @@ export {
   type CapabilityOverrideValidationResult,
 } from './validate-overrides.js';
 
-// ── Provider ──────────────────────────────────────────────────────────────────
-
-export { ipodProvider, createIpodProvider, type IpodProviderDeps } from './provider.js';
-
 // ── libgpod-naming surface ────────────────────────────────────────────────────
 
 export {

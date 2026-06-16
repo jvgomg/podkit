@@ -493,7 +493,7 @@ export class LinuxDeviceManager implements DeviceManager {
     for (const device of devices) {
       // Check USB identity — most reliable for unmounted devices.
       // Carry the fingerprint forward on the device record so the discovery
-      // reconciliation step (`reconcileIpodDiscovery`) can fold this entry
+      // reconciliation step (`reconcileDiscoveredDevices`) can fold this entry
       // with the matching USB-inquiry record by serial number.
       const usb = findUsbIdentity(device.identifier);
       if (usb?.vendorId === '05ac') {

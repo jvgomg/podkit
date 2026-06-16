@@ -309,6 +309,7 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
             try {
               const discovered = await core.discoverConnectedDevices({
                 deviceManager: manager,
+                massStoragePresets: mergedPresets(podkitConfig),
               });
               return matchConfiguredDeviceToDiscovered(device, discovered);
             } catch {
