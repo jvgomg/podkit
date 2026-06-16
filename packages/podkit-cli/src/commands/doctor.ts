@@ -84,6 +84,7 @@ import { openDevice, getDeviceTypeDisplayName } from './open-device.js';
 import type { ReadinessResult } from '@podkit/core';
 import { DOCS_URLS } from '@podkit/core';
 import { resolveDeviceContentPaths } from '../resolvers/content-paths.js';
+import { mergedPresets } from '../config/preset-registry.js';
 import {
   stageMarker,
   printReadinessSummary,
@@ -532,9 +533,10 @@ export async function runDoctorDiagnostics(
 
   // Mass-storage devices: resolve content paths and run applicable checks
   if (isMassStorage) {
-    const label = getDeviceTypeDisplayName(deviceConfig);
+    const presets = mergedPresets(config);
+    const label = getDeviceTypeDisplayName(deviceConfig, presets);
 
-    const contentPaths = resolveDeviceContentPaths(deviceConfig, config.deviceDefaults);
+    const contentPaths = resolveDeviceContentPaths(deviceConfig, config.deviceDefaults, presets);
 
     const report = await core.runDiagnostics({
       mountPoint: devicePath,
@@ -689,7 +691,13 @@ export async function runDoctorDiagnostics(
 
   if (dbAvailable) {
     try {
-      opened = await openDevice(core, devicePath, deviceConfig, config.deviceDefaults);
+      opened = await openDevice(
+        core,
+        devicePath,
+        deviceConfig,
+        config.deviceDefaults,
+        mergedPresets(config)
+      );
     } catch {
       // Failed to open device — we'll show readiness results and skip DB checks
     }
@@ -1362,7 +1370,11 @@ async function runMassStorageRepair(
     ctx: {
       mountPoint: devicePath,
       deviceType: 'mass-storage',
-      contentPaths: resolveDeviceContentPaths(deviceConfig, config.deviceDefaults),
+      contentPaths: resolveDeviceContentPaths(
+        deviceConfig,
+        config.deviceDefaults,
+        mergedPresets(config)
+      ),
       adapters: [],
     },
     dryRun: options.dryRun ?? false,

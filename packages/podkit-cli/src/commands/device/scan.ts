@@ -4,6 +4,7 @@
 import { Command } from 'commander';
 import { confirm } from '../../utils/confirm.js';
 import { getContext } from '../../context.js';
+import { mergedPresets } from '../../config/preset-registry.js';
 import { runAction } from '../../errors.js';
 import { loadCoreOrFail, type CoreLoaderDeps } from '../../handler-deps.js';
 import { OutputContext, formatBytes, formatNumber, bold } from '../../output/index.js';
@@ -571,6 +572,7 @@ export async function runDeviceScan(
     discovered: discoveredRows,
     configuredDevices,
     isSupportedPlatform: manager.isSupported,
+    presets: mergedPresets(config),
   };
 
   const writeRender = () => {

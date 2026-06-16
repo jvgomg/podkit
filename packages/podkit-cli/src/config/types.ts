@@ -51,6 +51,7 @@ import type {
   TranscodeTargetCodec,
 } from '@podkit/core';
 import type { ReadinessUnsupportedReason } from '@podkit/device-types';
+import type { MassStoragePreset } from '@podkit/devices-mass-storage';
 
 /**
  * Codec preference configuration
@@ -74,11 +75,21 @@ export interface CodecPreferenceConfig {
   lossless?: (TranscodeTargetCodec | 'source')[];
 }
 
-/** Supported device types */
-export type DeviceType = 'ipod' | 'echo-mini' | 'rockbox' | 'generic';
-
-/** Valid device type values */
+/** Valid built-in device type values (canonical list — used for shell completion). */
 export const DEVICE_TYPES = ['ipod', 'echo-mini', 'rockbox', 'generic'] as const;
+
+/** Literal union of built-in device type IDs. Used by exhaustive switches. */
+export type BuiltInDeviceType = (typeof DEVICE_TYPES)[number];
+
+/**
+ * Device type identifier.
+ *
+ * Built-in ids (`ipod`, `echo-mini`, `rockbox`, `generic`) plus arbitrary
+ * user-defined mass-storage preset ids declared in the config's `[presets.X]`
+ * section. The `string & {}` intersection keeps built-in literals visible in
+ * IDE autocomplete while accepting any string at runtime.
+ */
+export type DeviceType = BuiltInDeviceType | (string & {});
 
 // Re-export canonical valid-values lists from the definitive source
 export { AUDIO_CODECS, ARTWORK_SOURCES } from '@podkit/device-types';
@@ -355,6 +366,17 @@ export interface PodkitConfig {
   video?: Record<string, VideoCollectionConfig>;
   /** Named devices with their settings */
   devices?: Record<string, DeviceConfig>;
+  /**
+   * User-defined mass-storage device presets, resolved at load time.
+   *
+   * Each entry is a fully-resolved `MassStoragePreset` constructed by
+   * `definePreset()` from the raw `[presets.<id>]` block in the config file.
+   * Built-in preset ids (`echo-mini`, `rockbox`, `generic`) are NOT keys here
+   * — they live in `BUILT_IN_PRESETS` from `@podkit/devices-mass-storage`.
+   * Use `mergedPresets(config)` from `./preset-registry.ts` to get the
+   * combined registry.
+   */
+  presets?: Record<string, MassStoragePreset>;
   /** Default collection and device names */
   defaults?: DefaultsConfig;
 
@@ -518,6 +540,47 @@ export interface ConfigFileDefaults {
 }
 
 /**
+ * Raw user-defined preset definition as parsed from TOML
+ *
+ * Fields mirror the flat per-device override convention (`[devices.X]`) rather
+ * than the nested `definePreset()` input shape — the loader flattens these
+ * into nested `capabilities` and `contentPaths` before calling `definePreset()`.
+ *
+ * The table key (`<id>` in `[presets.<id>]`) IS the preset id; no `id` field
+ * is permitted inside the table.
+ *
+ * @example
+ * ```toml
+ * [presets.my-walkman]
+ * extends = "generic"
+ * manufacturer = "Sony"
+ * productName = "NW-A105"
+ * supportedAudioCodecs = ["aac", "flac", "mp3"]
+ * artworkMaxResolution = 240
+ * musicDir = "MUSIC"
+ * ```
+ */
+export interface ConfigFilePresetDefinition {
+  /** Optional preset id to inherit from (built-in or earlier user preset). */
+  extends?: string;
+  /** Display: vendor / brand the device is sold under. */
+  manufacturer?: string;
+  /** Display: short product name. */
+  productName?: string;
+  // -- Flat capability fields (loader maps to nested `capabilities` block) --
+  artworkMaxResolution?: number;
+  artworkSources?: string[];
+  supportedAudioCodecs?: string[];
+  supportsVideo?: boolean;
+  audioNormalization?: string;
+  supportsAlbumArtistBrowsing?: boolean;
+  // -- Flat content-path fields (loader maps to nested `contentPaths` block) --
+  musicDir?: string;
+  moviesDir?: string;
+  tvShowsDir?: string;
+}
+
+/**
  * Config file content as parsed from TOML
  *
  * This represents the raw TOML structure before validation.
@@ -577,6 +640,8 @@ export interface ConfigFileContent {
   video?: Record<string, ConfigFileVideoCollection>;
   /** Named devices: [devices.{name}] */
   devices?: Record<string, ConfigFileDevice>;
+  /** User-defined mass-storage presets: [presets.{name}] */
+  presets?: Record<string, ConfigFilePresetDefinition>;
   /** Default selections: [defaults] */
   defaults?: ConfigFileDefaults;
 }

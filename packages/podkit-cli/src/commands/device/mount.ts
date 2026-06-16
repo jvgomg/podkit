@@ -8,6 +8,7 @@ import { loadCoreOrFail, type CoreLoaderDeps } from '../../handler-deps.js';
 import { getDeviceIdentity, formatDeviceLookupMessage } from '../../device-resolver.js';
 import { OutputContext, bold } from '../../output/index.js';
 import { getDeviceLabel } from '../open-device.js';
+import { mergedPresets } from '../../config/preset-registry.js';
 import { DeviceErrorCodes } from './error-codes.js';
 import { resolveDeviceArg } from './shared.js';
 import type { DeviceMountOutput } from './output-types.js';
@@ -43,6 +44,7 @@ export async function runDeviceMount(
   out: OutputContext,
   deps: DeviceMountDeps = {}
 ): Promise<void> {
+  const { config } = getContext();
   const explicitDisk = options.disk;
   const dryRun = options.dryRun ?? false;
 
@@ -83,7 +85,7 @@ export async function runDeviceMount(
       const device = await manager.findByVolumeUuid(volumeUuid);
 
       if (!device) {
-        const devLabel = getDeviceLabel(resolvedDevice?.config);
+        const devLabel = getDeviceLabel(resolvedDevice?.config, mergedPresets(config));
         throw new CliError({
           message: `${devLabel} not found with UUID: ${volumeUuid}`,
           code: DeviceErrorCodes.DEVICE_NOT_FOUND,
@@ -128,7 +130,7 @@ export async function runDeviceMount(
 
   if (!dryRun) {
     const displayName = volumeName || deviceId;
-    const devLabel = getDeviceLabel(resolvedDevice?.config);
+    const devLabel = getDeviceLabel(resolvedDevice?.config, mergedPresets(config));
     out.print(`Mounting ${devLabel}: ${displayName}...`);
   }
 
@@ -201,7 +203,7 @@ export async function runDeviceMount(
     out.result<DeviceMountOutput>(
       { success: true, device: deviceId, mountPoint: result.mountPoint },
       () => {
-        const devLabel = getDeviceLabel(resolvedDevice?.config);
+        const devLabel = getDeviceLabel(resolvedDevice?.config, mergedPresets(config));
         out.print(`${devLabel} mounted at: ${result.mountPoint}`);
         out.newline();
         out.print('You can now use:');
@@ -215,7 +217,9 @@ export async function runDeviceMount(
       code: DeviceErrorCodes.MOUNT_FAILED,
       details: { device: deviceId },
       printText: (o) => {
-        o.error(`Failed to mount ${getDeviceLabel(resolvedDevice?.config).toLowerCase()}.`);
+        o.error(
+          `Failed to mount ${getDeviceLabel(resolvedDevice?.config, mergedPresets(config)).toLowerCase()}.`
+        );
         o.newline();
         if (result.error) {
           o.error(result.error);

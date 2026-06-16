@@ -31,6 +31,7 @@ import {
   formatArtistsTable,
 } from '../display-utils.js';
 import { openDevice, isMassStorageDevice, getDeviceTypeDisplayName } from '../open-device.js';
+import { mergedPresets } from '../../config/preset-registry.js';
 import { DeviceErrorCodes, type DeviceErrorCode } from './error-codes.js';
 import {
   resolveDeviceArg,
@@ -217,14 +218,17 @@ export async function runDeviceMusic(
       core,
       resolveResult.path,
       resolvedDevice?.config,
-      config.deviceDefaults
+      config.deviceDefaults,
+      mergedPresets(config)
     );
     try {
       const allTracks = deviceResult.adapter.getTracks();
       const musicTracks = allTracks.filter((t) => core.isMusicMediaType(t.mediaType));
       const deviceName =
         resolvedDevice?.name?.toUpperCase() ||
-        (deviceResult.isIpodDevice ? 'iPod' : getDeviceTypeDisplayName(resolvedDevice?.config));
+        (deviceResult.isIpodDevice
+          ? 'iPod'
+          : getDeviceTypeDisplayName(resolvedDevice?.config, mergedPresets(config)));
       const heading = `Music on ${deviceName}:`;
       const displayTracks = musicTracks.map(deviceTrackToDisplayTrack);
 

@@ -336,6 +336,48 @@ Devices can override the global `cleanArtists` setting:
 format = "feat. {}"
 ```
 
+## Custom Mass-Storage Presets
+
+Beyond the built-in `echo-mini`, `rockbox`, and `generic` presets, you can declare custom mass-storage device presets in the `[presets.<id>]` section. A custom preset captures the device's capabilities (what codecs it plays, artwork limits, content paths) once, then any number of `[devices.X]` entries can `type = "<id>"` to use it.
+
+```toml
+[presets.my-walkman]
+extends = "generic"
+manufacturer = "Sony"
+productName = "NW-A105"
+supportedAudioCodecs = ["aac", "flac", "mp3"]
+artworkMaxResolution = 240
+musicDir = "MUSIC"
+
+[devices.walkman]
+type = "my-walkman"
+path = "/Volumes/MyWalkman"
+```
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `extends` | string | Inherit defaults from another preset (built-in id or another `[presets.X]`). |
+| `manufacturer` | string | Display label vendor / brand (e.g. `"Sony"`). |
+| `productName` | string | Display label short name (e.g. `"NW-A105"`). |
+| `supportedAudioCodecs` | string[] | Codecs the device firmware plays natively. |
+| `artworkMaxResolution` | number | Max artwork dimension in pixels. |
+| `artworkSources` | string[] | One of `database`, `embedded`, `sidecar`. |
+| `supportsVideo` | boolean | Whether the device plays video. |
+| `audioNormalization` | string | One of `soundcheck`, `replaygain`, `none`. |
+| `supportsAlbumArtistBrowsing` | boolean | Whether the device groups by album artist. |
+| `musicDir` / `moviesDir` / `tvShowsDir` | string | Device-relative content paths. |
+
+`extends` chains are resolved at load time. A preset that omits `extends` inherits from the `generic` baseline so it has sensible defaults.
+
+**Rules:**
+
+- Preset ids are unique. Declaring `[presets.echo-mini]` (a built-in id) fails to load — pick a different id and use `extends = "echo-mini"` instead.
+- `[presets.ipod]` is also refused (`ipod` is the iPod provider, not a mass-storage preset).
+- Cycles in `extends` chains (`a → b → a`) are rejected with the preset names named in the error.
+- Listing `wav` or `aiff` in `supportedAudioCodecs` emits a warning: podkit transcodes sources in those formats rather than direct-copying them.
+
+Two devices configured with the same preset id resolve independently. They share the preset baseline but per-device `[devices.X]` capability overrides apply on top, so an Echo Mini and a `[devices.echo2]` echo-mini-typed device can have different `quality` / codec / artwork settings.
+
 ## Clean Artists
 
 Extracts featured artist information from the artist field and moves it to the title field. Applied globally to all devices unless overridden.

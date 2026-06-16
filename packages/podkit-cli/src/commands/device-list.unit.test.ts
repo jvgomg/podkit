@@ -21,7 +21,10 @@ import {
   type DeviceConfig,
 } from '../config/index.js';
 
-function makeContext(devices: Record<string, DeviceConfig> = {}): CliContext {
+function makeContext(
+  devices: Record<string, DeviceConfig> = {},
+  presets?: PodkitConfig['presets']
+): CliContext {
   const config: PodkitConfig = {
     quality: 'medium',
     artwork: true,
@@ -31,6 +34,7 @@ function makeContext(devices: Record<string, DeviceConfig> = {}): CliContext {
     devices,
     music: {},
     video: {},
+    ...(presets ? { presets } : {}),
   };
   const globalOpts: GlobalOptions = {
     json: true,
@@ -169,6 +173,87 @@ describe('runDeviceList', () => {
     if (result.success) {
       expect(result.devices).toHaveLength(1);
       expect(result.devices[0]?.connected).toBe(false);
+    }
+  });
+
+  it('renders the user-preset productName in text mode', async () => {
+    const { definePreset } = await import('@podkit/devices-mass-storage');
+    const walkman = definePreset({
+      id: 'my-walkman',
+      extends: 'generic',
+      manufacturer: 'Sony',
+      productName: 'NW-A105',
+    });
+    const ctx = makeContext(
+      {
+        walkman: { type: 'my-walkman', path: '/Volumes/MyWalkman' } as DeviceConfig,
+      },
+      { 'my-walkman': walkman }
+    );
+    // Text mode prints the device-type display name in the "Type" column.
+    // JSON mode currently only emits the raw `type` id, so user-preset
+    // metadata flow is only observable through the text renderer.
+    const stdout = new BufferSink();
+    const stderr = new BufferSink();
+    const exitCode = new BufferExitCodeSink();
+    const out = new OutputContext({
+      mode: 'text',
+      quiet: false,
+      verbose: 0,
+      color: false,
+      tips: false,
+      tty: false,
+      stdout,
+      stderr,
+      exitCode,
+    });
+    const deps: DeviceListDeps = {
+      loadCore: async () => fakeCore(),
+      getDeviceManager: () => fakeManager(),
+      loadLibgpod: async () => undefined,
+    };
+
+    await run(ctx, out, deps);
+    expect(exitCode.get()).toBeUndefined();
+
+    const text = stdout.text();
+    expect(text).toContain('walkman');
+    expect(text).toContain('NW-A105');
+    // Without merged-registry threading, the row would fall back to 'iPod'.
+    expect(text).not.toMatch(/walkman\s+iPod\b/);
+  });
+
+  it('exposes the raw preset id in JSON mode (no metadata leak)', async () => {
+    const { definePreset } = await import('@podkit/devices-mass-storage');
+    const walkman = definePreset({
+      id: 'my-walkman',
+      extends: 'generic',
+      manufacturer: 'Sony',
+      productName: 'NW-A105',
+    });
+    const ctx = makeContext(
+      {
+        walkman: { type: 'my-walkman', path: '/Volumes/MyWalkman' } as DeviceConfig,
+      },
+      { 'my-walkman': walkman }
+    );
+    const { out, stdout, exitCode } = makeOut();
+    const deps: DeviceListDeps = {
+      loadCore: async () => fakeCore(),
+      getDeviceManager: () => fakeManager(),
+      loadLibgpod: async () => undefined,
+    };
+
+    await run(ctx, out, deps);
+    expect(exitCode.get()).toBeUndefined();
+
+    // JSON mode exposes the raw type id so programmatic consumers can
+    // match against their own preset registry. Renaming or removing the
+    // `type` field would break that contract.
+    const result = stdout.json<DeviceListOutput>();
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.devices[0]?.type).toBe('my-walkman');
     }
   });
 });

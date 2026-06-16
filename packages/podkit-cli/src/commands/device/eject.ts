@@ -14,6 +14,7 @@ import {
 } from '../../device-resolver.js';
 import { OutputContext } from '../../output/index.js';
 import { isMassStorageDevice, getDeviceTypeDisplayName } from '../open-device.js';
+import { mergedPresets } from '../../config/preset-registry.js';
 import { DeviceErrorCodes } from './error-codes.js';
 import { resolveDeviceArg } from './shared.js';
 import type { DeviceEjectOutput } from './output-types.js';
@@ -47,7 +48,7 @@ export async function runDeviceEject(
   out: OutputContext,
   deps: DeviceEjectDeps = {}
 ): Promise<void> {
-  const { globalOpts } = getContext();
+  const { config, globalOpts } = getContext();
   const force = options.force ?? false;
 
   const resolved = resolveDeviceArg();
@@ -96,7 +97,7 @@ export async function runDeviceEject(
   const devicePath = resolveResult.path;
 
   const deviceLabel = isMassStorageDevice(resolvedDevice?.config?.type)
-    ? getDeviceTypeDisplayName(resolvedDevice?.config)
+    ? getDeviceTypeDisplayName(resolvedDevice?.config, mergedPresets(config))
     : 'iPod';
 
   if (!existsSync(devicePath)) {

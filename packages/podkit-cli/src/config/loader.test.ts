@@ -1490,6 +1490,321 @@ supportsAlbumArtistBrowsing = false
       });
     });
 
+    describe('presets', () => {
+      function withCapturedWarnings<T>(fn: () => T): { result: T; warnings: string[] } {
+        const original = console.warn;
+        const warnings: string[] = [];
+        console.warn = (msg: unknown) => {
+          warnings.push(String(msg));
+        };
+        try {
+          return { result: fn(), warnings };
+        } finally {
+          console.warn = original;
+        }
+      }
+
+      it('parses a user preset extending a built-in', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[presets.my-walkman]
+extends = "generic"
+manufacturer = "Sony"
+productName = "NW-A105"
+supportedAudioCodecs = ["aac", "flac", "mp3"]
+artworkMaxResolution = 240
+musicDir = "MUSIC"
+`)
+        );
+
+        const result = loadConfigFile(configPath)!;
+        const preset = result.presets!['my-walkman'];
+        expect(preset).toBeDefined();
+        expect(preset!.manufacturer).toBe('Sony');
+        expect(preset!.productName).toBe('NW-A105');
+        expect(preset!.supportedAudioCodecs).toEqual(['aac', 'flac', 'mp3']);
+        expect(preset!.artworkMaxResolution).toBe(240);
+        expect(preset!.contentPaths.musicDir).toBe('MUSIC');
+        // Inherits from generic
+        expect(preset!.supportsVideo).toBe(false);
+        expect(preset!.audioNormalization).toBe('none');
+      });
+
+      it('parses a preset with no extends (falls back to generic baseline)', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[presets.minimal]
+manufacturer = "Acme"
+productName = "MP3Walk"
+`)
+        );
+
+        const result = loadConfigFile(configPath)!;
+        const preset = result.presets!['minimal'];
+        expect(preset).toBeDefined();
+        expect(preset!.manufacturer).toBe('Acme');
+        expect(preset!.productName).toBe('MP3Walk');
+        expect(preset!.supportedAudioCodecs).toEqual(['aac', 'mp3', 'flac']);
+      });
+
+      it('resolves user preset extending another user preset', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[presets.base-dap]
+extends = "generic"
+manufacturer = "Acme"
+productName = "Base"
+supportedAudioCodecs = ["aac", "flac"]
+
+[presets.deluxe-dap]
+extends = "base-dap"
+productName = "Deluxe"
+artworkMaxResolution = 600
+`)
+        );
+
+        const result = loadConfigFile(configPath)!;
+        const deluxe = result.presets!['deluxe-dap'];
+        expect(deluxe).toBeDefined();
+        expect(deluxe!.manufacturer).toBe('Acme');
+        expect(deluxe!.productName).toBe('Deluxe');
+        expect(deluxe!.supportedAudioCodecs).toEqual(['aac', 'flac']);
+        expect(deluxe!.artworkMaxResolution).toBe(600);
+      });
+
+      it('rejects a preset extending an unknown id with file context', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[presets.broken]
+extends = "no-such-preset"
+manufacturer = "X"
+productName = "Y"
+`)
+        );
+
+        expect(() => loadConfigFile(configPath)).toThrow(
+          /\[presets\.broken\].*extends.*no-such-preset/
+        );
+      });
+
+      it('rejects a cycle in extends with file context', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[presets.a]
+extends = "b"
+manufacturer = "A"
+productName = "A"
+
+[presets.b]
+extends = "a"
+manufacturer = "B"
+productName = "B"
+`)
+        );
+
+        expect(() => loadConfigFile(configPath)).toThrow(
+          /(cycle|circular|unresolved).*\[presets\.(a|b)\]/i
+        );
+      });
+
+      it('rejects collision with a built-in preset id', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[presets.echo-mini]
+manufacturer = "Knockoff"
+productName = "Echo Mini Clone"
+`)
+        );
+
+        expect(() => loadConfigFile(configPath)).toThrow(
+          /\[presets\.echo-mini\].*(built-in|collides)/i
+        );
+      });
+
+      it('rejects [presets.ipod] since ipod is not a mass-storage preset', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[presets.ipod]
+manufacturer = "Apple"
+productName = "iPod"
+`)
+        );
+
+        expect(() => loadConfigFile(configPath)).toThrow(/\[presets\.ipod\]/i);
+      });
+
+      it('rejects invalid codec name', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[presets.bad]
+extends = "generic"
+manufacturer = "X"
+productName = "Y"
+supportedAudioCodecs = ["aac", "made-up-codec"]
+`)
+        );
+
+        expect(() => loadConfigFile(configPath)).toThrow(/Invalid audio codec.*made-up-codec/);
+      });
+
+      it('rejects invalid artwork source', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[presets.bad]
+extends = "generic"
+manufacturer = "X"
+productName = "Y"
+artworkSources = ["random"]
+`)
+        );
+
+        expect(() => loadConfigFile(configPath)).toThrow(/Invalid artwork source.*random/);
+      });
+
+      it('rejects invalid audioNormalization', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[presets.bad]
+extends = "generic"
+manufacturer = "X"
+productName = "Y"
+audioNormalization = "bogus"
+`)
+        );
+
+        expect(() => loadConfigFile(configPath)).toThrow(/Invalid audioNormalization.*bogus/);
+      });
+
+      it('warns when preset supportedAudioCodecs includes wav', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[presets.my-walkman]
+extends = "generic"
+manufacturer = "Sony"
+productName = "NW-A105"
+supportedAudioCodecs = ["aac", "mp3", "wav"]
+`)
+        );
+
+        const { result, warnings } = withCapturedWarnings(() => loadConfigFile(configPath));
+        expect(result!.presets!['my-walkman']!.supportedAudioCodecs).toContain('wav');
+        const codecWarning = warnings.find((w) => w.includes('supportedAudioCodecs'));
+        expect(codecWarning).toBeDefined();
+        expect(codecWarning!).toContain('"wav"');
+        expect(codecWarning!).toContain('[presets.my-walkman]');
+        expect(codecWarning!).toContain('transcoded');
+      });
+
+      it('warns naming both wav and aiff in a preset', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[presets.dap]
+extends = "rockbox"
+manufacturer = "X"
+productName = "Y"
+supportedAudioCodecs = ["wav", "aiff", "mp3"]
+`)
+        );
+
+        const { warnings } = withCapturedWarnings(() => loadConfigFile(configPath));
+        const codecWarning = warnings.find((w) => w.includes('supportedAudioCodecs'));
+        expect(codecWarning).toBeDefined();
+        expect(codecWarning!).toContain('"wav"');
+        expect(codecWarning!).toContain('"aiff"');
+      });
+
+      it('does NOT warn when preset has only supported codecs', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[presets.clean]
+extends = "generic"
+manufacturer = "X"
+productName = "Y"
+supportedAudioCodecs = ["aac", "mp3", "flac"]
+`)
+        );
+
+        const { warnings } = withCapturedWarnings(() => loadConfigFile(configPath));
+        expect(warnings.find((w) => w.includes('supportedAudioCodecs'))).toBeUndefined();
+      });
+
+      it('rejects a preset extending itself with a targeted message', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[presets.loop]
+extends = "loop"
+manufacturer = "X"
+productName = "Y"
+`)
+        );
+
+        expect(() => loadConfigFile(configPath)).toThrow(
+          /\[presets\.loop\].*cannot extend itself/i
+        );
+      });
+
+      it('trims whitespace around extends before lookup', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[presets.tidy]
+extends = "  generic  "
+manufacturer = "Acme"
+productName = "Tidy"
+`)
+        );
+
+        const result = loadConfigFile(configPath)!;
+        expect(result.presets!['tidy']).toBeDefined();
+        expect(result.presets!['tidy']!.supportedAudioCodecs).toEqual(['aac', 'mp3', 'flac']);
+      });
+
+      it('rejects empty supportedAudioCodecs', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[presets.empty]
+extends = "generic"
+manufacturer = "X"
+productName = "Y"
+supportedAudioCodecs = []
+`)
+        );
+
+        expect(() => loadConfigFile(configPath)).toThrow(/Empty supportedAudioCodecs/);
+      });
+    });
+
     describe('defaults', () => {
       it('parses defaults section', () => {
         const configPath = path.join(tempDir, 'config.toml');

@@ -5,13 +5,9 @@ import { Command, Option } from 'commander';
 import { confirm } from '../../utils/confirm.js';
 import { existsSync, statSync } from '../../utils/fs.js';
 import { getContext } from '../../context.js';
+import { mergedPresets, knownDeviceTypeIds } from '../../config/preset-registry.js';
 import { CliError, runAction } from '../../errors.js';
-import {
-  QUALITY_PRESETS,
-  VIDEO_QUALITY_PRESETS,
-  ENCODING_MODES,
-  DEVICE_TYPES,
-} from '../../config/index.js';
+import { QUALITY_PRESETS, VIDEO_QUALITY_PRESETS, ENCODING_MODES } from '../../config/index.js';
 import { validateCapabilityOverrides } from '@podkit/devices-mass-storage';
 import { OutputContext, formatBytes, formatNumber, bold } from '../../output/index.js';
 import {
@@ -225,7 +221,11 @@ interface AddOptions {
 export const addSubcommand = new Command('add')
   .description('detect and add a device to config')
   .argument('[name]', 'device name (alternative to passing -d <name> at the program level)')
-  .addOption(new Option('--type <type>', 'device type').choices([...DEVICE_TYPES]))
+  // `--type` is validated post-parse against the merged registry
+  // (built-in ∪ user-defined `[presets.X]`) so users can pass their own
+  // preset ids. The built-in list still drives shell completion via the
+  // generated completion file.
+  .option('--type <type>', 'device type')
   .option('--path <path>', 'path to device mount point')
   .option('-y, --yes', 'skip confirmation prompts')
   .option(
@@ -402,15 +402,31 @@ export async function runDeviceAdd(
   }
 
   // =========================================================================
-  // Mass-storage device flow (--type echo-mini|rockbox|generic)
+  // Mass-storage device flow (--type echo-mini|rockbox|generic|<user-preset>)
   // =========================================================================
   const deviceType = options.type;
+
+  // Post-parse validation: `--type` accepts `ipod` plus the merged
+  // (built-in ∪ user-defined `[presets.X]`) registry. The runtime check
+  // replaces Commander's `.choices()` which would reject any string not
+  // in the built-in list at parse time.
+  const presets = mergedPresets(configResult.config);
+
+  if (deviceType !== undefined) {
+    const knownIds = knownDeviceTypeIds(configResult.config);
+    if (!knownIds.includes(deviceType)) {
+      throw new CliError({
+        message: `Unknown device type "${deviceType}". Known types: ${knownIds.join(', ')}.`,
+        code: DeviceErrorCodes.INVALID_TYPE,
+      });
+    }
+  }
 
   if (deviceType && isMassStorageDevice(deviceType)) {
     // Mass-storage devices require --path
     if (!explicitPath) {
       throw new CliError({
-        message: `--path is required for ${getDeviceTypeDisplayName({ type: deviceType })} devices. Usage: podkit device add -d <name> --type ${deviceType} --path <mount-point>`,
+        message: `--path is required for ${getDeviceTypeDisplayName({ type: deviceType }, presets)} devices. Usage: podkit device add -d <name> --type ${deviceType} --path <mount-point>`,
         code: DeviceErrorCodes.PATH_REQUIRED,
       });
     }
@@ -450,8 +466,8 @@ export async function runDeviceAdd(
     }
 
     // Resolve preset + capabilities through the symmetric core helper.
-    // Today this catches typo'd preset ids defensively; once TASK-325 wires
-    // user-defined presets the same call surface will accept them.
+    // Accepts both built-in and user-defined preset ids — the post-parse
+    // `--type` validation above filters unknown ids before we reach here.
     const assessment = assessMassStorageDevice(explicitPath, {
       presetId: deviceType,
       overrides: capabilityOverridePatch,
@@ -497,14 +513,14 @@ export async function runDeviceAdd(
     // Interactive confirmation (skip if auto-confirm or JSON mode)
     if (!autoConfirm && out.isText) {
       out.newline();
-      out.print(`Adding ${getDeviceTypeDisplayName({ type: deviceType })} device:`);
+      out.print(`Adding ${getDeviceTypeDisplayName({ type: deviceType }, presets)} device:`);
       out.print(`  Name:   ${name}`);
       // Rich form here (`FiiO Snowsky Echo Mini (echo-mini)`) so the user
       // sees the exact `--type` token alongside vendor + product name.
       // No per-device overrides yet at `add` time — those land in config
       // after this confirmation, so subsequent `device info` calls will
       // see them.
-      out.print(`  Type:   ${getDeviceTypeRichDisplayName({ type: deviceType })}`);
+      out.print(`  Type:   ${getDeviceTypeRichDisplayName({ type: deviceType }, presets)}`);
       out.print(`  Path:   ${explicitPath}`);
       out.newline();
 
@@ -537,6 +553,7 @@ export async function runDeviceAdd(
           deviceType: deviceType as NonNullable<DeviceConfig['type']>,
           configResult: { created: result.created ?? false, configPath: result.configPath ?? '' },
           isFirstDevice,
+          presets,
         })
     );
     return;
@@ -879,10 +896,9 @@ export async function runDeviceAdd(
     try {
       const { suggestAddIntents } = await loadCore();
       const { ipodProvider } = await import('@podkit/devices-ipod');
-      const { createMassStorageProvider, BUILT_IN_PRESETS } =
-        await import('@podkit/devices-mass-storage');
+      const { createMassStorageProvider } = await import('@podkit/devices-mass-storage');
       const intents = await suggestAddIntents({
-        providers: [ipodProvider, createMassStorageProvider(BUILT_IN_PRESETS)],
+        providers: [ipodProvider, createMassStorageProvider(mergedPresets(configResult.config))],
       });
       suggestedIntent = intents[0];
     } catch {
@@ -898,7 +914,7 @@ export async function runDeviceAdd(
       });
     }
 
-    const displayName = getDeviceTypeDisplayName({ type: suggestedIntent.kind });
+    const displayName = getDeviceTypeDisplayName({ type: suggestedIntent.kind }, presets);
     out.print(`Detected ${displayName} via USB.`);
     // Only render the "To add it, run:" block when the intent supplied
     // a concrete command. Empty addArgs means "no command differs from

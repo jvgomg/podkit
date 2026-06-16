@@ -29,6 +29,7 @@ import { displayFor } from '@podkit/core';
 
 import { bold, formatBytes, formatNumber } from '../output/index.js';
 import { getDeviceTypeDisplayName } from './open-device.js';
+import type { MassStoragePreset } from '@podkit/devices-mass-storage';
 import {
   collectReadinessIssues,
   formatIssueLines,
@@ -75,6 +76,14 @@ export interface DeviceScanInput {
   configuredDevices: ConfiguredDeviceSummary[];
   /** Whether the platform's device manager supports enumeration. */
   isSupportedPlatform: boolean;
+  /**
+   * Merged mass-storage preset registry (built-in + user-defined). The
+   * caller is responsible for computing this via `mergedPresets(config)`
+   * — passing only `BUILT_IN_PRESETS` is fine when no user presets exist,
+   * but rendering with this field undefined would fall back silently to
+   * `'iPod'` for any user-preset-typed device, so the field is required.
+   */
+  presets: Record<string, MassStoragePreset>;
 }
 
 // ── Renderer ─────────────────────────────────────────────────────────────────
@@ -88,7 +97,7 @@ export interface DeviceScanInput {
  * Pure — same input always produces the same output, no I/O, no side effects.
  */
 export function renderDeviceScan(input: DeviceScanInput): string[] {
-  const { discovered, configuredDevices, isSupportedPlatform } = input;
+  const { discovered, configuredDevices, isSupportedPlatform, presets } = input;
 
   const hasAnyDevices = discovered.length > 0 || configuredDevices.length > 0;
 
@@ -103,7 +112,7 @@ export function renderDeviceScan(input: DeviceScanInput): string[] {
   const lines: string[] = [];
 
   for (const row of discovered) {
-    pushDeviceRow(lines, row);
+    pushDeviceRow(lines, row, presets);
   }
 
   // No-detected-devices footer (only when configured devices exist alongside
@@ -118,7 +127,7 @@ export function renderDeviceScan(input: DeviceScanInput): string[] {
     lines.push('Not detected:');
     for (const cd of configuredDevices) {
       const pathInfo = cd.path ? ` — ${cd.path}` : '';
-      lines.push(`  ${bold(cd.name)} (${getDeviceTypeDisplayName(cd)})${pathInfo}`);
+      lines.push(`  ${bold(cd.name)} (${getDeviceTypeDisplayName(cd, presets)})${pathInfo}`);
     }
     lines.push('');
   }
@@ -128,13 +137,17 @@ export function renderDeviceScan(input: DeviceScanInput): string[] {
 
 // ── Single dispatcher ────────────────────────────────────────────────────────
 
-function pushDeviceRow(lines: string[], row: DiscoveredDeviceRow): void {
+function pushDeviceRow(
+  lines: string[],
+  row: DiscoveredDeviceRow,
+  presets: Record<string, MassStoragePreset>
+): void {
   switch (row.device.kind) {
     case 'ipod':
       pushIpodRow(lines, row, row.device);
       break;
     case 'mass-storage':
-      pushMassStorageRow(lines, row.device);
+      pushMassStorageRow(lines, row.device, presets);
       break;
     case 'unsupported':
       pushUnsupportedRow(lines, row.device);
@@ -259,7 +272,8 @@ function pushUnsupportedRow(
 
 function pushMassStorageRow(
   lines: string[],
-  device: import('@podkit/core').DiscoveredDeviceMassStorage
+  device: import('@podkit/core').DiscoveredDeviceMassStorage,
+  presets: Record<string, MassStoragePreset>
 ): void {
   if (!device.usb) {
     // Block-only mass-storage: no preset metadata. Use displayFor fallback.
@@ -270,7 +284,7 @@ function pushMassStorageRow(
   }
   // Pre-add scan — no user-supplied display overrides yet, only the
   // preset's defaults shown to confirm what `device add` will store.
-  const presetDisplayName = getDeviceTypeDisplayName({ type: device.usb.presetId });
+  const presetDisplayName = getDeviceTypeDisplayName({ type: device.usb.presetId }, presets);
   if (device.usb.device.diskIdentifier) {
     lines.push(
       `  ${bold(presetDisplayName)} (${device.usb.presetId}) — disk: ${device.usb.device.diskIdentifier}`

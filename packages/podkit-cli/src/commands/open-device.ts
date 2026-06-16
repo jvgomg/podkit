@@ -13,11 +13,7 @@
 import type { AudioCodec, AudioNormalizationMode, DeviceArtworkSource } from '@podkit/device-types';
 import type { DeviceAdapter, DeviceCapabilities, IpodDatabase } from '@podkit/core';
 import { resolveIpodModel } from '@podkit/devices-ipod';
-import {
-  BUILT_IN_PRESETS,
-  formatPresetShortDisplay,
-  type BuiltInPresetId,
-} from '@podkit/devices-mass-storage';
+import { formatPresetShortDisplay, type MassStoragePreset } from '@podkit/devices-mass-storage';
 import type { DeviceConfig, PodkitConfig } from '../config/types.js';
 import { resolveDeviceContentPaths } from '../resolvers/content-paths.js';
 
@@ -115,16 +111,17 @@ function unwrapDisplay(v: string | { value: string } | undefined): string | unde
  * display layer). iPods and unknown types still fall back to `'iPod'`
  * for the same historical reason as the old switch.
  */
-export function getDeviceTypeDisplayName(device: DeviceDisplayInput | undefined): string {
+export function getDeviceTypeDisplayName(
+  device: DeviceDisplayInput | undefined,
+  presets: Record<string, MassStoragePreset>
+): string {
   const type = device?.type;
   if (type === undefined || type === 'ipod') return 'iPod';
-  const preset = BUILT_IN_PRESETS[type as BuiltInPresetId];
+  const preset = presets[type];
   if (preset) {
     return unwrapDisplay(device?.productName) ?? formatPresetShortDisplay(preset);
   }
-  // Unknown type — backward compat: undefined / unrecognised → iPod. User
-  // presets the CLI doesn't know about land here; once the user-preset
-  // registry is plumbed through this code path, look it up there too.
+  // Unknown type — backward compat: undefined / unrecognised → iPod.
   return 'iPod';
 }
 
@@ -141,10 +138,13 @@ export function getDeviceTypeDisplayName(device: DeviceDisplayInput | undefined)
  * The `id` portion (`(generic)`) stays the preset id so the CLI hint
  * still names the exact `--type` token the user passed.
  */
-export function getDeviceTypeRichDisplayName(device: DeviceDisplayInput | undefined): string {
+export function getDeviceTypeRichDisplayName(
+  device: DeviceDisplayInput | undefined,
+  presets: Record<string, MassStoragePreset>
+): string {
   const type = device?.type;
   if (type === undefined || type === 'ipod') return 'iPod';
-  const preset = BUILT_IN_PRESETS[type as BuiltInPresetId];
+  const preset = presets[type];
   if (preset) {
     const manufacturer = unwrapDisplay(device?.manufacturer) ?? preset.manufacturer;
     const productName = unwrapDisplay(device?.productName) ?? preset.productName;
@@ -159,8 +159,11 @@ export function getDeviceTypeRichDisplayName(device: DeviceDisplayInput | undefi
  * preset default. Passing a full `DeviceConfig` ensures the override is
  * picked up automatically.
  */
-export function getDeviceLabel(device: DeviceDisplayInput | undefined): string {
-  return isMassStorageDevice(device?.type) ? getDeviceTypeDisplayName(device) : 'iPod';
+export function getDeviceLabel(
+  device: DeviceDisplayInput | undefined,
+  presets: Record<string, MassStoragePreset>
+): string {
+  return isMassStorageDevice(device?.type) ? getDeviceTypeDisplayName(device, presets) : 'iPod';
 }
 
 /**
@@ -240,8 +243,9 @@ function pickCapabilityFields(
 export async function openDevice(
   core: CoreModule,
   path: string,
-  deviceConfig?: DeviceConfig,
-  deviceDefaults?: PodkitConfig['deviceDefaults']
+  deviceConfig: DeviceConfig | undefined,
+  deviceDefaults: PodkitConfig['deviceDefaults'] | undefined,
+  presets: Record<string, MassStoragePreset>
 ): Promise<OpenDeviceResult> {
   const deviceType = deviceConfig?.type;
   const isIpod = !deviceType || deviceType === 'ipod';
@@ -330,6 +334,7 @@ export async function openDevice(
     // `device info` rendering can call `resolveCapabilitiesResolved`
     // directly when it needs inheritance markers.
     const resolved = core.resolveCapabilitiesResolved(massStorageIdentity, {
+      presets,
       deviceConfigOverrides,
       deviceDefaultsOverrides,
     });
@@ -353,7 +358,7 @@ export async function openDevice(
   // returned `undefined` when no overrides applied, which let the adapter
   // fall back to DEFAULT_CONTENT_PATHS internally — equivalent to the
   // normalised form we now pass explicitly.
-  const contentPaths = resolveDeviceContentPaths(deviceConfig, deviceDefaults);
+  const contentPaths = resolveDeviceContentPaths(deviceConfig, deviceDefaults, presets);
 
   // Resolve pathTemplate: per-device config > global deviceDefaults > adapter default
   const pathTemplate = deviceConfig?.pathTemplate ?? deviceDefaults?.pathTemplate;

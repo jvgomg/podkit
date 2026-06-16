@@ -46,6 +46,7 @@ interface MakeContextOptions {
   devices?: Record<string, DeviceConfig>;
   configPath?: string;
   json?: boolean;
+  presets?: PodkitConfig['presets'];
 }
 
 function makeContext(opts: MakeContextOptions = {}): CliContext {
@@ -58,6 +59,7 @@ function makeContext(opts: MakeContextOptions = {}): CliContext {
     devices: opts.devices ?? {},
     music: {},
     video: {},
+    ...(opts.presets ? { presets: opts.presets } : {}),
   };
   const globalOpts: GlobalOptions = {
     json: opts.json ?? true, // JSON mode by default — tests assert structured payloads
@@ -190,6 +192,94 @@ describe('runDeviceAdd: device flag + name validation', () => {
     const err = stdout.json<AddOutputError>();
     expect(err.error).toContain('"foo"');
     expect(err.error.toLowerCase()).toContain('already exists');
+  });
+});
+
+// =============================================================================
+// Validation: --type accepts user-defined presets, rejects unknown
+// =============================================================================
+
+describe('runDeviceAdd: --type validation against merged preset registry', () => {
+  it('rejects --type with an unknown id, naming built-ins in the error', async () => {
+    const ctx = makeContext({ device: 'foo' });
+    const { out, stdout, exitCode } = makeOut();
+    await runAdd(ctx, { type: 'no-such-preset', path: '/mnt/x' }, out);
+    expect(exitCode.get()).toBe(1);
+    const err = stdout.json<AddOutputError>();
+    expect(err.success).toBe(false);
+    expect(err.error).toContain('Unknown device type "no-such-preset"');
+    // Built-ins must appear in the error message.
+    expect(err.error).toContain('ipod');
+    expect(err.error).toContain('echo-mini');
+    expect(err.error).toContain('rockbox');
+    expect(err.error).toContain('generic');
+  });
+
+  it('rejects --type with an unknown id, listing user presets too', async () => {
+    const { definePreset } = await import('@podkit/devices-mass-storage');
+    const walkman = definePreset({
+      id: 'my-walkman',
+      extends: 'generic',
+      manufacturer: 'Sony',
+      productName: 'NW-A105',
+    });
+    const ctx = makeContext({ device: 'foo', presets: { 'my-walkman': walkman } });
+    const { out, stdout, exitCode } = makeOut();
+    await runAdd(ctx, { type: 'definitely-not-defined', path: '/mnt/x' }, out);
+    expect(exitCode.get()).toBe(1);
+    const err = stdout.json<AddOutputError>();
+    expect(err.error).toContain('my-walkman');
+  });
+
+  it('does not reject --type when it is a configured user preset', async () => {
+    // The validation gate passes; subsequent failures (path not existing, etc.)
+    // come from the existing mass-storage flow and have nothing to do with
+    // type validation. We assert the error message is NOT the unknown-type one.
+    const { definePreset } = await import('@podkit/devices-mass-storage');
+    const walkman = definePreset({
+      id: 'my-walkman',
+      extends: 'generic',
+      manufacturer: 'Sony',
+      productName: 'NW-A105',
+    });
+    const ctx = makeContext({ device: 'foo', presets: { 'my-walkman': walkman } });
+    const { out, stdout, exitCode } = makeOut();
+    await runAdd(ctx, { type: 'my-walkman', path: '/no/such/path/exists' }, out);
+    expect(exitCode.get()).toBe(1);
+    const err = stdout.json<AddOutputError>();
+    expect(err.error).not.toContain('Unknown device type');
+    // The mass-storage flow will reject the bogus path instead.
+    expect(err.error.toLowerCase()).toMatch(/path/);
+  });
+
+  it('routes a user preset through the same mass-storage flow as a built-in', async () => {
+    // Proves that beyond the --type validation gate, a user-preset id reaches
+    // the same mass-storage code path as a built-in.
+    // We trigger a downstream rejection that only fires AFTER type passes
+    // through to the mass-storage capability-override validator. If the user
+    // preset weren't recognised, we'd hit the unknown-type rejection earlier.
+    const { definePreset } = await import('@podkit/devices-mass-storage');
+    const walkman = definePreset({
+      id: 'my-walkman',
+      extends: 'generic',
+      manufacturer: 'Sony',
+      productName: 'NW-A105',
+    });
+    const dir = await mkdtemp(join(tmpdir(), 'device-add-userpreset-'));
+    try {
+      const ctx = makeContext({ device: 'walkman', presets: { 'my-walkman': walkman } });
+      const { out, stdout, exitCode } = makeOut();
+      // Invalid artworkSources value — the mass-storage validator that rejects
+      // this only runs if the type was accepted and the path resolved.
+      await runAdd(ctx, { type: 'my-walkman', path: dir, artworkSources: ['bogus'] as never }, out);
+      expect(exitCode.get()).toBe(1);
+      const err = stdout.json<AddOutputError>();
+      expect(err.error).not.toContain('Unknown device type');
+      expect(err.error.toLowerCase()).toContain('artwork source');
+      expect(err.error).toContain('bogus');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
 

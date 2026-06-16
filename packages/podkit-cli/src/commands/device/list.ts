@@ -5,8 +5,8 @@ import { Command } from 'commander';
 import { existsSync } from '../../utils/fs.js';
 import { getContext } from '../../context.js';
 import type { CoreLoaderDeps } from '../../handler-deps.js';
-import { BUILT_IN_PRESETS } from '@podkit/devices-mass-storage';
 import { isMassStorageDevice, getDeviceTypeDisplayName } from '../open-device.js';
+import { mergedPresets } from '../../config/preset-registry.js';
 import { OutputContext } from '../../output/index.js';
 import { sortDevicesForDisplay, getDevicePrefix } from './shared.js';
 import type { DeviceListOutput } from './output-types.js';
@@ -119,6 +119,7 @@ export async function runDeviceList(out: OutputContext, deps: DeviceListDeps = {
   const deviceFromMountPoint = libgpod?.deviceFromMountPoint;
 
   const globalResolved = resolveGlobalConfig(config);
+  const presets = mergedPresets(config);
 
   const resolvedDevices: ReturnType<typeof resolveDeviceSettings>[] = [];
 
@@ -187,7 +188,7 @@ export async function runDeviceList(out: OutputContext, deps: DeviceListDeps = {
           if (deviceConfig.supportsAlbumArtistBrowsing !== undefined) {
             overrides.supportsAlbumArtistBrowsing = deviceConfig.supportsAlbumArtistBrowsing;
           }
-          capabilities = resolveCapabilities(massStorageIdentity, { overrides });
+          capabilities = resolveCapabilities(massStorageIdentity, { presets, overrides });
         } catch {
           capabilities = null;
         }
@@ -197,9 +198,11 @@ export async function runDeviceList(out: OutputContext, deps: DeviceListDeps = {
     // Mass-storage devices have a preset baseline for their display
     // labels; iPods don't. Pass the preset's manufacturer/productName
     // when available so the resolver can attribute them with provenance.
+    // Consults the merged registry so user-defined `[presets.X]` entries
+    // surface their labels in `device list`.
     const presetDisplay = (() => {
-      if (type === 'ipod') return undefined;
-      const preset = BUILT_IN_PRESETS[type as keyof typeof BUILT_IN_PRESETS];
+      if (type === 'ipod' || type === undefined) return undefined;
+      const preset = presets[type];
       return preset
         ? { manufacturer: preset.manufacturer, productName: preset.productName }
         : undefined;
@@ -254,7 +257,7 @@ export async function runDeviceList(out: OutputContext, deps: DeviceListDeps = {
     const headers = ['NAME', 'TYPE', 'QUALITY', 'AUDIO', 'VIDEO', 'ARTWORK'];
     const widths = [
       Math.max(6, ...resolvedDevices.map((d) => d.name.length + 2)),
-      Math.max(6, ...resolvedDevices.map((d) => getDeviceTypeDisplayName(d).length)),
+      Math.max(6, ...resolvedDevices.map((d) => getDeviceTypeDisplayName(d, presets).length)),
       9,
       9,
       9,
@@ -269,7 +272,7 @@ export async function runDeviceList(out: OutputContext, deps: DeviceListDeps = {
       const row = formatRow(
         [
           d.name,
-          getDeviceTypeDisplayName(d),
+          getDeviceTypeDisplayName(d, presets),
           formatResolved(d.quality),
           formatResolved(d.audio),
           formatResolved(d.video),

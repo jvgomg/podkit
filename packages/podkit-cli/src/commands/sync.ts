@@ -91,6 +91,7 @@ import { createShutdownController } from '../shutdown.js';
 import { MusicPresenter } from './music-presenter.js';
 import { VideoPresenter } from './video-presenter.js';
 import { openDevice } from './open-device.js';
+import { mergedPresets } from '../config/preset-registry.js';
 import {
   genericSyncCollection,
   type MusicContentConfig,
@@ -744,7 +745,13 @@ export async function runSync(
 
   let openResult: import('./open-device.js').OpenDeviceResult;
   try {
-    openResult = await openDevice(core, devicePath, deviceConfig, config.deviceDefaults);
+    openResult = await openDevice(
+      core,
+      devicePath,
+      deviceConfig,
+      config.deviceDefaults,
+      mergedPresets(config)
+    );
   } catch (err) {
     dbSpinner.stop();
     const isIpodError = err instanceof core.IpodError;

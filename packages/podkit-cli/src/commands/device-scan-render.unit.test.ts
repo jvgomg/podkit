@@ -15,6 +15,7 @@ import { classifyAsIpod, type IpodClassification, type IpodModel } from '@podkit
 import {
   classifyAsMassStorage,
   type MassStorageClassification,
+  BUILT_IN_PRESETS,
 } from '@podkit/devices-mass-storage';
 import type {
   DiscoveredDevice,
@@ -145,6 +146,7 @@ function emptyInput(overrides: Partial<DeviceScanInput> = {}): DeviceScanInput {
     discovered: [],
     configuredDevices: [],
     isSupportedPlatform: true,
+    presets: BUILT_IN_PRESETS,
     ...overrides,
   };
 }

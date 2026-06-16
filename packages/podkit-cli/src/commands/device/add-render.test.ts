@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'bun:test';
 import type { DeviceCapabilities } from '@podkit/core';
+import { BUILT_IN_PRESETS } from '@podkit/devices-mass-storage';
 import { OutputContext } from '../../output/index.js';
 import { BufferSink } from '../../test-utils/buffer-sink.js';
 import {
@@ -136,6 +137,7 @@ describe('printMassStorageDeviceAddSuccess', () => {
       deviceType: 'echo-mini',
       configResult: { created: true, configPath: '/tmp/podkit.toml' },
       isFirstDevice: true,
+      presets: BUILT_IN_PRESETS,
     });
     const text = stdout.text();
     expect(text).toContain('Created config file: /tmp/podkit.toml');
@@ -153,6 +155,7 @@ describe('printMassStorageDeviceAddSuccess', () => {
       deviceType: 'echo-mini',
       configResult: { created: false, configPath: '/tmp/podkit.toml' },
       isFirstDevice: false,
+      presets: BUILT_IN_PRESETS,
     });
     const text = stdout.text();
     expect(text).toContain('Updated config file: /tmp/podkit.toml');
@@ -166,6 +169,7 @@ describe('printMassStorageDeviceAddSuccess', () => {
       deviceType: 'generic',
       configResult: { created: false, configPath: '/x' },
       isFirstDevice: false,
+      presets: BUILT_IN_PRESETS,
     });
     expect(stdout.text()).not.toContain('Set as default');
   });

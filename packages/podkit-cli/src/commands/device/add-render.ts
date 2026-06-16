@@ -17,6 +17,7 @@ import type { DeviceCapabilities } from '@podkit/core';
 import { OutputContext } from '../../output/index.js';
 import { printCapabilitySummary } from './capability-summary.js';
 import { getDeviceTypeDisplayName } from '../open-device.js';
+import type { MassStoragePreset } from '@podkit/devices-mass-storage';
 import type { DeviceConfig } from '../../config/types.js';
 
 /**
@@ -80,6 +81,7 @@ export function printMassStorageDeviceAddSuccess(
     deviceType: NonNullable<DeviceConfig['type']>;
     configResult: { created: boolean; configPath: string };
     isFirstDevice: boolean;
+    presets: Record<string, MassStoragePreset>;
   }
 ): void {
   out.newline();
@@ -90,7 +92,7 @@ export function printMassStorageDeviceAddSuccess(
   );
   out.newline();
   out.print(
-    `Device "${opts.name}" added to config (${getDeviceTypeDisplayName({ type: opts.deviceType })}).`
+    `Device "${opts.name}" added to config (${getDeviceTypeDisplayName({ type: opts.deviceType }, opts.presets)}).`
   );
   if (opts.isFirstDevice) {
     out.print(`Set as default device.`);

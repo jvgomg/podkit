@@ -15,7 +15,21 @@
  * in hand don't have to spread its fields manually.
  */
 import { describe, it, expect } from 'bun:test';
-import { getDeviceTypeDisplayName, getDeviceTypeRichDisplayName } from './open-device.js';
+import { BUILT_IN_PRESETS } from '@podkit/devices-mass-storage';
+import {
+  getDeviceTypeDisplayName as _getDeviceTypeDisplayName,
+  getDeviceTypeRichDisplayName as _getDeviceTypeRichDisplayName,
+} from './open-device.js';
+
+// These tests pin the built-in preset baseline. The helpers now require an
+// explicit registry; tests bind to BUILT_IN_PRESETS via wrappers so the
+// assertions read the same as before the registry threading landed.
+function getDeviceTypeDisplayName(device: Parameters<typeof _getDeviceTypeDisplayName>[0]) {
+  return _getDeviceTypeDisplayName(device, BUILT_IN_PRESETS);
+}
+function getDeviceTypeRichDisplayName(device: Parameters<typeof _getDeviceTypeRichDisplayName>[0]) {
+  return _getDeviceTypeRichDisplayName(device, BUILT_IN_PRESETS);
+}
 
 describe('getDeviceTypeDisplayName — preset defaults', () => {
   it('returns the preset productName when no overrides are supplied', () => {

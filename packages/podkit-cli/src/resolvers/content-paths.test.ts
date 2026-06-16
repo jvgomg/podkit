@@ -4,8 +4,18 @@
 
 import { describe, it, expect } from 'bun:test';
 import { BUILT_IN_PRESETS } from '@podkit/devices-mass-storage';
-import { resolveDeviceContentPaths } from './content-paths.js';
+import { resolveDeviceContentPaths as _resolveDeviceContentPaths } from './content-paths.js';
 import type { DeviceConfig, PodkitConfig } from '../config/types.js';
+
+// These tests pin the built-in preset content-path baseline. The resolver
+// now requires an explicit registry; bind to BUILT_IN_PRESETS so the
+// assertions read the same as before the registry threading landed.
+function resolveDeviceContentPaths(
+  deviceConfig: DeviceConfig | undefined,
+  deviceDefaults: PodkitConfig['deviceDefaults'] | undefined
+) {
+  return _resolveDeviceContentPaths(deviceConfig, deviceDefaults, BUILT_IN_PRESETS);
+}
 
 describe('resolveDeviceContentPaths', () => {
   it('returns DEFAULT_CONTENT_PATHS when given no config and no defaults', () => {

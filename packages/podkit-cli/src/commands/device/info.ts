@@ -16,6 +16,7 @@ import {
 } from '@podkit/core';
 import type { ReadinessLevel } from '@podkit/core';
 import { openDevice, isMassStorageDevice, getDeviceTypeDisplayName } from '../open-device.js';
+import { mergedPresets } from '../../config/preset-registry.js';
 import { formatReadinessLevel, collectReadinessIssues, printIssues } from '../readiness-display.js';
 import { DeviceErrorCodes } from './error-codes.js';
 import {
@@ -93,7 +94,8 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
               core,
               resolveResult.path,
               device,
-              podkitConfig.deviceDefaults
+              podkitConfig.deviceDefaults,
+              mergedPresets(podkitConfig)
             );
             resolvedDeviceCapabilities = openedDeviceResult.capabilities;
             firmwareDeviceCapabilities = openedDeviceResult.firmwareCapabilities;
@@ -329,7 +331,9 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
           // device config directly, so an AliExpress override on a
           // `generic` device shows the user's label instead of the
           // preset default.
-          out.print(`  Type:          ${getDeviceTypeDisplayName(device)}`);
+          out.print(
+            `  Type:          ${getDeviceTypeDisplayName(device, mergedPresets(podkitConfig))}`
+          );
         }
         if (device.volumeUuid) {
           out.print(`  Volume UUID:   ${device.volumeUuid}`);

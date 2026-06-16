@@ -47,6 +47,10 @@ an architecture doc to match a change you're shipping, ask whether the
   why `bin/podkit` and `bin/podkit-debug` exist side by side, the
   `__PODKIT_DEV_HOOKS__` strip pattern, and the e2e wiring that opts
   into test seams.
+- **[device/capabilities](./device/capabilities.md)** — How
+  `DeviceCapabilities` are resolved from the merged (built-in ∪
+  user-defined) preset registry plus per-device overrides, and the
+  threading convention CLI consumers follow.
 
 That's it for now. The rest of the library is pending — see
 [Goals and migration plan](#goals-and-migration-plan) below.
@@ -189,9 +193,9 @@ like `sync/error-handling.md` did for TASK-381.
 - [ ] **`device/adapter-contract.md`** — `DeviceAdapter` interface. The
   contract a new device must implement. Triggered by: any new device
   adapter (e.g. a third mass-storage variant, or a new native target).
-- [ ] **`device/capabilities.md`** — `DeviceCapabilities` model. How
-  capabilities flow from device → resolver → planner → adapter. Triggered
-  by: any capability-resolution work.
+- [x] **`device/capabilities.md`** — `DeviceCapabilities` model. How
+  capabilities flow from device → resolver → planner → adapter, plus the
+  built-in / user-defined preset registry.
 - [ ] **`collection-adapters/adapter-contract.md`** — `CollectionAdapter`
   interface. Triggered by: any new source adapter.
 - [ ] **`transcode/codec-resolution.md`** — How the planner picks a
