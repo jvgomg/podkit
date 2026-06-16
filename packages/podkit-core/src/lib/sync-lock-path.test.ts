@@ -33,6 +33,23 @@ async function withTempMount<T>(fn: (mount: string) => Promise<T>): Promise<T> {
 }
 
 /**
+ * Poll until `path` exists on disk or `timeoutMs` elapses. Used to
+ * synchronise spawning of the loser child — we wait for the winner to
+ * actually create its lock file before starting the contender, instead
+ * of betting on a timing margin (`acquireDelayMs`) that breaks under
+ * heavy CI / parallel-turbo load where `bun` cold-start can exceed
+ * hundreds of milliseconds.
+ */
+async function waitForLockFile(path: string, timeoutMs = 15_000): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (existsSync(path)) return;
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  throw new Error(`lock file did not appear within ${timeoutMs}ms: ${path}`);
+}
+
+/**
  * Result of a competing-process lock attempt: the child either acquired
  * the lock and held it for the configured hold duration, or it failed
  * with `LockHeldError` / `LockContestedError`.
@@ -157,19 +174,17 @@ describe('resolveSyncLockPath', () => {
 describe('cross-process per-device lock', () => {
   it('mass-storage: one process acquires; the other exits LOCK_HELD (exit 4)', async () => {
     await withTempMount(async (mount) => {
-      const [a, b] = await Promise.all([
-        spawnLockChild(mount, /* isIpod */ false, /* holdMs */ 500),
-        // Start the second child slightly later to make the race
-        // deterministic — the first child must have written its lock
-        // file before the second probes. Without a small offset the
-        // second child can win, which is still a valid outcome but
-        // makes the test order-of-spawn-dependent. The contention
-        // contract holds either way (exactly one wins) so we assert
-        // on "one acquired, one held" rather than which one was
-        // first.
-        spawnLockChild(mount, false, 0, /* acquireDelayMs */ 100),
-      ]);
-      const results = [a, b];
+      const lockPath = await resolveSyncLockPath(mount, /* isIpod */ false);
+      // Start the winner with a long hold, wait until its lock file is
+      // visible on disk, then spawn the loser. Polling for the file
+      // replaces the previous timing margin (`acquireDelayMs`) which
+      // could be exceeded under heavy parallel load (bun cold-start
+      // dominates wall-clock).
+      const winnerPromise = spawnLockChild(mount, false, /* holdMs */ 3000);
+      await waitForLockFile(lockPath);
+      const loser = await spawnLockChild(mount, false, 0);
+      const winner = await winnerPromise;
+      const results = [winner, loser];
       const acquired = results.filter((r) => r.outcome === 'acquired');
       const held = results.filter((r) => r.outcome === 'held' || r.outcome === 'contested');
       const failures = results.filter((r) => r.outcome === 'other');
@@ -190,11 +205,12 @@ describe('cross-process per-device lock', () => {
       await import('node:fs/promises').then((m) =>
         m.mkdir(join(mount, 'iPod_Control'), { recursive: true })
       );
-      const [a, b] = await Promise.all([
-        spawnLockChild(mount, /* isIpod */ true, /* holdMs */ 500),
-        spawnLockChild(mount, true, 0, /* acquireDelayMs */ 100),
-      ]);
-      const results = [a, b];
+      const lockPath = await resolveSyncLockPath(mount, /* isIpod */ true);
+      const winnerPromise = spawnLockChild(mount, true, /* holdMs */ 3000);
+      await waitForLockFile(lockPath);
+      const loser = await spawnLockChild(mount, true, 0);
+      const winner = await winnerPromise;
+      const results = [winner, loser];
       const acquired = results.filter((r) => r.outcome === 'acquired');
       const held = results.filter((r) => r.outcome === 'held' || r.outcome === 'contested');
       const failures = results.filter((r) => r.outcome === 'other');
@@ -213,10 +229,11 @@ describe('cross-process per-device lock', () => {
     // production. Re-running it under a different name documents the
     // sync-vs-doctor scenario explicitly in the test list.
     await withTempMount(async (mount) => {
-      const [syncish, doctorish] = await Promise.all([
-        spawnLockChild(mount, false, 500), // long-held "sync"
-        spawnLockChild(mount, false, 0, /* acquireDelayMs */ 100), // "doctor --repair orphan-files"
-      ]);
+      const lockPath = await resolveSyncLockPath(mount, /* isIpod */ false);
+      const syncPromise = spawnLockChild(mount, false, /* holdMs */ 3000); // long-held "sync"
+      await waitForLockFile(lockPath);
+      const doctorish = await spawnLockChild(mount, false, 0); // "doctor --repair orphan-files"
+      const syncish = await syncPromise;
       const results = [syncish, doctorish];
       const acquired = results.filter((r) => r.outcome === 'acquired');
       const held = results.filter((r) => r.outcome === 'held' || r.outcome === 'contested');

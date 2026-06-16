@@ -4,13 +4,27 @@
  * `@podkit/device-testing` dependency that the sibling `*.unit.test.ts`
  * pulls in (and which is unavailable in some test environments).
  */
-import { describe, expect, it } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { definePreset, BUILT_IN_PRESETS } from '@podkit/devices-mass-storage';
 import {
   renderDeviceScan,
   type DeviceScanInput,
   type ConfiguredDeviceSummary,
 } from './device-scan-render.js';
+
+// `bold()` wraps text in ANSI escapes when stdout is a TTY, which breaks
+// substring assertions like `toContain('walkman (iPod)')` whenever the
+// runner inherits a real terminal (turbo with TTY passthrough, direct
+// interactive `bun test`). Pin it off for this file — the rendering
+// contract under test is the textual structure, not the colour.
+let savedIsTty = false;
+beforeAll(() => {
+  savedIsTty = process.stdout.isTTY;
+  process.stdout.isTTY = false;
+});
+afterAll(() => {
+  process.stdout.isTTY = savedIsTty;
+});
 
 function emptyInput(overrides: Partial<DeviceScanInput> = {}): DeviceScanInput {
   return {
