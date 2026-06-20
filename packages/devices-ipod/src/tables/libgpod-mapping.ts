@@ -19,6 +19,7 @@
 
 import type { IpodGenerationId } from '../types.js';
 import { GENERATIONS } from './generations.js';
+import { formatIpodLabel } from '../format.js';
 
 /**
  * libgpod's IpodGeneration string values.
@@ -158,7 +159,8 @@ export function formatGeneration(libgpodName: string): string {
 
   const genId = LIBGPOD_NAME_TO_GENERATION_ID.get(libgpodName);
   if (genId) {
-    return GENERATIONS[genId].displayName;
+    const gen = GENERATIONS[genId];
+    return formatIpodLabel({ family: gen.family, ordinal: gen.ordinal });
   }
   return libgpodName;
 }

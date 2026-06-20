@@ -98,3 +98,7 @@ export {
 // ── Model resolver ────────────────────────────────────────────────────────────
 
 export { resolveIpodModel, type ResolveModelInput } from './resolve.js';
+
+// ── Label formatters ──────────────────────────────────────────────────────────
+
+export { formatIpodLabel, formatIpodShortLabel, type IpodLabelParts } from './format.js';

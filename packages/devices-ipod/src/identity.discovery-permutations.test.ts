@@ -17,7 +17,7 @@
  *     behaviour is asserted in `discovery-permutations.test.ts`.
  *   - Malformed serial (non-hex / non-3-char suffix) returns `undefined`.
  *     Doctor's sysinfo-consistency axis depends on this: a bogus serial must not
- *     silently resolve to "Unknown iPod (model M…)" and propagate downstream.
+ *     silently resolve to a synthetic model and propagate downstream.
  *
  * Existing coverage that this file deliberately does NOT duplicate:
  *
@@ -75,14 +75,16 @@ describe('identify({from: "usb"}) for every PID in IPOD_USB_IDS', () => {
   const entries = Object.entries(IPOD_USB_IDS);
 
   for (const [pid, entry] of entries) {
-    it(`${pid} → ${entry.generation} (${entry.displayName})`, () => {
+    const gen = GENERATIONS[entry.generation];
+    it(`${pid} → ${entry.generation} (${gen.family} ${gen.ordinal ?? '∅'})`, () => {
       const model = identify({ from: 'usb', productId: pid });
       expect(model).toBeDefined();
       expect(model!.generationId).toBe(entry.generation);
-      expect(model!.displayName).toBe(entry.displayName);
+      expect(model!.family).toBe(gen.family);
+      expect(model!.ordinal).toBe(gen.ordinal);
       expect(model!.source).toBe('usb');
       // Checksum type is generation-determined; assert it's threaded through.
-      expect(model!.checksumType).toBe(GENERATIONS[entry.generation].checksumType);
+      expect(model!.checksumType).toBe(gen.checksumType);
     });
   }
 

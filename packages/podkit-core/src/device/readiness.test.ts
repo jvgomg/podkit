@@ -268,14 +268,14 @@ describe('checkSysInfo', () => {
         productId: '0x1209',
         vendorId: '0x05ac',
       },
-      'iPod Classic 6th generation'
+      'iPod Classic (6th Generation)'
     );
     expect(result.stage.status).toBe('warn');
     expect(result.stage.summary).toContain('mismatch');
     expect(result.stage.details?.generationMismatch).toBe(true);
     expect(result.stage.details?.sysInfoGeneration).toBeDefined();
     expect(result.stage.details?.usbGeneration).toBeDefined();
-    expect(result.stage.details?.usbModelName).toBe('iPod Classic 6th generation');
+    expect(result.stage.details?.usbModelName).toBe('iPod Classic (6th Generation)');
   });
 
   it('passes when SysInfoExtended generation matches USB generation', async () => {
@@ -298,12 +298,12 @@ describe('checkSysInfo', () => {
         productId: '0x1207',
         vendorId: '0x05ac',
       },
-      'iPod 5th generation (Video)'
+      'iPod Video (5th Generation)'
     );
     expect(result.stage.status).toBe('warn');
     expect(result.stage.summary).toContain('mismatch');
     expect(result.stage.details?.generationMismatch).toBe(true);
-    expect(result.stage.details?.usbModelName).toBe('iPod 5th generation (Video)');
+    expect(result.stage.details?.usbModelName).toBe('iPod Video (5th Generation)');
   });
 
   it('passes when classic SysInfo generation matches USB generation', async () => {
@@ -330,10 +330,10 @@ describe('checkSysInfo', () => {
         productId: '0x1207',
         vendorId: '0x05ac',
       },
-      'iPod 5th generation (Video)'
+      'iPod Video (5th Generation)'
     );
     expect(result.stage.status).toBe('pass');
-    expect(result.stage.details?.usbModelName).toBe('iPod 5th generation (Video)');
+    expect(result.stage.details?.usbModelName).toBe('iPod Video (5th Generation)');
   });
 
   it('keeps fail status when checksum device has mismatch (fail takes priority)', async () => {

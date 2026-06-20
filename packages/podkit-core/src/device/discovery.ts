@@ -27,7 +27,7 @@
  */
 
 import type { DeviceAddIntent } from '@podkit/device-types';
-import type { IpodClassification } from '@podkit/devices-ipod';
+import { formatIpodShortLabel, type IpodClassification } from '@podkit/devices-ipod';
 import {
   formatPresetDisplay,
   formatPresetShortDisplay,
@@ -220,12 +220,13 @@ function displayForMassStorage(d: DiscoveredDeviceMassStorage): DeviceDisplay {
 function displayForIpod(d: DiscoveredDeviceIpod): DeviceDisplay {
   // Preferred path: USB inquiry gave us a resolved model (built by
   // `classifyAsIpod` → `identify` during USB classification). Its
-  // `displayName` already reflects the cascade — generation + capacity +
-  // colour for sysinfo/serial sources, generation alone for USB-only sources.
+  // `family` + `ordinal` structured fields drive both labels — short uses
+  // `formatIpodShortLabel`, rich uses the displayName already composed by
+  // `identify()` via `formatIpodLabel`. See ADR-020.
   const usbModel = d.usb?.model;
   if (usbModel) {
     return {
-      short: shortenIpodLabel(usbModel.displayName),
+      short: formatIpodShortLabel({ family: usbModel.family, ordinal: usbModel.ordinal }),
       rich: usbModel.displayName,
       source: 'ipod-generation',
     };
@@ -340,49 +341,6 @@ function describeAddIntentForUnsupported(d: DiscoveredDeviceUnsupported): Device
     addArgs: [],
     notes: [d.usb.reason],
   };
-}
-
-/**
- * Trim the long-form generation suffix from an iPod `displayName` to
- * produce a short label suitable for table cells.
- *
- * The cascade emits two surface shapes:
- * - USB-source (`identify({ from: 'usb', … })` via `IPOD_USB_IDS`) uses the
- *   compact lowercase form: `'iPod nano 3rd generation'`.
- * - SysInfo / serial / generation-synthesis sources use the parenthetical
- *   form from `GENERATIONS[…].displayName`: `'iPod nano 4GB Silver (2nd Generation)'`
- *   or `'iPod (5th Generation)'`.
- *
- * Both compress to `'iPod nano 3G'` / `'iPod nano 2G'` / `'iPod 5G'`. Decimal
- * ordinals like `5.5th` carry through: `'iPod Video (5.5th Generation)'` →
- * `'iPod Video 5.5G'`. The family is whatever leads the string up to the
- * generation marker; the gen number is whatever sits between `Nth` and
- * `generation`.
- *
- * Inputs that don't match either pattern (`'iPod Photo'`, `'iPod'`) pass
- * through unchanged.
- *
- * @internal
- */
-function shortenIpodLabel(displayName: string): string {
-  // Lowercase USB-source form: `iPod nano 3rd generation` (no parens).
-  // Family is `iPod <model>` or just `iPod`; followed by a digit (optionally
-  // with a decimal fraction) + ordinal suffix + `generation`. Everything
-  // between the family and the generation marker (capacity, color) is dropped.
-  const lower = displayName.match(
-    /^(iPod(?:\s+[A-Za-z]+)?)\s+(?:.*\s+)?(\d+(?:\.\d+)?)(?:st|nd|rd|th)\s+generation\b/i
-  );
-  if (lower) {
-    return `${lower[1]!} ${lower[2]!}G`;
-  }
-  // Parenthetical form: `iPod nano 4GB Silver (2nd Generation)`.
-  const paren = displayName.match(
-    /^(iPod(?:\s+[A-Za-z]+)?).*?\((\d+(?:\.\d+)?)(?:st|nd|rd|th)\s+Generation\)/i
-  );
-  if (paren) {
-    return `${paren[1]!} ${paren[2]!}G`;
-  }
-  return displayName;
 }
 
 // ── Reconciliation ──────────────────────────────────────────────────────────

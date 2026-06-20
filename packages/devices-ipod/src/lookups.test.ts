@@ -12,6 +12,7 @@ import {
   lookupByFamilyId,
   toLibgpodGeneration,
 } from './lookups.js';
+import { identify } from './identity.js';
 
 import type { IpodChecksumType, IpodGenerationId } from './types.js';
 
@@ -33,59 +34,63 @@ describe('package re-exports', () => {
     expect(typeof mod.GENERATION_ID_TO_LIBGPOD).toBe('object');
     expect(Array.isArray(mod.IPOD_GENERATION_IDS)).toBe(true);
     expect(mod.IPOD_GENERATION_IDS.length).toBe(29);
+    expect(typeof mod.formatIpodLabel).toBe('function');
+    expect(typeof mod.formatIpodShortLabel).toBe('function');
   });
 });
 
 // ── lookupByUsbId ───────────────────────────────────────────────────────────
+//
+// Per ADR-020 the USB table no longer carries `displayName` strings — only
+// the generation reference. `identify({ from: 'usb', ... })` composes the
+// canonical label via `formatIpodLabel`.
 
 describe('lookupByUsbId', () => {
-  test('returns entry for known 0x120x product IDs', () => {
-    expect(lookupByUsbId('0x1207')?.displayName).toBe('iPod 5th generation (Video)');
-    expect(lookupByUsbId('0x1209')?.displayName).toBe('iPod 5th generation (Video)');
-    expect(lookupByUsbId('0x1205')?.displayName).toBe('iPod mini');
-    expect(lookupByUsbId('0x120a')?.displayName).toBe('iPod nano 1st generation');
-    expect(lookupByUsbId('0x1208')?.displayName).toBe('iPod nano 3rd generation');
-    expect(lookupByUsbId('0x120b')?.displayName).toBe('iPod nano 4th generation');
-    expect(lookupByUsbId('0x120c')?.displayName).toBe('iPod nano 5th generation');
-    expect(lookupByUsbId('0x120d')?.displayName).toBe('iPod nano 6th generation');
-    expect(lookupByUsbId('0x120e')?.displayName).toBe('iPod nano 7th generation');
+  test('returns generation for known 0x120x product IDs', () => {
+    expect(lookupByUsbId('0x1207')?.generation).toBe('video_5g');
+    expect(lookupByUsbId('0x1209')?.generation).toBe('video_5g');
+    expect(lookupByUsbId('0x1205')?.generation).toBe('mini_1g');
+    expect(lookupByUsbId('0x120a')?.generation).toBe('nano_1g');
+    expect(lookupByUsbId('0x1208')?.generation).toBe('nano_3g');
+    expect(lookupByUsbId('0x120b')?.generation).toBe('nano_4g');
+    expect(lookupByUsbId('0x120c')?.generation).toBe('nano_5g');
+    expect(lookupByUsbId('0x120d')?.generation).toBe('nano_6g');
+    expect(lookupByUsbId('0x120e')?.generation).toBe('nano_7g');
   });
 
-  test('returns entry for new 0x126x product IDs', () => {
-    expect(lookupByUsbId('0x1260')?.displayName).toBe('iPod nano 2nd generation');
-    expect(lookupByUsbId('0x1261')?.displayName).toBe('iPod Classic 6th generation');
-    expect(lookupByUsbId('0x1262')?.displayName).toBe('iPod nano 3rd generation');
-    expect(lookupByUsbId('0x1263')?.displayName).toBe('iPod nano 4th generation');
-    expect(lookupByUsbId('0x1265')?.displayName).toBe('iPod nano 5th generation');
-    expect(lookupByUsbId('0x1266')?.displayName).toBe('iPod nano 6th generation');
-    expect(lookupByUsbId('0x1267')?.displayName).toBe('iPod nano 7th generation');
+  test('returns generation for new 0x126x product IDs', () => {
+    expect(lookupByUsbId('0x1260')?.generation).toBe('nano_2g');
+    expect(lookupByUsbId('0x1261')?.generation).toBe('classic_6g');
+    expect(lookupByUsbId('0x1262')?.generation).toBe('nano_3g');
+    expect(lookupByUsbId('0x1263')?.generation).toBe('nano_4g');
+    expect(lookupByUsbId('0x1265')?.generation).toBe('nano_5g');
+    expect(lookupByUsbId('0x1266')?.generation).toBe('nano_6g');
+    expect(lookupByUsbId('0x1267')?.generation).toBe('nano_7g');
   });
 
-  test('returns entry for shuffle IDs', () => {
-    expect(lookupByUsbId('0x1300')?.displayName).toBe('iPod shuffle 1st generation');
-    expect(lookupByUsbId('0x1301')?.displayName).toBe('iPod shuffle 2nd generation');
-    expect(lookupByUsbId('0x1302')?.displayName).toBe('iPod shuffle 3rd generation');
-    expect(lookupByUsbId('0x1303')?.displayName).toBe('iPod shuffle 4th generation');
+  test('returns generation for shuffle IDs', () => {
+    expect(lookupByUsbId('0x1300')?.generation).toBe('shuffle_1g');
+    expect(lookupByUsbId('0x1303')?.generation).toBe('shuffle_4g');
   });
 
-  test('returns entry for touch IDs', () => {
-    expect(lookupByUsbId('0x1291')?.displayName).toBe('iPod touch 1st generation');
-    expect(lookupByUsbId('0x129a')?.displayName).toBe('iPod touch 4th generation');
+  test('returns generation for touch IDs', () => {
+    expect(lookupByUsbId('0x1291')?.generation).toBe('touch_1g');
+    expect(lookupByUsbId('0x129a')?.generation).toBe('touch_4g');
   });
 
-  test('returns entry for mini IDs', () => {
-    expect(lookupByUsbId('0x1202')?.displayName).toBe('iPod mini 1st generation');
-    expect(lookupByUsbId('0x1204')?.displayName).toBe('iPod mini 2nd generation');
+  test('returns generation for mini IDs', () => {
+    expect(lookupByUsbId('0x1202')?.generation).toBe('mini_1g');
+    expect(lookupByUsbId('0x1204')?.generation).toBe('mini_2g');
   });
 
   test('normalises input without 0x prefix', () => {
-    expect(lookupByUsbId('1209')?.displayName).toBe('iPod 5th generation (Video)');
-    expect(lookupByUsbId('1262')?.displayName).toBe('iPod nano 3rd generation');
+    expect(lookupByUsbId('1209')?.generation).toBe('video_5g');
+    expect(lookupByUsbId('1262')?.generation).toBe('nano_3g');
   });
 
   test('normalises uppercase input', () => {
-    expect(lookupByUsbId('0X1209')?.displayName).toBe('iPod 5th generation (Video)');
-    expect(lookupByUsbId('0X1262')?.displayName).toBe('iPod nano 3rd generation');
+    expect(lookupByUsbId('0X1209')?.generation).toBe('video_5g');
+    expect(lookupByUsbId('0X1262')?.generation).toBe('nano_3g');
   });
 
   test('returns undefined for unknown product ID', () => {
@@ -98,39 +103,90 @@ describe('lookupByUsbId', () => {
   });
 });
 
+// ── identify({ from: 'usb' }) — display strings ─────────────────────────────
+//
+// Per ADR-020 USB-sourced displayNames use the canonical parenthetical
+// form composed from the generation entry's family + ordinal.
+
+describe('identify({ from: usb })', () => {
+  test('composes parenthetical labels for known product IDs', () => {
+    expect(identify({ from: 'usb', productId: '0x1209' })?.displayName).toBe(
+      'iPod Video (5th Generation)'
+    );
+    expect(identify({ from: 'usb', productId: '0x120a' })?.displayName).toBe(
+      'iPod nano (1st Generation)'
+    );
+    expect(identify({ from: 'usb', productId: '0x1208' })?.displayName).toBe(
+      'iPod nano (3rd Generation)'
+    );
+    expect(identify({ from: 'usb', productId: '0x1262' })?.displayName).toBe(
+      'iPod nano (3rd Generation)'
+    );
+    expect(identify({ from: 'usb', productId: '0x1261' })?.displayName).toBe(
+      'iPod Classic (6th Generation)'
+    );
+    expect(identify({ from: 'usb', productId: '0x1300' })?.displayName).toBe(
+      'iPod shuffle (1st Generation)'
+    );
+  });
+
+  test('mini 0x1205 resolves via mini_1g (family + ordinal)', () => {
+    // 0x1205 covers both mini 1G and 2G; mapped to mini_1g per lookups.
+    const model = identify({ from: 'usb', productId: '0x1205' });
+    expect(model?.family).toBe('iPod mini');
+    expect(model?.ordinal).toBe(1);
+    expect(model?.displayName).toBe('iPod mini (1st Generation)');
+  });
+
+  test('exposes structured family + ordinal fields', () => {
+    const nano3 = identify({ from: 'usb', productId: '0x1262' });
+    expect(nano3?.family).toBe('iPod nano');
+    expect(nano3?.ordinal).toBe(3);
+
+    const video55 = identify({ from: 'usb', productId: '0x1209' });
+    expect(video55?.family).toBe('iPod Video');
+    expect(video55?.ordinal).toBe(5);
+  });
+});
+
 // ── lookupByModelNumber ──────────────────────────────────────────────────────
 
 describe('lookupByModelNumber', () => {
-  test('returns entry for known model numbers with M prefix', () => {
-    expect(lookupByModelNumber('MA147')?.displayName).toBe(
-      'iPod Video 60GB Black (5th Generation)'
-    );
-    expect(lookupByModelNumber('MC297')?.displayName).toBe(
-      'iPod Classic 160GB Black (7th Generation)'
-    );
-    expect(lookupByModelNumber('MB261')?.displayName).toBe('iPod nano 8GB Black (3rd Generation)');
+  test('returns generation + variant for known model numbers with M prefix', () => {
+    const a147 = lookupByModelNumber('MA147');
+    expect(a147?.generation).toBe('video_5g');
+    expect(a147?.capacityGb).toBe(60);
+    expect(a147?.color).toBe('Black');
+
+    const c297 = lookupByModelNumber('MC297');
+    expect(c297?.generation).toBe('classic_7g');
+    expect(c297?.capacityGb).toBe(160);
+    expect(c297?.color).toBe('Black');
+
+    const b261 = lookupByModelNumber('MB261');
+    expect(b261?.generation).toBe('nano_3g');
+    expect(b261?.capacityGb).toBe(8);
+    expect(b261?.color).toBe('Black');
   });
 
   test('returns entry for known model numbers without M prefix', () => {
-    expect(lookupByModelNumber('A147')?.displayName).toBe('iPod Video 60GB Black (5th Generation)');
-    expect(lookupByModelNumber('B261')?.displayName).toBe('iPod nano 8GB Black (3rd Generation)');
+    expect(lookupByModelNumber('A147')?.generation).toBe('video_5g');
+    expect(lookupByModelNumber('B261')?.generation).toBe('nano_3g');
   });
 
   test('strips Apple service / refurb prefixes (P, F)', () => {
-    expect(lookupByModelNumber('P9804')?.displayName).toContain('iPod mini');
-    expect(lookupByModelNumber('F9436')?.displayName).toContain('iPod mini');
+    expect(lookupByModelNumber('P9804')?.generation).toBe('mini_2g');
+    expect(lookupByModelNumber('F9436')?.generation).toBe('mini_1g');
   });
 
   test('is case-insensitive', () => {
-    expect(lookupByModelNumber('ma147')?.displayName).toBe(
-      'iPod Video 60GB Black (5th Generation)'
-    );
-    expect(lookupByModelNumber('mb261')?.displayName).toBe('iPod nano 8GB Black (3rd Generation)');
+    expect(lookupByModelNumber('ma147')?.generation).toBe('video_5g');
+    expect(lookupByModelNumber('mb261')?.generation).toBe('nano_3g');
   });
 
   test('returns entry for legacy entries', () => {
-    expect(lookupByModelNumber('MA099LL')?.displayName).toBe('iPod nano 1GB (1st Generation)');
-    expect(lookupByModelNumber('MC477')?.displayName).toBe('iPod Classic 160GB (7th Generation)');
+    expect(lookupByModelNumber('MA099LL')?.generation).toBe('nano_1g');
+    expect(lookupByModelNumber('MC477')?.generation).toBe('classic_7g');
   });
 
   test('returns undefined for unknown model numbers', () => {
@@ -162,8 +218,60 @@ describe('lookupByModelNumber', () => {
     for (const modelNum of oldTableEntries) {
       const result = lookupByModelNumber(modelNum);
       expect(result).toBeDefined();
-      expect(typeof result?.displayName).toBe('string');
+      expect(typeof result?.generation).toBe('string');
     }
+  });
+});
+
+// ── identify({ from: 'sysinfo' }) — display strings ─────────────────────────
+
+describe('identify({ from: sysinfo })', () => {
+  test('composes rich labels with capacity + colour', () => {
+    expect(identify({ from: 'sysinfo', modelNumStr: 'MA147' })?.displayName).toBe(
+      'iPod Video 60GB Black (5th Generation)'
+    );
+    expect(identify({ from: 'sysinfo', modelNumStr: 'MB261' })?.displayName).toBe(
+      'iPod nano 8GB Black (3rd Generation)'
+    );
+    expect(identify({ from: 'sysinfo', modelNumStr: 'MC297' })?.displayName).toBe(
+      'iPod Classic 160GB Black (7th Generation)'
+    );
+  });
+
+  test('inserts variant tag between family and capacity (U2)', () => {
+    expect(identify({ from: 'sysinfo', modelNumStr: 'M9787' })?.displayName).toBe(
+      'iPod U2 25GB (4th Generation)'
+    );
+    expect(identify({ from: 'sysinfo', modelNumStr: 'MA127' })?.displayName).toBe(
+      'iPod Photo U2 20GB'
+    );
+    expect(identify({ from: 'sysinfo', modelNumStr: 'MA664' })?.displayName).toBe(
+      'iPod Video U2 30GB (5.5th Generation)'
+    );
+  });
+
+  test('inserts variant tag for 2015 nano 7G refresh', () => {
+    expect(identify({ from: 'sysinfo', modelNumStr: 'KN52' })?.displayName).toBe(
+      'iPod nano 2015 16GB Space Gray (7th Generation)'
+    );
+  });
+
+  test('photo family renders without a generation marker', () => {
+    expect(identify({ from: 'sysinfo', modelNumStr: 'MA079' })?.displayName).toBe(
+      'iPod Photo 20GB'
+    );
+  });
+
+  test('decimal ordinals render with -th suffix', () => {
+    expect(identify({ from: 'sysinfo', modelNumStr: 'MA444' })?.displayName).toBe(
+      'iPod Video 30GB White (5.5th Generation)'
+    );
+  });
+
+  test('sub-GB capacities render as MB', () => {
+    expect(identify({ from: 'sysinfo', modelNumStr: 'M9724' })?.displayName).toBe(
+      'iPod shuffle 512MB (1st Generation)'
+    );
   });
 });
 
@@ -177,7 +285,6 @@ describe('lookupBySerial', () => {
     expect(variant!.generation).toBe('nano_3g');
     expect(variant!.capacityGb).toBe(8);
     expect(variant!.color).toBe('Black');
-    expect(variant!.displayName).toBe('iPod nano 8GB Black (3rd Generation)');
   });
 
   test('returns variant for classic 6G suffix', () => {
@@ -221,7 +328,6 @@ describe('lookupBySerial', () => {
     expect(variant!.generation).toBe('mini_2g');
     expect(variant!.capacityGb).toBe(4);
     expect(variant!.color).toBe('Pink');
-    expect(variant!.displayName).toBe('iPod mini 4GB Pink (2nd Generation)');
   });
 
   test('returns variant for nano 7G 16GB Blue (real hardware: serial DCYL44J8F0GP)', () => {
@@ -231,7 +337,6 @@ describe('lookupBySerial', () => {
     expect(variant!.generation).toBe('nano_7g');
     expect(variant!.capacityGb).toBe(16);
     expect(variant!.color).toBe('Blue');
-    expect(variant!.displayName).toBe('iPod nano 16GB Blue (7th Generation)');
   });
 
   test('is case-insensitive', () => {
@@ -277,13 +382,16 @@ describe('lookupGenerationInfo', () => {
   test('returns correct info for classic_6g', () => {
     const info = lookupGenerationInfo('classic_6g');
     expect(info.id).toBe('classic_6g');
-    expect(info.displayName).toBe('iPod Classic (6th Generation)');
+    expect(info.family).toBe('iPod Classic');
+    expect(info.ordinal).toBe(6);
     expect(info.checksumType).toBe('hash58');
   });
 
   test('returns correct info for nano_5g', () => {
     const info = lookupGenerationInfo('nano_5g');
     expect(info.id).toBe('nano_5g');
+    expect(info.family).toBe('iPod nano');
+    expect(info.ordinal).toBe(5);
     expect(info.checksumType).toBe('hash72');
   });
 
@@ -295,6 +403,18 @@ describe('lookupGenerationInfo', () => {
   test('returns correct info for video_5g', () => {
     const info = lookupGenerationInfo('video_5g');
     expect(info.checksumType).toBe('none');
+  });
+
+  test('photo carries a null ordinal (no generation marker)', () => {
+    const info = lookupGenerationInfo('photo');
+    expect(info.family).toBe('iPod Photo');
+    expect(info.ordinal).toBeNull();
+  });
+
+  test('video_5_5g carries the decimal ordinal 5.5', () => {
+    const info = lookupGenerationInfo('video_5_5g');
+    expect(info.family).toBe('iPod Video');
+    expect(info.ordinal).toBe(5.5);
   });
 });
 
@@ -393,7 +513,8 @@ describe('end-to-end identification pipeline', () => {
     expect(checksumType).toBe('hash58');
 
     const genInfo = lookupGenerationInfo(variant!.generation);
-    expect(genInfo.displayName).toBe('iPod nano (3rd Generation)');
+    expect(genInfo.family).toBe('iPod nano');
+    expect(genInfo.ordinal).toBe(3);
   });
 
   test('USB product ID -> generation -> checksum type', () => {
@@ -404,9 +525,9 @@ describe('end-to-end identification pipeline', () => {
     expect(checksumType).toBe('hash58');
   });
 
-  test('model number -> serial suffix cross-reference', () => {
-    const byNumber = lookupByModelNumber('MB261');
-    const bySerial = lookupBySerial('YXX');
+  test('model number -> serial suffix cross-reference produces identical IpodModel', () => {
+    const byNumber = identify({ from: 'sysinfo', modelNumStr: 'MB261' });
+    const bySerial = identify({ from: 'serial', serialNumber: 'AAAAAAAAYXX' });
 
     expect(byNumber).toBeDefined();
     expect(bySerial).toBeDefined();

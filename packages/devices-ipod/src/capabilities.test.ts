@@ -27,6 +27,7 @@ import type {
 
 import { getCapabilities } from './capabilities.js';
 import { GENERATIONS } from './tables/generations.js';
+import { formatIpodLabel } from './format.js';
 import { GENERATION_ID_TO_LIBGPOD } from './tables/libgpod-mapping.js';
 import {
   IPOD_GENERATION_IDS,
@@ -155,10 +156,13 @@ function referenceCreateIpodCapabilities(device: LibgpodDeviceInfo): DeviceCapab
 // ── Test helpers ──────────────────────────────────────────────────────────────
 
 function makeIdentity(generationId: IpodGenerationId): IpodModel {
+  const gen = GENERATIONS[generationId];
   return {
-    displayName: GENERATIONS[generationId].displayName,
+    displayName: formatIpodLabel({ family: gen.family, ordinal: gen.ordinal }),
     generationId,
-    checksumType: GENERATIONS[generationId].checksumType as IpodChecksumType,
+    family: gen.family,
+    ordinal: gen.ordinal,
+    checksumType: gen.checksumType as IpodChecksumType,
     source: 'usb',
   };
 }

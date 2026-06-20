@@ -85,6 +85,17 @@ export interface IpodModel {
   readonly displayName: string;
   /** iPod generation identifier */
   readonly generationId: IpodGenerationId;
+  /**
+   * Marketing family name without the generation marker. Carried from the
+   * `IpodGeneration` table entry. See ADR-020.
+   */
+  readonly family: string;
+  /**
+   * Generation number as written in the marketing name. `5.5` for the iPod
+   * Video 5.5G. `null` for entries that never carried a generation marker
+   * (`photo`). See ADR-020.
+   */
+  readonly ordinal: number | null;
   /** Checksum type required for this generation's iTunesDB */
   readonly checksumType: IpodChecksumType;
   /** Apple model number without prefix, e.g., "A426" (present for sysinfo/serial sources) */
@@ -93,6 +104,8 @@ export interface IpodModel {
   readonly capacityGb?: number;
   /** Device color (present for sysinfo/serial sources) */
   readonly color?: string;
+  /** Variant tag (e.g., "U2", "2015"). Present for sysinfo/serial sources. */
+  readonly variant?: string;
   /** How this model was identified */
   readonly source: IpodModelSource;
   /**

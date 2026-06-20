@@ -299,6 +299,8 @@ describe('isIdentityFullyEmpty', () => {
           model: {
             displayName: 'iPod nano (2nd Generation)',
             generationId: 'nano_2g',
+            family: 'iPod nano',
+            ordinal: 2,
             checksumType: 'none',
             source: 'usb',
           },
@@ -363,6 +365,8 @@ describe('summariseIdentitySignals', () => {
       model: {
         displayName: 'iPod nano (2nd Generation)',
         generationId: 'nano_2g',
+        family: 'iPod nano',
+        ordinal: 2,
         checksumType: 'none',
         source: 'sysinfo',
       },

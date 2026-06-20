@@ -23,7 +23,7 @@ import { requireLibgpodNode } from '@podkit/libgpod-node';
 import { IpodDatabase } from '../ipod/database.js';
 import { IpodDeviceAdapter } from './ipod-adapter.js';
 import { buildAudioSyncTag, buildCopySyncTag, buildVideoSyncTag } from '../metadata/sync-tags.js';
-import { GENERATIONS, type IpodGenerationId } from '@podkit/devices-ipod';
+import { GENERATIONS, formatIpodLabel, type IpodGenerationId } from '@podkit/devices-ipod';
 import { identifyCapabilities } from './resolve-capabilities.js';
 import type { DeviceCapabilities } from '@podkit/device-types';
 import { replayGainToSoundcheck } from '../metadata/normalization.js';
@@ -37,8 +37,10 @@ requireLibgpodNode();
 function capsForGeneration(id: IpodGenerationId): DeviceCapabilities {
   const gen = GENERATIONS[id];
   return identifyCapabilities({
-    displayName: gen.displayName,
+    displayName: formatIpodLabel({ family: gen.family, ordinal: gen.ordinal }),
     generationId: id,
+    family: gen.family,
+    ordinal: gen.ordinal,
     checksumType: gen.checksumType,
     source: 'usb',
   });

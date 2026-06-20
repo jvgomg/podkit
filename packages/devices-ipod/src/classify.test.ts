@@ -10,14 +10,14 @@ describe('classifyAsIpod — known iPods', () => {
     expect(result!.kind).toBe('ipod');
     expect(result!.supported).toBe(true);
     expect(result!.unsupportedReason?.headline).toBeUndefined();
-    expect(result!.model?.displayName).toBe('iPod Classic 6th generation');
+    expect(result!.model?.displayName).toBe('iPod Classic (6th Generation)');
   });
 
   it('classifies an iPod nano 1G (0x05ac:0x120a)', () => {
     const result = classifyAsIpod({ vendorId: '05ac', productId: '120a' });
     expect(result).not.toBeNull();
     expect(result!.supported).toBe(true);
-    expect(result!.model?.displayName).toBe('iPod nano 1st generation');
+    expect(result!.model?.displayName).toBe('iPod nano (1st Generation)');
   });
 
   it('preserves passed-in device fields on the classification', () => {
@@ -52,14 +52,14 @@ describe('classifyAsIpod — system_profiler raw input forms', () => {
     const result = classifyAsIpod({ vendorId: '05ac', productId: '1261' });
     expect(result).not.toBeNull();
     expect(result!.supported).toBe(true);
-    expect(result!.model?.displayName).toBe('iPod Classic 6th generation');
+    expect(result!.model?.displayName).toBe('iPod Classic (6th Generation)');
   });
 
   it('matches an iPod Classic 6G from the `apple_vendor_id` literal sentinel', () => {
     const result = classifyAsIpod({ vendorId: 'apple_vendor_id', productId: '1261' });
     expect(result).not.toBeNull();
     expect(result!.supported).toBe(true);
-    expect(result!.model?.displayName).toBe('iPod Classic 6th generation');
+    expect(result!.model?.displayName).toBe('iPod Classic (6th Generation)');
   });
 
   it('matches an iPod Classic 6G from prefixed and suffixed `0x05ac (Apple Inc.)` form', () => {
@@ -69,7 +69,7 @@ describe('classifyAsIpod — system_profiler raw input forms', () => {
     });
     expect(result).not.toBeNull();
     expect(result!.supported).toBe(true);
-    expect(result!.model?.displayName).toBe('iPod Classic 6th generation');
+    expect(result!.model?.displayName).toBe('iPod Classic (6th Generation)');
   });
 });
 

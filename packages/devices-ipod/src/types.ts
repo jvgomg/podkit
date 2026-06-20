@@ -26,7 +26,19 @@ import type { IpodGenerationId, IpodChecksumType } from '@podkit/device-types';
 /** Generation metadata */
 export interface IpodGeneration {
   id: IpodGenerationId;
-  displayName: string;
+  /**
+   * Marketing family name without the generation marker.
+   * Examples: `"iPod"`, `"iPod Video"`, `"iPod Classic"`, `"iPod nano"`,
+   * `"iPod Photo"`. Combined with {@link ordinal} via `formatIpodLabel`
+   * to produce the human-readable display string. See ADR-020.
+   */
+  family: string;
+  /**
+   * Generation number as written in the marketing name. `5.5` for the
+   * iPod Video 5.5G. `null` for entries that never carried a generation
+   * marker (`photo`). See ADR-020.
+   */
+  ordinal: number | null;
   checksumType: IpodChecksumType;
   /**
    * Whether libgpod 0.8.x can read and write the iTunesDB for this generation.
@@ -65,8 +77,9 @@ export interface IpodGeneration {
 /** Model entry from serial suffix lookup -- specific variant (color, capacity) */
 export interface IpodModelVariant {
   modelNumber: string; // e.g., "B261" (without M prefix)
-  displayName: string; // e.g., "iPod nano 8GB Black (3rd Generation)"
   generation: IpodGenerationId;
   capacityGb?: number;
   color?: string;
+  /** Variant tag (e.g., "U2", "2015"). Inserted by formatIpodLabel between family and capacity. */
+  variant?: string;
 }

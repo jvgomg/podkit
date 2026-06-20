@@ -387,36 +387,43 @@ describe('displayFor', () => {
     expect(display.source).toBe('ipod-generation');
   });
 
-  it.each([['iPod Photo'], ['iPod']])(
-    'passes unrecognised displayName %p through the shortener unchanged',
-    (displayName) => {
+  it.each([
+    ['iPod Photo', null],
+    ['iPod', null],
+  ])(
+    'renders family-only labels (%p) without a generation suffix when ordinal is null',
+    (family, ordinal) => {
       const u = {
         kind: 'ipod' as const,
         device: { vendorId: '05ac', productId: '0000' } as EnumeratedUsbDevice,
         identity: {},
-        model: { displayName },
+        model: { displayName: family, family, ordinal },
       };
       const d: DiscoveredDeviceIpod = {
         kind: 'ipod',
-        // biome-ignore lint/suspicious/noExplicitAny: synthetic classification shape — only `model.displayName` is read.
+        // biome-ignore lint/suspicious/noExplicitAny: synthetic classification shape — only `model.{displayName,family,ordinal}` is read.
         usb: u as any,
         matchedBy: 'usb-only',
       };
 
-      expect(displayFor(d).short).toBe(displayName);
+      expect(displayFor(d).short).toBe(family);
     }
   );
 
-  it('shortens the 5.5G iPod Video displayName via decimal-ordinal regex', () => {
+  it('shortens the 5.5G iPod Video via the structured decimal ordinal', () => {
     const u = {
       kind: 'ipod' as const,
       device: { vendorId: '05ac', productId: '0000' } as EnumeratedUsbDevice,
       identity: {},
-      model: { displayName: 'iPod Video (5.5th Generation)' },
+      model: {
+        displayName: 'iPod Video (5.5th Generation)',
+        family: 'iPod Video',
+        ordinal: 5.5,
+      },
     };
     const d: DiscoveredDeviceIpod = {
       kind: 'ipod',
-      // biome-ignore lint/suspicious/noExplicitAny: synthetic classification shape — only `model.displayName` is read.
+      // biome-ignore lint/suspicious/noExplicitAny: synthetic classification shape — only `model.{displayName,family,ordinal}` is read.
       usb: u as any,
       matchedBy: 'usb-only',
     };

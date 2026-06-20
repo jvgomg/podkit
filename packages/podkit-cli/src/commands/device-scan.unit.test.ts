@@ -243,8 +243,10 @@ describe('runDeviceScan', () => {
     };
 
     const fakeIpodModel = {
-      displayName: 'iPod video (5th Generation)',
+      displayName: 'iPod Video (5th Generation)',
       generationId: 'video_5g',
+      family: 'iPod Video',
+      ordinal: 5,
       checksumType: 'hash58',
       source: 'usb',
     } as const;
@@ -292,8 +294,8 @@ describe('runDeviceScan', () => {
     expect(usbOnly.volumeUuid).toBe('');
     expect(usbOnly.size).toBe(0);
     expect(usbOnly.usbDescriptor).toEqual({ vendorId: '05ac', productId: '1209' });
-    expect(usbOnly.volumeName).toBe('iPod video (5th Generation)');
-    expect(usbOnly.model?.displayName).toBe('iPod video (5th Generation)');
+    expect(usbOnly.volumeName).toBe('iPod Video (5th Generation)');
+    expect(usbOnly.model?.displayName).toBe('iPod Video (5th Generation)');
     expect(usbOnly.model?.generationId).toBe('video_5g');
     expect(usbOnly.model?.source).toBe('usb');
   });
@@ -333,6 +335,8 @@ describe('runDeviceScan', () => {
       model: {
         displayName: 'iPod nano 8GB Black (3rd Generation)',
         generationId: 'nano_3g',
+        family: 'iPod nano',
+        ordinal: 3,
         checksumType: 'none',
         source: 'usb',
       },

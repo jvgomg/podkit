@@ -47,7 +47,7 @@ describe('classifyUsbDevices', () => {
     expect(result[0]!.kind).toBe('ipod');
     if (result[0]!.kind === 'ipod') {
       expect(result[0]!.supported).toBe(true);
-      expect(result[0]!.model?.displayName).toBe('iPod 5th generation (Video)');
+      expect(result[0]!.model?.displayName).toBe('iPod Video (5th Generation)');
     }
   });
 

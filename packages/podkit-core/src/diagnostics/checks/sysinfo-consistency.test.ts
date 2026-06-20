@@ -75,15 +75,19 @@ function presentFs(xml: string): SysinfFsReader {
 }
 
 const NANO_2G_MODEL: IpodModel = {
-  displayName: 'iPod nano 2nd generation',
+  displayName: 'iPod nano (2nd Generation)',
   generationId: 'nano_2g',
+  family: 'iPod nano',
+  ordinal: 2,
   checksumType: 'none',
   source: 'usb',
 };
 
 const NANO_3G_MODEL: IpodModel = {
-  displayName: 'iPod nano 3rd generation',
+  displayName: 'iPod nano (3rd Generation)',
   generationId: 'nano_3g',
+  family: 'iPod nano',
+  ordinal: 3,
   checksumType: 'none',
   source: 'usb',
 };
@@ -402,9 +406,9 @@ describe('checkSysinfoConsistency — fold rules pinned (AC #2/#5/#6)', () => {
     // Both displayNames present in summary. Note: the on-disk identifier
     // (MA477) resolves to a rich "iPod nano 2GB Silver (2nd Generation)"
     // displayName; the live USB-derived side carries only the generation-
-    // level "iPod nano 3rd generation".
+    // level "iPod nano (3rd Generation)".
     expect(result.summary).toContain('iPod nano 2GB Silver (2nd Generation)');
-    expect(result.summary).toContain('iPod nano 3rd generation');
+    expect(result.summary).toContain('iPod nano (3rd Generation)');
     // GUID axis passed — it shouldn't appear.
     expect(result.summary).not.toContain('FireWireGUID mismatch');
   });
@@ -504,7 +508,7 @@ describe('checkSysinfoConsistency — model granularity (AC #13)', () => {
     // be matching on `generationId` only — anything finer would fail this
     // exact configuration on every real iPod with a SysInfoExtended file.
     expect(modelAxis?.onDisk).toBe('iPod nano 2GB Silver (2nd Generation)');
-    expect(modelAxis?.live).toBe('iPod nano 2nd generation');
+    expect(modelAxis?.live).toBe('iPod nano (2nd Generation)');
     expect(modelAxis?.onDisk).not.toBe(modelAxis?.live);
   });
 

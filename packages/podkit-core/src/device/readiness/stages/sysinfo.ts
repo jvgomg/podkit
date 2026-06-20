@@ -1,13 +1,13 @@
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import {
-  lookupByModelNumber,
   lookupGenerationByModelNumber,
   lookupGenerationByProductId,
   getChecksumType,
   lookupGenerationInfo,
   identify,
   resolveIpodModel,
+  formatIpodLabel,
 } from '@podkit/devices-ipod';
 import type { IpodChecksumType, IpodGenerationId, IpodModel } from '@podkit/devices-ipod';
 import { readSysInfoExtended, SYSINFO_PATH, SYSINFO_EXTENDED_PATH } from '@podkit/ipod-firmware';
@@ -42,9 +42,11 @@ function detectGenerationMismatch(
   if (!sysInfoGenId || !usbConnection?.productId) return undefined;
   const usbGenId = lookupGenerationByProductId(usbConnection.productId);
   if (!usbGenId || sysInfoGenId === usbGenId) return undefined;
+  const sysInfoGen = lookupGenerationInfo(sysInfoGenId);
+  const usbGen = lookupGenerationInfo(usbGenId);
   return {
-    sysInfoGeneration: lookupGenerationInfo(sysInfoGenId).displayName,
-    usbGeneration: lookupGenerationInfo(usbGenId).displayName,
+    sysInfoGeneration: formatIpodLabel({ family: sysInfoGen.family, ordinal: sysInfoGen.ordinal }),
+    usbGeneration: formatIpodLabel({ family: usbGen.family, ordinal: usbGen.ordinal }),
   };
 }
 
@@ -284,8 +286,8 @@ export async function checkSysInfo(
   }
 
   const modelNumber = modelMatch[1]!;
-  const modelName = lookupByModelNumber(modelNumber)?.displayName;
   const sysInfoModel = identify({ from: 'sysinfo', modelNumStr: modelNumber });
+  const modelName = sysInfoModel?.displayName;
 
   if (!modelName) {
     return stageOnly({

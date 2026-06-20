@@ -9,7 +9,7 @@ describe('identify', () => {
     test('resolves known product ID to generation-level model', () => {
       const model = identify({ from: 'usb', productId: '0x1260' });
       expect(model).toBeDefined();
-      expect(model!.displayName).toBe('iPod nano 2nd generation');
+      expect(model!.displayName).toBe('iPod nano (2nd Generation)');
       expect(model!.generationId).toBe('nano_2g');
       expect(model!.checksumType).toBe('none');
       expect(model!.source).toBe('usb');

@@ -221,8 +221,10 @@ describe('renderDeviceScan', () => {
     // 1 configured-but-not-detected device.
 
     const mountedIpodModel: IpodModel = {
-      displayName: 'iPod 5G Video',
+      displayName: 'iPod Video (5th Generation)',
       generationId: 'video_5g',
+      family: 'iPod Video',
+      ordinal: 5,
       checksumType: 'none',
       source: 'usb',
     };

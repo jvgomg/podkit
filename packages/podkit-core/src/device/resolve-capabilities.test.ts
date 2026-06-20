@@ -255,11 +255,13 @@ describe('identifyCapabilities', () => {
     // Use USB lookup for a 1G classic — no serial/model table entry
     identify({ from: 'usb', productId: '0x1101' }); // hypothetical; likely undefined
     // Fall back to a generation-based identify
-    const { GENERATIONS } = await import('@podkit/devices-ipod');
+    const { GENERATIONS, formatIpodLabel } = await import('@podkit/devices-ipod');
     const gen = GENERATIONS['classic_1g'];
     const syntheticModel = {
-      displayName: gen.displayName,
+      displayName: formatIpodLabel({ family: gen.family, ordinal: gen.ordinal }),
       generationId: 'classic_1g' as const,
+      family: gen.family,
+      ordinal: gen.ordinal,
       checksumType: gen.checksumType,
       source: 'usb' as const,
     };

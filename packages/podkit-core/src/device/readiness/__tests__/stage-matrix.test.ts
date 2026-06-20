@@ -141,7 +141,9 @@ function makeEnumeratedUsbDevice(
 function makeIpodModel(): IpodModel {
   return {
     generationId: 'video_5g',
-    displayName: 'iPod video 5th generation',
+    displayName: 'iPod Video (5th Generation)',
+    family: 'iPod Video',
+    ordinal: 5,
     modelNumber: 'MA147',
     checksumType: 'none',
     source: 'usb',
@@ -214,7 +216,7 @@ describe('readiness pipeline — usb stage (ACs #1–#3)', () => {
     expect(usb?.details?.identifier).toBe('disk6s2');
     expect(usb?.details?.vendorId).toBe('0x05ac');
     expect(usb?.details?.productId).toBe('0x1207');
-    expect(usb?.details?.usbModel).toBe('iPod video 5th generation');
+    expect(usb?.details?.usbModel).toBe('iPod Video (5th Generation)');
     expect(result.usbModel).toEqual(usbModel);
   });
 
@@ -268,7 +270,7 @@ describe('readiness pipeline — usb stage (ACs #1–#3)', () => {
     expect(usb?.status).toBe('pass');
     expect(usb?.details?.vendorId).toBe('05ac');
     expect(usb?.details?.productId).toBe('1209');
-    expect(usb?.details?.modelName).toBe('iPod video 5th generation');
+    expect(usb?.details?.modelName).toBe('iPod Video (5th Generation)');
   });
 });
 
@@ -491,7 +493,7 @@ describe('readiness pipeline — sysinfo stage (ACs #10–#13)', () => {
     expect(sysinfo?.status).toBe('pass');
     expect(sysinfo?.details?.sysInfoExtendedExists).toBe(true);
     // usbModelName is threaded through from the input
-    expect(sysinfo?.details?.usbModelName).toBe('iPod video 5th generation');
+    expect(sysinfo?.details?.usbModelName).toBe('iPod Video (5th Generation)');
     // deviceModel surfaces on the result, not the stage details
     expect(result.deviceModel).toBeDefined();
   });

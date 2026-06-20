@@ -178,7 +178,7 @@ describe('runDeviceInfo', () => {
       const fakeIpod = {
         getInfo: () => ({
           device: {
-            modelName: 'iPod nano 3rd generation', // libgpod-derived
+            modelName: 'iPod nano (3rd Generation)', // libgpod-derived
             modelNumber: 'MA978',
             generation: 'nano_3g',
             capacity: 8,
@@ -211,6 +211,8 @@ describe('runDeviceInfo', () => {
               model: {
                 displayName: 'iPod nano 8GB Black (3rd Generation)',
                 generationId: 'nano_3g',
+                family: 'iPod nano',
+                ordinal: 3,
                 checksumType: 'none',
                 source: 'serial',
                 color: 'Black',

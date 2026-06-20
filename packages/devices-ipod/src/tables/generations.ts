@@ -1,8 +1,9 @@
 /**
  * Generation metadata table.
  *
- * Maps each IpodGenerationId to its display name, checksum type, and
- * device-class capability flags (ALAC, video, artwork resolution).
+ * Maps each IpodGenerationId to its family + ordinal pair (the structured
+ * identity per ADR-020), checksum type, and device-class capability flags
+ * (ALAC, video, artwork resolution).
  *
  * This is the single authoritative source for generation-level metadata.
  * It is consumed by `getCapabilities()` to synthesise a `DeviceCapabilities`
@@ -22,7 +23,8 @@ import type { IpodGeneration, IpodGenerationId } from '../types.js';
 export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
   classic_1g: {
     id: 'classic_1g',
-    displayName: 'iPod (1st Generation)',
+    family: 'iPod',
+    ordinal: 1,
     checksumType: 'none',
     supported: true,
     supportsAlac: false,
@@ -31,7 +33,8 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
   },
   classic_2g: {
     id: 'classic_2g',
-    displayName: 'iPod (2nd Generation)',
+    family: 'iPod',
+    ordinal: 2,
     checksumType: 'none',
     supported: true,
     supportsAlac: false,
@@ -40,7 +43,8 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
   },
   classic_3g: {
     id: 'classic_3g',
-    displayName: 'iPod (3rd Generation)',
+    family: 'iPod',
+    ordinal: 3,
     checksumType: 'none',
     supported: true,
     supportsAlac: false,
@@ -49,7 +53,8 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
   },
   classic_4g: {
     id: 'classic_4g',
-    displayName: 'iPod (4th Generation)',
+    family: 'iPod',
+    ordinal: 4,
     checksumType: 'none',
     supported: true,
     supportsAlac: true,
@@ -58,7 +63,8 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
   },
   photo: {
     id: 'photo',
-    displayName: 'iPod Photo',
+    family: 'iPod Photo',
+    ordinal: null,
     checksumType: 'none',
     supported: true,
     supportsAlac: true,
@@ -68,7 +74,8 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
   },
   video_5g: {
     id: 'video_5g',
-    displayName: 'iPod Video (5th Generation)',
+    family: 'iPod Video',
+    ordinal: 5,
     checksumType: 'none',
     supported: true,
     supportsAlac: true,
@@ -77,7 +84,8 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
   },
   video_5_5g: {
     id: 'video_5_5g',
-    displayName: 'iPod Video (5.5th Generation)',
+    family: 'iPod Video',
+    ordinal: 5.5,
     checksumType: 'none',
     supported: true,
     supportsAlac: true,
@@ -86,7 +94,8 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
   },
   classic_6g: {
     id: 'classic_6g',
-    displayName: 'iPod Classic (6th Generation)',
+    family: 'iPod Classic',
+    ordinal: 6,
     checksumType: 'hash58',
     supported: true,
     supportsAlac: true,
@@ -95,7 +104,8 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
   },
   classic_7g: {
     id: 'classic_7g',
-    displayName: 'iPod Classic (7th Generation)',
+    family: 'iPod Classic',
+    ordinal: 7,
     checksumType: 'hash58',
     supported: true,
     supportsAlac: true,
@@ -104,7 +114,8 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
   },
   mini_1g: {
     id: 'mini_1g',
-    displayName: 'iPod mini (1st Generation)',
+    family: 'iPod mini',
+    ordinal: 1,
     checksumType: 'none',
     supported: true,
     supportsAlac: false,
@@ -113,7 +124,8 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
   },
   mini_2g: {
     id: 'mini_2g',
-    displayName: 'iPod mini (2nd Generation)',
+    family: 'iPod mini',
+    ordinal: 2,
     checksumType: 'none',
     supported: true,
     supportsAlac: true,
@@ -122,7 +134,8 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
   },
   nano_1g: {
     id: 'nano_1g',
-    displayName: 'iPod nano (1st Generation)',
+    family: 'iPod nano',
+    ordinal: 1,
     checksumType: 'none',
     supported: true,
     supportsAlac: false,
@@ -131,7 +144,8 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
   },
   nano_2g: {
     id: 'nano_2g',
-    displayName: 'iPod nano (2nd Generation)',
+    family: 'iPod nano',
+    ordinal: 2,
     checksumType: 'none',
     supported: true,
     supportsAlac: false,
@@ -140,7 +154,8 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
   },
   nano_3g: {
     id: 'nano_3g',
-    displayName: 'iPod nano (3rd Generation)',
+    family: 'iPod nano',
+    ordinal: 3,
     checksumType: 'hash58',
     supported: true,
     supportsAlac: true,
@@ -149,7 +164,8 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
   },
   nano_4g: {
     id: 'nano_4g',
-    displayName: 'iPod nano (4th Generation)',
+    family: 'iPod nano',
+    ordinal: 4,
     checksumType: 'hash58',
     supported: true,
     supportsAlac: true,
@@ -158,7 +174,8 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
   },
   nano_5g: {
     id: 'nano_5g',
-    displayName: 'iPod nano (5th Generation)',
+    family: 'iPod nano',
+    ordinal: 5,
     checksumType: 'hash72',
     supported: true,
     supportsAlac: true,
@@ -167,7 +184,8 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
   },
   nano_6g: {
     id: 'nano_6g',
-    displayName: 'iPod nano (6th Generation)',
+    family: 'iPod nano',
+    ordinal: 6,
     checksumType: 'hashAB',
     // libgpod has entries for nano_6 but cannot write its iTunesDB format.
     // Multi-touch nano with no video playback hardware.
@@ -178,7 +196,8 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
   },
   nano_7g: {
     id: 'nano_7g',
-    displayName: 'iPod nano (7th Generation)',
+    family: 'iPod nano',
+    ordinal: 7,
     checksumType: 'hashAB',
     // Not in libgpod's ipod_info_table — libgpod cannot sync this device.
     // Hardware specs preserved here for diagnostics (ALAC + video capable).
@@ -189,7 +208,8 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
   },
   shuffle_1g: {
     id: 'shuffle_1g',
-    displayName: 'iPod shuffle (1st Generation)',
+    family: 'iPod shuffle',
+    ordinal: 1,
     checksumType: 'none',
     supported: true,
     supportsAlac: false,
@@ -198,7 +218,8 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
   },
   shuffle_2g: {
     id: 'shuffle_2g',
-    displayName: 'iPod shuffle (2nd Generation)',
+    family: 'iPod shuffle',
+    ordinal: 2,
     checksumType: 'none',
     supported: true,
     supportsAlac: false,
@@ -207,7 +228,8 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
   },
   shuffle_3g: {
     id: 'shuffle_3g',
-    displayName: 'iPod shuffle (3rd Generation)',
+    family: 'iPod shuffle',
+    ordinal: 3,
     checksumType: 'none',
     // libgpod has ipod_info_table entries but requires iTunes authentication.
     supported: false,
@@ -217,7 +239,8 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
   },
   shuffle_4g: {
     id: 'shuffle_4g',
-    displayName: 'iPod shuffle (4th Generation)',
+    family: 'iPod shuffle',
+    ordinal: 4,
     checksumType: 'none',
     // libgpod has ipod_info_table entries but requires iTunes authentication.
     supported: false,
@@ -227,7 +250,8 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
   },
   touch_1g: {
     id: 'touch_1g',
-    displayName: 'iPod touch (1st Generation)',
+    family: 'iPod touch',
+    ordinal: 1,
     checksumType: 'hash72',
     // libgpod has ipod_info_table entries (A623/A627/B376) but uses Apple's
     // proprietary sync protocol — cannot be accessed via disk mode.
@@ -238,7 +262,8 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
   },
   touch_2g: {
     id: 'touch_2g',
-    displayName: 'iPod touch (2nd Generation)',
+    family: 'iPod touch',
+    ordinal: 2,
     checksumType: 'hash72',
     // libgpod has ipod_info_table entries (B528/B531/B533/C086) but uses
     // Apple's proprietary sync protocol — cannot be accessed via disk mode.
@@ -249,7 +274,8 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
   },
   touch_3g: {
     id: 'touch_3g',
-    displayName: 'iPod touch (3rd Generation)',
+    family: 'iPod touch',
+    ordinal: 3,
     checksumType: 'hash72',
     // libgpod has ipod_info_table entries (C008/C011) but uses Apple's
     // proprietary sync protocol — cannot be accessed via disk mode.
@@ -260,7 +286,8 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
   },
   touch_4g: {
     id: 'touch_4g',
-    displayName: 'iPod touch (4th Generation)',
+    family: 'iPod touch',
+    ordinal: 4,
     checksumType: 'hashAB',
     // libgpod has ipod_info_table entries (C540/C544/C547) but uses Apple's
     // proprietary sync protocol — cannot be accessed via disk mode.
@@ -271,7 +298,8 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
   },
   touch_5g: {
     id: 'touch_5g',
-    displayName: 'iPod touch (5th Generation)',
+    family: 'iPod touch',
+    ordinal: 5,
     checksumType: 'none',
     // Not in libgpod's ipod_info_table. Also uses Apple's proprietary sync
     // protocol — cannot be accessed via disk mode.
@@ -282,7 +310,8 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
   },
   touch_6g: {
     id: 'touch_6g',
-    displayName: 'iPod touch (6th Generation)',
+    family: 'iPod touch',
+    ordinal: 6,
     checksumType: 'none',
     // Not in libgpod's ipod_info_table. Also uses Apple's proprietary sync
     // protocol — cannot be accessed via disk mode.
@@ -293,7 +322,8 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
   },
   touch_7g: {
     id: 'touch_7g',
-    displayName: 'iPod touch (7th Generation)',
+    family: 'iPod touch',
+    ordinal: 7,
     checksumType: 'none',
     // Not in libgpod's ipod_info_table. Also uses Apple's proprietary sync
     // protocol — cannot be accessed via disk mode.

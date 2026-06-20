@@ -34,7 +34,7 @@ import { createSyncExecutor } from '../engine/executor.js';
 import { FFmpegTranscoder } from '../../transcode/ffmpeg.js';
 import { IpodDatabase } from '../../ipod/database.js';
 import { IpodDeviceAdapter } from '../../device/ipod-adapter.js';
-import { GENERATIONS, type IpodGenerationId } from '@podkit/devices-ipod';
+import { GENERATIONS, formatIpodLabel, type IpodGenerationId } from '@podkit/devices-ipod';
 import { identifyCapabilities } from '../../device/resolve-capabilities.js';
 import type { DeviceCapabilities } from '@podkit/device-types';
 import type { CollectionTrack } from '../../adapters/interface.js';
@@ -49,8 +49,10 @@ requireLibgpodNode();
 function capsForGeneration(id: IpodGenerationId): DeviceCapabilities {
   const gen = GENERATIONS[id];
   return identifyCapabilities({
-    displayName: gen.displayName,
+    displayName: formatIpodLabel({ family: gen.family, ordinal: gen.ordinal }),
     generationId: id,
+    family: gen.family,
+    ordinal: gen.ordinal,
     checksumType: gen.checksumType,
     source: 'usb',
   });

@@ -693,8 +693,10 @@ describe('runDeviceAdd: HFS+ on Linux refusal (TASK-317.12)', () => {
     const { out, stdout } = makeOut();
 
     const stubModel: IpodModel = {
-      displayName: 'iPod 5G Video',
+      displayName: 'iPod Video (5th Generation)',
       generationId: 'video_5g',
+      family: 'iPod Video',
+      ordinal: 5,
       checksumType: 'none',
       source: 'usb',
     };
@@ -755,6 +757,8 @@ describe('runDeviceAdd: HFS+ on Linux refusal (TASK-317.12)', () => {
     const stubModel: IpodModel = {
       displayName: 'iPod nano (3rd Generation)',
       generationId: 'nano_3g',
+      family: 'iPod nano',
+      ordinal: 3,
       checksumType: 'none',
       source: 'usb',
     };
@@ -841,6 +845,8 @@ describe('runDeviceAdd: missing volumeUuid refusal (TASK-317.15)', () => {
   const stubModel: IpodModel = {
     displayName: 'iPod nano (3rd Generation)',
     generationId: 'nano_3g',
+    family: 'iPod nano',
+    ordinal: 3,
     checksumType: 'none',
     source: 'usb',
   };
@@ -1039,6 +1045,8 @@ const NANO_2G_USB: CompleteUsbDevice = {
 const NANO_2G_MODEL: IpodModel = {
   displayName: 'iPod nano (2nd Generation)',
   generationId: 'nano_2g',
+  family: 'iPod nano',
+  ordinal: 2,
   checksumType: 'none',
   source: 'usb',
 };
@@ -1288,6 +1296,8 @@ describe('runDeviceAdd: nano 2G slick-flow (cascade + combined prompt)', () => {
       model: {
         displayName: 'iPod touch (1st Generation)',
         generationId: 'touch_1g',
+        family: 'iPod touch',
+        ordinal: 1,
         checksumType: 'none',
         source: 'usb',
         unsupportedReason: {
@@ -1338,6 +1348,8 @@ describe('runDeviceAdd: nano 2G slick-flow (cascade + combined prompt)', () => {
       model: {
         displayName: 'iPod touch (1st Generation)',
         generationId: 'touch_1g',
+        family: 'iPod touch',
+        ordinal: 1,
         checksumType: 'none',
         source: 'usb',
         unsupportedReason: {

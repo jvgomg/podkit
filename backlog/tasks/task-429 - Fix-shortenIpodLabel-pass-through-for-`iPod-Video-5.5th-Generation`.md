@@ -4,7 +4,7 @@ title: Fix shortenIpodLabel pass-through for `iPod Video (5.5th Generation)`
 status: Done
 assignee: []
 created_date: '2026-06-15 21:53'
-updated_date: '2026-06-15 22:29'
+updated_date: '2026-06-20 17:25'
 labels:
   - devices-ipod
   - follow-up
@@ -41,7 +41,13 @@ If (b) is on the roadmap, do (b). If not, do (a) now and remove the pinned-pass-
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 5.5G iPod Video renders with a sensible short label (`"iPod Video 5.5G"` or equivalent) in `device scan` / `device list` / `device info`
-- [ ] #2 No other shortener inputs regress — full `discovery.test.ts` + `device-scan-render.unit.test.ts` snapshot tests pass
-- [ ] #3 The known-gap pinned test is updated or removed (depending on fix approach)
+- [x] #1 5.5G iPod Video renders with a sensible short label (`"iPod Video 5.5G"` or equivalent) in `device scan` / `device list` / `device info`
+- [x] #2 No other shortener inputs regress — full `discovery.test.ts` + `device-scan-render.unit.test.ts` snapshot tests pass
+- [x] #3 The known-gap pinned test is updated or removed (depending on fix approach)
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Closed by TASK-428 / ADR-020. Path (b) — structured upstream — landed: `IpodModel` now carries `family: string` + `ordinal: number | null` directly. `displayFor` reads `formatIpodShortLabel({ family, ordinal })`, so `{ family: 'iPod Video', ordinal: 5.5 }` renders `iPod Video 5.5G` without any regex. `shortenIpodLabel` deleted entirely. The decimal-ordinal short-label is pinned by `discovery.test.ts` and `format.test.ts`.
+<!-- SECTION:FINAL_SUMMARY:END -->

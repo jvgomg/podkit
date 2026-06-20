@@ -179,20 +179,17 @@ export function lookupBySerial(serialSuffix: string): IpodModelVariant | undefin
 
   const entry = MODEL_INDEX.get(modelNumber);
   if (!entry) {
-    // Model number exists in serial table but not in model table.
-    return {
-      modelNumber,
-      displayName: `Unknown iPod (model M${modelNumber})`,
-      generation: 'classic_1g', // fallback
-    };
+    // Serial-table model number not in MODEL_NUMBERS — refuse to invent a
+    // generation. The cascade falls through to other axes (USB, FamilyID).
+    return undefined;
   }
 
   return {
     modelNumber,
-    displayName: entry.displayName,
     generation: entry.generation,
     capacityGb: entry.capacityGb,
     color: entry.color,
+    ...(entry.variant ? { variant: entry.variant } : {}),
   };
 }
 

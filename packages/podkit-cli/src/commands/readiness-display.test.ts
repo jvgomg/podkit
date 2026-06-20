@@ -126,7 +126,7 @@ describe('collectReadinessIssues', () => {
           generationMismatch: true,
           sysInfoGeneration: 'iPod (5th Generation / Video)',
           usbGeneration: 'iPod Classic (6th Generation)',
-          usbModelName: 'iPod Classic 6th generation',
+          usbModelName: 'iPod Classic (6th Generation)',
           suggestion:
             'Run `podkit doctor --repair sysinfo-extended` to read device identity from USB.',
         },
@@ -151,14 +151,14 @@ describe('collectReadinessIssues', () => {
         status: 'fail',
         summary: 'SysInfo not found',
         details: {
-          usbModelName: 'iPod Classic 6th generation',
+          usbModelName: 'iPod Classic (6th Generation)',
           suggestion:
             'Run `podkit doctor --repair sysinfo-extended` to read device identity from USB.',
         },
       },
     ]);
     const issues = collectReadinessIssues(stages, 'myipod');
-    expect(issues[0]!.details).toContain('USB reports: iPod Classic 6th generation');
+    expect(issues[0]!.details).toContain('USB reports: iPod Classic (6th Generation)');
   });
 
   it('collects database failure with impact explanation and init command', () => {

@@ -188,7 +188,7 @@ function makeFakeCore(opts: {
   const fakeIpod = {
     getInfo: () => ({
       device: {
-        modelName: opts.reportDeviceModel ?? 'iPod nano 7th generation 16GB',
+        modelName: opts.reportDeviceModel ?? 'iPod nano 16GB (7th Generation)',
         modelNumber: 'MD478',
         generation: 'nano_7g',
         capacity: 16,
@@ -228,7 +228,7 @@ function makeFakeCore(opts: {
         { stage: 'sysinfo', status: 'pass', summary: 'ok' },
         { stage: 'database', status: 'pass', summary: 'ok' },
       ],
-      deviceModel: { displayName: opts.reportDeviceModel ?? 'iPod nano 7th generation 16GB' },
+      deviceModel: { displayName: opts.reportDeviceModel ?? 'iPod nano 16GB (7th Generation)' },
       usbModel: undefined,
     }),
     assessIpodIdentity: async () => ({
@@ -815,7 +815,7 @@ describe('deviceModel field rendering', () => {
     const ctx = makeContext({ device: 'ipod' });
     const { out, stdout } = makeOut();
     const fakeCore = makeFakeCore({
-      reportDeviceModel: 'iPod nano 4th generation 8GB Silver',
+      reportDeviceModel: 'iPod nano 8GB Silver (4th Generation)',
       reportChecks: [],
     });
 
@@ -836,7 +836,7 @@ describe('deviceModel field rendering', () => {
 
     const payload = stdout.json<{ deviceType: string; deviceModel: string }>();
     expect(payload.deviceType).toBe('ipod');
-    expect(payload.deviceModel).toBe('iPod nano 4th generation 8GB Silver');
+    expect(payload.deviceModel).toBe('iPod nano 8GB Silver (4th Generation)');
   });
 
   it('mass-storage: deviceModel resolves to the preset display name (e.g. "Echo Mini")', async () => {

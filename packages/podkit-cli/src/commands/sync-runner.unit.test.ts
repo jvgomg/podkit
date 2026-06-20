@@ -162,6 +162,8 @@ describe('runSync: validation + deps seam', () => {
             model: {
               displayName: 'iPod nano (7th Generation)',
               generationId: 'nano_7g',
+              family: 'iPod nano',
+              ordinal: 7,
               checksumType: 'hashAB',
               source: 'usb',
               unsupportedReason: {

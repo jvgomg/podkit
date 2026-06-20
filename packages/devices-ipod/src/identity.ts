@@ -11,6 +11,10 @@
  * that captures capacity, color, and generation without requiring a live
  * firmware inquiry.
  *
+ * Display strings (`IpodModel.displayName`) are composed by `formatIpodLabel`
+ * from the structured family + ordinal + capacity/color/variant fields per
+ * ADR-020. No upstream table stores hand-curated label strings.
+ *
  * @module
  */
 
@@ -18,6 +22,7 @@ import { GENERATIONS } from './tables/generations.js';
 import { lookupByUsbId, lookupBySerial, lookupByModelNumber } from './lookups.js';
 import { lookupUnsupportedReason } from './tables/unsupported.js';
 import { buildUnsupportedReason } from './build-unsupported-reason.js';
+import { formatIpodLabel } from './format.js';
 import type { IpodModel, IpodModelSource } from './types.js';
 
 // ── Input types ──────────────────────────────────────────────────────────────
@@ -41,16 +46,16 @@ export type IpodModelInput =
  * @example
  * ```ts
  * // From USB product ID (generation only)
- * identify({ from: 'usb', productId: '0x1260' })
- * // → { displayName: "iPod nano 2nd generation", generationId: "nano_2g", source: "usb" }
+ * identify({ from: 'usb', productId: '0x1262' })
+ * // → { displayName: "iPod nano (3rd Generation)", family: "iPod nano", ordinal: 3, … }
  *
  * // From SysInfo model number (full variant)
  * identify({ from: 'sysinfo', modelNumStr: 'MA477' })
- * // → { displayName: "iPod nano 2GB Silver (2nd Generation)", color: "Silver", source: "sysinfo" }
+ * // → { displayName: "iPod nano 2GB Silver (2nd Generation)", color: "Silver", … }
  *
  * // From serial number suffix (full variant)
  * identify({ from: 'serial', serialNumber: '5U828GFNYXX' })
- * // → { displayName: "iPod nano 8GB Black (3rd Generation)", color: "Black", source: "serial" }
+ * // → { displayName: "iPod nano 8GB Black (3rd Generation)", color: "Black", … }
  * ```
  */
 export function identify(input: IpodModelInput): IpodModel | undefined {
@@ -59,16 +64,19 @@ export function identify(input: IpodModelInput): IpodModel | undefined {
       const entry = lookupByUsbId(input.productId);
       if (!entry) return undefined;
       const gen = GENERATIONS[entry.generation];
+      const displayName = formatIpodLabel({ family: gen.family, ordinal: gen.ordinal });
       // Check unsupported PID table first, then fall back to generation flag.
       const headline =
         lookupUnsupportedReason(input.productId) ??
-        (!gen.supported ? `${entry.displayName} is not a podkit-supported generation.` : undefined);
+        (!gen.supported ? `${displayName} is not a podkit-supported generation.` : undefined);
       const unsupportedReason = headline
         ? buildUnsupportedReason(headline, entry.generation)
         : undefined;
       return {
-        displayName: entry.displayName,
+        displayName,
         generationId: entry.generation,
+        family: gen.family,
+        ordinal: gen.ordinal,
         checksumType: gen.checksumType,
         source: 'usb' satisfies IpodModelSource,
         ...(unsupportedReason ? { unsupportedReason } : {}),
@@ -79,22 +87,32 @@ export function identify(input: IpodModelInput): IpodModel | undefined {
       const entry = lookupByModelNumber(input.modelNumStr);
       if (!entry) return undefined;
       const gen = GENERATIONS[entry.generation];
+      const displayName = formatIpodLabel({
+        family: gen.family,
+        ordinal: gen.ordinal,
+        capacityGb: entry.capacityGb,
+        color: entry.color,
+        variant: entry.variant,
+      });
       // Re-derive stripped model number for the modelNumber field
       const upper = input.modelNumStr.toUpperCase();
       const stripped = /^[MPF]/.test(upper) ? upper.slice(1) : upper;
       const headline = !gen.supported
-        ? `${entry.displayName} is not a podkit-supported generation.`
+        ? `${displayName} is not a podkit-supported generation.`
         : undefined;
       const unsupportedReason = headline
         ? buildUnsupportedReason(headline, entry.generation)
         : undefined;
       return {
-        displayName: entry.displayName,
+        displayName,
         generationId: entry.generation,
+        family: gen.family,
+        ordinal: gen.ordinal,
         checksumType: gen.checksumType,
         modelNumber: stripped,
         capacityGb: entry.capacityGb,
         color: entry.color,
+        ...(entry.variant ? { variant: entry.variant } : {}),
         source: 'sysinfo' satisfies IpodModelSource,
         ...(unsupportedReason ? { unsupportedReason } : {}),
       };
@@ -107,19 +125,29 @@ export function identify(input: IpodModelInput): IpodModel | undefined {
       const variant = lookupBySerial(suffix);
       if (!variant) return undefined;
       const gen = GENERATIONS[variant.generation];
+      const displayName = formatIpodLabel({
+        family: gen.family,
+        ordinal: gen.ordinal,
+        capacityGb: variant.capacityGb,
+        color: variant.color,
+        variant: variant.variant,
+      });
       const headline = !gen.supported
-        ? `${variant.displayName} is not a podkit-supported generation.`
+        ? `${displayName} is not a podkit-supported generation.`
         : undefined;
       const unsupportedReason = headline
         ? buildUnsupportedReason(headline, variant.generation)
         : undefined;
       return {
-        displayName: variant.displayName,
+        displayName,
         generationId: variant.generation,
+        family: gen.family,
+        ordinal: gen.ordinal,
         checksumType: gen.checksumType,
         modelNumber: variant.modelNumber,
         capacityGb: variant.capacityGb,
         color: variant.color,
+        ...(variant.variant ? { variant: variant.variant } : {}),
         source: 'serial' satisfies IpodModelSource,
         ...(unsupportedReason ? { unsupportedReason } : {}),
       };

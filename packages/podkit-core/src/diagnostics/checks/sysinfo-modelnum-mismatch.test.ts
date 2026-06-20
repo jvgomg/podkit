@@ -106,22 +106,28 @@ function sieReader(result: SysInfoExtendedResult | null): SieReader {
 
 // Synthetic generation-only models for the liveIdentity fallback path.
 const VIDEO_5G_USB_MODEL: IpodModel = {
-  displayName: 'iPod 5th generation (Video)',
+  displayName: 'iPod Video (5th Generation)',
   generationId: 'video_5g',
+  family: 'iPod Video',
+  ordinal: 5,
   checksumType: 'none',
   source: 'usb',
 };
 
 const VIDEO_5_5G_USB_MODEL: IpodModel = {
-  displayName: 'iPod 5th generation Late 2006 (Enhanced)',
+  displayName: 'iPod Video (5.5th Generation)',
   generationId: 'video_5_5g',
+  family: 'iPod Video',
+  ordinal: 5.5,
   checksumType: 'none',
   source: 'usb',
 };
 
 const NANO_2G_USB_MODEL: IpodModel = {
-  displayName: 'iPod nano 2nd generation',
+  displayName: 'iPod nano (2nd Generation)',
   generationId: 'nano_2g',
+  family: 'iPod nano',
+  ordinal: 2,
   checksumType: 'none',
   source: 'usb',
 };

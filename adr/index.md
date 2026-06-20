@@ -27,6 +27,7 @@ This section contains Architecture Decision Records (ADRs) documenting significa
 | [ADR-014](/developers/adr/adr-014-device-capability-architecture) | Device Capability Architecture (m-18) | Accepted | 2026-05-06 |
 | [ADR-015](/developers/adr/adr-015-cli-error-output-shape) | CLI Error Output Shape | Accepted | 2026-05-09 |
 | [ADR-019](/developers/adr/adr-019-music-pipeline-engine-symmetry) | MusicPipeline ↔ engine/executor Symmetry | Proposed | 2026-06-12 |
+| [ADR-020](/developers/adr/adr-020-ipod-identity-structured-fields) | Structured iPod Identity Fields | Accepted | 2026-06-20 |
 
 ## What is an ADR?
 
