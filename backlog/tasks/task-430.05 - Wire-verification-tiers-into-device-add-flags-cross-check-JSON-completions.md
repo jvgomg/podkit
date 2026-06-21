@@ -3,9 +3,10 @@ id: TASK-430.05
 title: >-
   Wire verification tiers into device add (flags, cross-check, JSON,
   completions)
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-06-21 09:28'
+updated_date: '2026-06-21 11:48'
 labels:
   - device-add
   - ux
@@ -36,10 +37,18 @@ Parent: TASK-430. Design: doc-045.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 `runDeviceAdd` consumes M3 then M4; the three legacy branches collapse onto shared scan/locate + assess + persist helpers
-- [ ] #2 `--no-firmware-inquiry` renamed to `--no-verify`; `--no-validate` added and implies `--no-verify`; only `--force` bypasses the empty-identity gate
-- [ ] #3 Verify tier runs the existing sysinfo diagnostics as the cross-check and errors on mismatch with the doctor-repair hint
-- [ ] #4 `--no-verify` succeeds when on-disk SysInfo is present and errors with a 'run doctor' hint when absent; `--no-validate` writes config with zero device I/O and errors on incomplete identity
-- [ ] #5 `verification` field present in the JSON success envelope per tier; new flags appear in completions (asserted by test)
-- [ ] #6 Changeset added; lint + typecheck + unit tests pass
+- [x] #1 `runDeviceAdd` consumes M3 then M4; the three legacy branches collapse onto shared scan/locate + assess + persist helpers
+- [x] #2 `--no-firmware-inquiry` renamed to `--no-verify`; `--no-validate` added and implies `--no-verify`; only `--force` bypasses the empty-identity gate
+- [x] #3 Verify tier runs the existing sysinfo diagnostics as the cross-check and errors on mismatch with the doctor-repair hint
+- [x] #4 `--no-verify` succeeds when on-disk SysInfo is present and errors with a 'run doctor' hint when absent; `--no-validate` writes config with zero device I/O and errors on incomplete identity
+- [x] #5 `verification` field present in the JSON success envelope per tier; new flags appear in completions (asserted by test)
+- [x] #6 Changeset added; lint + typecheck + unit tests pass
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Implemented by opus worker + 2 sonnet reviews + team-lead cleanup. runDeviceAdd thinned onto M3->reach(scan/locate, skipped for config-inject)->per-kind assess adapter->verify-tier cross-check (sysinfo-consistency + sysinfo-modelnum-mismatch, liveIdentity from usbFingerprint, CheckResult.status->crossCheck)->M4->act-on-Outcome loop (prompt-write-sie re-enters once via sieReEntered guard; refusals mapped to DeviceErrorCodes incl. new IDENTITY_MISMATCH pointing at doctor --repair sysinfo-modelnum-mismatch). config-inject returns via persistInjectedConfig BEFORE loadCore/getDeviceManager (zero device I/O, pinned by an exploding-manager test). Deleted enforceIdentityGate/throwEmptyIdentityRefusal/warnPartialIdentity/throwVolumeUuidRequired (logic now in M4). Flags: --no-firmware-inquiry renamed --no-verify, added --no-validate (implies --no-verify structurally) + --volume-uuid/--volume-name; only --force bypasses empty-identity gate now. JSON DeviceAddSuccess.verification added. Completions test asserts new flags present + old gone. Changeset .changeset/device-add-verification-tiers.md (minor). synthesizeTestVolumeUuid kept as pre-M4 shim for 430.06.
+
+Independent review traced the high-risk areas CORRECT: double-M4 pre-pass safely ignores refuse-empty-identity (only acts on hfsplus/no-uuid before assess); SIE re-entry can't loop; config-inject zero-I/O; cross-check won't spuriously mismatch on absent data (absent->skip not fail). Team-lead fixes: removed dead firmwareInquiry option wiring + obsolete opt-out tests in add-firmware-inquiry, added pre-pass clarifying comment. Review B1/B2 (e2e tests still using --no-firmware-inquiry + asserting old bypass behaviour) DEFERRED to 430.06 which owns those files. Gates: lint 0/0, build, podkit 1721 unit + 67 integration pass, core 3193 pass.
+<!-- SECTION:NOTES:END -->
