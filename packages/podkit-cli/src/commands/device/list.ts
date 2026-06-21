@@ -72,7 +72,7 @@ export async function runDeviceList(out: OutputContext, deps: DeviceListDeps = {
     try {
       const manager = (deps.getDeviceManager ?? coreOrNull.getDeviceManager)();
       if (manager.isSupported) {
-        const ipods = await manager.findIpodDevices();
+        const ipods = await manager.scan({ kinds: ['ipod'] });
         for (const ipod of ipods) {
           if (ipod.volumeUuid) {
             connectedUuids.set(ipod.volumeUuid.toUpperCase(), {

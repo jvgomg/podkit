@@ -13,13 +13,13 @@
  * const manager = getDeviceManager();
  *
  * // Find attached iPods
- * const ipods = await manager.findIpodDevices();
+ * const ipods = await manager.scan({ kinds: ['ipod'] });
  *
  * // Eject a device
  * await manager.eject('/Volumes/iPod');
  *
- * // Mount by UUID
- * const device = await manager.findByVolumeUuid('ABC-123');
+ * // Locate by UUID
+ * const device = await manager.locate({ volumeUuid: 'ABC-123' });
  * if (device) {
  *   await manager.mount(device.identifier);
  * }

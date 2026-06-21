@@ -147,7 +147,7 @@ export class MacOSDeviceManager implements DeviceManager {
    */
   private readonly subprocess: SubprocessRunner;
 
-  // Cache listDevices() results for 1s so multiple calls within a single
+  // Cache enumerateDevices() results for 1s so multiple calls within a single
   // command invocation (e.g. device info: UUID lookup + readiness check)
   // don't each pay the full diskutil cost.
   private _listDevicesCache: { result: PlatformDeviceInfo[]; expiresAt: number } | null = null;
@@ -371,7 +371,74 @@ export class MacOSDeviceManager implements DeviceManager {
     };
   }
 
-  async listDevices(): Promise<PlatformDeviceInfo[]> {
+  async scan(options?: {
+    kinds?: ReadonlyArray<'ipod' | 'mass-storage'>;
+  }): Promise<PlatformDeviceInfo[]> {
+    const devices = await this.enumerateDevices();
+    // Only the `ipod` filter is implemented at this layer (iPod classification
+    // is heuristic but self-contained). `mass-storage` filtering needs preset
+    // matching, which lives above the manager — so any `kinds` that does not
+    // include `'ipod'` (including `['mass-storage']`) returns the full
+    // enumerate. No caller relies on mass-storage-only filtering yet.
+    if (!options?.kinds?.includes('ipod')) {
+      return devices;
+    }
+    return this.filterIpods(devices);
+  }
+
+  async locate(
+    target: { volumeUuid: string } | { path: string }
+  ): Promise<PlatformDeviceInfo | null> {
+    // Both `diskutil info <volume-uuid>` and `diskutil info <path>` resolve
+    // the target directly (single subprocess); a bogus target exits non-zero
+    // and `getPlatformDeviceInfo` returns null. For UUID-less but mounted
+    // volumes (FunctionFS / bind mounts), `getPlatformDeviceInfo` would skip
+    // the record (no Volume UUID), so the `{ path }` branch falls back to a
+    // path-mode record so resolution can still proceed.
+    const query = 'volumeUuid' in target ? target.volumeUuid : target.path;
+    const device = await this.getPlatformDeviceInfo(query);
+    if (device) return device;
+    if ('path' in target) {
+      return this.locatePathFallback(target.path);
+    }
+    return null;
+  }
+
+  /**
+   * Build a path-mode `PlatformDeviceInfo` for a mounted volume that
+   * `getPlatformDeviceInfo` rejected for lacking a Volume UUID (FunctionFS /
+   * bind mounts). Re-reads `diskutil info <path>` once; returns a record with
+   * `volumeUuid: ''` and a valid mount point, or `null` when the path is not
+   * a mounted volume.
+   */
+  private async locatePathFallback(path: string): Promise<PlatformDeviceInfo | null> {
+    const { stdout, code } = await execCommand('diskutil', ['info', path], this.subprocess);
+    if (code !== 0) return null;
+
+    const info = parseDiskutilInfo(stdout);
+    const rawMountPoint = info['Mount Point'] || '';
+    const isMounted = rawMountPoint !== '' && rawMountPoint !== '(not mounted)';
+    if (!isMounted) return null;
+
+    const filesystem = info['File System Personality'] || info['Type (Bundle)'] || undefined;
+    return {
+      identifier: info['Device Identifier'] || '',
+      volumeName: info['Volume Name'] || '',
+      volumeUuid: '',
+      mediaType: info['Media Type'] || '',
+      storage: { sizeBytes: 0, ...(filesystem ? { filesystem } : {}) },
+      isMounted: true,
+      mountPoint: rawMountPoint,
+    };
+  }
+
+  /**
+   * Enumerate every user-visible partition (the legacy `listDevices` body),
+   * shared by `scan()` and `getSiblingVolumes`. Caches results for 1s so
+   * multiple calls within a single command invocation don't each pay the full
+   * diskutil cost.
+   */
+  private async enumerateDevices(): Promise<PlatformDeviceInfo[]> {
     const now = Date.now();
     if (this._listDevicesCache && this._listDevicesCache.expiresAt > now) {
       return this._listDevicesCache.result;
@@ -409,8 +476,13 @@ export class MacOSDeviceManager implements DeviceManager {
     return devices;
   }
 
-  async findIpodDevices(): Promise<PlatformDeviceInfo[]> {
-    const devices = await this.listDevices();
+  /**
+   * Classify enumerated partitions down to iPods (media type, `iPod_Control`
+   * directory, `IPOD`/`POD`/`TERAPOD` volume label). macOS does not attach a
+   * USB fingerprint here — it reconciles via `diskIdentifier` against the
+   * USB-inquiry stream in `reconcileDiscoveredDevices`.
+   */
+  private filterIpods(devices: PlatformDeviceInfo[]): PlatformDeviceInfo[] {
     const ipods: PlatformDeviceInfo[] = [];
 
     for (const device of devices) {
@@ -438,19 +510,6 @@ export class MacOSDeviceManager implements DeviceManager {
     }
 
     return ipods;
-  }
-
-  async findByVolumeUuid(uuid: string): Promise<PlatformDeviceInfo | null> {
-    const devices = await this.listDevices();
-    const normalizedUuid = uuid.toUpperCase();
-
-    for (const device of devices) {
-      if (device.volumeUuid.toUpperCase() === normalizedUuid) {
-        return device;
-      }
-    }
-
-    return null;
   }
 
   requiresPrivileges(_operation: 'mount' | 'eject'): boolean {
@@ -551,23 +610,6 @@ Replace diskXsY with your actual device identifier`;
         ? { isMounted: true as const, mountPoint: rawMountPoint }
         : { isMounted: false as const }),
     };
-  }
-
-  async getUuidForMountPoint(mountPoint: string): Promise<string | null> {
-    const devices = await this.listDevices();
-    const normalized = mountPoint.replace(/\/+$/, '');
-
-    for (const device of devices) {
-      // Type narrowing on `isMounted` makes `mountPoint` non-nullable.
-      if (device.isMounted) {
-        const deviceNormalized = device.mountPoint.replace(/\/+$/, '');
-        if (deviceNormalized === normalized) {
-          return device.volumeUuid || null;
-        }
-      }
-    }
-
-    return null;
   }
 
   async getSiblingVolumes(mountPoint: string): Promise<string[]> {

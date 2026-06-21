@@ -682,13 +682,10 @@ function createMockDeviceManager(): any {
     async mount(_deviceId: string, _options?: any) {
       return { success: true, device: 'disk4s2', mountPoint: DEMO_MOUNT_POINT };
     },
-    async listDevices() {
+    async scan(_options?: { kinds?: ReadonlyArray<'ipod' | 'mass-storage'> }) {
       return [{ ...DEMO_PLATFORM_DEVICE }];
     },
-    async findIpodDevices() {
-      return [{ ...DEMO_PLATFORM_DEVICE }];
-    },
-    async findByVolumeUuid(_uuid: string) {
+    async locate(_target: { volumeUuid: string } | { path: string }) {
       return { ...DEMO_PLATFORM_DEVICE };
     },
     getManualInstructions(_op: string) {

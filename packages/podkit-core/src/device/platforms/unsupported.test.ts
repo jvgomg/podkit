@@ -48,26 +48,30 @@ describe('UnsupportedDeviceManager', () => {
     });
   });
 
-  describe('listDevices', () => {
+  describe('scan', () => {
     it('returns empty array', async () => {
       const manager = new UnsupportedDeviceManager('linux');
-      const devices = await manager.listDevices();
+      const devices = await manager.scan();
       expect(devices).toEqual([]);
     });
-  });
 
-  describe('findIpodDevices', () => {
-    it('returns empty array', async () => {
+    it('returns empty array for the iPod kind', async () => {
       const manager = new UnsupportedDeviceManager('linux');
-      const ipods = await manager.findIpodDevices();
+      const ipods = await manager.scan({ kinds: ['ipod'] });
       expect(ipods).toEqual([]);
     });
   });
 
-  describe('findByVolumeUuid', () => {
-    it('returns null', async () => {
+  describe('locate', () => {
+    it('returns null by UUID', async () => {
       const manager = new UnsupportedDeviceManager('linux');
-      const device = await manager.findByVolumeUuid('ABC-123');
+      const device = await manager.locate({ volumeUuid: 'ABC-123' });
+      expect(device).toBeNull();
+    });
+
+    it('returns null by path', async () => {
+      const manager = new UnsupportedDeviceManager('linux');
+      const device = await manager.locate({ path: '/Volumes/iPod' });
       expect(device).toBeNull();
     });
   });

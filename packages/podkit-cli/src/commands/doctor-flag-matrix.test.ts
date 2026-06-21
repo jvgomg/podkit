@@ -186,12 +186,10 @@ function fakeManager(overrides: Partial<DeviceManager> = {}): DeviceManager {
   const base: Partial<DeviceManager> = {
     platform: 'test',
     isSupported: true,
-    listDevices: async () => [],
-    findIpodDevices: async () => [],
-    findByVolumeUuid: async () => null,
+    scan: async () => [],
+    locate: async () => null,
     getManualInstructions: () => '',
     requiresPrivileges: () => false,
-    getUuidForMountPoint: async () => null,
     assessDevice: async () => null,
   };
   return { ...base, ...overrides } as DeviceManager;

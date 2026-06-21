@@ -81,9 +81,8 @@ function fakeManager(overrides: Partial<DeviceManager> = {}): DeviceManager {
   const base: Partial<DeviceManager> = {
     platform: 'test',
     isSupported: true,
-    findIpodDevices: async () => [],
-    listDevices: async () => [],
-    findByVolumeUuid: async () => null,
+    scan: async () => [],
+    locate: async () => null,
     getSiblingVolumes: async () => [],
     getManualInstructions: () => '',
   };
@@ -164,7 +163,7 @@ describe('runDeviceScan', () => {
     }
   });
 
-  it('skips findIpodDevices + enumerateUsb when the platform manager is unsupported', async () => {
+  it('skips scan + enumerateUsb when the platform manager is unsupported', async () => {
     const ctx = makeContext();
     const { out, stdout, exitCode } = makeOut();
 
@@ -180,7 +179,7 @@ describe('runDeviceScan', () => {
         fakeManager({
           isSupported: false,
           platform: 'unsupported',
-          findIpodDevices: async () => {
+          scan: async () => {
             findIpodCalled = true;
             return [];
           },
@@ -190,7 +189,7 @@ describe('runDeviceScan', () => {
     await runScan(ctx, {}, out, deps);
     expect(exitCode.get()).toBeUndefined();
     // discoverConnectedDevices short-circuits on unsupported platforms —
-    // neither the USB enumerate nor findIpodDevices are called.
+    // neither the USB enumerate nor scan() are called.
     expect(findIpodCalled).toBe(false);
     expect(enumerateCalled).toBe(false);
     const result = stdout.json<DeviceScanOutput>();
@@ -219,7 +218,7 @@ describe('runDeviceScan', () => {
     // vendor/product descriptor without falling back to `lsusb` cross-checks.
     //
     // The fake `enumerateUsb` returns an Apple iPod video 5G descriptor with
-    // no `diskIdentifier`; the fake `findIpodDevices` returns nothing, so
+    // no `diskIdentifier`; the fake `scan` returns nothing, so
     // there is no joinable block device. The scan envelope must contain a
     // single `usbOnly: true` device with the expected vendor/product IDs and
     // the iPod 5G video model details from the classifier.
@@ -275,7 +274,7 @@ describe('runDeviceScan', () => {
       getDeviceManager: () =>
         fakeManager({
           isSupported: true,
-          findIpodDevices: async () => [],
+          scan: async () => [],
         }),
     };
 
@@ -304,7 +303,7 @@ describe('runDeviceScan', () => {
   describe('linka double-entry regression', () => {
     /**
      * The linka repro (Linux nano 3G FAT32): both the block-device pipeline
-     * (`findIpodDevices` → /dev/sdc1) and the USB-inquiry pipeline
+     * (`scan({ kinds: ['ipod'] })` → /dev/sdc1) and the USB-inquiry pipeline
      * (`enumerateUsb` + `classifyUsbDevices`) independently identify the
      * same physical iPod. Pre-fix: rendered as two entries — a fully-green
      * mounted row plus a phantom "USB only" row claiming the device needed
@@ -368,7 +367,7 @@ describe('runDeviceScan', () => {
         getDeviceManager: () =>
           fakeManager({
             isSupported: true,
-            findIpodDevices: async () => [NANO_3G_BLOCK],
+            scan: async (opts) => (opts?.kinds?.includes('ipod') ? [NANO_3G_BLOCK] : []),
           }),
       };
 
@@ -415,7 +414,7 @@ describe('runDeviceScan', () => {
         loadCore: async () => fakeCore(),
         enumerate: async () => [usbOnlyTouch.device],
         classify: () => [usbOnlyTouch],
-        getDeviceManager: () => fakeManager({ isSupported: true, findIpodDevices: async () => [] }),
+        getDeviceManager: () => fakeManager({ isSupported: true, scan: async () => [] }),
       };
 
       await runScan(ctx, {}, out, deps);
@@ -447,7 +446,7 @@ describe('runDeviceScan', () => {
         enumerate: async () => [usbOnlyIos.device],
         classify: () => [usbOnlyIos],
         getDeviceManager: () =>
-          fakeManager({ platform: 'darwin', isSupported: true, findIpodDevices: async () => [] }),
+          fakeManager({ platform: 'darwin', isSupported: true, scan: async () => [] }),
       };
 
       await runScan(ctx, {}, out, deps);

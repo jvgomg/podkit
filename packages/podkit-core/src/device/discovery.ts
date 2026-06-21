@@ -1,7 +1,7 @@
 /**
  * Discovered-device union — a single tagged record per physical device,
  * reconciled across the block-device pipeline ({@link PlatformDeviceInfo}
- * from `DeviceManager.listDevices` / `findIpodDevices`) and the USB-inquiry
+ * from `DeviceManager.scan`) and the USB-inquiry
  * pipeline ({@link ClassifiedUsbDevice} from `classifyUsbDevices`). One
  * union type, three arms (iPod / mass-storage / unsupported), each carrying
  * its own per-arm `matchedBy` enum.
@@ -80,7 +80,7 @@ export type DiscoveredDevice =
  *   `mmcblk0`). Used on macOS, which doesn't surface a block-side
  *   `usb` fingerprint.
  * - `'block-only'` — no matching USB classification was found. The
- *   block side classified this as an iPod via {@link DeviceManager.findIpodDevices}
+ *   block side classified this as an iPod via {@link DeviceManager.scan}
  *   (media-type, FAT32+iPod_Control, etc.) but the USB enumeration didn't
  *   produce a corresponding iPod entry (e.g. libusb permission denial,
  *   sleeping device).
@@ -117,9 +117,9 @@ export interface DiscoveredDeviceIpod {
  * - `'block-only'` — mounted volume that no preset claimed via USB classification.
  *   This happens when the block side is mass-storage but the USB layer didn't
  *   recognise the VID/PID. (In the orchestrator today this is impossible because
- *   `findIpodDevices` pre-filters to iPods — see the orchestrator JSDoc — but
- *   the reconciler accepts the case for future callers that pass the full
- *   `listDevices` output.)
+ *   `scan({ kinds: ['ipod'] })` pre-filters to iPods — see the orchestrator
+ *   JSDoc — but the reconciler accepts the case for future callers that pass
+ *   the full `scan()` output.)
  * - `'usb-only'` — recognised mass-storage USB but no block-device entry
  *   (powered off, wrong USB mode).
  */
@@ -357,15 +357,16 @@ function nonEmpty(s: string | undefined | null): s is string {
  * whether the block-only entry is an iPod or generic mass-storage.
  *
  * Today {@link discoverConnectedDevices} only feeds this function with
- * already-iPod-filtered block devices (from {@link DeviceManager.findIpodDevices}),
+ * already-iPod-filtered block devices (from
+ * {@link DeviceManager.scan}`({ kinds: ['ipod'] })`),
  * so every block-only entry IS an iPod and this heuristic always returns
  * `true`. The heuristic is kept as a defensive narrow for future callers
- * that may pass the full `listDevices` output — they will get correct
+ * that may pass the full `scan()` output — they will get correct
  * classification provided the platform populates `mediaType` (macOS) or
  * the volume is iPod-shaped.
  *
  * **Safety note for future callers:** the `volumeName === 'IPOD'` fallback
- * is unsafe against the full `listDevices` stream — a generic FAT32 stick
+ * is unsafe against the full `scan()` stream — a generic FAT32 stick
  * a user happened to label "IPOD" would misclassify. Future callers passing
  * unfiltered block lists should combine this heuristic with a stronger
  * signal (USB-side classification, iPod_Control directory probe, etc.)
@@ -527,7 +528,7 @@ function findMatchingUsbForBlock(
 export interface DiscoverConnectedDevicesOptions {
   /**
    * The platform device manager. Provides the block-device side
-   * ({@link DeviceManager.findIpodDevices}). Required.
+   * ({@link DeviceManager.scan}`({ kinds: ['ipod'] })`). Required.
    */
   deviceManager: DeviceManager;
   /**
@@ -558,11 +559,11 @@ export interface DiscoverConnectedDevicesOptions {
  * block-device pipeline when `manager.isSupported === false`.
  *
  * **Block-only kind classification — judgement call.** The orchestrator
- * calls `manager.findIpodDevices()`, which pre-filters to iPods (media-type,
- * `IPOD` volume label, etc.). Every block-only entry from this orchestrator
- * is therefore an iPod — the {@link blockLooksLikeIpod} fallback in
- * {@link reconcileDiscoveredDevices} is defensive only for callers that
- * supply the full `listDevices` output. The reconciler is the more general
+ * calls `manager.scan({ kinds: ['ipod'] })`, which pre-filters to iPods
+ * (media-type, `IPOD` volume label, etc.). Every block-only entry from this
+ * orchestrator is therefore an iPod — the {@link blockLooksLikeIpod} fallback
+ * in {@link reconcileDiscoveredDevices} is defensive only for callers that
+ * supply the full `scan()` output. The reconciler is the more general
  * primitive; this orchestrator preserves today's iPod-centric behaviour.
  */
 export async function discoverConnectedDevices(
@@ -581,7 +582,7 @@ export async function discoverConnectedDevices(
   if (!deviceManager.isSupported) return [];
 
   const [blockDevices, enumerated] = await Promise.all([
-    deviceManager.findIpodDevices(),
+    deviceManager.scan({ kinds: ['ipod'] }),
     enumerate(),
   ]);
   const classified = classify(enumerated);

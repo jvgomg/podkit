@@ -213,10 +213,10 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
           }
 
           // Look up filesystem UUID for the mount point. Single diskutil-info
-          // call (cheap); avoids the full findIpodDevices walk below.
+          // call (cheap); avoids the full scan({ kinds: ['ipod'] }) walk below.
           if (liveStatus?.mounted && manager.isSupported) {
             try {
-              const uuid = await manager.getUuidForMountPoint(resolveResult.path);
+              const uuid = (await manager.locate({ path: resolveResult.path }))?.volumeUuid ?? null;
               if (uuid) {
                 liveStatus.volumeUuid = uuid;
               }
@@ -227,7 +227,7 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
 
           // Run readiness check for iPod devices (skip mass-storage). In path
           // mode we synthesize the PlatformDeviceInfo from data we already
-          // have rather than calling manager.findIpodDevices() — that's a
+          // have rather than calling manager.scan({ kinds: ['ipod'] }) — that's a
           // full disk enumeration which on macOS dispatches diskutil
           // subprocesses per attached disk. We then lift it through
           // `ipodFromBlock` so the readiness dispatch sees a uniform

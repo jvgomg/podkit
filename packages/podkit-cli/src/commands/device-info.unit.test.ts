@@ -5,7 +5,7 @@
  * `device.integration.test.ts`. These tests target the small helper that
  * makes the path-mode optimisation possible: synthesising a
  * `PlatformDeviceInfo` from a user-supplied path so the readiness pipeline
- * can run without `manager.findIpodDevices()`.
+ * can run without `manager.scan({ kinds: ['ipod'] })`.
  */
 
 import { describe, it, expect } from 'bun:test';

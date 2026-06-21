@@ -82,7 +82,7 @@ export async function runDeviceMount(
       const deviceIdentity = getDeviceIdentity(resolvedDevice);
       out.print(formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, out.isVerbose));
 
-      const device = await manager.findByVolumeUuid(volumeUuid);
+      const device = await manager.locate({ volumeUuid });
 
       if (!device) {
         const devLabel = getDeviceLabel(resolvedDevice?.config, mergedPresets(config));

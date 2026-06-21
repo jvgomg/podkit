@@ -150,12 +150,10 @@ function fakeManager(overrides: Partial<DeviceManager> = {}): DeviceManager {
   const base: Partial<DeviceManager> = {
     platform: 'test',
     isSupported: true,
-    listDevices: async () => [],
-    findIpodDevices: async () => [],
-    findByVolumeUuid: async () => null,
+    scan: async () => [],
+    locate: async () => null,
     getManualInstructions: () => '',
     requiresPrivileges: () => false,
-    getUuidForMountPoint: async () => null,
     assessDevice: async () => null,
   };
   return { ...base, ...overrides } as DeviceManager;
@@ -954,8 +952,7 @@ describe('doctor against an unrecognised device path', () => {
           fakeManager({
             // Force the manager to return no matching device — guarantees
             // resolveDevicePath surfaces its no-path branch.
-            findIpodDevices: async () => [],
-            getUuidForMountPoint: async () => null,
+            scan: async () => [],
           }),
       })
     );

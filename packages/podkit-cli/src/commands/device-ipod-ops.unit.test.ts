@@ -89,8 +89,8 @@ function fakeManager(overrides: Partial<DeviceManager> = {}): DeviceManager {
   return {
     platform: 'test',
     isSupported: true,
-    findIpodDevices: async () => [],
-    findByVolumeUuid: async () => null,
+    scan: async () => [],
+    locate: async () => null,
     ...overrides,
   } as DeviceManager;
 }

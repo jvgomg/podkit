@@ -226,14 +226,17 @@ function mockManager(devices: PlatformDeviceInfo[] = []): DeviceManager {
   return {
     platform: 'darwin',
     isSupported: true,
-    listDevices: async () => devices,
-    findIpodDevices: async () => devices,
-    findByVolumeUuid: async (uuid: string) => devices.find((d) => d.volumeUuid === uuid) ?? null,
-    getUuidForMountPoint: async (mountPoint: string) => {
-      const device = devices.find(
-        (d) => d.isMounted && d.mountPoint?.replace(/\/+$/, '') === mountPoint.replace(/\/+$/, '')
+    scan: async () => devices,
+    locate: async (target) => {
+      if ('volumeUuid' in target) {
+        return devices.find((d) => d.volumeUuid === target.volumeUuid) ?? null;
+      }
+      return (
+        devices.find(
+          (d) =>
+            d.isMounted && d.mountPoint?.replace(/\/+$/, '') === target.path.replace(/\/+$/, '')
+        ) ?? null
       );
-      return device?.volumeUuid ?? null;
     },
     eject: async () => ({ success: false, device: 'mock', error: 'mock' }),
     mount: async () => ({ success: false, device: 'mock', error: 'mock' }),

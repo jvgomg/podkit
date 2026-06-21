@@ -112,12 +112,10 @@ function fakeManager(overrides: Partial<DeviceManager> = {}): DeviceManager {
     isSupported: true,
     eject: notImplemented as DeviceManager['eject'],
     mount: notImplemented as DeviceManager['mount'],
-    listDevices: async () => [],
-    findIpodDevices: async () => [],
-    findByVolumeUuid: async () => null,
+    scan: async () => [],
+    locate: async () => null,
     getManualInstructions: () => '',
     requiresPrivileges: () => false,
-    getUuidForMountPoint: async () => null,
     assessDevice: async () => null,
   };
   return { ...base, ...overrides } as DeviceManager;
@@ -469,24 +467,27 @@ describe('runDeviceAdd: iPod flow', () => {
       getDeviceManager: () =>
         fakeManager({
           isSupported: true,
-          findIpodDevices: async () => [
-            {
-              identifier: 'disk2s2',
-              volumeName: 'iPodA',
-              volumeUuid: 'uuid-a',
-              storage: { sizeBytes: 0 },
-              isMounted: true,
-              mountPoint: '/Volumes/iPodA',
-            } as Awaited<ReturnType<DeviceManager['findIpodDevices']>>[number],
-            {
-              identifier: 'disk3s2',
-              volumeName: 'iPodB',
-              volumeUuid: 'uuid-b',
-              storage: { sizeBytes: 0 },
-              isMounted: true,
-              mountPoint: '/Volumes/iPodB',
-            } as Awaited<ReturnType<DeviceManager['findIpodDevices']>>[number],
-          ],
+          scan: async (opts) =>
+            opts?.kinds?.includes('ipod')
+              ? [
+                  {
+                    identifier: 'disk2s2',
+                    volumeName: 'iPodA',
+                    volumeUuid: 'uuid-a',
+                    storage: { sizeBytes: 0 },
+                    isMounted: true,
+                    mountPoint: '/Volumes/iPodA',
+                  } as Awaited<ReturnType<DeviceManager['scan']>>[number],
+                  {
+                    identifier: 'disk3s2',
+                    volumeName: 'iPodB',
+                    volumeUuid: 'uuid-b',
+                    storage: { sizeBytes: 0 },
+                    isMounted: true,
+                    mountPoint: '/Volumes/iPodB',
+                  } as Awaited<ReturnType<DeviceManager['scan']>>[number],
+                ]
+              : [],
         }),
     };
     await runAdd(ctx, { type: 'ipod' }, out, deps);
@@ -522,7 +523,7 @@ describe('runDeviceAdd: iPod flow', () => {
     const ctx = makeContext({ device: 'd' });
     const { out, stdout, exitCode } = makeOut();
     const deps: DeviceAddDeps = {
-      getDeviceManager: () => fakeManager({ isSupported: true, findIpodDevices: async () => [] }),
+      getDeviceManager: () => fakeManager({ isSupported: true, scan: async () => [] }),
       loadCore: async () => {
         const real = await import('@podkit/core');
         // Route discoverConnectedDevices through the real orchestrator
@@ -561,7 +562,7 @@ describe('runDeviceAdd: iPod flow', () => {
     const ctx = makeContext({ device: 'd' });
     const { out, stdout, exitCode } = makeOut();
     const deps: DeviceAddDeps = {
-      getDeviceManager: () => fakeManager({ isSupported: true, findIpodDevices: async () => [] }),
+      getDeviceManager: () => fakeManager({ isSupported: true, scan: async () => [] }),
       loadCore: async () => {
         const real = await import('@podkit/core');
         return {
@@ -619,16 +620,19 @@ describe('runDeviceAdd: HFS+ on Linux refusal (TASK-317.12)', () => {
       getDeviceManager: () =>
         fakeManager({
           isSupported: true,
-          listDevices: async () => [
-            {
-              identifier: 'sdc2',
-              volumeName: '',
-              volumeUuid: '',
-              storage: { sizeBytes: 8_000_000_000, filesystem: 'hfsplus' },
-              isMounted: true,
-              mountPoint: dir,
-            },
-          ],
+          scan: async (opts) =>
+            opts?.kinds?.includes('ipod')
+              ? []
+              : [
+                  {
+                    identifier: 'sdc2',
+                    volumeName: '',
+                    volumeUuid: '',
+                    storage: { sizeBytes: 8_000_000_000, filesystem: 'hfsplus' },
+                    isMounted: true,
+                    mountPoint: dir,
+                  } as Awaited<ReturnType<DeviceManager['scan']>>[number],
+                ],
         }),
     };
 
@@ -657,16 +661,19 @@ describe('runDeviceAdd: HFS+ on Linux refusal (TASK-317.12)', () => {
       getDeviceManager: () =>
         fakeManager({
           isSupported: true,
-          findIpodDevices: async () => [
-            {
-              identifier: 'sdc2',
-              volumeName: '',
-              volumeUuid: '',
-              storage: { sizeBytes: 8_000_000_000, filesystem: 'hfsplus' },
-              isMounted: true,
-              mountPoint: '/media/james/disk',
-            } as Awaited<ReturnType<DeviceManager['findIpodDevices']>>[number],
-          ],
+          scan: async (opts) =>
+            opts?.kinds?.includes('ipod')
+              ? [
+                  {
+                    identifier: 'sdc2',
+                    volumeName: '',
+                    volumeUuid: '',
+                    storage: { sizeBytes: 8_000_000_000, filesystem: 'hfsplus' },
+                    isMounted: true,
+                    mountPoint: '/media/james/disk',
+                  } as Awaited<ReturnType<DeviceManager['scan']>>[number],
+                ]
+              : [],
           mount: async () => {
             throw new Error('mount() should not be called for HFS+ on Linux');
           },
@@ -722,17 +729,19 @@ describe('runDeviceAdd: HFS+ on Linux refusal (TASK-317.12)', () => {
       getDeviceManager: () =>
         fakeManager({
           isSupported: true,
-          listDevices: async () => [
-            {
-              identifier: 'disk6s2',
-              volumeName: 'TERAPOD',
-              volumeUuid: 'AAAA-BBBB',
-              storage: { sizeBytes: 80_000_000_000, filesystem: 'hfsplus' },
-              isMounted: true,
-              mountPoint: dir,
-            },
-          ],
-          findIpodDevices: async () => [],
+          scan: async (opts) =>
+            opts?.kinds?.includes('ipod')
+              ? []
+              : [
+                  {
+                    identifier: 'disk6s2',
+                    volumeName: 'TERAPOD',
+                    volumeUuid: 'AAAA-BBBB',
+                    storage: { sizeBytes: 80_000_000_000, filesystem: 'hfsplus' },
+                    isMounted: true,
+                    mountPoint: dir,
+                  } as Awaited<ReturnType<DeviceManager['scan']>>[number],
+                ],
         }),
       assessIdentity: async () => stubAssessment,
       ipodDatabase: {
@@ -784,29 +793,31 @@ describe('runDeviceAdd: HFS+ on Linux refusal (TASK-317.12)', () => {
       getDeviceManager: () =>
         fakeManager({
           isSupported: true,
-          listDevices: async () => [
-            {
-              identifier: 'sdb2',
-              volumeName: 'IPOD',
-              volumeUuid: 'AAAA-BBBB',
-              storage: { sizeBytes: 8_000_000_000, filesystem: 'vfat' },
-              isMounted: true,
-              mountPoint: dir,
-            },
-          ],
-          // findIpodDevices is consulted for the volumeUuid lookup in the
-          // --path branch; mirror the listDevices record so TASK-317.15
-          // doesn't refuse on missing UUID.
-          findIpodDevices: async () => [
-            {
-              identifier: 'sdb2',
-              volumeName: 'IPOD',
-              volumeUuid: 'AAAA-BBBB',
-              storage: { sizeBytes: 8_000_000_000, filesystem: 'vfat' },
-              isMounted: true,
-              mountPoint: dir,
-            } as Awaited<ReturnType<DeviceManager['findIpodDevices']>>[number],
-          ],
+          // scan({ kinds: ['ipod'] }) is consulted for the volumeUuid lookup
+          // in the --path branch; mirror the plain scan() record so
+          // TASK-317.15 doesn't refuse on missing UUID.
+          scan: async (opts) =>
+            opts?.kinds?.includes('ipod')
+              ? [
+                  {
+                    identifier: 'sdb2',
+                    volumeName: 'IPOD',
+                    volumeUuid: 'AAAA-BBBB',
+                    storage: { sizeBytes: 8_000_000_000, filesystem: 'vfat' },
+                    isMounted: true,
+                    mountPoint: dir,
+                  } as Awaited<ReturnType<DeviceManager['scan']>>[number],
+                ]
+              : [
+                  {
+                    identifier: 'sdb2',
+                    volumeName: 'IPOD',
+                    volumeUuid: 'AAAA-BBBB',
+                    storage: { sizeBytes: 8_000_000_000, filesystem: 'vfat' },
+                    isMounted: true,
+                    mountPoint: dir,
+                  } as Awaited<ReturnType<DeviceManager['scan']>>[number],
+                ],
         }),
       assessIdentity: async () => stubAssessment,
       ipodDatabase: {
@@ -878,26 +889,28 @@ describe('runDeviceAdd: missing volumeUuid refusal (TASK-317.15)', () => {
           isSupported: true,
           // Note: HFS+ is caught earlier by TASK-317.12. Use an unusual
           // filesystem (e.g. exfat) to exercise this catch-all branch.
-          listDevices: async () => [
-            {
-              identifier: 'sdc2',
-              volumeName: 'IPOD',
-              volumeUuid: '',
-              storage: { sizeBytes: 8_000_000_000, filesystem: 'exfat' },
-              isMounted: true,
-              mountPoint: dir,
-            },
-          ],
-          findIpodDevices: async () => [
-            {
-              identifier: 'sdc2',
-              volumeName: 'IPOD',
-              volumeUuid: '',
-              storage: { sizeBytes: 8_000_000_000, filesystem: 'exfat' },
-              isMounted: true,
-              mountPoint: dir,
-            } as Awaited<ReturnType<DeviceManager['findIpodDevices']>>[number],
-          ],
+          scan: async (opts) =>
+            opts?.kinds?.includes('ipod')
+              ? [
+                  {
+                    identifier: 'sdc2',
+                    volumeName: 'IPOD',
+                    volumeUuid: '',
+                    storage: { sizeBytes: 8_000_000_000, filesystem: 'exfat' },
+                    isMounted: true,
+                    mountPoint: dir,
+                  } as Awaited<ReturnType<DeviceManager['scan']>>[number],
+                ]
+              : [
+                  {
+                    identifier: 'sdc2',
+                    volumeName: 'IPOD',
+                    volumeUuid: '',
+                    storage: { sizeBytes: 8_000_000_000, filesystem: 'exfat' },
+                    isMounted: true,
+                    mountPoint: dir,
+                  } as Awaited<ReturnType<DeviceManager['scan']>>[number],
+                ],
         }),
       assessIdentity: async () => stubAssessment,
       ipodDatabase: {
@@ -927,18 +940,21 @@ describe('runDeviceAdd: missing volumeUuid refusal (TASK-317.15)', () => {
       getDeviceManager: () =>
         fakeManager({
           isSupported: true,
-          findIpodDevices: async () => [
-            {
-              identifier: 'sdc2',
-              volumeName: 'IPOD',
-              // Empty UUID — simulates lsblk not surfacing one (corrupt
-              // FAT32 table, unusual layout, mass-storage with no FS UUID).
-              volumeUuid: '',
-              storage: { sizeBytes: 8_000_000_000, filesystem: 'vfat' },
-              isMounted: true,
-              mountPoint: '/media/james/IPOD',
-            } as Awaited<ReturnType<DeviceManager['findIpodDevices']>>[number],
-          ],
+          scan: async (opts) =>
+            opts?.kinds?.includes('ipod')
+              ? [
+                  {
+                    identifier: 'sdc2',
+                    volumeName: 'IPOD',
+                    // Empty UUID — simulates lsblk not surfacing one (corrupt
+                    // FAT32 table, unusual layout, mass-storage with no FS UUID).
+                    volumeUuid: '',
+                    storage: { sizeBytes: 8_000_000_000, filesystem: 'vfat' },
+                    isMounted: true,
+                    mountPoint: '/media/james/IPOD',
+                  } as Awaited<ReturnType<DeviceManager['scan']>>[number],
+                ]
+              : [],
           mount: async () => {
             throw new Error('mount() should not be called when volumeUuid is missing');
           },
@@ -970,16 +986,19 @@ describe('runDeviceAdd: missing volumeUuid refusal (TASK-317.15)', () => {
       getDeviceManager: () =>
         fakeManager({
           isSupported: true,
-          findIpodDevices: async () => [
-            {
-              identifier: 'sdc2',
-              volumeName: 'IPOD',
-              volumeUuid: 'manual-L21lZGlhL2phbWVz',
-              storage: { sizeBytes: 8_000_000_000, filesystem: 'vfat' },
-              isMounted: true,
-              mountPoint: '/media/james/IPOD',
-            } as Awaited<ReturnType<DeviceManager['findIpodDevices']>>[number],
-          ],
+          scan: async (opts) =>
+            opts?.kinds?.includes('ipod')
+              ? [
+                  {
+                    identifier: 'sdc2',
+                    volumeName: 'IPOD',
+                    volumeUuid: 'manual-L21lZGlhL2phbWVz',
+                    storage: { sizeBytes: 8_000_000_000, filesystem: 'vfat' },
+                    isMounted: true,
+                    mountPoint: '/media/james/IPOD',
+                  } as Awaited<ReturnType<DeviceManager['scan']>>[number],
+                ]
+              : [],
         }),
     };
 
@@ -997,16 +1016,19 @@ describe('runDeviceAdd: missing volumeUuid refusal (TASK-317.15)', () => {
       getDeviceManager: () =>
         fakeManager({
           isSupported: true,
-          findIpodDevices: async () => [
-            {
-              identifier: 'sdc2',
-              volumeName: 'IPOD',
-              volumeUuid: '968A-2063',
-              storage: { sizeBytes: 8_000_000_000, filesystem: 'vfat' },
-              isMounted: true,
-              mountPoint: '/media/james/IPOD',
-            } as Awaited<ReturnType<DeviceManager['findIpodDevices']>>[number],
-          ],
+          scan: async (opts) =>
+            opts?.kinds?.includes('ipod')
+              ? [
+                  {
+                    identifier: 'sdc2',
+                    volumeName: 'IPOD',
+                    volumeUuid: '968A-2063',
+                    storage: { sizeBytes: 8_000_000_000, filesystem: 'vfat' },
+                    isMounted: true,
+                    mountPoint: '/media/james/IPOD',
+                  } as Awaited<ReturnType<DeviceManager['scan']>>[number],
+                ]
+              : [],
         }),
       assessIdentity: async () => stubAssessment,
       ipodDatabase: {
@@ -1113,16 +1135,19 @@ describe('runDeviceAdd: nano 2G slick-flow (cascade + combined prompt)', () => {
       getDeviceManager: () =>
         fakeManager({
           isSupported: true,
-          findIpodDevices: async () => [
-            {
-              identifier: 'disk6s2',
-              volumeName: 'PARTY IPOD',
-              volumeUuid: 'NANO-2G-UUID',
-              storage: { sizeBytes: 4_000_000_000 },
-              isMounted: true,
-              mountPoint: '/Volumes/PARTY IPOD',
-            } as Awaited<ReturnType<DeviceManager['findIpodDevices']>>[number],
-          ],
+          scan: async (opts) =>
+            opts?.kinds?.includes('ipod')
+              ? [
+                  {
+                    identifier: 'disk6s2',
+                    volumeName: 'PARTY IPOD',
+                    volumeUuid: 'NANO-2G-UUID',
+                    storage: { sizeBytes: 4_000_000_000 },
+                    isMounted: true,
+                    mountPoint: '/Volumes/PARTY IPOD',
+                  } as Awaited<ReturnType<DeviceManager['scan']>>[number],
+                ]
+              : [],
         }),
       assessIdentity: async () => makeNano2GAssessment({ firmwareInquiry: 'missing' }),
       ensureSysInfoExtended: async () => {
@@ -1163,16 +1188,19 @@ describe('runDeviceAdd: nano 2G slick-flow (cascade + combined prompt)', () => {
       getDeviceManager: () =>
         fakeManager({
           isSupported: true,
-          findIpodDevices: async () => [
-            {
-              identifier: 'disk6s2',
-              volumeName: 'PARTY IPOD',
-              volumeUuid: 'NANO-2G-UUID',
-              storage: { sizeBytes: 4_000_000_000 },
-              isMounted: true,
-              mountPoint: '/Volumes/PARTY IPOD',
-            } as Awaited<ReturnType<DeviceManager['findIpodDevices']>>[number],
-          ],
+          scan: async (opts) =>
+            opts?.kinds?.includes('ipod')
+              ? [
+                  {
+                    identifier: 'disk6s2',
+                    volumeName: 'PARTY IPOD',
+                    volumeUuid: 'NANO-2G-UUID',
+                    storage: { sizeBytes: 4_000_000_000 },
+                    isMounted: true,
+                    mountPoint: '/Volumes/PARTY IPOD',
+                  } as Awaited<ReturnType<DeviceManager['scan']>>[number],
+                ]
+              : [],
         }),
       assessIdentity: async () => makeNano2GAssessment({ firmwareInquiry: 'missing' }),
       ensureSysInfoExtended: async () => {
@@ -1202,16 +1230,19 @@ describe('runDeviceAdd: nano 2G slick-flow (cascade + combined prompt)', () => {
       getDeviceManager: () =>
         fakeManager({
           isSupported: true,
-          findIpodDevices: async () => [
-            {
-              identifier: 'disk6s2',
-              volumeName: 'PARTY IPOD',
-              volumeUuid: 'NANO-2G-UUID',
-              storage: { sizeBytes: 4_000_000_000 },
-              isMounted: true,
-              mountPoint: '/Volumes/PARTY IPOD',
-            } as Awaited<ReturnType<DeviceManager['findIpodDevices']>>[number],
-          ],
+          scan: async (opts) =>
+            opts?.kinds?.includes('ipod')
+              ? [
+                  {
+                    identifier: 'disk6s2',
+                    volumeName: 'PARTY IPOD',
+                    volumeUuid: 'NANO-2G-UUID',
+                    storage: { sizeBytes: 4_000_000_000 },
+                    isMounted: true,
+                    mountPoint: '/Volumes/PARTY IPOD',
+                  } as Awaited<ReturnType<DeviceManager['scan']>>[number],
+                ]
+              : [],
         }),
       assessIdentity: async () => makeNano2GAssessment({ firmwareInquiry: 'missing' }),
       ensureSysInfoExtended: async () => {
@@ -1248,16 +1279,19 @@ describe('runDeviceAdd: nano 2G slick-flow (cascade + combined prompt)', () => {
         getDeviceManager: () =>
           fakeManager({
             isSupported: true,
-            findIpodDevices: async () => [
-              {
-                identifier: 'disk6s2',
-                volumeName: 'PARTY IPOD',
-                volumeUuid: 'NANO-2G-UUID',
-                storage: { sizeBytes: 4_000_000_000, filesystem: 'vfat' },
-                isMounted: true,
-                mountPoint: mountDir,
-              } as Awaited<ReturnType<DeviceManager['findIpodDevices']>>[number],
-            ],
+            scan: async (opts) =>
+              opts?.kinds?.includes('ipod')
+                ? [
+                    {
+                      identifier: 'disk6s2',
+                      volumeName: 'PARTY IPOD',
+                      volumeUuid: 'NANO-2G-UUID',
+                      storage: { sizeBytes: 4_000_000_000, filesystem: 'vfat' },
+                      isMounted: true,
+                      mountPoint: mountDir,
+                    } as Awaited<ReturnType<DeviceManager['scan']>>[number],
+                  ]
+                : [],
           }),
         assessIdentity: async () => makeNano2GAssessment({ firmwareInquiry: 'missing' }),
         ensureSysInfoExtended: async () => {
@@ -1320,16 +1354,19 @@ describe('runDeviceAdd: nano 2G slick-flow (cascade + combined prompt)', () => {
       getDeviceManager: () =>
         fakeManager({
           isSupported: true,
-          findIpodDevices: async () => [
-            {
-              identifier: 'disk1s2',
-              volumeName: 'TOUCH',
-              volumeUuid: 'TOUCH-UUID',
-              storage: { sizeBytes: 0 },
-              isMounted: true,
-              mountPoint: '/Volumes/TOUCH',
-            } as Awaited<ReturnType<DeviceManager['findIpodDevices']>>[number],
-          ],
+          scan: async (opts) =>
+            opts?.kinds?.includes('ipod')
+              ? [
+                  {
+                    identifier: 'disk1s2',
+                    volumeName: 'TOUCH',
+                    volumeUuid: 'TOUCH-UUID',
+                    storage: { sizeBytes: 0 },
+                    isMounted: true,
+                    mountPoint: '/Volumes/TOUCH',
+                  } as Awaited<ReturnType<DeviceManager['scan']>>[number],
+                ]
+              : [],
         }),
       assessIdentity: async () => unsupportedAssessment,
       ipodDatabase: FAKE_IPOD_DB,
@@ -1372,16 +1409,19 @@ describe('runDeviceAdd: nano 2G slick-flow (cascade + combined prompt)', () => {
       getDeviceManager: () =>
         fakeManager({
           isSupported: true,
-          findIpodDevices: async () => [
-            {
-              identifier: 'disk1s2',
-              volumeName: 'TOUCH',
-              volumeUuid: 'TOUCH-UUID',
-              storage: { sizeBytes: 0 },
-              isMounted: true,
-              mountPoint: '/Volumes/TOUCH',
-            } as Awaited<ReturnType<DeviceManager['findIpodDevices']>>[number],
-          ],
+          scan: async (opts) =>
+            opts?.kinds?.includes('ipod')
+              ? [
+                  {
+                    identifier: 'disk1s2',
+                    volumeName: 'TOUCH',
+                    volumeUuid: 'TOUCH-UUID',
+                    storage: { sizeBytes: 0 },
+                    isMounted: true,
+                    mountPoint: '/Volumes/TOUCH',
+                  } as Awaited<ReturnType<DeviceManager['scan']>>[number],
+                ]
+              : [],
         }),
       assessIdentity: async () => unsupportedAssessment,
       ipodDatabase: FAKE_IPOD_DB,

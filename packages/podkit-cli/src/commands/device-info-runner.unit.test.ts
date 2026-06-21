@@ -73,9 +73,8 @@ function fakeManager(overrides: Partial<DeviceManager> = {}): DeviceManager {
   const base: Partial<DeviceManager> = {
     platform: 'test',
     isSupported: true,
-    findIpodDevices: async () => [],
-    findByVolumeUuid: async () => null,
-    getUuidForMountPoint: async () => null,
+    scan: async () => [],
+    locate: async () => null,
   };
   return { ...base, ...overrides } as DeviceManager;
 }
@@ -141,7 +140,10 @@ describe('runDeviceInfo', () => {
           managerCalled = true;
           return fakeManager({
             isSupported: true,
-            getUuidForMountPoint: async () => 'STUB-UUID',
+            locate: async () =>
+              ({ volumeUuid: 'STUB-UUID', isMounted: false }) as Awaited<
+                ReturnType<DeviceManager['locate']>
+              >,
           });
         },
       };

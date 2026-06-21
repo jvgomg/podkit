@@ -85,8 +85,8 @@ function fakeManager(): DeviceManager {
   return {
     platform: 'test',
     isSupported: true,
-    findIpodDevices: async () => [],
-    findByVolumeUuid: async () => null,
+    scan: async () => [],
+    locate: async () => null,
   } as unknown as DeviceManager;
 }
 

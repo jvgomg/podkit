@@ -9,13 +9,14 @@
  *
  * ## USB-only devices
  *
- * `findIpodDevices()` returns only iPods that lsblk sees as mounted block
- * devices. The complementary USB-walk path that surfaces vendor-only Apple
- * devices (iPod 6G in restore mode, FunctionFS-synthesised VM-test personas
- * with `massStorageBackingFile: null`) lives in
+ * `scan({ kinds: ['ipod'] })` returns only iPods that lsblk sees as mounted
+ * block devices. The complementary USB-walk path that surfaces vendor-only
+ * Apple devices (iPod 6G in restore mode, FunctionFS-synthesised VM-test
+ * personas with `massStorageBackingFile: null`) lives in
  * `../usb-enumeration.ts` (`enumerateUsb`, which reads
- * `/sys/bus/usb/devices/` directly) and is composed with `findIpodDevices()`
- * by the `device scan` CLI runner. See TASK-334 for the rationale: the join
+ * `/sys/bus/usb/devices/` directly) and is composed with
+ * `scan({ kinds: ['ipod'] })` by the `device scan` CLI runner. See TASK-334
+ * for the rationale: the join
  * happens at the scan layer so the same composition works on macOS, where
  * the USB walk reads `system_profiler` output.
  */
@@ -250,6 +251,24 @@ export function parseLsblkJson(jsonString: string): PlatformDeviceInfo[] {
   return devices;
 }
 
+/**
+ * Parse one line of `findmnt --pairs` output (`KEY="value" KEY="value" …`)
+ * into a record. Values are double-quoted; embedded `\"` is unescaped. Empty
+ * values (`UUID=""`) are preserved as empty strings so UUID-less mounts stay
+ * distinguishable from absent columns.
+ *
+ * Exported for unit testing — pure, no I/O.
+ */
+export function parseFindmntPairs(line: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  const re = /(\w+)="((?:[^"\\]|\\.)*)"/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(line)) !== null) {
+    out[match[1]!] = match[2]!.replace(/\\(.)/g, '$1');
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Partition suffix stripping
 // ---------------------------------------------------------------------------
@@ -399,12 +418,25 @@ export class LinuxDeviceManager implements DeviceManager {
    */
   private readonly subprocess: SubprocessRunner;
 
+  /**
+   * Resolver for the `/sys` USB fingerprint of a block device, injectable so
+   * tests can stand in an Apple-vendor descriptor without a real sysfs tree.
+   * Defaults to the real `findUsbIdentity` (`/sys/bus/usb` walk).
+   */
+  private readonly usbIdentityResolver: (blockDeviceName: string) => UsbFingerprint | undefined;
+
   // Lazy-cached tool availability
   private _lsblkAvailable: boolean | null = null;
   private _udisksctlAvailable: boolean | null = null;
 
-  constructor(opts: { subprocess?: SubprocessRunner } = {}) {
+  constructor(
+    opts: {
+      subprocess?: SubprocessRunner;
+      usbIdentityResolver?: (blockDeviceName: string) => UsbFingerprint | undefined;
+    } = {}
+  ) {
     this.subprocess = opts.subprocess ?? defaultSubprocessRunner;
+    this.usbIdentityResolver = opts.usbIdentityResolver ?? findUsbIdentity;
   }
 
   // ------------------------------------------------------------------
@@ -453,7 +485,11 @@ export class LinuxDeviceManager implements DeviceManager {
   // Device enumeration
   // ------------------------------------------------------------------
 
-  async listDevices(): Promise<PlatformDeviceInfo[]> {
+  /**
+   * Enumerate every attached partition (the legacy `listDevices` body),
+   * shared by `scan()` and the internal device-lookup helpers.
+   */
+  private async enumerateDevices(): Promise<PlatformDeviceInfo[]> {
     await this.requireLsblk();
 
     const { stdout, code } = await execCommand(
@@ -469,25 +505,128 @@ export class LinuxDeviceManager implements DeviceManager {
     return parseLsblkJson(stdout);
   }
 
-  async findByVolumeUuid(uuid: string): Promise<PlatformDeviceInfo | null> {
-    const devices = await this.listDevices();
-    const normalizedUuid = uuid.toUpperCase();
+  async scan(options?: {
+    kinds?: ReadonlyArray<'ipod' | 'mass-storage'>;
+  }): Promise<PlatformDeviceInfo[]> {
+    const devices = await this.enumerateDevices();
+    // Only the `ipod` filter is implemented at this layer; `mass-storage`
+    // filtering needs preset matching that lives above the manager. Any
+    // `kinds` not including `'ipod'` (including `['mass-storage']`) returns the
+    // full enumerate. The iPod path additionally attaches the /sys USB
+    // fingerprint (the reconciler depends on it); plain `scan()` does not.
+    if (!options?.kinds?.includes('ipod')) {
+      return devices;
+    }
+    return this.filterIpods(devices);
+  }
 
-    for (const device of devices) {
-      if (device.volumeUuid.toUpperCase() === normalizedUuid) {
-        return device;
+  async locate(
+    target: { volumeUuid: string } | { path: string }
+  ): Promise<PlatformDeviceInfo | null> {
+    return 'volumeUuid' in target
+      ? this.locateByVolumeUuid(target.volumeUuid)
+      : this.locateByPath(target.path);
+  }
+
+  /**
+   * Resolve a Volume UUID directly to its device node, then run a single
+   * `lsblk` on that node — avoids enumerating every attached device.
+   * Prefers `/dev/disk/by-uuid/<uuid>` (realpath) and falls back to
+   * `blkid -U <uuid>`. Returns `null` when the UUID resolves to nothing or
+   * when the probe binary is missing (non-zero exit → degrade, not throw).
+   */
+  private async locateByVolumeUuid(uuid: string): Promise<PlatformDeviceInfo | null> {
+    let nodePath: string | null = null;
+
+    const byUuidLink = `/dev/disk/by-uuid/${uuid}`;
+    try {
+      if (existsSync(byUuidLink)) {
+        nodePath = realpathSync(byUuidLink);
       }
+    } catch {
+      nodePath = null;
     }
 
-    return null;
+    if (!nodePath) {
+      const { stdout, code } = await execCommand('blkid', ['-U', uuid], this.subprocess);
+      if (code !== 0) return null;
+      const resolved = stdout.trim();
+      if (!resolved) return null;
+      nodePath = resolved;
+    }
+
+    // Intentionally no `requireLsblk()` here (unlike enumerate/mount/eject):
+    // `locate` degrades to null on a missing binary rather than throwing.
+    const { stdout, code } = await execCommand(
+      'lsblk',
+      ['--json', '-b', '-o', 'NAME,UUID,LABEL,MOUNTPOINT,FSTYPE,SIZE,PHY-SEC,TYPE', nodePath],
+      this.subprocess
+    );
+    if (code !== 0) return null;
+
+    const devices = parseLsblkJson(stdout);
+    const normalizedUuid = uuid.toUpperCase();
+    return devices.find((d) => d.volumeUuid.toUpperCase() === normalizedUuid) ?? null;
+  }
+
+  /**
+   * Resolve a path to the volume mounted at (or containing) it via a single
+   * `findmnt`, then synthesise a `PlatformDeviceInfo` from its source / UUID /
+   * label / fstype. UUID-less but mounted volumes (tmpfs / Docker bind /
+   * FunctionFS) return a record with `volumeUuid: ''` and a valid mount point
+   * so path-mode resolution can proceed. Returns `null` when nothing is
+   * mounted at the target or the binary is missing.
+   */
+  private async locateByPath(path: string): Promise<PlatformDeviceInfo | null> {
+    // One findmnt resolves the path to its enclosing mount. `--pairs` emits
+    // `KEY="value"` so empty fields (UUID-less tmpfs / FunctionFS) stay
+    // unambiguous — positional splitting on whitespace would collapse them.
+    // This keeps `locate({ path })` to exactly one direct OS call.
+    const { stdout, code } = await execCommand(
+      'findmnt',
+      ['--pairs', '-o', 'SOURCE,UUID,LABEL,FSTYPE,TARGET', '--target', path],
+      this.subprocess
+    );
+    if (code !== 0) return null;
+
+    const line = stdout.split('\n').find((l) => l.trim() !== '');
+    if (!line) return null;
+
+    const pairs = parseFindmntPairs(line);
+    const source = pairs['SOURCE'] ?? '';
+    const uuid = pairs['UUID'] ?? '';
+    const label = pairs['LABEL'] ?? '';
+    const fstype = pairs['FSTYPE'] ?? '';
+    const target = pairs['TARGET'] || path;
+
+    // A bare findmnt --target that resolves nothing still exits 0 with empty
+    // output; guard against a row that carries no mount target.
+    if (!source && !target) return null;
+
+    // Derive a kernel identifier (sda1) from the device-node source.
+    const identifier = source.startsWith('/dev/') ? source.slice('/dev/'.length) : source;
+
+    return {
+      identifier,
+      volumeName: label,
+      volumeUuid: uuid,
+      mediaType: '',
+      storage: { sizeBytes: 0, ...(fstype ? { filesystem: fstype } : {}) },
+      isMounted: true,
+      mountPoint: target,
+    };
   }
 
   // ------------------------------------------------------------------
   // iPod detection
   // ------------------------------------------------------------------
 
-  async findIpodDevices(): Promise<PlatformDeviceInfo[]> {
-    const devices = await this.listDevices();
+  /**
+   * Classify enumerated partitions down to iPods, attaching the `/sys` USB
+   * fingerprint (`findUsbIdentity`) so the discovery reconciler can fold each
+   * iPod with its USB-inquiry record by serial number.
+   */
+  private filterIpods(devices: PlatformDeviceInfo[]): PlatformDeviceInfo[] {
     const ipods: PlatformDeviceInfo[] = [];
 
     for (const device of devices) {
@@ -495,7 +634,7 @@ export class LinuxDeviceManager implements DeviceManager {
       // Carry the fingerprint forward on the device record so the discovery
       // reconciliation step (`reconcileDiscoveredDevices`) can fold this entry
       // with the matching USB-inquiry record by serial number.
-      const usb = findUsbIdentity(device.identifier);
+      const usb = this.usbIdentityResolver(device.identifier);
       if (usb?.vendorId === '05ac') {
         ipods.push({ ...device, usb });
         continue;
@@ -533,7 +672,7 @@ export class LinuxDeviceManager implements DeviceManager {
     const baseName = deviceId.replace('/dev/', '');
 
     // Get device info to check current state and volume name
-    const devices = await this.listDevices();
+    const devices = await this.enumerateDevices();
     const device = devices.find((d) => d.identifier === baseName);
 
     // Already mounted — return existing mount point.
@@ -664,7 +803,7 @@ export class LinuxDeviceManager implements DeviceManager {
     let wholeDiskPath: string | undefined;
     try {
       await this.requireLsblk();
-      const devices = await this.listDevices();
+      const devices = await this.enumerateDevices();
       const device = devices.find((d) => d.mountPoint === mountPoint);
       if (device) {
         devicePath = `/dev/${device.identifier}`;
@@ -750,27 +889,6 @@ export class LinuxDeviceManager implements DeviceManager {
   }
 
   // ------------------------------------------------------------------
-  // UUID lookup by mount point
-  // ------------------------------------------------------------------
-
-  async getUuidForMountPoint(mountPoint: string): Promise<string | null> {
-    const devices = await this.listDevices();
-    const normalized = mountPoint.replace(/\/+$/, '');
-
-    for (const device of devices) {
-      // Type narrowing on `isMounted` makes `mountPoint` non-nullable.
-      if (device.isMounted) {
-        const deviceNormalized = device.mountPoint.replace(/\/+$/, '');
-        if (deviceNormalized === normalized) {
-          return device.volumeUuid || null;
-        }
-      }
-    }
-
-    return null;
-  }
-
-  // ------------------------------------------------------------------
   // Device assessment
   // ------------------------------------------------------------------
 
@@ -793,7 +911,7 @@ export class LinuxDeviceManager implements DeviceManager {
     // Get device info from lsblk
     let devices: PlatformDeviceInfo[];
     try {
-      devices = await this.listDevices();
+      devices = await this.enumerateDevices();
     } catch {
       return null;
     }
@@ -802,7 +920,7 @@ export class LinuxDeviceManager implements DeviceManager {
     if (!device) return null;
 
     // Get USB identity from /sys
-    const usb = findUsbIdentity(baseName);
+    const usb = this.usbIdentityResolver(baseName);
 
     const iFlash = detectIFlash(device.storage.sizeBytes, device.storage.blockSizeBytes ?? 512);
 

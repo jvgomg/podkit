@@ -82,13 +82,11 @@ function fakeManager(overrides: Partial<DeviceManager> = {}): DeviceManager {
     isSupported: true,
     eject: notImplemented as DeviceManager['eject'],
     mount: notImplemented as DeviceManager['mount'],
-    listDevices: async () => [],
-    findIpodDevices: async () => [],
-    findByVolumeUuid: async () => null,
+    scan: async () => [],
+    locate: async () => null,
     getSiblingVolumes: async () => [],
     getManualInstructions: () => 'manual mount instructions',
     requiresPrivileges: () => false,
-    getUuidForMountPoint: async () => null,
     assessDevice: async () => null,
   };
   return { ...base, ...overrides } as DeviceManager;

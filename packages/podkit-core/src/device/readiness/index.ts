@@ -151,7 +151,7 @@ async function runIpodBlockPipeline(
   });
 
   // Stage 2: Partitioned
-  // findIpodDevices only returns partitioned devices. Surface the partition
+  // scan({ kinds: ['ipod'] }) only returns partitioned devices. Surface the partition
   // layout collected by the platform probe (lsblk on Linux, diskutil on
   // macOS) so JSON consumers can render "iPod with single partition (FAT32,
   // 32GB)" without re-probing the kernel (TASK-338).
@@ -551,7 +551,7 @@ function runUnsupported(discovered: DiscoveredDeviceUnsupported): ReadinessResul
  *
  * Falls back to the historical `{ identifier }` shape when no layout was
  * captured by the probe — preserves the existing contract for callers that
- * synthesise a `PlatformDeviceInfo` without going through `listDevices()`.
+ * synthesise a `PlatformDeviceInfo` without going through `scan()`.
  */
 function buildPartitionStageDetails(device: PlatformDeviceInfo): Record<string, unknown> {
   const layout = device.storage.partitionLayout;

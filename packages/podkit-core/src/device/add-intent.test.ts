@@ -169,7 +169,7 @@ function emptyManager(): DeviceManager {
   return {
     platform: 'test',
     isSupported: true,
-    findIpodDevices: async () => [],
+    scan: async () => [],
   } as unknown as DeviceManager;
 }
 
@@ -205,7 +205,7 @@ describe('suggestAddIntents', () => {
     const unsupportedManager = {
       platform: 'test',
       isSupported: false,
-      findIpodDevices: async () => [],
+      scan: async () => [],
     } as unknown as DeviceManager;
     const intents = await suggestAddIntents({
       deviceManager: unsupportedManager,

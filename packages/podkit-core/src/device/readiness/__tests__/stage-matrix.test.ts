@@ -377,7 +377,7 @@ describe('readiness pipeline — partition stage (ACs #4–#5)', () => {
   });
 
   it('#4 partition pass-path falls back to identifier-only when no layout was captured by the probe (legacy/synthesised PlatformDeviceInfo)', async () => {
-    // Callers that synthesise a `PlatformDeviceInfo` outside `listDevices()`
+    // Callers that synthesise a `PlatformDeviceInfo` outside `scan()`
     // (e.g. older doctor flows, tests that pre-date TASK-338) won't carry a
     // `partitionLayout` field. The pipeline preserves the historical
     // `{ identifier }` shape so existing JSON consumers don't see a sudden

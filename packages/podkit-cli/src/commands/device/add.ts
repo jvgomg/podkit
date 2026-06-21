@@ -611,7 +611,7 @@ export async function runDeviceAdd(
     // (volumeUuid lookup, DB init, config save). See TASK-317.12 +
     // `filesystem-policy.ts` for the policy rationale.
     if (manager.isSupported) {
-      const platformDevices = await manager.listDevices();
+      const platformDevices = await manager.scan();
       // Normalize trailing slashes — `--path /media/x/disk/` from shell completion
       // must still match `/media/x/disk` returned by lsblk.
       const stripSlash = (p: string) => p.replace(/\/+$/, '') || p;
@@ -721,7 +721,7 @@ export async function runDeviceAdd(
     let matchingFilesystem: string | null | undefined;
 
     if (manager.isSupported) {
-      const ipods = await manager.findIpodDevices();
+      const ipods = await manager.scan({ kinds: ['ipod'] });
       const matchingDevice = ipods.find((d) => d.isMounted && d.mountPoint === explicitPath);
       if (matchingDevice) {
         volumeUuid = matchingDevice.volumeUuid;
@@ -836,7 +836,7 @@ export async function runDeviceAdd(
 
   out.print('Scanning for attached devices...');
 
-  const ipods = await manager.findIpodDevices();
+  const ipods = await manager.scan({ kinds: ['ipod'] });
 
   if (ipods.length === 0) {
     // Disk scan found nothing. Before the generic "no iPod found" message,
@@ -1065,7 +1065,7 @@ export async function runDeviceAdd(
     if (mountResult.success && mountResult.mountPoint) {
       out.print(`Mounted at ${mountResult.mountPoint}.`);
       // Re-fetch device info so subsequent code has the mount point
-      const updated = await manager.findByVolumeUuid(ipod.volumeUuid);
+      const updated = await manager.locate({ volumeUuid: ipod.volumeUuid });
       if (updated?.isMounted) ipod = updated;
     } else if (mountResult.requiresSudo) {
       const explanationLines = assessment?.iFlash.confirmed

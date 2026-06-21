@@ -45,25 +45,21 @@ export class UnsupportedDeviceManager implements DeviceManager {
     };
   }
 
-  async listDevices(): Promise<PlatformDeviceInfo[]> {
+  async scan(_options?: {
+    kinds?: ReadonlyArray<'ipod' | 'mass-storage'>;
+  }): Promise<PlatformDeviceInfo[]> {
     return [];
   }
 
-  async findIpodDevices(): Promise<PlatformDeviceInfo[]> {
-    return [];
-  }
-
-  async findByVolumeUuid(_uuid: string): Promise<PlatformDeviceInfo | null> {
+  async locate(
+    _target: { volumeUuid: string } | { path: string }
+  ): Promise<PlatformDeviceInfo | null> {
     return null;
   }
 
   requiresPrivileges(_operation: 'mount' | 'eject'): boolean {
     // Unknown for unsupported platforms - operation will fail anyway
     return false;
-  }
-
-  async getUuidForMountPoint(_mountPoint: string): Promise<string | null> {
-    return null;
   }
 
   async assessDevice(_diskIdentifier: string): Promise<DeviceAssessment | null> {

@@ -268,7 +268,7 @@ export async function resolveDevicePath(options: DevicePathOptions): Promise<Dev
     // matches the expected UUID. Protects against syncing to the wrong iPod
     // when multiple devices share the same mount point.
     if (deviceIdentity?.volumeUuid) {
-      const device = await manager.findByVolumeUuid(deviceIdentity.volumeUuid);
+      const device = await manager.locate({ volumeUuid: deviceIdentity.volumeUuid });
       if (device) {
         // UUID device found — check if it's at the expected path.
         // Type narrowing on `isMounted` makes `mountPoint` non-nullable.
@@ -322,7 +322,7 @@ export async function resolveDevicePath(options: DevicePathOptions): Promise<Dev
 
   // Priority 3: Auto-detect via Volume UUID
   if (deviceIdentity?.volumeUuid) {
-    const device = await manager.findByVolumeUuid(deviceIdentity.volumeUuid);
+    const device = await manager.locate({ volumeUuid: deviceIdentity.volumeUuid });
 
     if (device) {
       if (requireMounted) {
@@ -406,7 +406,7 @@ async function matchPathToConfigDevice(
 ): Promise<{ matchedDevice: MatchedDevice; deviceInfo?: PlatformDeviceInfo } | null> {
   if (!config.devices) return null;
 
-  const uuid = await manager.getUuidForMountPoint(mountPath);
+  const uuid = (await manager.locate({ path: mountPath }))?.volumeUuid ?? null;
   if (!uuid) return null;
 
   const uuidMap = buildUuidMap(config.devices);
@@ -414,7 +414,7 @@ async function matchPathToConfigDevice(
   if (!match) return null;
 
   // Also get device info for the matched UUID
-  const deviceInfo = await manager.findByVolumeUuid(uuid);
+  const deviceInfo = await manager.locate({ volumeUuid: uuid });
 
   return {
     matchedDevice: { name: match.name, config: match.config },
@@ -434,7 +434,7 @@ export async function autoDetectDevice(
   manager: DeviceManager,
   config: import('../config/types.js').PodkitConfig
 ): Promise<DevicePathResult> {
-  const ipods = await manager.findIpodDevices();
+  const ipods = await manager.scan({ kinds: ['ipod'] });
 
   if (ipods.length === 0) {
     return {

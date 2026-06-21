@@ -24,13 +24,10 @@ function createMockManager(
     async mount() {
       return { success: false, device: '' };
     },
-    async listDevices() {
+    async scan() {
       return [];
     },
-    async findIpodDevices() {
-      return [];
-    },
-    async findByVolumeUuid() {
+    async locate() {
       return null;
     },
     getManualInstructions() {
@@ -38,9 +35,6 @@ function createMockManager(
     },
     requiresPrivileges() {
       return false;
-    },
-    async getUuidForMountPoint() {
-      return null;
     },
     async assessDevice() {
       return null;

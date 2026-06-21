@@ -30,7 +30,7 @@ import type { DeviceAssessment } from './assessment.js';
  *   `storage.partitionLayout`) — `storage` is always present; the inner fields
  *   stay optional because not every probe surfaces them.
  * - **USB** (`usb?: UsbFingerprint`) — present on Linux (sysfs walk attached
- *   in `findIpodDevices`). Absent on macOS, which reconciles via
+ *   in `scan({ kinds: ['ipod'] })`). Absent on macOS, which reconciles via
  *   `diskIdentifier` against the USB-inquiry stream in
  *   `reconcileDiscoveredDevices`.
  * - **Media type** (`mediaType?: string`) — top-level; populated by macOS only.
@@ -265,29 +265,43 @@ export interface DeviceManager {
   mount(deviceId: string, options?: MountOptions): Promise<MountResult>;
 
   /**
-   * List all attached disk devices
+   * Enumerate attached disk devices.
    *
+   * With no options, returns every attached block-device partition the
+   * platform surfaces (the legacy `listDevices` behaviour). When
+   * `options.kinds` includes `'ipod'`, the result is narrowed to devices
+   * classified as iPods (media type "iPod", `iPod_Control` directory, `IPOD`
+   * volume label, Apple USB vendor id, etc.) and — on Linux — each iPod entry
+   * carries the `/sys` USB fingerprint in `usb` so the discovery reconciler
+   * can fold it with the matching USB-inquiry record by serial number.
+   *
+   * NOTE: only the `'ipod'` filter is implemented. `'mass-storage'` filtering
+   * needs preset matching that lives above the manager, so a `kinds` that does
+   * not include `'ipod'` (including `['mass-storage']`) currently returns the
+   * full enumerate. No caller relies on mass-storage-only filtering yet.
+   *
+   * @param options.kinds - Device kinds to include. Omit for all devices.
    * @returns Array of device information
    */
-  listDevices(): Promise<PlatformDeviceInfo[]>;
+  scan(options?: { kinds?: ReadonlyArray<'ipod' | 'mass-storage'> }): Promise<PlatformDeviceInfo[]>;
 
   /**
-   * Find iPod devices among attached disks
+   * Locate a single device by Volume UUID or by mount path.
    *
-   * Uses heuristics like media type "iPod", FAT32 filesystem
-   * with iPod_Control directory, etc.
+   * Issues a direct OS query for the target rather than enumerating every
+   * attached device and filtering — `{ volumeUuid }` resolves the UUID to a
+   * device node, `{ path }` resolves the volume mounted at (or containing)
+   * the path. Returns `null` when the OS cannot resolve the target, or when
+   * the underlying probe binary is unavailable (degrades rather than throws).
    *
-   * @returns Array of iPod device information
-   */
-  findIpodDevices(): Promise<PlatformDeviceInfo[]>;
-
-  /**
-   * Find a device by its Volume UUID
+   * For UUID-less but mounted volumes (tmpfs / Docker bind / FunctionFS),
+   * `locate({ path })` returns a record with `volumeUuid: ''` and a valid
+   * `mountPoint` / `identifier` so path-mode resolution can proceed.
    *
-   * @param uuid - Volume UUID to search for
+   * @param target - `{ volumeUuid }` or `{ path }`
    * @returns Device info if found, null otherwise
    */
-  findByVolumeUuid(uuid: string): Promise<PlatformDeviceInfo | null>;
+  locate(target: { volumeUuid: string } | { path: string }): Promise<PlatformDeviceInfo | null>;
 
   /**
    * Get manual instructions for unsupported operations
@@ -306,18 +320,6 @@ export interface DeviceManager {
    * @returns true if elevated privileges are required but not available
    */
   requiresPrivileges(operation: 'mount' | 'eject'): boolean;
-
-  /**
-   * Get the Volume UUID for a given mount point
-   *
-   * Looks up what device is mounted at the specified path and returns
-   * its Volume UUID. Used for matching a CLI-provided path to a
-   * configured device.
-   *
-   * @param mountPoint - Path to the mounted device (e.g., "/Volumes/IPOD")
-   * @returns Volume UUID if found, null otherwise
-   */
-  getUuidForMountPoint(mountPoint: string): Promise<string | null>;
 
   /**
    * Assess a device's characteristics before mounting

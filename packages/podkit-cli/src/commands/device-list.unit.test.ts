@@ -74,7 +74,7 @@ function fakeManager(overrides: Partial<DeviceManager> = {}): DeviceManager {
   const base: Partial<DeviceManager> = {
     platform: 'test',
     isSupported: true,
-    findIpodDevices: async () => [],
+    scan: async () => [],
   };
   return { ...base, ...overrides } as DeviceManager;
 }

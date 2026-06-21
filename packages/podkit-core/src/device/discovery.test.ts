@@ -490,15 +490,13 @@ describe('discoverConnectedDevices', () => {
     return {
       platform: 'test',
       isSupported,
-      findIpodDevices: async () => ipods,
+      scan: async () => ipods,
       // Unused by discoverConnectedDevices but required by the interface:
       eject: async () => ({ success: true, device: '' }),
       mount: async () => ({ success: true, device: '' }),
-      listDevices: async () => ipods,
-      findByVolumeUuid: async () => null,
+      locate: async () => null,
       getManualInstructions: () => '',
       requiresPrivileges: () => false,
-      getUuidForMountPoint: async () => null,
       assessDevice: async () => null,
     } as unknown as DeviceManager;
   }

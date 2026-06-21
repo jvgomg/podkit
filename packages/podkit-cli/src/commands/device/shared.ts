@@ -377,7 +377,7 @@ export function parseFormat(filetype: string | undefined): string {
  * Build a minimal `PlatformDeviceInfo` for a path the user passed via `--device`.
  *
  * In path mode we already know where the device is, so we don't need to walk
- * every attached disk via `manager.findIpodDevices()` (which on macOS dispatches
+ * every attached disk via `manager.scan({ kinds: ['ipod'] })` (which on macOS dispatches
  * `diskutil list` + per-disk subprocess calls — slow under parallel load).
  *
  * Fields the readiness pipeline reads (`identifier`, `volumeName`, `volumeUuid`,
