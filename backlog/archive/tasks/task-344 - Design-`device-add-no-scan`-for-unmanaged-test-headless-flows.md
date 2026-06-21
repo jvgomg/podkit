@@ -4,6 +4,7 @@ title: Design `device add --no-scan` for unmanaged / test / headless flows
 status: To Do
 assignee: []
 created_date: '2026-05-17 09:33'
+updated_date: '2026-06-21 09:22'
 labels:
   - device-add
   - ux
@@ -11,6 +12,8 @@ labels:
   - design
 milestone: m-18
 dependencies: []
+documentation:
+  - doc-045 - PRD-Device-discovery-seam-device-add-verification-tiers.md
 priority: medium
 ordinal: 56000
 ---
@@ -133,3 +136,9 @@ Should `--no-scan` also work with the scan-found branch (no `--path` flag, just 
 - [ ] #7 User docs added (likely under `docs/user-guide/`) covering when to use --no-scan, the replug-following trade-off, and a worked example for the headless-server case.
 - [ ] #8 Shell completions list --no-scan and any new sibling flags.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Superseded by doc-045 PRD (Device discovery seam + device add verification tiers). The narrow `--no-scan` flag is subsumed: 'no scan' is now a product of declaring identity args + the `--no-verify` / `--no-validate` verification tiers, not a standalone flag. `synthesizeTestVolumeUuid` + the `PODKIT_TEST_SYNTHETIC_VOLUME_UUID` env-var hatch are removed and e2e migrates to `--no-validate`. See doc-045 for the full design; implementation to be planned from there.
+<!-- SECTION:NOTES:END -->
