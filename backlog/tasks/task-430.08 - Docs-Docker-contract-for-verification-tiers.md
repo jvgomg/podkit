@@ -1,9 +1,10 @@
 ---
 id: TASK-430.08
 title: Docs + Docker contract for verification tiers
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-06-21 09:28'
+updated_date: '2026-06-21 12:26'
 labels:
   - docs
   - device-add
@@ -32,8 +33,14 @@ Parent: TASK-430. Design: doc-045 (Further Notes — Docker SCSI gap).
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 `adding-devices.md` has a headless/automation section covering `--no-verify` vs `--no-validate`, the replug trade-off, and a worked Docker example
-- [ ] #2 A gated `device-add.docker.test.ts` pins the `--no-verify` / `--no-validate` Docker contract
-- [ ] #3 The Docker-SCSI gap is documented as a known limitation with the 'run doctor on an SCSI-capable host' workflow and the synthesize-from-`--type` candidate noted
-- [ ] #4 Docs-site build passes
+- [x] #1 `adding-devices.md` has a headless/automation section covering `--no-verify` vs `--no-validate`, the replug trade-off, and a worked Docker example
+- [x] #2 A gated `device-add.docker.test.ts` pins the `--no-verify` / `--no-validate` Docker contract
+- [x] #3 The Docker-SCSI gap is documented as a known limitation with the 'run doctor on an SCSI-capable host' workflow and the synthesize-from-`--type` candidate noted
+- [x] #4 Docs-site build passes
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Implemented by sonnet worker + team-lead verification. Added a 'Headless / Automation' section to docs/user-guide/devices/adding-devices.md: decision table (default / --no-verify / --no-validate), the replug trade-off (--volume-uuid vs path-only), worked Docker (--no-verify --path) + provisioning (--no-validate) examples, and a Starlight :::caution Docker-SCSI-gap callout (#docker-scsi-gap anchor). New rough-edges doc backlog/docs/doc-046 capturing the unsolved Docker-SCSI gap (problem, per-tier behaviour, run-doctor-on-SCSI-host workflow, synthesize-from-type candidate). New gated test-packages/e2e-tests/src/commands/device-add.docker.test.ts: 4 --no-validate assertions (uuid add zero-dep, verification=config-only, mass-storage add, incomplete-identity reject) + 2 skip-stubs for --no-verify with SCSI-gap comments; skip-gated via isDockerAvailable() like other *.docker.test.ts, excluded from host test:e2e. Verified: docs examples use valid flags (--type ipod is accepted; knownDeviceTypeIds=['ipod',...presets]). Gates: lint 0/0, build 19/19, e2e-tests typecheck clean, docs-site vite build ✓. NOT RUN HERE: test:e2e:docker (needs Docker).
+<!-- SECTION:NOTES:END -->

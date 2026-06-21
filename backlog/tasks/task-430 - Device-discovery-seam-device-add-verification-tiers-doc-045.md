@@ -1,9 +1,10 @@
 ---
 id: TASK-430
 title: Device discovery seam + device add verification tiers (doc-045)
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-06-21 09:26'
+updated_date: '2026-06-21 12:27'
 labels:
   - device-add
   - device-discovery
@@ -29,3 +30,19 @@ See doc-045 for the full design, scenario matrix, module sketch (M1 scan/locate,
 
 Subtasks track the vertical/phased slices. Critical path: spike → core seam → M3/M4 → wire tiers → e2e migration → docs. Loop-collapse and CLI de-leakage hang off the core seam and run in parallel.
 <!-- SECTION:DESCRIPTION:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+All 8 subtasks delivered (doc-045). Two coordinated changes shipped on branch `feat/device-scan-locate-seam`:
+
+1. **Core discovery seam** — `DeviceManager.listDevices/findIpodDevices/findByVolumeUuid/getUuidForMountPoint` deleted and replaced by `scan({ kinds? })` (enumerate) + `locate({ volumeUuid | path })` (first real direct single-target lookup: macOS `diskutil info`, Linux `findmnt`/`blkid -U`). Resolvers/orchestrators rebased; disguised enumerate+.find collapses removed.
+
+2. **`device add` verification tiers** — runDeviceAdd thinned onto two pure decision modules (M3 resolveAddRequest, M4 decideAddOutcome) with kind-agnostic assessment views. Three tiers: default verify (live sysinfo cross-check), `--no-verify` (trust on-disk SysInfo, required), `--no-validate` (config-inject, zero device I/O). `--no-firmware-inquiry` renamed `--no-verify` (breaking → minor); only `--force` bypasses empty-identity now; JSON `verification` field. Env-var test hatch (`PODKIT_TEST_SYNTHETIC_VOLUME_UUID`/`synthesizeTestVolumeUuid`) removed, e2e migrated to `--no-validate`. CLI iPod-vs-mass-storage label leakage collapsed onto `DeviceDisplay`.
+
+Gates: lint 0/0; build 19/19; core 3188 + CLI 1721 unit + 67 integration pass; host e2e 33/0 (483s). NOT RUN (need Lima/Docker): VM `--no-verify` persona cases + `volume-uuid-defensive` rewrite (`test:vm`); Docker contract test (`test:e2e:docker`).
+
+Open risk (documented, not solved): Docker-SCSI gap — see doc-046 + the adding-devices.md #docker-scsi-gap callout.
+
+Committed in 6 logical commits; supersedes archived TASK-344.
+<!-- SECTION:FINAL_SUMMARY:END -->

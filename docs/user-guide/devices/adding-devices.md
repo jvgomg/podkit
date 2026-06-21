@@ -164,6 +164,61 @@ sudo blkid /dev/sdX1
 
 The `volumeUuid` uniquely identifies the device regardless of which port or mount point it uses.
 
+## Headless / Automation
+
+`podkit device add` has three verification tiers. Choose the right one for your environment:
+
+| Situation | Flag | What podkit does |
+|-----------|------|-----------------|
+| Device connected, SCSI/USB works (normal desktop) | _(default)_ | Reads device, requires on-disk SysInfo (offers to write SysInfoExtended if absent), runs live cross-check; refuses on identity mismatch |
+| Device mounted in-container or on headless server — SCSI unavailable but on-disk SysInfo is present | `--no-verify` | Trusts on-disk SysInfo; skips live cross-check; errors with a "`run podkit doctor`" hint if SysInfo is absent |
+| Device absent, CI, or scripted provisioning | `--no-validate` | Pure config write from your arguments — zero device I/O; on-disk SysInfo not required |
+
+### Replug behaviour: volume UUID vs path-only
+
+By default, podkit stores the volume UUID so it can find the device again after a replug (even if the mount path changes). When you pass only `--path` and no `--volume-uuid`, podkit stores just the mount path — the device will not be re-found if it remounts at a different path. The CLI warns you when this happens. Prefer `--volume-uuid` for any device that could change mount points.
+
+### Docker / headless-server examples
+
+**Mounting an iPod in a Docker container (on-disk SysInfo present):**
+
+If the iPod is bind-mounted into the container at `/mnt/ipod` and `SysInfoExtended` was already written on an SCSI-capable host, use `--no-verify` to skip the unavailable SCSI cross-check while still validating the on-disk identity:
+
+```bash
+podkit device add -d ipod --no-verify --path /mnt/ipod
+```
+
+podkit reads the on-disk `SysInfo` / `SysInfoExtended` to identify the device and adds it to config. If SysInfo is absent, it refuses with a hint to run `podkit doctor` on a host with SCSI access first (see [Known Limitation](#docker-scsi-gap) below).
+
+**Provisioning config offline (device not present):**
+
+```bash
+# By volume UUID — survives replug, preferred
+podkit device add -d ipod --no-validate --type ipod --volume-uuid ABCD-1234
+
+# By path — pinned to the mount path; warns that replug will break re-discovery
+podkit device add -d ipod --no-validate --type ipod --path /mnt/ipod
+
+# Mass-storage device
+podkit device add -d echo --no-validate --type echo-mini --volume-uuid WXYZ-9012
+```
+
+`--no-validate` requires a complete identity: `--volume-uuid` or `--path`, plus `--type` for mass-storage devices. It writes the config row and exits without touching any device. This is also how e2e tests add devices without hardware attached.
+
+JSON output from `device add --format json` includes a `verification` field reporting which tier ran: `"verified"`, `"trusted-disk"`, or `"config-only"`.
+
+### Docker SCSI gap {#docker-scsi-gap}
+
+:::caution[Known limitation]
+A Docker user whose mounted iPod has **no on-disk SysInfo** is told to run `podkit doctor` — but `podkit doctor` writes `SysInfoExtended` via SCSI/USB inquiry, which may not be available inside the container. Checksum-based iPod generations (those identified by hash58/72/AB model numbers) **require** `SysInfoExtended` on disk for sync to produce a valid database checksum; without SCSI access somewhere, those devices cannot sync regardless of which `device add` tier you use.
+
+**Current recommended workflow:** run `podkit doctor --repair sysinfo-extended` once on a host with SCSI access (macOS with iPodDriver.kext, or a Linux host with the `sg` module and the podkit udev rule), then use the iPod from Docker. The `SysInfoExtended` file persists on the device across remounts.
+
+A future direction being considered (not yet implemented): synthesize `SysInfoExtended` from the declared `--type` / generation using the `@podkit/devices-ipod` tables, with no SCSI required. This would close the gap for offline provisioning. Whether `SG_IO` works inside Docker under `--privileged` (which would limit the gap to rootless containers only) is also unconfirmed.
+:::
+
+See [Device Health Checks](/user-guide/devices/doctor) for full `podkit doctor` documentation.
+
 ## Removing a Device
 
 To unregister a device:
