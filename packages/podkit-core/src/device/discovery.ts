@@ -249,6 +249,78 @@ function displayForUnsupported(d: DiscoveredDeviceUnsupported): DeviceDisplay {
   return { short, rich: d.usb.reason, source: 'unsupported-fallback' };
 }
 
+// ── displayForConfig (configured devices) ────────────────────────────────────
+
+/**
+ * Structural subset of a configured device the {@link displayForConfig}
+ * helper reads.
+ *
+ * Pinned as a structural type so callers can pass either a raw TOML
+ * `DeviceConfig` (`manufacturer: string`) or a `ResolvedDeviceSettings`
+ * (resolved-with-provenance shape — `manufacturer: { value: string }`),
+ * without coupling the helper signature to either CLI module. The
+ * `{ value: string }` arm of each union covers the resolved form;
+ * {@link unwrapDisplayField} projects both into a plain string.
+ */
+export interface DeviceDisplayInput {
+  type?: string;
+  manufacturer?: string | { value: string };
+  productName?: string | { value: string };
+}
+
+/** Project a raw-or-Resolved display field to its plain string value. */
+function unwrapDisplayField(v: string | { value: string } | undefined): string | undefined {
+  if (v === undefined) return undefined;
+  return typeof v === 'string' ? v : v.value;
+}
+
+/**
+ * Compose a {@link DeviceDisplay} for a CONFIGURED device — the static-config
+ * sibling of {@link displayFor}, which works on a live {@link DiscoveredDevice}.
+ *
+ * Where `displayFor` reads identity off a freshly-reconciled USB/block record,
+ * `displayForConfig` reads the persisted TOML `type` + a preset registry. It
+ * yields the same `{ short, rich }` shape so CLI call sites can render labels
+ * for configured-but-not-necessarily-connected devices without branching on
+ * the iPod-vs-mass-storage kind.
+ *
+ * Resolution, matching the long-standing CLI label helpers it replaces:
+ * - iPod / undefined / unknown type → `{ short: 'iPod', rich: 'iPod' }`
+ *   (the historical fallback — iPod rich labels come from the cascade /
+ *   discovery pipeline elsewhere, not from config).
+ * - mass-storage preset → short is the per-device `productName` override (if
+ *   set) else `formatPresetShortDisplay(preset)`; rich is
+ *   `'<manufacturer override ?? preset.manufacturer> <productName override ?? preset.productName> (<type>)'`,
+ *   keeping the preset id as the `--type` token tail.
+ *
+ * Pure: no I/O, no platform branches. Same input → same output.
+ */
+export function displayForConfig(
+  device: DeviceDisplayInput | undefined,
+  presets: Record<string, MassStoragePreset>
+): DeviceDisplay {
+  const type = device?.type;
+  // iPod / undefined / unknown type all collapse to the historical 'iPod'
+  // fallback. `source: 'ipod-generation'` mirrors `displayForIpod`'s tag even
+  // though config alone carries no resolved model — discovery / the cascade
+  // fills the richer identity in when a live device is available.
+  if (type === undefined || type === 'ipod') {
+    return { short: 'iPod', rich: 'iPod', source: 'ipod-generation' };
+  }
+  const preset = presets[type];
+  if (!preset) {
+    // Unknown type — backward compat with the old switch: fall back to 'iPod'.
+    return { short: 'iPod', rich: 'iPod', source: 'ipod-generation' };
+  }
+  const manufacturer = unwrapDisplayField(device?.manufacturer) ?? preset.manufacturer;
+  const productName = unwrapDisplayField(device?.productName) ?? preset.productName;
+  return {
+    short: unwrapDisplayField(device?.productName) ?? formatPresetShortDisplay(preset),
+    rich: `${manufacturer} ${productName} (${type})`,
+    source: 'preset',
+  };
+}
+
 // ── describeAddIntent dispatcher ────────────────────────────────────────────
 
 /**

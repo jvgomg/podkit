@@ -16,9 +16,11 @@
  */
 import { describe, it, expect } from 'bun:test';
 import { BUILT_IN_PRESETS } from '@podkit/devices-mass-storage';
+import { displayForConfig as coreDisplayForConfig } from '@podkit/core';
 import {
   getDeviceTypeDisplayName as _getDeviceTypeDisplayName,
   getDeviceTypeRichDisplayName as _getDeviceTypeRichDisplayName,
+  displayForConfig as cliDisplayForConfig,
 } from './open-device.js';
 
 // These tests pin the built-in preset baseline. The helpers now require an
@@ -149,4 +151,39 @@ describe('per-device overrides — the AliExpress example', () => {
       })
     ).toBe("Joe's Custom Build (rockbox)");
   });
+});
+
+// The CLI keeps a local mirror of core's `displayForConfig` because
+// `open-device.ts` must stay free of static `@podkit/core` value imports
+// (core's index transitively loads the libgpod native bindings). Two copies
+// of the same label vocabulary can drift — this block imports BOTH and pins
+// them to identical output, so editing one without the other fails CI.
+describe('displayForConfig — CLI mirror is byte-identical to core', () => {
+  const sweep: Array<Parameters<typeof cliDisplayForConfig>[0]> = [
+    undefined,
+    { type: 'ipod' },
+    { type: 'not-a-real-type' },
+    { type: 'echo-mini' },
+    { type: 'rockbox' },
+    { type: 'generic' },
+    { type: 'generic', manufacturer: 'AliExpress', productName: 'USB MP3 player' },
+    { type: 'generic', productName: 'My DAP' },
+    { type: 'rockbox', manufacturer: "Joe's" },
+    { type: 'echo-mini', manufacturer: 'Sally', productName: 'Music player' },
+    {
+      type: 'generic',
+      manufacturer: { value: 'AliExpress' },
+      productName: { value: 'USB MP3 player' },
+    },
+    { type: 'rockbox', manufacturer: { value: "Joe's" }, productName: 'Custom Build' },
+    { type: 'ipod', manufacturer: 'AliExpress', productName: 'USB MP3 player' },
+  ];
+
+  for (const input of sweep) {
+    it(`matches core for ${JSON.stringify(input)}`, () => {
+      const cli = cliDisplayForConfig(input, BUILT_IN_PRESETS);
+      const core = coreDisplayForConfig(input, BUILT_IN_PRESETS);
+      expect(cli).toEqual(core);
+    });
+  }
 });

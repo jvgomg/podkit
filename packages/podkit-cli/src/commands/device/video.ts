@@ -30,7 +30,7 @@ import {
   aggregateArtists,
   formatArtistsTable,
 } from '../display-utils.js';
-import { openDevice, isMassStorageDevice, getDeviceTypeDisplayName } from '../open-device.js';
+import { openDevice, isMassStorageDevice, displayForConfig } from '../open-device.js';
 import { mergedPresets } from '../../config/preset-registry.js';
 import { DeviceErrorCodes, type DeviceErrorCode } from './error-codes.js';
 import {
@@ -221,9 +221,7 @@ export async function runDeviceVideo(
       const videoTracks = allTracks.filter((t) => core.isVideoMediaType(t.mediaType));
       const deviceName =
         resolvedDevice?.name?.toUpperCase() ||
-        (deviceResult.isIpodDevice
-          ? 'iPod'
-          : getDeviceTypeDisplayName(resolvedDevice?.config, mergedPresets(config)));
+        displayForConfig(resolvedDevice?.config, mergedPresets(config)).short;
       const heading = `Video on ${deviceName}:`;
       const displayTracks = videoTracks.map(deviceTrackToDisplayTrack);
 

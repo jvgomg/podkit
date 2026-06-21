@@ -5,7 +5,7 @@ import { Command } from 'commander';
 import { existsSync } from '../../utils/fs.js';
 import { getContext } from '../../context.js';
 import type { CoreLoaderDeps } from '../../handler-deps.js';
-import { isMassStorageDevice, getDeviceTypeDisplayName } from '../open-device.js';
+import { isMassStorageDevice, displayForConfig } from '../open-device.js';
 import { mergedPresets } from '../../config/preset-registry.js';
 import { OutputContext } from '../../output/index.js';
 import { sortDevicesForDisplay, getDevicePrefix, pickCapabilityOverrides } from './shared.js';
@@ -238,7 +238,7 @@ export async function runDeviceList(out: OutputContext, deps: DeviceListDeps = {
     const headers = ['NAME', 'TYPE', 'QUALITY', 'AUDIO', 'VIDEO', 'ARTWORK'];
     const widths = [
       Math.max(6, ...resolvedDevices.map((d) => d.name.length + 2)),
-      Math.max(6, ...resolvedDevices.map((d) => getDeviceTypeDisplayName(d, presets).length)),
+      Math.max(6, ...resolvedDevices.map((d) => displayForConfig(d, presets).short.length)),
       9,
       9,
       9,
@@ -253,7 +253,7 @@ export async function runDeviceList(out: OutputContext, deps: DeviceListDeps = {
       const row = formatRow(
         [
           d.name,
-          getDeviceTypeDisplayName(d, presets),
+          displayForConfig(d, presets).short,
           formatResolved(d.quality),
           formatResolved(d.audio),
           formatResolved(d.video),

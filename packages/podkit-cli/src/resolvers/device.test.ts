@@ -377,6 +377,50 @@ describe('resolveDevicePath', () => {
     expect(result.matchedDevice?.config.quality).toBe('medium');
   });
 
+  it('Scenario B: matchPathToConfigDevice makes exactly ONE locate call (not two)', async () => {
+    // Previously matchPathToConfigDevice called locate({ path }) to get the UUID,
+    // then a second locate({ volumeUuid }) to get the device record. Now the first
+    // locate({ path }) returns a fully-populated PlatformDeviceInfo — no second
+    // call needed. Assert call count = 1.
+    const device = mockDevice({
+      volumeUuid: 'ABC-123',
+      mountPoint: '/Volumes/IPOD',
+      isMounted: true,
+    });
+    const configWithDevices = makeConfig({
+      devices: {
+        terapod: { volumeUuid: 'ABC-123', volumeName: 'TERAPOD', quality: 'medium' },
+      },
+    });
+    let locateCallCount = 0;
+    const countingManager: DeviceManager = {
+      ...mockManager([device]),
+      locate: async (target) => {
+        locateCallCount++;
+        if ('path' in target) {
+          return (
+            [device].find(
+              (d) =>
+                d.isMounted && d.mountPoint?.replace(/\/+$/, '') === target.path.replace(/\/+$/, '')
+            ) ?? null
+          );
+        }
+        return [device].find((d) => d.volumeUuid === target.volumeUuid) ?? null;
+      },
+    };
+    const result = await resolveDevicePath({
+      cliPath: '/Volumes/IPOD',
+      manager: countingManager,
+      config: configWithDevices,
+    });
+    expect(result.source).toBe('path-matched');
+    expect(result.matchedDevice?.name).toBe('terapod');
+    // Single locate({ path }) — reuses the result as deviceInfo.
+    expect(locateCallCount).toBe(1);
+    // The deviceInfo returned IS the object locate() returned — no second lookup.
+    expect(result.deviceInfo).toEqual(device);
+  });
+
   it('does not auto-match when path UUID does not match any config device (Scenario B)', async () => {
     const device = mockDevice({
       volumeUuid: 'XYZ-789',

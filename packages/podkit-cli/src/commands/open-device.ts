@@ -11,7 +11,13 @@
  */
 
 import type { AudioCodec, AudioNormalizationMode, DeviceArtworkSource } from '@podkit/device-types';
-import type { DeviceAdapter, DeviceCapabilities, IpodDatabase } from '@podkit/core';
+import type {
+  DeviceAdapter,
+  DeviceCapabilities,
+  DeviceDisplay,
+  DeviceDisplayInput,
+  IpodDatabase,
+} from '@podkit/core';
 import { resolveIpodModel } from '@podkit/devices-ipod';
 import { formatPresetShortDisplay, type MassStoragePreset } from '@podkit/devices-mass-storage';
 import type { DeviceConfig, PodkitConfig } from '../config/types.js';
@@ -76,94 +82,86 @@ export function isMassStorageDevice(type: string | undefined): boolean {
 }
 
 /**
- * Structural subset of a `DeviceConfig` (or `ResolvedDeviceSettings`)
- * the display helpers read.
- *
- * Pinned as a structural type so callers can pass either a full
- * `DeviceConfig` (TOML raw shape — `manufacturer: string`) or a
- * `ResolvedDeviceSettings` (resolved-with-provenance shape —
- * `manufacturer: Resolved<string, _>`), without coupling the helper
- * signatures to either module. The `{ value: string }` arm of each
- * union covers the resolved form; `unwrapDisplay` projects both into
- * a plain string for the formatting code below.
+ * Re-export the structural display-input type from core so CLI call sites
+ * keep importing it from the one place they already import the display
+ * helpers. The canonical definition lives next to {@link displayForConfig}
+ * in `@podkit/core/device/discovery`.
  */
-export interface DeviceDisplayInput {
-  type?: string;
-  manufacturer?: string | { value: string };
-  productName?: string | { value: string };
-}
+export type { DeviceDisplayInput };
 
-/** Project a raw-or-Resolved display field to its plain string value. */
+/**
+ * Project a raw-or-Resolved display field to its plain string value.
+ *
+ * Mirror of core's `unwrapDisplayField` (private to `displayForConfig`).
+ * Kept here because this CLI module is intentionally native-free — it
+ * can't statically value-import `@podkit/core` (that would eager-load the
+ * libgpod bindings), so the few-line label vocabulary is reproduced rather
+ * than imported. The `displayForConfig — CLI mirror is byte-identical to core`
+ * block in `open-device.display.test.ts` imports BOTH copies and asserts they
+ * produce identical output, so the two cannot silently drift.
+ */
 function unwrapDisplay(v: string | { value: string } | undefined): string | undefined {
   if (v === undefined) return undefined;
   return typeof v === 'string' ? v : v.value;
 }
 
 /**
- * Get a human-readable short display name for a device.
+ * Compose a {@link DeviceDisplay} for a CONFIGURED device — the native-free
+ * CLI mirror of core's `displayForConfig`. Produces the same `{ short, rich }`
+ * vocabulary so label call sites can render a device without branching on the
+ * iPod-vs-mass-storage kind.
  *
- * Resolution order per field:
- *   `device.productName` (per-device TOML) → preset.productName
- *
- * Mass-storage types compose `formatPresetShortDisplay` against the
- * preset registry, so presets own their labels (the previous hard-coded
- * switch leaked Echo Mini / Rockbox / Generic strings into the CLI's
- * display layer). iPods and unknown types still fall back to `'iPod'`
- * for the same historical reason as the old switch.
+ * Resolution (matching the long-standing CLI label helpers it replaces):
+ * - iPod / undefined / unknown type → `{ short: 'iPod', rich: 'iPod' }`.
+ * - mass-storage preset → short is the per-device `productName` override (if
+ *   set) else the preset product name; rich is
+ *   `'<manufacturer> <productName> (<type>)'` with per-device overrides
+ *   winning over preset defaults and the preset id kept as the `--type` tail.
+ */
+export function displayForConfig(
+  device: DeviceDisplayInput | undefined,
+  presets: Record<string, MassStoragePreset>
+): DeviceDisplay {
+  const type = device?.type;
+  if (type === undefined || type === 'ipod') {
+    return { short: 'iPod', rich: 'iPod', source: 'ipod-generation' };
+  }
+  const preset = presets[type];
+  if (!preset) {
+    // Unknown type — backward compat: undefined / unrecognised → iPod.
+    return { short: 'iPod', rich: 'iPod', source: 'ipod-generation' };
+  }
+  const manufacturer = unwrapDisplay(device?.manufacturer) ?? preset.manufacturer;
+  const productName = unwrapDisplay(device?.productName) ?? preset.productName;
+  return {
+    short: unwrapDisplay(device?.productName) ?? formatPresetShortDisplay(preset),
+    rich: `${manufacturer} ${productName} (${type})`,
+    source: 'preset',
+  };
+}
+
+/**
+ * Short display name for a device. Thin wrapper over {@link displayForConfig}
+ * — `displayForConfig(device, presets).short`. Retained as a named helper for
+ * the call sites and tests that ask only for the compact label.
  */
 export function getDeviceTypeDisplayName(
   device: DeviceDisplayInput | undefined,
   presets: Record<string, MassStoragePreset>
 ): string {
-  const type = device?.type;
-  if (type === undefined || type === 'ipod') return 'iPod';
-  const preset = presets[type];
-  if (preset) {
-    return unwrapDisplay(device?.productName) ?? formatPresetShortDisplay(preset);
-  }
-  // Unknown type — backward compat: undefined / unrecognised → iPod.
-  return 'iPod';
+  return displayForConfig(device, presets).short;
 }
 
 /**
  * Rich display name for a device — `'FiiO Snowsky Echo Mini (echo-mini)'`
- * style. Returns the same `'iPod'` fallback as the short form for iPods and
- * unknown types so callers that want one consistent label can switch in
- * place.
- *
- * Resolution order per field:
- *   `device.manufacturer` (per-device TOML) → preset.manufacturer
- *   `device.productName`  (per-device TOML) → preset.productName
- *
- * The `id` portion (`(generic)`) stays the preset id so the CLI hint
- * still names the exact `--type` token the user passed.
+ * style. Thin wrapper over {@link displayForConfig} —
+ * `displayForConfig(device, presets).rich`.
  */
 export function getDeviceTypeRichDisplayName(
   device: DeviceDisplayInput | undefined,
   presets: Record<string, MassStoragePreset>
 ): string {
-  const type = device?.type;
-  if (type === undefined || type === 'ipod') return 'iPod';
-  const preset = presets[type];
-  if (preset) {
-    const manufacturer = unwrapDisplay(device?.manufacturer) ?? preset.manufacturer;
-    const productName = unwrapDisplay(device?.productName) ?? preset.productName;
-    return `${manufacturer} ${productName} (${type})`;
-  }
-  return 'iPod';
-}
-
-/**
- * Get a device label for user-facing messages — short form ("Echo Mini",
- * "iPod", …), with the user's productName override winning over the
- * preset default. Passing a full `DeviceConfig` ensures the override is
- * picked up automatically.
- */
-export function getDeviceLabel(
-  device: DeviceDisplayInput | undefined,
-  presets: Record<string, MassStoragePreset>
-): string {
-  return isMassStorageDevice(device?.type) ? getDeviceTypeDisplayName(device, presets) : 'iPod';
+  return displayForConfig(device, presets).rich;
 }
 
 /**

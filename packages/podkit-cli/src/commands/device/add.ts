@@ -21,11 +21,7 @@ import {
   DOCS_URLS,
 } from '@podkit/core';
 import type { IpodIdentityAssessment, IdentitySignalSummary } from '@podkit/core';
-import {
-  isMassStorageDevice,
-  getDeviceTypeDisplayName,
-  getDeviceTypeRichDisplayName,
-} from '../open-device.js';
+import { isMassStorageDevice, getDeviceTypeDisplayName, displayForConfig } from '../open-device.js';
 import type { DeviceConfig } from '../../config/index.js';
 import { DeviceErrorCodes } from './error-codes.js';
 import { formatIFlashEvidence, formatIFlashMountExplanation, resolveDeviceName } from './shared.js';
@@ -513,14 +509,15 @@ export async function runDeviceAdd(
     // Interactive confirmation (skip if auto-confirm or JSON mode)
     if (!autoConfirm && out.isText) {
       out.newline();
-      out.print(`Adding ${getDeviceTypeDisplayName({ type: deviceType }, presets)} device:`);
+      const confirmDisplay = displayForConfig({ type: deviceType }, presets);
+      out.print(`Adding ${confirmDisplay.short} device:`);
       out.print(`  Name:   ${name}`);
       // Rich form here (`FiiO Snowsky Echo Mini (echo-mini)`) so the user
       // sees the exact `--type` token alongside vendor + product name.
       // No per-device overrides yet at `add` time — those land in config
       // after this confirmation, so subsequent `device info` calls will
       // see them.
-      out.print(`  Type:   ${getDeviceTypeRichDisplayName({ type: deviceType }, presets)}`);
+      out.print(`  Type:   ${confirmDisplay.rich}`);
       out.print(`  Path:   ${explicitPath}`);
       out.newline();
 
@@ -611,14 +608,9 @@ export async function runDeviceAdd(
     // (volumeUuid lookup, DB init, config save). See TASK-317.12 +
     // `filesystem-policy.ts` for the policy rationale.
     if (manager.isSupported) {
-      const platformDevices = await manager.scan();
-      // Normalize trailing slashes — `--path /media/x/disk/` from shell completion
-      // must still match `/media/x/disk` returned by lsblk.
-      const stripSlash = (p: string) => p.replace(/\/+$/, '') || p;
-      const wantPath = stripSlash(explicitPath);
-      const matching = platformDevices.find(
-        (d) => d.mountPoint && stripSlash(d.mountPoint) === wantPath
-      );
+      // Direct single-target lookup — no full enumerate needed.
+      // locate({ path }) returns null when nothing is mounted at this path.
+      const matching = await manager.locate({ path: explicitPath });
       if (matching && isFilesystemUnsupportedHere(matching.storage.filesystem, platform)) {
         throw new CliError({
           message: formatHfsplusOnLinuxRefusal().join('\n'),

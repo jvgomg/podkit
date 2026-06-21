@@ -24,7 +24,7 @@ import {
 } from '../device-resolver.js';
 import { CliError, runAction, type CliErrorOutput } from '../errors.js';
 import { OutputContext } from '../output/index.js';
-import { getDeviceLabel } from './open-device.js';
+import { displayForConfig } from './open-device.js';
 import { mergedPresets } from '../config/preset-registry.js';
 import { loadCoreOrFail, type CoreLoaderDeps } from '../handler-deps.js';
 
@@ -142,7 +142,7 @@ export async function runEject(
   }
 
   const devicePath = resolveResult.path;
-  const deviceLabel = getDeviceLabel(resolvedDevice?.config, mergedPresets(config));
+  const deviceLabel = displayForConfig(resolvedDevice?.config, mergedPresets(config)).short;
 
   if (!existsSync(devicePath)) {
     throw new CliError({

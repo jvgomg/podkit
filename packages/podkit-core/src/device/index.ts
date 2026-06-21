@@ -233,11 +233,13 @@ export type {
   DiscoveredDeviceUnsupported,
   DiscoverConnectedDevicesOptions,
   DeviceDisplay,
+  DeviceDisplayInput,
 } from './discovery.js';
 export {
   reconcileDiscoveredDevices,
   discoverConnectedDevices,
   displayFor,
+  displayForConfig,
   describeAddIntent,
 } from './discovery.js';
 

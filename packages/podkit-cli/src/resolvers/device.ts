@@ -398,6 +398,9 @@ function buildUuidMap(
 /**
  * Match a CLI path to a configured device by reading the UUID at that mount point
  * and looking it up in config.devices. (Scenario B)
+ *
+ * A single locate({ path }) call returns a fully-populated PlatformDeviceInfo
+ * (uuid, identifier, mountPoint) — no second locate({ volumeUuid }) needed.
  */
 async function matchPathToConfigDevice(
   mountPath: string,
@@ -406,15 +409,16 @@ async function matchPathToConfigDevice(
 ): Promise<{ matchedDevice: MatchedDevice; deviceInfo?: PlatformDeviceInfo } | null> {
   if (!config.devices) return null;
 
-  const uuid = (await manager.locate({ path: mountPath }))?.volumeUuid ?? null;
+  // One locate call provides both the UUID for config matching and the full
+  // device record for the caller. volumeUuid: '' means the device is mounted
+  // but has no UUID — treat that the same as null (no config match possible).
+  const deviceInfo = await manager.locate({ path: mountPath });
+  const uuid = deviceInfo?.volumeUuid || null;
   if (!uuid) return null;
 
   const uuidMap = buildUuidMap(config.devices);
   const match = uuidMap.get(uuid.toUpperCase());
   if (!match) return null;
-
-  // Also get device info for the matched UUID
-  const deviceInfo = await manager.locate({ volumeUuid: uuid });
 
   return {
     matchedDevice: { name: match.name, config: match.config },

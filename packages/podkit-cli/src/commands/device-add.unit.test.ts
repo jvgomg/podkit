@@ -615,24 +615,28 @@ describe('runDeviceAdd: HFS+ on Linux refusal (TASK-317.12)', () => {
   it('refuses with UNSUPPORTED_FILESYSTEM_ON_LINUX when --path points at HFS+ on Linux', async () => {
     const ctx = makeContext({ device: 'nano4g' });
     const { out, stdout, exitCode } = makeOut();
+    // The HFS+ check now uses a single locate({ path }) call — no full scan().
+    const hfsDevice = {
+      identifier: 'sdc2',
+      volumeName: '',
+      volumeUuid: '',
+      storage: { sizeBytes: 8_000_000_000, filesystem: 'hfsplus' },
+      isMounted: true,
+      mountPoint: dir,
+    } as Awaited<ReturnType<DeviceManager['scan']>>[number];
+    let locateCallCount = 0;
     const deps: DeviceAddDeps = {
       platform: 'linux',
       getDeviceManager: () =>
         fakeManager({
           isSupported: true,
-          scan: async (opts) =>
-            opts?.kinds?.includes('ipod')
-              ? []
-              : [
-                  {
-                    identifier: 'sdc2',
-                    volumeName: '',
-                    volumeUuid: '',
-                    storage: { sizeBytes: 8_000_000_000, filesystem: 'hfsplus' },
-                    isMounted: true,
-                    mountPoint: dir,
-                  } as Awaited<ReturnType<DeviceManager['scan']>>[number],
-                ],
+          locate: async (target) => {
+            locateCallCount++;
+            if ('path' in target && target.path.replace(/\/+$/, '') === dir.replace(/\/+$/, '')) {
+              return hfsDevice;
+            }
+            return null;
+          },
         }),
     };
 
@@ -651,6 +655,8 @@ describe('runDeviceAdd: HFS+ on Linux refusal (TASK-317.12)', () => {
     expect(err.details?.filesystem).toBe('hfsplus');
     expect(err.details?.platform).toBe('linux');
     expect(err.details?.path).toBe(dir);
+    // Exactly one locate({ path }) call — no enumerate+find.
+    expect(locateCallCount).toBe(1);
   });
 
   it('refuses scan-found HFS+ iPod on Linux before any mount attempt', async () => {

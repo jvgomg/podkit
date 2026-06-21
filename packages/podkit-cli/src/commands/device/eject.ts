@@ -13,7 +13,7 @@ import {
   formatDeviceLookupMessage,
 } from '../../device-resolver.js';
 import { OutputContext } from '../../output/index.js';
-import { isMassStorageDevice, getDeviceTypeDisplayName } from '../open-device.js';
+import { displayForConfig } from '../open-device.js';
 import { mergedPresets } from '../../config/preset-registry.js';
 import { DeviceErrorCodes } from './error-codes.js';
 import { resolveDeviceArg } from './shared.js';
@@ -96,9 +96,7 @@ export async function runDeviceEject(
 
   const devicePath = resolveResult.path;
 
-  const deviceLabel = isMassStorageDevice(resolvedDevice?.config?.type)
-    ? getDeviceTypeDisplayName(resolvedDevice?.config, mergedPresets(config))
-    : 'iPod';
+  const deviceLabel = displayForConfig(resolvedDevice?.config, mergedPresets(config)).short;
 
   if (!existsSync(devicePath)) {
     throw new CliError({

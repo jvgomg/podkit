@@ -682,11 +682,13 @@ export type {
   DiscoveredDeviceUnsupported,
   DiscoverConnectedDevicesOptions,
   DeviceDisplay,
+  DeviceDisplayInput,
 } from './device/index.js';
 export {
   reconcileDiscoveredDevices,
   discoverConnectedDevices,
   displayFor,
+  displayForConfig,
   describeAddIntent,
 } from './device/index.js';
 

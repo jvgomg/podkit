@@ -17,7 +17,7 @@ import {
 } from '@podkit/core';
 import type { DiscoveredDevice, ReadinessLevel } from '@podkit/core';
 import type { ResolvedDeviceCapabilities } from '@podkit/device-types';
-import { openDevice, isMassStorageDevice, getDeviceTypeRichDisplayName } from '../open-device.js';
+import { openDevice, isMassStorageDevice, displayForConfig } from '../open-device.js';
 import { mergedPresets } from '../../config/preset-registry.js';
 import { formatReadinessLevel, collectReadinessIssues, printIssues } from '../readiness-display.js';
 import { resolveDeviceSettings, type ResolvedDeviceSettings } from '../../config/resolve.js';
@@ -204,8 +204,14 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
             liveStatus = { mounted: true, mountPoint: resolveResult.path };
             const message = err instanceof Error ? err.message : String(err);
             liveStatus.databaseError = message;
-            // IpodError on iPod devices is expected (empty/uninitialized)
-            if (err instanceof core.IpodError && !isMassStorageDevice(device?.type)) {
+            // IpodError on iPod devices is expected (empty/uninitialized).
+            // Key off the opened-device result rather than re-deriving the kind
+            // from config. When the open itself threw before assignment, an
+            // `IpodError` can only have come from the iPod database-open path
+            // (MassStorageAdapter.open never throws `IpodError`), so an absent
+            // result with this error class is, by construction, an iPod.
+            const isIpod = openedDeviceResult?.isIpodDevice ?? true;
+            if (err instanceof core.IpodError && isIpod) {
               // Database not found or corrupt — expected on empty/uninitialized iPods
             } else {
               databaseErrorIsUnexpected = true;
@@ -232,7 +238,14 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
           // subprocesses per attached disk. We then lift it through
           // `ipodFromBlock` so the readiness dispatch sees a uniform
           // DiscoveredDevice shape.
-          if (liveStatus?.mounted && !isMassStorageDevice(device?.type) && manager.isSupported) {
+          // iPod-readiness gate keys off the opened-device result. When the
+          // open failed (no result) we fall back to the config-derived kind so
+          // readiness still runs for an iPod whose database wouldn't open
+          // (empty / uninitialised) — `checkReadiness` probes sysinfo without
+          // needing the parsed iTunesDB handle.
+          const readinessIsIpod =
+            openedDeviceResult?.isIpodDevice ?? !isMassStorageDevice(device?.type);
+          if (liveStatus?.mounted && readinessIsIpod && manager.isSupported) {
             try {
               const matchingBlock =
                 resolveResult.deviceInfo ??
@@ -357,7 +370,7 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
   // Resolve the discovered device ONLY when we need a header anchor the
   // cheap paths couldn't provide. Mounted iPods get their model via
   // `liveStatus.model.name` (cascade-resolved); configured mass-storage
-  // devices get theirs via `getDeviceTypeRichDisplayName`. Both cover the
+  // devices get theirs via `displayForConfig(...).rich`. Both cover the
   // common case without a USB walk.
   let discoveredDevice: DiscoveredDevice | undefined;
   if (lookupDiscoveredDevice && device) {
@@ -476,7 +489,7 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
         const presets = mergedPresets(podkitConfig);
         const anchor = (() => {
           if (discoveredDevice) return displayForCore(discoveredDevice).rich;
-          if (isMassStorage) return getDeviceTypeRichDisplayName(device, presets);
+          if (isMassStorage) return displayForConfig(device, presets).rich;
           return liveStatus?.model?.name;
         })();
         const defaultMarker = isDefault ? ' (default)' : '';

@@ -21,6 +21,7 @@ import type { DeviceManager, PlatformDeviceInfo } from './types.js';
 import {
   discoverConnectedDevices,
   displayFor,
+  displayForConfig,
   reconcileDiscoveredDevices,
   type DiscoveredDevice,
   type DiscoveredDeviceIpod,
@@ -480,6 +481,74 @@ describe('displayFor', () => {
     const display = displayFor(d);
     expect(display.short).toBe('MUSIC');
     expect(display.source).toBe('usb-fingerprint');
+  });
+});
+
+// ── displayForConfig ──────────────────────────────────────────────────────────
+//
+// `displayForConfig` is the configured-device sibling of `displayFor`. These
+// cases pin the exact strings the CLI's former `getDeviceType*DisplayName`
+// helpers produced (see `open-device.display.test.ts`) so the collapse onto a
+// single `DeviceDisplay` vocabulary stays byte-identical.
+
+describe('displayForConfig', () => {
+  it('returns the "iPod" fallback for ipod / undefined / unknown types', () => {
+    expect(displayForConfig({ type: 'ipod' }, BUILT_IN_PRESETS)).toEqual({
+      short: 'iPod',
+      rich: 'iPod',
+      source: 'ipod-generation',
+    });
+    expect(displayForConfig(undefined, BUILT_IN_PRESETS).short).toBe('iPod');
+    expect(displayForConfig(undefined, BUILT_IN_PRESETS).rich).toBe('iPod');
+    expect(displayForConfig({ type: 'not-a-real-type' }, BUILT_IN_PRESETS).short).toBe('iPod');
+    expect(displayForConfig({ type: 'not-a-real-type' }, BUILT_IN_PRESETS).rich).toBe('iPod');
+  });
+
+  it('uses preset product name (short) and "<mfr> <product> (<id>)" (rich) by default', () => {
+    expect(displayForConfig({ type: 'echo-mini' }, BUILT_IN_PRESETS)).toEqual({
+      short: 'Echo Mini',
+      rich: 'FiiO Snowsky Echo Mini (echo-mini)',
+      source: 'preset',
+    });
+    expect(displayForConfig({ type: 'rockbox' }, BUILT_IN_PRESETS).short).toBe('Rockbox device');
+    expect(displayForConfig({ type: 'rockbox' }, BUILT_IN_PRESETS).rich).toBe(
+      'Rockbox Rockbox device (rockbox)'
+    );
+    expect(displayForConfig({ type: 'generic' }, BUILT_IN_PRESETS).short).toBe(
+      'Mass-storage device'
+    );
+    expect(displayForConfig({ type: 'generic' }, BUILT_IN_PRESETS).rich).toBe(
+      'Generic Mass-storage device (generic)'
+    );
+  });
+
+  it('lets per-device manufacturer / productName overrides win (AliExpress example)', () => {
+    const ali = { type: 'generic', manufacturer: 'AliExpress', productName: 'USB MP3 player' };
+    expect(displayForConfig(ali, BUILT_IN_PRESETS).short).toBe('USB MP3 player');
+    expect(displayForConfig(ali, BUILT_IN_PRESETS).rich).toBe(
+      'AliExpress USB MP3 player (generic)'
+    );
+  });
+
+  it('honours partial overrides and Resolved-shaped { value } fields', () => {
+    expect(
+      displayForConfig({ type: 'generic', productName: 'My DAP' }, BUILT_IN_PRESETS).rich
+    ).toBe('Generic My DAP (generic)');
+    expect(
+      displayForConfig(
+        { type: 'generic', manufacturer: { value: 'AliExpress' }, productName: { value: 'X' } },
+        BUILT_IN_PRESETS
+      ).rich
+    ).toBe('AliExpress X (generic)');
+  });
+
+  it('ignores overrides for iPod types (display is fixed)', () => {
+    expect(
+      displayForConfig(
+        { type: 'ipod', manufacturer: 'AliExpress', productName: 'USB MP3 player' },
+        BUILT_IN_PRESETS
+      ).rich
+    ).toBe('iPod');
   });
 });
 
