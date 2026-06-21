@@ -2679,6 +2679,9 @@ export async function discoverConnectedDevices(_opts: any): Promise<any[]> {
 export function displayFor(_d: any): any {
   return { short: '', rich: '', source: 'unsupported-fallback' };
 }
+export function displayForConfig(_d: any): any {
+  return { short: '', rich: '', source: 'unsupported-fallback' };
+}
 export function describeAddIntent(_d: any): any {
   return null;
 }

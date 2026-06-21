@@ -763,6 +763,29 @@ async function reachByScan(req: AddRequest, ctx: ReachDeviceCtx): Promise<Reache
 
   let ipod = ipods[0]!;
 
+  // Refuse an unsupported filesystem (HFS+ on Linux) BEFORE attempting to
+  // mount — mounting an HFS+ volume on Linux is exactly what the refusal
+  // exists to prevent. The main-flow pre-pass also covers no-UUID, but that
+  // is checked post-mount (a device may only expose its UUID once mounted),
+  // so here we fire only the pre-mount filesystem refusal.
+  const scanProbePath = ipod.isMounted ? ipod.mountPoint : `/dev/${ipod.identifier}`;
+  const scanStateView: DeviceStateView = {
+    located: true,
+    ...(ipod.volumeUuid ? { volumeUuid: ipod.volumeUuid } : {}),
+    ...(ipod.storage.filesystem !== undefined ? { filesystem: ipod.storage.filesystem } : {}),
+    platform: ctx.platform,
+    path: scanProbePath,
+    crossCheck: 'skipped',
+  };
+  const scanPreCheck = decideAddOutcome(req.tier, req.claim, null, scanStateView, req.force);
+  if (scanPreCheck.kind === 'refuse-hfsplus-on-linux') {
+    throwOutcomeError(scanPreCheck, {
+      platform: ctx.platform,
+      probePath: scanProbePath,
+      identifier: ipod.identifier,
+    });
+  }
+
   // Mount-if-unmounted (mount logic stays here).
   if (!ipod.isMounted) {
     const assessment = await manager.assessDevice(ipod.identifier);

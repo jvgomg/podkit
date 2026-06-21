@@ -112,6 +112,29 @@ describe('MacOSDeviceManager.locate', () => {
     expect(listCalled).toBe(false);
   });
 
+  it('locate({ path }) returns null for a non-mountpoint sub-path (diskutil resolves the containing volume)', async () => {
+    // `diskutil info /Users/x/scratch` resolves to the CONTAINING volume
+    // (Mount Point `/`). Exact-mountpoint matching must reject this so a
+    // sub-path doesn't silently adopt the root volume; null lets the caller's
+    // no-UUID gate decide.
+    const containingVolume = [
+      'Device Identifier:        disk3s1',
+      'Volume Name:              Macintosh HD',
+      'Mounted:                  Yes',
+      'Mount Point:              /',
+      'Volume UUID:              ROOT-UUID-0000',
+      'File System Personality:  APFS',
+    ].join('\n');
+    const { runner } = recordingRunner({
+      diskutil: (args) =>
+        args[0] === 'info'
+          ? { stdout: containingVolume, stderr: '', exitCode: 0 }
+          : { stdout: '', stderr: 'unexpected', exitCode: 1 },
+    });
+    const manager = new MacOSDeviceManager({ subprocess: runner });
+    expect(await manager.locate({ path: '/Users/x/scratch' })).toBeNull();
+  });
+
   it('locate returns null (does not throw) when diskutil exits non-zero (bogus UUID)', async () => {
     const { runner } = recordingRunner({
       diskutil: () => ({ stdout: '', stderr: 'Could not find disk', exitCode: 1 }),

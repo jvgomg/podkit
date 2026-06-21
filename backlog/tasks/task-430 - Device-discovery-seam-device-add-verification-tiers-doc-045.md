@@ -4,7 +4,7 @@ title: Device discovery seam + device add verification tiers (doc-045)
 status: Done
 assignee: []
 created_date: '2026-06-21 09:26'
-updated_date: '2026-06-21 12:27'
+updated_date: '2026-06-21 14:39'
 labels:
   - device-add
   - device-discovery
@@ -45,4 +45,6 @@ Gates: lint 0/0; build 19/19; core 3188 + CLI 1721 unit + 67 integration pass; h
 Open risk (documented, not solved): Docker-SCSI gap — see doc-046 + the adding-devices.md #docker-scsi-gap callout.
 
 Committed in 6 logical commits; supersedes archived TASK-344.
+
+POST-COMPLETION FIXES (found by the user running test:vm + test:e2e:docker): three regressions fixed in commit 255e5904. (1) locate({path}) used findmnt --target / diskutil info which resolve a non-mountpoint sub-path to its ENCLOSING mount — restored exact-mountpoint matching on both platforms (the no-UUID gate now fires correctly for scratch paths); per-platform unit tests added. (2) reachByScan mounted an unmounted HFS+ iPod before the filesystem refusal — moved the refusal before the mount block; unmounted-device unit test added (asserts mount() never called). (3) Docker mass-storage test used --volume-uuid (mass-storage needs --path) and asserted the iPod renderer string — both fixed. Verified: lint 0/0, core 3190, CLI 1723 unit + 67 integration, host e2e 33/0, e2e:docker 4 pass/2 skip/0 fail. The two VM regressions are now also covered by host-runnable unit tests. The original VM run's 2 failures were real; an additional host-e2e run showed 3 transient failures traced to 24 orphaned Subsonic containers starving the parallel suite (both files pass in isolation; clean re-run 33/0).
 <!-- SECTION:FINAL_SUMMARY:END -->

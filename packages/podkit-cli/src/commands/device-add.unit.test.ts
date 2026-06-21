@@ -697,6 +697,48 @@ describe('runDeviceAdd: HFS+ on Linux refusal (TASK-317.12)', () => {
     expect(err.details?.path).toBe('/media/james/disk');
   });
 
+  it('refuses scan-found UNMOUNTED HFS+ iPod on Linux before attempting to mount it', async () => {
+    // Regression: an HFS+ iPod on Linux is unmounted (Linux can't mount it),
+    // so the scan branch reaches the mount-if-unmounted block. The filesystem
+    // refusal must fire BEFORE that mount attempt — mounting HFS+ is exactly
+    // what the refusal prevents.
+    const ctx = makeContext({ device: 'nano4g' });
+    const { out, stdout, exitCode } = makeOut();
+    const deps: DeviceAddDeps = {
+      platform: 'linux',
+      getDeviceManager: () =>
+        fakeManager({
+          isSupported: true,
+          scan: async (opts) =>
+            opts?.kinds?.includes('ipod')
+              ? [
+                  {
+                    identifier: 'sdc2',
+                    volumeName: '',
+                    volumeUuid: '',
+                    storage: { sizeBytes: 8_000_000_000, filesystem: 'hfsplus' },
+                    isMounted: false,
+                  } as Awaited<ReturnType<DeviceManager['scan']>>[number],
+                ]
+              : [],
+          assessDevice: async () => null,
+          mount: async () => {
+            throw new Error('mount() should not be called for HFS+ on Linux');
+          },
+        }),
+      assessIdentity: async () => {
+        throw new Error('assessIdentity() should not be called for HFS+ on Linux');
+      },
+    };
+
+    await runAdd(ctx, { type: 'ipod' }, out, deps);
+    expect(exitCode.get()).toBe(1);
+    const err = stdout.json<AddOutputErrorWithDetails>();
+    expect(err.code).toBe('UNSUPPORTED_FILESYSTEM_ON_LINUX');
+    expect(err.details?.filesystem).toBe('hfsplus');
+    expect(err.details?.path).toBe('/dev/sdc2');
+  });
+
   it('does NOT refuse HFS+ on macOS (refusal is Linux-only)', async () => {
     // The runner falls through to identity assessment + DB init. To avoid
     // those touching real disks/USB, stub assessIdentity + ipodDatabase.

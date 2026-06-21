@@ -603,6 +603,16 @@ export class LinuxDeviceManager implements DeviceManager {
     // output; guard against a row that carries no mount target.
     if (!source && !target) return null;
 
+    // `findmnt --target` resolves a path to its ENCLOSING mount, so a
+    // non-mountpoint sub-path (e.g. `/tmp/scratch` under a non-tmpfs `/tmp`)
+    // would otherwise resolve to the containing filesystem and hand back the
+    // wrong device + UUID. Require an exact mountpoint match — matching the
+    // legacy `getUuidForMountPoint` semantics. A miss returns null; the caller
+    // (e.g. `device add --path`) then synthesises a path-only device and the
+    // no-UUID gate decides.
+    const stripSlash = (p: string) => p.replace(/\/+$/, '') || p;
+    if (stripSlash(target) !== stripSlash(path)) return null;
+
     // Derive a kernel identifier (sda1) from the device-node source.
     const identifier = source.startsWith('/dev/') ? source.slice('/dev/'.length) : source;
 

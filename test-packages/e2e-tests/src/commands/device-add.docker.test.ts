@@ -157,10 +157,13 @@ describe('podkit device add --no-validate (config-inject, Docker context)', () =
     expect(json!.verification).toBe('config-only');
   });
 
-  it('adds a mass-storage device by volume UUID with zero device dependency (exit 0)', async () => {
+  it('adds a mass-storage device by path with zero device dependency (exit 0)', async () => {
     const configPath = join(tempDir, `config-ms-${randomUUID().slice(0, 8)}.toml`);
     await writeFile(configPath, 'version = 2\n');
 
+    // Mass-storage devices are path-anchored (resolved by mount path, not
+    // volume UUID), so `--path` is required even under `--no-validate`.
+    // config-inject does no device I/O, so the path need not exist here.
     const result = await runCli([
       '--config',
       configPath,
@@ -171,13 +174,15 @@ describe('podkit device add --no-validate (config-inject, Docker context)', () =
       '--type',
       'echo-mini',
       '--no-validate',
-      '--volume-uuid',
-      'DOCKER-TEST-UUID-ECHO',
+      '--path',
+      '/mnt/echo-mini',
       '--yes',
     ]);
 
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain('Added to config');
+    // Mass-storage add uses its own success renderer:
+    // `Device "<name>" added to config (<Product>).`
+    expect(result.stdout).toContain('added to config');
 
     const config = await readFile(configPath, 'utf-8');
     expect(config).toContain('[devices.echomini]');

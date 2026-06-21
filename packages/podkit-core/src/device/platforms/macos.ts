@@ -389,19 +389,28 @@ export class MacOSDeviceManager implements DeviceManager {
   async locate(
     target: { volumeUuid: string } | { path: string }
   ): Promise<PlatformDeviceInfo | null> {
-    // Both `diskutil info <volume-uuid>` and `diskutil info <path>` resolve
-    // the target directly (single subprocess); a bogus target exits non-zero
-    // and `getPlatformDeviceInfo` returns null. For UUID-less but mounted
-    // volumes (FunctionFS / bind mounts), `getPlatformDeviceInfo` would skip
-    // the record (no Volume UUID), so the `{ path }` branch falls back to a
-    // path-mode record so resolution can still proceed.
-    const query = 'volumeUuid' in target ? target.volumeUuid : target.path;
-    const device = await this.getPlatformDeviceInfo(query);
-    if (device) return device;
-    if ('path' in target) {
-      return this.locatePathFallback(target.path);
+    // `diskutil info <volume-uuid>` resolves directly (single subprocess);
+    // a bogus UUID exits non-zero and `getPlatformDeviceInfo` returns null.
+    if ('volumeUuid' in target) {
+      return this.getPlatformDeviceInfo(target.volumeUuid);
     }
-    return null;
+
+    // `diskutil info <path>` resolves a path to its CONTAINING volume, so a
+    // non-mountpoint sub-path would hand back the wrong device. Require an
+    // exact mountpoint match — matching the legacy `getUuidForMountPoint`
+    // semantics. For UUID-less but mounted volumes (FunctionFS / bind mounts)
+    // `getPlatformDeviceInfo` skips the record (no Volume UUID), so fall back
+    // to a path-mode record. Either source is accepted only when its mount
+    // point is exactly the requested path; otherwise null (the caller
+    // synthesises a path-only device and the no-UUID gate decides).
+    const path = target.path;
+    const stripSlash = (p: string) => p.replace(/\/+$/, '') || p;
+    const matches = (info: PlatformDeviceInfo | null): PlatformDeviceInfo | null =>
+      info && info.isMounted && stripSlash(info.mountPoint) === stripSlash(path) ? info : null;
+
+    const direct = matches(await this.getPlatformDeviceInfo(path));
+    if (direct) return direct;
+    return matches(await this.locatePathFallback(path));
   }
 
   /**

@@ -725,6 +725,22 @@ describe('LinuxDeviceManager.locate', () => {
     expect(await manager.locate({ path: '/nope' })).toBeNull();
   });
 
+  it('locate({ path }) returns null for a non-mountpoint sub-path (findmnt resolves the enclosing mount)', async () => {
+    // `findmnt --target /tmp/scratch` resolves to the ENCLOSING mount (`/`)
+    // with the root filesystem's UUID. Exact-mountpoint matching must reject
+    // this so `device add --path /tmp/scratch` doesn't silently adopt the
+    // root filesystem — it returns null and the caller's no-UUID gate fires.
+    const { runner } = recordingRunner({
+      findmnt: () => ({
+        stdout: 'SOURCE="/dev/sda1" UUID="ROOT-UUID" LABEL="" FSTYPE="ext4" TARGET="/"\n',
+        stderr: '',
+        exitCode: 0,
+      }),
+    });
+    const manager = new LinuxDeviceManager({ subprocess: runner });
+    expect(await manager.locate({ path: '/tmp/scratch' })).toBeNull();
+  });
+
   it('locate returns null (does not throw) when the blkid binary is missing', async () => {
     const { runner } = recordingRunner({
       // Reject transport-level — the manager collapses this to exit code 1.
