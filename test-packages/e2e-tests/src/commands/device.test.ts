@@ -25,133 +25,142 @@ describe('podkit device add', () => {
   });
 
   describe('with explicit path', () => {
+    // The config-inject tier (`--no-validate`) writes the config row straight
+    // from a complete identity with zero device I/O — the product-level
+    // replacement for the removed test-only synthetic-UUID hatch. These tests
+    // therefore need no device target at all.
     it('adds device with existing database', async () => {
-      await withTarget(async (target) => {
-        // Create minimal config
-        await writeFile(configPath, 'version = 2\n');
+      // Create minimal config
+      await writeFile(configPath, 'version = 2\n');
 
-        const result = await runCli([
-          '--config',
-          configPath,
-          '--device',
-          'testipod',
-          'device',
-          'add',
-          '--path',
-          target.path,
-          '--yes',
-        ]);
+      const result = await runCli([
+        '--config',
+        configPath,
+        '--device',
+        'testipod',
+        'device',
+        'add',
+        '--type',
+        'ipod',
+        '--no-validate',
+        '--volume-uuid',
+        'test-existing-db',
+        '--yes',
+      ]);
 
-        expect(result.exitCode).toBe(0);
-        expect(result.stdout).toContain('Added to config');
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('Added to config');
 
-        // Verify config was updated
-        const config = await readFile(configPath, 'utf-8');
-        expect(config).toContain('[devices.testipod]');
-      });
+      // Verify config was updated
+      const config = await readFile(configPath, 'utf-8');
+      expect(config).toContain('[devices.testipod]');
     });
 
     it('outputs JSON with device info', async () => {
-      await withTarget(async (target) => {
-        await writeFile(configPath, 'version = 2\n');
+      await writeFile(configPath, 'version = 2\n');
 
-        const { result, json } = await runCliJson<{
-          success: boolean;
-          device: { name: string; trackCount: number };
-          saved: boolean;
-          isDefault: boolean;
-        }>([
-          '--config',
-          configPath,
-          '--json',
-          '--device',
-          'testipod',
-          'device',
-          'add',
-          '--path',
-          target.path,
-        ]);
+      const { result, json } = await runCliJson<{
+        success: boolean;
+        device: { name: string };
+        saved: boolean;
+        isDefault: boolean;
+      }>([
+        '--config',
+        configPath,
+        '--json',
+        '--device',
+        'testipod',
+        'device',
+        'add',
+        '--type',
+        'ipod',
+        '--no-validate',
+        '--volume-uuid',
+        'test-json-info',
+      ]);
 
-        expect(result.exitCode).toBe(0);
-        expect(json).not.toBeNull();
-        expect(json!.success).toBe(true);
-        expect(json!.device.name).toBe('testipod');
-        expect(json!.saved).toBe(true);
-        expect(json!.isDefault).toBe(true); // First device becomes default
-      });
+      expect(result.exitCode).toBe(0);
+      expect(json).not.toBeNull();
+      expect(json!.success).toBe(true);
+      expect(json!.device.name).toBe('testipod');
+      expect(json!.saved).toBe(true);
+      expect(json!.isDefault).toBe(true); // First device becomes default
     });
 
     it('sets first device as default', async () => {
-      await withTarget(async (target) => {
-        await writeFile(configPath, 'version = 2\n');
+      await writeFile(configPath, 'version = 2\n');
 
-        await runCli([
-          '--config',
-          configPath,
-          '--device',
-          'firstipod',
-          'device',
-          'add',
-          '--path',
-          target.path,
-          '--yes',
-        ]);
+      await runCli([
+        '--config',
+        configPath,
+        '--device',
+        'firstipod',
+        'device',
+        'add',
+        '--type',
+        'ipod',
+        '--no-validate',
+        '--volume-uuid',
+        'test-first-default',
+        '--yes',
+      ]);
 
-        const config = await readFile(configPath, 'utf-8');
-        expect(config).toContain('[defaults]');
-        expect(config).toContain('device = "firstipod"');
-      });
+      const config = await readFile(configPath, 'utf-8');
+      expect(config).toContain('[defaults]');
+      expect(config).toContain('device = "firstipod"');
     });
 
     it('rejects invalid device name', async () => {
-      await withTarget(async (target) => {
-        await writeFile(configPath, 'version = 2\n');
+      await writeFile(configPath, 'version = 2\n');
 
-        const result = await runCli([
-          '--config',
-          configPath,
-          '--device',
-          '123invalid',
-          'device',
-          'add',
-          '--path',
-          target.path,
-          '--yes',
-        ]);
+      const result = await runCli([
+        '--config',
+        configPath,
+        '--device',
+        '123invalid',
+        'device',
+        'add',
+        '--type',
+        'ipod',
+        '--no-validate',
+        '--volume-uuid',
+        'test-invalid-name',
+        '--yes',
+      ]);
 
-        expect(result.exitCode).toBe(1);
-        expect(result.stderr).toContain('Invalid device name');
-      });
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('Invalid device name');
     });
 
     it('rejects duplicate device name', async () => {
-      await withTarget(async (target) => {
-        // Create config with existing device
-        await writeFile(
-          configPath,
-          `version = 2
+      // Create config with existing device
+      await writeFile(
+        configPath,
+        `version = 2
 
 [devices.existing]
 volumeUuid = "test-uuid"
 volumeName = "test"
 `
-        );
+      );
 
-        const result = await runCli([
-          '--config',
-          configPath,
-          '--device',
-          'existing',
-          'device',
-          'add',
-          '--path',
-          target.path,
-          '--yes',
-        ]);
+      const result = await runCli([
+        '--config',
+        configPath,
+        '--device',
+        'existing',
+        'device',
+        'add',
+        '--type',
+        'ipod',
+        '--no-validate',
+        '--volume-uuid',
+        'test-duplicate-name',
+        '--yes',
+      ]);
 
-        expect(result.exitCode).toBe(1);
-        expect(result.stderr).toContain('already exists');
-      });
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('already exists');
     });
   });
 
@@ -160,8 +169,7 @@ volumeName = "test"
      * Strip both identity files from the test target so the cascade has
      * nothing on disk. Combined with the test target's lack of a real USB
      * connection, the firmware-inquiry assessment lands in `unwritable`
-     * state with no usable USB fingerprint — the device-add empty-identity
-     * gate triggers.
+     * state with no usable USB fingerprint — no model anchor resolves.
      */
     async function stripIdentity(targetPath: string): Promise<void> {
       const deviceDir = join(targetPath, 'iPod_Control', 'Device');
@@ -174,7 +182,14 @@ volumeName = "test"
       }
     }
 
-    it('refuses to add the device when both identity files are absent and USB is unreachable', async () => {
+    // Host tmpdir targets have no real filesystem UUID, so a verify-tier add
+    // by path now trips the no-UUID gate (VOLUME_UUID_REQUIRED) before the
+    // cascade can even assess identity — the no-UUID refusal shadows the
+    // empty-identity refusal for these targets. The empty-identity *policy*
+    // (refuse when no signal, --force / declared bypass) is exercised directly
+    // as an exhaustive Outcome table in `verification-policy.test.ts`; here we
+    // pin the host-rendered no-UUID refusal copy + the `--force` bypass.
+    it('refuses to add a UUID-less target in the verify tier (no-UUID gate)', async () => {
       await withTarget(async (target) => {
         await stripIdentity(target.path);
         await writeFile(configPath, 'version = 2\n');
@@ -191,18 +206,18 @@ volumeName = "test"
           '--yes',
         ]);
 
-        // Refusal: empty-identity gate fires, exit 1, device NOT persisted.
+        // Refusal: no-UUID gate fires, exit 1, device NOT persisted.
         expect(result.exitCode).toBe(1);
-        expect(result.stderr).toContain('no identifying signal');
-        expect(result.stderr).toContain('--no-firmware-inquiry');
-        expect(result.stderr).toContain('--force');
+        expect(result.stderr).toContain('does not have a readable filesystem UUID');
+        // The removed flag must no longer be suggested anywhere.
+        expect(result.stderr).not.toContain('--no-firmware-inquiry');
         // Config row was not written.
         const config = await readFile(configPath, 'utf-8');
         expect(config).not.toContain('[devices.testipod]');
       });
     });
 
-    it('proceeds with --force when identity is empty (warning, exit 0)', async () => {
+    it('proceeds with --force on a UUID-less target (warning, exit 0)', async () => {
       await withTarget(async (target) => {
         await stripIdentity(target.path);
         await writeFile(configPath, 'version = 2\n');
@@ -222,17 +237,21 @@ volumeName = "test"
 
         expect(result.exitCode).toBe(0);
         expect(result.stdout).toContain('Added to config');
-        expect(result.stderr).toContain('empty device identity');
+        // --force bypasses the no-UUID gate → path-only warning, then proceeds.
+        expect(result.stderr).toContain('without a stable volume UUID');
         const config = await readFile(configPath, 'utf-8');
         expect(config).toContain('[devices.testipod]');
       });
     });
 
-    it('proceeds with --no-firmware-inquiry when identity is empty (preserved behaviour)', async () => {
+    it('writes config from args with --no-validate (no device read, exit 0)', async () => {
       await withTarget(async (target) => {
         await stripIdentity(target.path);
         await writeFile(configPath, 'version = 2\n');
 
+        // The config-inject tier replaces the old test-only synthetic-UUID
+        // hatch: it writes the row straight from a complete identity with zero
+        // device I/O, so a UUID-less target adds cleanly.
         const result = await runCli([
           '--config',
           configPath,
@@ -240,10 +259,12 @@ volumeName = "test"
           'testipod',
           'device',
           'add',
-          '--path',
-          target.path,
+          '--type',
+          'ipod',
+          '--no-validate',
+          '--volume-uuid',
+          'test-sysinfo-novalidate',
           '--yes',
-          '--no-firmware-inquiry',
         ]);
 
         expect(result.exitCode).toBe(0);
@@ -253,45 +274,35 @@ volumeName = "test"
       });
     });
 
-    it('warns and proceeds when model anchor is missing but other signals exist (partial cascade)', async () => {
-      await withTarget(async (target) => {
-        // Drop SysInfoExtended and SysInfo entirely; the cascade has no model.
-        // But with --type explicitly provided, we have enough signal to proceed
-        // (user's assertion counts as a signal). Partial cascade warns because
-        // the model-identifying anchor is missing.
-        try {
-          await rm(join(target.path, 'iPod_Control', 'Device', 'SysInfoExtended'));
-        } catch {
-          /* may not exist */
-        }
-        try {
-          await rm(join(target.path, 'iPod_Control', 'Device', 'SysInfo'));
-        } catch {
-          /* may not exist */
-        }
+    // The partial-cascade *warning* ("Unable to determine device model" when a
+    // declared type proceeds without a model anchor) is reached only after the
+    // no-UUID gate passes — i.e. for a real/VM device that carries a filesystem
+    // UUID. On a UUID-less host tmpdir the no-UUID gate now shadows it, so that
+    // behaviour is covered as an Outcome row in `verification-policy.test.ts`
+    // (partial-identity) and by the VM persona cases. Here we pin the host
+    // config-inject path: a declared `--type ipod` writes the row from args.
+    it('writes config from a declared --type with --no-validate', async () => {
+      await writeFile(configPath, 'version = 2\n');
 
-        await writeFile(configPath, 'version = 2\n');
+      const result = await runCli([
+        '--config',
+        configPath,
+        '--device',
+        'testipod',
+        'device',
+        'add',
+        '--type',
+        'ipod',
+        '--no-validate',
+        '--volume-uuid',
+        'test-declared-type',
+        '--yes',
+      ]);
 
-        const result = await runCli([
-          '--config',
-          configPath,
-          '--device',
-          'testipod',
-          'device',
-          'add',
-          '--path',
-          target.path,
-          '--type',
-          'ipod',
-          '--yes',
-        ]);
-
-        expect(result.exitCode).toBe(0);
-        expect(result.stdout).toContain('Added to config');
-        expect(result.stderr).toContain('Unable to determine device model');
-        const config = await readFile(configPath, 'utf-8');
-        expect(config).toContain('[devices.testipod]');
-      });
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('Added to config');
+      const config = await readFile(configPath, 'utf-8');
+      expect(config).toContain('[devices.testipod]');
     });
   });
 

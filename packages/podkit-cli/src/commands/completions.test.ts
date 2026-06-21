@@ -13,6 +13,7 @@ import {
   loadCompletionConfig,
   completionsCommand,
 } from './completions.js';
+import { addSubcommand } from './device/add.js';
 
 function createTestProgram(): Command {
   const program = new Command();
@@ -177,6 +178,37 @@ describe('completions', () => {
 
       expect(output).toContain('__complete devices');
       expect(output).toContain('__complete collections');
+    });
+  });
+
+  describe('device add verification flags (doc-045)', () => {
+    function programWithDeviceAdd(): Command {
+      const program = new Command();
+      program.name('podkit').description('Modern sync for classic iPods');
+      const device = program.command('device').description('manage devices');
+      device.addCommand(addSubcommand);
+      return program;
+    }
+
+    it('auto-derives --no-verify into zsh completions', () => {
+      const output = generateZshCompletions(programWithDeviceAdd());
+      expect(output).toContain('--no-verify');
+    });
+
+    it('auto-derives --no-validate into zsh completions', () => {
+      const output = generateZshCompletions(programWithDeviceAdd());
+      expect(output).toContain('--no-validate');
+    });
+
+    it('auto-derives the new flags into bash completions', () => {
+      const output = generateBashCompletions(programWithDeviceAdd());
+      expect(output).toContain('--no-verify');
+      expect(output).toContain('--no-validate');
+    });
+
+    it('no longer surfaces the removed --no-firmware-inquiry flag', () => {
+      const output = generateZshCompletions(programWithDeviceAdd());
+      expect(output).not.toContain('--no-firmware-inquiry');
     });
   });
 

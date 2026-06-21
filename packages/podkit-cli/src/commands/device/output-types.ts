@@ -77,6 +77,13 @@ export interface DeviceAddSuccess {
   saved?: boolean;
   configPath?: string;
   isDefault?: boolean;
+  /**
+   * Which verification tier ran (doc-045). `verified` = full live SCSI
+   * cross-check + SysInfo (default); `trusted-disk` = `--no-verify` (on-disk
+   * SysInfo trusted, no live check); `config-only` = `--no-validate` (pure
+   * config write, no device read).
+   */
+  verification?: 'verified' | 'trusted-disk' | 'config-only';
 }
 
 export type DeviceAddErrorOutput = CliErrorOutput & { code: DeviceErrorCode };

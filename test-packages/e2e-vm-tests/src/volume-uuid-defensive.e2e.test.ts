@@ -1,52 +1,39 @@
 /**
- * VM coverage — defensive volumeUuid refusal (commit `6db8fb0`).
+ * VM coverage — defensive volumeUuid refusal + the config-inject escape.
  *
- * Pins the post-`6db8fb0` `device add` refusal contract: when the resolved
- * device has no readable filesystem UUID (corrupt FAT32 table, tmpfs path,
- * unusual filesystem layout, or — historically — the legacy `manual-XXX`
- * synthetic prefix), `device add` exits with code `VOLUME_UUID_REQUIRED`
- * and a docs-pointer message, INSTEAD of silently substituting the
- * pre-`6db8fb0` `manual-${base64(path)}` UUID that collided across
- * devices.
+ * Pins the `device add` no-UUID refusal contract: when the resolved device
+ * has no readable filesystem UUID (corrupt FAT32 table, tmpfs path, unusual
+ * filesystem layout), a *verify / trust-disk* add exits with code
+ * `VOLUME_UUID_REQUIRED` and a docs-pointer message, INSTEAD of silently
+ * substituting a path-derived UUID that collided across devices.
  *
  * Two scenarios verified here:
  *
- *   1. `--path /tmp/<dir>` (tmpfs) → tmpfs has no filesystem UUID, the
- *      add-flow drops through to the volumeUuid check, the check throws
- *      VOLUME_UUID_REQUIRED. This exercises the explicit-path code path
- *      in `runDeviceAdd` (`add.ts` ~line 624 — the `!volumeUuid ||
- *      volumeUuid.startsWith('manual-')` branch).
+ *   1. Verify-tier-only refusal: `--path /tmp/<dir>` (tmpfs) → tmpfs has no
+ *      filesystem UUID, so the add-flow's no-UUID gate (M4 `refuse-no-uuid`)
+ *      fires and the command exits with VOLUME_UUID_REQUIRED. This is the
+ *      gate that protects the verify and trust-disk tiers, which both read
+ *      the device.
  *
- *   2. `--path /tmp/<dir>` with `PODKIT_TEST_SYNTHETIC_VOLUME_UUID=1` env
- *      var set → the test-only escape hatch in `synthesizeTestVolumeUuid`
- *      bypasses the refusal and `device add` succeeds. Pairs as the
- *      "happy path" regression control — without it, this test suite
- *      could pass even if the entire add-flow was broken.
+ *   2. Config-inject escape: `--no-validate --type ipod --volume-uuid <uuid>`
+ *      against the SAME tmpfs path → the config-inject tier writes the row
+ *      straight from the supplied identity with ZERO device I/O, so the
+ *      no-UUID gate never runs and the add succeeds. This is the product-level
+ *      replacement for the removed test-only synthetic-UUID escape hatch and
+ *      doubles as the "happy path" regression control — without it, the suite
+ *      could pass even if the entire add-flow were broken.
  *
  * # Scope limitations
  *
- *   - "Stale config with legacy `volumeUuid = "manual-XXX"`" requires
- *     hand-editing `~/.config/podkit/podkit.toml` inside the VM, then
- *     re-running `device add` against the same target. The legacy-
- *     coercion path is exercised by the same `!volumeUuid ||
- *     volumeUuid.startsWith('manual-')` branch — i.e. functionally
- *     identical to scenario 1 — so we do not duplicate that here. Unit
- *     coverage in `device-add.unit.test.ts` exercises the explicit
- *     "manual-" prefix case via the in-memory test harness.
+ *   - "Normal FAT32 with real UUID adds successfully" is the verify-tier
+ *     positive. It requires mounting the kernel-bound `/dev/sdX1` partition
+ *     of a persona backing image and reading the lsblk UUID back through the
+ *     device manager — exercised by the persona-backed `--no-verify` cases,
+ *     not here. The config-inject scenario above proves the persist tail is
+ *     functionally complete when an identity is supplied.
  *
- *   - "Normal FAT32 with real UUID adds successfully" is the third
- *     AC scenario. The starter `ipod-video-5g-iflash-1tb` persona has
- *     a synthesised FAT32 backing image, but `device add --path` against
- *     it requires (a) mounting the kernel-bound `/dev/sdX1` partition
- *     and (b) the partition's lsblk UUID being read back through
- *     `manager.findIpodDevices()`. The `synthesizeTestVolumeUuid` escape
- *     hatch is the canonical test-replacement for the "real UUID" path
- *     in environments without a real iPod, so we use it as the proof
- *     that the production code path is functionally complete when a
- *     UUID is present.
- *
- * @see commit 6db8fb0
- * @see packages/podkit-cli/src/commands/device/add.ts (throwVolumeUuidRequired)
+ * @see packages/podkit-cli/src/commands/device/verification-policy.ts (refuse-no-uuid)
+ * @see packages/podkit-cli/src/commands/device/resolve-add-request.ts (config-inject)
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
@@ -92,12 +79,13 @@ describe('VM: volumeUuid defensive refusal', () => {
         });
         expect(setup.exitCode).toBe(0);
 
-        // `--no-firmware-inquiry` to avoid SCSI probes; `--yes` to skip
-        // interactive prompts (DB init, etc); `--json` so we can assert
+        // `--no-verify` keeps us in the trust-disk tier (no SCSI probes) which
+        // still reads the device and so still trips the no-UUID gate; `--yes`
+        // skips interactive prompts (DB init, etc); `--json` so we can assert
         // on the structured error envelope.
         const result = await limaTestVmRunner.run(
           `/usr/local/bin/podkit device add -d testdev --path ${scratch} ` +
-            `--no-firmware-inquiry --yes --json`,
+            `--no-verify --yes --json`,
           { timeoutMs: VM_WARM_TIMEOUT_MS }
         );
         expect(result.exitCode).not.toBe(0);
@@ -120,46 +108,41 @@ describe('VM: volumeUuid defensive refusal', () => {
     );
 
     it(
-      'allows device add when PODKIT_TEST_SYNTHETIC_VOLUME_UUID=1 supplies a synthetic UUID',
+      'allows device add against a UUID-less path via --no-validate (config-inject)',
       async () => {
-        // Regression control: the test-only escape hatch must still work
-        // so the e2e dummy-iPod target can complete `device add`. If
-        // someone deleted `synthesizeTestVolumeUuid` from `add.ts`, every
-        // VOLUME_UUID_REQUIRED test would still pass, but this one would
-        // start failing — surfacing the deletion.
-        const scratch = `${SCRATCH_BASE}-synthetic`;
+        // Regression control + the replacement for the removed synthetic-UUID
+        // hatch: `--no-validate` writes the config row straight from the
+        // supplied identity with zero device I/O, so the no-UUID gate is never
+        // reached. If the config-inject tier regressed, this would start
+        // failing while the refusal test above kept passing — surfacing the
+        // break.
+        const scratch = `${SCRATCH_BASE}-novalidate`;
         const setup = await limaTestVmRunner.run(`rm -rf ${scratch} && mkdir -p ${scratch}`, {
           timeoutMs: VM_WARM_TIMEOUT_MS,
         });
         expect(setup.exitCode).toBe(0);
 
-        // The env-var seam is set per-command (not in the VM's persistent
-        // environment) via the runner's `env` opt.
         const result = await limaTestVmRunner.run(
-          `/usr/local/bin/podkit device add -d testdev-synth --path ${scratch} ` +
-            `--no-firmware-inquiry --yes --json`,
-          {
-            timeoutMs: VM_WARM_TIMEOUT_MS,
-            env: { PODKIT_TEST_SYNTHETIC_VOLUME_UUID: '1' },
-          }
+          `/usr/local/bin/podkit device add -d testdev-inject --path ${scratch} ` +
+            `--type ipod --no-validate --volume-uuid vm-inject-uuid --yes --json`,
+          { timeoutMs: VM_WARM_TIMEOUT_MS }
         );
-        // Add should succeed: the synthetic UUID gets a `test-` prefix
-        // and the rest of the flow runs through (no firmware inquiry,
-        // no real DB, config write succeeds).
+        // Add should succeed: config-inject writes the supplied identity
+        // straight to config (no device read, no DB init).
         expect(result.exitCode).toBe(0);
         const success = JSON.parse(result.stdout) as {
           success: boolean;
+          verification?: string;
           device?: { volumeUuid?: string };
         };
         expect(success.success).toBe(true);
-        // The synthetic UUID is prefixed `test-` (per
-        // `synthesizeTestVolumeUuid` in `add.ts`).
-        expect(success.device?.volumeUuid).toMatch(/^test-/);
+        expect(success.verification).toBe('config-only');
+        expect(success.device?.volumeUuid).toBe('vm-inject-uuid');
 
         // Clean up the saved config entry so the rest of the suite isn't
         // polluted by stale state. `device remove` is idempotent.
         await limaTestVmRunner.run(
-          `/usr/local/bin/podkit device remove -d testdev-synth --json 2>/dev/null || true`,
+          `/usr/local/bin/podkit device remove -d testdev-inject --json 2>/dev/null || true`,
           { timeoutMs: VM_WARM_TIMEOUT_MS }
         );
       },

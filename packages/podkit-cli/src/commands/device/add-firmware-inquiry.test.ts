@@ -34,7 +34,6 @@ describe('offerFirmwareInquiry — prompt flow (interactive)', () => {
     const { out, stdout } = makeOut();
     const result = await offerFirmwareInquiry({
       assessment: assessment({ firmwareInquiry: 'missing' }),
-      options: {},
       autoConfirm: false,
       recordUnsupported: false,
       out,
@@ -54,7 +53,6 @@ describe('offerFirmwareInquiry — prompt flow (interactive)', () => {
     const { out } = makeOut();
     await offerFirmwareInquiry({
       assessment: assessment({ firmwareInquiry: 'missing' }),
-      options: {},
       autoConfirm: false,
       recordUnsupported: false,
       out,
@@ -74,7 +72,6 @@ describe('offerFirmwareInquiry — prompt flow (interactive)', () => {
     const { out } = makeOut();
     await offerFirmwareInquiry({
       assessment: assessment({ firmwareInquiry: 'present' }),
-      options: {},
       autoConfirm: false,
       recordUnsupported: false,
       out,
@@ -92,7 +89,6 @@ describe('offerFirmwareInquiry — prompt flow (interactive)', () => {
     const { out, stdout } = makeOut();
     const result = await offerFirmwareInquiry({
       assessment: assessment({ firmwareInquiry: 'missing' }),
-      options: {},
       autoConfirm: false,
       recordUnsupported: false,
       out,
@@ -109,7 +105,6 @@ describe('offerFirmwareInquiry — prompt flow (interactive)', () => {
     const { out } = makeOut();
     await offerFirmwareInquiry({
       assessment: assessment({ firmwareInquiry: 'missing' }),
-      options: {},
       autoConfirm: false,
       recordUnsupported: false,
       out,
@@ -134,7 +129,6 @@ describe('offerFirmwareInquiry — recordUnsupported skip', () => {
     const { out } = makeOut();
     const result = await offerFirmwareInquiry({
       assessment: assessment({ firmwareInquiry: 'missing' }),
-      options: {},
       autoConfirm: false,
       recordUnsupported: true,
       out,
@@ -158,66 +152,12 @@ describe('offerFirmwareInquiry — recordUnsupported skip', () => {
   });
 });
 
-describe('offerFirmwareInquiry — --no-firmware-inquiry opt-out', () => {
-  it('does NOT offer SIE when options.firmwareInquiry === false', async () => {
-    let promptShown = '';
-    const { out } = makeOut();
-    await offerFirmwareInquiry({
-      assessment: assessment({ firmwareInquiry: 'missing' }),
-      options: { firmwareInquiry: false },
-      autoConfirm: false,
-      recordUnsupported: false,
-      out,
-      name: 'mypod',
-      mountPoint: '/Volumes/iPod',
-      confirmFn: async (msg) => {
-        promptShown = msg;
-        return true;
-      },
-    });
-    expect(promptShown).toBe('Add this iPod as "mypod"?');
-  });
-
-  it('emits the needs-checksum warning in non-interactive mode when opted-out AND needsChecksum', async () => {
-    const { out, stderr } = makeOut();
-    const result = await offerFirmwareInquiry({
-      assessment: assessment({ firmwareInquiry: 'missing', needsChecksum: true }),
-      options: { firmwareInquiry: false },
-      autoConfirm: true,
-      recordUnsupported: false,
-      out,
-      name: 'mypod',
-      mountPoint: '/Volumes/iPod',
-      confirmFn: async () => true,
-    });
-    expect(result.proceed).toBe(true);
-    expect(stderr.text()).toContain('requires SysInfoExtended for the iTunesDB checksum');
-    expect(stderr.text()).toContain('Run `podkit doctor --repair sysinfo-extended` later.');
-  });
-
-  it('does NOT warn when needsChecksum=false even on opt-out', async () => {
-    const { out, stderr } = makeOut();
-    await offerFirmwareInquiry({
-      assessment: assessment({ firmwareInquiry: 'present', needsChecksum: false }),
-      options: { firmwareInquiry: false },
-      autoConfirm: true,
-      recordUnsupported: false,
-      out,
-      name: 'mypod',
-      mountPoint: '/Volumes/iPod',
-      confirmFn: async () => true,
-    });
-    expect(stderr.text()).not.toContain('requires SysInfoExtended');
-  });
-});
-
 describe('offerFirmwareInquiry — autoConfirm', () => {
   it('skips the prompt entirely when autoConfirm=true (no confirmFn call)', async () => {
     let confirmCalls = 0;
     const { out } = makeOut();
     const result = await offerFirmwareInquiry({
       assessment: assessment({ firmwareInquiry: 'missing' }),
-      options: {},
       autoConfirm: true,
       recordUnsupported: false,
       out,
@@ -238,7 +178,6 @@ describe('offerFirmwareInquiry — autoConfirm', () => {
     const { out } = makeOut();
     const result = await offerFirmwareInquiry({
       assessment: assessment({ firmwareInquiry: 'missing' }),
-      options: {},
       autoConfirm: true,
       recordUnsupported: false,
       out,
@@ -264,7 +203,6 @@ describe('offerFirmwareInquiry — inquiry result handling', () => {
     const { out } = makeOut();
     const result = await offerFirmwareInquiry({
       assessment: before,
-      options: {},
       autoConfirm: true,
       recordUnsupported: false,
       out,
@@ -280,7 +218,6 @@ describe('offerFirmwareInquiry — inquiry result handling', () => {
     const { out, stdout, stderr } = makeOut();
     const result = await offerFirmwareInquiry({
       assessment: assessment({ firmwareInquiry: 'missing' }),
-      options: {},
       autoConfirm: true,
       recordUnsupported: false,
       out,
@@ -312,7 +249,6 @@ describe('offerFirmwareInquiry — null assessment', () => {
     const { out } = makeOut();
     const result = await offerFirmwareInquiry({
       assessment: null,
-      options: {},
       autoConfirm: false,
       recordUnsupported: false,
       out,

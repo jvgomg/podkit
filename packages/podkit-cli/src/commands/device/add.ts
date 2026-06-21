@@ -1,5 +1,22 @@
 /**
  * `podkit device add` — detect and add a device to the configured devices list.
+ *
+ * The runner is a thin orchestration of three pure modules + a small set of
+ * impure I/O steps:
+ *
+ *   1. M3 `resolveAddRequest` — static argument validation → {@link AddRequest}
+ *      (tier, claim, target, config patch, config-inject identity). Throws
+ *      `CliError` only for static arg errors.
+ *   2. Reach the device (impure; SKIPPED for `config-inject`) — `scan` for a
+ *      `scan` target, `locate` for `path`/`uuid`, + mount-if-unmounted.
+ *   3. Assess (impure, per-kind adapter) — `assessIpodIdentity` /
+ *      `assessMassStorageDevice` → kind-agnostic {@link DeviceAssessmentView}.
+ *   4. Verify-tier cross-check (only for `verify`) — run the
+ *      `sysinfo-consistency` + `sysinfo-modelnum-mismatch` diagnostics and
+ *      collapse to `crossCheck: 'pass' | 'mismatch' | 'skipped'`.
+ *   5. M4 `decideAddOutcome` — the scenario matrix → {@link Outcome}.
+ *   6. Act on the Outcome — the ONLY place that prompts / throws `CliError`.
+ *   7. DB init / track-count + persist — shared tail for every tier/kind.
  */
 import { Command, Option } from 'commander';
 import { confirm } from '../../utils/confirm.js';
@@ -7,25 +24,27 @@ import { existsSync, statSync } from '../../utils/fs.js';
 import { getContext } from '../../context.js';
 import { mergedPresets, knownDeviceTypeIds } from '../../config/preset-registry.js';
 import { CliError, runAction } from '../../errors.js';
-import { QUALITY_PRESETS, VIDEO_QUALITY_PRESETS, ENCODING_MODES } from '../../config/index.js';
+import { QUALITY_PRESETS, ENCODING_MODES } from '../../config/index.js';
 import { validateCapabilityOverrides } from '@podkit/devices-mass-storage';
 import { OutputContext, formatBytes, formatNumber, bold } from '../../output/index.js';
 import {
   assessIpodIdentity,
   assessMassStorageDevice,
-  isFilesystemUnsupportedHere,
   formatHfsplusOnLinuxRefusal,
   makeHfsplusOnLinuxUnsupportedReason,
-  isIdentityFullyEmpty,
-  summariseIdentitySignals,
   DOCS_URLS,
 } from '@podkit/core';
-import type { IpodIdentityAssessment, IdentitySignalSummary } from '@podkit/core';
+import type {
+  IpodIdentityAssessment,
+  PlatformDeviceInfo,
+  DeviceManager,
+  IpodModel,
+} from '@podkit/core';
 import { isMassStorageDevice, getDeviceTypeDisplayName, displayForConfig } from '../open-device.js';
 import type { DeviceConfig } from '../../config/index.js';
 import { DeviceErrorCodes } from './error-codes.js';
 import { formatIFlashEvidence, formatIFlashMountExplanation, resolveDeviceName } from './shared.js';
-import type { DeviceAddOutput } from './output-types.js';
+import type { DeviceAddSuccess } from './output-types.js';
 import { stripDefaultOptionValues } from '../../utils/option-source.js';
 import { confirmUnsupportedDeviceAdd } from './capability-summary.js';
 import { printIpodDeviceAddSuccess, printMassStorageDeviceAddSuccess } from './add-render.js';
@@ -35,150 +54,20 @@ import {
   persistDeviceConfig,
   resolveIsFirstDeviceAndConfigPath,
 } from './add-persist.js';
+import { resolveAddRequest } from './resolve-add-request.js';
+import type {
+  AddRequest,
+  RawAddOptions,
+  DeviceConfigPatch,
+  MassStoragePatch,
+} from './resolve-add-request.js';
+import { decideAddOutcome } from './verification-policy.js';
+import type { DeviceStateView, Outcome } from './verification-policy.js';
+import { ipodAssessmentToView } from './assessment-views.js';
 
-/**
- * Defensive refusal for TASK-317.15: we cannot persist a device that
- * doesn't carry a real filesystem UUID. podkit identifies iPods by
- * volumeUuid across replug cycles, so without one, downstream commands
- * (`podkit doctor -d <name>`, `podkit sync -d <name>`) can't find the
- * device. The dominant trigger (HFS+ on Linux) is handled explicitly by
- * TASK-317.12; this is the catch-all for corrupt FAT32 tables, unusual
- * filesystem layouts, mass-storage with no FS UUID, etc.
- *
- * Previously, `device add` silently substituted a synthetic
- * `manual-<base64-of-mount-path>` UUID, which collided between any two
- * devices mounted under the same parent dir and didn't survive replug.
- */
-/**
- * Test-only escape hatch for the volumeUuid refusal in TASK-317.15. When
- * `PODKIT_TEST_SYNTHETIC_VOLUME_UUID=1` is set in the environment, this
- * returns a deterministic synthetic UUID derived from the mount path so
- * the dummy-iPod e2e target can complete `device add` without a real
- * filesystem behind it. Returns `undefined` when the env var is not set,
- * in which case the caller throws `VOLUME_UUID_REQUIRED`.
- *
- * Production safety: real users never set this variable. Documented in
- * `test-packages/e2e-tests/README.md`.
- */
-function synthesizeTestVolumeUuid(path: string): string | undefined {
-  if (process.env.PODKIT_TEST_SYNTHETIC_VOLUME_UUID !== '1') return undefined;
-  const slug = Buffer.from(path).toString('base64').replace(/[/+=]/g, '').slice(0, 16);
-  return `test-${slug}`;
-}
-
-/**
- * Throw the empty-identity refusal. Triggered when the cascade resolves
- * nothing at all — no SysInfoExtended access, no classic SysInfo on disk,
- * no USB fingerprint, no `--type` from the user. Persisting a config row
- * with empty identity strands later commands; refuse instead.
- *
- * Bypass via `--force` (explicit override) or `--no-firmware-inquiry`
- * (existing explicit consent).
- */
-function throwEmptyIdentityRefusal(opts: { path: string | undefined }): never {
-  const lines = [
-    'Cannot add this device: no identifying signal is available.',
-    '',
-    '  • SysInfoExtended could not be read from firmware (USB inquiry path is closed).',
-    '  • No classic SysInfo file was found on the device.',
-    '  • USB enumeration did not resolve a product fingerprint.',
-    '',
-    'Persisting a device row with empty identity strands later commands ' +
-      '(`podkit doctor`, `podkit sync`) — they cannot reliably identify the',
-    'device on replug. Try one of:',
-    '',
-    '  • Re-mount the device read-write and check the USB connection, then retry.',
-    '  • Pass --no-firmware-inquiry if you knowingly want to skip the firmware',
-    '    inquiry (cascade-derived identity still applies when present).',
-    '  • Pass --force to add the device anyway — some operations may behave',
-    '    conservatively without identity.',
-  ];
-  throw new CliError({
-    message: lines.join('\n'),
-    code: DeviceErrorCodes.EMPTY_IDENTITY,
-    details: { path: opts.path ?? '(unknown)' },
-  });
-}
-
-/**
- * Print the partial-cascade warning when the device has some identity signal
- * but is missing the model-identifying anchor (SysInfoExtended or classic
- * SysInfo ModelNumStr). Absence of USB fingerprint alone is not actionable
- * for the user — it's transient and resolved on next assessment with USB.
- */
-function warnPartialIdentity(out: OutputContext, _signals: IdentitySignalSummary): void {
-  if (!out.isText) return;
-  out.warn(
-    'Unable to determine device model from disk — no SysInfoExtended or classic SysInfo. ' +
-      'Proceeding with USB identity only; some operations may behave conservatively. ' +
-      'Retry with the device re-mounted or re-plugged.'
-  );
-}
-
-/**
- * Apply the empty-identity gate to the cascade result. Encapsulates the
- * three-way branch — block / `--force` / `--no-firmware-inquiry` — that
- * `--path` and scan paths both need, plus the partial-cascade warning.
- *
- * Throws `CliError(EMPTY_IDENTITY)` on the block path; otherwise returns,
- * having emitted any warnings as side effects.
- *
- * Single source of truth for the device-add identity policy. Tests pinning
- * the policy reference `isIdentityFullyEmpty` directly.
- */
-function enforceIdentityGate(
-  out: OutputContext,
-  assessment: IpodIdentityAssessment | null,
-  options: AddOptions,
-  refusalPath: string | undefined
-): void {
-  const signals = summariseIdentitySignals(assessment, options.type);
-  if (isIdentityFullyEmpty(assessment, options.type)) {
-    if (options.force) {
-      if (out.isText) {
-        out.warn(
-          'Proceeding with empty device identity (--force). ' +
-            'Some operations may not behave correctly.'
-        );
-      }
-      return;
-    }
-    if (options.firmwareInquiry === false) {
-      if (out.isText) {
-        out.warn(
-          'Proceeding with empty device identity (--no-firmware-inquiry). ' +
-            'Some operations may not behave correctly.'
-        );
-      }
-      return;
-    }
-    throwEmptyIdentityRefusal({ path: refusalPath });
-  }
-  if (!signals.hasSysInfoExtended && !signals.hasSysInfoModelNumber) {
-    warnPartialIdentity(out, signals);
-  }
-}
-
-function throwVolumeUuidRequired(opts: {
-  path: string | undefined;
-  identifier: string;
-  filesystem: string | null | undefined;
-}): never {
-  throw new CliError({
-    message:
-      'Cannot add iPod: this iPod does not have a readable filesystem UUID. ' +
-      'podkit identifies iPods by volume UUID across replug cycles — without one, ' +
-      'commands like `podkit doctor -d <name>` would fail to find the device.\n\n' +
-      'Common causes: corrupt partition table, unusual filesystem layout. ' +
-      `See: ${DOCS_URLS.troubleshooting}`,
-    code: DeviceErrorCodes.VOLUME_UUID_REQUIRED,
-    details: {
-      path: opts.path ?? '(unknown)',
-      identifier: opts.identifier,
-      filesystem: opts.filesystem ?? null,
-    },
-  });
-}
+// =============================================================================
+// Options + Commander definition
+// =============================================================================
 
 interface AddOptions {
   yes?: boolean;
@@ -195,21 +84,27 @@ interface AddOptions {
   musicDir?: string;
   moviesDir?: string;
   tvShowsDir?: string;
+  /** Plain identity input — explicit mount path. */
+  path?: string;
+  /** Plain identity input — volume UUID (config-inject / direct locate). */
+  volumeUuid?: string;
+  /** Plain identity input — friendly volume name (config-inject). */
+  volumeName?: string;
   /**
-   * Skip the firmware inquiry that would write SysInfoExtended. Identity
-   * still cascades through any classic SysInfo on disk and the USB product
-   * ID, so for non-checksum devices this is a viable shortcut. Hash-based
-   * generations still need SysInfoExtended for sync to succeed — the flag
-   * is a "configure now, repair later" affordance.
+   * Commander `--no-verify` boolean: `false` when the user passed
+   * `--no-verify`. Drops the live SCSI cross-check + SysInfoExtended write
+   * (trust-disk tier) — the old `--no-firmware-inquiry`, renamed and widened.
    */
-  firmwareInquiry?: boolean;
+  verify?: boolean;
   /**
-   * Override the empty-identity refusal. When `device add` resolves no
-   * identifying signal (no SysInfoExtended access, no classic SysInfo, no
-   * USB fingerprint), it refuses by default — a config row with empty
-   * identity confuses downstream commands. `--force` records the user's
-   * explicit consent to proceed anyway; expect later commands to behave
-   * conservatively.
+   * Commander `--no-validate` boolean: `false` when the user passed
+   * `--no-validate`. Pure config write from complete args, no device read
+   * (config-inject tier). Structurally implies `--no-verify`.
+   */
+  validate?: boolean;
+  /**
+   * Override the empty-identity / no-UUID refusal. The only flag that
+   * bypasses the empty-identity gate now (M4 enforces this).
    */
   force?: boolean;
 }
@@ -223,10 +118,16 @@ export const addSubcommand = new Command('add')
   // generated completion file.
   .option('--type <type>', 'device type')
   .option('--path <path>', 'path to device mount point')
+  .option('--volume-uuid <uuid>', 'volume UUID (direct lookup / config-inject)')
+  .option('--volume-name <name>', 'friendly volume name (config-inject)')
   .option('-y, --yes', 'skip confirmation prompts')
   .option(
-    '--no-firmware-inquiry',
-    'skip writing SysInfoExtended via USB firmware inquiry (iPod only)'
+    '--no-verify',
+    'skip the live cross-check + SysInfoExtended write; trust on-disk SysInfo (iPod only)'
+  )
+  .option(
+    '--no-validate',
+    'write config purely from args without reading the device (requires a complete identity)'
   )
   .option('--force', 'add the device even when no identifying signal is available (use sparingly)')
   .addOption(
@@ -271,21 +172,19 @@ export const addSubcommand = new Command('add')
     '--tv-shows-dir <name>',
     'TV shows directory name on device (default: Video/Shows, mass-storage only)'
   )
-  .action(
-    async (
-      positionalName: string | undefined,
-      options: AddOptions & { path?: string },
-      command
-    ) => {
-      const { globalOpts } = getContext();
-      const out = OutputContext.fromGlobalOpts(globalOpts);
-      // Drop Commander's synthesised `--no-X` defaults so unspecified flags
-      // don't silently write `artwork: true` (etc.) into the new device
-      // config on every `device add` run.
-      const cleaned = stripDefaultOptionValues(options, command);
-      await runAction(out, () => runDeviceAdd({ ...cleaned, name: positionalName }, out));
-    }
-  );
+  .action(async (positionalName: string | undefined, options: AddOptions, command) => {
+    const { globalOpts } = getContext();
+    const out = OutputContext.fromGlobalOpts(globalOpts);
+    // Drop Commander's synthesised `--no-X` defaults so unspecified flags
+    // don't silently write `artwork: true` (etc.) into the new device
+    // config on every `device add` run.
+    const cleaned = stripDefaultOptionValues(options, command);
+    await runAction(out, () => runDeviceAdd({ ...cleaned, name: positionalName }, out));
+  });
+
+// =============================================================================
+// Dependency injection seam
+// =============================================================================
 
 /**
  * Dependency injection seam for `runDeviceAdd`. Tests pass stubs to avoid
@@ -296,29 +195,13 @@ export interface DeviceAddDeps {
   getDeviceManager?: () => import('@podkit/core').DeviceManager;
   confirm?: (msg: string) => Promise<boolean>;
   loadCore?: () => Promise<typeof import('@podkit/core')>;
-  /**
-   * Override for `process.platform`. Tests use this to exercise the
-   * HFS+-on-Linux refusal (TASK-317.12) from a macOS or Linux test runner
-   * without mutating the global `process` object.
-   */
+  /** Override for `process.platform`. */
   platform?: NodeJS.Platform | string;
-  /**
-   * Override the cascade-driven identity assessment — tests inject the
-   * model + capabilities + firmware-inquiry state without writing a synthetic
-   * mount-point fixture. Production uses `assessIpodIdentity` from
-   * `@podkit/core`.
-   */
+  /** Override the cascade-driven identity assessment. */
   assessIdentity?: (mountPoint: string) => Promise<import('@podkit/core').IpodIdentityAssessment>;
-  /**
-   * Override the SysInfoExtended write step. Tests assert that this fires
-   * (or doesn't, under `--no-firmware-inquiry`) without performing real
-   * USB I/O. Production uses `ensureSysInfoExtended` from `@podkit/core`.
-   */
+  /** Override the SysInfoExtended write step. */
   ensureSysInfoExtended?: typeof import('@podkit/core').ensureSysInfoExtended;
-  /**
-   * Override the iPod database adapter. Tests stub `hasDatabase` / `open` /
-   * `initializeIpod` so the runner doesn't load native libgpod bindings.
-   */
+  /** Override the iPod database adapter. */
   ipodDatabase?: {
     hasDatabase: (path: string) => Promise<boolean>;
     open: (path: string) => Promise<{ trackCount: number; close: () => void }>;
@@ -326,265 +209,84 @@ export interface DeviceAddDeps {
   };
 }
 
+// =============================================================================
+// Internal orchestration types
+// =============================================================================
+
+type CoreModule = typeof import('@podkit/core');
+
+interface IpodDatabaseLike {
+  hasDatabase: (path: string) => Promise<boolean>;
+  open: (path: string) => Promise<{ trackCount: number; close: () => void }>;
+  initializeIpod: (path: string) => Promise<{ close: () => void }>;
+}
+
+/** The located, mounted device + a small bundle of resolution context. */
+interface ReachedDevice {
+  device: PlatformDeviceInfo;
+}
+
+// =============================================================================
+// Runner
+// =============================================================================
+
 /**
  * `device add` runner — testable in-process.
  *
- * Extracted from the action callback. The body is unchanged; tests construct
- * an OutputContext with BufferSinks, call this directly, then assert on
- * captured output + `process.exitCode`. Use `deps` to inject fakes for the
- * device manager, confirm prompts, and the dynamic `@podkit/core` import.
+ * Thin orchestration over M3 (`resolveAddRequest`) and M4
+ * (`decideAddOutcome`) with impure reach/assess/cross-check steps in between.
  */
 export async function runDeviceAdd(
-  options: AddOptions & { path?: string; name?: string },
+  options: AddOptions & { name?: string },
   out: OutputContext,
   deps: DeviceAddDeps = {}
 ): Promise<void> {
   const { globalOpts, configResult } = getContext();
   const name = resolveDeviceName(options.name, globalOpts.device, 'add');
-  const explicitPath = options.path;
-  const autoConfirm = options.yes ?? false;
   const confirmFn = deps.confirm ?? confirm;
   const loadCore = deps.loadCore ?? (() => import('@podkit/core'));
   const assessIdentity = deps.assessIdentity ?? assessIpodIdentity;
-  const platform = deps.platform ?? process.platform;
+  const platform = String(deps.platform ?? process.platform);
 
-  // Validate device name
-  if (!/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(name)) {
-    throw new CliError({
-      message:
-        'Invalid device name. Must start with a letter and contain only letters, numbers, hyphens, and underscores.',
-      code: DeviceErrorCodes.INVALID_DEVICE_NAME,
-    });
-  }
-
-  const existingDevices = configResult.config.devices || {};
-  if (name in existingDevices) {
-    throw new CliError({
-      message: `Device "${name}" already exists in config. Use a different name or remove it first.`,
-      code: DeviceErrorCodes.DEVICE_EXISTS,
-    });
-  }
-
-  // Validate quality options
-  if (options.quality !== undefined && !QUALITY_PRESETS.includes(options.quality as any)) {
-    throw new CliError({
-      message: `Invalid quality preset "${options.quality}". Valid values: ${QUALITY_PRESETS.join(', ')}`,
-      code: DeviceErrorCodes.INVALID_QUALITY,
-    });
-  }
-  if (
-    options.audioQuality !== undefined &&
-    !QUALITY_PRESETS.includes(options.audioQuality as any)
-  ) {
-    throw new CliError({
-      message: `Invalid audio quality preset "${options.audioQuality}". Valid values: ${QUALITY_PRESETS.join(', ')}`,
-      code: DeviceErrorCodes.INVALID_AUDIO_QUALITY,
-    });
-  }
-  if (
-    options.videoQuality !== undefined &&
-    !VIDEO_QUALITY_PRESETS.includes(options.videoQuality as any)
-  ) {
-    throw new CliError({
-      message: `Invalid video quality preset "${options.videoQuality}". Valid values: ${VIDEO_QUALITY_PRESETS.join(', ')}`,
-      code: DeviceErrorCodes.INVALID_VIDEO_QUALITY,
-    });
-  }
-  if (options.encoding !== undefined && options.encoding !== 'vbr' && options.encoding !== 'cbr') {
-    throw new CliError({
-      message: `Invalid encoding mode "${options.encoding}". Valid values: vbr, cbr`,
-      code: DeviceErrorCodes.INVALID_ENCODING,
-    });
-  }
-
-  // =========================================================================
-  // Mass-storage device flow (--type echo-mini|rockbox|generic|<user-preset>)
-  // =========================================================================
-  const deviceType = options.type;
-
-  // Post-parse validation: `--type` accepts `ipod` plus the merged
-  // (built-in ∪ user-defined `[presets.X]`) registry. The runtime check
-  // replaces Commander's `.choices()` which would reject any string not
-  // in the built-in list at parse time.
+  // ── M3: resolve the static request ──────────────────────────────────────
   const presets = mergedPresets(configResult.config);
+  const raw: RawAddOptions = { ...options, name };
+  const req = resolveAddRequest(raw, {
+    globalDevice: globalOpts.device,
+    existingDeviceNames: Object.keys(configResult.config.devices ?? {}),
+    knownDeviceTypeIds: knownDeviceTypeIds(configResult.config),
+    isMassStorageType: (type) => isMassStorageDevice(type),
+    validateCapabilityOverrides: (patch) => {
+      const result = validateCapabilityOverrides(patch);
+      if (result.ok) return { ok: true };
+      const [first] = result.errors;
+      return {
+        ok: false,
+        ...(first
+          ? {
+              firstError: {
+                message: first.message,
+                code: first.code as keyof typeof DeviceErrorCodes,
+              },
+            }
+          : {}),
+      };
+    },
+  });
 
-  if (deviceType !== undefined) {
-    const knownIds = knownDeviceTypeIds(configResult.config);
-    if (!knownIds.includes(deviceType)) {
-      throw new CliError({
-        message: `Unknown device type "${deviceType}". Known types: ${knownIds.join(', ')}.`,
-        code: DeviceErrorCodes.INVALID_TYPE,
-      });
-    }
+  const isMassStorage = req.claim.mode === 'declared' && isMassStorageDevice(req.claim.deviceType);
+
+  // ── Tier: config-inject — pure config write, ZERO device I/O ─────────────
+  if (req.tier === 'config-inject') {
+    return await persistInjectedConfig(req, out, isMassStorage, presets);
   }
 
-  if (deviceType && isMassStorageDevice(deviceType)) {
-    // Mass-storage devices require --path
-    if (!explicitPath) {
-      throw new CliError({
-        message: `--path is required for ${getDeviceTypeDisplayName({ type: deviceType }, presets)} devices. Usage: podkit device add -d <name> --type ${deviceType} --path <mount-point>`,
-        code: DeviceErrorCodes.PATH_REQUIRED,
-      });
-    }
-
-    // Verify path exists and is a directory
-    if (!existsSync(explicitPath) || !statSync(explicitPath).isDirectory()) {
-      throw new CliError({
-        message: existsSync(explicitPath)
-          ? `Path is not a directory: ${explicitPath}`
-          : `Path not found: ${explicitPath}`,
-        code: existsSync(explicitPath)
-          ? DeviceErrorCodes.PATH_NOT_DIRECTORY
-          : DeviceErrorCodes.PATH_NOT_FOUND,
-      });
-    }
-
-    // Validate capability override options
-    const capabilityOverridePatch: Parameters<typeof validateCapabilityOverrides>[0] = {};
-    if (options.artworkMaxResolution !== undefined) {
-      capabilityOverridePatch.artworkMaxResolution = parseInt(options.artworkMaxResolution, 10);
-    }
-    if (options.artworkSources !== undefined) {
-      capabilityOverridePatch.artworkSources = options.artworkSources as any;
-    }
-    if (options.supportedAudioCodecs !== undefined) {
-      capabilityOverridePatch.supportedAudioCodecs = options.supportedAudioCodecs as any;
-    }
-    const capabilityValidation = validateCapabilityOverrides(capabilityOverridePatch);
-    if (!capabilityValidation.ok) {
-      const [first] = capabilityValidation.errors;
-      if (first) {
-        throw new CliError({
-          message: first.message,
-          code: DeviceErrorCodes[first.code as keyof typeof DeviceErrorCodes],
-        });
-      }
-    }
-
-    // Resolve preset + capabilities through the symmetric core helper.
-    // Accepts both built-in and user-defined preset ids — the post-parse
-    // `--type` validation above filters unknown ids before we reach here.
-    const assessment = assessMassStorageDevice(explicitPath, {
-      presetId: deviceType,
-      overrides: capabilityOverridePatch,
-    });
-    if (!assessment.preset) {
-      throw new CliError({
-        message: `Unknown device preset "${deviceType}".`,
-        code: DeviceErrorCodes.UNSUPPORTED_DEVICE,
-      });
-    }
-
-    const deviceConfig: DeviceConfig = {
-      type: deviceType as DeviceConfig['type'],
-      path: explicitPath,
-    };
-    applyCommonDeviceConfigOptions(deviceConfig, options);
-    // Mass-storage-specific options — not shared with the iPod flows.
-    if (options.artworkMaxResolution !== undefined)
-      deviceConfig.artworkMaxResolution = parseInt(options.artworkMaxResolution, 10);
-    if (options.artworkSources !== undefined)
-      deviceConfig.artworkSources = options.artworkSources as DeviceConfig['artworkSources'];
-    if (options.supportedAudioCodecs !== undefined)
-      deviceConfig.supportedAudioCodecs =
-        options.supportedAudioCodecs as DeviceConfig['supportedAudioCodecs'];
-    if (options.supportsVideo !== undefined) deviceConfig.supportsVideo = options.supportsVideo;
-    if (options.musicDir !== undefined) deviceConfig.musicDir = options.musicDir;
-    if (options.moviesDir !== undefined) deviceConfig.moviesDir = options.moviesDir;
-    if (options.tvShowsDir !== undefined) deviceConfig.tvShowsDir = options.tvShowsDir;
-
-    const volumeName = explicitPath.split('/').pop() || name;
-    const { isFirstDevice, configPath } = resolveIsFirstDeviceAndConfigPath(configResult);
-
-    const deviceInfo = {
-      name,
-      identifier: 'mass-storage',
-      volumeName,
-      volumeUuid: '',
-      size: 0,
-      isMounted: true,
-      mountPoint: explicitPath,
-    };
-
-    // Interactive confirmation (skip if auto-confirm or JSON mode)
-    if (!autoConfirm && out.isText) {
-      out.newline();
-      const confirmDisplay = displayForConfig({ type: deviceType }, presets);
-      out.print(`Adding ${confirmDisplay.short} device:`);
-      out.print(`  Name:   ${name}`);
-      // Rich form here (`FiiO Snowsky Echo Mini (echo-mini)`) so the user
-      // sees the exact `--type` token alongside vendor + product name.
-      // No per-device overrides yet at `add` time — those land in config
-      // after this confirmation, so subsequent `device info` calls will
-      // see them.
-      out.print(`  Type:   ${confirmDisplay.rich}`);
-      out.print(`  Path:   ${explicitPath}`);
-      out.newline();
-
-      const shouldSave = await confirmFn(`Add this device as "${name}"?`);
-      if (!shouldSave) {
-        out.print('Cancelled. No changes made.');
-        return;
-      }
-    }
-
-    const { result } = persistDeviceConfig({
-      name,
-      deviceConfig,
-      configPath,
-      isFirstDevice,
-      deviceInfoForErrorDetails: deviceInfo,
-    });
-
-    out.result<DeviceAddOutput>(
-      {
-        success: true,
-        device: deviceInfo,
-        saved: true,
-        configPath: result.configPath,
-        isDefault: isFirstDevice,
-      },
-      () =>
-        printMassStorageDeviceAddSuccess(out, {
-          name,
-          deviceType: deviceType as NonNullable<DeviceConfig['type']>,
-          configResult: { created: result.created ?? false, configPath: result.configPath ?? '' },
-          isFirstDevice,
-          presets,
-        })
-    );
-    return;
-  }
-
-  // =========================================================================
-  // iPod device flow (--type ipod or no --type)
-  // =========================================================================
-
-  // Reject mass-storage-only options on iPod devices
-  const massStorageOnlyOptions = [
-    options.artworkMaxResolution !== undefined && '--artwork-max-resolution',
-    options.artworkSources !== undefined && '--artwork-sources',
-    options.supportedAudioCodecs !== undefined && '--supported-audio-codecs',
-    options.supportsVideo !== undefined && '--supports-video',
-    options.musicDir !== undefined && '--music-dir',
-    options.moviesDir !== undefined && '--movies-dir',
-    options.tvShowsDir !== undefined && '--tv-shows-dir',
-  ].filter(Boolean) as string[];
-
-  if (massStorageOnlyOptions.length > 0) {
-    throw new CliError({
-      message: `${massStorageOnlyOptions.join(', ')} ${massStorageOnlyOptions.length === 1 ? 'is' : 'are'} only valid for mass-storage devices (--type echo-mini|rockbox|generic).`,
-      code: DeviceErrorCodes.INVALID_OPTION_FOR_TYPE,
-    });
-  }
-
-  // Load core dependencies (overridable via deps.loadCore for tests)
-  let core: typeof import('@podkit/core');
-  let IpodDatabase: typeof import('@podkit/core').IpodDatabase | DeviceAddDeps['ipodDatabase'];
-
+  // ── Load core (iPod tiers need the manager + db adapter) ─────────────────
+  let core: CoreModule;
+  let IpodDatabase: IpodDatabaseLike;
   try {
     core = await loadCore();
-    IpodDatabase = deps.ipodDatabase ?? core.IpodDatabase;
+    IpodDatabase = (deps.ipodDatabase ?? core.IpodDatabase) as IpodDatabaseLike;
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to load podkit-core';
     throw new CliError({
@@ -592,233 +294,434 @@ export async function runDeviceAdd(
       code: DeviceErrorCodes.CORE_LOAD_FAILED,
     });
   }
-
   const manager = (deps.getDeviceManager ?? core.getDeviceManager)();
 
-  // If explicit path provided, use it directly
-  if (explicitPath) {
-    if (!existsSync(explicitPath)) {
-      throw new CliError({
-        message: `Path not found: ${explicitPath}`,
-        code: DeviceErrorCodes.PATH_NOT_FOUND,
-      });
-    }
+  // =========================================================================
+  // Mass-storage flow (verify / trust-disk — both treat the path as truth)
+  // =========================================================================
+  if (isMassStorage) {
+    return await runMassStorageAdd(req, out, presets, confirmFn);
+  }
 
-    // Refuse HFS+ iPods on Linux up-front — before any state-mutating work
-    // (volumeUuid lookup, DB init, config save). See TASK-317.12 +
-    // `filesystem-policy.ts` for the policy rationale.
-    if (manager.isSupported) {
-      // Direct single-target lookup — no full enumerate needed.
-      // locate({ path }) returns null when nothing is mounted at this path.
-      const matching = await manager.locate({ path: explicitPath });
-      if (matching && isFilesystemUnsupportedHere(matching.storage.filesystem, platform)) {
-        throw new CliError({
-          message: formatHfsplusOnLinuxRefusal().join('\n'),
-          code: DeviceErrorCodes.UNSUPPORTED_FILESYSTEM_ON_LINUX,
-          details: {
-            filesystem: matching.storage.filesystem,
-            platform,
-            path: explicitPath,
-            unsupported: makeHfsplusOnLinuxUnsupportedReason({
-              ...(matching.storage.filesystem ? { filesystem: matching.storage.filesystem } : {}),
-              path: explicitPath,
-            }),
-          },
-        });
-      }
-    }
+  // =========================================================================
+  // iPod flow (verify / trust-disk)
+  // =========================================================================
 
-    // Cascade-driven identity assessment (no writes, no prompts).
-    let assessment: IpodIdentityAssessment = await assessIdentity(explicitPath);
+  // ── Reach the device ─────────────────────────────────────────────────────
+  const reached = await reachDevice(req, {
+    out,
+    manager,
+    platform,
+    loadCore,
+    name,
+    presets: () => mergedPresets(configResult.config),
+  });
+  if (!reached) return; // a hint/refusal was already emitted (scan path)
+  const ipod = reached.device;
 
-    // Empty-identity gate. If the cascade resolved literally nothing — no
-    // SysInfoExtended path, no classic SysInfo on disk, no USB fingerprint —
-    // refuse unless the user explicitly opted in via `--force`,
-    // `--no-firmware-inquiry`, or `--type`. Partial cascades warn-and-proceed.
-    enforceIdentityGate(out, assessment, options, explicitPath);
+  const probePath = ipod.isMounted ? ipod.mountPoint : `/dev/${ipod.identifier}`;
+  const userTypeOpt = req.claim.mode === 'declared' ? { userType: req.claim.deviceType } : {};
 
-    // Known-unsupported generations: warn-and-allow (TASK-317.03). The user
-    // gets the canonical message and an explicit Y/n prompt; `--yes` flips
-    // the default to accept. On confirmation we persist `unsupported: true`.
-    const unsupportedDecision = await confirmUnsupportedDeviceAdd(out, assessment, {
-      autoConfirm,
+  // Device-state view is independent of the (expensive) identity assessment,
+  // so build it now and short-circuit the device-state refusals (HFS+,
+  // no-UUID) BEFORE assessing — those refusals don't need the assessment, and
+  // assessing an HFS+-on-Linux iPod would be wasted (and pin the refusal late).
+  const baseStateView: DeviceStateView = {
+    located: true,
+    ...(ipod.volumeUuid ? { volumeUuid: ipod.volumeUuid } : {}),
+    ...(ipod.storage.filesystem !== undefined ? { filesystem: ipod.storage.filesystem } : {}),
+    platform,
+    path: probePath,
+    crossCheck: 'skipped',
+  };
+  // Pre-pass: fire the location-based refusals (HFS+-on-Linux, no readable
+  // volume UUID) BEFORE assessing, preserving the long-standing "refuse HFS+
+  // before any disk read" ordering. M4 with a null assessment also produces
+  // refuse-empty-identity for an undeclared claim — that one is NOT actionable
+  // yet (the real assessment may carry identity), so we deliberately ignore
+  // every outcome here except the two location refusals and re-run M4 below
+  // with the real assessment.
+  const preCheck = decideAddOutcome(req.tier, req.claim, null, baseStateView, req.force);
+  if (preCheck.kind === 'refuse-hfsplus-on-linux' || preCheck.kind === 'refuse-no-uuid') {
+    throwOutcomeError(preCheck, { platform, probePath, identifier: ipod.identifier });
+  }
+
+  // ── Assess ───────────────────────────────────────────────────────────────
+  let assessment: IpodIdentityAssessment | null = null;
+  if (ipod.isMounted) {
+    assessment = await assessIdentity(ipod.mountPoint);
+  }
+
+  // ── Act on the Outcome ───────────────────────────────────────────────────
+  let recordUnsupported = false;
+  let firmwareWritten = false;
+  let firmwarePrompted = false;
+  let sieReEntered = false;
+
+  // Known-unsupported generation/kind: surface the canonical refusal copy + an
+  // explicit confirm (user story 22) up front — every tier that *reads* the
+  // device does this, and it must precede the SysInfoExtended offer so the user
+  // isn't asked to write firmware to a device they may not want. M4 still emits
+  // `prompt-unsupported` as the deciding outcome in other cases; the loop below
+  // treats it as already-handled when we recorded the decision here.
+  let unsupportedHandled = false;
+  if (assessment?.model?.unsupportedReason) {
+    const decision = await confirmUnsupportedDeviceAdd(out, assessment, {
+      autoConfirm: req.autoConfirm,
       confirmFn,
     });
-    if (unsupportedDecision === 'cancelled') {
+    if (decision === 'cancelled') {
       out.print('Cancelled. No changes made.');
       return;
     }
-    const recordUnsupported = unsupportedDecision === 'add-anyway';
-
-    const identityDisplayName = assessment.model?.displayName ?? 'Unknown iPod';
-
-    if (!autoConfirm && out.isText) {
-      out.newline();
-      out.print(`iPod at path: ${identityDisplayName}`);
-      out.print(`  Path:        ${explicitPath}`);
-    }
-
-    // Database init / track-count read.
-    const hasDb = await IpodDatabase.hasDatabase(explicitPath);
-    let trackCount = 0;
-    let initialized = false;
-
-    if (!hasDb) {
-      out.print('');
-      out.print('This iPod needs to be initialized (no iTunesDB found).');
-
-      const shouldInit =
-        autoConfirm || out.isJson || (await confirmFn('Initialize iPod database now?'));
-
-      if (!shouldInit) {
-        out.print('Cancelled. iPod not initialized.');
-        return;
-      }
-
-      try {
-        out.print('Initializing iPod database...');
-        const ipod = await IpodDatabase.initializeIpod(explicitPath);
-        ipod.close();
-        initialized = true;
-        out.print(`Initialized as ${identityDisplayName}.`);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        throw new CliError({
-          message: `Failed to initialize iPod: ${message}`,
-          code: DeviceErrorCodes.INIT_FAILED,
-        });
-      }
-    } else {
-      try {
-        const ipod = await IpodDatabase.open(explicitPath);
-        try {
-          trackCount = ipod.trackCount;
-        } finally {
-          ipod.close();
-        }
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        out.verbose1(`Warning: Could not read database: ${message}`);
-      }
-    }
-
-    if (!autoConfirm && out.isText) {
-      out.print(`  Tracks:      ${formatNumber(trackCount)}`);
-    }
-
-    // Get volume UUID if possible (for macOS)
-    let volumeUuid = '';
-    let volumeName = explicitPath.split('/').pop() || 'iPod';
-    let matchingIdentifier = 'unknown';
-    let matchingFilesystem: string | null | undefined;
-
-    if (manager.isSupported) {
-      const ipods = await manager.scan({ kinds: ['ipod'] });
-      const matchingDevice = ipods.find((d) => d.isMounted && d.mountPoint === explicitPath);
-      if (matchingDevice) {
-        volumeUuid = matchingDevice.volumeUuid;
-        volumeName = matchingDevice.volumeName;
-        matchingIdentifier = matchingDevice.identifier;
-        matchingFilesystem = matchingDevice.storage.filesystem;
-      }
-    }
-
-    // TASK-317.15: refuse cleanly when no real filesystem UUID is available.
-    // Replaces the legacy `manual-${base64(path)}` synthetic-UUID fallback,
-    // which collided between any two devices mounted under the same parent
-    // dir and didn't survive replug. The HFS+-on-Linux case is already
-    // caught earlier by TASK-317.12; this is the residual defensive layer.
-    if (!volumeUuid || volumeUuid.startsWith('manual-')) {
-      const syntheticUuid = synthesizeTestVolumeUuid(explicitPath);
-      if (syntheticUuid) {
-        volumeUuid = syntheticUuid;
-      } else {
-        throwVolumeUuidRequired({
-          path: explicitPath,
-          identifier: matchingIdentifier,
-          filesystem: matchingFilesystem,
-        });
-      }
-    }
-
-    const deviceInfo = {
-      name,
-      identifier: 'unknown',
-      volumeName,
-      volumeUuid,
-      size: 0,
-      isMounted: true,
-      mountPoint: explicitPath,
-      trackCount,
-      modelName: identityDisplayName,
-    };
-
-    const { isFirstDevice, configPath } = resolveIsFirstDeviceAndConfigPath(configResult);
-    const deviceConfig: DeviceConfig = { volumeUuid, volumeName };
-    if (recordUnsupported) {
-      deviceConfig.unsupported = {
-        kind: assessment.model?.unsupportedReason?.kind ?? 'unsupported-device',
-        confirmedAt: new Date().toISOString(),
-      };
-    }
-    applyCommonDeviceConfigOptions(deviceConfig, options);
-
-    // Combined confirmation + firmware-inquiry. Helper owns the prompt
-    // copy, the needs-checksum warning, and the inquiry → re-assess
-    // lifecycle. Skips the SIE write entirely when the user already
-    // acknowledged this device as unsupported.
-    const firmwareResult = await offerFirmwareInquiry({
-      assessment,
-      options,
-      autoConfirm,
-      recordUnsupported,
-      out,
-      name,
-      mountPoint: explicitPath,
-      confirmFn,
-      deps: {
-        assessIdentity: deps.assessIdentity,
-        ensureSysInfoExtended: deps.ensureSysInfoExtended,
-      },
-    });
-    if (!firmwareResult.proceed) return;
-    assessment = firmwareResult.assessment ?? assessment;
-    const firmwareWritten = firmwareResult.firmwareWritten;
-
-    const { result } = persistDeviceConfig({
-      name,
-      deviceConfig,
-      configPath,
-      isFirstDevice,
-      deviceInfoForErrorDetails: deviceInfo,
-    });
-
-    const finalDisplayName = assessment.model?.displayName ?? identityDisplayName;
-    deviceInfo.modelName = finalDisplayName;
-
-    out.result<DeviceAddOutput>(
-      {
-        success: true,
-        device: deviceInfo,
-        initialized,
-        saved: true,
-        configPath: result.configPath,
-        isDefault: isFirstDevice,
-      },
-      () =>
-        printIpodDeviceAddSuccess(out, {
-          name,
-          modelDisplay: finalDisplayName,
-          capabilities: assessment.capabilities,
-          firmwareWritten,
-          isFirstDevice,
-          initialized,
-        })
-    );
-    return;
+    recordUnsupported = decision === 'add-anyway';
+    unsupportedHandled = true;
   }
 
-  // No explicit path - scan for devices
+  // ── Build views, run M4, act ─────────────────────────────────────────────
+  let view = ipodAssessmentToView(assessment ?? emptyIpodAssessment(), userTypeOpt);
+
+  const crossCheck =
+    req.tier === 'verify' && assessment && ipod.isMounted
+      ? await runVerifyCrossCheck(ipod.mountPoint, assessment)
+      : { crossCheck: 'skipped' as const };
+
+  const stateView: DeviceStateView = {
+    ...baseStateView,
+    crossCheck: crossCheck.crossCheck,
+    ...(crossCheck.detail !== undefined ? { crossCheckDetail: crossCheck.detail } : {}),
+  };
+
+  let outcome = decideAddOutcome(req.tier, req.claim, view, stateView, req.force);
+
+  // The outcome loop runs at most twice: the second pass only happens after a
+  // successful prompt-write-sie re-assess, and a second prompt-write-sie is
+  // collapsed to proceed-with-warning so it can never loop.
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    if (outcome.kind === 'proceed') break;
+
+    if (outcome.kind === 'proceed-with-warning') {
+      emitOutcomeWarning(out, outcome.warning);
+      break;
+    }
+
+    if (outcome.kind === 'prompt-unsupported') {
+      if (unsupportedHandled) break; // already prompted up front
+      const decision = await confirmUnsupportedDeviceAdd(out, assessment, {
+        autoConfirm: req.autoConfirm,
+        confirmFn,
+      });
+      if (decision === 'cancelled') {
+        out.print('Cancelled. No changes made.');
+        return;
+      }
+      recordUnsupported = decision === 'add-anyway';
+      break;
+    }
+
+    if (outcome.kind === 'prompt-write-sie') {
+      if (sieReEntered) {
+        // Defensive: a second prompt-write-sie must not loop. Treat as
+        // proceed-with-warning (the write was already attempted once).
+        emitOutcomeWarning(out, 'partial-identity');
+        break;
+      }
+      const firmwareResult = await offerFirmwareInquiry({
+        assessment,
+        autoConfirm: req.autoConfirm,
+        recordUnsupported,
+        out,
+        name,
+        mountPoint: outcome.mountPoint,
+        confirmFn,
+        deps: {
+          assessIdentity: deps.assessIdentity,
+          ensureSysInfoExtended: deps.ensureSysInfoExtended,
+        },
+      });
+      if (!firmwareResult.proceed) return;
+      assessment = firmwareResult.assessment;
+      firmwareWritten = firmwareWritten || firmwareResult.firmwareWritten;
+      firmwarePrompted = true;
+      sieReEntered = true;
+      // Re-assess view + state, re-enter M4 once.
+      view = ipodAssessmentToView(assessment ?? emptyIpodAssessment(), userTypeOpt);
+      outcome = decideAddOutcome(req.tier, req.claim, view, stateView, req.force);
+      continue;
+    }
+
+    // Refusals + errors.
+    throwOutcomeError(outcome, { platform, probePath, identifier: ipod.identifier });
+  }
+
+  // ── DB init / track-count + persist (shared iPod tail) ───────────────────
+  await finishIpodAdd({
+    req,
+    out,
+    ipod,
+    assessment,
+    recordUnsupported,
+    firmwareWritten,
+    firmwarePrompted,
+    IpodDatabase,
+    confirmFn,
+    name,
+  });
+}
+
+// =============================================================================
+// Phase: config-inject (pure config write, ZERO device I/O)
+// =============================================================================
+
+async function persistInjectedConfig(
+  req: AddRequest,
+  out: OutputContext,
+  isMassStorage: boolean,
+  presets: Record<string, import('@podkit/devices-mass-storage').MassStoragePreset>
+): Promise<void> {
+  const injected = req.injectedIdentity;
+  // M3 guarantees `injectedIdentity` is present + complete for config-inject.
+  if (!injected) {
+    throw new CliError({
+      message:
+        '--no-validate requires a complete device identity (--type plus --volume-uuid or --path).',
+      code: DeviceErrorCodes.EMPTY_IDENTITY,
+    });
+  }
+
+  const { configResult } = getContext();
+  const { isFirstDevice, configPath } = resolveIsFirstDeviceAndConfigPath(configResult);
+
+  const deviceConfig: DeviceConfig = isMassStorage
+    ? { type: injected.deviceType as DeviceConfig['type'], path: injected.path ?? '' }
+    : {
+        ...(injected.volumeUuid ? { volumeUuid: injected.volumeUuid } : {}),
+        volumeName:
+          injected.volumeName ?? injected.path?.split('/').pop() ?? injected.volumeUuid ?? req.name,
+      };
+  applyCommonConfigFromPatch(deviceConfig, req.config);
+  if (isMassStorage) applyMassStorageConfigFromPatch(deviceConfig, req.config.massStorage);
+
+  const deviceInfo = {
+    name: req.name,
+    identifier: isMassStorage ? 'mass-storage' : 'unknown',
+    volumeName: injected.volumeName ?? injected.path?.split('/').pop() ?? req.name,
+    volumeUuid: injected.volumeUuid ?? '',
+    size: 0,
+    isMounted: false,
+    ...(injected.path ? { mountPoint: injected.path } : {}),
+  };
+
+  const { result } = persistDeviceConfig({
+    name: req.name,
+    deviceConfig,
+    configPath,
+    isFirstDevice,
+    deviceInfoForErrorDetails: deviceInfo,
+  });
+
+  out.result<DeviceAddSuccess>(
+    {
+      success: true,
+      device: deviceInfo,
+      saved: true,
+      configPath: result.configPath,
+      isDefault: isFirstDevice,
+      verification: 'config-only',
+    },
+    () => {
+      if (isMassStorage) {
+        printMassStorageDeviceAddSuccess(out, {
+          name: req.name,
+          deviceType: injected.deviceType as NonNullable<DeviceConfig['type']>,
+          configResult: { created: result.created ?? false, configPath: result.configPath ?? '' },
+          isFirstDevice,
+          presets,
+        });
+      } else {
+        printIpodDeviceAddSuccess(out, {
+          name: req.name,
+          modelDisplay: deviceInfo.volumeName,
+          capabilities: null,
+          firmwareWritten: false,
+          isFirstDevice,
+          initialized: false,
+        });
+      }
+    }
+  );
+}
+
+// =============================================================================
+// Phase: mass-storage add (verify / trust-disk)
+// =============================================================================
+
+async function runMassStorageAdd(
+  req: AddRequest,
+  out: OutputContext,
+  presets: Record<string, import('@podkit/devices-mass-storage').MassStoragePreset>,
+  confirmFn: (msg: string) => Promise<boolean>
+): Promise<void> {
+  // M3 guarantees a `path` target for declared mass-storage types.
+  const explicitPath = req.target.kind === 'path' ? req.target.path : '';
+  const deviceType = (req.claim.mode === 'declared' ? req.claim.deviceType : '') as string;
+
+  // Path existence/stat is device I/O — performed here, not in M3.
+  if (!existsSync(explicitPath) || !statSync(explicitPath).isDirectory()) {
+    throw new CliError({
+      message: existsSync(explicitPath)
+        ? `Path is not a directory: ${explicitPath}`
+        : `Path not found: ${explicitPath}`,
+      code: existsSync(explicitPath)
+        ? DeviceErrorCodes.PATH_NOT_DIRECTORY
+        : DeviceErrorCodes.PATH_NOT_FOUND,
+    });
+  }
+
+  const assessment = assessMassStorageDevice(explicitPath, {
+    presetId: deviceType,
+    overrides: massStorageOverridesFromPatch(req.config.massStorage),
+  });
+  if (!assessment.preset) {
+    throw new CliError({
+      message: `Unknown device preset "${deviceType}".`,
+      code: DeviceErrorCodes.UNSUPPORTED_DEVICE,
+    });
+  }
+
+  const deviceConfig: DeviceConfig = {
+    type: deviceType as DeviceConfig['type'],
+    path: explicitPath,
+  };
+  applyCommonConfigFromPatch(deviceConfig, req.config);
+  applyMassStorageConfigFromPatch(deviceConfig, req.config.massStorage);
+
+  const volumeName = explicitPath.split('/').pop() || req.name;
+  const { configResult } = getContext();
+  const { isFirstDevice, configPath } = resolveIsFirstDeviceAndConfigPath(configResult);
+
+  const deviceInfo = {
+    name: req.name,
+    identifier: 'mass-storage',
+    volumeName,
+    volumeUuid: '',
+    size: 0,
+    isMounted: true,
+    mountPoint: explicitPath,
+  };
+
+  if (!req.autoConfirm && out.isText) {
+    out.newline();
+    const confirmDisplay = displayForConfig({ type: deviceType }, presets);
+    out.print(`Adding ${confirmDisplay.short} device:`);
+    out.print(`  Name:   ${req.name}`);
+    out.print(`  Type:   ${confirmDisplay.rich}`);
+    out.print(`  Path:   ${explicitPath}`);
+    out.newline();
+    const shouldSave = await confirmFn(`Add this device as "${req.name}"?`);
+    if (!shouldSave) {
+      out.print('Cancelled. No changes made.');
+      return;
+    }
+  }
+
+  const { result } = persistDeviceConfig({
+    name: req.name,
+    deviceConfig,
+    configPath,
+    isFirstDevice,
+    deviceInfoForErrorDetails: deviceInfo,
+  });
+
+  out.result<DeviceAddSuccess>(
+    {
+      success: true,
+      device: deviceInfo,
+      saved: true,
+      configPath: result.configPath,
+      isDefault: isFirstDevice,
+      verification: req.tier === 'verify' ? 'verified' : 'trusted-disk',
+    },
+    () =>
+      printMassStorageDeviceAddSuccess(out, {
+        name: req.name,
+        deviceType: deviceType as NonNullable<DeviceConfig['type']>,
+        configResult: { created: result.created ?? false, configPath: result.configPath ?? '' },
+        isFirstDevice,
+        presets,
+      })
+  );
+}
+
+// =============================================================================
+// Phase: reach the device (scan | locate + mount)
+// =============================================================================
+
+interface ReachDeviceCtx {
+  out: OutputContext;
+  manager: DeviceManager;
+  platform: string;
+  loadCore: () => Promise<CoreModule>;
+  name: string;
+  presets: () => Record<string, import('@podkit/devices-mass-storage').MassStoragePreset>;
+}
+
+/**
+ * Reach the iPod the request targets. Returns the located, mounted device, or
+ * `null` when a hint / refusal was already emitted (the scan "no device"
+ * surface). HFS+ + UUID gating is left to M4 — this only locates + mounts.
+ */
+async function reachDevice(req: AddRequest, ctx: ReachDeviceCtx): Promise<ReachedDevice | null> {
+  if (req.target.kind === 'path') {
+    return await reachByPath(req.target.path, ctx);
+  }
+  if (req.target.kind === 'uuid') {
+    return await reachByUuid(req.target.volumeUuid, ctx);
+  }
+  return await reachByScan(req, ctx);
+}
+
+async function reachByPath(path: string, ctx: ReachDeviceCtx): Promise<ReachedDevice | null> {
+  const { manager } = ctx;
+  if (!existsSync(path)) {
+    throw new CliError({
+      message: `Path not found: ${path}`,
+      code: DeviceErrorCodes.PATH_NOT_FOUND,
+    });
+  }
+
+  // Path targets always proceed from the path: when the OS can locate a volume
+  // we use its real record (UUID, filesystem); otherwise we synthesise a
+  // minimal one (bind mount / tmpfs) and let M4's no-UUID gate decide.
+  if (!manager.isSupported) {
+    return { device: synthLocatedDevice(path) };
+  }
+  const located = await manager.locate({ path });
+  return { device: located ?? synthLocatedDevice(path) };
+}
+
+async function reachByUuid(volumeUuid: string, ctx: ReachDeviceCtx): Promise<ReachedDevice | null> {
+  const { manager } = ctx;
+  if (!manager.isSupported) {
+    throw new CliError({
+      message: `Device scanning is not supported on ${manager.platform}. Specify a path explicitly: podkit device add -d <name> --path <path>`,
+      code: DeviceErrorCodes.SCAN_UNSUPPORTED,
+    });
+  }
+  const located = await manager.locate({ volumeUuid });
+  if (!located) {
+    throw new CliError({
+      message: `No device found for volume UUID ${volumeUuid}.`,
+      code: DeviceErrorCodes.DEVICE_NOT_FOUND,
+    });
+  }
+  return { device: located };
+}
+
+async function reachByScan(req: AddRequest, ctx: ReachDeviceCtx): Promise<ReachedDevice | null> {
+  const { out, manager, loadCore, name } = ctx;
+
   if (!manager.isSupported) {
     throw new CliError({
       message: `Device scanning is not supported on ${manager.platform}. Specify a path explicitly: podkit device add -d <name> --path <path>`,
@@ -827,145 +730,13 @@ export async function runDeviceAdd(
   }
 
   out.print('Scanning for attached devices...');
-
   const ipods = await manager.scan({ kinds: ['ipod'] });
 
   if (ipods.length === 0) {
-    // Disk scan found nothing. Before the generic "no iPod found" message,
-    // enrich the surface by consulting the discovery orchestrator. A single
-    // walk handles three "we saw something podkit refuses to add" cases:
-    //
-    //   1. iPod touch / iOS device — `DiscoveredDeviceIpod` with
-    //      `usb.supported === false` (no mass-storage mount so disk scan
-    //      never sees it).
-    //   2. Vendor-recognised non-iPod that podkit explicitly refuses to
-    //      manage — `DiscoveredDeviceUnsupported` (Sony Walkman, generic
-    //      SanDisk USB, …).
-    //   3. Supported device attached but unmounted — handled below via
-    //      `suggestAddIntents` so the user gets a `device add` hint.
-    //
-    // Both refusal flows surface `UNSUPPORTED_DEVICE` with the canonical
-    // reason; the hint flow surfaces `DETECTED_MASS_STORAGE` with an add
-    // suggestion.
-    let earlyUnsupportedReason: import('@podkit/core').ReadinessUnsupportedReason | undefined;
-    let earlyUnsupportedDisplay: string | undefined;
-    try {
-      const coreMod = await loadCore();
-      const discovered = await coreMod.discoverConnectedDevices({
-        deviceManager: manager,
-        massStoragePresets: mergedPresets(configResult.config),
-      });
-      const unsupportedIpod = discovered.find(
-        (d): d is import('@podkit/core').DiscoveredDeviceIpod =>
-          d.kind === 'ipod' && d.usb?.supported === false
-      );
-      if (unsupportedIpod?.usb) {
-        const usb = unsupportedIpod.usb;
-        const pid = parseInt(usb.device.productId.replace(/^0x/i, ''), 16);
-        const isIosRange = Number.isFinite(pid) && pid >= 0x1290 && pid <= 0x12af;
-        earlyUnsupportedDisplay =
-          usb.model?.displayName ?? (isIosRange ? 'iOS device' : 'Unsupported iPod');
-        // `classifyAsIpod` already attaches the canonical typed payload.
-        // Fall back to a synthesised reason only when the classifier somehow
-        // returned `supported: false` without one (defensive — currently
-        // unreachable on the iPod cascade path).
-        earlyUnsupportedReason = usb.unsupportedReason ?? {
-          kind: isIosRange ? 'ios-device' : 'unsupported-device',
-          headline: `${earlyUnsupportedDisplay} is not supported by podkit.`,
-          docsUrl: DOCS_URLS.supportedDevices,
-        };
-      } else {
-        // No unsupported-iPod hit — check for a vendor-recognised non-iPod
-        // refusal (Sony Walkman, SanDisk, …). Pre-TASK-427 these never
-        // surfaced via the provider framework (no provider claimed them),
-        // so device add fell through to `NO_IPOD`. Post-TASK-427 the
-        // dispatcher emits an intent; surface it cleanly here instead of
-        // letting the suggestAddIntents path render it as "Detected iPod
-        // via USB" via the type-display fallback.
-        const unsupportedKind = discovered.find(
-          (d): d is import('@podkit/core').DiscoveredDeviceUnsupported => d.kind === 'unsupported'
-        );
-        if (unsupportedKind) {
-          earlyUnsupportedDisplay = unsupportedKind.usb.family ?? 'Unsupported device';
-          earlyUnsupportedReason = {
-            kind: 'unsupported-device',
-            headline: unsupportedKind.usb.reason,
-            docsUrl: DOCS_URLS.supportedDevices,
-          };
-        }
-      }
-    } catch {
-      // Discovery is best-effort; fall through.
-    }
-
-    if (earlyUnsupportedReason) {
-      const lines = [earlyUnsupportedReason.headline];
-      if (earlyUnsupportedReason.details) lines.push(...earlyUnsupportedReason.details);
-      lines.push(`  See: ${earlyUnsupportedReason.docsUrl ?? DOCS_URLS.supportedDevices}`);
-      throw new CliError({
-        message: lines.join('\n'),
-        code: DeviceErrorCodes.UNSUPPORTED_DEVICE,
-        details: {
-          model: earlyUnsupportedDisplay,
-          unsupported: earlyUnsupportedReason,
-        },
-      });
-    }
-
-    // No iPod found via the manager and no refusal-class device. Walk the
-    // USB bus once more via `suggestAddIntents` so the user sees a
-    // "Detected X via USB — add with …" hint for supported devices the
-    // disk scan missed (e.g. an Echo Mini whose SD card hasn't mounted yet,
-    // a user-defined preset that disk scan can't classify). The dispatcher
-    // never emits `providerId: 'unsupported'` intents here because the
-    // refusal branch above caught those — but the filter stays as a
-    // belt-and-braces guard against future kinds.
-    let suggestedIntent: import('@podkit/core').DeviceAddIntent | undefined;
-    try {
-      const core = await loadCore();
-      const intents = await core.suggestAddIntents({
-        deviceManager: manager,
-        massStoragePresets: mergedPresets(configResult.config),
-      });
-      suggestedIntent = intents.find((i) => i.providerId !== 'unsupported');
-    } catch {
-      // Enumeration is best-effort: if it fails (e.g. USB walk errors),
-      // fall through to the original "no iPod found" error path.
-    }
-
-    if (!suggestedIntent) {
-      throw new CliError({
-        message:
-          'No iPod devices found. Make sure your iPod is connected, or specify a path explicitly with --path.',
-        code: DeviceErrorCodes.NO_IPOD,
-      });
-    }
-
-    const displayName = getDeviceTypeDisplayName({ type: suggestedIntent.kind }, presets);
-    out.print(`Detected ${displayName} via USB.`);
-    // Only render the "To add it, run:" block when the intent supplied
-    // a concrete command. Empty addArgs means "no command differs from
-    // what you just ran" — the notes carry the user-facing guidance.
-    if (suggestedIntent.addArgs.length > 0) {
-      out.print('To add it, run:');
-      out.print(`  podkit device add -d ${name} ${suggestedIntent.addArgs.join(' ')}`);
-    }
-    for (const note of suggestedIntent.notes ?? []) {
-      out.print(`  ${note}`);
-    }
-
-    const detailMessage =
-      suggestedIntent.addArgs.length > 0
-        ? `Detected ${suggestedIntent.kind} device — add with ${suggestedIntent.addArgs.join(' ')}`
-        : `Detected ${suggestedIntent.kind} device — see notes above`;
-    throw new CliError({
-      message: detailMessage,
-      code: DeviceErrorCodes.DETECTED_MASS_STORAGE,
-      details: { kind: suggestedIntent.kind, providerId: suggestedIntent.providerId },
-    });
+    await handleNoDeviceFound(ctx);
+    return null; // handleNoDeviceFound always throws; this is unreachable.
   }
 
-  // Multiple iPods found - error with guidance
   if (ipods.length > 1) {
     if (out.isText) {
       out.newline();
@@ -992,47 +763,9 @@ export async function runDeviceAdd(
 
   let ipod = ipods[0]!;
 
-  // Refuse HFS+ iPods on Linux up-front — before mount attempts, identity
-  // assessment, or any state-mutating work. See TASK-317.12.
-  if (isFilesystemUnsupportedHere(ipod.storage.filesystem, platform)) {
-    const path = ipod.isMounted ? ipod.mountPoint : `/dev/${ipod.identifier}`;
-    throw new CliError({
-      message: formatHfsplusOnLinuxRefusal().join('\n'),
-      code: DeviceErrorCodes.UNSUPPORTED_FILESYSTEM_ON_LINUX,
-      details: {
-        filesystem: ipod.storage.filesystem,
-        platform,
-        path,
-        unsupported: makeHfsplusOnLinuxUnsupportedReason({
-          ...(ipod.storage.filesystem ? { filesystem: ipod.storage.filesystem } : {}),
-          path,
-        }),
-      },
-    });
-  }
-
-  // TASK-317.15: refuse cleanly when the scan-found iPod has no readable
-  // filesystem UUID. HFS+ on Linux is already caught above; this is the
-  // catch-all for corrupt FAT32, unusual layouts, etc. Without a real
-  // UUID we cannot identify the device across replug cycles.
-  if (!ipod.volumeUuid || ipod.volumeUuid.startsWith('manual-')) {
-    const probePath = ipod.isMounted ? ipod.mountPoint : `/dev/${ipod.identifier}`;
-    const syntheticUuid = synthesizeTestVolumeUuid(probePath);
-    if (syntheticUuid) {
-      ipod = { ...ipod, volumeUuid: syntheticUuid };
-    } else {
-      throwVolumeUuidRequired({
-        path: probePath,
-        identifier: ipod.identifier,
-        filesystem: ipod.storage.filesystem,
-      });
-    }
-  }
-
-  // Handle unmounted device: assess, attempt mount, guide user if sudo required
+  // Mount-if-unmounted (mount logic stays here).
   if (!ipod.isMounted) {
     const assessment = await manager.assessDevice(ipod.identifier);
-
     out.newline();
     out.print(
       `Found iPod: ${ipod.volumeName} (${formatBytes(ipod.storage.sizeBytes)}) — not mounted`
@@ -1053,10 +786,8 @@ export async function runDeviceAdd(
     out.print('Attempting to mount...');
 
     const mountResult = await manager.mount(ipod.identifier);
-
     if (mountResult.success && mountResult.mountPoint) {
       out.print(`Mounted at ${mountResult.mountPoint}.`);
-      // Re-fetch device info so subsequent code has the mount point
       const updated = await manager.locate({ volumeUuid: ipod.volumeUuid });
       if (updated?.isMounted) ipod = updated;
     } else if (mountResult.requiresSudo) {
@@ -1064,9 +795,7 @@ export async function runDeviceAdd(
         ? formatIFlashMountExplanation(assessment)
         : ['Mounting requires elevated privileges.'];
       if (out.isText) {
-        for (const line of explanationLines) {
-          out.error(line);
-        }
+        for (const line of explanationLines) out.error(line);
         out.newline();
         out.error(`Run:  ${bold('sudo')} podkit device add -d ${name}`);
       }
@@ -1083,47 +812,199 @@ export async function runDeviceAdd(
     }
   }
 
-  // Assess identity from disk + USB without writing anything. The cascade
-  // resolves model + capabilities from the most specific signal we have:
-  // SysInfoExtended → classic SysInfo ModelNumStr → USB product ID.
-  // This runs before database init so SysInfoExtended is available for the
-  // hash58/72/AB checksum stack when we eventually write it.
-  let assessment: IpodIdentityAssessment | null = null;
-  if (ipod.isMounted) {
-    assessment = await assessIdentity(ipod.mountPoint);
+  if (!ipod.isMounted) {
+    // Mount failed silently — keep the original render context.
+    if (!req.autoConfirm && out.isText) {
+      out.newline();
+      out.print(`  Name:        ${ipod.volumeName || '(unnamed)'}`);
+      out.print(`  Mount:       (not mounted)`);
+      out.print(`  Capacity:    ${formatBytes(ipod.storage.sizeBytes)}`);
+      out.print(`  Volume UUID: ${ipod.volumeUuid}`);
+      out.print(`  Device:      /dev/${ipod.identifier}`);
+    }
   }
 
-  // Empty-identity gate (mirrors the --path branch above).
-  // The scan branch can still proceed when we identified the iPod via the
-  // OS-level device walk (volume UUID, mount point) even though the cascade
-  // resolved nothing — the user is plainly looking at a recognised iPod —
-  // but persisting a config row without any model/USB/SysInfo signal still
-  // strands downstream commands that depend on identity. Same gate.
-  enforceIdentityGate(
-    out,
-    assessment,
-    options,
-    ipod.isMounted ? ipod.mountPoint : `/dev/${ipod.identifier}`
-  );
+  return { device: ipod };
+}
 
-  // Known-unsupported generations (touch_*, nano_6/7, shuffle_3g/4g, iOS): warn-allow.
-  // The cascade-resolved model carries `unsupportedReason`; we surface the
-  // canonical message and prompt explicitly. On confirmation we mark the
-  // persisted device with `unsupported: true` so `sync` + mutating
-  // `doctor --repair` flows can still refuse.
-  const scanUnsupportedDecision = await confirmUnsupportedDeviceAdd(out, assessment, {
-    autoConfirm,
-    confirmFn,
+/**
+ * The scan "no iPod found" surface — consults the discovery orchestrator for
+ * unsupported-device / hint cases, then throws the right `CliError`. Always
+ * throws.
+ */
+async function handleNoDeviceFound(ctx: ReachDeviceCtx): Promise<never> {
+  const { manager, loadCore, name, presets } = ctx;
+  const massStoragePresets = presets();
+
+  let earlyUnsupportedReason: import('@podkit/core').ReadinessUnsupportedReason | undefined;
+  let earlyUnsupportedDisplay: string | undefined;
+  try {
+    const coreMod = await loadCore();
+    const discovered = await coreMod.discoverConnectedDevices({
+      deviceManager: manager,
+      massStoragePresets,
+    });
+    const unsupportedIpod = discovered.find(
+      (d): d is import('@podkit/core').DiscoveredDeviceIpod =>
+        d.kind === 'ipod' && d.usb?.supported === false
+    );
+    if (unsupportedIpod?.usb) {
+      const usb = unsupportedIpod.usb;
+      const pid = parseInt(usb.device.productId.replace(/^0x/i, ''), 16);
+      const isIosRange = Number.isFinite(pid) && pid >= 0x1290 && pid <= 0x12af;
+      earlyUnsupportedDisplay =
+        usb.model?.displayName ?? (isIosRange ? 'iOS device' : 'Unsupported iPod');
+      earlyUnsupportedReason = usb.unsupportedReason ?? {
+        kind: isIosRange ? 'ios-device' : 'unsupported-device',
+        headline: `${earlyUnsupportedDisplay} is not supported by podkit.`,
+        docsUrl: DOCS_URLS.supportedDevices,
+      };
+    } else {
+      const unsupportedKind = discovered.find(
+        (d): d is import('@podkit/core').DiscoveredDeviceUnsupported => d.kind === 'unsupported'
+      );
+      if (unsupportedKind) {
+        earlyUnsupportedDisplay = unsupportedKind.usb.family ?? 'Unsupported device';
+        earlyUnsupportedReason = {
+          kind: 'unsupported-device',
+          headline: unsupportedKind.usb.reason,
+          docsUrl: DOCS_URLS.supportedDevices,
+        };
+      }
+    }
+  } catch {
+    // Discovery is best-effort; fall through.
+  }
+
+  if (earlyUnsupportedReason) {
+    const lines = [earlyUnsupportedReason.headline];
+    if (earlyUnsupportedReason.details) lines.push(...earlyUnsupportedReason.details);
+    lines.push(`  See: ${earlyUnsupportedReason.docsUrl ?? DOCS_URLS.supportedDevices}`);
+    throw new CliError({
+      message: lines.join('\n'),
+      code: DeviceErrorCodes.UNSUPPORTED_DEVICE,
+      details: { model: earlyUnsupportedDisplay, unsupported: earlyUnsupportedReason },
+    });
+  }
+
+  let suggestedIntent: import('@podkit/core').DeviceAddIntent | undefined;
+  try {
+    const core = await loadCore();
+    const intents = await core.suggestAddIntents({
+      deviceManager: manager,
+      massStoragePresets,
+    });
+    suggestedIntent = intents.find((i) => i.providerId !== 'unsupported');
+  } catch {
+    // Enumeration is best-effort.
+  }
+
+  if (!suggestedIntent) {
+    throw new CliError({
+      message:
+        'No iPod devices found. Make sure your iPod is connected, or specify a path explicitly with --path.',
+      code: DeviceErrorCodes.NO_IPOD,
+    });
+  }
+
+  const displayName = getDeviceTypeDisplayName({ type: suggestedIntent.kind }, massStoragePresets);
+  ctx.out.print(`Detected ${displayName} via USB.`);
+  if (suggestedIntent.addArgs.length > 0) {
+    ctx.out.print('To add it, run:');
+    ctx.out.print(`  podkit device add -d ${name} ${suggestedIntent.addArgs.join(' ')}`);
+  }
+  for (const note of suggestedIntent.notes ?? []) ctx.out.print(`  ${note}`);
+
+  const detailMessage =
+    suggestedIntent.addArgs.length > 0
+      ? `Detected ${suggestedIntent.kind} device — add with ${suggestedIntent.addArgs.join(' ')}`
+      : `Detected ${suggestedIntent.kind} device — see notes above`;
+  throw new CliError({
+    message: detailMessage,
+    code: DeviceErrorCodes.DETECTED_MASS_STORAGE,
+    details: { kind: suggestedIntent.kind, providerId: suggestedIntent.providerId },
   });
-  if (scanUnsupportedDecision === 'cancelled') {
-    out.print('Cancelled. No changes made.');
-    return;
-  }
-  const recordUnsupportedScan = scanUnsupportedDecision === 'add-anyway';
+}
 
-  // Render identity to the user before any prompts. Cascade-derived display
-  // name; USB product ID is enough for the nano 2G "empty SysInfo" case.
+// =============================================================================
+// Phase: verify-tier cross-check
+// =============================================================================
+
+/**
+ * Run the `sysinfo-consistency` + `sysinfo-modelnum-mismatch` diagnostics and
+ * collapse their `CheckResult.status` into a single `crossCheck`:
+ *   - `fail` / `warn` → `mismatch`
+ *   - `pass`          → `pass`
+ *   - `skip`          → `skipped`
+ *
+ * `mismatch` from either check wins; `pass` beats `skipped`. The `liveIdentity`
+ * the checks expect is assembled from the assessment's USB fingerprint.
+ */
+async function runVerifyCrossCheck(
+  mountPoint: string,
+  assessment: IpodIdentityAssessment
+): Promise<{ crossCheck: 'pass' | 'mismatch' | 'skipped'; detail?: string }> {
+  const { getDiagnosticCheck } = await import('@podkit/core');
+  const consistency = getDiagnosticCheck('sysinfo-consistency');
+  const modelnum = getDiagnosticCheck('sysinfo-modelnum-mismatch');
+
+  const { identify } = await import('@podkit/core');
+  const liveModel: IpodModel | undefined =
+    assessment.usbFingerprint?.productId !== undefined
+      ? identify({ from: 'usb', productId: assessment.usbFingerprint.productId })
+      : undefined;
+  const liveIdentity = {
+    ...(assessment.usbFingerprint?.serialNumber
+      ? { firewireGuid: assessment.usbFingerprint.serialNumber }
+      : {}),
+    ...(liveModel ? { model: liveModel } : {}),
+  };
+
+  const ctx = {
+    mountPoint,
+    deviceType: 'ipod' as const,
+    liveIdentity,
+  };
+
+  // `mismatch` from either check wins (early return); otherwise a `pass` on
+  // either axis lifts the result above `skipped`.
+  let sawPass = false;
+  for (const check of [consistency, modelnum]) {
+    if (!check) continue;
+    const result = await check.check(ctx);
+    if (result.status === 'fail' || result.status === 'warn') {
+      return { crossCheck: 'mismatch', detail: result.summary };
+    }
+    if (result.status === 'pass') sawPass = true;
+  }
+
+  return { crossCheck: sawPass ? 'pass' : 'skipped' };
+}
+
+// =============================================================================
+// Phase: shared iPod tail (DB init / track-count + persist)
+// =============================================================================
+
+async function finishIpodAdd(args: {
+  req: AddRequest;
+  out: OutputContext;
+  ipod: PlatformDeviceInfo;
+  assessment: IpodIdentityAssessment | null;
+  recordUnsupported: boolean;
+  firmwareWritten: boolean;
+  /** True when the firmware/add prompt already fired in the outcome loop. */
+  firmwarePrompted: boolean;
+  IpodDatabase: IpodDatabaseLike;
+  confirmFn: (msg: string) => Promise<boolean>;
+  name: string;
+}): Promise<void> {
+  const { req, out, ipod, recordUnsupported, firmwarePrompted, IpodDatabase, confirmFn, name } =
+    args;
+  const assessment = args.assessment;
+  const firmwareWritten = args.firmwareWritten;
+  const autoConfirm = req.autoConfirm;
   const identityDisplayName = assessment?.model?.displayName ?? 'Unknown iPod';
+
   if (!autoConfirm && out.isText) {
     out.newline();
     out.print(`Found ${identityDisplayName}:`);
@@ -1134,26 +1015,20 @@ export async function runDeviceAdd(
     out.print(`  Device:      /dev/${ipod.identifier}`);
   }
 
-  // Database init / track-count read (model name comes from cascade, not libgpod).
   let trackCount = 0;
   let initialized = false;
-
   if (ipod.isMounted) {
     const mountPoint = ipod.mountPoint;
     const hasDb = await IpodDatabase.hasDatabase(mountPoint);
-
     if (!hasDb) {
       out.newline();
       out.print('This iPod needs to be initialized (no iTunesDB found).');
-
       const shouldInit =
         autoConfirm || out.isJson || (await confirmFn('Initialize iPod database now?'));
-
       if (!shouldInit) {
         out.print('Cancelled. iPod not initialized.');
         return;
       }
-
       try {
         out.print('Initializing iPod database...');
         const db = await IpodDatabase.initializeIpod(mountPoint);
@@ -1176,13 +1051,39 @@ export async function runDeviceAdd(
           db.close();
         }
       } catch {
-        // Couldn't read database info, continue anyway
+        // Couldn't read database info, continue anyway.
       }
     }
   }
 
   if (!autoConfirm && out.isText) {
     out.print(`  Tracks:      ${formatNumber(trackCount)}`);
+  }
+
+  const { configResult } = getContext();
+  const { isFirstDevice, configPath } = resolveIsFirstDeviceAndConfigPath(configResult);
+  const deviceConfig: DeviceConfig = {
+    volumeUuid: ipod.volumeUuid,
+    volumeName: ipod.volumeName,
+  };
+  if (recordUnsupported) {
+    deviceConfig.unsupported = {
+      kind: assessment?.model?.unsupportedReason?.kind ?? 'unsupported-device',
+      confirmedAt: new Date().toISOString(),
+    };
+  }
+  applyCommonConfigFromPatch(deviceConfig, req.config);
+
+  // Final add confirmation. The SysInfoExtended write (verify tier, SIE
+  // missing) was already handled by the prompt-write-sie outcome, which also
+  // served as the confirmation — so only prompt here when that did NOT fire
+  // (SIE already present, or the trust-disk tier). Skipped under --yes / JSON.
+  if (!firmwarePrompted && !autoConfirm && out.isText) {
+    const shouldSave = await confirmFn(`Add this iPod as "${name}"?`);
+    if (!shouldSave) {
+      out.print('Cancelled. No changes made.');
+      return;
+    }
   }
 
   const deviceInfo = {
@@ -1194,43 +1095,8 @@ export async function runDeviceAdd(
     isMounted: ipod.isMounted,
     mountPoint: ipod.isMounted ? ipod.mountPoint : undefined,
     trackCount,
-    modelName: identityDisplayName,
+    modelName: assessment?.model?.displayName ?? identityDisplayName,
   };
-
-  const { isFirstDevice, configPath } = resolveIsFirstDeviceAndConfigPath(configResult);
-  const deviceConfig: DeviceConfig = {
-    volumeUuid: ipod.volumeUuid,
-    volumeName: ipod.volumeName,
-  };
-  if (recordUnsupportedScan) {
-    deviceConfig.unsupported = {
-      kind: assessment?.model?.unsupportedReason?.kind ?? 'unsupported-device',
-      confirmedAt: new Date().toISOString(),
-    };
-  }
-  applyCommonDeviceConfigOptions(deviceConfig, options);
-
-  // Combined confirmation + firmware-inquiry — same helper as the
-  // explicit-path branch. The mount-gate above guarantees ipod.isMounted
-  // is true at this point; the ternary just satisfies the discriminated-
-  // union narrowing on PlatformDeviceInfo.
-  const firmwareResult = await offerFirmwareInquiry({
-    assessment,
-    options,
-    autoConfirm,
-    recordUnsupported: recordUnsupportedScan,
-    out,
-    name,
-    mountPoint: ipod.isMounted ? ipod.mountPoint : '',
-    confirmFn,
-    deps: {
-      assessIdentity: deps.assessIdentity,
-      ensureSysInfoExtended: deps.ensureSysInfoExtended,
-    },
-  });
-  if (!firmwareResult.proceed) return;
-  assessment = firmwareResult.assessment;
-  const firmwareWritten = firmwareResult.firmwareWritten;
 
   const { result } = persistDeviceConfig({
     name,
@@ -1240,14 +1106,7 @@ export async function runDeviceAdd(
     deviceInfoForErrorDetails: deviceInfo,
   });
 
-  const finalModel = assessment?.model;
-  const finalCapabilities = assessment?.capabilities;
-  const finalDisplayName = finalModel?.displayName ?? identityDisplayName;
-  // Refresh deviceInfo's modelName for JSON consumers — post-write cascade
-  // may resolve a more specific variant.
-  deviceInfo.modelName = finalDisplayName;
-
-  out.result<DeviceAddOutput>(
+  out.result<DeviceAddSuccess>(
     {
       success: true,
       device: deviceInfo,
@@ -1255,15 +1114,204 @@ export async function runDeviceAdd(
       saved: true,
       configPath: result.configPath,
       isDefault: isFirstDevice,
+      verification: req.tier === 'verify' ? 'verified' : 'trusted-disk',
     },
     () =>
       printIpodDeviceAddSuccess(out, {
         name,
-        modelDisplay: finalDisplayName,
-        capabilities: finalCapabilities,
+        modelDisplay: deviceInfo.modelName,
+        capabilities: assessment?.capabilities,
         firmwareWritten,
         isFirstDevice,
         initialized,
       })
   );
+}
+
+// =============================================================================
+// Outcome → side-effect mappers
+// =============================================================================
+
+function emitOutcomeWarning(
+  out: OutputContext,
+  warning: 'partial-identity' | 'path-only-no-uuid' | 'empty-identity-forced'
+): void {
+  if (!out.isText) return;
+  if (warning === 'partial-identity') {
+    out.warn(
+      'Unable to determine device model from disk — no SysInfoExtended or classic SysInfo. ' +
+        'Proceeding with USB identity only; some operations may behave conservatively. ' +
+        'Retry with the device re-mounted or re-plugged.'
+    );
+  } else if (warning === 'path-only-no-uuid') {
+    out.warn(
+      'Proceeding without a stable volume UUID (--force). This device may not be re-found ' +
+        'if its mount path changes — pass --volume-uuid to make it durable across replug.'
+    );
+  } else {
+    out.warn('Proceeding with empty device identity. Some operations may not behave correctly.');
+  }
+}
+
+/** Map a refusal/error Outcome to a `CliError`. Always throws. */
+function throwOutcomeError(
+  outcome: Outcome,
+  ctx: { platform: string; probePath: string; identifier?: string }
+): never {
+  switch (outcome.kind) {
+    case 'error-mismatch':
+      throw new CliError({
+        message:
+          'On-disk SysInfo disagrees with the connected device. ' +
+          (outcome.detail ? `${outcome.detail}\n\n` : '') +
+          'Run `podkit doctor --repair sysinfo-modelnum-mismatch` to reconcile the device identity, ' +
+          'then retry the add.',
+        code: DeviceErrorCodes.IDENTITY_MISMATCH,
+        ...(outcome.detail ? { details: { detail: outcome.detail } } : {}),
+      });
+    case 'error-missing-sysinfo':
+      throw new CliError({
+        message:
+          'This iPod has no on-disk SysInfo and --no-verify skips the firmware inquiry that would ' +
+          'write it. Run `podkit doctor` on a host that can perform the USB inquiry to write ' +
+          'SysInfoExtended, then retry, or drop --no-verify to let add write it now.',
+        code: DeviceErrorCodes.EMPTY_IDENTITY,
+        details: { path: ctx.probePath },
+      });
+    case 'refuse-no-uuid':
+      throw new CliError({
+        message:
+          'Cannot add iPod: this iPod does not have a readable filesystem UUID. ' +
+          'podkit identifies iPods by volume UUID across replug cycles — without one, ' +
+          'commands like `podkit doctor -d <name>` would fail to find the device.\n\n' +
+          'Common causes: corrupt partition table, unusual filesystem layout. ' +
+          `See: ${DOCS_URLS.troubleshooting}`,
+        code: DeviceErrorCodes.VOLUME_UUID_REQUIRED,
+        details: {
+          path: outcome.path ?? ctx.probePath,
+          identifier: ctx.identifier ?? 'unknown',
+          filesystem: outcome.filesystem ?? null,
+        },
+      });
+    case 'refuse-hfsplus-on-linux':
+      throw new CliError({
+        message: formatHfsplusOnLinuxRefusal().join('\n'),
+        code: DeviceErrorCodes.UNSUPPORTED_FILESYSTEM_ON_LINUX,
+        details: {
+          filesystem: outcome.filesystem ?? null,
+          platform: ctx.platform,
+          path: outcome.path ?? ctx.probePath,
+          unsupported: makeHfsplusOnLinuxUnsupportedReason({
+            ...(outcome.filesystem ? { filesystem: outcome.filesystem } : {}),
+            path: outcome.path ?? ctx.probePath,
+          }),
+        },
+      });
+    case 'refuse-empty-identity':
+      throw new CliError({
+        message: emptyIdentityRefusalLines().join('\n'),
+        code: DeviceErrorCodes.EMPTY_IDENTITY,
+        details: { path: outcome.path ?? ctx.probePath },
+      });
+    case 'error-incomplete-injection':
+      throw new CliError({
+        message: `--no-validate requires a complete device identity. Missing: ${outcome.missing.join(', ')}.`,
+        code: DeviceErrorCodes.EMPTY_IDENTITY,
+        details: { missing: outcome.missing },
+      });
+    default:
+      // Exhaustiveness: every non-refusal kind is handled by the caller.
+      throw new CliError({
+        message: `Unexpected add outcome: ${outcome.kind}`,
+        code: DeviceErrorCodes.UNSUPPORTED_DEVICE,
+      });
+  }
+}
+
+function emptyIdentityRefusalLines(): string[] {
+  return [
+    'Cannot add this device: no identifying signal is available.',
+    '',
+    '  • SysInfoExtended could not be read from firmware (USB inquiry path is closed).',
+    '  • No classic SysInfo file was found on the device.',
+    '  • USB enumeration did not resolve a product fingerprint.',
+    '',
+    'Persisting a device row with empty identity strands later commands ' +
+      '(`podkit doctor`, `podkit sync`) — they cannot reliably identify the',
+    'device on replug. Try one of:',
+    '',
+    '  • Re-mount the device read-write and check the USB connection, then retry.',
+    '  • Pass --force to add the device anyway — some operations may behave',
+    '    conservatively without identity.',
+  ];
+}
+
+// =============================================================================
+// Config-patch appliers
+// =============================================================================
+
+function applyCommonConfigFromPatch(deviceConfig: DeviceConfig, patch: DeviceConfigPatch): void {
+  applyCommonDeviceConfigOptions(deviceConfig, {
+    ...(patch.quality !== undefined ? { quality: patch.quality } : {}),
+    ...(patch.audioQuality !== undefined ? { audioQuality: patch.audioQuality } : {}),
+    ...(patch.videoQuality !== undefined ? { videoQuality: patch.videoQuality } : {}),
+    ...(patch.encoding !== undefined ? { encoding: patch.encoding } : {}),
+    ...(patch.artwork !== undefined ? { artwork: patch.artwork } : {}),
+  });
+}
+
+function applyMassStorageConfigFromPatch(deviceConfig: DeviceConfig, ms: MassStoragePatch): void {
+  if (ms.artworkMaxResolution !== undefined)
+    deviceConfig.artworkMaxResolution = ms.artworkMaxResolution;
+  if (ms.artworkSources !== undefined)
+    deviceConfig.artworkSources = ms.artworkSources as DeviceConfig['artworkSources'];
+  if (ms.supportedAudioCodecs !== undefined)
+    deviceConfig.supportedAudioCodecs =
+      ms.supportedAudioCodecs as DeviceConfig['supportedAudioCodecs'];
+  if (ms.supportsVideo !== undefined) deviceConfig.supportsVideo = ms.supportsVideo;
+  if (ms.musicDir !== undefined) deviceConfig.musicDir = ms.musicDir;
+  if (ms.moviesDir !== undefined) deviceConfig.moviesDir = ms.moviesDir;
+  if (ms.tvShowsDir !== undefined) deviceConfig.tvShowsDir = ms.tvShowsDir;
+}
+
+function massStorageOverridesFromPatch(
+  ms: MassStoragePatch
+): Parameters<typeof validateCapabilityOverrides>[0] {
+  const overrides: Parameters<typeof validateCapabilityOverrides>[0] = {};
+  if (ms.artworkMaxResolution !== undefined)
+    overrides.artworkMaxResolution = ms.artworkMaxResolution;
+  if (ms.artworkSources !== undefined) overrides.artworkSources = ms.artworkSources;
+  if (ms.supportedAudioCodecs !== undefined)
+    overrides.supportedAudioCodecs = ms.supportedAudioCodecs;
+  return overrides;
+}
+
+// =============================================================================
+// Small synth helpers
+// =============================================================================
+
+/** Synthesise a minimal located device from a bare path (no OS volume info). */
+function synthLocatedDevice(path: string): PlatformDeviceInfo {
+  return {
+    identifier: 'unknown',
+    volumeName: path.split('/').pop() || 'iPod',
+    volumeUuid: '',
+    storage: { sizeBytes: 0 },
+    isMounted: true,
+    mountPoint: path,
+  } as PlatformDeviceInfo;
+}
+
+/** A neutral assessment used to build a view when assessment is null. */
+function emptyIpodAssessment(): IpodIdentityAssessment {
+  return {
+    model: null,
+    capabilities: null,
+    needsChecksum: false,
+    checksumType: undefined,
+    firmwareInquiry: 'unwritable',
+    existing: null,
+    usbFingerprint: null,
+    sysInfoModelNumber: undefined,
+  };
 }

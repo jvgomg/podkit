@@ -107,11 +107,6 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
       // Consistent output formatting across hosts.
       NO_COLOR: '1',
       FORCE_COLOR: '0',
-      // E2E dummy-iPod targets are tmpdir-backed and have no real filesystem
-      // UUID. The synthetic-UUID hatch in `device add` lets test-only setups
-      // skip the refusal; production paths still require a real UUID. See
-      // packages/podkit-cli/src/commands/device/add.ts (`synthesizeTestVolumeUuid`).
-      PODKIT_TEST_SYNTHETIC_VOLUME_UUID: '1',
     };
 
     // 'production' runs the bundle under node; 'debug' invokes the compiled
@@ -260,8 +255,8 @@ music = "main"
 
   if (devicePath) {
     // A device stanza so the test target is addressable as `-d test`. Real
-    // configs key on volume UUID; the e2e runner stamps a synthetic UUID via
-    // PODKIT_TEST_SYNTHETIC_VOLUME_UUID (see runCli above).
+    // configs key on volume UUID; this fixed `test-uuid` stands in for tests
+    // that only need an addressable device row (no `device add` involved).
     content += `
 [devices.test]
 volumeUuid = "test-uuid"

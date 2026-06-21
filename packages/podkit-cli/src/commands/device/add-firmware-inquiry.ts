@@ -5,9 +5,10 @@
  * 780-830 and scan-branch 1242-1295) into a single helper.
  *
  * The block decides whether to offer reading SysInfoExtended over USB,
- * prompts the user for combined confirmation, surfaces the needs-
- * checksum warning when the user opted out via --no-firmware-inquiry,
- * and runs the actual inquiry through the core helper.
+ * prompts the user for combined confirmation, and runs the actual inquiry
+ * through the core helper. Tier gating lives in the caller: M4 only emits
+ * `prompt-write-sie` (which reaches this helper) in the verify tier, so the
+ * helper no longer consults a per-call opt-out flag.
  *
  * Returns a discriminated result:
  *  - `{ proceed: false }` — the user declined the prompt; caller should
@@ -37,8 +38,6 @@ export interface OfferFirmwareInquiryDeps {
 export interface OfferFirmwareInquiryArgs {
   /** Cascade-derived identity assessment. May be null on the scan branch when the cascade resolved nothing. */
   assessment: IpodIdentityAssessment | null;
-  /** Parsed add options — only `firmwareInquiry` is consulted here. */
-  options: { firmwareInquiry?: boolean };
   /** `--yes` mode: skip the interactive prompt entirely. */
   autoConfirm: boolean;
   /** `true` when the user has already acknowledged the device is unsupported. SIE write is skipped in that case. */
@@ -68,14 +67,10 @@ export type FirmwareInquiryResult =
 export async function offerFirmwareInquiry(
   args: OfferFirmwareInquiryArgs
 ): Promise<FirmwareInquiryResult> {
-  const { options, autoConfirm, recordUnsupported, out, name, mountPoint, confirmFn } = args;
+  const { autoConfirm, recordUnsupported, out, name, mountPoint, confirmFn } = args;
   let assessment = args.assessment;
 
-  const offer =
-    !!assessment &&
-    assessment.firmwareInquiry === 'missing' &&
-    options.firmwareInquiry !== false &&
-    !recordUnsupported;
+  const offer = !!assessment && assessment.firmwareInquiry === 'missing' && !recordUnsupported;
 
   if (!autoConfirm && out.isText) {
     if (offer) {
@@ -92,17 +87,6 @@ export async function offerFirmwareInquiry(
     if (!shouldSave) {
       out.print('Cancelled. No changes made.');
       return { proceed: false };
-    }
-  } else if (assessment?.needsChecksum && !offer && options.firmwareInquiry === false) {
-    // Hard requirement: hash-based devices won't sync without
-    // SysInfoExtended. Don't silently strand the user — surface this
-    // even in non-interactive modes.
-    if (out.isText) {
-      out.warn(
-        `This iPod's generation requires SysInfoExtended for the iTunesDB checksum. ` +
-          'Skipping firmware inquiry will leave it unsynced. ' +
-          'Run `podkit doctor --repair sysinfo-extended` later.'
-      );
     }
   }
 

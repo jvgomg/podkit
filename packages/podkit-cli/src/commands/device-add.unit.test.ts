@@ -799,31 +799,18 @@ describe('runDeviceAdd: HFS+ on Linux refusal (TASK-317.12)', () => {
       getDeviceManager: () =>
         fakeManager({
           isSupported: true,
-          // scan({ kinds: ['ipod'] }) is consulted for the volumeUuid lookup
-          // in the --path branch; mirror the plain scan() record so
-          // TASK-317.15 doesn't refuse on missing UUID.
-          scan: async (opts) =>
-            opts?.kinds?.includes('ipod')
-              ? [
-                  {
-                    identifier: 'sdb2',
-                    volumeName: 'IPOD',
-                    volumeUuid: 'AAAA-BBBB',
-                    storage: { sizeBytes: 8_000_000_000, filesystem: 'vfat' },
-                    isMounted: true,
-                    mountPoint: dir,
-                  } as Awaited<ReturnType<DeviceManager['scan']>>[number],
-                ]
-              : [
-                  {
-                    identifier: 'sdb2',
-                    volumeName: 'IPOD',
-                    volumeUuid: 'AAAA-BBBB',
-                    storage: { sizeBytes: 8_000_000_000, filesystem: 'vfat' },
-                    isMounted: true,
-                    mountPoint: dir,
-                  } as Awaited<ReturnType<DeviceManager['scan']>>[number],
-                ],
+          // The --path branch resolves the device via a single locate({ path }).
+          locate: async (target) =>
+            'path' in target
+              ? ({
+                  identifier: 'sdb2',
+                  volumeName: 'IPOD',
+                  volumeUuid: 'AAAA-BBBB',
+                  storage: { sizeBytes: 8_000_000_000, filesystem: 'vfat' },
+                  isMounted: true,
+                  mountPoint: dir,
+                } as Awaited<ReturnType<DeviceManager['locate']>>)
+              : null,
         }),
       assessIdentity: async () => stubAssessment,
       ipodDatabase: {
@@ -893,30 +880,20 @@ describe('runDeviceAdd: missing volumeUuid refusal (TASK-317.15)', () => {
       getDeviceManager: () =>
         fakeManager({
           isSupported: true,
-          // Note: HFS+ is caught earlier by TASK-317.12. Use an unusual
-          // filesystem (e.g. exfat) to exercise this catch-all branch.
-          scan: async (opts) =>
-            opts?.kinds?.includes('ipod')
-              ? [
-                  {
-                    identifier: 'sdc2',
-                    volumeName: 'IPOD',
-                    volumeUuid: '',
-                    storage: { sizeBytes: 8_000_000_000, filesystem: 'exfat' },
-                    isMounted: true,
-                    mountPoint: dir,
-                  } as Awaited<ReturnType<DeviceManager['scan']>>[number],
-                ]
-              : [
-                  {
-                    identifier: 'sdc2',
-                    volumeName: 'IPOD',
-                    volumeUuid: '',
-                    storage: { sizeBytes: 8_000_000_000, filesystem: 'exfat' },
-                    isMounted: true,
-                    mountPoint: dir,
-                  } as Awaited<ReturnType<DeviceManager['scan']>>[number],
-                ],
+          // Note: HFS+ is caught earlier by the HFS+ policy. Use an unusual
+          // filesystem (e.g. exfat) with no UUID to exercise the no-UUID gate.
+          // The --path branch resolves via a single locate({ path }).
+          locate: async (target) =>
+            'path' in target
+              ? ({
+                  identifier: 'sdc2',
+                  volumeName: 'IPOD',
+                  volumeUuid: '',
+                  storage: { sizeBytes: 8_000_000_000, filesystem: 'exfat' },
+                  isMounted: true,
+                  mountPoint: dir,
+                } as Awaited<ReturnType<DeviceManager['locate']>>)
+              : null,
         }),
       assessIdentity: async () => stubAssessment,
       ipodDatabase: {
@@ -1227,7 +1204,7 @@ describe('runDeviceAdd: nano 2G slick-flow (cascade + combined prompt)', () => {
     expect(writeCalled).toBe(true);
   });
 
-  it('skips SysInfoExtended write under --no-firmware-inquiry', async () => {
+  it('skips SysInfoExtended write under --no-verify', async () => {
     const ctx = makeContext({ device: 'nano2g', json: true, configPath: tempConfig });
     const { out, stdout } = makeOut(true);
 
@@ -1260,16 +1237,18 @@ describe('runDeviceAdd: nano 2G slick-flow (cascade + combined prompt)', () => {
 
     await runAdd(
       ctx,
-      // commander's `--no-firmware-inquiry` parses to `firmwareInquiry: false`.
-      { type: 'ipod', yes: true, firmwareInquiry: false },
+      // commander's `--no-verify` parses to `verify: false` (trust-disk tier).
+      { type: 'ipod', yes: true, verify: false },
       out,
       deps
     );
     expect(writeCalled).toBe(false);
-    const result = stdout.json<AddOutputSuccess>();
+    const result = stdout.json<AddOutputSuccess & { verification?: string }>();
     expect(result.success).toBe(true);
     // Identity still cascade-resolved even without firmware write.
     expect(result.device.modelName).toContain('nano (2nd Generation)');
+    // Trust-disk tier surfaced in the JSON envelope.
+    expect(result.verification).toBe('trusted-disk');
   });
 
   it('--path branch: cascade-resolves identity and writes SysInfoExtended', async () => {
@@ -1280,24 +1259,21 @@ describe('runDeviceAdd: nano 2G slick-flow (cascade + combined prompt)', () => {
 
       let writeCalled = false;
       const deps: DeviceAddDeps = {
-        // Path branch consults manager for volumeUuid lookup; supply a real
-        // matching record so TASK-317.15's defensive refusal doesn't fire.
+        // The --path branch resolves the device via a single locate({ path }).
         getDeviceManager: () =>
           fakeManager({
             isSupported: true,
-            scan: async (opts) =>
-              opts?.kinds?.includes('ipod')
-                ? [
-                    {
-                      identifier: 'disk6s2',
-                      volumeName: 'PARTY IPOD',
-                      volumeUuid: 'NANO-2G-UUID',
-                      storage: { sizeBytes: 4_000_000_000, filesystem: 'vfat' },
-                      isMounted: true,
-                      mountPoint: mountDir,
-                    } as Awaited<ReturnType<DeviceManager['scan']>>[number],
-                  ]
-                : [],
+            locate: async (target) =>
+              'path' in target
+                ? ({
+                    identifier: 'disk6s2',
+                    volumeName: 'PARTY IPOD',
+                    volumeUuid: 'NANO-2G-UUID',
+                    storage: { sizeBytes: 4_000_000_000, filesystem: 'vfat' },
+                    isMounted: true,
+                    mountPoint: mountDir,
+                  } as Awaited<ReturnType<DeviceManager['locate']>>)
+                : null,
           }),
         assessIdentity: async () => makeNano2GAssessment({ firmwareInquiry: 'missing' }),
         ensureSysInfoExtended: async () => {
@@ -1466,5 +1442,346 @@ describe('runDeviceAdd: nano 2G slick-flow (cascade + combined prompt)', () => {
     const u = dev?.unsupported as { kind?: string; confirmedAt?: string };
     expect(u.kind).toBe('unsupported-preset');
     expect(u.confirmedAt).toBe(isoDate);
+  });
+});
+
+// =============================================================================
+// doc-045: verification tiers (verify cross-check / trust-disk / config-inject)
+// =============================================================================
+
+interface AddOutputSuccessWithTier {
+  success: true;
+  device: { name: string; volumeUuid: string; modelName?: string; mountPoint?: string };
+  saved: boolean;
+  verification?: 'verified' | 'trusted-disk' | 'config-only';
+}
+
+/** Write a SysInfoExtended plist into a mount's iPod_Control/Device dir. */
+async function writeSysInfoExtended(mount: string, guid: string): Promise<void> {
+  const { mkdir, writeFile } = await import('node:fs/promises');
+  const dir = join(mount, 'iPod_Control', 'Device');
+  await mkdir(dir, { recursive: true });
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+<key>FireWireGUID</key><string>${guid}</string>
+<key>SerialNumber</key><string>XY0123456RXX</string>
+<key>FamilyID</key><integer>9</integer>
+</dict>
+</plist>`;
+  await writeFile(join(dir, 'SysInfoExtended'), xml);
+}
+
+const VERIFY_NANO_2G: IpodModel = {
+  displayName: 'iPod nano (2nd Generation)',
+  generationId: 'nano_2g',
+  family: 'iPod nano',
+  ordinal: 2,
+  checksumType: 'none',
+  source: 'usb',
+};
+
+describe('runDeviceAdd: verify-tier cross-check (doc-045)', () => {
+  let mount: string;
+  let tempConfig: string;
+
+  beforeEach(async () => {
+    mount = await mkdtemp(join(tmpdir(), 'device-add-verify-'));
+    tempConfig = join(mount, 'config.toml');
+  });
+
+  afterEach(async () => {
+    await rm(mount, { recursive: true, force: true });
+  });
+
+  function makeAssessment(serialNumber: string): IpodIdentityAssessment {
+    return {
+      model: VERIFY_NANO_2G,
+      capabilities: NANO_2G_CAPS,
+      needsChecksum: false,
+      checksumType: 'none',
+      firmwareInquiry: 'present',
+      existing: null,
+      usbFingerprint: { ...NANO_2G_USB, serialNumber },
+      sysInfoModelNumber: undefined,
+    };
+  }
+
+  it('succeeds with verification=verified when on-disk SysInfo agrees with the live device', async () => {
+    const guid = '000A27001A0647CB';
+    await writeSysInfoExtended(mount, guid);
+
+    const ctx = makeContext({ device: 'terapod', configPath: tempConfig });
+    const { out, stdout, exitCode } = makeOut(true);
+    const deps: DeviceAddDeps = {
+      platform: 'darwin',
+      getDeviceManager: () =>
+        fakeManager({
+          isSupported: true,
+          locate: async (target) =>
+            'path' in target
+              ? ({
+                  identifier: 'disk6s2',
+                  volumeName: 'TERAPOD',
+                  volumeUuid: 'REAL-UUID',
+                  storage: { sizeBytes: 4_000_000_000, filesystem: 'hfsplus' },
+                  isMounted: true,
+                  mountPoint: mount,
+                } as Awaited<ReturnType<DeviceManager['locate']>>)
+              : null,
+        }),
+      // Live serial normalises to the same GUID on disk → cross-check passes.
+      assessIdentity: async () => makeAssessment(guid),
+      ipodDatabase: FAKE_IPOD_DB,
+    };
+
+    await runAdd(ctx, { type: 'ipod', path: mount, yes: true }, out, deps);
+    expect(exitCode.get()).toBeUndefined();
+    const result = stdout.json<AddOutputSuccessWithTier>();
+    expect(result.success).toBe(true);
+    expect(result.verification).toBe('verified');
+  });
+
+  it('errors with a doctor --repair hint when on-disk SysInfo disagrees with the live device', async () => {
+    await writeSysInfoExtended(mount, '000A27001A0647CB');
+
+    const ctx = makeContext({ device: 'terapod', configPath: tempConfig });
+    const { out, stdout, exitCode } = makeOut(true);
+    const deps: DeviceAddDeps = {
+      platform: 'darwin',
+      getDeviceManager: () =>
+        fakeManager({
+          isSupported: true,
+          locate: async (target) =>
+            'path' in target
+              ? ({
+                  identifier: 'disk6s2',
+                  volumeName: 'TERAPOD',
+                  volumeUuid: 'REAL-UUID',
+                  storage: { sizeBytes: 4_000_000_000, filesystem: 'hfsplus' },
+                  isMounted: true,
+                  mountPoint: mount,
+                } as Awaited<ReturnType<DeviceManager['locate']>>)
+              : null,
+        }),
+      // Live serial normalises to a different GUID → guid axis fails → mismatch.
+      assessIdentity: async () => makeAssessment('DEADBEEFDEADBEEF'),
+      ipodDatabase: FAKE_IPOD_DB,
+    };
+
+    await runAdd(ctx, { type: 'ipod', path: mount, yes: true }, out, deps);
+    expect(exitCode.get()).toBe(1);
+    const err = stdout.json<AddOutputError>();
+    expect(err.success).toBe(false);
+    expect(err.code).toBe('IDENTITY_MISMATCH');
+    expect(err.error).toContain('podkit doctor --repair sysinfo-modelnum-mismatch');
+  });
+});
+
+describe('runDeviceAdd: trust-disk tier (--no-verify, doc-045)', () => {
+  let mount: string;
+  let tempConfig: string;
+
+  beforeEach(async () => {
+    mount = await mkdtemp(join(tmpdir(), 'device-add-trustdisk-'));
+    tempConfig = join(mount, 'config.toml');
+  });
+
+  afterEach(async () => {
+    await rm(mount, { recursive: true, force: true });
+  });
+
+  it('succeeds (trusted-disk) when a checksum iPod has SysInfo present on disk', async () => {
+    const ctx = makeContext({ device: 'pod', configPath: tempConfig });
+    const { out, stdout, exitCode } = makeOut(true);
+    const deps: DeviceAddDeps = {
+      platform: 'darwin',
+      getDeviceManager: () =>
+        fakeManager({
+          isSupported: true,
+          locate: async (target) =>
+            'path' in target
+              ? ({
+                  identifier: 'disk6s2',
+                  volumeName: 'POD',
+                  volumeUuid: 'REAL-UUID',
+                  storage: { sizeBytes: 4_000_000_000, filesystem: 'hfsplus' },
+                  isMounted: true,
+                  mountPoint: mount,
+                } as Awaited<ReturnType<DeviceManager['locate']>>)
+              : null,
+        }),
+      // Checksum generation, SysInfo already present → trust-disk proceeds.
+      assessIdentity: async () => ({
+        model: VERIFY_NANO_2G,
+        capabilities: NANO_2G_CAPS,
+        needsChecksum: true,
+        checksumType: 'hash72',
+        firmwareInquiry: 'present',
+        existing: null,
+        usbFingerprint: NANO_2G_USB,
+        sysInfoModelNumber: undefined,
+      }),
+      ipodDatabase: FAKE_IPOD_DB,
+    };
+
+    await runAdd(ctx, { type: 'ipod', path: mount, yes: true, verify: false }, out, deps);
+    expect(exitCode.get()).toBeUndefined();
+    const result = stdout.json<AddOutputSuccessWithTier>();
+    expect(result.success).toBe(true);
+    expect(result.verification).toBe('trusted-disk');
+  });
+
+  it('errors with a run-doctor hint when a checksum iPod has no SysInfo on disk', async () => {
+    const ctx = makeContext({ device: 'pod', configPath: tempConfig });
+    const { out, stdout, exitCode } = makeOut(true);
+    const deps: DeviceAddDeps = {
+      platform: 'darwin',
+      getDeviceManager: () =>
+        fakeManager({
+          isSupported: true,
+          locate: async (target) =>
+            'path' in target
+              ? ({
+                  identifier: 'disk6s2',
+                  volumeName: 'POD',
+                  volumeUuid: 'REAL-UUID',
+                  storage: { sizeBytes: 4_000_000_000, filesystem: 'hfsplus' },
+                  isMounted: true,
+                  mountPoint: mount,
+                } as Awaited<ReturnType<DeviceManager['locate']>>)
+              : null,
+        }),
+      // Checksum generation, SysInfo missing → trust-disk refuses.
+      assessIdentity: async () => ({
+        model: VERIFY_NANO_2G,
+        capabilities: NANO_2G_CAPS,
+        needsChecksum: true,
+        checksumType: 'hash72',
+        firmwareInquiry: 'missing',
+        existing: null,
+        usbFingerprint: NANO_2G_USB,
+        sysInfoModelNumber: undefined,
+      }),
+      ipodDatabase: FAKE_IPOD_DB,
+    };
+
+    await runAdd(ctx, { type: 'ipod', path: mount, yes: true, verify: false }, out, deps);
+    expect(exitCode.get()).toBe(1);
+    const err = stdout.json<AddOutputError>();
+    expect(err.success).toBe(false);
+    expect(err.error.toLowerCase()).toContain('podkit doctor');
+  });
+});
+
+describe('runDeviceAdd: config-inject tier (--no-validate, doc-045)', () => {
+  let dir: string;
+  let tempConfig: string;
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'device-add-inject-'));
+    tempConfig = join(dir, 'config.toml');
+  });
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  /** A manager that throws on every device touch — proves zero device I/O. */
+  function explodingManager(): DeviceManager {
+    return fakeManager({
+      isSupported: true,
+      scan: async () => {
+        throw new Error('scan() must not be called under --no-validate');
+      },
+      locate: async () => {
+        throw new Error('locate() must not be called under --no-validate');
+      },
+    });
+  }
+
+  it('writes the config purely from args with ZERO device I/O (uuid + type)', async () => {
+    const ctx = makeContext({ device: 'headless', configPath: tempConfig });
+    const { out, stdout, exitCode } = makeOut(true);
+    const deps: DeviceAddDeps = {
+      getDeviceManager: explodingManager,
+      assessIdentity: async () => {
+        throw new Error('assessIdentity() must not be called under --no-validate');
+      },
+      ipodDatabase: {
+        hasDatabase: async () => {
+          throw new Error('hasDatabase() must not be called under --no-validate');
+        },
+        open: async () => {
+          throw new Error('open() must not be called under --no-validate');
+        },
+        initializeIpod: async () => {
+          throw new Error('initializeIpod() must not be called under --no-validate');
+        },
+      },
+    };
+
+    await runAdd(
+      ctx,
+      { type: 'ipod', yes: true, validate: false, volumeUuid: 'INJECTED-UUID' },
+      out,
+      deps
+    );
+    expect(exitCode.get()).toBeUndefined();
+    const result = stdout.json<AddOutputSuccessWithTier>();
+    expect(result.success).toBe(true);
+    expect(result.verification).toBe('config-only');
+    expect(result.device.volumeUuid).toBe('INJECTED-UUID');
+
+    // The row actually persisted.
+    const { loadConfigFile } = await import('../config/index.js');
+    const parsed = loadConfigFile(tempConfig);
+    expect(parsed?.devices?.headless?.volumeUuid).toBe('INJECTED-UUID');
+  });
+
+  it('errors when the injected identity is incomplete (uuid/path present but no --type)', async () => {
+    const ctx = makeContext({ device: 'headless', configPath: tempConfig });
+    const { out, stdout, exitCode } = makeOut(true);
+    const deps: DeviceAddDeps = { getDeviceManager: explodingManager };
+
+    await runAdd(ctx, { yes: true, validate: false, volumeUuid: 'INJECTED-UUID' }, out, deps);
+    expect(exitCode.get()).toBe(1);
+    const err = stdout.json<AddOutputError>();
+    expect(err.success).toBe(false);
+    expect(err.error).toContain('--type');
+  });
+
+  it('errors when the injected identity is incomplete (type present but no uuid/path)', async () => {
+    const ctx = makeContext({ device: 'headless', configPath: tempConfig });
+    const { out, stdout, exitCode } = makeOut(true);
+    const deps: DeviceAddDeps = { getDeviceManager: explodingManager };
+
+    await runAdd(ctx, { type: 'ipod', yes: true, validate: false }, out, deps);
+    expect(exitCode.get()).toBe(1);
+    const err = stdout.json<AddOutputError>();
+    expect(err.success).toBe(false);
+    expect(err.error).toMatch(/--volume-uuid|--path/);
+  });
+
+  it('accepts a path-only injected identity (no uuid) with ZERO device I/O', async () => {
+    const ctx = makeContext({ device: 'headless', configPath: tempConfig });
+    const { out, stdout, exitCode } = makeOut(true);
+    const deps: DeviceAddDeps = {
+      getDeviceManager: explodingManager,
+      assessIdentity: async () => {
+        throw new Error('assessIdentity() must not be called under --no-validate');
+      },
+    };
+
+    await runAdd(
+      ctx,
+      { type: 'ipod', yes: true, validate: false, path: '/mnt/headless-ipod' },
+      out,
+      deps
+    );
+    expect(exitCode.get()).toBeUndefined();
+    const result = stdout.json<AddOutputSuccessWithTier>();
+    expect(result.success).toBe(true);
+    expect(result.verification).toBe('config-only');
   });
 });

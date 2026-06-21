@@ -176,10 +176,6 @@ export async function assessIpodIdentity(
 }
 
 // =============================================================================
-// ensureSysInfoExtendedAndReassess
-// =============================================================================
-
-// =============================================================================
 // isIdentityFullyEmpty
 // =============================================================================
 
@@ -189,8 +185,8 @@ export async function assessIpodIdentity(
  * were available.
  *
  * `userType` mirrors the user's explicit `--type` choice. An explicit type is
- * a deliberate user assertion about the device kind and counts as a signal in
- * the same sense as `--no-firmware-inquiry`: enough to proceed.
+ * a deliberate user assertion about the device kind and counts as an identity
+ * signal: enough to clear the empty-identity gate and proceed.
  */
 export interface IdentitySignalSummary {
   /** Cascade resolved a known model (display name or generation). */
