@@ -1,8 +1,9 @@
-#!/usr/bin/env node
 /**
  * podkit CLI
  *
- * Command-line interface for syncing music to iPods.
+ * Command-line interface for syncing music to iPods. Distributed only as a
+ * Bun `--compile` binary (see ADR-021) — there is no npm channel, so the
+ * `#!/usr/bin/env node` shebang is intentionally absent.
  */
 
 import { Command } from 'commander';

@@ -11,7 +11,7 @@
     "node": ">=20.0.0"
   },
   "scripts": {
-    "podkit": "node packages/podkit-cli/dist/main.js",
+    "podkit": "bun packages/podkit-cli/dist/main.js",
     "postinstall": "manypkg check",
     "build": "turbo run build",
     "test": "turbo run test",

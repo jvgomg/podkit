@@ -22,7 +22,6 @@ Features planned for upcoming development.
 | Feature | Description | Discussion |
 |---------|-------------|------------|
 | **Sync selection and filtering** | Fine-grained control over what gets synced — by genre, artist, playlist, or custom filters | [#16](https://github.com/jvgomg/podkit/discussions/16) |
-| **npm distribution** | Install podkit via `npm install -g podkit` or `npx podkit` | [#20](https://github.com/jvgomg/podkit/discussions/20) |
 
 Even features in **Next** benefit from your input. If you have thoughts on how any of these should work — what your ideal workflow looks like, what would make it click for you — please share them in the discussion thread.
 

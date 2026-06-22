@@ -150,7 +150,7 @@ Keep this table updated when creating or closing discussions.
 | 17 | Roadmap (pinned, Announcements) | Meta | — |
 | 22 | Beta Testers Wanted (Announcements) | Meta | — |
 | 19 | Homebrew distribution | Distribution | Shipped |
-| 20 | npm distribution | Distribution | Next |
+| 20 | npm distribution | Distribution | Dropped (ADR-021 — CLI ships as a Bun binary only; close discussion) |
 | 21 | Configuration wizard | Onboarding | Later |
 | 23 | Playlist sync | Library Sync | Later |
 | 24 | Star rating sync | Library Sync | Later |

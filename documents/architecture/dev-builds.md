@@ -201,10 +201,14 @@ interface CliOptions {
 }
 ```
 
-- **`'production'` (default)** invokes `node packages/podkit-cli/dist/main.js`.
-  Same shape as the dev-mode `bun run dev`, same `--define` flags as
-  the compiled binary. Use this for everything by default — the e2e
-  suite should be exercising the shipping artefact, not a debug build.
+- **`'production'` (default)** invokes `bun packages/podkit-cli/dist/main.js`
+  (the bundle is built `bun build --target bun`). Same `--define` flags as
+  the compiled binary, so it tree-shakes hook bodies the same way. Use this
+  for everything by default — it's the fast e2e proxy. Note (ADR-021): the
+  *user-shipped* artefact is the Bun `--compile` binary (`bin/podkit`), not
+  this bundle; `dist/main.js` is an internal e2e-only artefact. Both run
+  under the Bun runtime, so the proxy is faithful (`bun:sqlite` and other
+  Bun built-ins resolve identically).
 - **`'debug'`** invokes `packages/podkit-cli/bin/podkit-debug` directly
   (no `node` wrapper — it's a self-contained `bun build --compile`
   binary). Use this only when the test needs `devPause` or a future

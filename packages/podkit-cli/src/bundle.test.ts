@@ -1,14 +1,14 @@
 /**
- * Regression tests for the published CLI bundle.
+ * Regression tests for the CLI bundle.
  *
- * The CLI ships as a single ESM file (`dist/main.js`) produced by
- * `bun build --target node`. Native modules (`koffi`, `usb`) MUST stay
- * external — bundling them inlines per-platform binary loaders that
- * either pin the wrong .node file for non-build platforms (npm install
- * use-case) or break entirely (koffi's loader uses `eval("require")`,
- * which references the bare `require` identifier that doesn't exist in
- * an ESM bundle scope, throwing `ReferenceError: require is not defined`
- * the first time SCSI fallback runs on a real device).
+ * The CLI is distributed only as a Bun `--compile` binary (ADR-021); this
+ * `dist/main.js` bundle is an internal build/e2e artifact, not an npm
+ * package. Native modules (`koffi`, `usb`) MUST stay external — bundling
+ * them inlines per-platform binary loaders that either pin the wrong .node
+ * file for non-build platforms or break entirely (koffi's loader uses
+ * `eval("require")`, which references the bare `require` identifier that
+ * doesn't exist in an ESM bundle scope, throwing `ReferenceError: require
+ * is not defined` the first time SCSI fallback runs on a real device).
  *
  * These tests require `bun run build --filter podkit` to have run first.
  * The "exists" test fails loudly if the bundle is missing, telling you
@@ -35,8 +35,18 @@ function readBundle(): string {
 }
 
 describe('CLI bundle (dist/main.js)', () => {
-  it('exists at the published path', () => {
+  it('exists at the built path', () => {
     expect(existsSync(CLI_BUNDLE)).toBe(true);
+  });
+
+  it('has no `#!/usr/bin/env node` shebang (CLI is not an npm bin — ADR-021)', () => {
+    expect(readBundle().startsWith('#!')).toBe(false);
+  });
+
+  it('package is private — the CLI is never published to npm (ADR-021)', () => {
+    const pkgPath = resolve(__dirname, '..', 'package.json');
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as { private?: boolean };
+    expect(pkg.private).toBe(true);
   });
 
   it('keeps `koffi` external — preserves a runtime `import("koffi")` call', () => {

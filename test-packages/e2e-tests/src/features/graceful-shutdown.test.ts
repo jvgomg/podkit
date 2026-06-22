@@ -104,7 +104,10 @@ function spawnCli(
     FORCE_COLOR: '0',
   };
 
-  const child = spawn('node', [cliPath, ...args], {
+  // Run the bundle under `bun` — it is built `bun build --target bun` and the
+  // CLI is a Bun-only artefact (ADR-021). This mirrors the shared runCli
+  // runner; the local copy exists only to expose the ChildProcess for signals.
+  const child = spawn('bun', [cliPath, ...args], {
     env,
     stdio: ['pipe', 'pipe', 'pipe'],
   });

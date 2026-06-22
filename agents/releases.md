@@ -7,11 +7,12 @@ This project uses [changesets](https://github.com/changesets/changesets) for ver
 ## When to Add a Changeset
 
 **Required** for any user-facing change to a published / distributed package:
-- `podkit` (CLI)
 - `@podkit/core`
 - `@podkit/libgpod-node`
 - `@podkit/daemon` (ships with the podkit distribution)
 - `@podkit/docker` (releases as the official Docker image)
+
+The `podkit` CLI is **not** published to npm — it ships only as a Bun `--compile` binary (Homebrew / GitHub Release / Docker). See [ADR-021](../adr/adr-021-cli-bun-binary-distribution.md). User-facing CLI changes are released through the binary/Docker workflow, not changesets.
 
 **Not required** for:
 - Test-only changes

@@ -9,7 +9,9 @@ sidebar:
 
 ## Status
 
-**Proposed**
+**Accepted** — distribution clause refined by [ADR-021](/developers/adr/adr-021-cli-bun-binary-distribution).
+
+> **Update (2026-06-22):** "Node for distribution" applies to the *libraries*, not the CLI. The `podkit` CLI ships **only** as a Bun `--compile` binary (the npm channel is dropped); `@podkit/core` and the other `@podkit/*` packages remain Node-compatible for Node consumers. See ADR-021.
 
 ## Context
 

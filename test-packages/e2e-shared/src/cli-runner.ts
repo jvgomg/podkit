@@ -32,9 +32,12 @@ export interface CliResult {
 /**
  * Which build of the CLI to run.
  *
- * - `'production'` (default): the bundled `dist/main.js` invoked under
- *   `node`. Hook bodies (see `documents/architecture/dev-builds.md`) are
- *   tree-shaken away — same shape as what end users ship.
+ * - `'production'` (default): the bundled `dist/main.js` (`bun build
+ *   --target bun`) invoked under `bun`. Hook bodies (see
+ *   `documents/architecture/dev-builds.md`) are tree-shaken away. This is a
+ *   fast e2e proxy — per ADR-021 the user-shipped artefact is the Bun
+ *   `--compile` binary (`bin/podkit`), not this bundle, but both run under
+ *   the Bun runtime so the proxy is faithful (`bun:sqlite` etc. resolve).
  * - `'debug'`: the compiled `bin/podkit-debug` binary invoked directly.
  *   Hook bodies are active; tests can drive `devPause(key)` via
  *   `PODKIT_DEV_PAUSE_KEY`. Tests opt in explicitly — most paths should
@@ -73,7 +76,7 @@ export interface CliOptions {
  * (`test-packages/e2e-shared/dist/`) are exactly three levels below the repo
  * root, so the same relative walk works in either mode.
  *
- * - `'production'` → `packages/podkit-cli/dist/main.js` (invoke under `node`)
+ * - `'production'` → `packages/podkit-cli/dist/main.js` (invoke under `bun`)
  * - `'debug'` → `packages/podkit-cli/bin/podkit-debug` (invoke directly)
  */
 export function getCliPath(binary: CliBinary = 'production'): string {
@@ -109,10 +112,10 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
       FORCE_COLOR: '0',
     };
 
-    // 'production' runs the bundle under node; 'debug' invokes the compiled
+    // 'production' runs the bundle under bun; 'debug' invokes the compiled
     // binary directly. See documents/architecture/dev-builds.md.
     const [command, commandArgs] =
-      binary === 'debug' ? [cliPath, args] : ['node', [cliPath, ...args]];
+      binary === 'debug' ? [cliPath, args] : ['bun', [cliPath, ...args]];
 
     const child = spawn(command, commandArgs, {
       cwd: options.cwd,

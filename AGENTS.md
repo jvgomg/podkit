@@ -253,7 +253,7 @@ The virtual iPod system creates a synthetic iPod for demonstrating podkit. It co
 
 Read [agents/releases.md](agents/releases.md) when creating changesets, reviewing release PRs, or publishing releases.
 
-Quick reference: `bunx changeset` to create a changeset. Required for user-facing changes to `podkit`, `@podkit/core`, `@podkit/libgpod-node`, `@podkit/daemon` or `@podkit/docker`.
+Quick reference: `bunx changeset` to create a changeset. Required for user-facing changes to `@podkit/core`, `@podkit/libgpod-node`, `@podkit/daemon` or `@podkit/docker`. The `podkit` CLI is **not** published to npm — it ships only as a Bun `--compile` binary (see [ADR-021](adr/adr-021-cli-bun-binary-distribution.md)); CLI changes release through the binary/Docker workflow, not changesets.
 
 Docs site deploys from a dedicated `docs-live` branch, not from `main`. Releases sync `docs-live` automatically; docs-only updates between releases require a cherry-pick from `main` to `docs-live`. See the "Docs Site Deployment" section in [agents/releases.md](agents/releases.md).
 

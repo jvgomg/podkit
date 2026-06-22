@@ -13,7 +13,7 @@ This section contains Architecture Decision Records (ADRs) documenting significa
 
 | ADR | Title | Status | Date |
 |-----|-------|--------|------|
-| [ADR-001](/developers/adr/adr-001-runtime) | Runtime Choice (Bun/Node) | Proposed | 2025-02-22 |
+| [ADR-001](/developers/adr/adr-001-runtime) | Runtime Choice (Bun/Node) | Accepted (refined by ADR-021) | 2025-02-22 |
 | [ADR-002](/developers/adr/adr-002-libgpod-binding) | libgpod Binding Approach | Proposed | 2025-02-22 |
 | [ADR-003](/developers/adr/adr-003-transcoding) | Transcoding Backend | Proposed | 2025-02-22 |
 | [ADR-004](/developers/adr/adr-004-collection-sources) | Collection Source Abstraction | Accepted | 2025-02-22 |
@@ -28,6 +28,7 @@ This section contains Architecture Decision Records (ADRs) documenting significa
 | [ADR-015](/developers/adr/adr-015-cli-error-output-shape) | CLI Error Output Shape | Accepted | 2026-05-09 |
 | [ADR-019](/developers/adr/adr-019-music-pipeline-engine-symmetry) | MusicPipeline ↔ engine/executor Symmetry | Proposed | 2026-06-12 |
 | [ADR-020](/developers/adr/adr-020-ipod-identity-structured-fields) | Structured iPod Identity Fields | Accepted | 2026-06-20 |
+| [ADR-021](/developers/adr/adr-021-cli-bun-binary-distribution) | CLI Distributes as a Bun Binary Only | Accepted | 2026-06-22 |
 
 ## What is an ADR?
 

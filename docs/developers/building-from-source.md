@@ -5,7 +5,9 @@ sidebar:
   order: 3
 ---
 
-podkit ships prebuilt native binaries for macOS (Intel and Apple Silicon) and Linux (x64). If prebuilt binaries are not available for your platform, podkit will attempt to build the native module from source during installation. This requires **libgpod** development headers.
+podkit ships as a standalone binary for macOS (Intel and Apple Silicon) and Linux (x64) — install it via [Homebrew or direct download](/getting-started/installation). The CLI is **not** distributed on npm.
+
+This page is for building podkit from source on a platform without a prebuilt binary, which compiles the native **libgpod** bindings and then produces the standalone CLI binary with `bun run compile`. It requires **libgpod** development headers.
 
 ## macOS
 
@@ -33,28 +35,32 @@ Reload your shell, then install podkit:
 
 ```bash
 source ~/.zshrc  # or ~/.bashrc
-npm install -g podkit
+bun install
+bun run compile   # builds the standalone podkit binary; copy it onto your PATH
 ```
 
 ## Ubuntu / Debian
 
 ```bash
 sudo apt install -y libgpod-dev
-npm install -g podkit
+bun install
+bun run compile   # builds the standalone podkit binary; copy it onto your PATH
 ```
 
 ## Fedora
 
 ```bash
 sudo dnf install -y libgpod-devel
-npm install -g podkit
+bun install
+bun run compile   # builds the standalone podkit binary; copy it onto your PATH
 ```
 
 ## Arch Linux
 
 ```bash
 sudo pacman -S libgpod
-npm install -g podkit
+bun install
+bun run compile   # builds the standalone podkit binary; copy it onto your PATH
 ```
 
 ## Verifying the Build
