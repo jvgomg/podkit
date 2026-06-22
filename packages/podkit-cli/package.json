@@ -32,6 +32,7 @@
     "@podkit/device-types": "workspace:*",
     "@podkit/devices-ipod": "workspace:*",
     "@podkit/devices-mass-storage": "workspace:*",
+    "@podkit/ipod-archive": "workspace:*",
     "@podkit/ipod-firmware": "workspace:*",
     "@podkit/libgpod-node": "workspace:*",
     "commander": "^14.0.3",

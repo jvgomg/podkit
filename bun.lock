@@ -82,6 +82,24 @@
         "starlight-links-validator": "^0.19.2",
       },
     },
+    "packages/ipod-archive": {
+      "name": "@podkit/ipod-archive",
+      "version": "0.0.0",
+      "dependencies": {
+        "@podkit/device-types": "workspace:*",
+        "@podkit/ipod-firmware": "workspace:*",
+        "@podkit/libgpod-node": "workspace:*",
+        "node-taglib-sharp": "^6.0.1",
+        "pngjs": "^7.0.0",
+      },
+      "devDependencies": {
+        "@podkit/gpod-testing": "workspace:*",
+        "@podkit/test-fixtures": "workspace:*",
+        "@types/bun": "latest",
+        "@types/pngjs": "^6.0.5",
+        "bun-types": "latest",
+      },
+    },
     "packages/ipod-db": {
       "name": "@podkit/ipod-db",
       "version": "0.0.1",
@@ -150,14 +168,12 @@
     "packages/podkit-cli": {
       "name": "podkit",
       "version": "0.6.0",
-      "bin": {
-        "podkit": "./dist/main.js",
-      },
       "dependencies": {
         "@podkit/core": "workspace:*",
         "@podkit/device-types": "workspace:*",
         "@podkit/devices-ipod": "workspace:*",
         "@podkit/devices-mass-storage": "workspace:*",
+        "@podkit/ipod-archive": "workspace:*",
         "@podkit/ipod-firmware": "workspace:*",
         "@podkit/libgpod-node": "workspace:*",
         "commander": "^14.0.3",
@@ -709,6 +725,8 @@
 
     "@podkit/gpod-testing": ["@podkit/gpod-testing@workspace:test-packages/gpod-testing"],
 
+    "@podkit/ipod-archive": ["@podkit/ipod-archive@workspace:packages/ipod-archive"],
+
     "@podkit/ipod-db": ["@podkit/ipod-db@workspace:packages/ipod-db"],
 
     "@podkit/ipod-firmware": ["@podkit/ipod-firmware@workspace:packages/ipod-firmware"],
@@ -938,6 +956,8 @@
     "@types/node": ["@types/node@25.5.0", "", { "dependencies": { "undici-types": "~7.18.0" } }, "sha512-jp2P3tQMSxWugkCUKLRPVUpGaL5MVFwF8RDuSRztfwgN1wmqJeMSbKlnEtQqU8UrhTmzEmZdu2I6v2dpp7XIxw=="],
 
     "@types/picomatch": ["@types/picomatch@3.0.2", "", {}, "sha512-n0i8TD3UDB7paoMMxA3Y65vUncFJXjcUf7lQY7YyKGl6031FNjfsLs6pdLFCy2GNFxItPJG8GvvpbZc2skH7WA=="],
+
+    "@types/pngjs": ["@types/pngjs@6.0.5", "", { "dependencies": { "@types/node": "*" } }, "sha512-0k5eKfrA83JOZPppLtS2C7OUtyNAl2wKNxfyYl9Q5g9lPkgBl/9hNyAu6HuEH2J4XmIv2znEpkDd0SaZVxW6iQ=="],
 
     "@types/react": ["@types/react@19.2.14", "", { "dependencies": { "csstype": "^3.2.2" } }, "sha512-ilcTH/UniCkMdtexkoCN0bI7pMcJDvmQFPvuPvmEaYA/NSfFTAgdUSLAoVjaRJm7+6PvcM+q1zYOwS4wTYMF9w=="],
 
@@ -1798,6 +1818,8 @@
     "pify": ["pify@4.0.1", "", {}, "sha512-uB80kBFb/tfd68bVleG9T5GGsGPjJrLAUpR5PZIrhBnIaRTQRjqdJSsIKkOP6OAIFbj7GOrcudc5pNjZ+geV2g=="],
 
     "pkg-types": ["pkg-types@1.3.1", "", { "dependencies": { "confbox": "^0.1.8", "mlly": "^1.7.4", "pathe": "^2.0.1" } }, "sha512-/Jm5M4RvtBFVkKWRu2BLUTNP8/M2a+UwuAX+ae4770q1qVGtfjG+WTCupoZixokjmHiry8uI+dlY8KXYV5HVVQ=="],
+
+    "pngjs": ["pngjs@7.0.0", "", {}, "sha512-LKWqWJRhstyYo9pGvgor/ivk2w94eSjE3RGVuzLGlr3NmD8bf7RcYGze1mNdEHRP6TRP6rMuDHk5t44hnTRyow=="],
 
     "podkit": ["podkit@workspace:packages/podkit-cli"],
 

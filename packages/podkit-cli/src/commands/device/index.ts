@@ -35,6 +35,7 @@ import { mountSubcommand } from './mount.js';
 import { initSubcommand } from './init.js';
 import { setSubcommand } from './set.js';
 import { defaultSubcommand } from './default.js';
+import { archiveSubcommand } from './archive.js';
 
 export const deviceCommand = new Command('device')
   .description('manage devices')
@@ -53,6 +54,7 @@ export const deviceCommand = new Command('device')
   .addCommand(ejectSubcommand)
   .addCommand(mountSubcommand)
   .addCommand(initSubcommand)
+  .addCommand(archiveSubcommand)
   .action(async () => {
     // Default action: run list subcommand
     await listSubcommand.parseAsync([], { from: 'user' });
@@ -75,3 +77,4 @@ export { runDeviceResetArtwork } from './reset-artwork.js';
 export { runDeviceEject, type DeviceEjectDeps } from './eject.js';
 export { runDeviceMount, type DeviceMountDeps } from './mount.js';
 export { runDeviceInit } from './init.js';
+export { runDeviceArchive, type DeviceArchiveDeps } from './archive.js';

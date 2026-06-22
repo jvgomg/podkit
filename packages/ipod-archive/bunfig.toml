@@ -1,0 +1,6 @@
+[test]
+# Bare `bun test` and `bun run test:unit` skip integration tests by default —
+# they write real files to tmp and may depend on system tooling. `bun run
+# test:integration` clears this with `--path-ignore-patterns=`.
+pathIgnorePatterns = ["**/*.integration.test.ts"]
+retry = 2

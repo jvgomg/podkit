@@ -1,9 +1,10 @@
 ---
 id: TASK-431
 title: iPod Archive command (device archive)
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-06-22 11:01'
+updated_date: '2026-06-22 17:42'
 labels:
   - feature
   - ipod
@@ -29,7 +30,19 @@ Subtasks are tracer-bullet vertical slices; see each for scope and dependencies.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 `podkit device archive` produces a raw dump + podkit archive end-to-end against a real/dummy iPod
-- [ ] #2 All 9 subtasks are Done
-- [ ] #3 Feature behaviour matches doc-047; no scope handled outside the PRD
+- [x] #1 `podkit device archive` produces a raw dump + podkit archive end-to-end against a real/dummy iPod
+- [x] #2 All 9 subtasks are Done
+- [x] #3 Feature behaviour matches doc-047; no scope handled outside the PRD
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Implemented the `podkit device archive` feature end-to-end as a new leaf package `@podkit/ipod-archive` + a thin CLI subcommand. All 9 subtasks Done.
+
+Two-stage design: `runDump` (lossless read-only raw dump of the iPod whitelist, streamed sha256 → manifest.sha256, junk/foreign skipped+reported) → `runTransform` (pure function of the dump; never touches a device) producing a browsable `archive/`: media-type-routed Music/Compilations/Podcasts/Audiobooks/Video trees, lossless audio copies with restamped tags + embedded PNG artwork (+cover.png per album), `library.sqlite` catalogue (bun:sqlite; tracks/playlists/playlist_items/albums/artwork/smart_playlist_rules/device/schema_version; bigint-as-TEXT; preserves play counts/ratings/timestamps verbatim; no blobs), m3u8 playlists (master skipped), README.md identity+stats card, and a both-stage report.{md,json}. `runArchive` composes both into one self-contained `<deviceName>-<serial>-<timestamp>/` (raw dump/ + archive/). CLI: bare → both stages, `--dump-only` → stage 1, `--from-dump <path>` → stage 2 (device-free).
+
+Read path is libgpod-node only; the ArtworkDB/.ithmb decode was ported in-package (no ipod-db dep) and cross-validated byte-for-byte against ipod-db's reference reader on a real 2,663-track iPod (2,417 artwork tracks, zero disagreements). Branch A (Bun-only CLI) → bun:sqlite. Changeset added (podkit minor).
+
+Quality: build + typecheck + lint clean; @podkit/ipod-archive 161 unit + 47 integration; podkit 1734 unit; binary e2e smoke 2/2. Not committed (left in working tree for the user).
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -51,6 +51,12 @@ an architecture doc to match a change you're shipping, ask whether the
   `DeviceCapabilities` are resolved from the merged (built-in ∪
   user-defined) preset registry plus per-device overrides, and the
   threading convention CLI consumers follow.
+- **[ipod-archive](./ipod-archive.md)** — How `podkit device archive`
+  extracts a self-contained archive off an iPod: the two-stage
+  raw-dump → transform design, the leaf `@podkit/ipod-archive` package,
+  why the read path is libgpod-node-only with a ported artwork decoder,
+  and the stage-boundary / lossless-extract / count-matches-output
+  conventions.
 
 That's it for now. The rest of the library is pending — see
 [Goals and migration plan](#goals-and-migration-plan) below.
@@ -95,6 +101,7 @@ documents/architecture/
 │   ├── libgpod-binding.md            # ⏳ pending
 │   ├── itunes-db.md                  # ⏳ pending
 │   └── artwork-db.md                 # ⏳ pending
+├── ipod-archive.md                   # ✅ landed (device archive: dump + transform)
 ├── cli/                              # CLI structure
 │   ├── output-context.md             # ⏳ pending
 │   ├── decisions-and-provenance.md   # ⏳ pending

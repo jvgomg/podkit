@@ -239,6 +239,39 @@ podkit device scan --format json
 
 The readiness pipeline checks six stages in sequence: USB Connection → Partition Table → Filesystem → Mounted → SysInfo → Database. Each stage shows ✓ (pass), ✗ (fail), or — (skipped). The overall readiness level is shown at the end. See [Device Readiness Levels](#device-readiness-levels) for what each level means.
 
+### `podkit device archive`
+
+Archive a connected iPod into a self-contained folder: a lossless, checksummed **raw dump** of the device's data, followed by a browsable **archive** (renamed audio tree with embedded artwork, a `library.sqlite` catalogue preserving play counts/ratings/history, `.m3u8` playlists, a README, and a report). iPod-only. The connected iPod is auto-detected; no prior configuration is required.
+
+```bash
+podkit device archive [path] [options]
+```
+
+| Option | Description |
+|--------|-------------|
+| `[path]` | Output directory (defaults to the current directory) |
+| `--dump-only` | Run only the raw-dump stage (no transform) |
+| `--from-dump <path>` | Build the archive from an existing dump, with no device connected |
+
+```bash
+# Archive the connected iPod into the current directory
+podkit device archive
+
+# Archive into a specific directory
+podkit device archive ~/ipod-archives
+
+# Pull a raw, checksummed copy off a failing iPod to process later
+podkit device archive --dump-only
+
+# Rebuild the browsable archive from an existing dump (no device needed)
+podkit device archive --from-dump ~/ipod-archives/PARTY_IPOD-YM7275YSVQH-20260622-211436
+
+# Target a specific iPod when more than one is connected
+podkit device archive -d classic
+```
+
+See [Archiving an iPod](/user-guide/devices/archive) for the full guide and the archive folder layout.
+
 ### `podkit device add`
 
 Detect a connected iPod and add it to the config.

@@ -450,3 +450,96 @@ export interface DeviceScanSuccess {
 
 export type DeviceScanErrorOutput = CliErrorOutput & { code: DeviceErrorCode };
 export type DeviceScanOutput = DeviceScanSuccess | DeviceScanErrorOutput;
+
+// ── archive ───────────────────────────────────────────────────────────────────
+
+export interface DeviceArchiveDumpSuccess {
+  success: true;
+  /** The raw-dump stage (stage 1). */
+  stage: 'dump';
+  /** Absolute path of the named archive root directory. */
+  outputDir: string;
+  /** Absolute path of the raw-dump tree inside `outputDir`. */
+  rawDumpDir: string;
+  /** Absolute path of the written `manifest.sha256`. */
+  manifestPath: string;
+  /** Count of files copied + hashed into the manifest. */
+  fileCount: number;
+  /** User-added entries skipped + reported (not copied). */
+  foreign: string[];
+  /** Files that could not be copied (recorded, not fatal). */
+  failures: Array<{ path: string; error: string }>;
+  /** Absolute path of the human-readable `report.md`. */
+  reportMarkdownPath: string;
+  /** Absolute path of the machine-readable `report.json`. */
+  reportJsonPath: string;
+}
+
+export interface DeviceArchiveTransformSuccess {
+  success: true;
+  /** The device-free transform stage (stage 2). */
+  stage: 'transform';
+  /** Absolute path of the browsable archive root (`archive/`). */
+  archiveDir: string;
+  /** Count of tracks extracted (lossless copy + tagged) into the archive. */
+  written: number;
+  /** Count of tracks with no audio body (null/empty ipodPath). */
+  noAudioCount: number;
+  /** Count of tracks extracted but carrying no decodable album artwork. */
+  noArtworkCount: number;
+  /** Count of tracks whose audio was missing or whose extraction failed. */
+  failureCount: number;
+  /** Absolute path of the emitted `README.md` identity card. */
+  readmePath: string;
+  /** Absolute path of the human-readable `report.md`. */
+  reportMarkdownPath: string;
+  /** Absolute path of the machine-readable `report.json`. */
+  reportJsonPath: string;
+}
+
+export interface DeviceArchiveBothSuccess {
+  success: true;
+  /** The full happy path — raw dump followed by the transform (both stages). */
+  stage: 'both';
+  /** Absolute path of the named, self-contained output directory. */
+  outputDir: string;
+  /** Absolute path of the raw-dump tree (`raw dump/`) inside `outputDir`. */
+  rawDumpDir: string;
+  /** Absolute path of the written `manifest.sha256`. */
+  manifestPath: string;
+  /** Absolute path of the browsable archive root (`archive/`) inside `outputDir`. */
+  archiveDir: string;
+  /** Count of files copied + hashed into the manifest (stage 1). */
+  fileCount: number;
+  /** User-added entries skipped + reported (stage 1, not copied). */
+  foreign: string[];
+  /** Files that could not be copied (stage 1, recorded, not fatal). */
+  dumpFailures: Array<{ path: string; error: string }>;
+  /** Count of tracks extracted (lossless copy + tagged) into the archive (stage 2). */
+  written: number;
+  /** Count of tracks with no audio body (stage 2, null/empty ipodPath). */
+  noAudioCount: number;
+  /** Count of tracks extracted but carrying no decodable album artwork (stage 2). */
+  noArtworkCount: number;
+  /** Count of tracks whose audio was missing or whose extraction failed (stage 2). */
+  failureCount: number;
+  /** Absolute path of the emitted `README.md` identity card. */
+  readmePath: string;
+  /** Absolute path of the unified human-readable `report.md` (covers both stages). */
+  reportMarkdownPath: string;
+  /** Absolute path of the unified machine-readable `report.json` (covers both stages). */
+  reportJsonPath: string;
+}
+
+export type DeviceArchiveErrorOutput = CliErrorOutput & { code: DeviceErrorCode };
+export type DeviceArchiveOutput =
+  | DeviceArchiveDumpSuccess
+  | DeviceArchiveTransformSuccess
+  | DeviceArchiveBothSuccess
+  | DeviceArchiveErrorOutput;
+
+/**
+ * Back-compat alias: stage-1 callers/tests refer to the dump-success shape as
+ * `DeviceArchiveSuccess`.
+ */
+export type DeviceArchiveSuccess = DeviceArchiveDumpSuccess;

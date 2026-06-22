@@ -1,0 +1,5 @@
+---
+"podkit": minor
+---
+
+New `podkit device archive [path]` command — archive a connected iPod into a self-contained, future-proof directory. It runs two stages: a lossless, read-only **raw dump** of the iPod's whitelisted data (each file checksummed into a `shasum -c`-compatible `manifest.sha256`), then a device-free **transform** that reads only the dump and produces a browsable **archive** — a renamed `Music/<AlbumArtist>/<Album>/NN Title.ext` tree (lossless copies with restamped tags + embedded album art), a queryable `library.sqlite` catalogue preserving the irreplaceable iTunesDB listening history (play counts, ratings, last-played, skip counts, date-added), `.m3u8` playlists, a human-readable `README.md` identity card, and a `report.{md,json}` listing everything skipped or failed. The bare invocation runs both stages into one `<deviceName>-<serial>-<timestamp>/` directory holding `raw dump/` + `archive/`; `--dump-only` runs just the raw dump, and `--from-dump <path>` re-runs just the transform against an existing dump without the device present. iPod-only.

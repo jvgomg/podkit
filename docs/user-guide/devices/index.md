@@ -99,4 +99,5 @@ You can also configure per-device artist transforms to clean up messy artist lis
 - [Artist Transforms](/user-guide/devices/artist-transforms) for cleaning up artist names
 - [Supported Devices](/devices/supported-devices) for device compatibility and profiles
 - [Adding a Device](/user-guide/devices/adding-devices) for registering new devices
+- [Archiving an iPod](/user-guide/devices/archive) for preserving a device's tracks, history, and playlists
 - [Configuration](/user-guide/configuration/) for full config file reference

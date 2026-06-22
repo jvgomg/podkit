@@ -69,6 +69,13 @@ export const DeviceErrorCodes = {
   INVALID_FIELDS: 'INVALID_FIELDS',
   MUSIC_LIST_FAILED: 'MUSIC_LIST_FAILED',
   VIDEO_LIST_FAILED: 'VIDEO_LIST_FAILED',
+  // Archive
+  ARCHIVE_DUMP_FAILED: 'ARCHIVE_DUMP_FAILED',
+  ARCHIVE_TRANSFORM_FAILED: 'ARCHIVE_TRANSFORM_FAILED',
+  /** Auto-detect found no iPod and no other device on a supported platform. */
+  NO_DEVICE_FOUND: 'NO_DEVICE_FOUND',
+  /** Auto-detect found an iPod, but it has no mounted volume. */
+  IPOD_NOT_MOUNTED: 'IPOD_NOT_MOUNTED',
 } as const;
 
 export type DeviceErrorCode = (typeof DeviceErrorCodes)[keyof typeof DeviceErrorCodes];

@@ -1,0 +1,40 @@
+{
+  "name": "@podkit/ipod-archive",
+  "version": "0.0.0",
+  "description": "iPod archive: raw dump + browsable archive transform (read-only, checksummed)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "bun build src/index.ts --outdir dist --target node --external bun:sqlite --external koffi --external usb --external node-taglib-sharp --external pngjs --external @podkit/ipod-firmware --external @podkit/libgpod-node && bun run build:types",
+    "build:types": "tsc -p tsconfig.build.json --emitDeclarationOnly --outDir dist",
+    "test": "true",
+    "test:unit": "bun test --pass-with-no-tests",
+    "test:integration": "bun test --pass-with-no-tests --path-ignore-patterns= .integration.",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@podkit/device-types": "workspace:*",
+    "@podkit/ipod-firmware": "workspace:*",
+    "@podkit/libgpod-node": "workspace:*",
+    "node-taglib-sharp": "^6.0.1",
+    "pngjs": "^7.0.0"
+  },
+  "devDependencies": {
+    "@podkit/gpod-testing": "workspace:*",
+    "@podkit/test-fixtures": "workspace:*",
+    "@types/bun": "latest",
+    "@types/pngjs": "^6.0.5",
+    "bun-types": "latest"
+  }
+}

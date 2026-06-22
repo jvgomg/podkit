@@ -21,6 +21,7 @@ Read these documents based on what you're working on:
 | Contributing | [docs/developers/contributing.md](../docs/developers/contributing.md) |
 | libgpod integration | [docs/developers/libgpod.md](../docs/developers/libgpod.md) |
 | Device management | [docs/user-guide/devices/](../docs/user-guide/devices/) |
+| Archiving an iPod (device archive) | [docs/user-guide/devices/archive.md](../docs/user-guide/devices/archive.md) |
 | Transcoding (audio) | [docs/user-guide/transcoding/audio.md](../docs/user-guide/transcoding/audio.md) |
 | Codec preferences | [docs/user-guide/transcoding/codec-preferences.md](../docs/user-guide/transcoding/codec-preferences.md) |
 | Transcoding (video) | [docs/user-guide/transcoding/video.md](../docs/user-guide/transcoding/video.md) |

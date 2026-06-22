@@ -3,7 +3,7 @@ id: doc-047
 title: 'PRD: iPod Archive Command (device archive)'
 type: specification
 created_date: '2026-06-22 08:44'
-updated_date: '2026-06-22 13:28'
+updated_date: '2026-06-22 15:01'
 tags:
   - prd
   - ipod
@@ -70,7 +70,6 @@ The feature is **iPod-only** for now (mass-storage devices are out of scope) and
 - The CLI subcommand `podkit device archive` lives in podkit-cli; **podkit-cli depends on `@podkit/ipod-archive`** and the command is a **thin shell**: resolve the device mountpoint (or take `--from-dump`), then delegate to the package. It does not need the full core-loading surface that other device subcommands use.
 - Package build mirrors existing leaf packages (`devices-ipod` convention): `bun build src/index.ts` + `tsc --emitDeclarationOnly`, orchestrated by turbo's generic `build` task. No tsup.
 - Stage 2 is **fully in-process** — no subprocess, no ffmpeg. Metadata via libgpod-node's N-API binding; artwork decode is pure-TS (see below); PNG encode via `pngjs`; tag/cover write via `node-taglib-sharp`.
-- **`@podkit/ipod-archive` is a deliberately Bun-targeted leaf** (per the resolved SQLite spike / ADR-021). It is the one package besides the CLI binary that need not be Node-compatible, which is what lets it use `bun:sqlite` directly.
 
 ### Reading the dump — libgpod-node, with artwork decode ported in-package
 - All track / playlist / smart-playlist / album / device-identity reads go through **`@podkit/libgpod-node`**. `Database.open(dumpDir)` calls libgpod's `itdb_parse()` with no device gate, so it opens a copied dump tree directly. libgpod-node's `Track` already exposes `mediaType`, `seasonNumber`, `episodeNumber`, `movieFlag`, `tvShow`, plus play counts, ratings, last-played, skip count, date-added, `dbid`, and the colon-separated `ipodPath`. **There is therefore no prerequisite ipod-db change** (the media-type fields that an ipod-db-based design would have needed already exist on libgpod-node's `Track`).
@@ -84,8 +83,7 @@ The feature is **iPod-only** for now (mass-storage devices are out of scope) and
 - Output directory name: `<deviceName>-<serial>-<timestamp>`. `deviceName` = configured podkit device name if the volume matches a known device, else the volume label. Naming **degrades gracefully** when serial is unavailable: serial → FireWireGUID → volume-label/timestamp-only. Names are sanitised.
 
 ### Stage 1 — raw dump
-- Native `node:fs` streaming copy (read stream → write stream), hashing each file through `node:crypto` sha256 **during** the copy (single read), emitting a `manifest.sha256` (compatible with `shasum -c`).
-- Prefer `node:fs` streams over `Bun.write`/`Bun.file` for the dump copy — they behave identically under Bun dev and the compiled binary, and keep the dumper portable. (The SQLite catalogue, by contrast, deliberately uses `bun:sqlite` — see the resolved spike below.)
+- Streaming copy of each file, hashing through sha256 **during** the copy (single read), emitting a `manifest.sha256` (compatible with `shasum -c`). `node:fs` + `node:crypto` streams are a fine implementation; Bun runtime APIs are also permitted (the CLI ships Bun-only — see distribution note).
 - Copies the iPod whitelist: `iPod_Control/*` (including `iTunes/` with `iTunesDB` and `Play Counts`, `Artwork/ArtworkDB` + `Artwork/F*.ithmb`, `Device/SysInfo*`, `Music/F00..F49`) plus root `Calendars`, `Contacts`, `Notes`.
 - **Skips and records** macOS junk (`._*`, `.DS_Store`, `.Spotlight-V100/`, `.fseventsd/`, `.Trashes/`) and **foreign files** (anything outside the iPod whitelist — user-added files). Foreign files are not copied; their paths are listed in the report for manual handling.
 - The dump is treated as read-only after creation.
@@ -104,20 +102,13 @@ The feature is **iPod-only** for now (mass-storage devices are out of scope) and
 - Filenames are renamed from DB metadata. Sanitisation targets the worst-case (portable) filesystem: Windows-reserved characters, trailing dots/spaces, reserved device names, length caps, NFC normalisation. Collisions append the track dbid. Missing artist/album → `Unknown Artist`/`Unknown Album`.
 - Audio extraction is **lossless**: copy the file, then write tags + embed cover **in place** via `node-taglib-sharp` (already proven in the mass-storage tag writer). No re-encode, no container remux.
 - Artwork: the in-package `ArtworkDecoder` yields the largest thumbnail as RGBA. Encode that RGBA to PNG via `pngjs`, embed it in the track tags, and also write it as `cover.png` in the album folder. Tracks without artwork are skipped (no placeholder).
-- `library.sqlite` is the parsed, queryable view (the raw `iTunesDB` in the dump remains the lossless source of truth — **no raw blobs** stored in SQLite). Proposed tables: `device` (model/serial/capacity/generation/dump_date/podkit_version), `tracks` (all DB fields + `exported_path` + `dump_path`), `playlists`, `playlist_items` (ordered, per-item timestamp), `albums`, `artwork` (track→image, width/height/format), `smart_playlist_rules`, and `schema_version`.
+- `library.sqlite` is the parsed, queryable view (the raw `iTunesDB` in the dump remains the lossless source of truth — **no raw blobs** stored in SQLite). Written with **`bun:sqlite`** (see runtime note). Proposed tables: `device` (model/serial/capacity/generation/dump_date/podkit_version), `tracks` (all DB fields + `exported_path` + `dump_path`), `playlists`, `playlist_items` (ordered, per-item timestamp), `albums`, `artwork` (track→image, width/height/format), `smart_playlist_rules`, and `schema_version`.
 
-### CLI distribution & runtime (RESOLVED — see ADR-021)
-> **Update (2026-06-22, ADR-021):** The dual-channel framing below is superseded. The `podkit` CLI now ships **only** as a Bun `--compile` binary; the npm CLI channel (`npm i -g podkit` / `npx podkit`) is dropped. The *libraries* (`@podkit/core` and the other `@podkit/*` packages) stay Node-compatible and npm-published; only the CLI app and the `@podkit/ipod-archive` leaf are Bun-targeted. Mechanical conversion is tracked in TASK-431.10.
-
-Original (now-historical) framing: the `podkit` CLI shipped through two channels with two runtimes: (1) **npm** (`npm i -g podkit`) installs `dist/main.js`, built `bun build --target node` with a `#!/usr/bin/env node` shebang → runs under **Node ≥20**; (2) a **standalone binary** (`bun build --compile`, used by Docker/releases/brew) → embeds the **Bun** runtime. That dual-runtime constraint is what originally ruled out `bun:sqlite` and motivated the spike.
-
-### SPIKE — SQLite strategy (RESOLVED: Branch A, `bun:sqlite` — ADR-021)
-> **Resolved (2026-06-22, TASK-431.02 → ADR-021):** Branch A. The CLI ships only as a Bun `--compile` binary and `@podkit/ipod-archive` uses the built-in **`bun:sqlite`** — zero dependency, no native staging, no wasm payload, no musl/glibc prebuild burden. Branch B (better-sqlite3 / sql.js) was evaluated and not needed once the CLI is accepted as Bun-only. `LibraryDbWriter` (TASK-431.06) is unblocked. The original options are retained below for context.
-
-The `library.sqlite` deliverable forced a runtime decision. It was resolved with a time-boxed spike whose outcome was one of two branches:
-
-- **Branch A — make the CLI a Bun-only binary.** Drop the npm/Node distribution channel so the CLI ships *only* as a `bun --compile` binary (Docker/releases/brew). `bun:sqlite` becomes usable (zero deps, built in). Refines ADR-001's distribution clause (libraries stay Node-compatible; only the CLI app changes) — assessed blast radius beyond the SQLite angle. **← chosen.**
-- **Branch B — keep dual-channel distribution and use a Node-safe driver.** `better-sqlite3` (native addon; ships via prebuilds for npm and stages a `.node` into the compiled binary exactly like `libgpod-node` + `usb` already do — one extra line in `compile.sh`), or `sql.js` (pure wasm; no native build, no `compile.sh` change, ~1MB payload, builds in memory then writes the file).
+### CLI distribution & runtime (RESOLVED — Branch A)
+The SQLite spike (task-431.02) is resolved in favour of **Branch A: the `podkit` CLI ships Bun-only.** The npm/Node distribution channel is dropped; the CLI is distributed solely as a `bun --compile` standalone binary (the channel already used by Docker/releases/brew). Consequences:
+- **`bun:sqlite` is the SQLite driver** for `library.sqlite` — zero dependencies, built into the Bun runtime. No `better-sqlite3` / `sql.js` / native staging needed.
+- Bun runtime APIs (`Bun.file`, `Bun.write`, `bun:sqlite`, etc.) are permitted anywhere in `@podkit/ipod-archive` and the CLI. (`node:*` modules still work under Bun and remain fine to use.)
+- **This reverses ADR-001 ("Node for distribution").** Dropping the npm channel is a cross-cutting change with its own blast radius — removing `npm i -g podkit`, updating install docs, the release/changeset workflow, the `#!/usr/bin/env node` shebang/`--target node` build, and any consumer assuming a Node artifact. **That work is tracked separately, outside this feature's task tree** (a new ADR superseding ADR-001 + a distribution-rework task). The archive feature assumes it lands; if it does not, the SQLite decision must be revisited.
 
 ### Modules (deep, isolation-first)
 - `VolumeClassifier` — `classify(volumeRoot) → { copy, junk, foreign }`. Pure; whitelist + junk + foreign classification.
@@ -127,7 +118,7 @@ The `library.sqlite` deliverable forced a runtime decision. It was resolved with
 - `RawDumper` — `dump(files, dest) → { manifest, failures }`. Streaming copy + sha256 + manifest.
 - `RgbaToPng` — thin RGBA→PNG encoder (pngjs).
 - `TagWriter` — `write(src, dest, meta, coverPng?)`. Copy + taglib tag/cover write.
-- `LibraryDbWriter` — `write(db, pathMap, dest)`. Builds `library.sqlite` via `bun:sqlite` (driver decided by the resolved spike).
+- `LibraryDbWriter` — `write(db, pathMap, dest)`. Builds `library.sqlite` via `bun:sqlite`.
 - `PlaylistWriter` — `write(playlists, pathMap, dir)`. M3U8, master skipped.
 - `ArchiveReport` — accumulates skips/failures → `report.md` + `report.json`.
 - Two orchestrator entry points exposed by the package: `runDump(volumeRoot, destDir)` (classify → dump → manifest) and `runTransform(dumpDir, destDir)` (load → plan → extract → tag → db → playlist → readme → report). `--from-dump` maps to `runTransform` alone; `--dump-only` to `runDump` alone; the default runs both.
@@ -145,7 +136,7 @@ Good tests here assert **external behaviour** — the shape of the produced tree
   - `RawDumper` — copies a fixture tree to a temp dir, verifies manifest entries and `shasum -c` compatibility, and records failures without aborting.
   - `RgbaToPng` — RGBA buffer → valid PNG of expected dimensions.
   - `TagWriter` — copy a tiny fixture `m4a`, write tags + embed cover, read them back and assert.
-  - `LibraryDbWriter` — open the produced `library.sqlite` and assert the device row, track fields (including play counts/ratings), playlist items ordering, and smart-playlist rules. (Uses `bun:sqlite` per the resolved spike.)
+  - `LibraryDbWriter` — open the produced `library.sqlite` (via `bun:sqlite`) and assert the device row, track fields (including play counts/ratings), playlist items ordering, and smart-playlist rules.
   - `PlaylistWriter` — assert emitted `.m3u8` content and that the master playlist is skipped.
   - `ArchiveReport` — assert the markdown + JSON enumerate foreign/junk/no-audio/no-artwork/failure buckets.
 - **End-to-end (one smoke):** run `device archive` against a fixture/dummy iPod (and a `--from-dump` run against a fixture dump) and assert the top-level archive structure, README presence, and report contents.
@@ -155,6 +146,7 @@ Prior art to follow: libgpod-node's own read tests and the gpod-testing fixtures
 ## Out of Scope
 
 - **Mass-storage / non-iPod devices.** iPod-only for this PRD.
+- **The CLI distribution rework itself** (dropping the npm/Node channel, superseding ADR-001) — a consequence of Branch A, tracked as separate work, not built under this feature's tasks.
 - **Re-import / restore onto an iPod.** The archive is lossless and structured enough to reconstruct a library in principle, but pushing data back onto a device is not built now.
 - **Dying-device resilience features** — no retry logic, bad-sector recovery, or resumable partial dumps in this version. Read failures are recorded and the run fails loud; the user re-runs.
 - **Interactive prompts.** The command never prompts; foreign files and anomalies are reported, not negotiated.
@@ -169,4 +161,4 @@ Prior art to follow: libgpod-node's own read tests and the gpod-testing fixtures
 - **Read path = libgpod-node only**, with one carve-out: libgpod-node has no artwork-pixel read API, so the package ports the `.ithmb`/ArtworkDB decode itself rather than depend on the early-stage ipod-db. No ipod-db dependency, no ipod-db prerequisite change.
 - Test device used during design: a Family-9 iPod, firmware 8.1.3, 63 `.m4a` tracks across `F00–F05`, with stock (non-foreign) Notes/Contacts sample files and a present `SysInfoExtended`. Real stock/dying devices may lack `SysInfoExtended` entirely — hence the serial-degradation requirement.
 - Naming: the two artifacts are the **raw dump** and the **podkit archive**; the command is `podkit device archive`.
-- **Blocking spike (RESOLVED — ADR-021):** the SQLite strategy resolved to Branch A (Bun-only CLI; `@podkit/ipod-archive` uses `bun:sqlite`). `LibraryDbWriter` (TASK-431.06) is unblocked. The mechanical CLI-to-Bun-only conversion is tracked in TASK-431.10.
+- **Spike resolved (task-431.02): Branch A — Bun-only CLI, `bun:sqlite`.** The only open architectural decision is closed. The consequent CLI-distribution rework (ADR-001 reversal, drop npm) is tracked separately and is a prerequisite for shipping the catalogue under `bun:sqlite`.
