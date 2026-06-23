@@ -88,6 +88,8 @@ run_tests() {
       --exclude 'packages/*/build/' \
       --exclude 'packages/*/bin/' \
       --exclude 'packages/*/.turbo/' \
+      --exclude 'target/' \
+      --exclude 'packages/*/src-tauri/target/' \
       --exclude 'packages/libgpod-node/prebuilds/' \
       --exclude 'test-packages/gpod-testing/templates/' \
       --exclude 'packages/ipod-db/fixtures/databases/' \

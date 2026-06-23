@@ -46,9 +46,14 @@ provision:
 
       echo "=== Installing system dependencies ==="
       apk update
+      # cmake builds koffi from source (no musl prebuilt); eudev-dev provides
+      # libudev.h for the `usb` package, which compiles libusb from source on
+      # aarch64 musl (its arm64 prebuild is glibc-only).
       apk add \
         build-base \
         python3 \
+        cmake \
+        eudev-dev \
         pkgconf \
         libgpod-dev \
         glib-dev \

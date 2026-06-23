@@ -1,4 +1,7 @@
 [test]
+# Resets `process.exitCode` after every test — CLI commands set it on failure
+# and a lingering value makes `bun test` exit non-zero despite "0 fail".
+preload = ["./src/test-utils/test-setup.ts"]
 # Bare `bun test` skips integration tests — they need system deps that not
 # every contributor has installed. `bun run test:integration` clears this
 # with `--path-ignore-patterns=`. Tests that need ffmpeg / gpod-tool /
