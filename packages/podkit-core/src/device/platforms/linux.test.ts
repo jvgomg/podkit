@@ -873,3 +873,89 @@ describe('LinuxDeviceManager.scan', () => {
     expect(all[0]!.usb).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// detectFilesystem / setVolumeLabel
+// ---------------------------------------------------------------------------
+
+describe('LinuxDeviceManager.detectFilesystem', () => {
+  it('reads FSTYPE from findmnt --target', async () => {
+    const { runner, calls } = recordingRunner({
+      findmnt: () => ({ stdout: 'SOURCE="/dev/sdb1" FSTYPE="vfat"', stderr: '', exitCode: 0 }),
+    });
+    const manager = new LinuxDeviceManager({ subprocess: runner });
+
+    expect(await manager.detectFilesystem('/mnt/ipod')).toBe('vfat');
+    const findmntCall = calls.find((c) => c.command === 'findmnt');
+    expect(findmntCall!.args).toContain('--target');
+    expect(findmntCall!.args).toContain('/mnt/ipod');
+  });
+
+  it('returns null when findmnt exits non-zero', async () => {
+    const { runner } = recordingRunner({
+      findmnt: () => ({ stdout: '', stderr: 'not mounted', exitCode: 1 }),
+    });
+    const manager = new LinuxDeviceManager({ subprocess: runner });
+    expect(await manager.detectFilesystem('/mnt/x')).toBeNull();
+  });
+});
+
+describe('LinuxDeviceManager.setVolumeLabel', () => {
+  it('relabels a FAT volume via `fatlabel <device> <label>`', async () => {
+    const { runner, calls } = recordingRunner({
+      findmnt: () => ({ stdout: 'SOURCE="/dev/sdb1" FSTYPE="vfat"', stderr: '', exitCode: 0 }),
+      fatlabel: () => ({ stdout: '', stderr: '', exitCode: 0 }),
+    });
+    const manager = new LinuxDeviceManager({ subprocess: runner });
+
+    await manager.setVolumeLabel('/mnt/ipod', 'PARTY IPOD');
+
+    const fatlabelCall = calls.find((c) => c.command === 'fatlabel');
+    expect(fatlabelCall).toBeDefined();
+    expect(fatlabelCall!.args).toEqual(['/dev/sdb1', 'PARTY IPOD']);
+  });
+
+  it('relabels an HFS+ volume via `hfslabel <device> <label>`', async () => {
+    const { runner, calls } = recordingRunner({
+      findmnt: () => ({ stdout: 'SOURCE="/dev/sdb1" FSTYPE="hfsplus"', stderr: '', exitCode: 0 }),
+      hfslabel: () => ({ stdout: '', stderr: '', exitCode: 0 }),
+    });
+    const manager = new LinuxDeviceManager({ subprocess: runner });
+
+    await manager.setVolumeLabel('/mnt/ipod', 'Party iPod');
+
+    const hfsCall = calls.find((c) => c.command === 'hfslabel');
+    expect(hfsCall).toBeDefined();
+    expect(hfsCall!.args).toEqual(['/dev/sdb1', 'Party iPod']);
+  });
+
+  it('throws VolumeLabelError on an unsupported filesystem', async () => {
+    const { runner } = recordingRunner({
+      findmnt: () => ({ stdout: 'SOURCE="/dev/sdb1" FSTYPE="ntfs"', stderr: '', exitCode: 0 }),
+    });
+    const manager = new LinuxDeviceManager({ subprocess: runner });
+
+    await expect(manager.setVolumeLabel('/mnt/ipod', 'X')).rejects.toThrow(
+      /unsupported filesystem/i
+    );
+  });
+
+  it('throws VolumeLabelError when fatlabel fails', async () => {
+    const { runner } = recordingRunner({
+      findmnt: () => ({ stdout: 'SOURCE="/dev/sdb1" FSTYPE="vfat"', stderr: '', exitCode: 0 }),
+      fatlabel: () => ({ stdout: '', stderr: 'permission denied', exitCode: 1 }),
+    });
+    const manager = new LinuxDeviceManager({ subprocess: runner });
+
+    await expect(manager.setVolumeLabel('/mnt/ipod', 'X')).rejects.toThrow(/permission denied/);
+  });
+
+  it('throws VolumeLabelError when the device node cannot be resolved', async () => {
+    const { runner } = recordingRunner({
+      findmnt: () => ({ stdout: '', stderr: '', exitCode: 1 }),
+    });
+    const manager = new LinuxDeviceManager({ subprocess: runner });
+
+    await expect(manager.setVolumeLabel('/mnt/x', 'X')).rejects.toThrow(/resolve a block device/i);
+  });
+});

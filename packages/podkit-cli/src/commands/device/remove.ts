@@ -14,8 +14,8 @@ import type { DeviceRemoveOutput } from './output-types.js';
 export const removeSubcommand = new Command('remove')
   .description('remove a device from config')
   .argument('[name]', 'device name (alternative to passing -d <name> at the program level)')
-  .option('--confirm', 'skip confirmation prompt')
-  .action(async (positionalName: string | undefined, options: { confirm?: boolean }) => {
+  .option('-y, --yes', 'skip confirmation prompt')
+  .action(async (positionalName: string | undefined, options: { yes?: boolean }) => {
     const { config, globalOpts, configResult } = getContext();
     const out = OutputContext.fromGlobalOpts(globalOpts);
 
@@ -42,7 +42,7 @@ export const removeSubcommand = new Command('remove')
 
       const wasDefault = name === defaultDevice;
 
-      if (!options.confirm && out.isText) {
+      if (!options.yes && out.isText) {
         out.print(`This will remove device "${name}" from the config.`);
         if (wasDefault) {
           out.print('This device is currently set as the default.');

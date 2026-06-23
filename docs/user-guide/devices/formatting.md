@@ -2,7 +2,7 @@
 title: Formatting a Device
 description: Format iPod devices with podkit, including current limitations and workarounds.
 sidebar:
-  order: 9
+  order: 10
 ---
 
 :::caution
@@ -18,7 +18,7 @@ A full format would erase the iPod filesystem entirely and recreate it from scra
 - Setting up the iPod directory structure
 - Initializing a new iTunesDB
 
-This goes beyond [resetting](/user-guide/devices/resetting), which only recreates the database while leaving the filesystem intact.
+This goes beyond [resetting](/user-guide/devices/resetting), which recreates the database and wipes the device's content but leaves the filesystem (partitioning and format) intact.
 
 ## Current Workarounds
 

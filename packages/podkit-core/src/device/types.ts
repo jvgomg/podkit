@@ -344,6 +344,64 @@ export interface DeviceManager {
    * @returns Mount points of sibling volumes (excluding the primary), or empty array
    */
   getSiblingVolumes(mountPoint: string): Promise<string[]>;
+
+  /**
+   * Report the filesystem type of the volume mounted at (or containing) the
+   * given path. macOS reads `diskutil info`'s "File System Personality" /
+   * "Type (Bundle)"; Linux reads `findmnt`'s `FSTYPE`. Returns `null` when the
+   * path cannot be resolved or the probe binary is missing (degrades rather
+   * than throws). The string is opaque OS terminology — use
+   * `classifyVolumeFilesystem` to map it onto a label-rule family.
+   *
+   * @param path - Mount path of the volume
+   * @returns The filesystem string, or `null` if unresolved
+   */
+  detectFilesystem(path: string): Promise<string | null>;
+
+  /**
+   * Set the on-disk volume label, selecting the correct OS tool for the
+   * platform and filesystem.
+   *
+   * - **macOS**: `diskutil rename <path> <label>` — works while mounted and
+   *   MOVES the mountpoint (e.g. `/Volumes/OLD` → `/Volumes/NEW`).
+   * - **Linux FAT**: `fatlabel <device> <label>` (dosfstools).
+   * - **Linux HFS+**: the hfsplus relabel tool.
+   *
+   * Throws a {@link VolumeLabelError} on failure. The caller is responsible for
+   * re-resolving the mountpoint afterward (the relabel may move it).
+   *
+   * @param path - Mount path of the volume to relabel
+   * @param label - The new volume label (already derived via `labelFromName`)
+   */
+  setVolumeLabel(path: string, label: string): Promise<void>;
+}
+
+/**
+ * Thrown when an OS-level volume relabel fails. Carries a `code` for
+ * programmatic handling; the CLI surfaces the `message` to the user.
+ */
+export class VolumeLabelError extends Error {
+  readonly code:
+    | 'UNSUPPORTED_FILESYSTEM'
+    | 'UNSUPPORTED_PLATFORM'
+    | 'RELABEL_FAILED'
+    | 'FILESYSTEM_UNRESOLVED';
+
+  constructor(
+    message: string,
+    code:
+      | 'UNSUPPORTED_FILESYSTEM'
+      | 'UNSUPPORTED_PLATFORM'
+      | 'RELABEL_FAILED'
+      | 'FILESYSTEM_UNRESOLVED'
+  ) {
+    super(message);
+    this.name = 'VolumeLabelError';
+    this.code = code;
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, VolumeLabelError);
+    }
+  }
 }
 
 /**

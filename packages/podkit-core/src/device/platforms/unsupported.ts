@@ -13,6 +13,7 @@ import type {
   EjectOptions,
   MountOptions,
 } from '../types.js';
+import { VolumeLabelError } from '../types.js';
 import type { DeviceAssessment } from '../assessment.js';
 
 /**
@@ -68,6 +69,17 @@ export class UnsupportedDeviceManager implements DeviceManager {
 
   async getSiblingVolumes(_mountPoint: string): Promise<string[]> {
     return [];
+  }
+
+  async detectFilesystem(_path: string): Promise<string | null> {
+    return null;
+  }
+
+  async setVolumeLabel(_path: string, _label: string): Promise<void> {
+    throw new VolumeLabelError(
+      `Setting the volume label is not supported on ${this.platform}.`,
+      'UNSUPPORTED_PLATFORM'
+    );
   }
 
   getManualInstructions(operation: 'mount' | 'eject'): string {

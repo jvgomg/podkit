@@ -2,7 +2,7 @@
 title: Archiving an iPod
 description: Extract a complete, self-contained archive of an iPod with podkit — playable tracks organised into folders, plus play counts, ratings, playlists, and artwork.
 sidebar:
-  order: 10
+  order: 11
 ---
 
 The `podkit device archive` command pulls **everything** off an iPod into a

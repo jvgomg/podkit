@@ -207,7 +207,7 @@ podkit device add -d echo --no-validate --type echo-mini --volume-uuid WXYZ-9012
 
 JSON output from `device add --format json` includes a `verification` field reporting which tier ran: `"verified"`, `"trusted-disk"`, or `"config-only"`.
 
-### Docker SCSI gap {#docker-scsi-gap}
+### Docker SCSI gap
 
 :::caution[Known limitation]
 A Docker user whose mounted iPod has **no on-disk SysInfo** is told to run `podkit doctor` — but `podkit doctor` writes `SysInfoExtended` via SCSI/USB inquiry, which may not be available inside the container. Checksum-based iPod generations (those identified by hash58/72/AB model numbers) **require** `SysInfoExtended` on disk for sync to produce a valid database checksum; without SCSI access somewhere, those devices cannot sync regardless of which `device add` tier you use.

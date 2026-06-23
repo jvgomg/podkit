@@ -82,6 +82,27 @@ describe('device command', () => {
       expect(initCmd).toBeDefined();
       expect(initCmd?.description()).toContain('initialize');
     });
+
+    it('has rename subcommand', () => {
+      const renameCmd = deviceCommand.commands.find((cmd) => cmd.name() === 'rename');
+      expect(renameCmd).toBeDefined();
+    });
+
+    it('rename subcommand requires a name argument', () => {
+      const renameCmd = deviceCommand.commands.find((cmd) => cmd.name() === 'rename');
+      const nameArg = renameCmd?.registeredArguments.find((arg) => arg.name() === 'name');
+      expect(nameArg).toBeDefined();
+      expect(nameArg?.required).toBe(true);
+    });
+
+    it('rename subcommand has --no-disk, --no-database and --yes options', () => {
+      const renameCmd = deviceCommand.commands.find((cmd) => cmd.name() === 'rename');
+      expect(renameCmd?.options.find((opt) => opt.long === '--no-disk')).toBeDefined();
+      expect(renameCmd?.options.find((opt) => opt.long === '--no-database')).toBeDefined();
+      const yesOption = renameCmd?.options.find((opt) => opt.long === '--yes');
+      expect(yesOption).toBeDefined();
+      expect(yesOption?.short).toBe('-y');
+    });
   });
 
   describe('--fields validation', () => {
@@ -145,10 +166,10 @@ describe('device command', () => {
       expect(arg?.required).toBe(false);
     });
 
-    it('remove subcommand has --confirm option', () => {
+    it('remove subcommand has --yes option', () => {
       const removeCmd = deviceCommand.commands.find((cmd) => cmd.name() === 'remove');
-      const confirmOption = removeCmd?.options.find((opt) => opt.long === '--confirm');
-      expect(confirmOption).toBeDefined();
+      const yesOption = removeCmd?.options.find((opt) => opt.long === '--yes');
+      expect(yesOption).toBeDefined();
     });
 
     it('info subcommand uses global --device for name', () => {
@@ -161,10 +182,10 @@ describe('device command', () => {
       expect(clearCmd?.registeredArguments).toHaveLength(0);
     });
 
-    it('clear subcommand has --confirm option', () => {
+    it('clear subcommand has --yes option', () => {
       const clearCmd = deviceCommand.commands.find((cmd) => cmd.name() === 'clear');
-      const confirmOption = clearCmd?.options.find((opt) => opt.long === '--confirm');
-      expect(confirmOption).toBeDefined();
+      const yesOption = clearCmd?.options.find((opt) => opt.long === '--yes');
+      expect(yesOption).toBeDefined();
     });
 
     it('clear subcommand has --dry-run option', () => {
@@ -194,6 +215,12 @@ describe('device command', () => {
       const resetCmd = deviceCommand.commands.find((cmd) => cmd.name() === 'reset');
       const dryRunOption = resetCmd?.options.find((opt) => opt.long === '--dry-run');
       expect(dryRunOption).toBeDefined();
+    });
+
+    it('init subcommand has --name option', () => {
+      const initCmd = deviceCommand.commands.find((cmd) => cmd.name() === 'init');
+      const nameOption = initCmd?.options.find((opt) => opt.long === '--name');
+      expect(nameOption).toBeDefined();
     });
   });
 });

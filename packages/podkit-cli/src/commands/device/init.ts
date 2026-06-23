@@ -18,18 +18,20 @@ import { OutputContext } from '../../output/index.js';
 import type { ReadinessLevel, ReadinessUnsupportedReason } from '@podkit/core';
 import { DOCS_URLS } from '@podkit/core';
 import { DeviceErrorCodes } from './error-codes.js';
-import { resolveDeviceArg, type DeviceOpDeps } from './shared.js';
+import { resolveDeviceArg, assertIpodDevice, type DeviceOpDeps } from './shared.js';
 import type { DeviceInitOutput } from './output-types.js';
 
 interface InitOptions {
   force?: boolean;
   yes?: boolean;
+  name?: string;
 }
 
 export const initSubcommand = new Command('init')
   .description('initialize iPod database on a device')
   .option('-f, --force', 'overwrite existing database')
   .option('-y, --yes', 'skip confirmation prompt')
+  .option('--name <name>', 'name for the device')
   .action(async (options: InitOptions) => {
     const { globalOpts } = getContext();
     const out = OutputContext.fromGlobalOpts(globalOpts);
@@ -53,14 +55,7 @@ export async function runDeviceInit(
   const { resolvedDevice, cliPath } = resolved;
 
   // Gate: this command only works with iPod devices (requires iTunesDB)
-  const resolvedType = resolvedDevice?.config?.type;
-  if (resolvedType && resolvedType !== 'ipod') {
-    throw new CliError({
-      message:
-        'This command is only supported for iPod devices. Mass-storage devices do not use an iTunesDB.',
-      code: DeviceErrorCodes.IPOD_ONLY,
-    });
-  }
+  assertIpodDevice(resolvedDevice, 'init');
 
   const core = await loadCoreOrFail(deps, DeviceErrorCodes.CORE_LOAD_FAILED);
   const IpodDatabase = deps.ipodDatabase ?? core.IpodDatabase;
@@ -266,7 +261,7 @@ export async function runDeviceInit(
   out.print('Initializing iPod database...');
 
   try {
-    const ipod = await IpodDatabase.initializeIpod(devicePath);
+    const ipod = await IpodDatabase.initializeIpod(devicePath, { name: options.name });
     const modelName = ipod.device.modelName;
     ipod.close();
 

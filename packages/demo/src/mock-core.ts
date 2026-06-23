@@ -669,6 +669,113 @@ export class IpodDatabase {
 }
 
 // =============================================================================
+// applyDeviceName (mock)
+// =============================================================================
+
+export async function applyDeviceName(input: {
+  db: { setDeviceName(name: string): void; save(): Promise<unknown> };
+  mountPath: string;
+  name: string;
+  disk?: boolean;
+  database?: boolean;
+  refreshConfig?: (info: {
+    volumeUuid?: string;
+    oldPath: string;
+    newPath: string;
+    newLabel: string;
+    name: string;
+  }) => Promise<void>;
+  volumeUuid?: string;
+}): Promise<{
+  name: string;
+  databaseUpdated: boolean;
+  diskUpdated: boolean;
+  mountPath: string;
+  diskLabel?: string;
+  diskWarning?: string;
+}> {
+  let databaseUpdated = false;
+  if (input.database !== false) {
+    input.db.setDeviceName(input.name);
+    await input.db.save();
+    databaseUpdated = true;
+  }
+  return {
+    name: input.name,
+    databaseUpdated,
+    diskUpdated: input.disk !== false,
+    mountPath: input.mountPath,
+  };
+}
+
+// =============================================================================
+// sweepDeviceContent (mock)
+// =============================================================================
+
+export class SweepContentError extends Error {
+  readonly code: 'INVALID_MOUNT_PATH' | 'NOT_AN_IPOD';
+  constructor(message: string, code: 'INVALID_MOUNT_PATH' | 'NOT_AN_IPOD') {
+    super(message);
+    this.name = 'SweepContentError';
+    this.code = code;
+  }
+}
+
+export function sweepDeviceContent(
+  _mountPath: string,
+  options: { music?: boolean; artwork?: boolean } = {}
+): {
+  musicFilesRemoved: number;
+  artworkFilesRemoved: number;
+  bytesFreed: number;
+  musicSwept: boolean;
+  artworkSwept: boolean;
+} {
+  const { music = true, artwork = true } = options;
+  return {
+    musicFilesRemoved: 0,
+    artworkFilesRemoved: 0,
+    bytesFreed: 0,
+    musicSwept: music,
+    artworkSwept: artwork,
+  };
+}
+
+// =============================================================================
+// Volume-label derivation (mock)
+// =============================================================================
+
+export function labelFromName(
+  name: string,
+  fs: 'fat' | 'hfs'
+): { label: string; lossy: boolean; warning?: string } {
+  const trimmed = name.trim();
+  if (fs === 'fat') {
+    const label = trimmed.toUpperCase().slice(0, 11);
+    return { label, lossy: label !== trimmed };
+  }
+  return { label: trimmed, lossy: false };
+}
+
+export function classifyVolumeFilesystem(filesystem: string | undefined): 'fat' | 'hfs' | null {
+  if (!filesystem) return null;
+  const f = filesystem.toLowerCase();
+  if (f.includes('fat') || f.includes('msdos') || f.includes('ms-dos')) return 'fat';
+  if (f.includes('apfs')) return null;
+  if (f.includes('hfs')) return 'hfs';
+  return null;
+}
+
+export class VolumeLabelError extends Error {
+  readonly code: string;
+  constructor(message: string, code: string) {
+    super(message);
+    this.name = 'VolumeLabelError';
+    this.code = code;
+  }
+}
+
+// =============================================================================
 // Device Management (mock)
 // =============================================================================
 
@@ -696,6 +803,12 @@ function createMockDeviceManager(): any {
     },
     async getSiblingVolumes(_mountPoint: string) {
       return [];
+    },
+    async detectFilesystem(_path: string) {
+      return 'MS-DOS FAT32';
+    },
+    async setVolumeLabel(_path: string, _label: string) {
+      return undefined;
     },
   };
 }

@@ -15,7 +15,7 @@ import {
 } from '../../device-resolver.js';
 import { OutputContext } from '../../output/index.js';
 import { DeviceErrorCodes } from './error-codes.js';
-import { resolveDeviceArg, type DeviceOpDeps } from './shared.js';
+import { resolveDeviceArg, assertIpodDevice, type DeviceOpDeps } from './shared.js';
 import type { DeviceResetArtworkOutput, DeviceResetArtworkSuccess } from './output-types.js';
 
 interface ResetArtworkOptions {
@@ -26,7 +26,7 @@ interface ResetArtworkOptions {
 export const resetArtworkSubcommand = new Command('reset-artwork')
   .description('wipe all artwork and clear artwork sync tags')
   .option('-y, --yes', 'skip confirmation prompt')
-  .option('--dry-run', 'show what would happen without making changes')
+  .option('-n, --dry-run', 'show what would happen without making changes')
   .action(async (options: ResetArtworkOptions) => {
     const { globalOpts } = getContext();
     const out = OutputContext.fromGlobalOpts(globalOpts);
@@ -51,14 +51,7 @@ export async function runDeviceResetArtwork(
   const { resolvedDevice, cliPath } = resolved;
 
   // Gate: this command only works with iPod devices (requires iTunesDB)
-  const resolvedType = resolvedDevice?.config?.type;
-  if (resolvedType && resolvedType !== 'ipod') {
-    throw new CliError({
-      message:
-        'This command is only supported for iPod devices. Mass-storage devices do not use an iTunesDB.',
-      code: DeviceErrorCodes.IPOD_ONLY,
-    });
-  }
+  assertIpodDevice(resolvedDevice, 'reset-artwork');
 
   const core = await loadCoreOrFail(deps, DeviceErrorCodes.CORE_LOAD_FAILED);
   const IpodDatabase = deps.ipodDatabase ?? core.IpodDatabase;

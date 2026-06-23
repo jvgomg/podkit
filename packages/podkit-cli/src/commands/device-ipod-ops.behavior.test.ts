@@ -176,7 +176,7 @@ describe('runDeviceClear: behaviour past IpodDatabase.open', () => {
     };
 
     await runWithContext(ctx, () =>
-      runAction(out, () => runDeviceClear({ type: 'all', confirm: true }, out, deps))
+      runAction(out, () => runDeviceClear({ type: 'all', yes: true }, out, deps))
     );
 
     expect(exitCode.get()).toBeUndefined();
@@ -212,7 +212,7 @@ describe('runDeviceClear: behaviour past IpodDatabase.open', () => {
     };
 
     await runWithContext(ctx, () =>
-      runAction(out, () => runDeviceClear({ type: 'music', confirm: true }, out, deps))
+      runAction(out, () => runDeviceClear({ type: 'music', yes: true }, out, deps))
     );
 
     expect(exitCode.get()).toBeUndefined();
@@ -285,7 +285,9 @@ describe('runDeviceReset: behaviour past IpodDatabase.hasDatabase/open', () => {
     expect(result.tracksRemoved).toBe(42);
   });
 
-  it('--dry-run with hasDatabase=false reports no track removal', async () => {
+  it('hasDatabase=false errors with NOT_INITIALIZED pointing to init', async () => {
+    // Reset re-sets an already-initialised device; a device with no iTunesDB
+    // is rejected (AC#4) — even in dry-run, since there is nothing to reset.
     const ctx = makeContext(mount);
     const { out, stdout, exitCode } = makeOut();
 
@@ -300,10 +302,10 @@ describe('runDeviceReset: behaviour past IpodDatabase.hasDatabase/open', () => {
       runAction(out, () => runDeviceReset({ dryRun: true }, out, deps))
     );
 
-    expect(exitCode.get()).toBeUndefined();
-    const result = stdout.json<SuccessJson>();
-    expect(result.dryRun).toBe(true);
-    expect(result.tracksRemoved).toBe(0);
+    expect(exitCode.get()).toBe(1);
+    const err = stdout.json<ErrJson>();
+    expect(err.code).toBe(DeviceErrorCodes.NOT_INITIALIZED);
+    expect(err.error).toContain('device init');
   });
 });
 
@@ -378,6 +380,56 @@ describe('runDeviceInit: behaviour past hasDatabase guard', () => {
     const result = stdout.json<SuccessJson>();
     expect(result.success).toBe(true);
     expect(result.modelName).toBe('iPod nano (5th Generation)');
+  });
+
+  it('--name is forwarded to initializeIpod', async () => {
+    const ctx = makeContext(mount);
+    const { out, exitCode } = makeOut();
+
+    let capturedName: string | undefined;
+    const adapter = makeFakeIpodAdapter();
+    const deps: DeviceOpDeps = {
+      loadCore: async () => fakeCore(),
+      getDeviceManager: () => fakeManager(),
+      ipodDatabase: {
+        open: async () => adapter,
+        hasDatabase: async () => false,
+        initializeIpod: async (_path: string, opts?: { name?: string }) => {
+          capturedName = opts?.name;
+          return adapter;
+        },
+      },
+    };
+
+    await runWithContext(ctx, () =>
+      runAction(out, () => runDeviceInit({ name: 'My iPod' }, out, deps))
+    );
+    expect(exitCode.get()).toBeUndefined();
+    expect(capturedName).toBe('My iPod');
+  });
+
+  it('without --name does not break (name defaults to libgpod default)', async () => {
+    const ctx = makeContext(mount);
+    const { out, exitCode } = makeOut();
+
+    let capturedName: string | undefined = 'sentinel';
+    const adapter = makeFakeIpodAdapter();
+    const deps: DeviceOpDeps = {
+      loadCore: async () => fakeCore(),
+      getDeviceManager: () => fakeManager(),
+      ipodDatabase: {
+        open: async () => adapter,
+        hasDatabase: async () => false,
+        initializeIpod: async (_path: string, opts?: { name?: string }) => {
+          capturedName = opts?.name;
+          return adapter;
+        },
+      },
+    };
+
+    await runWithContext(ctx, () => runAction(out, () => runDeviceInit({}, out, deps)));
+    expect(exitCode.get()).toBeUndefined();
+    expect(capturedName).toBeUndefined();
   });
 });
 

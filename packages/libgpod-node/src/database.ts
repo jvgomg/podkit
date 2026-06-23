@@ -1336,6 +1336,37 @@ export class Database {
     return playlists.find((p) => p.isMaster) ?? null;
   }
 
+  /**
+   * Set the iPod's device name.
+   *
+   * The case-correct device name (e.g. "Party iPod") is stored as the name of
+   * the iTunesDB master playlist — the iPod firmware reads it from there. This
+   * method fetches the master playlist and renames it via `renamePlaylist`.
+   *
+   * This is the legitimate low-level writer: there is no guard here. Callers
+   * that go through the generic playlist rename API are blocked higher up
+   * (`@podkit/core`'s `IpodPlaylist.rename()` refuses the master playlist) so
+   * that renaming the device is always an explicit, intentional act.
+   *
+   * The new name persists across `save()` + reopen.
+   *
+   * @param name New device name (becomes the master playlist name)
+   * @throws LibgpodError if no master playlist is found, or if the rename fails
+   *
+   * @example
+   * ```typescript
+   * db.setDeviceName('Party iPod');
+   * await db.save();
+   * ```
+   */
+  setDeviceName(name: string): void {
+    const master = this.getMasterPlaylist();
+    if (!master) {
+      throw new LibgpodError('No master playlist found', LibgpodErrorCode.Unknown, 'setDeviceName');
+    }
+    this.renamePlaylist(master.id, name);
+  }
+
   // ============================================================================
   // Smart playlist operations
   // ============================================================================

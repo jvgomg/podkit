@@ -317,7 +317,7 @@ podkit device remove -d <name>
 
 | Option | Description |
 |--------|-------------|
-| `--confirm` | Skip confirmation prompt |
+| `-y, --yes` | Skip confirmation prompt |
 
 ### `podkit device set`
 
@@ -462,7 +462,7 @@ podkit device clear [-d <name>] [options]
 | Option | Description |
 |--------|-------------|
 | `--type <type>` | Content type to clear: `music`, `video`, or `all` (default: `all`) |
-| `--confirm` | Skip confirmation prompt (for scripts) |
+| `-y, --yes` | Skip confirmation prompt (for scripts) |
 | `--dry-run` | Show what would be removed without removing |
 
 ```bash
@@ -473,12 +473,39 @@ podkit device clear --dry-run
 podkit device clear --type music
 
 # Clear everything, no prompt
-podkit device clear --confirm
+podkit device clear --yes
 ```
+
+### `podkit device rename`
+
+Rename the iPod. The case-correct name lives in two places — the iTunesDB name (what the iPod firmware displays) and the OS volume label — and this writes both by default. FAT32 volume labels are uppercased and limited to 11 characters, so the disk label may differ from the displayed name; the label that was set is always reported, with a warning only when the name had to be shortened or had characters removed (a plain case change isn't flagged). After a rename the device's cached name/path in your podkit config are refreshed automatically; your `-d` alias is unchanged.
+
+```bash
+podkit device rename <name> [-d <device>] [options]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--no-disk` | Do not change the OS volume label (rename the iPod database only) |
+| `--no-database` | Do not change the iPod database name (relabel the disk only) |
+| `-y, --yes` | Skip confirmation prompt |
+
+```bash
+# Rename the default device (updates both the iPod name and the disk label)
+podkit device rename "Party iPod"
+
+# Rename a specific device
+podkit device rename "Party iPod" -d classic
+
+# Change only the iPod's displayed name, leave the disk label alone
+podkit device rename "Party iPod" --no-disk
+```
+
+See [Renaming a Device](/user-guide/devices/renaming) for details.
 
 ### `podkit device reset`
 
-Reset the iPod database. This erases all tracks and recreates the database from scratch.
+Factory-reset the iPod: recreate an empty database **and** wipe every audio and artwork file on disk. This is the one-shot "start fresh" command — more thorough than [clear](/user-guide/devices/clearing), which only removes tracks. Reset reads the device's current name and reuses it (or set a new one with `--name`); the disk label is updated to match. A device with no readable database can't be reset — `podkit device init` it first.
 
 ```bash
 podkit device reset [-d <name>] [options]
@@ -486,8 +513,9 @@ podkit device reset [-d <name>] [options]
 
 | Option | Description |
 |--------|-------------|
+| `--name <name>` | Name for the reset device (defaults to its current name) |
 | `-y, --yes` | Skip confirmation prompt |
-| `--dry-run` | Show what would happen without making changes |
+| `-n, --dry-run` | Show what would happen without making changes |
 
 ### `podkit device reset-artwork`
 
@@ -502,7 +530,7 @@ podkit device reset-artwork [-d <name>] [options]
 | Option | Description |
 |--------|-------------|
 | `-y, --yes` | Skip confirmation prompt |
-| `--dry-run` | Show what would happen without making changes |
+| `-n, --dry-run` | Show what would happen without making changes |
 
 ### `podkit device eject`
 
@@ -553,6 +581,7 @@ podkit device init [-d <name>] [options]
 
 | Option | Description |
 |--------|-------------|
+| `--name <name>` | Name for the device (sets the iPod's name at initialization) |
 | `-f, --force` | Overwrite existing database |
 | `-y, --yes` | Skip confirmation prompt |
 

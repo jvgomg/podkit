@@ -32,7 +32,7 @@ export const mountSubcommand = new Command('mount')
   .description('mount a device')
   .option('--disk <identifier>', 'disk identifier (e.g., /dev/disk4s2)')
   .option('--target <path>', 'mount point path (default: /tmp/podkit-{volumeName})')
-  .option('--dry-run', 'show mount command without executing')
+  .option('-n, --dry-run', 'show mount command without executing')
   .action(async (options: MountOptions) => {
     const { config, globalOpts } = getContext();
     const out = OutputContext.fromGlobalOpts(globalOpts, config);

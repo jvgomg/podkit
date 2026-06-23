@@ -98,6 +98,7 @@ export type {
   EjectProgressEvent,
   EjectWithRetryOptions,
 } from './types.js';
+export { VolumeLabelError } from './types.js';
 
 export type { DeviceAssessment, IFlashAssessment, IFlashEvidence } from './assessment.js';
 
@@ -246,6 +247,29 @@ export {
 // OS error code interpreter
 export type { InterpretedError } from './error-codes.js';
 export { interpretError } from './error-codes.js';
+
+// Device rename orchestrator
+export type {
+  ApplyDeviceNameInput,
+  ApplyDeviceNameResult,
+  IpodDatabaseNameWriter,
+  DeviceLabelWriter,
+  ResolveMountPath,
+  RefreshConfig,
+  ConfigRefreshInfo,
+} from './apply-device-name.js';
+export { applyDeviceName } from './apply-device-name.js';
+
+// Factory-reset content sweep (brute-force on-disk file removal)
+export type {
+  SweepDeviceContentOptions,
+  SweepDeviceContentResult,
+} from './sweep-device-content.js';
+export { sweepDeviceContent, SweepContentError } from './sweep-device-content.js';
+
+// Volume-label derivation (pure)
+export type { VolumeFilesystem, LabelFromNameResult } from './label-from-name.js';
+export { labelFromName, classifyVolumeFilesystem } from './label-from-name.js';
 
 // Eject with retry
 export { ejectWithRetry, isRetryableError } from './eject.js';

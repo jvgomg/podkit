@@ -13,6 +13,7 @@
  * podkit device music [-d name]       # list music on device
  * podkit device video [-d name]       # list video on device
  * podkit device clear [-d name]       # clear all content
+ * podkit device rename <name>         # rename the device (-d selects which)
  * podkit device reset [-d name]       # reset database
  * podkit device eject [-d name]       # eject device
  * podkit device mount [-d name]       # mount device
@@ -28,6 +29,7 @@ import { infoSubcommand } from './info.js';
 import { musicSubcommand } from './music.js';
 import { videoSubcommand } from './video.js';
 import { clearSubcommand } from './clear.js';
+import { renameSubcommand } from './rename.js';
 import { resetSubcommand } from './reset.js';
 import { resetArtworkSubcommand } from './reset-artwork.js';
 import { ejectSubcommand } from './eject.js';
@@ -49,6 +51,7 @@ export const deviceCommand = new Command('device')
   .addCommand(musicSubcommand)
   .addCommand(videoSubcommand)
   .addCommand(clearSubcommand)
+  .addCommand(renameSubcommand)
   .addCommand(resetSubcommand)
   .addCommand(resetArtworkSubcommand)
   .addCommand(ejectSubcommand)
@@ -72,6 +75,7 @@ export { runDeviceInfo, type DeviceInfoDeps } from './info.js';
 export { runDeviceMusic, type DeviceMusicDeps } from './music.js';
 export { runDeviceVideo, type DeviceVideoDeps } from './video.js';
 export { runDeviceClear } from './clear.js';
+export { runDeviceRename } from './rename.js';
 export { runDeviceReset } from './reset.js';
 export { runDeviceResetArtwork } from './reset-artwork.js';
 export { runDeviceEject, type DeviceEjectDeps } from './eject.js';

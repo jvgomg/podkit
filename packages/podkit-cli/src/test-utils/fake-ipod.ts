@@ -27,6 +27,8 @@ export function makeFakeIpodAdapter(overrides: Partial<IpodAdapterStub> = {}): I
     getTracks: () => [],
     removeAllTracks: () => ({ removedCount: 0, fileDeleteErrors: [] }),
     removeTracksByContentType: () => ({ removedCount: 0, fileDeleteErrors: [] }),
+    setDeviceName: () => {},
+    getMasterPlaylist: () => ({ name: 'iPod' }),
     save: async () => {},
     close: () => {},
     ...overrides,

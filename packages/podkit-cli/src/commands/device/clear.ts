@@ -15,19 +15,19 @@ import {
 } from '../../device-resolver.js';
 import { OutputContext, formatBytes, formatNumber } from '../../output/index.js';
 import { DeviceErrorCodes } from './error-codes.js';
-import { resolveDeviceArg, type DeviceOpDeps } from './shared.js';
+import { resolveDeviceArg, assertIpodDevice, type DeviceOpDeps } from './shared.js';
 import type { DeviceClearOutput } from './output-types.js';
 
 interface ClearOptions {
-  confirm?: boolean;
+  yes?: boolean;
   dryRun?: boolean;
   type?: 'music' | 'video' | 'all';
 }
 
 export const clearSubcommand = new Command('clear')
   .description('remove content from the device (all, music only, or video only)')
-  .option('--confirm', 'skip confirmation prompt (for scripts)')
-  .option('--dry-run', 'show what would be removed without removing')
+  .option('-y, --yes', 'skip confirmation prompt')
+  .option('-n, --dry-run', 'show what would be removed without removing')
   .option(
     '--type <type>',
     'content type to clear: "music", "video", or "all" (default: all)',
@@ -55,14 +55,7 @@ export async function runDeviceClear(
   const { resolvedDevice, cliPath } = resolved;
 
   // Gate: this command only works with iPod devices (requires iTunesDB)
-  const resolvedType = resolvedDevice?.config?.type;
-  if (resolvedType && resolvedType !== 'ipod') {
-    throw new CliError({
-      message:
-        'This command is only supported for iPod devices. Mass-storage devices do not use an iTunesDB.',
-      code: DeviceErrorCodes.IPOD_ONLY,
-    });
-  }
+  assertIpodDevice(resolvedDevice, 'clear');
 
   const core = await loadCoreOrFail(deps, DeviceErrorCodes.CORE_LOAD_FAILED);
   const IpodDatabase = deps.ipodDatabase ?? core.IpodDatabase;
@@ -194,7 +187,7 @@ export async function runDeviceClear(
       return;
     }
 
-    if (!options.confirm && out.isText) {
+    if (!options.yes && out.isText) {
       out.print(`Found ${formatNumber(targetCount)} ${contentLabel} (${formatBytes(targetSize)})`);
       out.newline();
       if (contentType === 'all') {

@@ -19,6 +19,7 @@ import type {
 } from '../types.js';
 import type { DeviceAssessment } from '../assessment.js';
 import { detectIFlash } from '../assessment.js';
+import { VolumeLabelError } from '../types.js';
 import type { SubprocessRunner, UsbFingerprint } from '@podkit/device-types';
 import { defaultSubprocessRunner } from '../../subprocess-runner.js';
 import { parseLocationId } from '../usb-enumeration.js';
@@ -759,6 +760,36 @@ Replace diskXsY with your actual device identifier`;
     }
 
     return names;
+  }
+
+  async detectFilesystem(path: string): Promise<string | null> {
+    const { stdout, code } = await execCommand('diskutil', ['info', path], this.subprocess);
+    if (code !== 0) return null;
+
+    const info = parseDiskutilInfo(stdout);
+    // Prefer the user-friendly "File System Personality" (e.g. "MS-DOS FAT32"),
+    // fall back to "Type (Bundle)" (e.g. "Apple_HFS") so unmounted partitions
+    // still report a type. Mirrors getPlatformDeviceInfo's filesystem read.
+    return info['File System Personality'] || info['Type (Bundle)'] || null;
+  }
+
+  async setVolumeLabel(path: string, label: string): Promise<void> {
+    // diskutil rename works on a mounted volume by mount path and MOVES the
+    // mountpoint (/Volumes/OLD → /Volumes/NEW). The label rules (case/length)
+    // are the caller's responsibility via labelFromName.
+    const { stdout, stderr, code } = await execCommand(
+      'diskutil',
+      ['rename', path, label],
+      this.subprocess
+    );
+
+    if (code !== 0) {
+      const detail = stderr.trim() || stdout.trim() || `diskutil rename exited ${code}`;
+      throw new VolumeLabelError(
+        `Failed to relabel volume at ${path}: ${detail}`,
+        'RELABEL_FAILED'
+      );
+    }
   }
 
   async assessDevice(diskIdentifier: string): Promise<DeviceAssessment | null> {

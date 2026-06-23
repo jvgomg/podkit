@@ -132,6 +132,10 @@ describe('iPod-only runners: type gate + DI seam', () => {
       expect(exitCode.get()).toBe(1);
       const err = stdout.json<ErrJson>();
       expect(err.code).toBe(DeviceErrorCodes.IPOD_ONLY);
+      // Message names the offending device + its type so the user knows which
+      // device was selected (often the default) and how to fix it.
+      expect(err.error).toContain('echo');
+      expect(err.error).toContain('iPod');
     });
 
     it(`${name} surfaces CORE_LOAD_FAILED when loadCore rejects`, async () => {

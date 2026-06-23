@@ -679,6 +679,37 @@ export class IpodDatabase implements IpodDatabaseInternal, PlaylistDatabaseInter
   }
 
   /**
+   * Sets the iPod's device name.
+   *
+   * The case-correct device name (e.g. "Party iPod") is stored as the name of
+   * the iTunesDB master playlist. This is the ONLY sanctioned way to rename the
+   * master playlist: the generic playlist API (`IpodPlaylist.rename()`) refuses
+   * the master playlist on purpose, because renaming the device through it would
+   * be a mistake. This explicit method documents the intent.
+   *
+   * The change must be persisted with `save()`.
+   *
+   * @param name New device name
+   * @throws {IpodError} If the database is closed (code: DATABASE_CLOSED)
+   * @throws {IpodError} If renaming fails (code: SAVE_FAILED)
+   *
+   * @example
+   * ```typescript
+   * ipod.setDeviceName('Party iPod');
+   * await ipod.save();
+   * ```
+   */
+  setDeviceName(name: string): void {
+    this.assertOpen();
+    try {
+      this.db.setDeviceName(name);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new IpodError(`Failed to set device name: ${message}`, 'SAVE_FAILED');
+    }
+  }
+
+  /**
    * Finds a playlist by name.
    *
    * @param name - Playlist name to search for

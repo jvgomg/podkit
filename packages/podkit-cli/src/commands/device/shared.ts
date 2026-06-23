@@ -47,6 +47,12 @@ export interface DeviceOpDeps extends CoreLoaderDeps {
    * `runDeviceResetArtwork`; harmless on the other runners.
    */
   resetArtworkDatabase?: typeof import('@podkit/core').resetArtworkDatabase;
+  /**
+   * Override `core.sweepDeviceContent`. Only consulted by `runDeviceReset`
+   * (the factory-wipe content sweep); harmless on the other runners. Tests
+   * inject a spy to assert the sweep ran (or, in dry-run, did NOT run).
+   */
+  sweepDeviceContent?: typeof import('@podkit/core').sweepDeviceContent;
 }
 
 // =============================================================================
@@ -256,6 +262,36 @@ export function resolveDeviceArg(): DeviceArgResult {
     config,
     globalOpts,
   };
+}
+
+/**
+ * Gate an iPod-only command (clear/reset/reset-artwork/init/rename) on the
+ * resolved device's type. iPod commands need an iTunesDB, which mass-storage
+ * devices (Echo Mini, Rockbox, generic) don't have.
+ *
+ * Names the offending device and its type so the error is actionable — this
+ * commonly fires when the user's *default* device is a mass-storage one and no
+ * `-d` was given, so a generic "only works on iPods" message left them guessing
+ * which device was even selected.
+ *
+ * No-ops when `resolvedDevice` is undefined (path mode via `-d /path`, where the
+ * type isn't known until the device is read) or already an iPod.
+ */
+export function assertIpodDevice(
+  resolvedDevice: ResolvedDevice | undefined,
+  commandLabel: string
+): void {
+  const type = resolvedDevice?.config?.type;
+  if (type && type !== 'ipod') {
+    const name = resolvedDevice?.name;
+    const subject = name ? `Device "${name}"` : 'The selected device';
+    throw new CliError({
+      message:
+        `${subject} (type: ${type}) is a mass-storage device with no iTunes database. ` +
+        `"podkit device ${commandLabel}" only works on iPods — select one with -d <name>.`,
+      code: DeviceErrorCodes.IPOD_ONLY,
+    });
+  }
 }
 
 // =============================================================================

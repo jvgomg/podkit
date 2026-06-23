@@ -35,6 +35,8 @@ import type {
 } from '../types.js';
 import type { DeviceAssessment } from '../assessment.js';
 import { detectIFlash } from '../assessment.js';
+import { VolumeLabelError } from '../types.js';
+import { classifyVolumeFilesystem } from '../label-from-name.js';
 import type { SubprocessRunner, UsbFingerprint } from '@podkit/device-types';
 import { defaultSubprocessRunner } from '../../subprocess-runner.js';
 
@@ -913,6 +915,80 @@ export class LinuxDeviceManager implements DeviceManager {
    */
   async getSiblingVolumes(_mountPoint: string): Promise<string[]> {
     return [];
+  }
+
+  async detectFilesystem(path: string): Promise<string | null> {
+    const resolved = await this.resolvePathSourceAndFstype(path);
+    return resolved?.fstype || null;
+  }
+
+  async setVolumeLabel(path: string, label: string): Promise<void> {
+    const resolved = await this.resolvePathSourceAndFstype(path);
+    if (!resolved || !resolved.source) {
+      throw new VolumeLabelError(
+        `Could not resolve a block device for ${path} to relabel.`,
+        'FILESYSTEM_UNRESOLVED'
+      );
+    }
+
+    const family = classifyVolumeFilesystem(resolved.fstype);
+    if (family === null) {
+      throw new VolumeLabelError(
+        `Cannot relabel ${path}: unsupported filesystem "${resolved.fstype || 'unknown'}".`,
+        'UNSUPPORTED_FILESYSTEM'
+      );
+    }
+
+    const device = resolved.source;
+
+    if (family === 'fat') {
+      // dosfstools fatlabel <device> <label>.
+      const result = await execCommand('fatlabel', [device, label], this.subprocess);
+      if (result.code !== 0) {
+        const detail =
+          result.stderr.trim() || result.stdout.trim() || `fatlabel exited ${result.code}`;
+        throw new VolumeLabelError(
+          `Failed to relabel FAT volume ${device}: ${detail}`,
+          'RELABEL_FAILED'
+        );
+      }
+      return;
+    }
+
+    // hfsplus: hfsplus tools ship `hfsplus-tune`-style utilities; the
+    // canonical relabel tool on Linux is `hfslabel` (from hfsutils /
+    // hfsprogs). Use it to set the volume name.
+    const result = await execCommand('hfslabel', [device, label], this.subprocess);
+    if (result.code !== 0) {
+      const detail =
+        result.stderr.trim() || result.stdout.trim() || `hfslabel exited ${result.code}`;
+      throw new VolumeLabelError(
+        `Failed to relabel HFS+ volume ${device}: ${detail}`,
+        'RELABEL_FAILED'
+      );
+    }
+  }
+
+  /**
+   * Resolve a path to its backing block-device node and filesystem type via a
+   * single `findmnt`. Returns `null` when nothing is mounted at/containing the
+   * path or `findmnt` is missing.
+   */
+  private async resolvePathSourceAndFstype(
+    path: string
+  ): Promise<{ source: string; fstype: string } | null> {
+    const { stdout, code } = await execCommand(
+      'findmnt',
+      ['--pairs', '-o', 'SOURCE,FSTYPE', '--target', path],
+      this.subprocess
+    );
+    if (code !== 0) return null;
+
+    const line = stdout.split('\n').find((l) => l.trim() !== '');
+    if (!line) return null;
+
+    const pairs = parseFindmntPairs(line);
+    return { source: pairs['SOURCE'] ?? '', fstype: pairs['FSTYPE'] ?? '' };
   }
 
   async assessDevice(diskIdentifier: string): Promise<DeviceAssessment | null> {

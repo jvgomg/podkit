@@ -13,6 +13,26 @@ import { describe, it, expect } from 'bun:test';
 import { IpodDatabase } from './database.js';
 import { IpodError } from './errors.js';
 
+/**
+ * Build a minimal `IpodDatabase` instance backed by a fake `db` object,
+ * bypassing the private constructor. Only the properties touched by the
+ * method under test need to be present on the fake.
+ */
+function makeInstance(fakeDb: Record<string, unknown>, closed = false): IpodDatabase {
+  const instance = Object.create(IpodDatabase.prototype) as IpodDatabase;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (instance as any).db = fakeDb;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (instance as any)._mountPoint = '/fake';
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (instance as any)._closed = closed;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (instance as any).trackHandles = new WeakMap();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (instance as any).playlistIds = new WeakMap();
+  return instance;
+}
+
 describe('IpodDatabase', () => {
   describe('open()', () => {
     it('throws NOT_FOUND error if mount point does not exist', async () => {
@@ -39,10 +59,39 @@ describe('IpodDatabase', () => {
     });
   });
 
+  describe('setDeviceName()', () => {
+    it('throws DATABASE_CLOSED when the database has been closed', () => {
+      const instance = makeInstance({}, true /* closed */);
+      expect(() => instance.setDeviceName('Party iPod')).toThrow(IpodError);
+      try {
+        instance.setDeviceName('Party iPod');
+      } catch (err) {
+        expect(err).toBeInstanceOf(IpodError);
+        expect((err as IpodError).code).toBe('DATABASE_CLOSED');
+      }
+    });
+
+    it('surfaces a write failure as IpodError with code SAVE_FAILED', () => {
+      const fakeDb = {
+        setDeviceName: () => {
+          throw new Error('native write error');
+        },
+      };
+      const instance = makeInstance(fakeDb);
+      expect(() => instance.setDeviceName('Party iPod')).toThrow(IpodError);
+      try {
+        instance.setDeviceName('Party iPod');
+      } catch (err) {
+        expect(err).toBeInstanceOf(IpodError);
+        expect((err as IpodError).code).toBe('SAVE_FAILED');
+        expect((err as IpodError).message).toContain('native write error');
+      }
+    });
+  });
+
   // Note: The following behaviors are tested in integration tests because
   // they require creating a real IpodDatabase instance:
   //
-  // - Closed state behavior (DATABASE_CLOSED errors)
   // - Track operations (addTrack, updateTrack, removeTrack, etc.)
   // - Playlist operations (createPlaylist, renamePlaylist, etc.)
   // - Track/playlist handle management (TRACK_REMOVED, PLAYLIST_REMOVED errors)

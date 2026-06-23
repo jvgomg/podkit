@@ -244,6 +244,8 @@ function mockManager(devices: PlatformDeviceInfo[] = []): DeviceManager {
     requiresPrivileges: () => false,
     assessDevice: async () => null,
     getSiblingVolumes: async () => [],
+    detectFilesystem: async () => null,
+    setVolumeLabel: async () => undefined,
   };
 }
 

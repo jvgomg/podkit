@@ -280,12 +280,55 @@ export interface DeviceResetSuccess {
   success: true;
   mountPoint?: string;
   modelName?: string;
+  /** Track count that was on the device before the reset. */
   tracksRemoved?: number;
+  /**
+   * The name applied to the recreated database + disk label. Carried over from
+   * the device's current name unless `--name` overrode it.
+   */
+  name?: string;
+  /** Number of audio files brute-force removed from `iPod_Control/Music/F*`. */
+  musicFilesRemoved?: number;
+  /** Number of artwork files removed (`.ithmb` + `ArtworkDB`). */
+  artworkFilesRemoved?: number;
+  /** Total bytes freed by the on-disk content sweep. */
+  bytesFreed?: number;
+  /**
+   * The OS volume label written during the disk-label pass. Differs from `name`
+   * on lossy filesystems (FAT folds to uppercase + 11 chars).
+   */
+  diskLabel?: string;
+  /** Human-readable warning when the disk label is a lossy rendering of the name. */
+  diskWarning?: string;
   dryRun?: boolean;
 }
 
 export type DeviceResetErrorOutput = CliErrorOutput & { code: DeviceErrorCode };
 export type DeviceResetOutput = DeviceResetSuccess | DeviceResetErrorOutput;
+
+// ── rename ──────────────────────────────────────────────────────────────────
+
+export interface DeviceRenameSuccess {
+  success: true;
+  /** The name applied to the device. */
+  name?: string;
+  /** Mountpoint after the rename (re-resolved if the disk label moved it). */
+  mountPoint?: string;
+  /** Whether the iTunesDB master-playlist name was written. */
+  databaseUpdated?: boolean;
+  /** Whether the OS volume label was written. */
+  diskUpdated?: boolean;
+  /**
+   * The disk label that was written. Differs from `name` on lossy filesystems
+   * (FAT folds to uppercase + 11 chars).
+   */
+  diskLabel?: string;
+  /** Human-readable warning when the disk label is a lossy rendering of the name. */
+  diskWarning?: string;
+}
+
+export type DeviceRenameErrorOutput = CliErrorOutput & { code: DeviceErrorCode };
+export type DeviceRenameOutput = DeviceRenameSuccess | DeviceRenameErrorOutput;
 
 // ── reset-artwork ───────────────────────────────────────────────────────────
 

@@ -42,6 +42,12 @@ function createMockManager(
     async getSiblingVolumes() {
       return [];
     },
+    async detectFilesystem() {
+      return null;
+    },
+    async setVolumeLabel() {
+      return undefined;
+    },
   };
 }
 

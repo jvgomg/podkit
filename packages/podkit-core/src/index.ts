@@ -754,6 +754,27 @@ export type {
 export type { InterpretedError } from './device/index.js';
 export { interpretError } from './device/index.js';
 
+// Device rename orchestrator
+export type {
+  ApplyDeviceNameInput,
+  ApplyDeviceNameResult,
+  IpodDatabaseNameWriter,
+  DeviceLabelWriter,
+  ResolveMountPath,
+  RefreshConfig,
+  ConfigRefreshInfo,
+} from './device/index.js';
+export { applyDeviceName } from './device/index.js';
+
+// Factory-reset content sweep (brute-force on-disk file removal)
+export type { SweepDeviceContentOptions, SweepDeviceContentResult } from './device/index.js';
+export { sweepDeviceContent, SweepContentError } from './device/index.js';
+
+// Volume-label derivation (pure)
+export type { VolumeFilesystem, LabelFromNameResult } from './device/index.js';
+export { labelFromName, classifyVolumeFilesystem } from './device/index.js';
+export { VolumeLabelError } from './device/index.js';
+
 // Audio normalization (volume normalization)
 export type { AudioNormalization, NormalizationSource } from './metadata/normalization.js';
 export {

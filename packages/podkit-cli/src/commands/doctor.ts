@@ -300,7 +300,7 @@ export const doctorCommand = new Command('doctor')
     ])
   )
   .option('-c, --collection <name>', 'music collection to use as artwork source')
-  .option('--dry-run', 'preview repair without modifying the iPod')
+  .option('-n, --dry-run', 'preview repair without modifying the iPod')
   .option('--format <fmt>', 'output format for file lists (csv)')
   .option('--no-system', 'skip system-scope checks (FFmpeg, SCSI transport, udev rule, etc.)')
   .option(

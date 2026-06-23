@@ -232,6 +232,8 @@ export function addDevice(
 export function updateDevice(
   name: string,
   updates: {
+    volumeName?: string | null;
+    path?: string | null;
     quality?: string | null;
     audioQuality?: string | null;
     videoQuality?: string | null;
@@ -315,14 +317,15 @@ export function updateDevice(
       if (typeof value === 'boolean' || typeof value === 'number') {
         formattedValue = String(value);
       } else if (Array.isArray(value)) {
-        formattedValue = `[${value.map((v) => `"${v}"`).join(', ')}]`;
+        formattedValue = `[${value.map((v) => `"${escapeTomlString(String(v))}"`).join(', ')}]`;
       } else {
-        formattedValue = `"${value}"`;
+        formattedValue = `"${escapeTomlString(value)}"`;
       }
 
       if (lineRegex.test(sectionContent)) {
-        // Update existing line
-        sectionContent = sectionContent.replace(lineRegex, `${tomlKey} = ${formattedValue}`);
+        // Update existing line. Use a replacement function so a `$` in the value
+        // is not interpreted as a regex replacement token.
+        sectionContent = sectionContent.replace(lineRegex, () => `${tomlKey} = ${formattedValue}`);
       } else {
         // Add new line after the section header (first line)
         sectionContent = `\n${tomlKey} = ${formattedValue}` + sectionContent;

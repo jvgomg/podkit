@@ -49,6 +49,13 @@ export interface IpodAdapterStub {
     type: 'music' | 'video',
     opts?: { deleteFiles?: boolean }
   ): { removedCount: number; fileDeleteErrors: string[] };
+  /** Mirrors `IpodDatabase.setDeviceName` — writes the master-playlist name. */
+  setDeviceName(name: string): void;
+  /**
+   * Mirrors `IpodDatabase.getMasterPlaylist` — the master playlist's `name` is
+   * the device's current display name, which `reset` reads to carry over.
+   */
+  getMasterPlaylist(): { name: string };
   save(): Promise<void>;
   close(): void;
 }
@@ -60,7 +67,7 @@ export interface IpodAdapterStub {
 export interface IpodDatabaseStub {
   open(path: string): Promise<IpodAdapterStub>;
   hasDatabase(path: string): Promise<boolean>;
-  initializeIpod(path: string): Promise<IpodAdapterStub>;
+  initializeIpod(path: string, opts?: { model?: string; name?: string }): Promise<IpodAdapterStub>;
 }
 
 /**

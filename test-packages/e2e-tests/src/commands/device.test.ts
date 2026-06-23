@@ -440,8 +440,8 @@ volumeName = "Test iPod"
       ]);
 
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain('Database recreated');
-      expect(result.stdout).toContain('Tracks: 0');
+      expect(result.stdout).toContain('Factory reset complete');
+      expect(result.stdout).toContain('Tracks:  0');
 
       // Verify database still works
       const verifyResult = await target.verify();
@@ -566,8 +566,9 @@ volumeName = "Test iPod"
   });
 
   describe('edge cases', () => {
-    it('creates database when resetting uninitialized device', async () => {
-      // Create uninitialized directory
+    it('refuses to reset an uninitialized device, pointing to device init', async () => {
+      // A directory with no iTunesDB cannot be *re*-set — reset is for devices
+      // that are already initialised. First-time setup goes through device init.
       const uninitDir = join(tempDir, 'uninit-ipod');
       await mkdir(uninitDir, { recursive: true });
 
@@ -591,16 +592,15 @@ volumeName = "Uninitialized iPod"
         '--yes',
       ]);
 
-      expect(result.exitCode).toBe(0);
-      // Should say "created" not "recreated" since there was no database
-      expect(result.stdout).toContain('Creating database');
-      expect(result.stdout).toContain('Database created');
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('no database to reset');
+      expect(result.stderr).toContain('device init');
 
-      // Verify database was created
-      await access(join(uninitDir, 'iPod_Control', 'iTunes', 'iTunesDB'));
+      // No database should have been created.
+      await expect(access(join(uninitDir, 'iPod_Control', 'iTunes', 'iTunesDB'))).rejects.toThrow();
     });
 
-    it('dry-run shows correct message for uninitialized device', async () => {
+    it('refuses in dry-run mode for an uninitialized device', async () => {
       const uninitDir = join(tempDir, 'uninit-dry-ipod');
       await mkdir(uninitDir, { recursive: true });
 
@@ -624,8 +624,8 @@ volumeName = "Uninitialized iPod"
         '--dry-run',
       ]);
 
-      expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain('no existing database found');
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('no database to reset');
     });
   });
 });

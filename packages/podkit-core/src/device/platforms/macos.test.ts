@@ -153,3 +153,47 @@ describe('MacOSDeviceManager.locate', () => {
     expect(await manager.locate({ path: '/Volumes/x' })).toBeNull();
   });
 });
+
+describe('MacOSDeviceManager.detectFilesystem', () => {
+  it('reads the File System Personality from diskutil info', async () => {
+    const { runner, calls } = recordingRunner({
+      diskutil: () => ({ stdout: DISKUTIL_INFO, stderr: '', exitCode: 0 }),
+    });
+    const manager = new MacOSDeviceManager({ subprocess: runner });
+
+    expect(await manager.detectFilesystem('/Volumes/TERAPOD')).toBe('MS-DOS FAT32');
+    expect(calls[0]!.args).toEqual(['info', '/Volumes/TERAPOD']);
+  });
+
+  it('returns null when diskutil exits non-zero', async () => {
+    const { runner } = recordingRunner({
+      diskutil: () => ({ stdout: '', stderr: 'not found', exitCode: 1 }),
+    });
+    const manager = new MacOSDeviceManager({ subprocess: runner });
+    expect(await manager.detectFilesystem('/Volumes/x')).toBeNull();
+  });
+});
+
+describe('MacOSDeviceManager.setVolumeLabel', () => {
+  it('relabels via `diskutil rename <path> <label>`', async () => {
+    const { runner, calls } = recordingRunner({
+      diskutil: () => ({ stdout: 'Volume renamed', stderr: '', exitCode: 0 }),
+    });
+    const manager = new MacOSDeviceManager({ subprocess: runner });
+
+    await manager.setVolumeLabel('/Volumes/IPOD', 'PARTY IPOD');
+
+    const diskutilCalls = calls.filter((c) => c.command === 'diskutil');
+    expect(diskutilCalls).toHaveLength(1);
+    expect(diskutilCalls[0]!.args).toEqual(['rename', '/Volumes/IPOD', 'PARTY IPOD']);
+  });
+
+  it('throws VolumeLabelError when diskutil rename fails', async () => {
+    const { runner } = recordingRunner({
+      diskutil: () => ({ stdout: '', stderr: 'Resource busy', exitCode: 1 }),
+    });
+    const manager = new MacOSDeviceManager({ subprocess: runner });
+
+    await expect(manager.setVolumeLabel('/Volumes/IPOD', 'X')).rejects.toThrow(/Resource busy/);
+  });
+});

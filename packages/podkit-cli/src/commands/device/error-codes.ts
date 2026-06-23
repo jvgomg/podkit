@@ -63,7 +63,17 @@ export const DeviceErrorCodes = {
   IPOD_DATABASE_INVALID: 'IPOD_DATABASE_INVALID',
   INVALID_TYPE: 'INVALID_TYPE',
   RESET_FAILED: 'RESET_FAILED',
+  /**
+   * `device reset` was run on a device with no readable iTunesDB. Reset
+   * re-sets an already-initialised device; first-time setup is `device init`.
+   */
+  NOT_INITIALIZED: 'NOT_INITIALIZED',
   RESET_ARTWORK_FAILED: 'RESET_ARTWORK_FAILED',
+  RENAME_FAILED: 'RENAME_FAILED',
+  /** Both `--no-disk` and `--no-database` passed — the rename is a no-op. */
+  NOTHING_TO_RENAME: 'NOTHING_TO_RENAME',
+  /** A name argument was required but missing or empty. */
+  NAME_REQUIRED: 'NAME_REQUIRED',
   // Music / video listing
   INVALID_OPTION: 'INVALID_OPTION',
   INVALID_FIELDS: 'INVALID_FIELDS',

@@ -53,7 +53,7 @@ This lists the tracks that would be deleted without actually removing anything.
 By default, podkit asks for confirmation before clearing. To skip the prompt (useful for scripts):
 
 ```bash
-podkit device clear --confirm
+podkit device clear --yes
 ```
 
 ## Clear vs Reset
@@ -61,11 +61,13 @@ podkit device clear --confirm
 | | `device clear` | `device reset` |
 |---|---|---|
 | **Removes tracks** | Yes | Yes |
+| **Partial wipe (`--type music`/`video`)** | Yes | No (all-or-nothing) |
+| **Deletes orphaned audio files** | No | Yes |
+| **Wipes artwork** | No | Yes |
 | **Recreates database** | No | Yes |
-| **Preserves database settings** | Yes | No |
-| **Use when** | Removing content | Database is corrupted or you want a fresh start |
+| **Use when** | Removing some or all content | A full factory wipe, or the database is corrupted |
 
-If you just want to remove tracks and re-sync, use `clear`. If the iPod database is in a bad state, use [reset](/user-guide/devices/resetting) instead.
+If you just want to remove tracks and re-sync, use `clear`. For a complete factory wipe — empty database, every audio and artwork file gone — use [reset](/user-guide/devices/resetting) instead.
 
 ## See Also
 
