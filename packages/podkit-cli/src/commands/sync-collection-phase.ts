@@ -79,6 +79,20 @@ export interface CollectionPhaseDeps {
   removeOrphans: boolean;
   devicePath: string;
   /**
+   * Empty-playlist override for this phase. True when `--yes` was passed or
+   * the `allowEmptyPlaylist` config key is set — lets a playlist-scoped
+   * collection that resolves to zero tracks proceed (and thereby wipe the
+   * device's tracks for it) instead of aborting / prompting. Only consulted
+   * for playlist-scoped collections.
+   */
+  allowEmptyPlaylist?: boolean;
+  /**
+   * @internal Injection seam for the empty-playlist confirm prompt, passed
+   * straight through to `genericSyncCollection`. Tests override it; production
+   * leaves it undefined (defaults to the real `confirmNo`).
+   */
+  confirm?: (question: string) => Promise<boolean>;
+  /**
    * @internal Injection point for tests — defaults to
    * `genericSyncCollection`. Production callers should never override.
    */
@@ -152,6 +166,7 @@ export async function runCollectionPhase(
 ): Promise<CollectionPhaseResult> {
   const { presenter, collections, contentConfig, renderPerCollectionHeader } = input;
   const { out, adapter, core, shutdown, dryRun, removeOrphans, devicePath } = deps;
+  const { allowEmptyPlaylist, confirm } = deps;
   const syncOne = deps.syncOne ?? genericSyncCollection;
 
   let completed = 0;
@@ -194,6 +209,8 @@ export async function runCollectionPhase(
       signal: shutdown.signal,
       shutdown,
       preliminaries: preliminariesForThisCall,
+      allowEmptyPlaylist,
+      confirm,
     });
 
     if (result.jsonOutput && out.isJson) {

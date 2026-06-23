@@ -75,6 +75,7 @@ export const SyncErrorCodes = {
   NO_COMPATIBLE_CODEC: 'NO_COMPATIBLE_CODEC',
   LOCK_HELD: 'LOCK_HELD',
   LOCK_UNAVAILABLE: 'LOCK_UNAVAILABLE',
+  EMPTY_PLAYLIST_ABORT: 'EMPTY_PLAYLIST_ABORT',
 } as const;
 export type SyncErrorCode = (typeof SyncErrorCodes)[keyof typeof SyncErrorCodes];
 
@@ -139,6 +140,7 @@ interface SyncOptions {
   delete?: boolean;
   collection?: string;
   eject?: boolean;
+  yes?: boolean;
 }
 
 // JSON envelope types live in `./sync-output-types.ts` — imported here
@@ -384,6 +386,10 @@ export const syncCommand = new Command('sync')
   .option('--check-artwork', 'detect artwork changes by comparing content hashes')
   .option('--delete', 'remove tracks from device not in source')
   .option('--eject', 'eject device after successful sync')
+  .option(
+    '-y, --yes',
+    'proceed without prompting when a playlist-scoped collection resolves to zero tracks'
+  )
   .action(
     withCleanOptions(async (options: SyncOptions) => {
       const { config, globalOpts } = getContext();
@@ -411,6 +417,11 @@ export async function runSync(
 
   const dryRun = options.dryRun ?? false;
   const removeOrphans = options.delete ?? false;
+  // Empty-playlist override: `--yes` (one-off) OR the `allowEmptyPlaylist`
+  // config key (daemon). Lets a playlist-scoped collection that resolves to
+  // zero tracks sync through instead of aborting / prompting. Only consulted
+  // for playlist-scoped collections inside the sync phase.
+  const allowEmptyPlaylist = (options.yes ?? false) || (config.allowEmptyPlaylist ?? false);
 
   // ----- Validate type argument -----
   const typeArgs = options.type ?? [];
@@ -1132,7 +1143,7 @@ export async function runSync(
           preSyncPreliminaries: preliminariesConsumed ? undefined : preSyncPreliminaries,
           priorPhaseCompleted: totalCompleted,
         },
-        { out, adapter, core, shutdown, dryRun, removeOrphans, devicePath }
+        { out, adapter, core, shutdown, dryRun, removeOrphans, devicePath, allowEmptyPlaylist }
       );
 
       if (musicResult.consumedPreliminaries) preliminariesConsumed = true;
@@ -1165,6 +1176,8 @@ export async function runSync(
           forceMetadata: options.forceMetadata ?? false,
         };
 
+        // allowEmptyPlaylist is intentionally omitted: video collections cannot
+        // be playlist-scoped, so the empty-playlist guard never applies here.
         const videoResult = await runCollectionPhase(
           {
             presenter: new VideoPresenter(),

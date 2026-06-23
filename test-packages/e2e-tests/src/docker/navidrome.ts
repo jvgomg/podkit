@@ -71,6 +71,33 @@ export interface NavidromeContainer {
    */
   restart(opts?: { minAlbums?: number }): Promise<void>;
 
+  /**
+   * Return all song IDs in the indexed library.
+   *
+   * Paginates through all albums via the Subsonic REST API and collects each
+   * song's id. Must be called after {@link waitForLibraryScan} completes (i.e.
+   * after {@link startNavidromeContainer} or {@link restart} resolves). Useful
+   * for building the `songIds` argument to {@link createPlaylist}.
+   */
+  listSongIds(): Promise<string[]>;
+
+  /**
+   * Create a named playlist on the server and return its id.
+   *
+   * Wraps the Subsonic `createPlaylist` REST endpoint. Pass `songIds: []` to
+   * create an **empty** playlist — the endpoint accepts an empty song list and
+   * Navidrome creates the playlist with `songCount: 0`.
+   *
+   * Must be called after the library scan completes (i.e. after
+   * {@link startNavidromeContainer} or {@link restart} resolves) so that any
+   * song ids provided actually exist on the server.
+   *
+   * @param name - Display name for the new playlist.
+   * @param songIds - Subsonic song ids to include; pass `[]` for an empty playlist.
+   * @returns The server-assigned playlist id.
+   */
+  createPlaylist(name: string, songIds: string[]): Promise<{ id: string }>;
+
   /** Stop the container. */
   stop(): Promise<void>;
 }
@@ -129,6 +156,12 @@ export async function startNavidromeContainer(opts: NavidromeOptions): Promise<N
       port = await handle.hostPort(NAVIDROME_PORT);
       await waitForServer(port, password, serverTimeoutMs);
       await waitForLibraryScan(port, password, restartOpts?.minAlbums ?? minAlbums, scanTimeoutMs);
+    },
+    async listSongIds() {
+      return listAllSongIds(port, password);
+    },
+    async createPlaylist(name, songIds) {
+      return createSubsonicPlaylist(port, password, name, songIds);
     },
     stop() {
       return handle.stop();
@@ -224,6 +257,125 @@ async function waitForLibraryScan(
   }
 
   throw new Error(`Navidrome library scan did not complete within ${timeoutMs}ms`);
+}
+
+/**
+ * Collect all song ids from the indexed library by paginating through albums.
+ *
+ * Uses the same `getAlbumList2` → `getAlbum` pattern as the Subsonic adapter
+ * so the ids match what the production code sees.
+ */
+async function listAllSongIds(port: number, password: string): Promise<string[]> {
+  const pageSize = 500;
+  let offset = 0;
+  const ids: string[] = [];
+
+  while (true) {
+    const albumsUrl = subsonicUrl(port, password, 'getAlbumList2', {
+      type: 'alphabeticalByName',
+      size: String(pageSize),
+      offset: String(offset),
+    });
+
+    const albumsRes = await fetch(albumsUrl);
+    if (!albumsRes.ok) {
+      throw new Error(`getAlbumList2 failed: HTTP ${albumsRes.status}`);
+    }
+    const albumsData = (await albumsRes.json()) as Record<string, unknown>;
+    const subsonicResponse = albumsData['subsonic-response'] as Record<string, unknown> | undefined;
+    const albumList = subsonicResponse?.albumList2 as Record<string, unknown> | undefined;
+    const albums = albumList?.album as Array<{ id: string }> | undefined;
+
+    if (!albums || albums.length === 0) break;
+
+    for (const album of albums) {
+      const albumUrl = subsonicUrl(port, password, 'getAlbum', { id: album.id });
+      const albumRes = await fetch(albumUrl);
+      if (!albumRes.ok) {
+        throw new Error(`getAlbum(${album.id}) failed: HTTP ${albumRes.status}`);
+      }
+
+      const albumData = (await albumRes.json()) as Record<string, unknown>;
+      const albumSubsonicResponse = albumData['subsonic-response'] as
+        | Record<string, unknown>
+        | undefined;
+      const fullAlbum = albumSubsonicResponse?.album as
+        | { song?: Array<{ id: string }> }
+        | undefined;
+
+      if (fullAlbum?.song) {
+        for (const song of fullAlbum.song) {
+          ids.push(song.id);
+        }
+      }
+    }
+
+    offset += pageSize;
+    if (albums.length < pageSize) break;
+  }
+
+  return ids;
+}
+
+/**
+ * Create a named playlist via the Subsonic REST API and return its id.
+ *
+ * Passes song ids as repeated `songId` query parameters. An empty `songIds`
+ * array is valid — Navidrome creates a playlist with `songCount: 0`.
+ *
+ * Retries on transient 5xx errors (e.g. Navidrome's "file is not a database"
+ * SQLite contention that can occur immediately after a library scan).
+ */
+async function createSubsonicPlaylist(
+  port: number,
+  password: string,
+  name: string,
+  songIds: string[]
+): Promise<{ id: string }> {
+  // Build the URL manually so we can repeat the `songId` parameter for each
+  // song — URLSearchParams.append handles the repeated-key case correctly.
+  const base = subsonicUrl(port, password, 'createPlaylist', { name });
+  const url = new URL(base);
+  for (const id of songIds) {
+    url.searchParams.append('songId', id);
+  }
+
+  const urlString = url.toString();
+  const maxAttempts = 5;
+  const retryDelayMs = 500;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const response = await fetch(urlString);
+    if (!response.ok) {
+      // Only retry on 5xx errors (transient server issues like SQLite contention).
+      // 4xx errors (401/403/404) are client errors and never transient.
+      if (response.status >= 500 && attempt < maxAttempts) {
+        await sleep(retryDelayMs * attempt);
+        continue;
+      }
+      throw new Error(`createPlaylist failed: HTTP ${response.status}`);
+    }
+
+    const data = (await response.json()) as Record<string, unknown>;
+    const subsonicResponse = data['subsonic-response'] as Record<string, unknown> | undefined;
+
+    if (subsonicResponse?.status !== 'ok') {
+      // Application-layer Subsonic errors (failed status) are not transient — throw immediately.
+      const error = subsonicResponse?.error as { code?: number; message?: string } | undefined;
+      const errorMessage = error?.message ?? String(subsonicResponse?.status);
+      throw new Error(`createPlaylist failed: ${errorMessage}`);
+    }
+
+    const playlist = subsonicResponse.playlist as { id?: string } | undefined;
+    if (!playlist?.id) {
+      throw new Error('createPlaylist response missing playlist.id');
+    }
+
+    return { id: playlist.id };
+  }
+
+  // Unreachable, but satisfies TypeScript.
+  throw new Error('createPlaylist failed: exhausted retry attempts');
 }
 
 function sleep(ms: number): Promise<void> {

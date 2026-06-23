@@ -43,6 +43,15 @@ export {
 
 export type { SubsonicAdapterConfig } from './adapters/subsonic.js';
 
+// Subsonic playlist resolution
+export {
+  resolvePlaylist,
+  PlaylistNotFoundError,
+  AmbiguousPlaylistError,
+} from './adapters/subsonic/playlist.js';
+
+export type { PlaylistApi, PlaylistEntryMapper } from './adapters/subsonic/playlist.js';
+
 // Sync engine
 export type {
   BaseOperation,

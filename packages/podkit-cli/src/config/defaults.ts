@@ -67,6 +67,7 @@ export const ENV_KEYS = {
   forceSyncTags: `${ENV_PREFIX}FORCE_SYNC_TAGS`,
   checkArtwork: `${ENV_PREFIX}CHECK_ARTWORK`,
   skipUpgrades: `${ENV_PREFIX}SKIP_UPGRADES`,
+  allowEmptyPlaylist: `${ENV_PREFIX}ALLOW_EMPTY_PLAYLIST`,
   artwork: `${ENV_PREFIX}ARTWORK`,
   tips: `${ENV_PREFIX}TIPS`,
   transferMode: `${ENV_PREFIX}TRANSFER_MODE`,

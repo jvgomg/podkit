@@ -51,6 +51,7 @@ import {
   escapeCsv,
 } from './display-utils.js';
 import type { CollectionTrack, CollectionVideo } from '@podkit/core';
+import { PlaylistNotFoundError, AmbiguousPlaylistError } from '@podkit/core';
 import { createMusicAdapter } from '../utils/source-adapter.js';
 import {
   resolveMusicCollection,
@@ -150,16 +151,22 @@ function formatCollectionTable(collections: CollectionInfo[]): string {
   // Calculate column widths
   const typeWidth = Math.max(4, ...collections.map((c) => c.type.length));
   const nameWidth = Math.max(4, ...collections.map((c) => c.name.length));
+  // PLAYLIST column: always shown; displays the playlist name or '-' when the collection has no playlist
+  const playlistValues = collections.map((c) => c.playlist ?? '-');
+  const playlistWidth = Math.max(8, ...playlistValues.map((p) => p.length));
 
   // Header
-  lines.push(`  ${'TYPE'.padEnd(typeWidth)}  ${'NAME'.padEnd(nameWidth)}  PATH`);
+  lines.push(
+    `  ${'TYPE'.padEnd(typeWidth)}  ${'NAME'.padEnd(nameWidth)}  ${'PLAYLIST'.padEnd(playlistWidth)}  PATH`
+  );
 
   // Data rows
   for (const col of collections) {
     const marker = col.isDefault ? '*' : ' ';
     const displayPath = col.subsonicUrl ?? col.path;
+    const displayPlaylist = (col.playlist ?? '-').padEnd(playlistWidth);
     lines.push(
-      `${marker} ${col.type.padEnd(typeWidth)}  ${col.name.padEnd(nameWidth)}  ${displayPath}`
+      `${marker} ${col.type.padEnd(typeWidth)}  ${col.name.padEnd(nameWidth)}  ${displayPlaylist}  ${displayPath}`
     );
   }
 
@@ -251,32 +258,42 @@ function resolveVideoCollectionArg(collectionName?: string):
 // List subcommand
 // =============================================================================
 
+/**
+ * `collection list` runner — testable in-process.
+ *
+ * Extracted from the action callback so unit tests can call it directly with a
+ * captured OutputContext (BufferSink) without spawning the CLI as a subprocess.
+ */
+export async function runCollectionList(
+  options: { type?: string },
+  out: OutputContext
+): Promise<void> {
+  const type = options.type;
+  let filterType: CollectionType | undefined;
+  if (type) {
+    if (type !== 'music' && type !== 'video') {
+      throw new CliError({
+        message: `Invalid type '${type}'. Must be 'music' or 'video'.`,
+        code: CollectionErrorCodes.INVALID_TYPE,
+      });
+    }
+    filterType = type as CollectionType;
+  }
+
+  const collections = getCollections(filterType);
+
+  out.result<CollectionListOutput>({ success: true, collections }, () =>
+    out.print(formatCollectionTable(collections))
+  );
+}
+
 const listSubcommand = new Command('list')
   .description('list configured collections')
   .addOption(new Option('-t, --type <type>', 'filter by type').choices([...CONTENT_TYPES]))
   .action(async (options: { type?: string }) => {
     const { globalOpts } = getContext();
     const out = OutputContext.fromGlobalOpts(globalOpts);
-
-    await runAction(out, async () => {
-      const type = options.type;
-      let filterType: CollectionType | undefined;
-      if (type) {
-        if (type !== 'music' && type !== 'video') {
-          throw new CliError({
-            message: `Invalid type '${type}'. Must be 'music' or 'video'.`,
-            code: CollectionErrorCodes.INVALID_TYPE,
-          });
-        }
-        filterType = type as CollectionType;
-      }
-
-      const collections = getCollections(filterType);
-
-      out.result<CollectionListOutput>({ success: true, collections }, () =>
-        out.print(formatCollectionTable(collections))
-      );
-    });
+    await runAction(out, () => runCollectionList(options, out));
   });
 
 // =============================================================================
@@ -514,81 +531,143 @@ const removeSubcommand = new Command('remove')
 // Info subcommand (renamed from show)
 // =============================================================================
 
+/**
+ * Factory type for creating a music adapter — injected so tests can supply a
+ * fake without touching the real network.
+ */
+export type MusicAdapterFactory = typeof createMusicAdapter;
+
+/**
+ * `collection info` runner — testable in-process.
+ *
+ * Extracted from the action callback so unit/integration tests can call it
+ * directly with a captured OutputContext (BufferSink) and a fake adapter
+ * factory instead of spawning the CLI as a subprocess or hitting a real server.
+ *
+ * @param options.collection - collection name from --collection flag
+ * @param out - OutputContext (text or JSON mode)
+ * @param adapterFactory - overridable adapter factory (defaults to createMusicAdapter)
+ */
+export async function runCollectionInfo(
+  options: { collection?: string },
+  out: OutputContext,
+  adapterFactory: MusicAdapterFactory = createMusicAdapter
+): Promise<void> {
+  const { config } = getContext();
+  const name = options.collection;
+
+  if (!name) {
+    throw new CliError({
+      message: 'Missing required --collection flag. Usage: podkit collection info -c <name>',
+      code: CollectionErrorCodes.COLLECTION_REQUIRED,
+    });
+  }
+
+  const existing = findCollection(name);
+  const collections: CollectionInfo[] = [];
+
+  if (existing.music) {
+    const isSubsonic = existing.music.type === 'subsonic';
+    const musicCol: CollectionInfo = {
+      name,
+      type: 'music',
+      path: existing.music.path,
+      isDefault: config.defaults?.music === name,
+      subsonicUrl: isSubsonic ? existing.music.url : undefined,
+      subsonicUsername: isSubsonic ? existing.music.username : undefined,
+      playlist: isSubsonic ? existing.music.playlist : undefined,
+    };
+
+    // For playlist-scoped subsonic collections, resolve the playlist to
+    // get its status (OK+count / MISSING / AMBIGUOUS / ERROR). This is the
+    // explicit on-demand validation surface; a network call is expected.
+    if (isSubsonic && existing.music.playlist !== undefined) {
+      const adapter = adapterFactory({ config: existing.music, name });
+      try {
+        await adapter.connect();
+        const tracks = await adapter.getItems();
+        musicCol.playlistStatus = 'OK';
+        musicCol.playlistTrackCount = tracks.length;
+      } catch (err) {
+        if (err instanceof PlaylistNotFoundError) {
+          musicCol.playlistStatus = 'MISSING';
+        } else if (err instanceof AmbiguousPlaylistError) {
+          musicCol.playlistStatus = 'AMBIGUOUS';
+        } else {
+          musicCol.playlistStatus = 'ERROR';
+        }
+      } finally {
+        await adapter.disconnect();
+      }
+    }
+
+    collections.push(musicCol);
+  }
+
+  if (existing.video) {
+    collections.push({
+      name,
+      type: 'video',
+      path: existing.video.path,
+      isDefault: config.defaults?.video === name,
+    });
+  }
+
+  if (collections.length === 0) {
+    throw new CliError({
+      message: `Collection '${name}' not found.`,
+      code: CollectionErrorCodes.COLLECTION_NOT_FOUND,
+    });
+  }
+
+  out.result<CollectionShowOutput>({ success: true, collections }, () => {
+    for (const col of collections) {
+      out.print(`Collection: ${col.name} (${col.type})`);
+      out.newline();
+
+      if (col.subsonicUrl) {
+        out.print('  Type:      subsonic');
+        out.print(`  URL:       ${col.subsonicUrl}`);
+        if (col.subsonicUsername) {
+          out.print(`  Username:  ${col.subsonicUsername}`);
+        }
+        out.print(`  Path:      ${col.path}`);
+        if (col.playlist !== undefined) {
+          const statusSuffix =
+            col.playlistStatus === 'OK'
+              ? ` (OK, ${col.playlistTrackCount} track${col.playlistTrackCount === 1 ? '' : 's'})`
+              : col.playlistStatus === 'MISSING'
+                ? ' (MISSING)'
+                : col.playlistStatus === 'AMBIGUOUS'
+                  ? ' (AMBIGUOUS)'
+                  : col.playlistStatus === 'ERROR'
+                    ? ' (ERROR)'
+                    : '';
+          out.print(`  Playlist:  ${col.playlist}${statusSuffix}`);
+        }
+      } else {
+        out.print('  Type:      directory');
+        out.print(`  Path:      ${col.path}`);
+      }
+
+      if (col.isDefault) {
+        out.print(`  Default:   yes`);
+      }
+
+      if (collections.indexOf(col) < collections.length - 1) {
+        out.newline();
+      }
+    }
+  });
+}
+
 const infoSubcommand = new Command('info')
   .description('display collection details')
   .option('-c, --collection <name>', 'collection name')
   .action(async (options: { collection?: string }) => {
-    const { globalOpts, config } = getContext();
+    const { globalOpts } = getContext();
     const out = OutputContext.fromGlobalOpts(globalOpts);
-
-    await runAction(out, async () => {
-      const name = options.collection;
-
-      if (!name) {
-        throw new CliError({
-          message: 'Missing required --collection flag. Usage: podkit collection info -c <name>',
-          code: CollectionErrorCodes.COLLECTION_REQUIRED,
-        });
-      }
-
-      const existing = findCollection(name);
-      const collections: CollectionInfo[] = [];
-
-      if (existing.music) {
-        const isSubsonic = existing.music.type === 'subsonic';
-        collections.push({
-          name,
-          type: 'music',
-          path: existing.music.path,
-          isDefault: config.defaults?.music === name,
-          subsonicUrl: isSubsonic ? existing.music.url : undefined,
-          subsonicUsername: isSubsonic ? existing.music.username : undefined,
-        });
-      }
-
-      if (existing.video) {
-        collections.push({
-          name,
-          type: 'video',
-          path: existing.video.path,
-          isDefault: config.defaults?.video === name,
-        });
-      }
-
-      if (collections.length === 0) {
-        throw new CliError({
-          message: `Collection '${name}' not found.`,
-          code: CollectionErrorCodes.COLLECTION_NOT_FOUND,
-        });
-      }
-
-      out.result<CollectionShowOutput>({ success: true, collections }, () => {
-        for (const col of collections) {
-          out.print(`Collection: ${col.name} (${col.type})`);
-          out.newline();
-
-          if (col.subsonicUrl) {
-            out.print('  Type:      subsonic');
-            out.print(`  URL:       ${col.subsonicUrl}`);
-            if (col.subsonicUsername) {
-              out.print(`  Username:  ${col.subsonicUsername}`);
-            }
-            out.print(`  Path:      ${col.path}`);
-          } else {
-            out.print('  Type:      directory');
-            out.print(`  Path:      ${col.path}`);
-          }
-
-          if (col.isDefault) {
-            out.print(`  Default:   yes`);
-          }
-
-          if (collections.indexOf(col) < collections.length - 1) {
-            out.newline();
-          }
-        }
-      });
-    });
+    await runAction(out, () => runCollectionInfo(options, out));
   });
 
 // =============================================================================
@@ -695,7 +774,11 @@ export async function runCollectionMusic(
     const tracks = await adapter.getItems();
     spinner.stop();
 
-    const heading = `Music in collection '${resolved.name}':`;
+    const playlistAnnotation =
+      collectionConfig.type === 'subsonic' && collectionConfig.playlist
+        ? ` (playlist: ${collectionConfig.playlist})`
+        : '';
+    const heading = `Music in collection '${resolved.name}'${playlistAnnotation}:`;
 
     const displayTracks: DisplayTrack[] = tracks.map((t: CollectionTrack) => ({
       title: t.title || 'Unknown Title',
@@ -1067,13 +1150,9 @@ export const collectionCommand = new Command('collection')
   .addCommand(infoSubcommand)
   .addCommand(musicSubcommand)
   .addCommand(videoSubcommand)
-  .action(() => {
+  .action(async () => {
     // Default action: list all collections
     const { globalOpts } = getContext();
     const out = OutputContext.fromGlobalOpts(globalOpts);
-    const collections = getCollections();
-
-    out.result<CollectionListOutput>({ success: true, collections }, () =>
-      out.print(formatCollectionTable(collections))
-    );
+    await runAction(out, () => runCollectionList({}, out));
   });

@@ -360,6 +360,31 @@ artwork = "yes"
       expect(result).toEqual({});
     });
 
+    it('parses allowEmptyPlaylist = true', () => {
+      const configPath = path.join(tempDir, 'config.toml');
+      fs.writeFileSync(configPath, v(`allowEmptyPlaylist = true`));
+
+      const result = loadConfigFile(configPath);
+      expect(result?.allowEmptyPlaylist).toBe(true);
+    });
+
+    it('parses allowEmptyPlaylist = false', () => {
+      const configPath = path.join(tempDir, 'config.toml');
+      fs.writeFileSync(configPath, v(`allowEmptyPlaylist = false`));
+
+      const result = loadConfigFile(configPath);
+      expect(result?.allowEmptyPlaylist).toBe(false);
+    });
+
+    it('ignores allowEmptyPlaylist with wrong type (string instead of boolean)', () => {
+      const configPath = path.join(tempDir, 'config.toml');
+      fs.writeFileSync(configPath, v(`allowEmptyPlaylist = "yes"`));
+
+      const result = loadConfigFile(configPath);
+      // String "yes" should not be parsed as allowEmptyPlaylist since type check is strict
+      expect(result).toEqual({});
+    });
+
     describe('cleanArtists config', () => {
       it('parses [cleanArtists] table form with options', () => {
         const configPath = path.join(tempDir, 'config.toml');
@@ -637,6 +662,75 @@ url = "https://music.work.com"
         );
 
         expect(() => loadConfigFile(configPath)).toThrow(/Missing or invalid "username"/);
+      });
+
+      it('parses subsonic collection with a playlist', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[music.workout]
+type = "subsonic"
+url = "https://music.work.com"
+username = "james"
+playlist = "Workout"
+`)
+        );
+
+        const result = loadConfigFile(configPath);
+        expect(result?.music?.workout).toEqual({
+          path: '',
+          type: 'subsonic',
+          url: 'https://music.work.com',
+          username: 'james',
+          playlist: 'Workout',
+        });
+      });
+
+      it('rejects playlist on a directory collection', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[music.local]
+path = "/music"
+playlist = "Workout"
+`)
+        );
+
+        expect(() => loadConfigFile(configPath)).toThrow(/"playlist" is only valid for subsonic/);
+      });
+
+      it('rejects an empty string playlist on a subsonic collection', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[music.nav]
+type = "subsonic"
+url = "https://music.example.com"
+username = "james"
+playlist = ""
+`)
+        );
+
+        expect(() => loadConfigFile(configPath)).toThrow(/must be a non-empty playlist name/);
+      });
+
+      it('rejects a whitespace-only playlist on a subsonic collection', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[music.nav]
+type = "subsonic"
+url = "https://music.example.com"
+username = "james"
+playlist = "   "
+`)
+        );
+
+        expect(() => loadConfigFile(configPath)).toThrow(/must be a non-empty playlist name/);
       });
     });
 
@@ -1983,6 +2077,26 @@ device = "terapod"
       expect(result.artwork).toBe(true);
     });
 
+    it('reads PODKIT_ALLOW_EMPTY_PLAYLIST=true', () => {
+      process.env[ENV_KEYS.allowEmptyPlaylist] = 'true';
+      try {
+        const result = loadEnvConfig();
+        expect(result.allowEmptyPlaylist).toBe(true);
+      } finally {
+        delete process.env[ENV_KEYS.allowEmptyPlaylist];
+      }
+    });
+
+    it('reads PODKIT_ALLOW_EMPTY_PLAYLIST=false', () => {
+      process.env[ENV_KEYS.allowEmptyPlaylist] = 'false';
+      try {
+        const result = loadEnvConfig();
+        expect(result.allowEmptyPlaylist).toBe(false);
+      } finally {
+        delete process.env[ENV_KEYS.allowEmptyPlaylist];
+      }
+    });
+
     it('reads PODKIT_AUDIO_QUALITY with valid value', () => {
       process.env[ENV_KEYS.audioQuality] = 'max';
       const result = loadEnvConfig();
@@ -2159,6 +2273,23 @@ device = "terapod"
         });
       });
 
+      it('creates named subsonic collection with a playlist', () => {
+        process.env.PODKIT_MUSIC_WORKOUT_TYPE = 'subsonic';
+        process.env.PODKIT_MUSIC_WORKOUT_URL = 'https://navidrome.example.com';
+        process.env.PODKIT_MUSIC_WORKOUT_USERNAME = 'user';
+        process.env.PODKIT_MUSIC_WORKOUT_PASSWORD = 'secret';
+        process.env.PODKIT_MUSIC_WORKOUT_PLAYLIST = 'Workout';
+        const result = loadEnvConfig();
+        expect(result.music?.workout).toEqual({
+          path: '',
+          type: 'subsonic',
+          url: 'https://navidrome.example.com',
+          username: 'user',
+          password: 'secret',
+          playlist: 'Workout',
+        });
+      });
+
       it('creates multiple named collections', () => {
         process.env.PODKIT_MUSIC_MAIN_PATH = '/music/library';
         process.env.PODKIT_MUSIC_VINYL_PATH = '/music/vinyl';
@@ -2184,6 +2315,19 @@ device = "terapod"
         process.env.PODKIT_MUSIC_TYPE = 'directory';
         const result = loadEnvConfig();
         expect(result.music).toBeUndefined();
+      });
+
+      it('throws when PLAYLIST is set on a directory collection', () => {
+        process.env.PODKIT_MUSIC_PATH = '/music';
+        process.env.PODKIT_MUSIC_PLAYLIST = 'Workout';
+        // TYPE defaults to 'directory' when not set to 'subsonic'
+        expect(() => loadEnvConfig()).toThrow(/"playlist" is only valid for subsonic/);
+      });
+
+      it('throws when PLAYLIST is set on a named directory collection', () => {
+        process.env.PODKIT_MUSIC_LOCAL_PATH = '/music';
+        process.env.PODKIT_MUSIC_LOCAL_PLAYLIST = 'Workout';
+        expect(() => loadEnvConfig()).toThrow(/"playlist" is only valid for subsonic/);
       });
 
       it('skips subsonic collection without URL', () => {
@@ -2569,6 +2713,24 @@ device = "terapod"
     it('skipUpgrades defaults to undefined when not set', () => {
       const result = mergeConfigs();
       expect(result.skipUpgrades).toBeUndefined();
+    });
+
+    it('merges allowEmptyPlaylist from partial config', () => {
+      const partial: PartialConfig = { allowEmptyPlaylist: true };
+      const result = mergeConfigs(partial);
+      expect(result.allowEmptyPlaylist).toBe(true);
+    });
+
+    it('later allowEmptyPlaylist overrides earlier', () => {
+      const first: PartialConfig = { allowEmptyPlaylist: true };
+      const second: PartialConfig = { allowEmptyPlaylist: false };
+      const result = mergeConfigs(first, second);
+      expect(result.allowEmptyPlaylist).toBe(false);
+    });
+
+    it('allowEmptyPlaylist defaults to undefined when not set', () => {
+      const result = mergeConfigs();
+      expect(result.allowEmptyPlaylist).toBeUndefined();
     });
 
     it('merges transferMode from partial config', () => {

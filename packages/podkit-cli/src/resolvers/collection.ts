@@ -156,6 +156,18 @@ export interface CollectionInfo {
   /** For subsonic collections */
   subsonicUrl?: string;
   subsonicUsername?: string;
+  /**
+   * For subsonic playlist-scoped collections: the configured playlist name.
+   * Populated from MusicCollectionConfig.playlist.
+   */
+  playlist?: string;
+  /**
+   * Playlist resolution status — only set by `collection info` after a
+   * network lookup. Not present in `collection list` (no network there).
+   */
+  playlistStatus?: 'OK' | 'MISSING' | 'AMBIGUOUS' | 'ERROR';
+  /** Track count when playlistStatus is 'OK'. */
+  playlistTrackCount?: number;
 }
 
 /**
@@ -182,6 +194,7 @@ export function getAllCollections(
         isDefault: config.defaults?.music === name,
         subsonicUrl: col.type === 'subsonic' ? col.url : undefined,
         subsonicUsername: col.type === 'subsonic' ? col.username : undefined,
+        playlist: col.type === 'subsonic' ? col.playlist : undefined,
       });
     }
   }

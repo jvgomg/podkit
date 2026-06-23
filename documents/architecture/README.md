@@ -57,6 +57,12 @@ an architecture doc to match a change you're shipping, ask whether the
   why the read path is libgpod-node-only with a ported artwork decoder,
   and the stage-boundary / lossless-extract / count-matches-output
   conventions.
+- **[collection-adapters/subsonic](./collection-adapters/subsonic.md)** —
+  How the Subsonic (Navidrome-compatible) collection adapter works:
+  connection, full-library vs. playlist-scoped sourcing, the playlist
+  resolver as a deep module, typed playlist errors, the two-boundary
+  model (ID-based sourcing vs. metadata-based device matching), and the
+  empty-playlist guard's place in the sync flow.
 
 That's it for now. The rest of the library is pending — see
 [Goals and migration plan](#goals-and-migration-plan) below.
@@ -89,7 +95,7 @@ documents/architecture/
 │   └── mass-storage-adapter.md       # ⏳ pending
 ├── collection-adapters/              # source adapters
 │   ├── adapter-contract.md           # ⏳ pending
-│   ├── subsonic.md                   # ⏳ pending
+│   ├── subsonic.md                   # ✅ landed (playlist-scoped sourcing + resolver + guard)
 │   └── directory.md                  # ⏳ pending
 ├── transcode/                        # FFmpeg integration
 │   ├── codec-resolution.md           # ⏳ pending

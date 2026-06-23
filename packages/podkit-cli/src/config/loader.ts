@@ -247,6 +247,10 @@ export function loadConfigFile(configPath: string): PartialConfig | undefined {
     config.skipUpgrades = parsed.skipUpgrades;
   }
 
+  if (typeof parsed.allowEmptyPlaylist === 'boolean') {
+    config.allowEmptyPlaylist = parsed.allowEmptyPlaylist;
+  }
+
   // Parse cleanArtists (boolean or table)
   if (parsed.cleanArtists !== undefined) {
     config.transforms = {
@@ -586,6 +590,15 @@ function parseMusicCollections(
       );
     }
 
+    // `playlist` is a subsonic-only constraint. Reject it on a directory
+    // collection at parse time rather than silently ignoring it.
+    if (rawCollection.playlist !== undefined && collectionType !== 'subsonic') {
+      throw new Error(
+        `"playlist" is only valid for subsonic collections, but [music.${name}] is a directory collection. ` +
+          `Remove "playlist" or set type = "subsonic".`
+      );
+    }
+
     if (collectionType === 'directory') {
       if (typeof rawCollection.path !== 'string') {
         throw new Error(
@@ -609,12 +622,20 @@ function parseMusicCollections(
             `Subsonic collections require a username.`
         );
       }
+      if (rawCollection.playlist !== undefined) {
+        if (typeof rawCollection.playlist !== 'string' || rawCollection.playlist.trim() === '') {
+          throw new Error(
+            `Invalid "playlist" in [music.${name}]: must be a non-empty playlist name.`
+          );
+        }
+      }
       collections[name] = {
         path: rawCollection.path ?? '', // Optional for subsonic
         type: 'subsonic',
         url: rawCollection.url,
         username: rawCollection.username,
         password: rawCollection.password, // Optional - can also use env var
+        playlist: rawCollection.playlist, // Optional - subsonic-only scope
       };
     }
     hasAnyCollection = true;
@@ -1599,6 +1620,11 @@ export function loadEnvConfig(): PartialConfig {
     config.skipUpgrades = parseBoolEnv(skipUpgrades);
   }
 
+  const allowEmptyPlaylist = process.env[ENV_KEYS.allowEmptyPlaylist];
+  if (allowEmptyPlaylist !== undefined) {
+    config.allowEmptyPlaylist = parseBoolEnv(allowEmptyPlaylist);
+  }
+
   const artwork = process.env[ENV_KEYS.artwork];
   if (artwork !== undefined) {
     config.artwork = parseBoolEnv(artwork);
@@ -1769,7 +1795,14 @@ export function loadEnvConfig(): PartialConfig {
 // =============================================================================
 
 /** Known field suffixes for music collection env vars */
-const MUSIC_COLLECTION_FIELDS = ['PATH', 'TYPE', 'URL', 'USERNAME', 'PASSWORD'] as const;
+const MUSIC_COLLECTION_FIELDS = [
+  'PATH',
+  'TYPE',
+  'URL',
+  'USERNAME',
+  'PASSWORD',
+  'PLAYLIST',
+] as const;
 type MusicCollectionField = (typeof MUSIC_COLLECTION_FIELDS)[number];
 
 /** Known field suffixes for video collection env vars */
@@ -1842,12 +1875,13 @@ function parseCollectionEnvKey(
  * - PODKIT_MUSIC_PATH=/music — creates a directory collection named "default"
  * - PODKIT_MUSIC_TYPE=subsonic — sets type (default: "directory")
  * - PODKIT_MUSIC_URL, PODKIT_MUSIC_USERNAME, PODKIT_MUSIC_PASSWORD — subsonic fields
+ * - PODKIT_MUSIC_PLAYLIST — optional subsonic playlist-scope name
  * - PODKIT_VIDEO_PATH=/videos — creates a video collection named "default"
  *
  * **Named collections:**
  * - PODKIT_MUSIC_MAIN_PATH=/music — creates collection named "main"
  * - PODKIT_MUSIC_NAVIDROME_TYPE=subsonic — creates collection named "navidrome"
- * - PODKIT_MUSIC_NAVIDROME_URL, _USERNAME, _PASSWORD — subsonic fields
+ * - PODKIT_MUSIC_NAVIDROME_URL, _USERNAME, _PASSWORD, _PLAYLIST — subsonic fields
  * - PODKIT_VIDEO_MOVIES_PATH=/movies — creates video collection named "movies"
  *
  * Collection names in env vars use UPPER_SNAKE_CASE, converted to lower-kebab-case
@@ -1896,6 +1930,12 @@ function loadEnvCollections(): {
 
     if (collectionType === 'directory') {
       if (!fields.PATH) continue; // PATH is required for directory collections
+      if (fields.PLAYLIST !== undefined) {
+        throw new Error(
+          `"playlist" is only valid for subsonic collections, but the "${name}" collection is a directory collection. ` +
+            `Remove the PLAYLIST env var or set TYPE=subsonic.`
+        );
+      }
       music[name] = {
         path: fields.PATH,
         type: 'directory',
@@ -1909,6 +1949,7 @@ function loadEnvCollections(): {
         url: fields.URL,
         username: fields.USERNAME,
         password: fields.PASSWORD,
+        playlist: fields.PLAYLIST, // Optional - subsonic-only scope
       };
     }
   }
@@ -2068,6 +2109,9 @@ export function mergeConfigs(...configs: PartialConfig[]): PodkitConfig {
     }
     if (config.skipUpgrades !== undefined) {
       merged.skipUpgrades = config.skipUpgrades;
+    }
+    if (config.allowEmptyPlaylist !== undefined) {
+      merged.allowEmptyPlaylist = config.allowEmptyPlaylist;
     }
     if (config.codec !== undefined) {
       merged.codec = config.codec;

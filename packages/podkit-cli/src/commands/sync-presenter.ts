@@ -17,7 +17,10 @@ import type {
 import type { EncodingMode, TransferMode } from '@podkit/core';
 import type { OutputContext, CollectedError } from '../output/index.js';
 import { formatBytes } from '../output/index.js';
-import type { SyncOutput, ErrorInfo, ResolvedCollection } from './sync.js';
+import type { SyncOutput, ErrorInfo, ResolvedCollection, SyncErrorCode } from './sync.js';
+import { CliError } from '../errors.js';
+import { confirmNo } from '../utils/confirm.js';
+import { decideEmptyPlaylist } from './empty-playlist-guard.js';
 
 // =============================================================================
 // Free-space JSON envelope helpers (TASK-378 AC #8)
@@ -412,6 +415,44 @@ export interface GenericSyncCollectionArgs<TSource, TDevice> {
    * undefined so the executor's pre-flight runs the cleanup exactly once.
    */
   preliminaries?: import('@podkit/core').PlanPreliminaries;
+  /**
+   * Empty-playlist override. True when the user explicitly opted into
+   * syncing a playlist-scoped collection that resolves to zero tracks —
+   * via `--yes` (one-off) or the `allowEmptyPlaylist` config key (daemon).
+   * Only consulted when the collection is playlist-scoped; ignored
+   * otherwise.
+   */
+  allowEmptyPlaylist?: boolean;
+  /**
+   * @internal Injection seam for the empty-playlist confirm prompt.
+   * Defaults to {@link confirmNo}. Tests pass a stub to drive the
+   * interactive guard branch without a real TTY.
+   */
+  confirm?: (question: string) => Promise<boolean>;
+}
+
+/**
+ * Error code for the empty-playlist guard's headless / declined-confirm
+ * abort. Distinct so JSON consumers and tests can branch without scraping
+ * the message body.
+ *
+ * The string must match `SyncErrorCodes.EMPTY_PLAYLIST_ABORT` — the type
+ * annotation enforces this. Defined here (not imported) to avoid a circular
+ * module initialisation issue: `sync-presenter` and `sync` import each other,
+ * and a value import of `SyncErrorCodes` would hit the TDZ on that cycle.
+ */
+export const EMPTY_PLAYLIST_ABORT_CODE: SyncErrorCode = 'EMPTY_PLAYLIST_ABORT';
+
+/**
+ * A music collection is "playlist-scoped" when it carries a non-empty
+ * subsonic `playlist` constraint. The empty-result guard only applies to
+ * these — an ordinary empty directory/library collection keeps its
+ * existing skip behaviour.
+ */
+function isPlaylistScoped(collection: ResolvedCollection): boolean {
+  if (collection.type !== 'music') return false;
+  const config = collection.config as { playlist?: string };
+  return typeof config.playlist === 'string' && config.playlist.trim() !== '';
 }
 
 /**
@@ -440,6 +481,8 @@ export async function genericSyncCollection<TSource, TDevice>(
     shutdown,
     statfsSyncFn,
     preliminaries,
+    allowEmptyPlaylist,
+    confirm,
   } = args;
 
   // Import statfsSync dynamically if not provided
@@ -499,8 +542,78 @@ export async function genericSyncCollection<TSource, TDevice>(
 
   spinner.stop(presenter.formatScanResult(sourceItems));
 
-  // 2. Safety check: refuse to sync when adapter returns zero items
-  if (sourceItems.length === 0) {
+  // 1b. Empty-playlist guard.
+  //
+  // ONLY for a playlist-scoped subsonic collection. When such a collection
+  // resolves to zero tracks, an unguarded sync would remove every track the
+  // device holds for it — an emptied or mistyped server playlist would
+  // silently wipe the device. The pure decision fn says what to do; this
+  // caller acts on it. An ordinary empty directory/library collection does
+  // NOT pass through here — it falls through to the step-2 skip unchanged.
+  let emptyPlaylistProceedApproved = false;
+  if (isPlaylistScoped(collection) && sourceItems.length === 0) {
+    const interactive = !out.isJson && out.isTty;
+    // sourceItems.length is always 0 here — the outer guard requires it.
+    // The function's >0 branch (→ 'proceed') exists for its own unit-level
+    // completeness and is not reachable from this call site.
+    const decision = decideEmptyPlaylist(sourceItems.length, {
+      interactive,
+      allowEmpty: allowEmptyPlaylist ?? false,
+    });
+
+    const deviceItemCount = presenter.getDeviceItems(ipod, core).length;
+    const warningBody =
+      `Playlist-scoped collection '${collection.name}' resolved to zero tracks. ` +
+      (deviceItemCount > 0
+        ? `Proceeding will remove all ${deviceItemCount} ${presenter.itemNoun} this collection put on the device.`
+        : `The device has no ${presenter.itemNoun} for this collection yet — syncing an empty playlist will add nothing.`);
+
+    const abort = (): never => {
+      // CliError propagates up to runAction → non-zero exit. The caller
+      // disconnects the source first so the connection isn't leaked.
+      throw new CliError({
+        message: warningBody,
+        code: EMPTY_PLAYLIST_ABORT_CODE,
+        details: {
+          collection: collection.name,
+          source: sourcePath,
+          device: devicePath,
+          deviceItems: deviceItemCount,
+        },
+        printText: (o) => {
+          o.error(warningBody);
+          o.error(
+            'Re-run with --yes (or set allowEmptyPlaylist = true) to sync the empty playlist anyway.'
+          );
+        },
+      });
+    };
+
+    if (decision === 'abort') {
+      await adapter.disconnect();
+      abort();
+    }
+
+    if (decision === 'confirm') {
+      out.warn(warningBody);
+      const proceed = await (confirm ?? confirmNo)('Sync the empty playlist anyway?');
+      if (!proceed) {
+        await adapter.disconnect();
+        // User declined — treat as an abort: stop without wiping the device.
+        out.print('Aborted. Device music for this collection was left untouched.');
+        abort();
+      }
+    }
+    // decision === 'proceed' (or confirmed) — fall through to the normal
+    // sync flow, which will remove the device's tracks for this collection.
+    emptyPlaylistProceedApproved = true;
+  }
+
+  // 2. Safety check: refuse to sync when adapter returns zero items.
+  // Skipped when the empty-playlist guard explicitly approved proceeding —
+  // the user deliberately opted to sync (and thereby wipe) an empty
+  // playlist-scoped collection.
+  if (sourceItems.length === 0 && !emptyPlaylistProceedApproved) {
     const noun = presenter.itemNoun;
     const message = `Collection '${collection.name}' returned zero ${noun} \u2014 skipping sync. Check your source configuration.`;
     await adapter.disconnect();

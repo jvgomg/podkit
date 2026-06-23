@@ -224,6 +224,8 @@ export interface SubsonicAdapterConfig {
   username: string;
   /** Password for authentication */
   password: string;
+  /** When set, sync only this named server playlist instead of the whole library */
+  playlist?: string;
 }
 
 /**

@@ -904,6 +904,51 @@ export class SubsonicConnectionError extends Error {
   }
 }
 
+// Keep field names + message shape in sync with packages/podkit-core/src/adapters/subsonic/playlist.ts
+export class PlaylistNotFoundError extends Error {
+  readonly playlistName: string;
+  readonly availablePlaylists: string[];
+
+  constructor(playlistName: string, availablePlaylists: string[]) {
+    const available =
+      availablePlaylists.length > 0
+        ? `Available playlists: ${availablePlaylists.map((n) => `"${n}"`).join(', ')}.`
+        : 'The server has no playlists.';
+    super(
+      `Playlist "${playlistName}" was not found on the Subsonic server. ` +
+        `${available} ` +
+        `Check the playlist name in your collection config, or create the playlist on the server.`
+    );
+    this.name = 'PlaylistNotFoundError';
+    this.playlistName = playlistName;
+    this.availablePlaylists = availablePlaylists;
+  }
+}
+
+export class AmbiguousPlaylistError extends Error {
+  readonly playlistName: string;
+  readonly matchingIds: string[];
+
+  constructor(playlistName: string, matchingIds: string[]) {
+    super(
+      `Playlist name "${playlistName}" matches ${matchingIds.length} playlists on the Subsonic server ` +
+        `(ids: ${matchingIds.join(', ')}). ` +
+        `Rename one of them on the server so the name is unique.`
+    );
+    this.name = 'AmbiguousPlaylistError';
+    this.playlistName = playlistName;
+    this.matchingIds = matchingIds;
+  }
+}
+
+export async function resolvePlaylist(
+  _api: any,
+  _name: string,
+  _mapEntry: any
+): Promise<{ id: string; tracks: any[] }> {
+  return { id: 'mock-playlist', tracks: [] };
+}
+
 // =============================================================================
 // Video Directory Adapter (mock)
 // =============================================================================

@@ -26,6 +26,7 @@ podkit settings can be overridden via environment variables. These take preceden
 | `PODKIT_CHECK_ARTWORK` | Enable artwork change detection (`true`/`false`, overrides config file `checkArtwork`) |
 | `PODKIT_SKIP_UPGRADES` | Skip file-replacement upgrades during sync (`true`/`false`, overrides config file `skipUpgrades`) |
 | `PODKIT_TIPS` | Show contextual tips (`true`/`false`, overrides config file `tips`) |
+| `PODKIT_ALLOW_EMPTY_PLAYLIST` | Allow a headless sync to proceed when a playlist-scoped Subsonic collection resolves to zero tracks (`true`/`false`, overrides config file `allowEmptyPlaylist`). |
 | `PODKIT_CLEAN_ARTISTS` | Enable/disable clean artists (`true`/`false`) |
 | `PODKIT_CLEAN_ARTISTS_DROP` | Drop featuring info instead of moving to title (`true`/`false`) |
 | `PODKIT_CLEAN_ARTISTS_FORMAT` | Format string for featuring text (e.g., `feat. {}`) |
@@ -54,6 +55,7 @@ Define a default music collection (no name required):
 | `PODKIT_MUSIC_URL` | Subsonic server URL |
 | `PODKIT_MUSIC_USERNAME` | Subsonic username |
 | `PODKIT_MUSIC_PASSWORD` | Subsonic password |
+| `PODKIT_MUSIC_PLAYLIST` | Scope a Subsonic collection to a named server playlist (subsonic only; errors on a directory collection) |
 
 Or define named collections by inserting the collection name (uppercased, hyphens as underscores):
 
@@ -64,6 +66,7 @@ Or define named collections by inserting the collection name (uppercased, hyphen
 | `PODKIT_MUSIC_<NAME>_URL` | Subsonic server URL for `<NAME>` |
 | `PODKIT_MUSIC_<NAME>_USERNAME` | Subsonic username for `<NAME>` |
 | `PODKIT_MUSIC_<NAME>_PASSWORD` | Subsonic password for `<NAME>` |
+| `PODKIT_MUSIC_<NAME>_PLAYLIST` | Scope collection `<NAME>` to a named Subsonic playlist (subsonic only) |
 
 ### Video Collections
 

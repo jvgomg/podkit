@@ -121,7 +121,11 @@ The `docs/` directory is organized for web publication (Starlight-compatible). R
 
 Cross-cutting rules (typed errors, no `console.warn` in core, sink-not-stderr, test-pins-contract) live in [documents/architecture/conventions.md](documents/architecture/conventions.md) — these apply to every package and every PR.
 
-Per-subsystem docs (currently only [sync/error-handling.md](documents/architecture/sync/error-handling.md); more pending — see the README's migration plan) follow a consistent eight-section template described in the README. When a refactor changes a convention, update the relevant architecture doc in the same PR. When you settle a new convention not yet documented, file a new doc or extend an existing one.
+Per-subsystem docs follow a consistent eight-section template described in the README. Landed docs include:
+- [sync/error-handling.md](documents/architecture/sync/error-handling.md) — typed errors, warning sinks, retry policy
+- [collection-adapters/subsonic.md](documents/architecture/collection-adapters/subsonic.md) — Subsonic adapter, playlist-scoped sourcing, resolver, empty-playlist guard
+
+When a refactor changes a convention, update the relevant architecture doc in the same PR. When you settle a new convention not yet documented, file a new doc or extend an existing one.
 
 The architecture docs are distinct from the rough-edges journals in `backlog/docs/doc-NNN-*.md` (working catalogue of *what's still smelly*) and from ADRs in `adr/` (decision log frozen at decision time). Don't duplicate content across them — link.
 

@@ -24,3 +24,12 @@ export type { DirectoryAdapterConfig, ScanProgress } from './directory.js';
 export { SubsonicAdapter, createSubsonicAdapter, SubsonicConnectionError } from './subsonic.js';
 
 export type { SubsonicAdapterConfig } from './subsonic.js';
+
+// Subsonic playlist resolution
+export {
+  resolvePlaylist,
+  PlaylistNotFoundError,
+  AmbiguousPlaylistError,
+} from './subsonic/playlist.js';
+
+export type { PlaylistApi, PlaylistEntryMapper } from './subsonic/playlist.js';

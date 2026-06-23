@@ -261,6 +261,50 @@ through `--repair`, not the diagnostic path.
 
 ---
 
+## 12. Adding a config field requires three changes, not one
+
+When adding a new top-level or nested config key, the change touches
+**three places**, each with a distinct test surface:
+
+1. **Parse** — `loadConfigFile` (and/or the env-var loader) must read the
+   raw value, validate it, and copy it into the partial config object.
+2. **Merge** — `mergeConfigs` (the field-by-field merge in
+   `packages/podkit-cli/src/config/loader.ts`) must carry the field
+   through. Fields omitted from `mergeConfigs` are silently dropped when
+   the merge path runs — the config-file or env-override produces a
+   partial config that is then merged into the precedence stack, and a
+   missing merge step means the value never surfaces in the final
+   `PodkitConfig`.
+3. **Test the merge** — unit tests must cover the merged-config path, not
+   only `loadConfigFile`. A bug in `mergeConfigs` is invisible when tests
+   only exercise the raw-parse path; it surfaces only when a caller tries
+   to override the key through a second config source (e.g. env var) and
+   finds the override silently discarded.
+
+**Rationale.** This feature class was learned from the `allowEmptyPlaylist`
+key (playlist-scoped Subsonic collections): the field was parsed correctly
+but omitted from `mergeConfigs`, so the config/env override silently had
+no effect. The bug was caught late because unit tests only covered
+`loadConfigFile`, not the merge path.
+
+**Checklist for a new config field:**
+
+- [ ] Parse: read and validate the raw value in `loadConfigFile` (and in
+  the env-var block if the key has an env counterpart).
+- [ ] Merge: add a `if (config.newField !== undefined)` branch in
+  `mergeConfigs`.
+- [ ] Test (parse path): table-driven test in `loader.test.ts` covering
+  valid values, invalid values (if any), and the default.
+- [ ] Test (merge path): a separate assertion that shows the value
+  survives when a second config source overrides it — i.e. call
+  `mergeConfigs(base, override)` and assert the override wins.
+
+See also [agents/config-migrations.md](../../agents/config-migrations.md)
+for when a new field requires a migration (breaking fields do; new
+optional fields with defaults do not).
+
+---
+
 ## 11. References
 
 - [sync/error-handling](./sync/error-handling.md) — the working example of

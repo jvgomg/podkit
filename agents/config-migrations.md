@@ -16,6 +16,23 @@ podkit uses a versioned config system with a migration engine. The config file h
 - Internal-only changes that don't affect the config file
 - Documentation-only changes
 
+## Recently Added Optional Fields (no migration required)
+
+These fields were added additively — existing configs that omit them
+continue to work; no migration or version bump was needed.
+
+| Field | Scope | Type | Default | Purpose |
+|-------|-------|------|---------|---------|
+| `playlist` | `[music.<name>]` block (subsonic only) | `string` | absent (= full-library) | Constrains a subsonic collection to a single named server playlist. Parse-time error if set on a directory collection. |
+| `allowEmptyPlaylist` | global `[defaults]` / top-level | `boolean` | `false` | When `true`, a headless sync against a playlist-scoped collection that resolves to zero tracks proceeds instead of aborting non-zero. Env override: `PODKIT_ALLOW_EMPTY_PLAYLIST`. |
+
+**IMPORTANT — three-place rule.** When adding any new config field, three
+locations must all be updated: (1) the parse block in `loadConfigFile`,
+(2) the corresponding branch in `mergeConfigs`, and (3) a test covering
+the merge path (not only the parse path). Missing step 2 causes the field
+to be silently dropped when multiple config sources are merged. See
+[conventions §12](../documents/architecture/conventions.md#12-adding-a-config-field-requires-three-changes-not-one).
+
 ## How Config Versions Work
 
 - `CURRENT_CONFIG_VERSION` in `packages/podkit-cli/src/config/version.ts` is the latest version

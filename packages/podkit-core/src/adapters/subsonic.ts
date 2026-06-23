@@ -14,6 +14,7 @@ import type { AudioNormalization } from '../metadata/normalization.js';
 import { replayGainToSoundcheck } from '../metadata/normalization.js';
 import { hashArtwork } from '../artwork/hash.js';
 import { ArtworkBytesCache, ArtworkClassificationMemo } from './subsonic/cache.js';
+import { resolvePlaylist } from './subsonic/playlist.js';
 
 /**
  * Configuration for SubsonicAdapter
@@ -27,6 +28,12 @@ export interface SubsonicAdapterConfig {
   password: string;
   /** When true, compute artwork hashes for change detection (--check-artwork) */
   checkArtwork?: boolean;
+  /**
+   * When set, the adapter syncs only this named server playlist's tracks
+   * instead of the whole library. Resolved and validated at connect() time —
+   * a missing or ambiguous name aborts before any transfer.
+   */
+  playlist?: string;
 }
 
 /**
@@ -281,6 +288,20 @@ export class SubsonicAdapter implements CollectionAdapter<CollectionTrack, Track
   private checkArtwork: boolean;
 
   /**
+   * The configured playlist name, or undefined for a whole-library collection.
+   * When set, connect() resolves it to {@link playlistTracks} and getItems()
+   * returns those instead of scanning the library.
+   */
+  private playlistName: string | undefined;
+
+  /**
+   * Tracks resolved from {@link playlistName} during connect(). Null until
+   * resolved (or when no playlist is configured). Distinct from {@link tracks},
+   * which is the whole-library scan cache.
+   */
+  private playlistTracks: CollectionTrack[] | null = null;
+
+  /**
    * Classification memo: `coverArtId → 'real' | 'placeholder' | 'missing'`.
    * Unbounded; persists across long daemon sessions so we never re-classify a
    * known cover. Populated by `fetchArtworkInfo` (the `--check-artwork` path)
@@ -309,6 +330,7 @@ export class SubsonicAdapter implements CollectionAdapter<CollectionTrack, Track
   constructor(config: SubsonicAdapterConfig) {
     this.config = config;
     this.checkArtwork = config.checkArtwork ?? false;
+    this.playlistName = config.playlist;
     this.api = new SubsonicAPI({
       url: config.url,
       auth: {
@@ -321,6 +343,12 @@ export class SubsonicAdapter implements CollectionAdapter<CollectionTrack, Track
 
   /**
    * Connect to the Subsonic server, validate credentials, and detect placeholder artwork.
+   *
+   * State machine: `this.connected` is set to `true` only at the very end of the
+   * successful path. Ping failure throws before reaching it; playlist-resolution
+   * failure also throws before it. This means a caller can never observe
+   * `connected === true` while `playlistTracks` is still `null` for a
+   * playlist-scoped adapter.
    */
   async connect(): Promise<void> {
     try {
@@ -328,7 +356,6 @@ export class SubsonicAdapter implements CollectionAdapter<CollectionTrack, Track
       if (response.status !== 'ok') {
         throw new Error(`Subsonic server returned status: ${response.status}`);
       }
-      this.connected = true;
     } catch (error) {
       // Re-throw SubsonicConnectionError directly (already has a descriptive message)
       if (error instanceof SubsonicConnectionError) {
@@ -349,6 +376,22 @@ export class SubsonicAdapter implements CollectionAdapter<CollectionTrack, Track
     // user sync runs in fast mode against a Navidrome library that includes
     // sidecar-less albums.
     this.placeholderHash = await this.detectPlaceholderArtwork();
+
+    // Playlist-scoped collections resolve and validate the configured playlist
+    // here, at connect time. This is the at-sync-start validation surface: a
+    // missing or ambiguous playlist throws (PlaylistNotFoundError /
+    // AmbiguousPlaylistError) before any transfer begins. The typed errors are
+    // intentionally NOT caught — they propagate to abort the sync.
+    if (this.playlistName !== undefined) {
+      const resolved = await resolvePlaylist(this.api, this.playlistName, (entry) =>
+        this.mapSongToTrack(entry)
+      );
+      this.playlistTracks = resolved.tracks;
+    }
+
+    // Set connected only after all async steps succeed, so a failed ping or
+    // failed playlist resolution never leaves the adapter in a partial state.
+    this.connected = true;
   }
 
   /**
@@ -394,6 +437,23 @@ export class SubsonicAdapter implements CollectionAdapter<CollectionTrack, Track
 
     if (!this.connected) {
       await this.connect();
+    }
+
+    // Playlist-scoped collection: connect() already resolved the playlist's
+    // tracks (server-side `getPlaylist`). Return those instead of scanning the
+    // whole library. The in-memory filter in getFilteredItems still layers on
+    // top unchanged.
+    if (this.playlistName !== undefined) {
+      // Invariant: connect() sets this.connected = true only after
+      // playlistTracks is populated, so this branch should be unreachable with
+      // a null playlistTracks. The guard makes the invariant explicit.
+      if (this.playlistTracks === null) {
+        throw new Error(
+          'playlistTracks is null after successful connect() — this is a bug in SubsonicAdapter'
+        );
+      }
+      this.tracks = this.playlistTracks;
+      return this.tracks;
     }
 
     this.tracks = [];
@@ -474,6 +534,7 @@ export class SubsonicAdapter implements CollectionAdapter<CollectionTrack, Track
    */
   async disconnect(): Promise<void> {
     this.tracks = null;
+    this.playlistTracks = null;
     this.connected = false;
     this.classify.clear();
     this.coverArtByTrack.clear();
@@ -649,9 +710,16 @@ export class SubsonicAdapter implements CollectionAdapter<CollectionTrack, Track
   }
 
   /**
-   * Map a Subsonic song (Child) to a CollectionTrack
+   * Map a Subsonic song (Child) to a CollectionTrack.
+   *
+   * The album is optional: the whole-library scan supplies the parent
+   * {@link AlbumWithSongsID3} (so album-level fields fill gaps in the song),
+   * but the playlist path resolves bare {@link Child} entries with no album
+   * object. When no album is given, album-level fields fall back to the song's
+   * own fields (`song.album`, `song.artist`, etc.), which OpenSubsonic
+   * populates on every Child returned by `getPlaylist`.
    */
-  private async mapSongToTrack(song: Child, album: AlbumWithSongsID3): Promise<CollectionTrack> {
+  private async mapSongToTrack(song: Child, album?: AlbumWithSongsID3): Promise<CollectionTrack> {
     const fileType = suffixToFileType(song.suffix);
     const codec = getCodec(song.suffix, song.contentType);
     const lossless = isLosslessSuffix(song.suffix);
@@ -698,16 +766,16 @@ export class SubsonicAdapter implements CollectionAdapter<CollectionTrack, Track
 
       // Core metadata
       title: song.title,
-      artist: song.artist ?? album.artist ?? 'Unknown Artist',
-      album: song.album ?? album.name,
+      artist: song.artist ?? album?.artist ?? 'Unknown Artist',
+      album: song.album ?? album?.name ?? 'Unknown Album',
 
       // Extended metadata
-      albumArtist: album.artist,
-      genre: song.genre ?? album.genre,
-      year: song.year ?? album.year,
+      albumArtist: album?.artist,
+      genre: song.genre ?? album?.genre,
+      year: song.year ?? album?.year,
       trackNumber: song.track,
       discNumber: song.discNumber,
-      compilation: album.isCompilation ?? undefined,
+      compilation: album?.isCompilation ?? undefined,
       // Subsonic duration is in seconds, convert to milliseconds
       duration: song.duration !== undefined ? song.duration * 1000 : undefined,
 

@@ -130,6 +130,12 @@ export interface MusicCollectionConfig {
   username?: string;
   /** Subsonic password (optional - can also use env var PODKIT_MUSIC_{NAME}_PASSWORD) */
   password?: string;
+  /**
+   * Subsonic playlist name (optional, subsonic-only). When set, the collection
+   * syncs only this named server playlist's tracks instead of the whole
+   * library. Rejected at parse time on a directory collection.
+   */
+  playlist?: string;
 }
 
 /**
@@ -342,6 +348,13 @@ export interface PodkitConfig {
   /** Detect artwork changes by comparing content hashes (can be overridden per-device) */
   checkArtwork?: boolean;
   /**
+   * Allow a playlist-scoped subsonic collection that resolves to zero tracks
+   * to sync through (and thereby wipe the device's tracks for it) without an
+   * interactive prompt. The daemon-side counterpart of the `--yes` flag.
+   * Defaults to false — a headless empty-playlist sync aborts non-zero.
+   */
+  allowEmptyPlaylist?: boolean;
+  /**
    * Transfer mode for synced files.
    *
    * - `fast` (default): strips embedded artwork, optimized for iPod playback.
@@ -479,6 +492,7 @@ export interface ConfigFileMusicCollection {
   url?: string;
   username?: string;
   password?: string;
+  playlist?: string;
 }
 
 /**
@@ -629,6 +643,8 @@ export interface ConfigFileContent {
   transferMode?: string;
   tips?: boolean;
   skipUpgrades?: boolean;
+  /** Allow a headless empty playlist-scoped sync to proceed: allowEmptyPlaylist */
+  allowEmptyPlaylist?: boolean;
   cleanArtists?: ConfigFileCleanArtists;
   showLanguage?: ConfigFileShowLanguage;
   /** Codec preference: [codec] */

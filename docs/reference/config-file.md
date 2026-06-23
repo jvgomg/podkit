@@ -26,6 +26,7 @@ artwork = true               # Include album artwork
 checkArtwork = false         # Detect changed artwork between syncs
 tips = true                  # Show contextual tips
 skipUpgrades = false         # Skip file-replacement upgrades for changed source files
+allowEmptyPlaylist = false   # Allow headless syncs to proceed when a playlist resolves to zero tracks
 
 # Codec preferences (defaults shown — omit to use these)
 [codec]
@@ -106,6 +107,7 @@ These apply to all devices unless overridden at the device level.
 | `checkArtwork` | boolean | `false` | Detect artwork changes between syncs (added, removed, or replaced). For Subsonic sources, adds one HTTP request per unique album during scanning. Consider using the `--check-artwork` CLI flag for periodic checks instead of enabling permanently on large libraries. |
 | `tips` | boolean | `true` | Show contextual tips (e.g., Sound Check, eject reminders). Also controllable via `--no-tips` flag or `PODKIT_TIPS=false`. |
 | `skipUpgrades` | boolean | `false` | Skip file-replacement upgrades for changed source files |
+| `allowEmptyPlaylist` | boolean | `false` | Allow a headless sync to proceed when a [playlist-scoped Subsonic collection](/user-guide/collections/subsonic#playlist-scoped-collections) resolves to zero tracks. When `false` (the default), a non-interactive sync aborts with a non-zero exit. Set to `true` for the daemon when you genuinely want empty-playlist syncs to pass through. Also overridable per-run with `--yes` or `PODKIT_ALLOW_EMPTY_PLAYLIST=true`. |
 
 ## Transfer Mode
 
@@ -213,6 +215,7 @@ path = "/cache/path"
 | `username` | string | yes | - | Subsonic username |
 | `password` | string | no | - | Subsonic password (can also use env var) |
 | `path` | string | yes | - | Local cache path for downloaded files |
+| `playlist` | string | no | - | Sync only this named server playlist instead of the whole library. The name must match exactly one playlist on the server — the sync aborts before transferring anything if the name is not found or is ambiguous. Only valid on `subsonic` collections; setting it on a directory collection is a config error. See [Playlist-Scoped Collections](/user-guide/collections/subsonic#playlist-scoped-collections). |
 
 The password can be provided via the config file, or through environment variables (see [Environment Variables](/reference/environment-variables)).
 
@@ -475,6 +478,14 @@ type = "subsonic"
 url = "https://music.example.com"
 username = "user"
 path = "/tmp/navidrome-cache"
+
+# Playlist-scoped collection — only the "Workout" playlist on the same server
+[music.workout]
+type = "subsonic"
+url = "https://music.example.com"
+username = "user"
+path = "/tmp/navidrome-cache"
+playlist = "Workout"
 
 # Video collections
 [video.movies]

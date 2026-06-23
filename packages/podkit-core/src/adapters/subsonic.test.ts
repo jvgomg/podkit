@@ -7,6 +7,7 @@
 import { describe, it, expect, afterEach } from 'bun:test';
 import { SubsonicAdapter, SubsonicConnectionError } from './subsonic.js';
 import type { SubsonicAdapterConfig } from './subsonic.js';
+import { PlaylistNotFoundError, AmbiguousPlaylistError } from './subsonic/playlist.js';
 import type { CollectionTrack } from './interface.js';
 import type { Child, AlbumWithSongsID3 } from 'subsonic-api';
 import { replayGainToSoundcheck } from '../metadata/normalization.js';
@@ -1120,5 +1121,220 @@ describe('SubsonicAdapter getArtwork', () => {
     expect(internals.classify.get('cover-0')).toBe('real');
     // And the memo has grown beyond the bytes cap — proving it's unbounded.
     expect(internals.classify.size()).toBe(101);
+  });
+});
+
+// =============================================================================
+// Playlist-scoped collections (schema + resolver + adapter wiring)
+// =============================================================================
+
+/**
+ * These tests assert external behaviour through the adapter's public surface:
+ * connect() resolves/validates the configured playlist (throwing the typed
+ * resolver errors before any transfer), and getItems() returns only the
+ * playlist's tracks when scoped — and the full library when not.
+ *
+ * The whole `api` object is replaced with an in-memory fake so no network is
+ * hit. ping/getCoverArt satisfy connect()'s existing probes; getPlaylists/
+ * getPlaylist drive the resolver; getAlbumList2/getAlbum drive the unscoped
+ * whole-library path.
+ */
+describe('SubsonicAdapter playlist scoping', () => {
+  function child(overrides: Partial<Child> & { id: string }): Child {
+    return {
+      isDir: false,
+      title: `Title ${overrides.id}`,
+      artist: 'Artist',
+      album: 'Album',
+      ...overrides,
+    } as Child;
+  }
+
+  type FakeApiOptions = {
+    playlists?: Array<{ id: string; name: string }>;
+    playlistEntries?: Record<string, Child[]>;
+    /** Songs returned by the whole-library scan (one synthetic album). */
+    librarySongs?: Child[];
+  };
+
+  /** Build an adapter whose `api` is a fully in-memory fake. */
+  function createAdapterWithFakeApi(
+    config: Partial<SubsonicAdapterConfig>,
+    opts: FakeApiOptions = {}
+  ): SubsonicAdapter {
+    const adapter = new SubsonicAdapter({
+      url: 'https://test.example.com',
+      username: 'u',
+      password: 'p',
+      ...config,
+    });
+
+    const librarySongs = opts.librarySongs ?? [];
+
+    const fakeApi = {
+      ping: async () => ({ status: 'ok' as const }),
+      // No placeholder image — keep the probe a no-op.
+      getCoverArt: async () =>
+        new Response('not an image', { status: 404, headers: { 'content-type': 'text/plain' } }),
+      getPlaylists: async () => ({ playlists: { playlist: opts.playlists ?? [] } }),
+      getPlaylist: async ({ id }: { id: string }) => ({
+        playlist: { entry: opts.playlistEntries?.[id] ?? [] },
+      }),
+      // Whole-library scan: one album page, then empty to terminate pagination.
+      getAlbumList2: async ({ offset }: { offset: number }) =>
+        offset === 0
+          ? { albumList2: { album: [{ id: 'album-1' }] } }
+          : { albumList2: { album: [] } },
+      getAlbum: async () => ({
+        album: {
+          id: 'album-1',
+          name: 'Album',
+          artist: 'Artist',
+          songCount: librarySongs.length,
+          duration: 0,
+          created: new Date('2024-01-01T00:00:00Z'),
+          song: librarySongs,
+        },
+      }),
+    };
+
+    (adapter as unknown as { api: unknown }).api = fakeApi;
+    return adapter;
+  }
+
+  it('connect() throws PlaylistNotFoundError when the configured playlist is missing', async () => {
+    const adapter = createAdapterWithFakeApi(
+      { playlist: 'Roadtrip' },
+      { playlists: [{ id: 'pl-1', name: 'Workout' }] }
+    );
+
+    const error = await adapter.connect().catch((e) => e);
+    expect(error).toBeInstanceOf(PlaylistNotFoundError);
+  });
+
+  it('connect() throws AmbiguousPlaylistError when two playlists share the name', async () => {
+    const adapter = createAdapterWithFakeApi(
+      { playlist: 'Workout' },
+      {
+        playlists: [
+          { id: 'pl-1', name: 'Workout' },
+          { id: 'pl-2', name: 'Workout' },
+        ],
+      }
+    );
+
+    const error = await adapter.connect().catch((e) => e);
+    expect(error).toBeInstanceOf(AmbiguousPlaylistError);
+  });
+
+  it('getItems() returns only the playlist tracks when playlist is set', async () => {
+    const adapter = createAdapterWithFakeApi(
+      { playlist: 'Workout' },
+      {
+        playlists: [{ id: 'pl-1', name: 'Workout' }],
+        playlistEntries: {
+          'pl-1': [
+            child({ id: 'p-1', title: 'Playlist Song 1' }),
+            child({ id: 'p-2', title: 'Playlist Song 2' }),
+          ],
+        },
+        // Library has different songs — these must NOT appear.
+        librarySongs: [child({ id: 'lib-1', title: 'Library Song' })],
+      }
+    );
+
+    await adapter.connect();
+    const items = await adapter.getItems();
+
+    expect(items.map((t) => t.id)).toEqual(['p-1', 'p-2']);
+    expect(items.some((t) => t.id === 'lib-1')).toBe(false);
+  });
+
+  it('getItems() returns the full library when no playlist is set', async () => {
+    const adapter = createAdapterWithFakeApi(
+      {},
+      {
+        librarySongs: [
+          child({ id: 'lib-1', title: 'Library Song 1' }),
+          child({ id: 'lib-2', title: 'Library Song 2' }),
+        ],
+      }
+    );
+
+    await adapter.connect();
+    const items = await adapter.getItems();
+
+    expect(items.map((t) => t.id).sort()).toEqual(['lib-1', 'lib-2']);
+  });
+
+  it('getFilteredItems() layers in-memory filters on top of the playlist scope', async () => {
+    const adapter = createAdapterWithFakeApi(
+      { playlist: 'Workout' },
+      {
+        playlists: [{ id: 'pl-1', name: 'Workout' }],
+        playlistEntries: {
+          'pl-1': [
+            child({ id: 'p-1', title: 'Keep', artist: 'Daft Punk' }),
+            child({ id: 'p-2', title: 'Drop', artist: 'Radiohead' }),
+          ],
+        },
+      }
+    );
+
+    await adapter.connect();
+    const filtered = await adapter.getFilteredItems({ artist: 'daft' });
+
+    expect(filtered.map((t) => t.id)).toEqual(['p-1']);
+  });
+
+  // ---------------------------------------------------------------------------
+  // B-1: adapter must NOT be left in a usable state when connect() throws
+  // ---------------------------------------------------------------------------
+
+  it('adapter is not left usable after connect() throws PlaylistNotFoundError', async () => {
+    const adapter = createAdapterWithFakeApi(
+      { playlist: 'Missing' },
+      { playlists: [{ id: 'pl-1', name: 'Other' }] }
+    );
+
+    // connect() must reject
+    await expect(adapter.connect()).rejects.toBeInstanceOf(PlaylistNotFoundError);
+
+    // A subsequent getItems() must not silently return [] — because
+    // connected === false, getItems() re-attempts connect(), which again throws
+    // PlaylistNotFoundError. The adapter never enters the "connected with null
+    // playlistTracks" corrupt state (the invariant guard in getItems() is
+    // therefore unreachable here, but is still a meaningful safety net for any
+    // future path that could bypass connect()).
+    await expect(adapter.getItems()).rejects.toBeInstanceOf(PlaylistNotFoundError);
+  });
+
+  // ---------------------------------------------------------------------------
+  // S-2: reconnect coverage — disconnect() clears playlistTracks; reconnect re-resolves
+  // ---------------------------------------------------------------------------
+
+  it('reconnect after disconnect re-resolves the playlist and getItems() returns tracks', async () => {
+    const adapter = createAdapterWithFakeApi(
+      { playlist: 'Workout' },
+      {
+        playlists: [{ id: 'pl-1', name: 'Workout' }],
+        playlistEntries: {
+          'pl-1': [child({ id: 'p-1', title: 'Track 1' }), child({ id: 'p-2', title: 'Track 2' })],
+        },
+      }
+    );
+
+    // First connect → getItems
+    await adapter.connect();
+    const firstItems = await adapter.getItems();
+    expect(firstItems.map((t) => t.id)).toEqual(['p-1', 'p-2']);
+
+    // Disconnect clears state
+    await adapter.disconnect();
+
+    // Reconnect re-resolves the playlist
+    await adapter.connect();
+    const secondItems = await adapter.getItems();
+    expect(secondItems.map((t) => t.id)).toEqual(['p-1', 'p-2']);
   });
 });
