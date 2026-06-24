@@ -47,7 +47,7 @@ import {
   resolveEffectiveDevice,
   autoDetectDevice,
 } from '../device-resolver.js';
-import { resolveEffectiveCollections } from '../resolvers/index.js';
+import { resolveEffectiveCollections, type EffectiveCollection } from '../resolvers/index.js';
 import { OutputContext, formatDurationSeconds, renderProgressBar } from '../output/index.js';
 import { CliError, runAction, type CliErrorOutput } from '../errors.js';
 import { loadCoreOrFail, type CoreLoaderDeps } from '../handler-deps.js';
@@ -390,6 +390,111 @@ export async function runSync(
   // If no types specified or 'all' was included, sync everything
   const syncType: SyncType | undefined = syncTypes.length === 1 ? syncTypes[0] : undefined;
 
+  // ----- Collection resolution helpers -----
+  //
+  // The empty-collections throw and the source-path-existence validation are
+  // identical regardless of WHEN we resolve (early for the device-independent
+  // `-c` flag case, late for the device-dependent no-flag case). Factored into
+  // local closures so the verbatim error logic (messages, codes, printText) is
+  // not duplicated between the two resolution sites.
+  function throwIfNoCollections(
+    musicColls: EffectiveCollection[],
+    videoColls: EffectiveCollection[]
+  ): void {
+    if (musicColls.length > 0 || videoColls.length > 0) return;
+
+    const errorMsg = options.collection
+      ? `Collection "${options.collection}" not found in config`
+      : 'No collections configured to sync';
+
+    throw new CliError({
+      message: errorMsg,
+      code: options.collection
+        ? SyncErrorCodes.COLLECTION_NOT_FOUND
+        : SyncErrorCodes.NO_COLLECTIONS,
+      details: { dryRun },
+      printText: (o) => {
+        if (options.collection) {
+          o.error(`Collection "${options.collection}" not found in config.`);
+          const musicNames = config.music ? Object.keys(config.music) : [];
+          const videoNames = config.video ? Object.keys(config.video) : [];
+          if (musicNames.length > 0) {
+            o.error(`Available music collections: ${musicNames.join(', ')}`);
+          }
+          if (videoNames.length > 0) {
+            o.error(`Available video collections: ${videoNames.join(', ')}`);
+          }
+          if (musicNames.length === 0 && videoNames.length === 0) {
+            o.error(
+              'No collections configured. Add collections to your config file or set PODKIT_MUSIC_PATH via environment variable.'
+            );
+          }
+        } else {
+          o.error('No collections configured to sync.');
+          o.error('');
+          o.error('Add collections to your config file:');
+          if (configResult.configPath) {
+            o.error(`  ${configResult.configPath}`);
+          }
+          o.error('');
+          o.error('Example:');
+          o.error('  [music.main]');
+          o.error('  path = "/path/to/music"');
+          o.error('');
+          o.error('Or set via environment variable:');
+          o.error('  PODKIT_MUSIC_PATH=/path/to/music');
+        }
+      },
+    });
+  }
+
+  function validateCollectionPaths(collections: EffectiveCollection[]): void {
+    for (const collection of collections) {
+      const collConfig = collection.config as MusicCollectionConfig | VideoCollectionConfig;
+      const isSubsonic = 'type' in collConfig && collConfig.type === 'subsonic';
+      if (!isSubsonic && collConfig.path && !existsSync(collConfig.path)) {
+        throw new CliError({
+          message: `Source directory not found: ${collConfig.path}`,
+          code: SyncErrorCodes.SOURCE_NOT_FOUND,
+          details: { dryRun, source: collConfig.path },
+          printText: (o) => {
+            o.error(`Source directory not found: ${collConfig.path}`);
+            o.error(`  Collection: ${collection.name} (${collection.type})`);
+          },
+        });
+      }
+    }
+  }
+
+  // ----- Early (offline) collection resolution for the `-c` flag case -----
+  //
+  // The `-c` flag is a WHOLESALE, device-INDEPENDENT override (it ignores both
+  // device and global defaults). So its resolved set is final regardless of
+  // which device we end up matching. Resolve + validate it here, BEFORE any
+  // device-path resolution or core load, so a typo'd `-c` name or a bad source
+  // path surfaces offline (no device required) instead of being masked by a
+  // later device error.
+  //
+  // The no-flag case is genuinely device-dependent (a path/UUID-matched device
+  // can supply per-device defaults), so it is resolved LATE — see below.
+  const flag = options.collection;
+  let musicCollections: EffectiveCollection[];
+  let videoCollections: EffectiveCollection[];
+
+  if (flag) {
+    const { collections } = resolveEffectiveCollections({ config, flag, type: syncType });
+    musicCollections = collections.filter((c) => c.type === 'music');
+    videoCollections = collections.filter((c) => c.type === 'video');
+    throwIfNoCollections(musicCollections, videoCollections);
+    validateCollectionPaths([...musicCollections, ...videoCollections]);
+  } else {
+    // Assigned in the late (post-matched-device) block below. Initialised to
+    // empty so the bindings are definitely-assigned for TypeScript; the late
+    // block overwrites them before any downstream consumer reads them.
+    musicCollections = [];
+    videoCollections = [];
+  }
+
   // ----- Resolve device -----
   const cliDeviceArg = parseCliDeviceArg(globalOpts.device, config);
   const deviceResult = resolveEffectiveDevice(cliDeviceArg, undefined, config);
@@ -522,93 +627,32 @@ export async function runSync(
     out.verbose1(`Auto-matched device to configured device '${resolved.matchedDevice.name}'`);
   }
 
-  // ----- Resolve collections -----
-  // Resolved AFTER the device is fully resolved (including a path/UUID
-  // auto-match to a configured `[devices.x]` entry) so the matched device can
-  // feed the cascade. The `device` field is threaded in but still unused by the
-  // resolver this slice — the cascade remains global-only, so the SET of
-  // collections is unchanged; only the resolution point moved. A configured
+  // ----- Resolve collections (no-flag case only) -----
+  // The `-c` flag case was already resolved + validated EARLY (above, offline)
+  // because it is a wholesale, device-independent override. The no-flag case is
+  // resolved HERE, AFTER the device is fully resolved (including a path/UUID
+  // auto-match to a configured `[devices.x]` entry), so the matched device's
+  // per-device `defaults.{music,video}` can feed the cascade. A configured
   // device selected by name OR auto-matched by path/UUID passes its
   // `{name, config}`; a raw unconfigured by-path device passes `undefined`
-  // (`resolvedDevice`), keeping it global-only. EffectiveCollection is a
-  // structural superset of ResolvedCollection — the extra `source` provenance
-  // is additive.
-  const { collections: allCollections } = resolveEffectiveCollections({
-    config,
-    flag: options.collection,
-    type: syncType,
-    device: resolved.matchedDevice
-      ? { name: resolved.matchedDevice.name, config: resolved.matchedDevice.config }
-      : resolvedDevice,
-  });
-  const musicCollections = allCollections.filter((c) => c.type === 'music');
-  const videoCollections = allCollections.filter((c) => c.type === 'video');
+  // (`resolvedDevice`), keeping it global-only. Exactly ONE resolution runs per
+  // run: early for the flag case, late for the no-flag case — never both.
+  if (!flag) {
+    const { collections: allCollections } = resolveEffectiveCollections({
+      config,
+      type: syncType,
+      device: resolved.matchedDevice
+        ? { name: resolved.matchedDevice.name, config: resolved.matchedDevice.config }
+        : resolvedDevice,
+    });
+    musicCollections = allCollections.filter((c) => c.type === 'music');
+    videoCollections = allCollections.filter((c) => c.type === 'video');
+    throwIfNoCollections(musicCollections, videoCollections);
+    validateCollectionPaths([...musicCollections, ...videoCollections]);
+  }
 
   const hasMusicToSync = musicCollections.length > 0;
   const hasVideoToSync = videoCollections.length > 0;
-
-  if (!hasMusicToSync && !hasVideoToSync) {
-    const errorMsg = options.collection
-      ? `Collection "${options.collection}" not found in config`
-      : 'No collections configured to sync';
-
-    throw new CliError({
-      message: errorMsg,
-      code: options.collection
-        ? SyncErrorCodes.COLLECTION_NOT_FOUND
-        : SyncErrorCodes.NO_COLLECTIONS,
-      details: { dryRun },
-      printText: (o) => {
-        if (options.collection) {
-          o.error(`Collection "${options.collection}" not found in config.`);
-          const musicNames = config.music ? Object.keys(config.music) : [];
-          const videoNames = config.video ? Object.keys(config.video) : [];
-          if (musicNames.length > 0) {
-            o.error(`Available music collections: ${musicNames.join(', ')}`);
-          }
-          if (videoNames.length > 0) {
-            o.error(`Available video collections: ${videoNames.join(', ')}`);
-          }
-          if (musicNames.length === 0 && videoNames.length === 0) {
-            o.error(
-              'No collections configured. Add collections to your config file or set PODKIT_MUSIC_PATH via environment variable.'
-            );
-          }
-        } else {
-          o.error('No collections configured to sync.');
-          o.error('');
-          o.error('Add collections to your config file:');
-          if (configResult.configPath) {
-            o.error(`  ${configResult.configPath}`);
-          }
-          o.error('');
-          o.error('Example:');
-          o.error('  [music.main]');
-          o.error('  path = "/path/to/music"');
-          o.error('');
-          o.error('Or set via environment variable:');
-          o.error('  PODKIT_MUSIC_PATH=/path/to/music');
-        }
-      },
-    });
-  }
-
-  // Validate collection paths exist
-  for (const collection of [...musicCollections, ...videoCollections]) {
-    const collConfig = collection.config as MusicCollectionConfig | VideoCollectionConfig;
-    const isSubsonic = 'type' in collConfig && collConfig.type === 'subsonic';
-    if (!isSubsonic && collConfig.path && !existsSync(collConfig.path)) {
-      throw new CliError({
-        message: `Source directory not found: ${collConfig.path}`,
-        code: SyncErrorCodes.SOURCE_NOT_FOUND,
-        details: { dryRun, source: collConfig.path },
-        printText: (o) => {
-          o.error(`Source directory not found: ${collConfig.path}`);
-          o.error(`  Collection: ${collection.name} (${collection.type})`);
-        },
-      });
-    }
-  }
 
   // Show hint if resolver provided one (e.g., "Run 'podkit device add'")
   if (resolved.hint) {

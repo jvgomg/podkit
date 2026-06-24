@@ -134,6 +134,8 @@ interface InfoJson {
     artwork: { value: boolean | null; source: string };
     manufacturer?: { value: string; source: string };
     productName?: { value: string; source: string };
+    defaultMusic?: { kind: string; name?: string; source?: string };
+    defaultVideo?: { kind: string; name?: string; source?: string };
     capabilities?: {
       supportedAudioCodecs: { value: string[]; source: string };
       supportsVideo: { value: boolean; source: string };
@@ -339,6 +341,87 @@ describe('runDeviceInfo: behaviour past openDevice', () => {
     // Mass-storage capabilities cascade through with preset / device-config
     // provenance.
     expect(result.settings?.capabilities).toBeDefined();
+  });
+
+  it('emits resolved default collections with provenance (JSON + text)', async () => {
+    // Device names an existing music collection and opts out of video; the
+    // global defaults exist but the device overrides music and suppresses video.
+    const config: PodkitConfig = {
+      quality: 'medium',
+      artwork: true,
+      tips: true,
+      transforms: DEFAULT_TRANSFORMS_CONFIG,
+      videoTransforms: DEFAULT_VIDEO_TRANSFORMS_CONFIG,
+      devices: {
+        mp3player: {
+          type: 'generic',
+          path: mount,
+          defaults: { music: 'workout', video: false },
+        },
+      },
+      music: { main: { path: '/music/main' }, workout: { path: '/music/workout' } },
+      video: { movies: { path: '/video/movies' } },
+      defaults: { music: 'main', video: 'movies' },
+    };
+    const globalOpts: GlobalOptions = {
+      json: true,
+      quiet: false,
+      verbose: 0,
+      color: false,
+      tips: false,
+      tty: false,
+      device: 'mp3player',
+    };
+    const ctx: CliContext = {
+      config,
+      globalOpts,
+      configResult: { config, configPath: undefined, configFileExists: false },
+    };
+    const { out, stdout, exitCode } = makeOut();
+
+    const deps: DeviceInfoDeps = {
+      loadCore: async () => fakeCore(),
+      getDeviceManager: () => fakeManager(),
+      openDevice: async () =>
+        makeFakeOpenDeviceResult({
+          tracks: [],
+          isIpodDevice: false,
+          capabilities: { supportedAudioCodecs: ['aac'] },
+        }),
+    };
+
+    await runWithContext(ctx, () => runAction(out, () => runDeviceInfo(out, deps)));
+    expect(exitCode.get()).toBeUndefined();
+
+    const result = stdout.json<InfoJson>();
+    // Device names an existing collection → explicit device provenance.
+    expect(result.settings?.defaultMusic).toEqual({
+      kind: 'name',
+      name: 'workout',
+      source: 'device',
+    });
+    // Device opted out of video → none, no name.
+    expect(result.settings?.defaultVideo).toEqual({ kind: 'none', source: 'device' });
+
+    // Text render: drive the same runner in text mode and assert the rows.
+    const tstdout = new BufferSink();
+    const tstderr = new BufferSink();
+    const texit = new BufferExitCodeSink();
+    const tout = new OutputContext({
+      mode: 'text',
+      quiet: false,
+      verbose: 0,
+      color: false,
+      tips: false,
+      tty: false,
+      stdout: tstdout,
+      stderr: tstderr,
+      exitCode: texit,
+    });
+    await runWithContext(ctx, () => runAction(tout, () => runDeviceInfo(tout, deps)));
+    const text = tstdout.text();
+    expect(text).toMatch(/Default music: +workout/);
+    expect(text).toMatch(/Default video: +none/);
   });
 
   it('iPod device emits settings WITHOUT capabilities sub-block or manufacturer/productName', async () => {

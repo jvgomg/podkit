@@ -10,6 +10,11 @@ import { mergedPresets } from '../../config/preset-registry.js';
 import { OutputContext } from '../../output/index.js';
 import { sortDevicesForDisplay, getDevicePrefix, pickCapabilityOverrides } from './shared.js';
 import type { DeviceListOutput } from './output-types.js';
+import {
+  classifyDeviceDefault,
+  formatDefaultCollection,
+} from '../../resolvers/default-collection-state.js';
+import { toDefaultCollectionOutput } from './info-render.js';
 
 /**
  * Format a table row with consistent column widths
@@ -205,6 +210,23 @@ export async function runDeviceList(out: OutputContext, deps: DeviceListDeps = {
   resolvedDevices.length = 0;
   resolvedDevices.push(...sorted);
 
+  // Resolved default collections per device (config-state, provenance-carrying).
+  // Classified once, keyed by name, so the JSON envelope and the text table
+  // share one computation. Surfaces the full tri-state the sync resolver drops.
+  const defaultStates = new Map<
+    string,
+    {
+      music: ReturnType<typeof classifyDeviceDefault>;
+      video: ReturnType<typeof classifyDeviceDefault>;
+    }
+  >();
+  for (const d of resolvedDevices) {
+    defaultStates.set(d.name, {
+      music: classifyDeviceDefault(config, devices[d.name], 'music'),
+      video: classifyDeviceDefault(config, devices[d.name], 'video'),
+    });
+  }
+
   // Build JSON output (backward-compatible shape + new resolved fields)
   const deviceList = resolvedDevices.map((d) => ({
     name: d.name,
@@ -221,6 +243,8 @@ export async function runDeviceList(out: OutputContext, deps: DeviceListDeps = {
     videoSource: d.video.source,
     artwork: d.artwork.value,
     artworkSource: d.artwork.source,
+    defaultMusic: toDefaultCollectionOutput(defaultStates.get(d.name)!.music),
+    defaultVideo: toDefaultCollectionOutput(defaultStates.get(d.name)!.video),
   }));
 
   out.result<DeviceListOutput>({ success: true, devices: deviceList, defaultDevice }, () => {
@@ -235,7 +259,21 @@ export async function runDeviceList(out: OutputContext, deps: DeviceListDeps = {
     );
     out.newline();
 
-    const headers = ['NAME', 'TYPE', 'QUALITY', 'AUDIO', 'VIDEO', 'ARTWORK'];
+    // Pre-format the default-collection cells so the column width fits the
+    // widest rendered value (`[name]` / `ghost (not found)` / `—`).
+    const defCell = (name: string, type: 'music' | 'video') =>
+      formatDefaultCollection(defaultStates.get(name)![type]);
+
+    const headers = [
+      'NAME',
+      'TYPE',
+      'QUALITY',
+      'AUDIO',
+      'VIDEO',
+      'ARTWORK',
+      'DEF MUSIC',
+      'DEF VIDEO',
+    ];
     const widths = [
       Math.max(6, ...resolvedDevices.map((d) => d.name.length + 2)),
       Math.max(6, ...resolvedDevices.map((d) => displayForConfig(d, presets).short.length)),
@@ -243,6 +281,8 @@ export async function runDeviceList(out: OutputContext, deps: DeviceListDeps = {
       9,
       9,
       9,
+      Math.max(9, ...resolvedDevices.map((d) => defCell(d.name, 'music').length + 2)),
+      Math.max(9, ...resolvedDevices.map((d) => defCell(d.name, 'video').length + 2)),
     ];
 
     out.print('  ' + formatRow(headers, widths));
@@ -258,6 +298,8 @@ export async function runDeviceList(out: OutputContext, deps: DeviceListDeps = {
           formatResolved(d.audio),
           formatResolved(d.video),
           formatResolved(d.artwork),
+          defCell(d.name, 'music'),
+          defCell(d.name, 'video'),
         ],
         widths
       );
@@ -266,6 +308,8 @@ export async function runDeviceList(out: OutputContext, deps: DeviceListDeps = {
     }
 
     out.newline();
-    out.print('● = connected  * = default  [value] = inherited  ✗ = unsupported  ? = unknown');
+    out.print(
+      '● = connected  * = default  [value] = inherited  ✗ = unsupported  ? = unknown  — = unset'
+    );
   });
 }

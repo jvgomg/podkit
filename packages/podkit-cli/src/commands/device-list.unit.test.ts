@@ -23,7 +23,8 @@ import {
 
 function makeContext(
   devices: Record<string, DeviceConfig> = {},
-  presets?: PodkitConfig['presets']
+  presets?: PodkitConfig['presets'],
+  configOverrides: Partial<PodkitConfig> = {}
 ): CliContext {
   const config: PodkitConfig = {
     quality: 'medium',
@@ -35,6 +36,7 @@ function makeContext(
     music: {},
     video: {},
     ...(presets ? { presets } : {}),
+    ...configOverrides,
   };
   const globalOpts: GlobalOptions = {
     json: true,
@@ -221,6 +223,104 @@ describe('runDeviceList', () => {
     expect(text).toContain('NW-A105');
     // Without merged-registry threading, the row would fall back to 'iPod'.
     expect(text).not.toMatch(/walkman\s+iPod\b/);
+  });
+
+  it('surfaces resolved default collections (provenance) across devices in JSON', async () => {
+    const ctx = makeContext(
+      {
+        // Device default music name (exists), opts out of video.
+        alpha: { type: 'ipod', defaults: { music: 'workout', video: false } } as DeviceConfig,
+        // Inherits global music default; names a missing video collection.
+        beta: { type: 'ipod', defaults: { video: 'ghost' } } as DeviceConfig,
+      },
+      undefined,
+      {
+        music: { main: { path: '/music/main' }, workout: { path: '/music/workout' } },
+        video: { movies: { path: '/video/movies' } },
+        defaults: { music: 'main', video: 'movies' },
+      }
+    );
+    const { out, stdout, exitCode } = makeOut();
+    const deps: DeviceListDeps = {
+      loadCore: async () => fakeCore(),
+      getDeviceManager: () => fakeManager(),
+      loadLibgpod: async () => undefined,
+    };
+
+    await run(ctx, out, deps);
+    expect(exitCode.get()).toBeUndefined();
+
+    const result = stdout.json<DeviceListOutput>();
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    const byName = new Map(result.devices.map((d) => [d.name, d]));
+
+    // alpha: explicit device music name + explicit device video opt-out.
+    expect(byName.get('alpha')?.defaultMusic).toEqual({
+      kind: 'name',
+      name: 'workout',
+      source: 'device',
+    });
+    expect(byName.get('alpha')?.defaultVideo).toEqual({ kind: 'none', source: 'device' });
+
+    // beta: inherits global music; video names a collection not in config.
+    expect(byName.get('beta')?.defaultMusic).toEqual({
+      kind: 'inherited',
+      name: 'main',
+      source: 'global',
+    });
+    expect(byName.get('beta')?.defaultVideo).toEqual({
+      kind: 'missing',
+      name: 'ghost',
+      source: 'device',
+    });
+  });
+
+  it('renders default-collection columns with provenance markers in text mode', async () => {
+    const ctx = makeContext(
+      {
+        alpha: { type: 'ipod', defaults: { music: 'workout', video: false } } as DeviceConfig,
+        beta: { type: 'ipod', defaults: { video: 'ghost' } } as DeviceConfig,
+      },
+      undefined,
+      {
+        music: { main: { path: '/music/main' }, workout: { path: '/music/workout' } },
+        video: { movies: { path: '/video/movies' } },
+        defaults: { music: 'main', video: 'movies' },
+      }
+    );
+    const stdout = new BufferSink();
+    const stderr = new BufferSink();
+    const exitCode = new BufferExitCodeSink();
+    const out = new OutputContext({
+      mode: 'text',
+      quiet: false,
+      verbose: 0,
+      color: false,
+      tips: false,
+      tty: false,
+      stdout,
+      stderr,
+      exitCode,
+    });
+    const deps: DeviceListDeps = {
+      loadCore: async () => fakeCore(),
+      getDeviceManager: () => fakeManager(),
+      loadLibgpod: async () => undefined,
+    };
+
+    await run(ctx, out, deps);
+    expect(exitCode.get()).toBeUndefined();
+
+    const text = stdout.text();
+    expect(text).toContain('DEF MUSIC');
+    expect(text).toContain('DEF VIDEO');
+    // alpha: explicit device music name (plain) + device video opt-out.
+    expect(text).toMatch(/alpha[\s\S]*?workout[\s\S]*?none/);
+    // beta: inherited global music (bracketed) + missing video name.
+    expect(text).toContain('[main]');
+    expect(text).toContain('ghost (not found)');
+    expect(text).toContain('— = unset');
   });
 
   it('exposes the raw preset id in JSON mode (no metadata leak)', async () => {

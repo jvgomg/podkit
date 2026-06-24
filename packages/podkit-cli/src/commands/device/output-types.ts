@@ -51,8 +51,31 @@ export interface DeviceListSuccess {
     videoSource: string;
     artwork: boolean | null;
     artworkSource: string;
+    /** Resolved default music collection for this device (provenance-carrying). */
+    defaultMusic: DefaultCollectionOutput;
+    /** Resolved default video collection for this device (provenance-carrying). */
+    defaultVideo: DefaultCollectionOutput;
   }>;
   defaultDevice?: string;
+}
+
+/**
+ * The resolved default collection (music or video) for a device, surfaced in
+ * `device info` / `device list` JSON. `kind` is the tri-state discriminant
+ * (see {@link import('../../resolvers/default-collection-state.js').DefaultCollectionState}):
+ *
+ *   - `name`      — explicit per-device default that exists; `name` set, `source: 'device'`.
+ *   - `missing`   — per-device default that is NOT in config; `name` set, `source: 'device'`.
+ *   - `inherited` — inherited from the global default; `name` set, `source: 'global'`.
+ *   - `none`      — device opted out (`false`); `name` absent, `source: 'device'`.
+ *   - `empty`     — nothing set, no usable global default; `name`/`source` absent.
+ */
+export interface DefaultCollectionOutput {
+  kind: 'name' | 'missing' | 'inherited' | 'none' | 'empty';
+  /** Collection name — present for `name`, `missing`, and `inherited`. */
+  name?: string;
+  /** Provenance — `'device'` for name/missing/none, `'global'` for inherited. */
+  source?: 'device' | 'global';
 }
 
 export type DeviceListErrorOutput = CliErrorOutput & { code: DeviceErrorCode };
@@ -143,6 +166,10 @@ export interface DeviceInfoSuccess {
     skipUpgrades: DeviceInfoResolvedValue<boolean>;
     encoding: DeviceInfoResolvedValue<string | undefined>;
     transferMode: DeviceInfoResolvedValue<string>;
+    /** Resolved default music collection for this device (provenance-carrying). */
+    defaultMusic: DefaultCollectionOutput;
+    /** Resolved default video collection for this device (provenance-carrying). */
+    defaultVideo: DefaultCollectionOutput;
     manufacturer?: DeviceInfoResolvedValue<string>;
     productName?: DeviceInfoResolvedValue<string>;
     capabilities?: {

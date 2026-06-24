@@ -6,8 +6,12 @@ import {
   printSettingsZone,
   printSummaryRow,
   printSectionHeader,
+  printDefaultCollectionRows,
+  toDefaultCollectionOutput,
   SUMMARY_LABEL_WIDTH,
 } from './info-render.js';
+import type { DefaultCollectionState } from '../../resolvers/default-collection-state.js';
+import type { DefaultCollectionOutput } from './output-types.js';
 import { OutputContext } from '../../output/index.js';
 import { BufferSink } from '../../test-utils/buffer-sink.js';
 
@@ -177,4 +181,64 @@ describe('printSettingsZone', () => {
     ]);
     expect(stdout.lines()).toEqual([]);
   });
+});
+
+describe('printDefaultCollectionRows', () => {
+  it('renders a per-device name plain and an inherited global bracketed', () => {
+    const { out, stdout } = makeOut();
+    printDefaultCollectionRows(
+      out,
+      { kind: 'name', name: 'main', source: 'device' },
+      { kind: 'inherited', name: 'shows', source: 'global' }
+    );
+    const text = stdout.text();
+    expect(text).toContain('Default music:  main');
+    expect(text).toContain('Default video:  [shows]');
+  });
+
+  it('renders none for a device opt-out and — for nothing set', () => {
+    const { out, stdout } = makeOut();
+    printDefaultCollectionRows(out, { kind: 'none', source: 'device' }, { kind: 'empty' });
+    const text = stdout.text();
+    expect(text).toContain('Default music:  none');
+    expect(text).toContain('Default video:  —');
+  });
+
+  it('renders a not-found marker for a per-device name missing from config', () => {
+    const { out, stdout } = makeOut();
+    printDefaultCollectionRows(
+      out,
+      { kind: 'missing', name: 'ghost', source: 'device' },
+      { kind: 'empty' }
+    );
+    expect(stdout.text()).toContain('Default music:  ghost (not found)');
+  });
+});
+
+describe('toDefaultCollectionOutput', () => {
+  const cases: Array<[DefaultCollectionState, DefaultCollectionOutput]> = [
+    [
+      { kind: 'name', name: 'main', source: 'device' },
+      { kind: 'name', name: 'main', source: 'device' },
+    ],
+    [
+      { kind: 'missing', name: 'ghost', source: 'device' },
+      { kind: 'missing', name: 'ghost', source: 'device' },
+    ],
+    [
+      { kind: 'inherited', name: 'shows', source: 'global' },
+      { kind: 'inherited', name: 'shows', source: 'global' },
+    ],
+    [
+      { kind: 'none', source: 'device' },
+      { kind: 'none', source: 'device' },
+    ],
+    [{ kind: 'empty' }, { kind: 'empty' }],
+  ];
+
+  for (const [state, expected] of cases) {
+    it(`maps ${state.kind} to its JSON shape`, () => {
+      expect(toDefaultCollectionOutput(state)).toEqual(expected);
+    });
+  }
 });

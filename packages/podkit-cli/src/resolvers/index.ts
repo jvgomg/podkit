@@ -94,5 +94,12 @@ export {
   type ResolveCollectionsInput,
 } from './effective-collections.js';
 
+// Per-device default-collection classification (config-state display)
+export {
+  classifyDeviceDefault,
+  formatDefaultCollection,
+  type DefaultCollectionState,
+} from './default-collection-state.js';
+
 // Content path resolution (mass-storage)
 export { resolveDeviceContentPaths } from './content-paths.js';

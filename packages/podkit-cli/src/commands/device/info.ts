@@ -37,7 +37,10 @@ import {
   buildSettingsRows,
   printSettingsZone,
   printSummaryRow,
+  printDefaultCollectionRows,
+  toDefaultCollectionOutput,
 } from './info-render.js';
+import { classifyDeviceDefault } from '../../resolvers/default-collection-state.js';
 
 export interface DeviceInfoDeps extends CoreLoaderDeps {
   getDeviceManager?: () => import('@podkit/core').DeviceManager;
@@ -424,8 +427,19 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
   // shape `device list` already emits per row. Breaking change for JSON
   // consumers; see the changeset for migration notes (read `settings.audio.value`
   // instead of `audioQuality`, etc).
+  // Resolved default collections (config-state, provenance-carrying). Classified
+  // here so both the JSON envelope and the text Settings section share one
+  // computation. The classifier surfaces the full tri-state (name / missing /
+  // inherited / none / empty) that the sync resolver deliberately drops.
+  const defaultMusicState = device
+    ? classifyDeviceDefault(podkitConfig, device, 'music')
+    : undefined;
+  const defaultVideoState = device
+    ? classifyDeviceDefault(podkitConfig, device, 'video')
+    : undefined;
+
   const settingsJson =
-    resolvedSettings && device
+    resolvedSettings && device && defaultMusicState && defaultVideoState
       ? {
           quality: resolvedSettings.quality,
           audio: resolvedSettings.audio,
@@ -435,6 +449,8 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
           skipUpgrades: resolvedSettings.skipUpgrades,
           encoding: resolvedSettings.encoding,
           transferMode: resolvedSettings.transferMode,
+          defaultMusic: toDefaultCollectionOutput(defaultMusicState),
+          defaultVideo: toDefaultCollectionOutput(defaultVideoState),
           ...(resolvedSettings.manufacturer ? { manufacturer: resolvedSettings.manufacturer } : {}),
           ...(resolvedSettings.productName ? { productName: resolvedSettings.productName } : {}),
           ...(resolvedCaps
@@ -691,6 +707,12 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
 
         const rows = buildSettingsRows(resolvedSettings, resolvedCaps, outputCodecRow);
         printSettingsZone(out, rows);
+
+        // Resolved default collections — config-state with provenance
+        // (plain / [bracketed-inherited] / none / — / ghost (not found)).
+        if (defaultMusicState && defaultVideoState) {
+          printDefaultCollectionRows(out, defaultMusicState, defaultVideoState);
+        }
 
         // Transforms block kept separate — runtime toggles, not capabilities;
         // `enabled` / `disabled` vocabulary is correct here.

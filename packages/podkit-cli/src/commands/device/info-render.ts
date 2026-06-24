@@ -19,6 +19,11 @@
 import type { ResolvedDeviceCapabilities } from '@podkit/device-types';
 import type { OutputContext } from '../../output/index.js';
 import { formatResolved, type ResolvedDeviceSettings } from '../../config/resolve.js';
+import {
+  formatDefaultCollection,
+  type DefaultCollectionState,
+} from '../../resolvers/default-collection-state.js';
+import type { DefaultCollectionOutput } from './output-types.js';
 
 /**
  * Fixed column width for the Summary zone label gutter. Picked so the
@@ -215,4 +220,39 @@ export function buildSettingsRows(
   }
 
   return rows;
+}
+
+/**
+ * Map a {@link DefaultCollectionState} to its JSON output shape. `name`/`source`
+ * are present only for the states that carry them (see {@link DefaultCollectionOutput}).
+ */
+export function toDefaultCollectionOutput(state: DefaultCollectionState): DefaultCollectionOutput {
+  switch (state.kind) {
+    case 'name':
+    case 'missing':
+      return { kind: state.kind, name: state.name, source: state.source };
+    case 'inherited':
+      return { kind: state.kind, name: state.name, source: state.source };
+    case 'none':
+      return { kind: state.kind, source: state.source };
+    case 'empty':
+      return { kind: state.kind };
+  }
+}
+
+/**
+ * Print the per-device default-collection rows (`Default music` /
+ * `Default video`) into the Summary zone, using the bracket-for-inherited
+ * convention (`main` / `[shows]` / `none` / `—` / `ghost (not found)`) from
+ * {@link formatDefaultCollection}. Rendered as plain summary rows — these are
+ * config-state, not cascade `Resolved<T>` values, so they carry no
+ * `from <provenance>` tail.
+ */
+export function printDefaultCollectionRows(
+  out: OutputContext,
+  music: DefaultCollectionState,
+  video: DefaultCollectionState
+): void {
+  printSummaryRow(out, 'Default music', formatDefaultCollection(music));
+  printSummaryRow(out, 'Default video', formatDefaultCollection(video));
 }

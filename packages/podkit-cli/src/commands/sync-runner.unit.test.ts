@@ -142,6 +142,57 @@ describe('runSync: validation + deps seam', () => {
     expect(err.error).toContain('mock failure');
   });
 
+  it("surfaces COLLECTION_NOT_FOUND offline for a typo'd -c, before any device error", async () => {
+    // A device path is given but no device is connected, so the device-path
+    // resolution would fail. The `-c` flag is wholesale + device-independent,
+    // so its "not found" must surface FIRST — offline, before the device error
+    // and before core ever loads.
+    const ctx = makeContext('/Volumes/DefinitelyNotConnected');
+    const { out, stdout, exitCode } = makeOut();
+    let loadCoreCalled = false;
+    const deps: SyncDeps = {
+      getDeviceManager: () => fakeManager(),
+      loadCore: async () => {
+        loadCoreCalled = true;
+        return {} as typeof import('@podkit/core');
+      },
+    };
+    await runWithContext(ctx, () =>
+      runAction(out, () => runSync({ collection: 'does-not-exist' }, out, deps))
+    );
+    expect(exitCode.get()).toBe(1);
+    const err = stdout.json<ErrJson>();
+    expect(err.code).toBe(SyncErrorCodes.COLLECTION_NOT_FOUND);
+    expect(err.error).toContain('does-not-exist');
+    // Resolved offline — core never loaded, no device path resolution reached.
+    expect(loadCoreCalled).toBe(false);
+  });
+
+  it('surfaces SOURCE_NOT_FOUND offline for a -c with a bad source path, before any device error', async () => {
+    // `-c main` exists but its source directory does not. With a disconnected
+    // device path, the bad-source error must still surface FIRST (offline).
+    const ctx = makeContext('/Volumes/DefinitelyNotConnected');
+    // Point the 'main' collection at a path that does not exist.
+    ctx.config.music = { main: { path: '/no/such/source/dir/podkit-test' } };
+    const { out, stdout, exitCode } = makeOut();
+    let loadCoreCalled = false;
+    const deps: SyncDeps = {
+      getDeviceManager: () => fakeManager(),
+      loadCore: async () => {
+        loadCoreCalled = true;
+        return {} as typeof import('@podkit/core');
+      },
+    };
+    await runWithContext(ctx, () =>
+      runAction(out, () => runSync({ collection: 'main' }, out, deps))
+    );
+    expect(exitCode.get()).toBe(1);
+    const err = stdout.json<ErrJson>();
+    expect(err.code).toBe(SyncErrorCodes.SOURCE_NOT_FOUND);
+    expect(err.error).toContain('/no/such/source/dir/podkit-test');
+    expect(loadCoreCalled).toBe(false);
+  });
+
   it('refuses cleanly with DEVICE_UNSUPPORTED when cascade resolves to an unsupported generation', async () => {
     const ctx = makeContext(sharedSourceDir);
     const { out, stdout, exitCode } = makeOut();
