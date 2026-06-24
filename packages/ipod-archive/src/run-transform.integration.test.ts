@@ -9,16 +9,59 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtemp, mkdir, rm, readFile, stat, cp, unlink } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { mkdtemp, mkdir, rm, readFile, writeFile, stat, cp, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { File as TagFile } from 'node-taglib-sharp';
+import { Database as SqliteDatabase } from 'bun:sqlite';
 import { createTestIpod } from '@podkit/gpod-testing';
 import { Database } from '@podkit/libgpod-node';
 import { runTransform } from './run-transform.js';
 import { writeTrack } from './tag-writer.js';
+import { retagWithFfmpeg, runFfmpegDefault } from './ffmpeg-tag.js';
 import { loadDump } from './dump-loader.js';
 import { IpodArchiveError } from './errors.js';
+import { rgbaToPng } from './artwork/rgba-to-png.js';
+
+/** A tiny solid-colour PNG buffer for cover-embedding tests. */
+function makeCoverPng(): Buffer {
+  const px = 4;
+  const data = Buffer.alloc(px * px * 4, 0x80);
+  return rgbaToPng({ width: px, height: px, data });
+}
+
+/** Whether a real ffmpeg is on PATH, so the fallback-via-ffmpeg test can run. */
+const FFMPEG_AVAILABLE = (() => {
+  try {
+    execFileSync('ffmpeg', ['-version'], { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+})();
+
+/**
+ * Build a valid-but-taglib-hostile MP3 from a real one: a minimal ID3v2 header
+ * declaring zero frames, then a large zero-padding gap, then the real audio
+ * frames. ffmpeg's tolerant demuxer reads it fine, but taglib's frame-sync
+ * search gives up ("MPEG audio header not found") — exactly the real-world
+ * failure the ffmpeg fallback exists for.
+ */
+async function makeTaglibHostileMp3(srcMp3: string, dest: string): Promise<void> {
+  const buf = await readFile(srcMp3);
+  let sync = -1;
+  for (let i = 0; i < buf.length - 1; i++) {
+    if (buf[i] === 0xff && (buf[i + 1]! & 0xe0) === 0xe0) {
+      sync = i;
+      break;
+    }
+  }
+  if (sync < 0) throw new Error('no MPEG frame sync in fixture');
+  const id3 = Buffer.from([0x49, 0x44, 0x33, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+  const gap = Buffer.alloc(4000, 0x00);
+  await writeFile(dest, Buffer.concat([id3, gap, buf.subarray(sync)]));
+}
 
 /** Read the audio-stream properties used to prove a copy was not re-encoded. */
 function readAudioProps(filePath: string): {
@@ -301,6 +344,137 @@ describe('runTransform — fixture dump', () => {
     expect((await stat(presentDest)).isFile()).toBe(true);
   });
 
+  test('a tag-write failure keeps the extracted file linked in the catalogue (not orphaned)', async () => {
+    dump = await seedDump(
+      [
+        {
+          title: 'Normal Song',
+          artist: 'Tagged',
+          album: 'Album',
+          albumArtist: 'Tagged',
+          trackNumber: 1,
+          source: MP3,
+        },
+        {
+          title: 'Hostile Song',
+          artist: 'Untaggable',
+          album: 'Album',
+          albumArtist: 'Untaggable',
+          trackNumber: 2,
+          source: MP3,
+        },
+      ],
+      false
+    );
+
+    // Replace the second track's on-device audio with a valid-but-taglib-hostile
+    // MP3 so tagging fails on it.
+    const { db, ipodRoot } = await loadDump(dump);
+    let hostileIpodPath: string | null = null;
+    for (const handle of db.getTracks()) {
+      const t = db.getTrack(handle);
+      if (t.title === 'Hostile Song') hostileIpodPath = t.ipodPath;
+    }
+    db.close();
+    expect(hostileIpodPath).not.toBeNull();
+    const hostileFile = resolve(
+      ipodRoot,
+      ...hostileIpodPath!.split(':').filter((s) => s.length > 0)
+    );
+    await makeTaglibHostileMp3(MP3, hostileFile);
+
+    // Force the ffmpeg fallback to fail too (no real ffmpeg here), so the track
+    // ends up genuinely untagged — the worst case the orphan-bug fix must handle.
+    const result = await runTransform(dump, { ffmpegPath: '/nonexistent/ffmpeg-binary' });
+
+    // Both tracks were extracted — the hostile one's audio is in the archive.
+    expect(result.written).toBe(2);
+    // It is NOT an extraction failure (the file copied fine)...
+    expect(result.failures).toEqual([]);
+    // ...it is a tag failure (extracted but couldn't be tagged).
+    expect(result.tagFailures).toHaveLength(1);
+    expect(result.tagFailures[0]?.title).toBe('Hostile Song');
+    expect(result.tagFailures[0]?.reason).toContain('taglib:');
+    expect(result.tagFailures[0]?.reason).toContain('ffmpeg:');
+
+    const hostileDest = join(
+      result.archiveDir,
+      'Music',
+      'Untaggable',
+      'Album',
+      '02 Hostile Song.mp3'
+    );
+    // The file is on disk and byte-identical to the (hostile) source — kept, not lost.
+    expect((await stat(hostileDest)).isFile()).toBe(true);
+    expect(await readFile(hostileDest)).toEqual(await readFile(hostileFile));
+
+    // The catalogue links the file (exported_path set) — the orphan bug is fixed.
+    const sqlite = new SqliteDatabase(result.libraryDbPath, { readonly: true });
+    try {
+      const row = sqlite
+        .query('SELECT exported_path FROM tracks WHERE title = ?')
+        .get('Hostile Song') as { exported_path: string | null };
+      expect(row.exported_path).toBe('Music/Untaggable/Album/02 Hostile Song.mp3');
+    } finally {
+      sqlite.close();
+    }
+
+    // The report files it under tag failures, worded as "in the archive and playable".
+    const reportMd = await readFile(result.reportMarkdownPath, 'utf8');
+    expect(reportMd).toContain('### Tracks extracted but not tagged (1)');
+    expect(reportMd).toContain('Hostile Song');
+    expect(reportMd).toContain('in the archive and playable');
+  });
+
+  test.skipIf(!FFMPEG_AVAILABLE)(
+    'a taglib-hostile track is tagged via the ffmpeg fallback and counted',
+    async () => {
+      dump = await seedDump(
+        [
+          {
+            title: 'Hostile Song',
+            artist: 'Untaggable',
+            album: 'Album',
+            albumArtist: 'Untaggable',
+            trackNumber: 1,
+            source: MP3,
+          },
+        ],
+        false
+      );
+
+      const { db, ipodRoot } = await loadDump(dump);
+      let hostileIpodPath: string | null = null;
+      for (const handle of db.getTracks()) {
+        const t = db.getTrack(handle);
+        if (t.title === 'Hostile Song') hostileIpodPath = t.ipodPath;
+      }
+      db.close();
+      const hostileFile = resolve(
+        ipodRoot,
+        ...hostileIpodPath!.split(':').filter((s) => s.length > 0)
+      );
+      await makeTaglibHostileMp3(MP3, hostileFile);
+
+      const result = await runTransform(dump);
+
+      // Tagged via fallback: written, counted, no tag failure.
+      expect(result.written).toBe(1);
+      expect(result.fallbackTagged).toBe(1);
+      expect(result.tagFailures).toEqual([]);
+
+      // The tags actually landed (taglib can now read the ffmpeg-remuxed file).
+      const dest = join(result.archiveDir, 'Music', 'Untaggable', 'Album', '01 Hostile Song.mp3');
+      const file = TagFile.createFromPath(dest);
+      try {
+        expect(file.tag.title).toBe('Hostile Song');
+        expect(file.tag.performers).toEqual(['Untaggable']);
+      } finally {
+        file.dispose();
+      }
+    }
+  );
+
   test('writes archive/ beside raw dump/ when given a named archive dir', async () => {
     // Stage-1 layout: <named>/raw dump/iPod_Control/...
     const seeded = await seedDump(
@@ -329,6 +503,52 @@ describe('runTransform — fixture dump', () => {
     expect(result.written).toBe(1);
     const dest = join(result.archiveDir, 'Music', 'Solo', 'Solo Album', '01 Only Song.mp3');
     expect((await stat(dest)).isFile()).toBe(true);
+  });
+
+  test('refuses to overwrite an existing (non-empty) archive', async () => {
+    dump = await seedDump(
+      [
+        {
+          title: 'Song',
+          artist: 'Artist',
+          album: 'Album',
+          albumArtist: 'Artist',
+          trackNumber: 1,
+          source: MP3,
+        },
+      ],
+      false
+    );
+
+    // First run succeeds and populates archive/.
+    await runTransform(dump);
+
+    // Second run must refuse rather than interleave new files with stale ones.
+    const err = await runTransform(dump).catch((e) => e);
+    expect(err).toBeInstanceOf(IpodArchiveError);
+    expect((err as IpodArchiveError).code).toBe('ARCHIVE_ALREADY_EXISTS');
+    expect((err as IpodArchiveError).message).toContain(join(dump, 'archive'));
+  });
+
+  test('tolerates an empty leftover archive directory', async () => {
+    dump = await seedDump(
+      [
+        {
+          title: 'Song',
+          artist: 'Artist',
+          album: 'Album',
+          albumArtist: 'Artist',
+          trackNumber: 1,
+          source: MP3,
+        },
+      ],
+      false
+    );
+
+    // A stray empty archive/ (e.g. an aborted earlier run) must not block.
+    await mkdir(join(dump, 'archive'), { recursive: true });
+    const result = await runTransform(dump);
+    expect(result.written).toBe(1);
   });
 });
 
@@ -417,9 +637,155 @@ describe('writeTrack', () => {
     // With no tag fields to write, writeTrack must not rewrite the container —
     // the copy is bit-for-bit identical to the source.
     const dest = join(workdir, 'passthrough.mp3');
-    await writeTrack(MP3, dest, {});
+    const result = await writeTrack(MP3, dest, {});
+    expect(result.outcome).toBe('tagged');
     expect(await readFile(dest)).toEqual(await readFile(MP3));
   });
+
+  test('taglib success reports the fast path', async () => {
+    const dest = join(workdir, 'fast.mp3');
+    const result = await writeTrack(MP3, dest, { title: 'T' });
+    expect(result.outcome).toBe('tagged');
+    expect(result.reason).toBeUndefined();
+  });
+
+  test('falls back to ffmpeg when taglib cannot parse the file, and reports the reason', async () => {
+    // A file that defeats taglib's frame-sync search but is still valid audio.
+    const hostile = join(workdir, 'hostile-src.mp3');
+    await makeTaglibHostileMp3(MP3, hostile);
+
+    // The fallback is exercised via an injected runner so the test does not
+    // depend on a real ffmpeg: it stands in for ffmpeg by producing the output
+    // file the real tool would (here, the pristine source bytes).
+    const dest = join(workdir, 'fallback.mp3');
+    const calls: string[][] = [];
+    const result = await writeTrack(
+      hostile,
+      dest,
+      { title: 'T', artist: 'A' },
+      {
+        runFfmpeg: async (_binary, args) => {
+          calls.push([...args]);
+          // The last arg is the temp output path ffmpeg would write.
+          const out = args[args.length - 1]!;
+          await cp(hostile, out);
+        },
+      }
+    );
+
+    expect(result.outcome).toBe('fallback');
+    expect(result.reason).toContain('MPEG audio header not found');
+    // The runner was invoked once, reading the pristine source (not the dest).
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toContain(hostile);
+    expect((await stat(dest)).isFile()).toBe(true);
+  });
+
+  test('keeps an untouched byte copy when both taglib and ffmpeg fail', async () => {
+    const hostile = join(workdir, 'hostile-untagged-src.mp3');
+    await makeTaglibHostileMp3(MP3, hostile);
+
+    const dest = join(workdir, 'untagged.mp3');
+    const result = await writeTrack(
+      hostile,
+      dest,
+      { title: 'T' },
+      {
+        runFfmpeg: async () => {
+          throw new Error('spawn ffmpeg ENOENT');
+        },
+      }
+    );
+
+    expect(result.outcome).toBe('untagged');
+    // The reason carries both failures so the report explains what happened.
+    expect(result.reason).toContain('taglib:');
+    expect(result.reason).toContain('ffmpeg:');
+    expect(result.reason).toContain('ENOENT');
+    // The archived file is the pristine source — no audio lost, no half-write.
+    expect(await readFile(dest)).toEqual(await readFile(hostile));
+  });
+
+  test.skipIf(!FFMPEG_AVAILABLE)(
+    'real ffmpeg fallback losslessly tags a taglib-hostile file',
+    async () => {
+      const hostile = join(workdir, 'real-hostile-src.mp3');
+      await makeTaglibHostileMp3(MP3, hostile);
+
+      const dest = join(workdir, 'real-fallback.mp3');
+      const result = await writeTrack(hostile, dest, {
+        title: 'FB Title',
+        artist: 'FB Artist',
+        album: 'FB Album',
+        trackNumber: 3,
+      });
+
+      expect(result.outcome).toBe('fallback');
+
+      // After the ffmpeg remux taglib CAN open the file, and the tags read back.
+      const file = TagFile.createFromPath(dest);
+      try {
+        expect(file.tag.title).toBe('FB Title');
+        expect(file.tag.performers).toEqual(['FB Artist']);
+        expect(file.tag.album).toBe('FB Album');
+        expect(file.tag.track).toBe(3);
+      } finally {
+        file.dispose();
+      }
+    }
+  );
+
+  test.skipIf(!FFMPEG_AVAILABLE)('real ffmpeg fallback embeds the cover art (MP3)', async () => {
+    const hostile = join(workdir, 'cover-hostile-src.mp3');
+    await makeTaglibHostileMp3(MP3, hostile);
+
+    const dest = join(workdir, 'cover-fallback.mp3');
+    const result = await writeTrack(hostile, dest, { title: 'Covered', cover: makeCoverPng() });
+
+    expect(result.outcome).toBe('fallback');
+    const file = TagFile.createFromPath(dest);
+    try {
+      expect(file.tag.title).toBe('Covered');
+      // The cover landed as a front-cover picture, not just text tags.
+      expect(file.tag.pictures.length).toBeGreaterThan(0);
+    } finally {
+      file.dispose();
+    }
+  });
+
+  test.skipIf(!FFMPEG_AVAILABLE)(
+    'retagWithFfmpeg writes a valid cover-bearing M4A and omits the MP3-only flag',
+    async () => {
+      // M4A is the primary real-device format and a valid M4A never reaches the
+      // fallback through taglib, so the ffmpeg remux is tested directly here.
+      // Cover art in MP4 needs the attached-picture mapping and must NOT carry
+      // `-id3v2_version` (an MP3-muxer option that errors on MP4 output).
+      const dest = join(workdir, 'direct-fallback.m4a');
+      let seenArgs: readonly string[] = [];
+      await retagWithFfmpeg(
+        M4A,
+        dest,
+        { title: 'Direct M4A', artist: 'A', cover: makeCoverPng() },
+        'ffmpeg',
+        async (binary, args) => {
+          seenArgs = args;
+          await runFfmpegDefault(binary, args);
+        }
+      );
+
+      expect(seenArgs).not.toContain('-id3v2_version');
+      expect(seenArgs).toContain('attached_pic');
+
+      const file = TagFile.createFromPath(dest);
+      try {
+        expect(file.tag.title).toBe('Direct M4A');
+        expect(file.tag.performers).toEqual(['A']);
+        expect(file.tag.pictures.length).toBeGreaterThan(0);
+      } finally {
+        file.dispose();
+      }
+    }
+  );
 
   test('M4A: copies losslessly and writes tags into MP4 atoms', async () => {
     const dest = join(workdir, 'nested', 'dir', 'out.m4a');

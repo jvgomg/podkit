@@ -189,9 +189,11 @@ describe('runDeviceArchive', () => {
         archiveDir: path.join(dumpDir, 'archive'),
         ipodRoot: path.join(dumpDir, 'raw dump'),
         written: 3,
+        fallbackTagged: 0,
         noAudio: [{ dbid: 1n, title: 'No File' }],
         noArtwork: [{ dbid: 2n, title: 'No Art' }],
         failures: [],
+        tagFailures: [],
         identity: {},
         libraryDbPath: path.join(dumpDir, 'archive', 'library.sqlite'),
         readmePath: path.join(dumpDir, 'archive', 'README.md'),
@@ -515,7 +517,9 @@ describe('runDeviceArchive', () => {
           written: 1,
           noAudio: [],
           noArtwork: [{ dbid: 2n, title: 'No Art' }],
+          fallbackTagged: 0,
           failures: [],
+          tagFailures: [],
           identity: {},
           libraryDbPath: path.join(outputDir, 'archive', 'library.sqlite'),
           readmePath: path.join(outputDir, 'archive', 'README.md'),
@@ -673,7 +677,9 @@ describe('runDeviceArchive — human output + progress', () => {
           written: 3,
           noAudio: [],
           noArtwork: [],
+          fallbackTagged: 0,
           failures: [],
+          tagFailures: [],
           identity: {},
           libraryDbPath: path.join(outputDir, 'archive', 'library.sqlite'),
           readmePath: path.join(outputDir, 'archive', 'README.md'),
@@ -711,7 +717,7 @@ describe('runDeviceArchive — human output + progress', () => {
     expect(text).toContain('2 songs · 1 movie · 2 playlists');
     // The raw-dump + final archive milestone lines.
     expect(text).toContain('✓ raw dump — 2 files');
-    expect(text).toContain('✓ archive — 3 tracks extracted + tagged');
+    expect(text).toContain('✓ archive — 3 tracks extracted');
   });
 
   it('--dump-only: prints a Dumping header + raw-dump line, no README/report/archive paths', async () => {
@@ -842,7 +848,9 @@ describe('runDeviceArchive — human output + progress', () => {
           written: 0,
           noAudio: [],
           noArtwork: [],
+          fallbackTagged: 0,
           failures: [],
+          tagFailures: [],
           identity: {},
           libraryDbPath: path.join(outputDir, 'archive', 'library.sqlite'),
           readmePath: path.join(outputDir, 'archive', 'README.md'),

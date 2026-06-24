@@ -520,6 +520,7 @@ async function runBothStages(
   const noAudioCount = transform.noAudio.length;
   const noArtworkCount = transform.noArtwork.length;
   const failureCount = transform.failures.length;
+  const tagFailureCount = transform.tagFailures.length;
 
   out.result<DeviceArchiveOutput>(
     {
@@ -533,9 +534,11 @@ async function runBothStages(
       foreign,
       dumpFailures,
       written: transform.written,
+      fallbackTaggedCount: transform.fallbackTagged,
       noAudioCount,
       noArtworkCount,
       failureCount,
+      tagFailureCount,
       readmePath: transform.readmePath,
       reportMarkdownPath: transform.reportMarkdownPath,
       reportJsonPath: transform.reportJsonPath,
@@ -546,25 +549,16 @@ async function runBothStages(
       // the track-extraction count and the informative skip/failure notes only;
       // the per-artifact path lines now live solely in the JSON envelope.
       out.success(
-        `✓ archive — ${formatNumber(transform.written)} track${transform.written === 1 ? '' : 's'} extracted + tagged`
+        `✓ archive — ${formatNumber(transform.written)} track${transform.written === 1 ? '' : 's'} extracted`
       );
       printDumpBuckets(out, foreign, dumpFailures);
-      if (noAudioCount > 0) {
-        out.print(
-          `  ${formatNumber(noAudioCount)} track${noAudioCount === 1 ? '' : 's'} skipped (no audio file)`
-        );
-      }
-      if (noArtworkCount > 0) {
-        out.print(
-          `  ${formatNumber(noArtworkCount)} track${noArtworkCount === 1 ? '' : 's'} had no album artwork`
-        );
-      }
-      if (failureCount > 0) {
-        out.warn(
-          `${formatNumber(failureCount)} track${failureCount === 1 ? '' : 's'} could not be extracted:`
-        );
-        for (const f of transform.failures) out.warn(`    - ${f.relPath}: ${f.error}`);
-      }
+      printTransformBuckets(out, {
+        fallbackTagged: transform.fallbackTagged,
+        noAudioCount,
+        noArtworkCount,
+        failures: transform.failures,
+        tagFailures: transform.tagFailures,
+      });
     }
   );
 }
@@ -586,6 +580,55 @@ function printDumpBuckets(
       `${formatNumber(failures.length)} file${failures.length === 1 ? '' : 's'} could not be copied:`
     );
     for (const f of failures) out.warn(`    - ${f.path}: ${f.error}`);
+  }
+}
+
+/** The stage-2 buckets the summary surfaces, shared by both run paths. */
+interface TransformBuckets {
+  fallbackTagged: number;
+  noAudioCount: number;
+  noArtworkCount: number;
+  failures: Array<{ relPath: string; error: string }>;
+  tagFailures: Array<{ relPath: string; reason: string }>;
+}
+
+/**
+ * Print the stage-2 summary notes. The buckets are deliberately distinct:
+ * - `could not be extracted` means the audio is genuinely NOT in the archive
+ *   (the copy failed). This is the only real loss.
+ * - `extracted but could not be tagged` means the file IS in the archive and
+ *   playable; only its metadata could not be rewritten, so it keeps its
+ *   original on-device tags. A warning, not a loss.
+ * - `tagged via ffmpeg fallback` is informational — those tracks are fully
+ *   tagged, just by the slower, more tolerant path.
+ */
+function printTransformBuckets(out: OutputContext, b: TransformBuckets): void {
+  if (b.noAudioCount > 0) {
+    out.print(
+      `  ${formatNumber(b.noAudioCount)} track${b.noAudioCount === 1 ? '' : 's'} skipped (no audio file)`
+    );
+  }
+  if (b.noArtworkCount > 0) {
+    out.print(
+      `  ${formatNumber(b.noArtworkCount)} track${b.noArtworkCount === 1 ? '' : 's'} had no album artwork`
+    );
+  }
+  if (b.fallbackTagged > 0) {
+    out.print(
+      `  ${formatNumber(b.fallbackTagged)} track${b.fallbackTagged === 1 ? '' : 's'} tagged via ffmpeg fallback`
+    );
+  }
+  if (b.failures.length > 0) {
+    out.warn(
+      `${formatNumber(b.failures.length)} track${b.failures.length === 1 ? '' : 's'} could not be extracted:`
+    );
+    for (const f of b.failures) out.warn(`    - ${f.relPath}: ${f.error}`);
+  }
+  if (b.tagFailures.length > 0) {
+    out.warn(
+      `${formatNumber(b.tagFailures.length)} track${b.tagFailures.length === 1 ? '' : 's'} extracted but could not be tagged (kept original tags):`
+    );
+    for (const f of b.tagFailures) out.warn(`    - ${f.relPath}: ${f.reason}`);
   }
 }
 
@@ -623,6 +666,7 @@ async function runTransformStage(
   const noAudioCount = result.noAudio.length;
   const noArtworkCount = result.noArtwork.length;
   const failureCount = result.failures.length;
+  const tagFailureCount = result.tagFailures.length;
 
   out.result<DeviceArchiveOutput>(
     {
@@ -630,9 +674,11 @@ async function runTransformStage(
       stage: 'transform',
       archiveDir: result.archiveDir,
       written: result.written,
+      fallbackTaggedCount: result.fallbackTagged,
       noAudioCount,
       noArtworkCount,
       failureCount,
+      tagFailureCount,
       readmePath: result.readmePath,
       reportMarkdownPath: result.reportMarkdownPath,
       reportJsonPath: result.reportJsonPath,
@@ -642,26 +688,15 @@ async function runTransformStage(
       // progress renderer; the per-artifact paths now live only in the JSON
       // envelope. Keep the extraction count + the informative skip/failure notes.
       out.success(
-        `✓ archive — ${formatNumber(result.written)} track${result.written === 1 ? '' : 's'} extracted + tagged`
+        `✓ archive — ${formatNumber(result.written)} track${result.written === 1 ? '' : 's'} extracted`
       );
-      if (noAudioCount > 0) {
-        out.print(
-          `  ${formatNumber(noAudioCount)} track${noAudioCount === 1 ? '' : 's'} skipped (no audio file)`
-        );
-      }
-      if (noArtworkCount > 0) {
-        out.print(
-          `  ${formatNumber(noArtworkCount)} track${noArtworkCount === 1 ? '' : 's'} had no album artwork`
-        );
-      }
-      if (failureCount > 0) {
-        out.warn(
-          `${formatNumber(failureCount)} track${failureCount === 1 ? '' : 's'} could not be extracted:`
-        );
-        for (const f of result.failures) {
-          out.warn(`    - ${f.relPath}: ${f.error}`);
-        }
-      }
+      printTransformBuckets(out, {
+        fallbackTagged: result.fallbackTagged,
+        noAudioCount,
+        noArtworkCount,
+        failures: result.failures,
+        tagFailures: result.tagFailures,
+      });
     }
   );
 }

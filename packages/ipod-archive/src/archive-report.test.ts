@@ -74,6 +74,7 @@ const EMPTY_STAGE2: ReportStage2 = {
   noAudio: [],
   noArtwork: [],
   transformFailures: [],
+  tagFailures: [],
   playlistFailures: [],
 };
 
@@ -172,6 +173,14 @@ describe('ArchiveReport — populated buckets', () => {
     transformFailures: [
       { dbid: '12', title: 'Broken', relPath: 'Music/A/B/01 Broken.m4a', error: 'missing source' },
     ],
+    tagFailures: [
+      {
+        dbid: '13',
+        title: 'Untaggable',
+        relPath: 'Music/C/D/01 Untaggable.mp3',
+        error: 'taglib: MPEG audio header not found; ffmpeg: spawn ENOENT',
+      },
+    ],
     playlistFailures: [{ name: 'My Mix', relPath: 'Playlists/My Mix.m3u8', error: 'EACCES' }],
   };
 
@@ -195,6 +204,13 @@ describe('ArchiveReport — populated buckets', () => {
     expect(md).toContain('No Art (dbid 11)');
     expect(md).toContain('### Transform failures (1)');
     expect(md).toContain('Broken (dbid 12) → `Music/A/B/01 Broken.m4a` — missing source');
+    expect(md).toContain('### Tracks extracted but not tagged (1)');
+    expect(md).toContain(
+      'Untaggable (dbid 13) → `Music/C/D/01 Untaggable.mp3` — ' +
+        'taglib: MPEG audio header not found; ffmpeg: spawn ENOENT'
+    );
+    // Worded so a reader knows these tracks are present, not lost.
+    expect(md).toContain('in the archive and playable');
     expect(md).toContain('### Playlist failures (1)');
     expect(md).toContain('My Mix → `Playlists/My Mix.m3u8` — EACCES');
   });
@@ -210,6 +226,14 @@ describe('ArchiveReport — populated buckets', () => {
     expect(json.stage2?.noAudio).toEqual([{ dbid: '10', title: 'Lonely Track' }]);
     expect(json.stage2?.noArtwork).toEqual([{ dbid: '11', title: 'No Art' }]);
     expect(json.stage2?.transformFailures).toHaveLength(1);
+    expect(json.stage2?.tagFailures).toEqual([
+      {
+        dbid: '13',
+        title: 'Untaggable',
+        relPath: 'Music/C/D/01 Untaggable.mp3',
+        error: 'taglib: MPEG audio header not found; ffmpeg: spawn ENOENT',
+      },
+    ]);
     expect(json.stage2?.playlistFailures).toHaveLength(1);
   });
 

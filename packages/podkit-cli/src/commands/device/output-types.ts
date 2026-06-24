@@ -524,14 +524,18 @@ export interface DeviceArchiveTransformSuccess {
   stage: 'transform';
   /** Absolute path of the browsable archive root (`archive/`). */
   archiveDir: string;
-  /** Count of tracks extracted (lossless copy + tagged) into the archive. */
+  /** Count of tracks whose audio was extracted (lossless copy) into the archive. */
   written: number;
+  /** Count of written tracks tagged via the ffmpeg fallback (a subset of `written`). */
+  fallbackTaggedCount: number;
   /** Count of tracks with no audio body (null/empty ipodPath). */
   noAudioCount: number;
   /** Count of tracks extracted but carrying no decodable album artwork. */
   noArtworkCount: number;
-  /** Count of tracks whose audio was missing or whose extraction failed. */
+  /** Count of tracks whose audio was missing or whose extraction (copy) failed. */
   failureCount: number;
+  /** Count of tracks extracted but left untagged (taglib + ffmpeg both failed). */
+  tagFailureCount: number;
   /** Absolute path of the emitted `README.md` identity card. */
   readmePath: string;
   /** Absolute path of the human-readable `report.md`. */
@@ -558,14 +562,18 @@ export interface DeviceArchiveBothSuccess {
   foreign: string[];
   /** Files that could not be copied (stage 1, recorded, not fatal). */
   dumpFailures: Array<{ path: string; error: string }>;
-  /** Count of tracks extracted (lossless copy + tagged) into the archive (stage 2). */
+  /** Count of tracks whose audio was extracted (lossless copy) into the archive (stage 2). */
   written: number;
+  /** Count of written tracks tagged via the ffmpeg fallback (stage 2, subset of `written`). */
+  fallbackTaggedCount: number;
   /** Count of tracks with no audio body (stage 2, null/empty ipodPath). */
   noAudioCount: number;
   /** Count of tracks extracted but carrying no decodable album artwork (stage 2). */
   noArtworkCount: number;
-  /** Count of tracks whose audio was missing or whose extraction failed (stage 2). */
+  /** Count of tracks whose audio was missing or whose extraction (copy) failed (stage 2). */
   failureCount: number;
+  /** Count of tracks extracted but left untagged (stage 2, taglib + ffmpeg both failed). */
+  tagFailureCount: number;
   /** Absolute path of the emitted `README.md` identity card. */
   readmePath: string;
   /** Absolute path of the unified human-readable `report.md` (covers both stages). */

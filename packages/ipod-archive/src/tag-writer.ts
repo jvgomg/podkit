@@ -17,6 +17,15 @@
  * front-cover picture (still a metadata-region rewrite — the audio body stays
  * bit-identical). When absent, the file's pictures are left untouched.
  *
+ * **Tagging is two-tiered.** taglib is the fast in-process default (~20× faster
+ * than spawning ffmpeg per file), and the audio body stays byte-identical to the
+ * source. But some real iPod MP3s defeat taglib's parser — a large padding gap
+ * before the first audio frame ("MPEG audio header not found"), or a malformed
+ * ID3 frame it can't re-serialize ("Argument null"). For those, tagging falls
+ * back to ffmpeg ({@link retagWithFfmpeg}): still lossless (the audio packets are
+ * copied bit-exact), just a container rewrite by a more tolerant tool. If both
+ * fail, the untouched byte copy is kept so no audio is ever lost.
+ *
  * @module
  */
 
@@ -25,6 +34,12 @@ import { mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { ByteVector, File as TagFile, Picture, PictureType } from 'node-taglib-sharp';
+import {
+  DEFAULT_FFMPEG,
+  retagWithFfmpeg,
+  runFfmpegDefault,
+  type FfmpegRunner,
+} from './ffmpeg-tag.js';
 
 /**
  * Metadata applied to an extracted track's tags.
@@ -50,6 +65,37 @@ export interface TrackTagMeta {
    * untouched.
    */
   cover?: Buffer;
+}
+
+/**
+ * How a track's tags were written, surfaced so the orchestrator can report it.
+ *
+ * - `tagged` — node-taglib-sharp wrote the tags (the fast, byte-lossless path),
+ *   or there were no tags to write (a pure byte copy).
+ * - `fallback` — taglib could not handle the file, so ffmpeg retagged it
+ *   losslessly. The file is fully tagged; `reason` carries the taglib error.
+ * - `untagged` — both taggers failed; the untouched byte copy is kept with its
+ *   original on-device tags. `reason` carries both errors. The audio is intact.
+ */
+export type TagWriteOutcome = 'tagged' | 'fallback' | 'untagged';
+
+/** Result of {@link writeTrack} — the audio always landed; this is how tagging went. */
+export interface WriteTrackResult {
+  /** Which tagging path succeeded (or that both failed). */
+  outcome: TagWriteOutcome;
+  /**
+   * For `fallback` / `untagged`: the underlying tagging error(s), for the report.
+   * Absent for `tagged`.
+   */
+  reason?: string;
+}
+
+/** Optional injection points for {@link writeTrack}'s ffmpeg fallback. */
+export interface WriteTrackOptions {
+  /** ffmpeg binary for the retag fallback. Defaults to `ffmpeg` (resolved on PATH). */
+  ffmpegPath?: string;
+  /** Injectable ffmpeg runner for tests; defaults to spawning `ffmpegPath`. */
+  runFfmpeg?: FfmpegRunner;
 }
 
 /**
@@ -80,41 +126,79 @@ function hasTextualFields(meta: TrackTagMeta): boolean {
 }
 
 /**
- * Copy `srcFile` to `destFile` losslessly, then stamp `meta`'s textual tags
- * onto the copy.
+ * Copy `srcFile` to `destFile` losslessly, then stamp `meta`'s tags onto the
+ * copy — via taglib, falling back to ffmpeg for files taglib can't handle.
  *
  * Parent directories of `destFile` are created if absent. The copy is a
  * straight byte stream — the audio body is bit-identical to the source. Tag
- * writing happens after the copy, in place on the destination, so the source
- * dump is never modified.
+ * writing happens after the copy, so the source dump is never modified.
  *
- * @throws when the source cannot be read, the destination cannot be written,
- *   or the tag write fails. The orchestrator records these per-track rather
- *   than aborting the whole run.
+ * Tagging never throws: it returns a {@link WriteTrackResult} describing whether
+ * taglib tagged it, ffmpeg fell back, or both failed (the byte copy is then kept
+ * untagged). Only a failed *copy* throws — that is the one case where no audio
+ * landed in the archive.
+ *
+ * @throws when the source cannot be read or the destination cannot be written
+ *   (the copy itself failed). The orchestrator records this as an extraction
+ *   failure rather than aborting the whole run.
  */
 export async function writeTrack(
   srcFile: string,
   destFile: string,
-  meta: TrackTagMeta
-): Promise<void> {
+  meta: TrackTagMeta,
+  opts: WriteTrackOptions = {}
+): Promise<WriteTrackResult> {
   await mkdir(dirname(destFile), { recursive: true });
 
   // Lossless byte copy (no transcode). Streamed so large files don't load
-  // wholesale into memory.
+  // wholesale into memory. A failure here propagates — no audio landed.
   await pipeline(createReadStream(srcFile), createWriteStream(destFile));
 
   // Nothing to write → leave the copy bit-for-bit identical to the source.
   // (Opening + saving via taglib would rewrite the tag region even with no
   // changes, so skip it entirely when there are no fields to apply.)
-  if (!hasWritableFields(meta)) return;
+  if (!hasWritableFields(meta)) return { outcome: 'tagged' };
 
-  // Stamp tags in place on the copy. taglib infers the container from the
-  // destination's extension (which the planner derived from the source path),
-  // so the copy keeps the source format.
+  try {
+    tagWithTaglib(destFile, meta);
+    return { outcome: 'tagged' };
+  } catch (taglibErr) {
+    // taglib couldn't parse/rewrite this file. Retag losslessly via ffmpeg from
+    // the pristine source (never the possibly half-written destination).
+    const reason = taglibErr instanceof Error ? taglibErr.message : String(taglibErr);
+    const ffmpegPath = opts.ffmpegPath ?? DEFAULT_FFMPEG;
+    const run = opts.runFfmpeg ?? runFfmpegDefault;
+    try {
+      await retagWithFfmpeg(srcFile, destFile, meta, ffmpegPath, run);
+      return { outcome: 'fallback', reason };
+    } catch (ffmpegErr) {
+      // Both taggers failed (e.g. ffmpeg not installed, or a truly broken file).
+      // Restore the pristine byte copy so the archived file is the untouched
+      // audio with its original on-device tags, not a half-written taglib mess.
+      // If this re-copy itself throws (e.g. disk full mid-restore) it propagates
+      // and the orchestrator records the track as an extraction failure — the
+      // correct outcome, since the destination can no longer be trusted.
+      await pipeline(createReadStream(srcFile), createWriteStream(destFile));
+      const ffmpegReason = ffmpegErr instanceof Error ? ffmpegErr.message : String(ffmpegErr);
+      return { outcome: 'untagged', reason: `taglib: ${reason}; ffmpeg: ${ffmpegReason}` };
+    }
+  }
+}
+
+/**
+ * Stamp `meta`'s tags onto `destFile` in place with node-taglib-sharp. taglib
+ * infers the container from the destination's extension (which the planner
+ * derived from the source path), so the copy keeps the source format and only
+ * the tag region is rewritten — the audio frames are untouched.
+ *
+ * @throws when taglib cannot open the container (e.g. "MPEG audio header not
+ *   found") or cannot re-serialize a tag on save (e.g. "Argument null"). The
+ *   caller catches this and falls back to ffmpeg.
+ */
+function tagWithTaglib(destFile: string, meta: TrackTagMeta): void {
   const file = TagFile.createFromPath(destFile);
   // node-taglib-sharp can return a null-ish handle for an unsupported or
-  // corrupt container. Surface a clear error rather than a null dereference;
-  // the orchestrator records it per-track without aborting the run.
+  // corrupt container. Surface a clear error rather than a null dereference.
   if (!file) {
     throw new Error(`Unsupported or unreadable audio container: ${destFile}`);
   }

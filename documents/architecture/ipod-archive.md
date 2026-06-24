@@ -35,7 +35,9 @@ The two stages compose into one self-contained output directory,
 `<deviceName>-<serial>-<timestamp>/`, holding `raw dump/` beside `archive/`.
 Because stage 2 is pure over stage 1, the transform is re-runnable and
 improvable without the device present (`--from-dump`), and a dump-only run is
-also supported (`--dump-only`).
+also supported (`--dump-only`). A re-run refuses to write into an existing,
+non-empty `archive/` (typed `ARCHIVE_ALREADY_EXISTS`) — the transform is a clean
+build, not a merge, so the caller clears the old archive first.
 
 The feature is **iPod-only**. Mass-storage devices have no `iTunesDB` and no
 listening history to rescue, so they are out of scope.
@@ -87,7 +89,16 @@ The deep modules, in rough pipeline order:
   to RGBA, and encodes to PNG.
 - **`TagWriter`** (`writeTrack`) — copies the audio file losslessly (byte copy,
   no transcode/remux), then writes text tags + embeds the PNG cover in place
-  via `node-taglib-sharp`.
+  via `node-taglib-sharp`. Tagging is **two-tiered**: taglib is the fast
+  in-process default (audio body stays byte-identical), but some real iPod MP3s
+  defeat its parser — a large padding gap before the first audio frame ("MPEG
+  audio header not found"), or a malformed ID3 frame it can't re-serialize
+  ("Argument null"). For those, tagging falls back to ffmpeg (`retagWithFfmpeg`,
+  `-c:a copy` — packets bit-exact, container rewritten by a more tolerant tool).
+  If both fail the untouched byte copy is kept with its original on-device tags.
+  The copy always precedes tagging, so a tag-write failure never loses audio and
+  never orphans the file from the catalogue — `written` counts extracted audio,
+  and `fallbackTagged` / `tagFailures` record how tagging went.
 - **`LibraryDbWriter`** (`writeLibraryDb`) — builds `library.sqlite` with
   `bun:sqlite` (see §3) in a single transaction: `device`, `tracks` (every
   field + `exported_path` + `dump_path`), `playlists`, `playlist_items`,
@@ -95,7 +106,7 @@ The deep modules, in rough pipeline order:
 - **`PlaylistWriter`** (`writePlaylists`) — emits `Playlists/<name>.m3u8` with
   relative paths, skipping the master/library playlist.
 - **`ArchiveReport`** — accumulates the cross-stage buckets (foreign skipped,
-  no-audio, no-artwork, copy/transform failures) and renders `report.md` +
+  no-audio, no-artwork, extraction failures, tag failures) and renders `report.md` +
   `report.json`. Also produces the README via `computeLibraryStats` +
   `renderReadme`.
 - **`ArchiveProgressEvent`** — a discriminated event union (`dump:start`,
@@ -150,8 +161,9 @@ lossless source of truth, and the catalogue is the convenient queryable view.
   only. If you need something from the device, it belongs in stage 1 and must
   be captured in the dump.
 - **Audio is never re-encoded.** Extraction is copy-then-tag-in-place. If you
-  add a tag or artwork, it goes into the existing `node-taglib-sharp` write —
-  no remux, no codec.
+  add a tag or artwork, it goes into the existing `node-taglib-sharp` write. The
+  ffmpeg tag fallback is the one remux on this path, and it is still lossless
+  (`-c:a copy` — packets bit-exact); no codec is ever run on the audio.
 - **Pure modules stay pure.** `ArchivePathPlanner`, `VolumeClassifier`, the
   pixel decoders, the report renderers, and `computeLibraryStats` do no I/O
   and take an injected clock where time is involved. They carry the bulk of

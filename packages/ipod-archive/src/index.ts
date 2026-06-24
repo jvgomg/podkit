@@ -77,7 +77,13 @@ export {
 } from './archive-path-planner.js';
 
 // ── Tag writing ────────────────────────────────────────────────────────────────
-export { writeTrack, type TrackTagMeta } from './tag-writer.js';
+export {
+  writeTrack,
+  type TrackTagMeta,
+  type WriteTrackResult,
+  type WriteTrackOptions,
+  type TagWriteOutcome,
+} from './tag-writer.js';
 
 // ── Artwork ──────────────────────────────────────────────────────────────────
 export {
@@ -175,6 +181,7 @@ export {
   type TransformResult,
   type TransformSkip,
   type TransformFailure,
+  type TransformTagFailure,
 } from './run-transform.js';
 
 export { runArchive, type RunArchiveOptions, type ArchiveResult } from './run-archive.js';

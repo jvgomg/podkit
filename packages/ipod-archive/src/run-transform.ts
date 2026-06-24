@@ -22,10 +22,11 @@
  * @module
  */
 
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join, posix } from 'node:path';
 import type { Track } from '@podkit/libgpod-node';
 import { loadDump, type DumpDeviceIdentity } from './dump-loader.js';
+import { IpodArchiveError } from './errors.js';
 import {
   planPath,
   createCollisionState,
@@ -34,7 +35,12 @@ import {
   MUSIC_SUBDIR,
 } from './archive-path-planner.js';
 import type { ArchiveProgressCallback, TransformStats } from './progress-events.js';
-import { writeTrack, type TrackTagMeta } from './tag-writer.js';
+import {
+  writeTrack,
+  type TrackTagMeta,
+  type WriteTrackResult,
+  type WriteTrackOptions,
+} from './tag-writer.js';
 import { resolveDumpAudioPath } from './ipod-path.js';
 import { createArtworkDecoder } from './artwork/artwork-decoder.js';
 import { rgbaToPng } from './artwork/rgba-to-png.js';
@@ -93,6 +99,13 @@ export interface RunTransformOptions {
    * at the end. Optional; never affects the result.
    */
   onProgress?: ArchiveProgressCallback;
+  /**
+   * ffmpeg binary used for the tag-write fallback (the few tracks node-taglib
+   * cannot handle). Defaults to `ffmpeg` resolved on `PATH`. When ffmpeg is
+   * absent the fallback degrades gracefully — those tracks are extracted and
+   * kept with their original on-device tags (recorded in {@link TransformResult.tagFailures}).
+   */
+  ffmpegPath?: string;
 }
 
 /** A track that produced no archive entry, with the reason recorded. */
@@ -117,14 +130,41 @@ export interface TransformFailure {
   error: string;
 }
 
+/**
+ * A track that was successfully extracted (its audio is in the archive) but
+ * whose metadata could not be written by either taglib or the ffmpeg fallback.
+ * The file is present and playable with its original on-device tags — this is a
+ * tagging warning, not a lost track.
+ */
+export interface TransformTagFailure {
+  /** Database ID of the track. */
+  dbid: bigint;
+  /** Track title (best-effort), for the report. */
+  title: string | null;
+  /** Archive-relative destination path of the extracted (but untagged) file. */
+  relPath: string;
+  /** Why both taglib and ffmpeg failed to write tags. */
+  reason: string;
+}
+
 /** Everything stage-2 produced, for the CLI summary and the later report stage. */
 export interface TransformResult {
   /** Absolute path of the archive root (`archive/`). */
   archiveDir: string;
   /** The iPod root inside the dump that tracks were resolved against. */
   ipodRoot: string;
-  /** Number of tracks successfully extracted + tagged. */
+  /**
+   * Number of tracks whose audio was extracted into the archive (a lossless
+   * copy landed). Independent of how tagging went — a track counts as written
+   * whether it was tagged by taglib, by the ffmpeg fallback, or left untagged.
+   */
   written: number;
+  /**
+   * Number of written tracks tagged via the ffmpeg fallback because taglib could
+   * not handle them. Informational (these are fully tagged, just by the slower,
+   * more tolerant path); a subset of {@link written}.
+   */
+  fallbackTagged: number;
   /** Tracks with no audio body (null/empty `ipodPath`). */
   noAudio: TransformSkip[];
   /**
@@ -133,8 +173,14 @@ export interface TransformResult {
    * this; it is not a failure (many iPods have no artwork at all).
    */
   noArtwork: TransformSkip[];
-  /** Tracks whose audio was missing or whose extraction failed. */
+  /** Tracks whose audio was missing or whose extraction (copy) failed. */
   failures: TransformFailure[];
+  /**
+   * Tracks extracted into the archive but whose tags could not be written by
+   * either taglib or ffmpeg. The audio is present and playable with its original
+   * on-device tags — a tagging warning, not a lost track.
+   */
+  tagFailures: TransformTagFailure[];
   /** Resolved device identity (best-effort). */
   identity: DumpDeviceIdentity;
   /** Absolute path of the emitted SQLite catalogue (`library.sqlite`). */
@@ -233,6 +279,28 @@ function resolveArchiveDir(dumpDir: string, opts: RunTransformOptions): string {
 }
 
 /**
+ * Throw {@link IpodArchiveError} `ARCHIVE_ALREADY_EXISTS` when `archiveDir`
+ * already holds files. A missing directory (or an empty leftover one) is fine —
+ * the transform creates/fills it. Any non-ENOENT stat error propagates.
+ */
+async function assertArchiveDirAbsent(archiveDir: string): Promise<void> {
+  let entries: string[];
+  try {
+    entries = await readdir(archiveDir);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
+    throw err;
+  }
+  if (entries.length > 0) {
+    throw new IpodArchiveError(
+      'ARCHIVE_ALREADY_EXISTS',
+      `An archive already exists at ${archiveDir}. ` +
+        'Remove it (or choose another output directory) before re-running the transform.'
+    );
+  }
+}
+
+/**
  * Run the transform stage against an existing dump.
  *
  * @param dumpDir - the named archive dir (containing `raw dump/`) or a directory
@@ -250,6 +318,13 @@ export async function runTransform(
 
   try {
     const archiveDir = resolveArchiveDir(dumpDir, opts);
+    // Refuse to write into an existing archive. The transform is not a merge: a
+    // second run over a populated `archive/` would interleave new files with
+    // stale ones (renamed albums, removed tracks) and leave a corrupt mix. The
+    // both-stages run always targets a fresh timestamped dir, so this only trips
+    // a re-run of `--from-dump` (or a bare iPod root) — there the user must clear
+    // the old archive first.
+    await assertArchiveDirAbsent(archiveDir);
     await mkdir(archiveDir, { recursive: true });
 
     // One decoder per dump: parses the ArtworkDB once and indexes the largest
@@ -264,7 +339,14 @@ export async function runTransform(
     const noAudio: TransformSkip[] = [];
     const noArtwork: TransformSkip[] = [];
     const failures: TransformFailure[] = [];
+    const tagFailures: TransformTagFailure[] = [];
     let written = 0;
+    let fallbackTagged = 0;
+
+    // Tag-write options, built once and shared across the loop. Only set
+    // ffmpegPath when provided so the default ('ffmpeg' on PATH) applies.
+    const writeOpts: WriteTrackOptions = {};
+    if (opts.ffmpegPath !== undefined) writeOpts.ffmpegPath = opts.ffmpegPath;
 
     // dbid → where each track was written + where it came from. Threaded into the
     // catalogue so `tracks.exported_path` / `tracks.dump_path` resolve. A track
@@ -346,18 +428,12 @@ export async function runTransform(
       }
 
       const destFile = join(archiveDir, relPath);
+      let tagResult: WriteTrackResult;
       try {
-        await writeTrack(sourcePath, destFile, meta);
-        written += 1;
-        // Extracted: record the archive-relative destination + dump source so
-        // the catalogue maps this track to its exported file.
-        pathMap.set(track.dbid, { exportedPath: relPath, dumpPath: track.ipodPath });
-        // Only record no-artwork for tracks that were successfully extracted;
-        // a track that fails extraction appears only in failures, not here.
-        if (coverPng === null) {
-          noArtwork.push({ dbid: track.dbid, title: track.title });
-        }
+        tagResult = await writeTrack(sourcePath, destFile, meta, writeOpts);
       } catch (err) {
+        // The copy itself failed → no audio landed in the archive. This is the
+        // only true extraction failure (the file is genuinely not there).
         failures.push({
           dbid: track.dbid,
           title: track.title,
@@ -365,9 +441,30 @@ export async function runTransform(
           sourcePath,
           error: err instanceof Error ? err.message : String(err),
         });
-        // Extraction failed → no exported file; still cataloguable via its source.
         pathMap.set(track.dbid, { exportedPath: null, dumpPath: track.ipodPath });
         continue;
+      }
+
+      // The audio is in the archive (the copy precedes tagging), so the
+      // catalogue links it regardless of how tagging went — never orphan a file
+      // that is on disk and playable.
+      written += 1;
+      pathMap.set(track.dbid, { exportedPath: relPath, dumpPath: track.ipodPath });
+      if (tagResult.outcome === 'fallback') fallbackTagged += 1;
+      if (tagResult.outcome === 'untagged') {
+        // Extracted but untaggable by both taglib and ffmpeg — a tagging
+        // warning, not a lost track (it keeps its original on-device tags).
+        tagFailures.push({
+          dbid: track.dbid,
+          title: track.title,
+          relPath,
+          reason: tagResult.reason ?? 'tag write failed',
+        });
+      }
+      // Only record no-artwork for tracks that were successfully extracted;
+      // a track that fails extraction appears only in failures, not here.
+      if (coverPng === null) {
+        noArtwork.push({ dbid: track.dbid, title: track.title });
       }
 
       // Write a `cover.png` into the album folder, once per folder. Only the
@@ -433,6 +530,12 @@ export async function runTransform(
         relPath: f.relPath,
         error: f.error,
       })),
+      tagFailures: tagFailures.map((f) => ({
+        dbid: f.dbid.toString(),
+        title: f.title,
+        relPath: f.relPath,
+        error: f.reason,
+      })),
       playlistFailures: playlistResult.failures.map((f) => ({
         name: f.name,
         relPath: f.relPath,
@@ -461,9 +564,11 @@ export async function runTransform(
       archiveDir,
       ipodRoot,
       written,
+      fallbackTagged,
       noAudio,
       noArtwork,
       failures,
+      tagFailures,
       identity,
       libraryDbPath,
       readmePath,

@@ -12,6 +12,12 @@ export type IpodArchiveErrorCode =
   /** The destination directory could not be created or written. */
   | 'DEST_NOT_WRITABLE'
   /**
+   * An archive already exists at the resolved output directory. The transform
+   * refuses to write over or merge into it, so the caller must remove it (or
+   * choose another output directory) before re-running.
+   */
+  | 'ARCHIVE_ALREADY_EXISTS'
+  /**
    * The supplied dump path could not be read as an iPod dump: no `iPod_Control`
    * directory was found inside it, or libgpod could not parse the iTunesDB.
    */

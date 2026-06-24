@@ -94,8 +94,14 @@ export interface ReportStage2 {
   noAudio: ReportTrackSkip[];
   /** Tracks extracted but carrying no decodable album artwork. */
   noArtwork: ReportTrackSkip[];
-  /** Tracks whose audio was missing or whose extraction failed. */
+  /** Tracks whose audio was missing or whose extraction (copy) failed. */
   transformFailures: ReportTransformFailure[];
+  /**
+   * Tracks extracted into the archive but whose tags could not be written by
+   * either taglib or ffmpeg. The audio is present and playable with its original
+   * on-device tags — a tagging warning, not a lost track.
+   */
+  tagFailures: ReportTransformFailure[];
   /** Playlists whose `.m3u8` write failed. */
   playlistFailures: ReportPlaylistFailure[];
 }
@@ -444,6 +450,7 @@ export class ArchiveReport {
       renderTrackBucket(lines, 'Tracks with no audio', this.stage2.noAudio);
       renderTrackBucket(lines, 'Tracks with no artwork', this.stage2.noArtwork);
       renderTransformFailures(lines, this.stage2.transformFailures);
+      renderTagFailures(lines, this.stage2.tagFailures);
       renderPlaylistFailures(lines, this.stage2.playlistFailures);
     }
 
@@ -466,6 +473,10 @@ function normalizeStage2(stage2: ReportStage2): ReportStage2 {
     noAudio: sortTrackSkips(stage2.noAudio),
     noArtwork: sortTrackSkips(stage2.noArtwork),
     transformFailures: [...stage2.transformFailures].sort((a, b) => {
+      const byPath = compareStable(a.relPath, b.relPath);
+      return byPath !== 0 ? byPath : compareStable(a.dbid, b.dbid);
+    }),
+    tagFailures: [...stage2.tagFailures].sort((a, b) => {
       const byPath = compareStable(a.relPath, b.relPath);
       return byPath !== 0 ? byPath : compareStable(a.dbid, b.dbid);
     }),
@@ -538,6 +549,33 @@ function renderTransformFailures(lines: string[], items: readonly ReportTransfor
   lines.push('');
   if (items.length === 0) {
     lines.push('No failures.');
+    lines.push('');
+    return;
+  }
+  appendList(
+    lines,
+    items.map(
+      (item) =>
+        `${item.title ?? '<untitled>'} (dbid ${item.dbid}) → \`${item.relPath}\` — ${item.error}`
+    )
+  );
+}
+
+/**
+ * Append a markdown subsection for stage-2 tag failures — tracks that WERE
+ * extracted (their audio is in the archive) but could not be tagged by either
+ * taglib or ffmpeg. Worded to make clear nothing was lost.
+ */
+function renderTagFailures(lines: string[], items: readonly ReportTransformFailure[]): void {
+  lines.push(`### Tracks extracted but not tagged (${items.length})`);
+  lines.push('');
+  lines.push(
+    '_These tracks are in the archive and playable; only their metadata could not ' +
+      'be rewritten, so they keep their original on-device tags._'
+  );
+  lines.push('');
+  if (items.length === 0) {
+    lines.push('None.');
     lines.push('');
     return;
   }
