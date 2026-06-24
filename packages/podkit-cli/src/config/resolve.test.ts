@@ -272,6 +272,20 @@ describe('resolveDeviceSettings', () => {
       expect(result.artwork).toEqual({ value: false, source: 'device' });
     });
 
+    it('resolves device artwork=true through the chain (source device)', () => {
+      // With no `false` anywhere, the explicit-false bypass is skipped and
+      // resolution reaches the resolveChain cascade. An explicit device
+      // `true` is returned with source 'device' (vs. inheriting 'global').
+      // Note: a global `false` would veto via the bypass above — covered
+      // separately — so global must be non-false to exercise this path.
+      const config = makeConfig({ artwork: true });
+      const device: DeviceConfig = { artwork: true };
+
+      const result = resolveDeviceSettings(config, 'test', device, FULL_CAPABILITIES, false, false);
+
+      expect(result.artwork).toEqual({ value: true, source: 'device' });
+    });
+
     it('falls back to global artwork', () => {
       const config = makeConfig({ artwork: false });
       const device: DeviceConfig = {};

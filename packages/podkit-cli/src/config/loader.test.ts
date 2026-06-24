@@ -118,6 +118,17 @@ quality = "invalid"
       expect(() => loadConfigFile(configPath)).toThrow(/Invalid quality value/);
     });
 
+    it('silently ignores a wrong-typed (non-string) quality value', () => {
+      // Top-level scalar/enum fields use a non-throwing type guard: a
+      // wrong-type value is skipped, not rejected (per-device fields, by
+      // contrast, throw on wrong type).
+      const configPath = path.join(tempDir, 'config.toml');
+      fs.writeFileSync(configPath, v(`quality = 42`));
+
+      const result = loadConfigFile(configPath);
+      expect(result?.quality).toBeUndefined();
+    });
+
     // Quality preset tests
     const validPresets = ['max', 'high', 'medium', 'low'] as const;
     for (const preset of validPresets) {

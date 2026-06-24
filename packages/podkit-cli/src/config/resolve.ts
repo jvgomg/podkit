@@ -124,20 +124,22 @@ function resolveGlobalAudio(
   config: PodkitConfig,
   quality: ResolvedValue<QualityPreset>
 ): ResolvedValue<QualityPreset> {
-  if (config.audioQuality !== undefined) {
-    return { value: config.audioQuality, source: 'global' };
-  }
-  return { value: quality.value, source: 'global-quality' };
+  return resolveChain<QualityPreset, ConfigSource>(
+    [{ value: config.audioQuality, source: 'global' }],
+    quality.value,
+    'global-quality'
+  );
 }
 
 function resolveGlobalVideo(
   config: PodkitConfig,
   quality: ResolvedValue<QualityPreset>
 ): ResolvedValue<VideoQualityPreset> {
-  if (config.videoQuality !== undefined) {
-    return { value: config.videoQuality, source: 'global' };
-  }
-  return { value: quality.value as VideoQualityPreset, source: 'global-quality' };
+  return resolveChain<VideoQualityPreset, ConfigSource>(
+    [{ value: config.videoQuality, source: 'global' }],
+    quality.value as VideoQualityPreset,
+    'global-quality'
+  );
 }
 
 function resolveGlobalArtwork(config: PodkitConfig): ResolvedValue<boolean> {
@@ -228,11 +230,12 @@ function resolveDeviceQuality(
   config: PodkitConfig,
   deviceConfig: DeviceConfig
 ): ResolvedValue<QualityPreset> {
-  if (deviceConfig.quality !== undefined) {
-    return { value: deviceConfig.quality, source: 'device' };
-  }
-  // Fall through to global quality
-  return { value: config.quality, source: 'global-quality' };
+  // device.quality → global.quality
+  return resolveChain<QualityPreset, ConfigSource>(
+    [{ value: deviceConfig.quality, source: 'device' }],
+    config.quality,
+    'global-quality'
+  );
 }
 
 // -- Audio --------------------------------------------------------------------
@@ -246,16 +249,18 @@ function resolveDeviceAudio(
   deviceConfig: DeviceConfig,
   quality: ResolvedValue<QualityPreset>
 ): ResolvedValue<QualityPreset> {
-  if (deviceConfig.audioQuality !== undefined) {
-    return { value: deviceConfig.audioQuality, source: 'device' };
-  }
-  if (deviceConfig.quality !== undefined) {
-    return { value: deviceConfig.quality, source: 'device-quality' };
-  }
-  if (config.audioQuality !== undefined) {
-    return { value: config.audioQuality, source: 'global' };
-  }
-  return { value: quality.value, source: quality.source };
+  // device.audioQuality → device.quality → global.audioQuality → (already-resolved global quality).
+  // The final fallback carries the already-resolved quality's own source
+  // (`global` or `global-quality`), so it's passed as the chain default.
+  return resolveChain<QualityPreset, ConfigSource>(
+    [
+      { value: deviceConfig.audioQuality, source: 'device' },
+      { value: deviceConfig.quality, source: 'device-quality' },
+      { value: config.audioQuality, source: 'global' },
+    ],
+    quality.value,
+    quality.source
+  );
 }
 
 // -- Video --------------------------------------------------------------------
@@ -279,17 +284,18 @@ function resolveDeviceVideo(
     return { value: null, source: 'unsupported' };
   }
 
-  // Device supports video — resolve quality
-  if (deviceConfig.videoQuality !== undefined) {
-    return { value: deviceConfig.videoQuality, source: 'device' };
-  }
-  if (deviceConfig.quality !== undefined) {
-    return { value: deviceConfig.quality as VideoQualityPreset, source: 'device-quality' };
-  }
-  if (config.videoQuality !== undefined) {
-    return { value: config.videoQuality, source: 'global' };
-  }
-  return { value: quality.value as VideoQualityPreset, source: quality.source };
+  // Device supports video — resolve quality.
+  // device.videoQuality → device.quality → global.videoQuality → (already-resolved
+  // global quality, carrying its own `global`/`global-quality` source).
+  return resolveChain<VideoQualityPreset, ConfigSource>(
+    [
+      { value: deviceConfig.videoQuality, source: 'device' },
+      { value: deviceConfig.quality as VideoQualityPreset | undefined, source: 'device-quality' },
+      { value: config.videoQuality, source: 'global' },
+    ],
+    quality.value as VideoQualityPreset,
+    quality.source
+  );
 }
 
 // -- Artwork ------------------------------------------------------------------
@@ -335,11 +341,16 @@ function resolveDeviceArtwork(
     return { value: null, source: 'unsupported' };
   }
 
-  // Device supports artwork — resolve setting
-  if (deviceConfig.artwork !== undefined) {
-    return { value: deviceConfig.artwork, source: 'device' };
-  }
-  return { value: config.artwork, source: 'global' };
+  // Device supports artwork — resolve setting.
+  // At this point deviceConfig.artwork is undefined or true (an explicit
+  // `false` was already intercepted by the bypass above). resolveChain
+  // returns the device value when present (true → source 'device'), else
+  // falls back to global.artwork — a required field, so always defined.
+  return resolveChain<boolean, ConfigSource>(
+    [{ value: deviceConfig.artwork, source: 'device' }],
+    config.artwork,
+    'global'
+  );
 }
 
 // -- Simple settings (device → global → default) -----------------------------

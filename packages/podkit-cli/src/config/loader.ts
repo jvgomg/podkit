@@ -34,7 +34,6 @@ import type {
   VideoCollectionConfig,
   DeviceConfig,
   DefaultsConfig,
-  DeviceType,
   AudioCodec,
   AudioNormalizationMode,
   DeviceArtworkSource,
@@ -74,17 +73,6 @@ import type { MassStoragePreset } from '@podkit/devices-mass-storage';
 import type { DeviceCapabilities } from '@podkit/device-types';
 
 /**
- * Build a quality validation error message.
- */
-function qualityError(fieldName: string, value: string, context?: string): string {
-  const location = context ? ` in ${context}` : ' in config';
-  return (
-    `Invalid ${fieldName} value "${value}"${location}. ` +
-    `Valid values: ${QUALITY_PRESETS.join(', ')}`
-  );
-}
-
-/**
  * Check if a string is a valid quality preset
  */
 function isValidQuality(value: string): value is QualityPreset {
@@ -106,13 +94,6 @@ function isValidVideoQuality(value: string): value is VideoQualityPreset {
 }
 
 /**
- * Check if a string is a valid device type
- */
-function isValidDeviceType(value: string): value is DeviceType {
-  return (DEVICE_TYPES as readonly string[]).includes(value);
-}
-
-/**
  * Validate a music path template. Required variables: {title} and {ext}.
  * Throws with a context-tagged message if invalid.
  */
@@ -126,6 +107,140 @@ function validatePathTemplate(template: string, context: string): void {
   if (!/\{ext\}/.test(template)) {
     throw new Error(`Invalid pathTemplate in ${context}: must contain {ext}.`);
   }
+}
+
+// =============================================================================
+// Shared TOML scalar/enum parse helpers
+// =============================================================================
+//
+// These collapse the repeated "type-check the raw value → validate against an
+// enum/range → throw a context-tagged error → assign" pattern that appears at
+// both top-level config parsing and per-device parsing. Each helper reproduces
+// the existing error strings exactly; the only behavioural knob is whether a
+// wrong *type* is a hard error (per-device blocks) or a silent skip (top-level
+// blocks, which historically only throw on an out-of-enum string).
+
+/**
+ * Validate a raw value against a string enum and assign it.
+ *
+ * Reproduces the canonical two-message shape:
+ *  - type error : `Invalid type for "${field}" in ${context}. Expected string, got ${typeof}.`
+ *  - value error: `Invalid ${label ?? field} value "${value}" in ${context}. Valid values: ${valid.join(', ')}`
+ *
+ * `context` is the full context tag as it appears in the message (e.g.
+ * `config` or `[devices.foo]`). When `throwOnWrongType` is false a non-string
+ * raw value is silently skipped (the top-level blocks' historical behaviour);
+ * when true a non-string raw value throws the type error (per-device blocks).
+ */
+function parseStringEnum<T extends string>(args: {
+  raw: unknown;
+  field: string;
+  context: string;
+  valid: readonly T[];
+  assign: (value: T) => void;
+  label?: string;
+  throwOnWrongType?: boolean;
+}): void {
+  const { raw, field, context, valid, assign, label, throwOnWrongType } = args;
+  if (raw === undefined) {
+    return;
+  }
+  if (typeof raw !== 'string') {
+    if (throwOnWrongType) {
+      throw new Error(
+        `Invalid type for "${field}" in ${context}. ` + `Expected string, got ${typeof raw}.`
+      );
+    }
+    return;
+  }
+  if (!(valid as readonly string[]).includes(raw)) {
+    throw new Error(
+      `Invalid ${label ?? field} value "${raw}" in ${context}. ` +
+        `Valid values: ${valid.join(', ')}`
+    );
+  }
+  assign(raw as T);
+}
+
+/**
+ * Validate a raw value against an integer range and assign it.
+ *
+ * Reproduces: `Invalid ${field} value "${value}" in ${context}. ${rangeText}`
+ * The exact `rangeText` (e.g. `Must be an integer between 64 and 320.`) is
+ * supplied per call so each site keeps its original wording.
+ */
+function parseIntegerInRange(args: {
+  raw: unknown;
+  field: string;
+  context: string;
+  min: number;
+  max: number;
+  rangeText: string;
+  assign: (value: number) => void;
+}): void {
+  const { raw, field, context, min, max, rangeText, assign } = args;
+  if (raw === undefined) {
+    return;
+  }
+  if (typeof raw !== 'number' || !Number.isInteger(raw) || raw < min || raw > max) {
+    throw new Error(`Invalid ${field} value "${String(raw)}" in ${context}. ` + rangeText);
+  }
+  assign(raw);
+}
+
+/**
+ * Validate a raw value against an inclusive numeric range and assign it.
+ *
+ * Reproduces: `Invalid ${field} value "${value}" in ${context}. ${rangeText}`
+ * Unlike {@link parseIntegerInRange} this does not require an integer.
+ */
+function parseNumberInRange(args: {
+  raw: unknown;
+  field: string;
+  context: string;
+  min: number;
+  max: number;
+  rangeText: string;
+  assign: (value: number) => void;
+}): void {
+  const { raw, field, context, min, max, rangeText, assign } = args;
+  if (raw === undefined) {
+    return;
+  }
+  if (typeof raw !== 'number' || raw < min || raw > max) {
+    throw new Error(`Invalid ${field} value "${String(raw)}" in ${context}. ` + rangeText);
+  }
+  assign(raw);
+}
+
+/**
+ * Validate a raw value as a boolean and assign it.
+ *
+ * Reproduces: `Invalid type for "${field}" in ${context}. Expected boolean, got ${typeof}.`
+ * When `throwOnWrongType` is false a non-boolean raw value is silently skipped
+ * (the top-level blocks' `typeof === 'boolean'` guard); when true a non-boolean
+ * raw value throws (per-device blocks).
+ */
+function parseBoolean(args: {
+  raw: unknown;
+  field: string;
+  context: string;
+  assign: (value: boolean) => void;
+  throwOnWrongType?: boolean;
+}): void {
+  const { raw, field, context, assign, throwOnWrongType } = args;
+  if (raw === undefined) {
+    return;
+  }
+  if (typeof raw !== 'boolean') {
+    if (throwOnWrongType) {
+      throw new Error(
+        `Invalid type for "${field}" in ${context}. ` + `Expected boolean, got ${typeof raw}.`
+      );
+    }
+    return;
+  }
+  assign(raw);
 }
 
 /**
@@ -154,102 +269,124 @@ export function loadConfigFile(configPath: string): PartialConfig | undefined {
 
   const config: PartialConfig = {};
 
-  if (typeof parsed.quality === 'string') {
-    if (isValidQuality(parsed.quality)) {
-      config.quality = parsed.quality;
-    } else {
-      throw new Error(qualityError('quality', parsed.quality));
-    }
-  }
+  parseStringEnum({
+    raw: parsed.quality,
+    field: 'quality',
+    context: 'config',
+    valid: QUALITY_PRESETS,
+    assign: (v) => {
+      config.quality = v;
+    },
+  });
 
-  if (typeof parsed.audioQuality === 'string') {
-    if (isValidQuality(parsed.audioQuality)) {
-      config.audioQuality = parsed.audioQuality;
-    } else {
-      throw new Error(qualityError('audioQuality', parsed.audioQuality));
-    }
-  }
+  parseStringEnum({
+    raw: parsed.audioQuality,
+    field: 'audioQuality',
+    context: 'config',
+    valid: QUALITY_PRESETS,
+    assign: (v) => {
+      config.audioQuality = v;
+    },
+  });
 
-  if (typeof parsed.videoQuality === 'string') {
-    if (isValidVideoQuality(parsed.videoQuality)) {
-      config.videoQuality = parsed.videoQuality;
-    } else {
-      throw new Error(
-        `Invalid videoQuality value "${parsed.videoQuality}" in config. ` +
-          `Valid values: ${VIDEO_QUALITY_PRESETS.join(', ')}`
-      );
-    }
-  }
+  parseStringEnum({
+    raw: parsed.videoQuality,
+    field: 'videoQuality',
+    context: 'config',
+    valid: VIDEO_QUALITY_PRESETS,
+    assign: (v) => {
+      config.videoQuality = v;
+    },
+  });
 
-  if (typeof parsed.encoding === 'string') {
-    if (isValidEncodingMode(parsed.encoding)) {
-      config.encoding = parsed.encoding;
-    } else {
-      throw new Error(
-        `Invalid encoding value "${parsed.encoding}" in config. ` + `Valid values: vbr, cbr`
-      );
-    }
-  }
+  parseStringEnum({
+    raw: parsed.encoding,
+    field: 'encoding',
+    context: 'config',
+    valid: ['vbr', 'cbr'] as const,
+    assign: (v) => {
+      config.encoding = v;
+    },
+  });
 
-  if (parsed.customBitrate !== undefined) {
-    if (
-      typeof parsed.customBitrate !== 'number' ||
-      !Number.isInteger(parsed.customBitrate) ||
-      parsed.customBitrate < 64 ||
-      parsed.customBitrate > 320
-    ) {
-      throw new Error(
-        `Invalid customBitrate value "${parsed.customBitrate}" in config. ` +
-          `Must be an integer between 64 and 320.`
-      );
-    }
-    config.customBitrate = parsed.customBitrate;
-  }
+  parseIntegerInRange({
+    raw: parsed.customBitrate,
+    field: 'customBitrate',
+    context: 'config',
+    min: 64,
+    max: 320,
+    rangeText: 'Must be an integer between 64 and 320.',
+    assign: (v) => {
+      config.customBitrate = v;
+    },
+  });
 
-  if (parsed.bitrateTolerance !== undefined) {
-    if (
-      typeof parsed.bitrateTolerance !== 'number' ||
-      parsed.bitrateTolerance < 0.0 ||
-      parsed.bitrateTolerance > 1.0
-    ) {
-      throw new Error(
-        `Invalid bitrateTolerance value "${parsed.bitrateTolerance}" in config. ` +
-          `Must be a number between 0.0 and 1.0.`
-      );
-    }
-    config.bitrateTolerance = parsed.bitrateTolerance;
-  }
+  parseNumberInRange({
+    raw: parsed.bitrateTolerance,
+    field: 'bitrateTolerance',
+    context: 'config',
+    min: 0.0,
+    max: 1.0,
+    rangeText: 'Must be a number between 0.0 and 1.0.',
+    assign: (v) => {
+      config.bitrateTolerance = v;
+    },
+  });
 
-  if (typeof parsed.artwork === 'boolean') {
-    config.artwork = parsed.artwork;
-  }
+  parseBoolean({
+    raw: parsed.artwork,
+    field: 'artwork',
+    context: 'config',
+    assign: (v) => {
+      config.artwork = v;
+    },
+  });
 
-  if (typeof parsed.tips === 'boolean') {
-    config.tips = parsed.tips;
-  }
+  parseBoolean({
+    raw: parsed.tips,
+    field: 'tips',
+    context: 'config',
+    assign: (v) => {
+      config.tips = v;
+    },
+  });
 
-  if (typeof parsed.checkArtwork === 'boolean') {
-    config.checkArtwork = parsed.checkArtwork;
-  }
+  parseBoolean({
+    raw: parsed.checkArtwork,
+    field: 'checkArtwork',
+    context: 'config',
+    assign: (v) => {
+      config.checkArtwork = v;
+    },
+  });
 
-  if (typeof parsed.transferMode === 'string') {
-    if (isValidTransferMode(parsed.transferMode)) {
-      config.transferMode = parsed.transferMode;
-    } else {
-      throw new Error(
-        `Invalid transferMode value "${parsed.transferMode}" in config. ` +
-          `Valid values: ${TRANSFER_MODES.join(', ')}`
-      );
-    }
-  }
+  parseStringEnum({
+    raw: parsed.transferMode,
+    field: 'transferMode',
+    context: 'config',
+    valid: TRANSFER_MODES,
+    assign: (v) => {
+      config.transferMode = v;
+    },
+  });
 
-  if (typeof parsed.skipUpgrades === 'boolean') {
-    config.skipUpgrades = parsed.skipUpgrades;
-  }
+  parseBoolean({
+    raw: parsed.skipUpgrades,
+    field: 'skipUpgrades',
+    context: 'config',
+    assign: (v) => {
+      config.skipUpgrades = v;
+    },
+  });
 
-  if (typeof parsed.allowEmptyPlaylist === 'boolean') {
-    config.allowEmptyPlaylist = parsed.allowEmptyPlaylist;
-  }
+  parseBoolean({
+    raw: parsed.allowEmptyPlaylist,
+    field: 'allowEmptyPlaylist',
+    context: 'config',
+    assign: (v) => {
+      config.allowEmptyPlaylist = v;
+    },
+  });
 
   // Parse cleanArtists (boolean or table)
   if (parsed.cleanArtists !== undefined) {
@@ -901,21 +1038,17 @@ function parseDevices(
     }
 
     // Parse optional device type
-    if (rawDevice.type !== undefined) {
-      if (typeof rawDevice.type !== 'string') {
-        throw new Error(
-          `Invalid type for "type" in [devices.${name}]. ` +
-            `Expected string, got ${typeof rawDevice.type}.`
-        );
-      }
-      if (!isValidDeviceType(rawDevice.type)) {
-        throw new Error(
-          `Invalid device type "${rawDevice.type}" in [devices.${name}]. ` +
-            `Valid values: ${DEVICE_TYPES.join(', ')}`
-        );
-      }
-      device.type = rawDevice.type;
-    }
+    parseStringEnum({
+      raw: rawDevice.type,
+      field: 'type',
+      label: 'device type',
+      context: `[devices.${name}]`,
+      valid: DEVICE_TYPES,
+      throwOnWrongType: true,
+      assign: (v) => {
+        device.type = v;
+      },
+    });
 
     // Parse optional path (mount point for mass-storage devices)
     if (rawDevice.path !== undefined) {
@@ -992,147 +1125,123 @@ function parseDevices(
     }
 
     // Parse optional quality
-    if (rawDevice.quality !== undefined) {
-      if (typeof rawDevice.quality !== 'string') {
-        throw new Error(
-          `Invalid type for "quality" in [devices.${name}]. ` +
-            `Expected string, got ${typeof rawDevice.quality}.`
-        );
-      }
-      if (!isValidQuality(rawDevice.quality)) {
-        throw new Error(qualityError('quality', rawDevice.quality, `[devices.${name}]`));
-      }
-      device.quality = rawDevice.quality;
-    }
+    parseStringEnum({
+      raw: rawDevice.quality,
+      field: 'quality',
+      context: `[devices.${name}]`,
+      valid: QUALITY_PRESETS,
+      throwOnWrongType: true,
+      assign: (v) => {
+        device.quality = v;
+      },
+    });
 
     // Parse optional audioQuality
-    if (rawDevice.audioQuality !== undefined) {
-      if (typeof rawDevice.audioQuality !== 'string') {
-        throw new Error(
-          `Invalid type for "audioQuality" in [devices.${name}]. ` +
-            `Expected string, got ${typeof rawDevice.audioQuality}.`
-        );
-      }
-      if (!isValidQuality(rawDevice.audioQuality)) {
-        throw new Error(qualityError('audioQuality', rawDevice.audioQuality, `[devices.${name}]`));
-      }
-      device.audioQuality = rawDevice.audioQuality;
-    }
+    parseStringEnum({
+      raw: rawDevice.audioQuality,
+      field: 'audioQuality',
+      context: `[devices.${name}]`,
+      valid: QUALITY_PRESETS,
+      throwOnWrongType: true,
+      assign: (v) => {
+        device.audioQuality = v;
+      },
+    });
 
     // Parse optional videoQuality
-    if (rawDevice.videoQuality !== undefined) {
-      if (typeof rawDevice.videoQuality !== 'string') {
-        throw new Error(
-          `Invalid type for "videoQuality" in [devices.${name}]. ` +
-            `Expected string, got ${typeof rawDevice.videoQuality}.`
-        );
-      }
-      if (!isValidVideoQuality(rawDevice.videoQuality)) {
-        throw new Error(
-          `Invalid videoQuality value "${rawDevice.videoQuality}" in [devices.${name}]. ` +
-            `Valid values: ${VIDEO_QUALITY_PRESETS.join(', ')}`
-        );
-      }
-      device.videoQuality = rawDevice.videoQuality;
-    }
+    parseStringEnum({
+      raw: rawDevice.videoQuality,
+      field: 'videoQuality',
+      context: `[devices.${name}]`,
+      valid: VIDEO_QUALITY_PRESETS,
+      throwOnWrongType: true,
+      assign: (v) => {
+        device.videoQuality = v;
+      },
+    });
 
     // Parse optional encoding
-    if (rawDevice.encoding !== undefined) {
-      if (typeof rawDevice.encoding !== 'string') {
-        throw new Error(
-          `Invalid type for "encoding" in [devices.${name}]. ` +
-            `Expected string, got ${typeof rawDevice.encoding}.`
-        );
-      }
-      if (!isValidEncodingMode(rawDevice.encoding)) {
-        throw new Error(
-          `Invalid encoding value "${rawDevice.encoding}" in [devices.${name}]. ` +
-            `Valid values: vbr, cbr`
-        );
-      }
-      device.encoding = rawDevice.encoding;
-    }
+    parseStringEnum({
+      raw: rawDevice.encoding,
+      field: 'encoding',
+      context: `[devices.${name}]`,
+      valid: ['vbr', 'cbr'] as const,
+      throwOnWrongType: true,
+      assign: (v) => {
+        device.encoding = v;
+      },
+    });
 
     // Parse optional customBitrate
-    if (rawDevice.customBitrate !== undefined) {
-      if (
-        typeof rawDevice.customBitrate !== 'number' ||
-        !Number.isInteger(rawDevice.customBitrate) ||
-        rawDevice.customBitrate < 64 ||
-        rawDevice.customBitrate > 320
-      ) {
-        throw new Error(
-          `Invalid customBitrate value "${rawDevice.customBitrate}" in [devices.${name}]. ` +
-            `Must be an integer between 64 and 320.`
-        );
-      }
-      device.customBitrate = rawDevice.customBitrate;
-    }
+    parseIntegerInRange({
+      raw: rawDevice.customBitrate,
+      field: 'customBitrate',
+      context: `[devices.${name}]`,
+      min: 64,
+      max: 320,
+      rangeText: 'Must be an integer between 64 and 320.',
+      assign: (v) => {
+        device.customBitrate = v;
+      },
+    });
 
     // Parse optional bitrateTolerance
-    if (rawDevice.bitrateTolerance !== undefined) {
-      if (
-        typeof rawDevice.bitrateTolerance !== 'number' ||
-        rawDevice.bitrateTolerance < 0.0 ||
-        rawDevice.bitrateTolerance > 1.0
-      ) {
-        throw new Error(
-          `Invalid bitrateTolerance value "${rawDevice.bitrateTolerance}" in [devices.${name}]. ` +
-            `Must be a number between 0.0 and 1.0.`
-        );
-      }
-      device.bitrateTolerance = rawDevice.bitrateTolerance;
-    }
+    parseNumberInRange({
+      raw: rawDevice.bitrateTolerance,
+      field: 'bitrateTolerance',
+      context: `[devices.${name}]`,
+      min: 0.0,
+      max: 1.0,
+      rangeText: 'Must be a number between 0.0 and 1.0.',
+      assign: (v) => {
+        device.bitrateTolerance = v;
+      },
+    });
 
     // Parse optional artwork
-    if (rawDevice.artwork !== undefined) {
-      if (typeof rawDevice.artwork !== 'boolean') {
-        throw new Error(
-          `Invalid type for "artwork" in [devices.${name}]. ` +
-            `Expected boolean, got ${typeof rawDevice.artwork}.`
-        );
-      }
-      device.artwork = rawDevice.artwork;
-    }
+    parseBoolean({
+      raw: rawDevice.artwork,
+      field: 'artwork',
+      context: `[devices.${name}]`,
+      throwOnWrongType: true,
+      assign: (v) => {
+        device.artwork = v;
+      },
+    });
 
     // Parse optional checkArtwork
-    if (rawDevice.checkArtwork !== undefined) {
-      if (typeof rawDevice.checkArtwork !== 'boolean') {
-        throw new Error(
-          `Invalid type for "checkArtwork" in [devices.${name}]. ` +
-            `Expected boolean, got ${typeof rawDevice.checkArtwork}.`
-        );
-      }
-      device.checkArtwork = rawDevice.checkArtwork;
-    }
+    parseBoolean({
+      raw: rawDevice.checkArtwork,
+      field: 'checkArtwork',
+      context: `[devices.${name}]`,
+      throwOnWrongType: true,
+      assign: (v) => {
+        device.checkArtwork = v;
+      },
+    });
 
     // Parse optional transferMode
-    if (rawDevice.transferMode !== undefined) {
-      if (typeof rawDevice.transferMode !== 'string') {
-        throw new Error(
-          `Invalid type for "transferMode" in [devices.${name}]. ` +
-            `Expected string, got ${typeof rawDevice.transferMode}.`
-        );
-      }
-      if (!isValidTransferMode(rawDevice.transferMode)) {
-        throw new Error(
-          `Invalid transferMode value "${rawDevice.transferMode}" in [devices.${name}]. ` +
-            `Valid values: ${TRANSFER_MODES.join(', ')}`
-        );
-      }
-      device.transferMode = rawDevice.transferMode;
-    }
+    parseStringEnum({
+      raw: rawDevice.transferMode,
+      field: 'transferMode',
+      context: `[devices.${name}]`,
+      valid: TRANSFER_MODES,
+      throwOnWrongType: true,
+      assign: (v) => {
+        device.transferMode = v;
+      },
+    });
 
     // Parse optional skipUpgrades
-    if (rawDevice.skipUpgrades !== undefined) {
-      if (typeof rawDevice.skipUpgrades !== 'boolean') {
-        throw new Error(
-          `Invalid type for "skipUpgrades" in [devices.${name}]. ` +
-            `Expected boolean, got ${typeof rawDevice.skipUpgrades}.`
-        );
-      }
-      device.skipUpgrades = rawDevice.skipUpgrades;
-    }
+    parseBoolean({
+      raw: rawDevice.skipUpgrades,
+      field: 'skipUpgrades',
+      context: `[devices.${name}]`,
+      throwOnWrongType: true,
+      assign: (v) => {
+        device.skipUpgrades = v;
+      },
+    });
 
     // Parse optional codec preferences
     if (rawDevice.codec !== undefined) {
@@ -1483,9 +1592,42 @@ function parsePresets(
 
 // =============================================================================
 /**
- * Validate that default references point to valid collections/devices
+ * Warn when a config reference points at a key absent from its registry.
  *
- * Logs warnings if defaults reference non-existent items.
+ * Reproduces the shape:
+ *   Warning: ${label}="${value}" references a non-existent ${kind}.
+ *   Available ${availableLabel}: ${keys join ', ' || '(none)'}
+ *
+ * General over (value + label + referent registry) so future callers can
+ * validate per-device default references (e.g. `label =
+ * "devices.terapod.defaultMusic"`, `kind = "music collection"`, `registry =
+ * music`) against the same warning surface without copy-pasting a block.
+ *
+ * No-ops when `value` is undefined. Emits at most one warning. Does not throw —
+ * a dangling default reference is advisory, not fatal.
+ */
+function validateRef(args: {
+  value: string | undefined;
+  label: string;
+  kind: string;
+  availableLabel: string;
+  registry: Record<string, unknown> | undefined;
+}): void {
+  const { value, label, kind, availableLabel, registry } = args;
+  if (value === undefined) {
+    return;
+  }
+  if (!registry || !(value in registry)) {
+    console.warn(
+      `Warning: ${label}="${value}" references a non-existent ${kind}. ` +
+        `Available ${availableLabel}: ${registry ? Object.keys(registry).join(', ') : '(none)'}`
+    );
+  }
+}
+
+/**
+ * Validate that default references point to valid collections/devices.
+ * Logs warnings (via {@link validateRef}) if defaults reference non-existent items.
  */
 function validateDefaultReferences(config: PartialConfig): void {
   const { defaults, music, video, devices } = config;
@@ -1495,34 +1637,31 @@ function validateDefaultReferences(config: PartialConfig): void {
   }
 
   // Validate defaults.music references a valid music collection
-  if (defaults.music !== undefined) {
-    if (!music || !(defaults.music in music)) {
-      console.warn(
-        `Warning: defaults.music="${defaults.music}" references a non-existent music collection. ` +
-          `Available collections: ${music ? Object.keys(music).join(', ') : '(none)'}`
-      );
-    }
-  }
+  validateRef({
+    value: defaults.music,
+    label: 'defaults.music',
+    kind: 'music collection',
+    availableLabel: 'collections',
+    registry: music,
+  });
 
   // Validate defaults.video references a valid video collection
-  if (defaults.video !== undefined) {
-    if (!video || !(defaults.video in video)) {
-      console.warn(
-        `Warning: defaults.video="${defaults.video}" references a non-existent video collection. ` +
-          `Available collections: ${video ? Object.keys(video).join(', ') : '(none)'}`
-      );
-    }
-  }
+  validateRef({
+    value: defaults.video,
+    label: 'defaults.video',
+    kind: 'video collection',
+    availableLabel: 'collections',
+    registry: video,
+  });
 
   // Validate defaults.device references a valid device
-  if (defaults.device !== undefined) {
-    if (!devices || !(defaults.device in devices)) {
-      console.warn(
-        `Warning: defaults.device="${defaults.device}" references a non-existent device. ` +
-          `Available devices: ${devices ? Object.keys(devices).join(', ') : '(none)'}`
-      );
-    }
-  }
+  validateRef({
+    value: defaults.device,
+    label: 'defaults.device',
+    kind: 'device',
+    availableLabel: 'devices',
+    registry: devices,
+  });
 }
 
 /**
