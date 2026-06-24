@@ -86,5 +86,13 @@ export {
   type CollectionInfo,
 } from './collection.js';
 
+// Effective (multi-type, provenance-carrying) collection resolution
+export {
+  resolveEffectiveCollections,
+  type CollectionSource,
+  type EffectiveCollection,
+  type ResolveCollectionsInput,
+} from './effective-collections.js';
+
 // Content path resolution (mass-storage)
 export { resolveDeviceContentPaths } from './content-paths.js';

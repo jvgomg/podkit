@@ -32,7 +32,6 @@ import type {
   TransformsConfig,
   VideoQualityPreset,
   VideoTransformsConfig,
-  PodkitConfig,
   MusicCollectionConfig,
   VideoCollectionConfig,
   DeviceConfig,
@@ -48,6 +47,7 @@ import {
   resolveEffectiveDevice,
   autoDetectDevice,
 } from '../device-resolver.js';
+import { resolveEffectiveCollections } from '../resolvers/index.js';
 import { OutputContext, formatDurationSeconds, renderProgressBar } from '../output/index.js';
 import { CliError, runAction, type CliErrorOutput } from '../errors.js';
 import { loadCoreOrFail, type CoreLoaderDeps } from '../handler-deps.js';
@@ -205,60 +205,6 @@ export interface ResolvedCollection {
   name: string;
   type: 'music' | 'video';
   config: MusicCollectionConfig | VideoCollectionConfig;
-}
-
-/**
- * Resolve collections to sync based on CLI flags and config
- */
-function resolveCollections(
-  config: PodkitConfig,
-  collectionName?: string,
-  type?: SyncType
-): ResolvedCollection[] {
-  const collections: ResolvedCollection[] = [];
-
-  if (collectionName) {
-    if ((!type || type === 'music') && config.music?.[collectionName]) {
-      collections.push({
-        name: collectionName,
-        type: 'music',
-        config: config.music[collectionName],
-      });
-    }
-    if ((!type || type === 'video') && config.video?.[collectionName]) {
-      collections.push({
-        name: collectionName,
-        type: 'video',
-        config: config.video[collectionName],
-      });
-    }
-    return collections;
-  }
-
-  // No specific collection name - use defaults
-  if (!type || type === 'music') {
-    const defaultMusicName = config.defaults?.music;
-    if (defaultMusicName && config.music?.[defaultMusicName]) {
-      collections.push({
-        name: defaultMusicName,
-        type: 'music',
-        config: config.music[defaultMusicName],
-      });
-    }
-  }
-
-  if (!type || type === 'video') {
-    const defaultVideoName = config.defaults?.video;
-    if (defaultVideoName && config.video?.[defaultVideoName]) {
-      collections.push({
-        name: defaultVideoName,
-        type: 'video',
-        config: config.video[defaultVideoName],
-      });
-    }
-  }
-
-  return collections;
 }
 
 /**
@@ -518,8 +464,83 @@ export async function runSync(
   let cleanArtistsResolutionReason: CleanArtistsResolutionReason | undefined;
   let transformWarnings: TransformWarning[] = [];
 
+  // ----- Load dependencies dynamically -----
+  const core = await loadCoreOrFail(deps, SyncErrorCodes.CORE_LOAD_FAILED);
+
+  // ----- Resolve device path -----
+  const manager = (deps.getDeviceManager ?? core.getDeviceManager)();
+  let resolved: Awaited<ReturnType<typeof resolveDevicePath>>;
+
+  if (needsAutoDetect) {
+    // Scenario A: no --device flag, no default — auto-detect connected iPod
+    resolved = await autoDetectDevice(manager, config);
+  } else {
+    const deviceIdentity = getDeviceIdentity(resolvedDevice);
+
+    if (deviceIdentity?.volumeUuid || deviceIdentity?.path) {
+      out.print(formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, out.isVerbose));
+    }
+
+    resolved = await resolveDevicePath({
+      cliDevice: cliPath,
+      deviceIdentity,
+      manager,
+      requireMounted: true,
+      quiet: globalOpts.quiet,
+      config,
+    });
+  }
+
+  if (!resolved.path) {
+    const message = resolved.error ?? formatDeviceError(resolved);
+    throw new CliError({
+      message,
+      code: SyncErrorCodes.DEVICE_PATH_UNRESOLVED,
+      details: { dryRun },
+    });
+  }
+
+  // If auto-matching found a configured device, apply its settings
+  if (resolved.matchedDevice) {
+    deviceConfig = resolved.matchedDevice.config;
+    derived = deriveSettings(deviceConfig);
+    effectiveTransforms = derived.transforms;
+    effectiveVideoTransforms = derived.videoTransforms;
+    effectiveQuality = derived.quality;
+    effectiveVideoQuality = derived.videoQuality;
+    effectiveArtwork = derived.artwork;
+    effectiveSkipUpgrades = derived.skipUpgrades;
+    effectiveEncoding = derived.encoding;
+    effectiveTransferMode = derived.transferMode;
+    effectiveCustomBitrate = derived.customBitrate;
+    effectiveBitrateTolerance = derived.bitrateTolerance;
+
+    // Re-derive device type after auto-match (the matched device may have a type)
+    deviceType = deviceConfig?.type;
+    isIpodDevice = !deviceType || deviceType === 'ipod';
+
+    out.verbose1(`Auto-matched device to configured device '${resolved.matchedDevice.name}'`);
+  }
+
   // ----- Resolve collections -----
-  const allCollections = resolveCollections(config, options.collection, syncType);
+  // Resolved AFTER the device is fully resolved (including a path/UUID
+  // auto-match to a configured `[devices.x]` entry) so the matched device can
+  // feed the cascade. The `device` field is threaded in but still unused by the
+  // resolver this slice — the cascade remains global-only, so the SET of
+  // collections is unchanged; only the resolution point moved. A configured
+  // device selected by name OR auto-matched by path/UUID passes its
+  // `{name, config}`; a raw unconfigured by-path device passes `undefined`
+  // (`resolvedDevice`), keeping it global-only. EffectiveCollection is a
+  // structural superset of ResolvedCollection — the extra `source` provenance
+  // is additive.
+  const { collections: allCollections } = resolveEffectiveCollections({
+    config,
+    flag: options.collection,
+    type: syncType,
+    device: resolved.matchedDevice
+      ? { name: resolved.matchedDevice.name, config: resolved.matchedDevice.config }
+      : resolvedDevice,
+  });
   const musicCollections = allCollections.filter((c) => c.type === 'music');
   const videoCollections = allCollections.filter((c) => c.type === 'video');
 
@@ -587,64 +608,6 @@ export async function runSync(
         },
       });
     }
-  }
-
-  // ----- Load dependencies dynamically -----
-  const core = await loadCoreOrFail(deps, SyncErrorCodes.CORE_LOAD_FAILED);
-
-  // ----- Resolve device path -----
-  const manager = (deps.getDeviceManager ?? core.getDeviceManager)();
-  let resolved: Awaited<ReturnType<typeof resolveDevicePath>>;
-
-  if (needsAutoDetect) {
-    // Scenario A: no --device flag, no default — auto-detect connected iPod
-    resolved = await autoDetectDevice(manager, config);
-  } else {
-    const deviceIdentity = getDeviceIdentity(resolvedDevice);
-
-    if (deviceIdentity?.volumeUuid || deviceIdentity?.path) {
-      out.print(formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, out.isVerbose));
-    }
-
-    resolved = await resolveDevicePath({
-      cliDevice: cliPath,
-      deviceIdentity,
-      manager,
-      requireMounted: true,
-      quiet: globalOpts.quiet,
-      config,
-    });
-  }
-
-  if (!resolved.path) {
-    const message = resolved.error ?? formatDeviceError(resolved);
-    throw new CliError({
-      message,
-      code: SyncErrorCodes.DEVICE_PATH_UNRESOLVED,
-      details: { dryRun },
-    });
-  }
-
-  // If auto-matching found a configured device, apply its settings
-  if (resolved.matchedDevice) {
-    deviceConfig = resolved.matchedDevice.config;
-    derived = deriveSettings(deviceConfig);
-    effectiveTransforms = derived.transforms;
-    effectiveVideoTransforms = derived.videoTransforms;
-    effectiveQuality = derived.quality;
-    effectiveVideoQuality = derived.videoQuality;
-    effectiveArtwork = derived.artwork;
-    effectiveSkipUpgrades = derived.skipUpgrades;
-    effectiveEncoding = derived.encoding;
-    effectiveTransferMode = derived.transferMode;
-    effectiveCustomBitrate = derived.customBitrate;
-    effectiveBitrateTolerance = derived.bitrateTolerance;
-
-    // Re-derive device type after auto-match (the matched device may have a type)
-    deviceType = deviceConfig?.type;
-    isIpodDevice = !deviceType || deviceType === 'ipod';
-
-    out.verbose1(`Auto-matched device to configured device '${resolved.matchedDevice.name}'`);
   }
 
   // Show hint if resolver provided one (e.g., "Run 'podkit device add'")
