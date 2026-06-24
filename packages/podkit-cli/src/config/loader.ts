@@ -34,6 +34,7 @@ import type {
   VideoCollectionConfig,
   DeviceConfig,
   DefaultsConfig,
+  CollectionDefault,
   AudioCodec,
   AudioNormalizationMode,
   DeviceArtworkSource,
@@ -241,6 +242,41 @@ function parseBoolean(args: {
     return;
   }
   assign(raw);
+}
+
+/**
+ * Validate a raw value as a per-device collection default and assign it.
+ *
+ * Accepts a collection name (any string) or the boolean `false` (explicit
+ * "sync nothing of this type by default"). Every other value — including the
+ * boolean `true`, numbers, arrays, and inline tables — throws a context-tagged
+ * error. `true` is meaningless here: there is no "the default" to switch on,
+ * only a named collection or an explicit none.
+ *
+ * `false` is preserved verbatim (not coerced to `undefined`) so the cascade can
+ * tell "sync none" apart from "inherit the global default".
+ */
+function parseCollectionDefault(args: {
+  raw: unknown;
+  field: string;
+  context: string;
+  assign: (value: CollectionDefault) => void;
+}): void {
+  const { raw, field, context, assign } = args;
+  if (raw === undefined) {
+    return;
+  }
+  if (typeof raw === 'string') {
+    assign(raw);
+    return;
+  }
+  if (raw === false) {
+    assign(false);
+    return;
+  }
+  throw new Error(
+    `Invalid ${field} value in ${context}. ` + `Expected a collection name (string) or false.`
+  );
 }
 
 /**
@@ -1303,6 +1339,39 @@ function parseDevices(
       device.productName = rawDevice.productName;
     }
 
+    // Parse optional per-device default collections. The TOML surface is FLAT
+    // (`defaultMusic` / `defaultVideo`); normalize into the nested
+    // `device.defaults = { music?, video? }` shape. The `defaults` object is
+    // only created when at least one key is present. `false` is preserved as
+    // an explicit "none" (not coerced to undefined).
+    let deviceDefaultMusic: CollectionDefault | undefined;
+    let deviceDefaultVideo: CollectionDefault | undefined;
+    parseCollectionDefault({
+      raw: rawDevice.defaultMusic,
+      field: 'defaultMusic',
+      context: `[devices.${name}]`,
+      assign: (v) => {
+        deviceDefaultMusic = v;
+      },
+    });
+    parseCollectionDefault({
+      raw: rawDevice.defaultVideo,
+      field: 'defaultVideo',
+      context: `[devices.${name}]`,
+      assign: (v) => {
+        deviceDefaultVideo = v;
+      },
+    });
+    if (deviceDefaultMusic !== undefined || deviceDefaultVideo !== undefined) {
+      device.defaults = {};
+      if (deviceDefaultMusic !== undefined) {
+        device.defaults.music = deviceDefaultMusic;
+      }
+      if (deviceDefaultVideo !== undefined) {
+        device.defaults.video = deviceDefaultVideo;
+      }
+    }
+
     // Validate: capability overrides and musicDir are only valid for mass-storage devices
     const isIpodDevice = !device.type || device.type === 'ipod';
     if (isIpodDevice) {
@@ -1632,36 +1701,65 @@ function validateRef(args: {
 function validateDefaultReferences(config: PartialConfig): void {
   const { defaults, music, video, devices } = config;
 
-  if (!defaults) {
-    return;
+  if (defaults) {
+    // Validate defaults.music references a valid music collection
+    validateRef({
+      value: defaults.music,
+      label: 'defaults.music',
+      kind: 'music collection',
+      availableLabel: 'collections',
+      registry: music,
+    });
+
+    // Validate defaults.video references a valid video collection
+    validateRef({
+      value: defaults.video,
+      label: 'defaults.video',
+      kind: 'video collection',
+      availableLabel: 'collections',
+      registry: video,
+    });
+
+    // Validate defaults.device references a valid device
+    validateRef({
+      value: defaults.device,
+      label: 'defaults.device',
+      kind: 'device',
+      availableLabel: 'devices',
+      registry: devices,
+    });
   }
 
-  // Validate defaults.music references a valid music collection
-  validateRef({
-    value: defaults.music,
-    label: 'defaults.music',
-    kind: 'music collection',
-    availableLabel: 'collections',
-    registry: music,
-  });
-
-  // Validate defaults.video references a valid video collection
-  validateRef({
-    value: defaults.video,
-    label: 'defaults.video',
-    kind: 'video collection',
-    availableLabel: 'collections',
-    registry: video,
-  });
-
-  // Validate defaults.device references a valid device
-  validateRef({
-    value: defaults.device,
-    label: 'defaults.device',
-    kind: 'device',
-    availableLabel: 'devices',
-    registry: devices,
-  });
+  // Validate per-device default collection references. A `false` (explicit
+  // "none") or absent value skips validation; only a string name is checked
+  // against the registry. validateRef emits a non-throwing warning when the
+  // name is dangling.
+  if (devices) {
+    for (const [deviceName, deviceConfig] of Object.entries(devices)) {
+      const deviceDefaults = deviceConfig.defaults;
+      if (!deviceDefaults) {
+        continue;
+      }
+      if (typeof deviceDefaults.music === 'string') {
+        validateRef({
+          value: deviceDefaults.music,
+          label: `devices.${deviceName}.defaultMusic`,
+          kind: 'music collection',
+          availableLabel: 'collections',
+          registry: music,
+        });
+      }
+      if (typeof deviceDefaults.video === 'string') {
+        validateRef({
+          value: deviceDefaults.video,
+          label: `devices.${deviceName}.defaultVideo`,
+          kind: 'video collection',
+          availableLabel: 'collections',
+          registry: video,
+        });
+      }
+    }
+  }
 }
 
 /**

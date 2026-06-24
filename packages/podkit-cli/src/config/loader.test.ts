@@ -1952,6 +1952,209 @@ video = "movies"
         const result = loadConfigFile(configPath);
         expect(result?.defaults?.video).toBe('movies');
       });
+
+      describe('per-device default collections', () => {
+        function withCapturedWarnings<T>(fn: () => T): { result: T; warnings: string[] } {
+          const original = console.warn;
+          const warnings: string[] = [];
+          console.warn = (msg: unknown) => {
+            warnings.push(String(msg));
+          };
+          try {
+            return { result: fn(), warnings };
+          } finally {
+            console.warn = original;
+          }
+        }
+
+        it('parses defaultMusic = "main" into nested defaults.music', () => {
+          const configPath = path.join(tempDir, 'config.toml');
+          fs.writeFileSync(
+            configPath,
+            v(`
+[music.main]
+path = "/music"
+
+[devices.terapod]
+volumeUuid = "ABC-123"
+defaultMusic = "main"
+`)
+          );
+
+          const { result, warnings } = withCapturedWarnings(() => loadConfigFile(configPath));
+          expect(result!.devices!.terapod!.defaults).toEqual({ music: 'main' });
+          expect(warnings).toHaveLength(0);
+        });
+
+        it('parses defaultVideo = false into nested defaults.video === false', () => {
+          const configPath = path.join(tempDir, 'config.toml');
+          fs.writeFileSync(
+            configPath,
+            v(`
+[devices.terapod]
+volumeUuid = "ABC-123"
+defaultVideo = false
+`)
+          );
+
+          const result = loadConfigFile(configPath);
+          expect(result!.devices!.terapod!.defaults!.video).toBe(false);
+        });
+
+        it('parses defaultMusic = false into nested defaults.music === false', () => {
+          const configPath = path.join(tempDir, 'config.toml');
+          fs.writeFileSync(
+            configPath,
+            v(`
+[devices.terapod]
+volumeUuid = "ABC-123"
+defaultMusic = false
+`)
+          );
+
+          const result = loadConfigFile(configPath);
+          expect(result!.devices!.terapod!.defaults!.music).toBe(false);
+        });
+
+        it('parses both flat keys into a single nested defaults object', () => {
+          const configPath = path.join(tempDir, 'config.toml');
+          fs.writeFileSync(
+            configPath,
+            v(`
+[music.main]
+path = "/music"
+
+[video.movies]
+path = "/movies"
+
+[devices.terapod]
+volumeUuid = "ABC-123"
+defaultMusic = "main"
+defaultVideo = false
+`)
+          );
+
+          const result = loadConfigFile(configPath);
+          expect(result!.devices!.terapod!.defaults).toEqual({
+            music: 'main',
+            video: false,
+          });
+        });
+
+        it('leaves defaults undefined when neither flat key is present', () => {
+          const configPath = path.join(tempDir, 'config.toml');
+          fs.writeFileSync(
+            configPath,
+            v(`
+[devices.terapod]
+volumeUuid = "ABC-123"
+`)
+          );
+
+          const result = loadConfigFile(configPath);
+          expect(result!.devices!.terapod!.defaults).toBeUndefined();
+        });
+
+        it('throws on defaultMusic = true', () => {
+          const configPath = path.join(tempDir, 'config.toml');
+          fs.writeFileSync(
+            configPath,
+            v(`
+[devices.terapod]
+volumeUuid = "ABC-123"
+defaultMusic = true
+`)
+          );
+
+          expect(() => loadConfigFile(configPath)).toThrow(
+            /Invalid defaultMusic value in \[devices\.terapod\]\. Expected a collection name \(string\) or false\./
+          );
+        });
+
+        it('throws on defaultMusic = 42 (number)', () => {
+          const configPath = path.join(tempDir, 'config.toml');
+          fs.writeFileSync(
+            configPath,
+            v(`
+[devices.terapod]
+volumeUuid = "ABC-123"
+defaultMusic = 42
+`)
+          );
+
+          expect(() => loadConfigFile(configPath)).toThrow(
+            /Invalid defaultMusic value in \[devices\.terapod\]/
+          );
+        });
+
+        it('throws on defaultVideo = array', () => {
+          const configPath = path.join(tempDir, 'config.toml');
+          fs.writeFileSync(
+            configPath,
+            v(`
+[devices.terapod]
+volumeUuid = "ABC-123"
+defaultVideo = ["a", "b"]
+`)
+          );
+
+          expect(() => loadConfigFile(configPath)).toThrow(
+            /Invalid defaultVideo value in \[devices\.terapod\]/
+          );
+        });
+
+        it('warns (non-throwing) when defaultMusic references a non-existent collection', () => {
+          const configPath = path.join(tempDir, 'config.toml');
+          fs.writeFileSync(
+            configPath,
+            v(`
+[devices.terapod]
+volumeUuid = "ABC-123"
+defaultMusic = "ghost"
+`)
+          );
+
+          const { result, warnings } = withCapturedWarnings(() => loadConfigFile(configPath));
+          // Config still loads and preserves the value.
+          expect(result!.devices!.terapod!.defaults!.music).toBe('ghost');
+          const warning = warnings.find((w) => w.includes('devices.terapod.defaultMusic'));
+          expect(warning).toBeDefined();
+          expect(warning!).toContain('references a non-existent music collection');
+        });
+
+        it('warns (non-throwing) when defaultVideo references a non-existent collection', () => {
+          const configPath = path.join(tempDir, 'config.toml');
+          fs.writeFileSync(
+            configPath,
+            v(`
+[devices.terapod]
+volumeUuid = "ABC-123"
+defaultVideo = "ghost"
+`)
+          );
+
+          const { result, warnings } = withCapturedWarnings(() => loadConfigFile(configPath));
+          expect(result!.devices!.terapod!.defaults!.video).toBe('ghost');
+          const warning = warnings.find((w) => w.includes('devices.terapod.defaultVideo'));
+          expect(warning).toBeDefined();
+          expect(warning!).toContain('references a non-existent video collection');
+        });
+
+        it('does NOT warn on defaultVideo = false even with no video collections', () => {
+          const configPath = path.join(tempDir, 'config.toml');
+          fs.writeFileSync(
+            configPath,
+            v(`
+[devices.terapod]
+volumeUuid = "ABC-123"
+defaultVideo = false
+`)
+          );
+
+          const { warnings } = withCapturedWarnings(() => loadConfigFile(configPath));
+          expect(warnings.filter((w) => w.includes('defaultVideo'))).toHaveLength(0);
+        });
+      });
     });
 
     describe('complete config (ADR-008)', () => {

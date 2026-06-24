@@ -275,7 +275,45 @@ export interface DeviceConfig {
   manufacturer?: string;
   /** Override the preset's `productName` — see {@link DeviceConfig.manufacturer}. */
   productName?: string;
+
+  // ===========================================================================
+  // Per-device default collections
+  // ===========================================================================
+
+  /**
+   * Per-device default collections, mirroring the top-level {@link DefaultsConfig}
+   * for music and video. When set, these take precedence over the global
+   * defaults for syncs targeting this device (cascade wiring lands separately).
+   *
+   * Each value is a {@link CollectionDefault}: a collection name to sync by
+   * default, or `false` to sync nothing of that type by default. An absent key
+   * inherits the global default.
+   *
+   * The TOML surface is FLAT (`defaultMusic` / `defaultVideo` under
+   * `[devices.<name>]`); the loader normalizes those into this nested shape.
+   *
+   * @example
+   * ```toml
+   * [devices.terapod]
+   * defaultMusic = "main"
+   * defaultVideo = false
+   * ```
+   */
+  defaults?: {
+    music?: CollectionDefault;
+    video?: CollectionDefault;
+  };
 }
+
+/**
+ * Per-type default collection selection.
+ *
+ * Tri-state:
+ * - a collection name (string) — sync this named collection by default
+ * - `false` — sync nothing of this type by default (explicit "none")
+ * - `undefined`/absent — inherit the global default ({@link DefaultsConfig})
+ */
+export type CollectionDefault = string | false;
 
 /**
  * Default collection and device configuration
@@ -542,6 +580,15 @@ export interface ConfigFileDevice {
   pathTemplate?: string;
   manufacturer?: string;
   productName?: string;
+  /**
+   * Flat per-device default music collection. A collection name (string) or the
+   * boolean `false` (explicit "sync no music by default"). Normalized into the
+   * nested `DeviceConfig.defaults.music` shape. Typed `unknown` so the loader
+   * can reject other types (e.g. `true`, numbers) with a friendly error.
+   */
+  defaultMusic?: unknown;
+  /** Flat per-device default video collection. See {@link ConfigFileDevice.defaultMusic}. */
+  defaultVideo?: unknown;
 }
 
 /**
