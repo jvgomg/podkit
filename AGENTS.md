@@ -257,7 +257,15 @@ The virtual iPod system creates a synthetic iPod for demonstrating podkit. It co
 
 Read [agents/releases.md](agents/releases.md) when creating changesets, reviewing release PRs, or publishing releases.
 
-Quick reference: `bunx changeset` to create a changeset. Required for user-facing changes to `@podkit/core`, `@podkit/libgpod-node`, `@podkit/daemon` or `@podkit/docker`. The `podkit` CLI is **not** published to npm — it ships only as a Bun `--compile` binary (see [ADR-021](adr/adr-021-cli-bun-binary-distribution.md)); CLI changes release through the binary/Docker workflow, not changesets.
+Quick reference: `bunx changeset` to create a changeset. **A changeset is required for any user-facing change to a distributed package:**
+
+- `podkit` — the CLI binary
+- `@podkit/core`
+- `@podkit/libgpod-node`
+- `@podkit/daemon`
+- `@podkit/docker`
+
+The `podkit` CLI is **not** published to npm — it ships as a Bun `--compile` binary (Homebrew / GitHub Release / Docker; see [ADR-021](adr/adr-021-cli-bun-binary-distribution.md)) — but it is still **changeset-versioned**: the changeset config sets `privatePackages.version: true`, so a changeset for `podkit` bumps its version and generates its changelog entry for the binary/Docker release. See [agents/releases.md](agents/releases.md) for the full policy.
 
 Docs site deploys from a dedicated `docs-live` branch, not from `main`. Releases sync `docs-live` automatically; docs-only updates between releases require a cherry-pick from `main` to `docs-live`. See the "Docs Site Deployment" section in [agents/releases.md](agents/releases.md).
 

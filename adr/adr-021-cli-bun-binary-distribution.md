@@ -13,6 +13,8 @@ sidebar:
 
 Refines the distribution clause of [ADR-001](/developers/adr/adr-001-runtime).
 
+> **Clarification (2026-06-24):** "Not published to npm" does **not** mean "no changeset." Because `podkit` stays out of the changesets `ignore` list and `privatePackages.version: true` keeps it versioned (see the risk table and Implementation notes below), a **user-facing CLI change still requires a changeset targeting the `podkit` package** — the changeset bumps the CLI version and writes its changelog entry, which the binary/Docker release workflow consumes instead of an npm publish. See [agents/releases.md](../agents/releases.md) for the canonical policy.
+
 ## Context
 
 The `podkit device archive` feature (doc-047, TASK-431) must write a `library.sqlite` catalogue. That forced a runtime decision (spike TASK-431.02): how does the CLI get a SQLite driver?
