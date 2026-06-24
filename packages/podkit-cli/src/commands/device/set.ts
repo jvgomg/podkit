@@ -45,6 +45,10 @@ interface SetOptions {
   clearTvShowsDir?: boolean;
   cleanArtists?: boolean;
   clearCleanArtists?: boolean;
+  defaultMusic?: string | false;
+  defaultVideo?: string | false;
+  clearDefaultMusic?: boolean;
+  clearDefaultVideo?: boolean;
 }
 
 export const setSubcommand = new Command('set')
@@ -97,6 +101,12 @@ export const setSubcommand = new Command('set')
   .option('--clean-artists', 'enable clean artists transform')
   .option('--no-clean-artists', 'disable clean artists transform')
   .option('--clear-clean-artists', 'remove clean artists setting (use global default)')
+  .option('--default-music <name>', 'default music collection for this device')
+  .option('--no-default-music', 'sync no music collection by default for this device')
+  .option('--clear-default-music', 'remove default music override (use global default)')
+  .option('--default-video <name>', 'default video collection for this device')
+  .option('--no-default-video', 'sync no video collection by default for this device')
+  .option('--clear-default-video', 'remove default video override (use global default)')
   .action(
     withCleanOptions(async (options: SetOptions) => {
       const { config, globalOpts, configResult } = getContext();
@@ -162,6 +172,41 @@ export const setSubcommand = new Command('set')
             message: `Invalid encoding mode "${options.encoding}". Valid values: vbr, cbr`,
             code: DeviceErrorCodes.INVALID_ENCODING,
           });
+        }
+
+        // Validate default-collection names (only a string name needs to exist;
+        // `false` / `--clear-*` reference no collection).
+        if (typeof options.defaultMusic === 'string') {
+          const available = Object.keys(config.music || {});
+          if (!available.includes(options.defaultMusic)) {
+            const collectionName = options.defaultMusic;
+            throw new CliError({
+              message: `Music collection "${collectionName}" not found in config.`,
+              code: DeviceErrorCodes.COLLECTION_NOT_FOUND,
+              printText: (o) => {
+                o.error(`Music collection "${collectionName}" not found in config.`);
+                if (available.length > 0) {
+                  o.error(`Available music collections: ${available.join(', ')}`);
+                }
+              },
+            });
+          }
+        }
+        if (typeof options.defaultVideo === 'string') {
+          const available = Object.keys(config.video || {});
+          if (!available.includes(options.defaultVideo)) {
+            const collectionName = options.defaultVideo;
+            throw new CliError({
+              message: `Video collection "${collectionName}" not found in config.`,
+              code: DeviceErrorCodes.COLLECTION_NOT_FOUND,
+              printText: (o) => {
+                o.error(`Video collection "${collectionName}" not found in config.`);
+                if (available.length > 0) {
+                  o.error(`Available video collections: ${available.join(', ')}`);
+                }
+              },
+            });
+          }
         }
 
         // Validate capability override options
@@ -294,10 +339,25 @@ export const setSubcommand = new Command('set')
           updates.cleanArtists = options.cleanArtists;
         }
 
+        // Per-device default collections (tri-state: name / `false` (none) / cleared).
+        // After withCleanOptions, `options.defaultMusic` is a string (name passed),
+        // `false` (`--no-default-music` passed), or `undefined` (absent).
+        if (options.clearDefaultMusic) {
+          updates.defaultMusic = null;
+        } else if (options.defaultMusic !== undefined) {
+          updates.defaultMusic = options.defaultMusic;
+        }
+
+        if (options.clearDefaultVideo) {
+          updates.defaultVideo = null;
+        } else if (options.defaultVideo !== undefined) {
+          updates.defaultVideo = options.defaultVideo;
+        }
+
         if (Object.keys(updates).length === 0) {
           throw new CliError({
             message:
-              'No settings to update. Specify at least one option (--quality, --audio-quality, --video-quality, --encoding, --artwork, --clean-artists, capability overrides, --music-dir, --movies-dir, --tv-shows-dir, or --clear-* variants).',
+              'No settings to update. Specify at least one option (--quality, --audio-quality, --video-quality, --encoding, --artwork, --clean-artists, --default-music, --default-video, capability overrides, --music-dir, --movies-dir, --tv-shows-dir, or --clear-* variants).',
             code: DeviceErrorCodes.NO_UPDATES,
           });
         }

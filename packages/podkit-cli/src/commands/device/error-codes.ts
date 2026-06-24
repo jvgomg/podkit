@@ -32,6 +32,8 @@ export const DeviceErrorCodes = {
   INVALID_ARTWORK_SOURCE: 'INVALID_ARTWORK_SOURCE',
   INVALID_AUDIO_CODEC: 'INVALID_AUDIO_CODEC',
   INVALID_OPTION_FOR_TYPE: 'INVALID_OPTION_FOR_TYPE',
+  /** A `--default-music`/`--default-video` name does not match any configured collection. */
+  COLLECTION_NOT_FOUND: 'COLLECTION_NOT_FOUND',
   UNSUPPORTED_DEVICE: 'UNSUPPORTED_DEVICE',
   /** Verify-tier cross-check: on-disk SysInfo disagrees with the live device. */
   IDENTITY_MISMATCH: 'IDENTITY_MISMATCH',

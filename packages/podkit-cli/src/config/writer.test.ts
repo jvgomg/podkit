@@ -758,4 +758,59 @@ quality = "low"
       confirmedAt,
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Per-device default collections — defaultMusic / defaultVideo (TASK-436.07)
+  // ---------------------------------------------------------------------------
+
+  it('writes a defaultMusic name as a quoted string', () => {
+    addDevice('terapod', { volumeUuid: 'ABC-123', volumeName: 'TERAPOD' }, { configPath });
+
+    const result = updateDevice('terapod', { defaultMusic: 'main' }, { configPath });
+
+    expect(result.success).toBe(true);
+    const content = fs.readFileSync(configPath, 'utf-8');
+    expect(content).toContain('defaultMusic = "main"');
+  });
+
+  it('writes a defaultVideo false as an unquoted boolean', () => {
+    addDevice('terapod', { volumeUuid: 'ABC-123', volumeName: 'TERAPOD' }, { configPath });
+
+    const result = updateDevice('terapod', { defaultVideo: false }, { configPath });
+
+    expect(result.success).toBe(true);
+    const content = fs.readFileSync(configPath, 'utf-8');
+    expect(content).toContain('defaultVideo = false');
+    expect(content).not.toContain('defaultVideo = "false"');
+  });
+
+  it('removes defaultMusic when value is null', () => {
+    fs.writeFileSync(
+      configPath,
+      `[devices.terapod]
+volumeUuid = "ABC-123"
+volumeName = "TERAPOD"
+defaultMusic = "main"
+`
+    );
+
+    const result = updateDevice('terapod', { defaultMusic: null }, { configPath });
+
+    expect(result.success).toBe(true);
+    const content = fs.readFileSync(configPath, 'utf-8');
+    expect(content).not.toContain('defaultMusic');
+    expect(content).toContain('volumeUuid');
+  });
+
+  it('round-trips defaultMusic name and defaultVideo false through the loader', () => {
+    addDevice('terapod', { volumeUuid: 'ABC-123', volumeName: 'TERAPOD' }, { configPath });
+    addMusicCollection('main', { path: '/music/main' }, { configPath });
+    updateDevice('terapod', { defaultMusic: 'main', defaultVideo: false }, { configPath });
+
+    const loaded = loadConfigFile(configPath);
+    expect(loaded?.devices?.terapod?.defaults).toEqual({
+      music: 'main',
+      video: false,
+    });
+  });
 });

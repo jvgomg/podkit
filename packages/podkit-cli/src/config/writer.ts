@@ -247,6 +247,10 @@ export function updateDevice(
     moviesDir?: string | null;
     tvShowsDir?: string | null;
     cleanArtists?: boolean | null;
+    /** Per-device default music collection: a name, `false` (none), or `null` to remove. */
+    defaultMusic?: string | false | null;
+    /** Per-device default video collection: a name, `false` (none), or `null` to remove. */
+    defaultVideo?: string | false | null;
   },
   options?: UpdateConfigOptions
 ): UpdateConfigResult {
