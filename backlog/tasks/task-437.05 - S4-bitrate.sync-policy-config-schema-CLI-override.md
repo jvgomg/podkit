@@ -4,7 +4,7 @@ title: 'S4: bitrate.sync policy + config schema + CLI override'
 status: In Progress
 assignee: []
 created_date: '2026-06-25 22:38'
-updated_date: '2026-06-27 20:14'
+updated_date: '2026-06-27 23:10'
 labels:
   - sync
   - transcoding
@@ -42,7 +42,7 @@ Add the per-device `bitrate.sync` policy with five modes (`off | match-cap | mat
 - [x] #2 Pure policy gate maps (direction, reason, mode) -> fire/suppress; unit-tested independently of the classifier
 - [x] #3 Each mode behaves per the PRD table: match-cap (both, source-down suppressed), match-all (+source-down), up-only, down-only, off (no bitrate moves)
 - [x] #4 --bitrate-sync=<mode> overrides device config for one run; only applies when explicitly passed (option-source guarded)
-- [ ] #5 Opt-in source-bound tolerance config (default 0) damps source-bound lossy comparison; legacy bitrateTolerance reinterpreted (DB-fallback role gone)
+- [x] #5 Opt-in source-bound tolerance config (default 0) damps source-bound lossy comparison; legacy bitrateTolerance reinterpreted (DB-fallback role gone)
 - [x] #6 Policy ladder honoured: skipUpgrades > bitrate.sync=off > bitrate moves
 - [x] #7 Config schema validation tests + per-mode e2e (up-only suppresses down, down-only suppresses up, off blocks bitrate, match-all re-encodes source-down)
 - [x] #8 Changeset added
@@ -89,4 +89,6 @@ Also applied two cheap correctness/doc fixes from the review: refreshed the stal
 Final gates: lint clean; FULL `turbo run typecheck` 36/36; @podkit/core unit 3351 pass / 5 skip / 0 fail; podkit unit 1914 pass / 0 fail; e2e (dummy) 47 pass.
 
 Team-lead review pass (Sonnet) + fixes: caught that mergeConfigs deep-merged the global [bitrate] block but still spread the per-device [devices.x.bitrate] block wholesale — a later config layer overriding one bitrate field (e.g. sync) would clobber another layer's tolerances. Fixed with field-by-field device-bitrate merge + a regression test mirroring the global-block test. Reviewer verified idempotency (same-family lossy cap oscillation fix, match-all source-down target bitrate), the full 35-cell gate table, off-lets-preconditions-fire, skipUpgrades-above-gate, and the CLI option-source guard — all correct. Pre-existing dead param loadCliConfig(globalOpts) left as-is (unrelated to this change; would ripple an exported signature across all call-sites). Gates green: lint 0/0, full typecheck 36/36, @podkit/core 3351 pass, podkit cli unit pass, e2e dummy 47 pass (upgrades/preset-change/mass-storage-sync/artwork-sync-tags).
+
+AC#5 retro-checked now satisfied: the source-bound tolerance landed in this slice, and the legacy bitrateTolerance reinterpretation (DB-fallback role gone) was completed in the sibling slice that removed the DB-bitrate fallback — bitrateTolerance is now wired as the symmetric fallback for the source-bound toleranceUp/toleranceDown in qualityTargetFromConfig (toleranceUp ?? bitrateTolerance, toleranceDown ?? bitrateTolerance), and QualityTarget no longer carries a fallback bitrateTolerance. The DB-bitrate fallback path is gone for audio.
 <!-- SECTION:NOTES:END -->
