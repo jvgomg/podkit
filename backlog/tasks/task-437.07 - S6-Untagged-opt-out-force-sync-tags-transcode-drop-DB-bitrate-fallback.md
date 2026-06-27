@@ -4,7 +4,7 @@ title: 'S6: Untagged opt-out + --force-sync-tags-transcode + drop DB-bitrate fal
 status: In Progress
 assignee: []
 created_date: '2026-06-25 22:38'
-updated_date: '2026-06-27 23:10'
+updated_date: '2026-06-27 23:23'
 labels:
   - sync
   - transcoding
@@ -40,7 +40,7 @@ Make the sync-tag the **sole** quality truth: remove the DB-bitrate + tolerance 
 - [x] #3 --force-sync-tags-transcode re-encodes untagged (or all matched) tracks to establish true bitrate+encoding sync-tags; explicit + destructive
 - [x] #4 --force-sync-tags (non-destructive, tag-only) behaviour preserved and clearly distinct
 - [x] #5 Sync-tag round-trip tests: untagged opted out until adopted; adoption writes authoritative encoded data
-- [ ] #6 E2E: untagged track unchanged on normal sync; --force-sync-tags-transcode adopts it
+- [x] #6 E2E: untagged track unchanged on normal sync; --force-sync-tags-transcode adopts it
 - [x] #7 ADR added/updated recording sync-tag-as-sole-truth (no DB-bitrate fallback)
 - [x] #8 Changeset added
 - [x] #9 User docs updated (--force-sync-tags-transcode + untagged opt-out behaviour)
@@ -81,4 +81,6 @@ OPEN / SCOPE NOTES for reviewer:
 Team-lead review pass (Sonnet) + fixes. Reviewer found NO blockers and verified the re-encode-storm prevention (untagged -> null on both bounds; adoption pass gated by the flag), the !syncTag adoption predicate, both-flags precedence, complete DB-fallback removal for audio (the retained detectBitratePresetMismatch/DEFAULT_VBR_TOLERANCE/DEFAULT_MIN_PRESET_BITRATE are video-only consumers), the bitrateTolerance reinterpretation, the intact tagged ladders, and ADR-022/ADR-010 coherence. Fixes I applied: (1) the adoption pass hardcoded direction 'up'/reason cap-up regardless of the move — now derives direction from effectiveTarget vs the device DB bitrate (display-only) so adopting an over-cap track reports a downward quality-change; this exposed that the adoption e2e was asserting the bug (a 900 kbps untagged track adopted to the 256 kbps high cap is a DOWN move), updated to expect quality-change-down. (2) Removed the now-doubly-dead public DiffOptions.bitrateTolerance field (no consumers; no-deprecation policy). (3) Fixed a stale `needsAdoption` JSDoc symbol reference. (4) Corrected the architecture doc which overgeneralised the opt-out (a bitless quality=high tag on a LOSSLESS source is still authoritative via exact comparison; only the lossy bound needs a recorded bitrate). Left N-2 (lossless-preset + lossy-source adoption display edge case) as-is. Gates green: lint 0/0, full typecheck 36/36, @podkit/core unit 3376 pass, podkit cli unit pass, e2e dummy 50 pass.
 
 AC#6 left UNCHECKED — a real, harness-limited gap: the adoption round-trip (transcode executes -> tag written -> next sync no-ops) and a mass-storage arm are not full-execution e2e-tested because the e2e SyncTarget harness has no sync-tag/comment mutation API and gpodTool.addTrack yields a fileless DB entry (so a real transcode/replace cannot be driven against it). The routing + idempotency are covered at the handler/unit level and the dry-run e2e. Recommend a follow-up to extend the harness so AC#6 can be closed with a real execution + re-sync no-op on both iPod and mass-storage.
+
+AC#6 now CLOSED with a full-execution mass-storage e2e (the harness limitation is sidestepped, no harness/C-code changes needed). Added `mass-storage adopts an untagged on-device track and converges across re-sync` in preset-change.test.ts: seeds via a real sync (podkit lays out the file + writes a sync tag at the correct layout) then strips the file comment with ffmpeg `-c copy -metadata comment=` to simulate a track podkit never wrote; asserts (1) a normal sync leaves it untouched (no add/update, comment still untagged), (2) `--force-sync-tags-transcode` runs a REAL re-encode that writes an authoritative `[podkit:` sync tag into the file comment (completed=1, still one track), (3) a follow-up sync is a no-op (idempotent convergence). This matches the repo convention that real re-encode/convergence is exercised on mass-storage (cap-down/cap-up/source-down all do) while the iPod arm stays dry-run routing. An initial direct-drop approach failed (podkit didn't match a hand-dropped top-level file to the source — its mass-storage matching expects podkit's own file layout), so the sync-then-strip approach is both more robust and more faithful to a pre-feature track. All 10 ACs now satisfied. Gates green: lint OK, full typecheck 36/36, e2e dummy 51 pass (preset-change 11 incl. the new arm + upgrades/mass-storage-sync/artwork-sync-tags 40).
 <!-- SECTION:NOTES:END -->
