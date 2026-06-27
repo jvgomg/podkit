@@ -973,3 +973,184 @@ describe('self-healing sync: lossy cap-up (bitrate cap enforcement)', () => {
     });
   }, 240000);
 });
+
+// =============================================================================
+// Source-down suppression: when the SOURCE is re-ripped LOWER than the device
+// copy (cap unchanged), the better device copy is kept by default — re-encoding
+// down to the worse source would destroy quality. The situation is reported
+// (qualityChanges[] + suppressed count) but never acted on (no operation, no
+// tracksToUpdate bump, idempotent across re-syncs).
+// =============================================================================
+
+describe('self-healing sync: source-down suppression (degraded source)', () => {
+  it('keeps the better device copy and reports it when the source is re-ripped lower', async () => {
+    requireFFmpeg();
+    await withTarget(async (target) => {
+      const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
+      const collectionDir = await mkdtemp(join(tmpdir(), 'podkit-source-down-'));
+
+      try {
+        const trackMeta = {
+          title: 'Degraded Source',
+          artist: 'Source Artist',
+          album: 'Source Album',
+        };
+
+        // Step 1: Sync a 192 kbps MP3 at quality=high (cap 256). Below the cap,
+        // so it is copied as-is (.mp3) and recorded at 192 in the sync tag.
+        generateMp3AtBitrate(join(collectionDir, 'track.mp3'), trackMeta, 192);
+        // Quality is supplied per-invocation via the `--quality` flag, which
+        // overrides the config's default.
+        const configPath = await createConfigFile(configDir, { source: collectionDir });
+
+        const { result: result1, json: json1 } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--quality',
+          'high',
+          '--json',
+        ]);
+        expect(result1.exitCode).toBe(0);
+        expect(json1?.result?.completed).toBe(1);
+        const mp3Before = (await findIpodMusicFiles(target.path)).filter((f) => f.endsWith('.mp3'));
+        expect(mp3Before).toHaveLength(1);
+
+        // Step 2: Re-rip the source LOWER (96 kbps). Now source 96 < recorded 192,
+        // both still under the 256 cap — this is the source-down case.
+        generateMp3AtBitrate(join(collectionDir, 'track.mp3'), trackMeta, 96);
+
+        // Step 3: Dry-run at the SAME quality=high. The change is reported but
+        // suppressed: a source-down-suppressed entry in qualityChanges[], a
+        // suppressed count of 1, and crucially NO tracksToUpdate (it stays put).
+        const { json: dryJson } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--quality',
+          'high',
+          '--dry-run',
+          '--json',
+        ]);
+        expect(dryJson?.plan?.updateBreakdown?.['quality-change-suppressed'] ?? 0).toBe(1);
+        expect(dryJson?.plan?.tracksToUpdate ?? 0).toBe(0);
+        expect(dryJson?.plan?.tracksToAdd ?? 0).toBe(0);
+        const suppressed = (dryJson?.plan?.qualityChanges ?? []).filter(
+          (q) => q.reason === 'source-down-suppressed'
+        );
+        expect(suppressed).toHaveLength(1);
+        expect(suppressed[0]!.reEncodes).toBe(false);
+        expect(suppressed[0]!.encodedBitrate).toBeGreaterThan(suppressed[0]!.sourceBitrate ?? 0);
+
+        // Step 4: Real sync at quality=high — nothing executes (no-op), the device
+        // file is UNCHANGED (still the original .mp3, never re-encoded to .m4a).
+        const { json: realJson } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--quality',
+          'high',
+          '--json',
+        ]);
+        expect(realJson?.result?.completed).toBe(0);
+        expect((await target.getTracks()).length).toBe(1);
+        const filesAfter = await findIpodMusicFiles(target.path);
+        expect(filesAfter.filter((f) => f.endsWith('.mp3'))).toHaveLength(1);
+        expect(filesAfter.filter((f) => f.endsWith('.m4a'))).toHaveLength(0);
+      } finally {
+        await rm(collectionDir, { recursive: true, force: true });
+        await rm(configDir, { recursive: true, force: true });
+      }
+    });
+  }, 180000);
+
+  it('suppresses (not cap-down) when the recorded copy is above the cap but the source dropped below it', async () => {
+    // The fixed edge: a device copy recorded ABOVE the cap whose source later
+    // degraded BELOW the cap must NOT re-encode down to the worse source — that
+    // would be a lossy-to-lossy upsample of degraded audio. It is suppressed.
+    requireFFmpeg();
+    await withTarget(async (target) => {
+      const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
+      const collectionDir = await mkdtemp(join(tmpdir(), 'podkit-source-down-edge-'));
+
+      try {
+        const trackMeta = {
+          title: 'Degraded Above Cap',
+          artist: 'Source Artist',
+          album: 'Source Album',
+        };
+
+        // Step 1: Sync a 320 kbps MP3 at quality=low (cap 128). The first sync
+        // copies the source as-is (recorded 320) — the cap is enforced on
+        // existing device tracks, not on the initial add.
+        generateMp3AtBitrate(join(collectionDir, 'track.mp3'), trackMeta, 320);
+        const configPath = await createConfigFile(configDir, { source: collectionDir });
+
+        const { result: result1 } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--quality',
+          'low',
+          '--json',
+        ]);
+        expect(result1.exitCode).toBe(0);
+        expect(
+          (await findIpodMusicFiles(target.path)).filter((f) => f.endsWith('.mp3'))
+        ).toHaveLength(1);
+
+        // Step 2: Re-rip the source to 100 kbps — below the 128 cap. Recorded 320
+        // is above the cap, but the source can no longer supply it.
+        generateMp3AtBitrate(join(collectionDir, 'track.mp3'), trackMeta, 100);
+
+        // Step 3: Dry-run at quality=low. Pre-fix this fired cap-down; now it is
+        // suppressed because the effective target follows the degraded source.
+        const { json: dryJson } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--quality',
+          'low',
+          '--dry-run',
+          '--json',
+        ]);
+        expect(dryJson?.plan?.updateBreakdown?.['quality-change-suppressed'] ?? 0).toBe(1);
+        expect(dryJson?.plan?.updateBreakdown?.['quality-change-down'] ?? 0).toBe(0);
+        expect(dryJson?.plan?.tracksToUpdate ?? 0).toBe(0);
+        const suppressed = (dryJson?.plan?.qualityChanges ?? []).filter(
+          (q) => q.reason === 'source-down-suppressed'
+        );
+        expect(suppressed).toHaveLength(1);
+
+        // Step 4: Real sync — no-op, file unchanged (still .mp3, not re-encoded).
+        const { json: realJson } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--quality',
+          'low',
+          '--json',
+        ]);
+        expect(realJson?.result?.completed).toBe(0);
+        const filesAfter = await findIpodMusicFiles(target.path);
+        expect(filesAfter.filter((f) => f.endsWith('.mp3'))).toHaveLength(1);
+        expect(filesAfter.filter((f) => f.endsWith('.m4a'))).toHaveLength(0);
+      } finally {
+        await rm(collectionDir, { recursive: true, force: true });
+        await rm(configDir, { recursive: true, force: true });
+      }
+    });
+  }, 180000);
+});

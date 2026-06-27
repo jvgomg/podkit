@@ -69,6 +69,33 @@ function breakdownKeyForUpdate(update: {
 }
 
 /**
+ * Build a {@link QualityChangeInfo} wire entry from a source track and its
+ * classifier decision. Shared by executed quality changes and report-only
+ * (source-down suppressed) ones so both surface identically in the JSON.
+ */
+function qualityChangeInfo(
+  source: { artist?: string; title?: string },
+  qc: {
+    reason: string;
+    direction: 'up' | 'down' | 'format-only';
+    reEncodes: boolean;
+    targetBitrate: number;
+    encodedBitrate?: number;
+    sourceBitrate?: number;
+  }
+): QualityChangeInfo {
+  return {
+    track: `${source.artist ?? 'Unknown'} - ${source.title ?? 'Unknown'}`,
+    reason: qc.reason,
+    direction: qc.direction,
+    reEncodes: qc.reEncodes,
+    targetBitrate: qc.targetBitrate,
+    ...(qc.encodedBitrate !== undefined && { encodedBitrate: qc.encodedBitrate }),
+    ...(qc.sourceBitrate !== undefined && { sourceBitrate: qc.sourceBitrate }),
+  };
+}
+
+/**
  * Group copy operations by source file type for display.
  * Returns formatted strings like `["Copy (FLAC): 3", "Copy (MP3): 2"]`.
  */
@@ -536,6 +563,26 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
         }
       }
     }
+
+    // Source-down suppressed: reported but never acted on (the source degraded
+    // below the better device copy). These stay in `existing`, so they appear as
+    // a dedicated count rather than under "Tracks to update".
+    const suppressed = diff.reportOnlyQualityChanges ?? [];
+    if (suppressed.length > 0) {
+      out.print(`  Source-down suppressed: ${formatNumber(suppressed.length)} (kept device copy)`);
+      if (out.isVerbose) {
+        for (const entry of suppressed) {
+          const qc = entry.qualityChange;
+          const bitrates =
+            qc.encodedBitrate !== undefined && qc.sourceBitrate !== undefined
+              ? ` [device ${qc.encodedBitrate} kbps vs source ${qc.sourceBitrate} kbps]`
+              : '';
+          out.print(
+            `    - ${entry.source.artist ?? 'Unknown'} - ${entry.source.title ?? 'Unknown'}: ${qc.reason}${bitrates}`
+          );
+        }
+      }
+    }
     out.newline();
 
     out.print('Estimates:');
@@ -722,17 +769,17 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
       updateBreakdown[key] = (updateBreakdown[key] ?? 0) + 1;
 
       if (update.reasons[0] === 'quality-change' && update.qualityChange) {
-        const qc = update.qualityChange;
-        qualityChanges.push({
-          track: `${update.source.artist ?? 'Unknown'} - ${update.source.title ?? 'Unknown'}`,
-          reason: qc.reason,
-          direction: qc.direction,
-          reEncodes: qc.reEncodes,
-          targetBitrate: qc.targetBitrate,
-          ...(qc.encodedBitrate !== undefined && { encodedBitrate: qc.encodedBitrate }),
-          ...(qc.sourceBitrate !== undefined && { sourceBitrate: qc.sourceBitrate }),
-        });
+        qualityChanges.push(qualityChangeInfo(update.source, update.qualityChange));
       }
+    }
+
+    // Report-only quality changes (source-down suppressed): visible in the
+    // breakdown count and qualityChanges[] JSON, but never an operation — the
+    // track stayed in `existing`, so it is NOT counted in tracksToUpdate.
+    for (const entry of diff.reportOnlyQualityChanges ?? []) {
+      updateBreakdown['quality-change-suppressed'] =
+        (updateBreakdown['quality-change-suppressed'] ?? 0) + 1;
+      qualityChanges.push(qualityChangeInfo(entry.source, entry.qualityChange));
     }
 
     let albumCount: number | undefined;
@@ -764,7 +811,7 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
           summary.upgradeOptimizedCopyCount +
           summary.upgradeArtworkCount,
         tracksToRelocate: summary.relocateCount > 0 ? summary.relocateCount : undefined,
-        updateBreakdown: diff.toUpdate.length > 0 ? updateBreakdown : undefined,
+        updateBreakdown: Object.keys(updateBreakdown).length > 0 ? updateBreakdown : undefined,
         qualityChanges: qualityChanges.length > 0 ? qualityChanges : undefined,
         tracksToTranscode: summary.addTranscodeCount,
         tracksToCopy: summary.addDirectCopyCount + summary.addOptimizedCopyCount,

@@ -150,12 +150,13 @@ export function isSourceLossless(source: CollectionTrack): boolean {
  * - `cap-down` (was `preset-downgrade`): the device's recorded encoding sits
  *   above the configured target — re-encode down.
  *
+ * - `source-down-suppressed`: the source has degraded below the device copy, so
+ *   re-encoding down would destroy quality. The good device copy is deliberately
+ *   kept (`reEncodes: false`) and the situation is reported rather than acted on.
+ *
  * The remaining reasons are defined in the vocabulary but not yet produced:
  * - `format-mismatch` / `encoding-mismatch`: precondition classes for codec
  *   correctness and CBR/VBR flip — reserved for forthcoming bitrate-policy work.
- * - `source-down-suppressed`: a worse source the user opted NOT to follow down —
- *   reserved for forthcoming source-down handling (`reEncodes: false`). For now a
- *   degraded source simply returns null (the good device copy is kept).
  */
 export type QualityChangeReason =
   | 'format-mismatch'
@@ -306,10 +307,11 @@ export function classifySourceBound(
  *
  * ## Currently reachable reasons
  *
- * Only four reasons are currently produced: `lossless-boundary`, `source-improved`,
- * `cap-up`, `cap-down`. The CBR/VBR (`encoding-mismatch`) and source-down
- * (`source-down-suppressed`) branches exist in the vocabulary but are not yet
- * enabled — they return `null`, preserving the current behaviour for those cases.
+ * Five reasons are currently produced: `lossless-boundary`, `source-improved`,
+ * `cap-up`, `cap-down`, and `source-down-suppressed` (the only one that does NOT
+ * re-encode — it reports a degraded source while keeping the better device copy).
+ * The CBR/VBR (`encoding-mismatch`) branch exists in the vocabulary but is not yet
+ * enabled — it returns `null`, preserving the current behaviour for that case.
  *
  * @returns The quality change, or `null` when the track is in sync.
  */
@@ -340,9 +342,10 @@ export function classifyQualityChange(input: {
  *
  * Lossless tracks use the sync-tag-exact / ALAC / DB-bitrate-tolerance ladder
  * below. Lossy tracks are routed to {@link classifyLossyDeviceBound}, which
- * enforces the cap in both directions: re-encode an over-cap lossy track down to
- * the cap, and re-encode an under-cap lossy track up from the source toward
- * `min(source, cap)`.
+ * applies the three-bound model against `min(source, cap)`: re-encode up toward
+ * the effective ceiling, re-encode down to the cap when the source can supply it,
+ * or suppress (report-only, no re-encode) when the source has degraded below the
+ * cap.
  */
 export function classifyDeviceBound(input: {
   source: CollectionTrack;
@@ -416,19 +419,29 @@ export function classifyDeviceBound(input: {
 }
 
 /**
- * Lossy device-vs-target bound (both directions).
+ * Lossy device-vs-target bound — the three-bound model.
  *
- * Re-encodes a lossy track when its recorded `encoded` bitrate no longer matches
- * the configured cap, in either direction:
+ * Compares the device's recorded `encoded` bitrate against the **effective
+ * target** `min(source.bitrate, cap)`, and classifies the gap:
  *
- * - `encoded > cap` → `cap-down` (re-encode down to the cap).
- * - `encoded < min(source, cap)` → `cap-up` (re-encode up from the source toward
+ * - `encoded < effectiveTarget` → `cap-up` (re-encode up from the source toward
  *   the effective ceiling). Raising the cap, or improving the source, lifts a
  *   lossy track up — but never past what the source can actually supply.
- * - `min(source, cap) <= encoded <= cap` → null (in sync). This includes the
- *   case where the source has DEGRADED below the device copy
- *   (`source < encoded <= cap`): the better existing copy is deliberately kept
- *   rather than re-encoded down to a worse source.
+ * - `encoded > effectiveTarget`:
+ *   - `source >= cap` → `cap-down` (re-encode down to the cap; the source can
+ *     supply the cap).
+ *   - `source < cap` → `source-down-suppressed` (`reEncodes: false`). The source
+ *     has degraded below the cap, so the device copy is better than anything the
+ *     current source can produce. Re-encoding down to the worse source would
+ *     destroy quality, so the file is left alone and the situation is reported.
+ *     This covers both `source < encoded <= cap` and the `encoded > cap` edge
+ *     where the source has since dropped below the cap (e.g. recorded 320, source
+ *     re-ripped to 100, cap 128) — re-encoding from the degraded source would be a
+ *     lossy-to-lossy upsample of worse audio, never a real cap-down.
+ * - `encoded === effectiveTarget` → null (in sync).
+ *
+ * Suppression is the DEFAULT for a degraded source. (A future opt-in policy may
+ * choose to follow the source down instead.)
  *
  * **The effective target is `min(source.bitrate, cap)`.** Re-encoding up to the
  * full cap when the source only supplies less would inflate the file with no
@@ -441,8 +454,9 @@ export function classifyDeviceBound(input: {
  * lossy — there is no guessing. A lossy device track with no recorded bitrate in
  * its sync tag (a copy added before sync-tag bitrate recording, or an
  * untagged/third-party track) cannot be compared, so it is opted out (returns
- * null). An explicit adoption path for untagged tracks is planned via
- * `--force-sync-tags-transcode`.
+ * null). The same applies when the source bitrate is unknown: with no effective
+ * target to compute, the track is left alone. An explicit adoption path for
+ * untagged tracks is planned via `--force-sync-tags-transcode`.
  *
  * The cap is `target.presetBitrate`, which the config resolver already folds
  * `customBitrate` into (`getPresetBitrate(preset, customBitrate)`), so a custom
@@ -466,27 +480,14 @@ function classifyLossyDeviceBound(
     return null;
   }
 
-  if (encoded > cap) {
-    return {
-      reason: 'cap-down',
-      direction: 'down',
-      reEncodes: true,
-      targetBitrate: cap,
-      encodedBitrate: encoded,
-      sourceBitrate: source.bitrate,
-    };
-  }
-
-  // The upward direction needs to know what the source can supply to bound the
-  // re-encode. Without a source bitrate there is nothing to raise toward, so the
-  // track is left alone (no DB-bitrate guessing).
+  // The effective target bounds both directions by what the source can supply.
+  // Without a source bitrate there is nothing to compare against, so the track is
+  // left alone (no DB-bitrate guessing).
   const sourceBitrate = source.bitrate;
   if (sourceBitrate === undefined) {
     return null;
   }
 
-  // Never re-encode above what the source can actually provide: the effective
-  // ceiling is the lower of the source bitrate and the cap.
   const effectiveTarget = Math.min(sourceBitrate, cap);
 
   if (encoded < effectiveTarget) {
@@ -500,10 +501,32 @@ function classifyLossyDeviceBound(
     };
   }
 
-  // `min(source, cap) <= encoded <= cap` — in sync. When `source < encoded <= cap`
-  // the source has degraded below the device copy; we deliberately do NOT
-  // re-encode down to the worse source here. Acting on a degraded source is a
-  // separate concern handled elsewhere.
+  if (encoded > effectiveTarget) {
+    if (sourceBitrate >= cap) {
+      // The source can supply the cap — re-encode down to it.
+      return {
+        reason: 'cap-down',
+        direction: 'down',
+        reEncodes: true,
+        targetBitrate: cap,
+        encodedBitrate: encoded,
+        sourceBitrate,
+      };
+    }
+    // The source has degraded below the cap, so the effective target is the
+    // source. The device copy is already better than the source can produce —
+    // report it but do not re-encode down to the worse source.
+    return {
+      reason: 'source-down-suppressed',
+      direction: 'down',
+      reEncodes: false,
+      targetBitrate: effectiveTarget,
+      encodedBitrate: encoded,
+      sourceBitrate,
+    };
+  }
+
+  // encoded === effectiveTarget — in sync.
   return null;
 }
 

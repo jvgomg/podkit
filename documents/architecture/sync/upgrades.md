@@ -32,11 +32,11 @@ for all music quality decisions. It returns a `QualityChange` object or `null`
 |---|---|---|
 | `lossless-boundary` | Source is lossless AND device copy is lossy | `up` |
 | `source-improved` | Same-family lossy source whose bitrate significantly exceeds the device copy (64 kbps absolute OR 1.5× relative) | `up` |
-| `cap-up` | Device's recorded encoding sits below the configured target — re-encode up | `up` |
-| `cap-down` | Device's recorded encoding sits above the configured target — re-encode down | `down` |
+| `cap-up` | Device's recorded encoding sits below the effective target — re-encode up | `up` |
+| `cap-down` | Device's recorded encoding sits above the cap AND the source can supply the cap — re-encode down | `down` |
+| `source-down-suppressed` | Source has degraded below the cap — the device copy is better than the source can produce; keep it and report (`reEncodes: false`) | `down` |
 | `format-mismatch` | _(reserved — not yet produced)_ Codec correctness precondition | `format-only` |
 | `encoding-mismatch` | _(reserved — not yet produced)_ CBR/VBR flip | `format-only` |
-| `source-down-suppressed` | _(reserved — not yet produced)_ Worse source the user opted NOT to follow down | — |
 
 The `QualityChange` object also carries: `direction`, `reEncodes` (false only
 for `source-down-suppressed`), `targetBitrate`, and optional
@@ -84,6 +84,30 @@ The music handler (`handler.ts`) assembles reasons as:
 `DiffUpdateEntry.reasons[0] === 'quality-change'` is the signal consumers
 (presenter, JSON output) use to branch on the quality axis. The specific
 sub-reason (lossless-boundary, cap-up, etc.) is always on `qualityChange.reason`.
+
+### The report-but-don't-execute path (`source-down-suppressed`)
+
+A `source-down-suppressed` change carries `reEncodes: false`: it must be
+**visible but never acted on**. Routing it through `toUpdate` would create an
+operation and inflate `tracksToUpdate`, so it takes a separate channel.
+
+`UnifiedSyncDiff.reportOnlyQualityChanges` holds these entries
+(`{ source, device, qualityChange }`). In `postProcessPresetChanges`, when the
+lossy device-bound returns a change with `reEncodes === false`, the handler
+pushes it onto `reportOnlyQualityChanges` and returns `null` from the
+`partitionExisting` callback — so the track stays in `existing` (no operation, no
+file work, never counted toward `tracksToUpdate`/`tracksToUpgrade`).
+
+The presenter (`music-presenter.ts`) reads this channel alongside `toUpdate`:
+
+- JSON: each report-only entry is appended to the collection's `qualityChanges[]`
+  and counted under `updateBreakdown["quality-change-suppressed"]` (shared with
+  the `qualityChangeInfo` helper used for executed changes).
+- Default text: a per-collection "Source-down suppressed" count; verbose lists
+  each track with its device-vs-source bitrates.
+
+Because no operation is produced, a suppressed track is a stable no-op: every
+dry-run reports it, and a real sync does nothing to it (idempotent).
 
 ---
 
@@ -154,20 +178,30 @@ deliberately narrow:
   `customBitrate` into `presetBitrate` (`getPresetBitrate(preset, customBitrate)`),
   so a custom cap is honoured for free. When there is no lossy cap (a lossless
   target preset, `presetBitrate === 0`) the path returns null.
-- **Effective target = `min(source.bitrate, cap)`.** The upward ceiling is
-  bounded by what the source can supply — re-encoding up to the full cap when the
-  source only provides less would inflate the file with no quality gain. The
-  source bitrate is required for the up direction; without it the up direction
-  returns null (nothing to raise toward).
-- **Direction: BOTH.**
-  - `encoded > cap` → `cap-down` (re-encode down to the cap).
-  - `encoded < min(source, cap)` → `cap-up` (re-encode up from the source toward
+- **Effective target = `min(source.bitrate, cap)`.** Both directions are bounded
+  by what the source can supply — re-encoding to the full cap when the source only
+  provides less would inflate the file with no quality gain. The source bitrate is
+  required; without it (or without a recorded `encoded`) the path returns null
+  (nothing to compare against, no DB-bitrate guessing).
+- **Three-bound model.** The gap between `encoded` and `effectiveTarget =
+  min(source, cap)` classifies the move:
+  - `encoded < effectiveTarget` → `cap-up` (re-encode up from the source toward
     the effective ceiling).
-  - `min(source, cap) <= encoded <= cap` → null (in sync). This includes the
-    **source-degraded** case (`source < encoded <= cap`): when the source was
-    re-ripped *below* the device copy, the better existing copy is deliberately
-    kept rather than re-encoded down to the worse source. Acting on a degraded
-    source is a separate concern, not handled here.
+  - `encoded > effectiveTarget`:
+    - `source >= cap` → `cap-down` (re-encode down to the cap — the source can
+      supply it).
+    - `source < cap` → `source-down-suppressed` (`reEncodes: false`). The source
+      has degraded below the cap, so the effective target follows the source and
+      the device copy is already better than the source can produce. Re-encoding
+      down would be a lossy-to-lossy downgrade of degraded audio, so the file is
+      **kept and reported, not acted on**. This single branch covers both
+      `source < encoded <= cap` and the edge where `encoded > cap` but the source
+      has since dropped below the cap (e.g. recorded 320, source re-ripped to 100,
+      cap 128) — a naive `encoded > cap` rule would wrongly fire cap-down there.
+  - `encoded === effectiveTarget` → null (in sync).
+
+  Suppression is the default for a degraded source. Following the source down
+  instead is left to a future opt-in policy.
 
 **Routing the re-encode.** A compatible/device-native lossy source would
 normally be *copied* by the classifier. A cap move must instead *transcode* it,
@@ -225,11 +259,13 @@ strings:
 | `preset-upgrade` | `cap-up` | `quality-change` |
 | `preset-downgrade` | `cap-down` | `quality-change` |
 
-**Lossy cap enforcement (both directions).** `classifyDeviceBound` routes lossy
-sources to `classifyLossyDeviceBound` (see §4), which re-encodes an over-cap lossy
-track down to the cap and an under-cap lossy track up from the source toward
-`min(source, cap)`. A source that degraded below the device copy is left alone.
-The lossless paths are unchanged.
+**Lossy cap enforcement (three-bound model).** `classifyDeviceBound` routes lossy
+sources to `classifyLossyDeviceBound` (see §4), which compares the recorded
+`encoded` against `min(source, cap)`: re-encode up toward the effective ceiling,
+re-encode down to the cap when the source can supply it, or — when the source has
+degraded below the cap — emit `source-down-suppressed` (`reEncodes: false`),
+keeping the better device copy and reporting it via the report-only channel
+(see §2). The lossless paths are unchanged.
 
 > **Sync-tag merge leak fixed with lossy cap-down.** `buildCopySyncTag` now
 > authoritatively emits `encoding: undefined` (mirroring `buildAudioSyncTag`'s
@@ -274,9 +310,11 @@ the `source-improved` upgrade.
 
 - **Encoding-mismatch:** CBR/VBR flip fires regardless of bitrate — will be
   wired before the bitrate compare in the sync-tag path.
-- **Source-down suppression:** A worse source under a "match-cap" flag will
-  produce `source-down-suppressed` with `reEncodes: false` instead of
-  re-encoding down.
+- **Follow-source-down policy:** Source-down is suppressed by default. A future
+  opt-in policy could choose to follow a degraded source down instead of keeping
+  the better device copy; the classifier already carries the
+  `source-down-suppressed` change (with the effective target = source bitrate) it
+  would need.
 - **Untagged opt-out:** Drop the DB-bitrate fallback once lossy sync tags are
   written for pre-existing libraries.
 

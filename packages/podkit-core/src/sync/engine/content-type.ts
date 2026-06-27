@@ -149,6 +149,21 @@ export interface UnifiedSyncDiff<TSource, TDevice> {
      */
     qualityChange?: QualityChange;
   }>;
+  /**
+   * Matched pairs the classifier flagged as a quality change but that the sync
+   * deliberately does NOT act on — currently a source re-ripped below the device
+   * copy, where re-encoding down would destroy quality (`reEncodes: false`).
+   *
+   * These stay in `existing` (no operation, no file work, never counted toward
+   * `tracksToUpdate`/`tracksToUpgrade`) but are surfaced in the summary and the
+   * `qualityChanges[]` JSON so the situation is visible. This is the
+   * "report but don't execute" path.
+   */
+  reportOnlyQualityChanges?: Array<{
+    source: TSource;
+    device: TDevice;
+    qualityChange: QualityChange;
+  }>;
 }
 
 // =============================================================================

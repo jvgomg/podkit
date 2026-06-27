@@ -3,9 +3,9 @@
  * its two bounds `classifySourceBound` / `classifyDeviceBound`).
  *
  * The classifier is pure, so the matrix of (transition × source type × tag
- * state) is covered exhaustively here without spinning up a sync. New rows
- * (encoding-mismatch, source-down-suppressed) will be added as those directions
- * are enabled — the scaffold section at the bottom holds placeholders.
+ * state) is covered exhaustively here without spinning up a sync. The
+ * encoding-mismatch row will be added when that direction is enabled — the
+ * scaffold section at the bottom holds its placeholder.
  *
  * Each case reads independently — it spells out its own source / device /
  * target and asserts the observable `{ reason, direction, reEncodes }`. No
@@ -262,10 +262,11 @@ describe('classifyDeviceBound', () => {
       ).toBeNull();
     });
 
-    test('source degraded below the device copy (source < encoded <= cap) -> null (keep the good copy)', () => {
+    test('source degraded below the device copy (source < encoded <= cap) -> source-down-suppressed (keep the good copy, report)', () => {
       // The source re-ripped down to 96 while the device copy is a healthy 192,
       // still under the 256 cap. Re-encoding down to the worse source would
-      // destroy quality, so the better existing copy is kept.
+      // destroy quality, so the better existing copy is kept and the situation
+      // is reported (reEncodes: false) rather than acted on.
       const source = makeMockCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 96 });
       const device = makeMockDeviceTrack({
         filetype: 'AAC audio file',
@@ -273,13 +274,50 @@ describe('classifyDeviceBound', () => {
         syncTag: buildAudioSyncTag('medium', 'vbr', 192, 'fast', 'aac'),
       });
 
-      expect(
-        classifyDeviceBound({
-          source,
-          device,
-          target: target({ preset: 'high', presetBitrate: 256 }),
-        })
-      ).toBeNull();
+      const change = classifyDeviceBound({
+        source,
+        device,
+        target: target({ preset: 'high', presetBitrate: 256 }),
+      });
+
+      expect(change).toMatchObject({
+        reason: 'source-down-suppressed',
+        direction: 'down',
+        reEncodes: false,
+      });
+      expect(change?.encodedBitrate).toBe(192);
+      expect(change?.sourceBitrate).toBe(96);
+      // The effective target follows the (degraded) source, not the cap.
+      expect(change?.targetBitrate).toBe(96);
+    });
+
+    test('source degraded BELOW the cap while the recorded copy is ABOVE the cap -> source-down-suppressed (not cap-down)', () => {
+      // The fixed edge: the device copy records 320 (above the 128 cap) but the
+      // source has since been re-ripped to 100 (below the cap). A naive
+      // `encoded > cap` rule would fire cap-down and re-encode 128 from the 100k
+      // source — a lossy-to-lossy upsample of degraded audio. The three-bound
+      // model recognises the source can no longer supply the cap and suppresses.
+      const source = makeMockCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 100 });
+      const device = makeMockDeviceTrack({
+        filetype: 'AAC audio file',
+        bitrate: 320,
+        syncTag: buildAudioSyncTag('high', 'vbr', 320, 'fast', 'aac'),
+      });
+
+      const change = classifyDeviceBound({
+        source,
+        device,
+        target: target({ preset: 'low', presetBitrate: 128 }),
+      });
+
+      expect(change).toMatchObject({
+        reason: 'source-down-suppressed',
+        direction: 'down',
+        reEncodes: false,
+      });
+      expect(change?.encodedBitrate).toBe(320);
+      expect(change?.sourceBitrate).toBe(100);
+      expect(change?.targetBitrate).toBe(100);
     });
 
     test('recorded bitrate below the cap but no source bitrate -> null (nothing to raise toward)', () => {
@@ -301,6 +339,30 @@ describe('classifyDeviceBound', () => {
           source,
           device,
           target: target({ preset: 'high', presetBitrate: 256 }),
+        })
+      ).toBeNull();
+    });
+
+    test('recorded bitrate above the cap but no source bitrate -> null (no effective target)', () => {
+      // The device copy exceeds the cap, but with no known source bitrate there
+      // is no way to know whether re-encoding would help or just inflate a
+      // degraded source — leave it alone rather than guess.
+      const source = makeMockCollectionTrack({
+        fileType: 'mp3',
+        lossless: false,
+        bitrate: undefined,
+      });
+      const device = makeMockDeviceTrack({
+        filetype: 'MPEG audio file',
+        bitrate: 320,
+        syncTag: buildCopySyncTag('fast', undefined, 'mp3', 320),
+      });
+
+      expect(
+        classifyDeviceBound({
+          source,
+          device,
+          target: target({ preset: 'low', presetBitrate: 128 }),
         })
       ).toBeNull();
     });
@@ -631,6 +693,30 @@ describe('classifyQualityChange (composed)', () => {
     expect(change?.encodedBitrate).toBe(320);
     expect(change?.targetBitrate).toBe(96);
   });
+
+  test('degraded lossy source -> source-down-suppressed via the device bound (source bound does not pre-empt)', () => {
+    // The source dropped to 96 below the 192 device copy, still under the cap.
+    // The source bound is null (a worse same-family source is not an upgrade), so
+    // the device bound owns this and suppresses rather than re-encoding down.
+    const source = makeMockCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 96 });
+    const device = makeMockDeviceTrack({
+      filetype: 'AAC audio file',
+      bitrate: 192,
+      syncTag: buildAudioSyncTag('medium', 'vbr', 192, 'fast', 'aac'),
+    });
+
+    const change = classifyQualityChange({
+      source,
+      device,
+      target: target({ preset: 'high', presetBitrate: 256 }),
+    });
+
+    expect(change).toMatchObject({
+      reason: 'source-down-suppressed',
+      direction: 'down',
+      reEncodes: false,
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -640,10 +726,9 @@ describe('classifyQualityChange (composed)', () => {
 // ---------------------------------------------------------------------------
 
 describe('not-yet-produced reasons (scaffold)', () => {
-  // Lossy cap enforcement (both directions) is implemented — see
-  // `classifyDeviceBound > lossy cap enforcement` above.
+  // Lossy cap enforcement (both directions) and source-down suppression are
+  // implemented — see `classifyDeviceBound > lossy cap enforcement` above.
   test.todo('encoding-mismatch: CBR<->VBR flip fires regardless of bitrate', () => {});
-  test.todo('source-down-suppressed: worse source under match-cap -> reEncodes:false', () => {});
 
   // Pin the type-level vocabulary so a refactor can't silently drop a reason.
   test('the QualityChange vocabulary covers every reason/direction', () => {

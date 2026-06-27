@@ -51,7 +51,16 @@ When you change your quality preset (e.g., from `low` to `high`), podkit detects
 - **Preset upgrade**: iPod bitrate is significantly lower than the new preset target (e.g., switching from `low` at 128 kbps to `high` at 256 kbps)
 - **Preset downgrade**: iPod bitrate is significantly higher than the new preset target (e.g., switching from `high` at 256 kbps to `medium` at 192 kbps)
 
-This affects lossless source tracks (FLAC, WAV, AIFF) in both directions. For **lossy** source tracks (MP3, AAC) the cap is now enforced in **both directions** too: lowering the cap re-encodes an over-cap lossy track down to the new cap, and raising the cap re-encodes an under-cap lossy track back up from the source — bounded by what the source can supply (`min(source, cap)`), never higher (see [Bitrate Cap Enforcement for Lossy Sources](/user-guide/transcoding/audio#bitrate-cap-enforcement-for-lossy-sources)). Lossy tracks already at the effective target stay as-is, and a source that was re-ripped *lower* is not followed down — the better device copy is kept.
+This affects lossless source tracks (FLAC, WAV, AIFF) in both directions. For **lossy** source tracks (MP3, AAC) the cap is now enforced in **both directions** too: lowering the cap re-encodes an over-cap lossy track down to the new cap, and raising the cap re-encodes an under-cap lossy track back up from the source — bounded by what the source can supply (`min(source, cap)`), never higher (see [Bitrate Cap Enforcement for Lossy Sources](/user-guide/transcoding/audio#bitrate-cap-enforcement-for-lossy-sources)). Lossy tracks already at the effective target stay as-is.
+
+### Source-down suppression
+
+If a track's source is re-ripped at a **lower** bitrate than the copy already on the device, podkit does **not** follow the source down by default — re-encoding the good device copy down to the worse source would only destroy quality. The better device copy is kept, and the situation is **reported rather than acted on**:
+
+- The dry-run/summary shows a per-collection **"Source-down suppressed"** count; run with `-v` to list each affected track with its device-vs-source bitrates.
+- `sync --json` lists each one in the collection's `qualityChanges[]` array with `reason: "source-down-suppressed"` and `reEncodes: false`, counted under `updateBreakdown["quality-change-suppressed"]`.
+
+Suppressed tracks are never queued for re-transfer, so this stays a stable no-op across repeated syncs. This is the default behaviour; a future opt-in policy may let you choose to follow the source down instead.
 
 ### Tolerance
 

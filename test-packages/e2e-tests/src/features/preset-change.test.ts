@@ -668,4 +668,109 @@ device = "${stanza?.name ?? ''}"
       { preset: 'generic' }
     );
   }, 240000);
+
+  // Mass-storage source-down suppression: when the SOURCE is re-ripped LOWER
+  // than the device copy (cap unchanged), the better device copy is kept by
+  // default and the situation is reported but not acted on. Pins the
+  // report-but-don't-execute path on a device with no iTunesDB (sync tag in the
+  // sidecar/comment).
+  it('mass-storage keeps the better device copy and reports source-down suppression', async () => {
+    requireFFmpeg();
+    await withMassStorageTarget(
+      async (target) => {
+        const configDir = await mkdtemp(join(tmpdir(), 'podkit-srcdown-ms-'));
+        const collectionDir = await mkdtemp(join(tmpdir(), 'podkit-srcdown-src-'));
+        try {
+          // A 192 kbps MP3 — below the high cap (256), copied as-is and recorded
+          // at 192 in the sidecar sync tag.
+          execSync(
+            `ffmpeg -f lavfi -i "sine=frequency=440:sample_rate=44100:duration=2" ` +
+              `-metadata title="Src Down" -metadata artist="Cap Artist" -metadata album="Cap Album" ` +
+              `-b:a 192k -y "${join(collectionDir, 'track.mp3')}"`,
+            { stdio: 'ignore' }
+          );
+
+          const stanza = target.deviceConfig();
+          const configPath = join(configDir, 'config.toml');
+          await writeFile(
+            configPath,
+            `version = 2
+
+quality = "high"
+
+[music.default]
+path = "${collectionDir}"
+
+${stanza?.toml ?? ''}
+
+[defaults]
+music = "default"
+device = "${stanza?.name ?? ''}"
+`
+          );
+
+          // Step 1: Initial sync at high — MP3 copied as-is, recorded 192.
+          const { result: result1 } = await runCliJson<SyncOutput>([
+            '--config',
+            configPath,
+            'sync',
+            '--device',
+            stanza?.name ?? target.path,
+            '--json',
+          ]);
+          expect(result1.exitCode).toBe(0);
+          expect((await target.getTracks()).length).toBe(1);
+
+          // Step 2: Re-rip the source LOWER (96 kbps), below the recorded 192 and
+          // still under the cap — the source-down case.
+          execSync(
+            `ffmpeg -f lavfi -i "sine=frequency=440:sample_rate=44100:duration=2" ` +
+              `-metadata title="Src Down" -metadata artist="Cap Artist" -metadata album="Cap Album" ` +
+              `-b:a 96k -y "${join(collectionDir, 'track.mp3')}"`,
+            { stdio: 'ignore' }
+          );
+
+          // Step 3: Dry-run at the SAME quality=high — reported but suppressed: a
+          // suppressed count of 1, a source-down-suppressed entry, and NO
+          // tracksToUpdate (the track stays put).
+          const { json: dryJson } = await runCliJson<SyncOutput>([
+            '--config',
+            configPath,
+            'sync',
+            '--device',
+            stanza?.name ?? target.path,
+            '--quality',
+            'high',
+            '--dry-run',
+            '--json',
+          ]);
+          expect(dryJson?.plan?.updateBreakdown?.['quality-change-suppressed'] ?? 0).toBe(1);
+          expect(dryJson?.plan?.tracksToUpdate ?? 0).toBe(0);
+          const suppressed = (dryJson?.plan?.qualityChanges ?? []).filter(
+            (q) => q.reason === 'source-down-suppressed'
+          );
+          expect(suppressed).toHaveLength(1);
+          expect(suppressed[0]!.reEncodes).toBe(false);
+
+          // Step 4: Real sync — no-op, device copy unchanged.
+          const { json: realJson } = await runCliJson<SyncOutput>([
+            '--config',
+            configPath,
+            'sync',
+            '--device',
+            stanza?.name ?? target.path,
+            '--quality',
+            'high',
+            '--json',
+          ]);
+          expect(realJson?.result?.completed).toBe(0);
+          expect((await target.getTracks()).length).toBe(1);
+        } finally {
+          await rm(configDir, { recursive: true, force: true });
+          await rm(collectionDir, { recursive: true, force: true });
+        }
+      },
+      { preset: 'generic' }
+    );
+  }, 180000);
 });

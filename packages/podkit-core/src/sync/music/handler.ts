@@ -454,6 +454,18 @@ export class MusicHandler implements ContentTypeHandler<
           target,
         });
         if (!change) return null;
+        // A source-down change (the source re-ripped below the device copy) is
+        // report-only: keep the better device copy in `existing`, surface it via
+        // the report-only channel, and create NO operation. Returning null here
+        // leaves the track in `existing` so it never inflates tracksToUpdate.
+        if (!change.reEncodes) {
+          (diff.reportOnlyQualityChanges ??= []).push({
+            source: match.source,
+            device: match.device,
+            qualityChange: change,
+          });
+          return null;
+        }
         return {
           reasons: ['quality-change'],
           changes: [

@@ -1073,6 +1073,46 @@ describe('MusicHandler', () => {
       expect(diff.toUpdate).toHaveLength(0);
     });
 
+    test('a degraded lossy source is reported (report-only), not moved to toUpdate', () => {
+      // Source re-ripped down to 96 (below the 128 cap) while the device copy
+      // still records 112. Re-encoding down to the worse source would destroy
+      // quality, so it is suppressed: the track stays in `existing` (no
+      // operation, no tracksToUpdate bump) but surfaces via the report-only
+      // channel so the situation is visible.
+      const h = createMusicHandler(makeConfig({ quality: 'low' }));
+      const source = makeCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 96 });
+      const device = makeDeviceTrack({
+        filetype: 'AAC audio file',
+        bitrate: 112,
+        syncTag:
+          parseSyncTag('[podkit:v1 quality=low encoding=vbr codec=aac bitrate=112]') ?? undefined,
+      });
+      const diff = makePresetDiff(source, device);
+
+      h.postProcessDiff(diff);
+
+      // Not acted on: stays in existing, never enters toUpdate.
+      expect(diff.existing).toHaveLength(1);
+      expect(diff.toUpdate).toHaveLength(0);
+
+      // But it IS reported via the report-only channel.
+      expect(diff.reportOnlyQualityChanges).toHaveLength(1);
+      const reported = diff.reportOnlyQualityChanges![0]!;
+      expect(reported.qualityChange).toMatchObject({
+        reason: 'source-down-suppressed',
+        direction: 'down',
+        reEncodes: false,
+      });
+      expect(reported.qualityChange.encodedBitrate).toBe(112);
+      expect(reported.qualityChange.sourceBitrate).toBe(96);
+
+      // No operation is planned for it.
+      const ops = diff.existing.flatMap((m) =>
+        h.planUpdate(m.source, m.device, [], undefined, undefined, undefined)
+      );
+      expect(ops).toHaveLength(0);
+    });
+
     test('uses sync tag comparison when resolvedQuality is provided — match keeps as existing', () => {
       const h = createMusicHandler(makeConfig({ quality: 'high', encoding: 'vbr' }));
       const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
