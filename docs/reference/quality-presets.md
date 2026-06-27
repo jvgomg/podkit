@@ -34,7 +34,7 @@ All presets use VBR encoding by default. Set `encoding = "cbr"` globally or per 
 
 The `max` preset is device-aware. On devices that support Apple Lossless (iPod Classic, Video 5G/5.5G, Nano 3G-5G), it produces ALAC from lossless sources. On other devices, it falls back to the same high-quality AAC as the `high` preset.
 
-- Compatible lossy sources (MP3, AAC) are always copied as-is, regardless of preset
+- Compatible lossy sources (MP3, AAC) are copied as-is when their bitrate is at or below the preset cap; a lossy track already on the device whose bitrate is **above** the cap is re-encoded down to the cap on the next sync (down direction only)
 - Incompatible lossy sources (OGG, Opus) are transcoded with the bitrate capped at the source bitrate
 
 ### File Size Estimates
@@ -119,7 +119,7 @@ Video quality is capped to source quality:
 
 When you change your quality preset, podkit detects that existing transcoded tracks on the iPod don't match the new target bitrate and re-transcodes them on the next sync. Play counts, star ratings, and playlist membership are preserved.
 
-This applies to lossless source tracks only. Lossy sources (MP3, AAC) are copied as-is regardless of the preset.
+This applies to lossless source tracks in both directions. Lossy sources (MP3, AAC) are also re-encoded **down** when a lowered cap puts their recorded bitrate above the new target; lossy tracks at or below the cap stay copied as-is.
 
 See [Track Upgrades](/user-guide/syncing/upgrades#preset-changes) for details.
 

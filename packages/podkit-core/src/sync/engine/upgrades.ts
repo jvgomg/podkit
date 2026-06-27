@@ -140,7 +140,7 @@ export function isSourceLossless(source: CollectionTrack): boolean {
 /**
  * Reasons the unified quality classifier can produce.
  *
- * Today (slice S0) only the four behaviour-preserving reasons are reachable:
+ * Four reasons are currently reachable:
  * - `lossless-boundary` (was `format-upgrade`): a lossless source replacing a
  *   lossy device copy.
  * - `source-improved` (was `quality-upgrade`): a lossy source whose bitrate
@@ -150,12 +150,11 @@ export function isSourceLossless(source: CollectionTrack): boolean {
  * - `cap-down` (was `preset-downgrade`): the device's recorded encoding sits
  *   above the configured target — re-encode down.
  *
- * The remaining reasons are scaffold for later slices and are NOT produced by
- * S0:
- * - `format-mismatch` / `encoding-mismatch`: precondition classes (CBR/VBR flip,
- *   codec correctness) — wired in S1/S2.
+ * The remaining reasons are defined in the vocabulary but not yet produced:
+ * - `format-mismatch` / `encoding-mismatch`: precondition classes for codec
+ *   correctness and CBR/VBR flip — reserved for forthcoming bitrate-policy work.
  * - `source-down-suppressed`: a worse source the user opted NOT to follow down —
- *   wired in S2 (`reEncodes: false`).
+ *   reserved for forthcoming source-down handling (`reEncodes: false`).
  */
 export type QualityChangeReason =
   | 'format-mismatch'
@@ -205,8 +204,7 @@ export interface QualityTarget {
   encoding: EncodingMode;
   /**
    * Custom bitrate override (kbps), when the user configured one. Folded into
-   * `presetBitrate` for S0's lossless paths, so nothing reads it yet; the lossy
-   * cap path (S1) consumes it directly. Kept so it isn't pruned before then.
+   * `presetBitrate` for lossless paths; the lossy cap path consumes it directly.
    */
   customBitrate?: number;
   /** Whether the resolved preset is ALAC (max on an ALAC-capable device). */
@@ -215,8 +213,8 @@ export interface QualityTarget {
   resolvedLossyCodec?: string;
   /**
    * Custom bitrate tolerance ratio (0.0-1.0) for the untagged DB-bitrate
-   * fallback. Overrides the encoding-mode default. (S0-only; the fallback is
-   * removed in a later slice.)
+   * fallback. Overrides the encoding-mode default. The fallback itself will be
+   * removed once lossy sync tags are written for pre-existing libraries.
    */
   bitrateTolerance?: number;
 }
@@ -297,22 +295,22 @@ export function classifySourceBound(
  * The classifier compares the device's recorded `encoded` quality against the
  * `target` and against the `source` as **separate bounds** — never collapsed to
  * `min(source, target)`. Collapsing would make a source drop indistinguishable
- * from a cap drop, which later slices must treat oppositely (cap-down
- * re-encodes; source-down suppresses).
+ * from a cap drop, which must be treated oppositely (cap-down re-encodes;
+ * source-down suppresses).
  *
  * The authoritative `encoded` value is the device's sync tag. When the sync tag
  * is absent the classifier falls back to the device DB bitrate + tolerance
- * (`detectBitratePresetMismatch`) — preserved here for behaviour-parity (S0);
- * removing the fallback is a later slice.
+ * (`detectBitratePresetMismatch`). This fallback will be removed once lossy sync
+ * tags are written for pre-existing libraries.
  *
- * ## S0 scope (behaviour-preserving)
+ * ## Currently reachable reasons
  *
- * Only the four reasons produced today are reachable:
- * `lossless-boundary`, `source-improved`, `cap-up`, `cap-down`. The lossy
- * cap-enforcement, CBR/VBR (`encoding-mismatch`) and source-down
- * (`source-down-suppressed`) branches are present but dormant — they return
- * `null` for lossy bitrate moves, preserving today's "lossy copied as-is"
- * behaviour. Later slices (S1/S2/S3) enable them.
+ * Only four reasons are currently produced: `lossless-boundary`, `source-improved`,
+ * `cap-up`, `cap-down`. The lossy cap-enforcement direction for upward moves
+ * (`encoded < cap`), CBR/VBR (`encoding-mismatch`) and source-down
+ * (`source-down-suppressed`) branches exist in the vocabulary but are not yet
+ * enabled — they return `null`, preserving the current "lossy copied as-is"
+ * behaviour for those cases.
  *
  * @returns The quality change, or `null` when the track is in sync.
  */
@@ -341,9 +339,10 @@ export function classifyQualityChange(input: {
  * without re-running the source bound (which `detectUpdates` already ran in the
  * match loop, with its own transcoding-active suppression).
  *
- * S0 preserves the lossless-only restriction: lossy sources are copied as-is,
- * so the cap does not (yet) enter their decision — the lossy branch is
- * intentionally dormant and returns null.
+ * Lossless tracks use the sync-tag-exact / ALAC / DB-bitrate-tolerance ladder
+ * below. Lossy tracks are routed to {@link classifyLossyDeviceBound}, which
+ * enables the cap-DOWN direction only (re-encode an over-cap lossy track down
+ * to the cap); cap-up for lossy is not yet enabled.
  */
 export function classifyDeviceBound(input: {
   source: CollectionTrack;
@@ -357,10 +356,7 @@ export function classifyDeviceBound(input: {
   const deviceLossless = isIpodTrackLossless(device);
 
   if (!sourceLossless) {
-    // TODO(S1/S3): lossy cap enforcement — compare `encoded` vs `target` and
-    // `encoded` vs `source` as separate bounds here. Dormant in S0 to preserve
-    // "lossy copied as-is".
-    return null;
+    return classifyLossyDeviceBound(source, device, target);
   }
 
   // Sync-tag-exact comparison takes priority over every bitrate/format fallback.
@@ -372,8 +368,8 @@ export function classifyDeviceBound(input: {
   // than tripping the config-wide ALAC branch.)
   const syncTag = device.syncTag;
   if (syncTag && expectedSyncTag) {
-    // TODO(S2): encoding-mismatch (CBR/VBR) is a precondition class that fires
-    // even when bitrate matches — wire it here ahead of the bitrate compare.
+    // encoding-mismatch (CBR/VBR) is a precondition class that fires even when
+    // bitrate matches — reserved for forthcoming bitrate-policy work.
     if (syncTagMatchesConfig(syncTag, expectedSyncTag)) {
       return null;
     }
@@ -402,8 +398,8 @@ export function classifyDeviceBound(input: {
     };
   }
 
-  // Untagged track — fall back to device DB bitrate + tolerance (S0-preserved;
-  // removed in a later slice). Keeps untagged lossless tracks comparable.
+  // Untagged track — fall back to device DB bitrate + tolerance. Keeps untagged
+  // lossless tracks comparable; will be removed once sync tags are universal.
   const tolerance =
     target.bitrateTolerance ??
     (target.encoding === 'cbr' ? DEFAULT_CBR_TOLERANCE : DEFAULT_VBR_TOLERANCE);
@@ -417,6 +413,64 @@ export function classifyDeviceBound(input: {
     targetBitrate: target.presetBitrate,
     encodedBitrate: device.bitrate,
   };
+}
+
+/**
+ * Lossy device-vs-target bound (cap-DOWN only).
+ *
+ * When the device's recorded `encoded` bitrate is ABOVE the configured cap,
+ * re-encode the lossy track down to the cap. The upward direction is not yet
+ * enabled:
+ *
+ * - `encoded > cap` → `cap-down` (re-encode down). Enabled here.
+ * - `encoded <= cap` (at or below the cap) → null. Raising an under-cap lossy
+ *   track is reserved for forthcoming bitrate-policy work.
+ *
+ * **`encoded` is the sync-tag bitrate and nothing else.** The iPod/DB bitrate is
+ * an unreliable proxy (especially for VBR) and is deliberately NOT consulted for
+ * lossy — there is no guessing. A lossy device track with no recorded bitrate in
+ * its sync tag (a copy added before sync-tag bitrate recording, or an
+ * untagged/third-party track) cannot be compared, so it is opted out (returns
+ * null). An explicit adoption path for untagged tracks is planned via
+ * `--force-sync-tags-transcode`.
+ *
+ * The cap is `target.presetBitrate`, which the config resolver already folds
+ * `customBitrate` into (`getPresetBitrate(preset, customBitrate)`), so a custom
+ * bitrate is honoured here for free.
+ */
+function classifyLossyDeviceBound(
+  source: CollectionTrack,
+  device: DeviceTrack,
+  target: QualityTarget
+): QualityChange | null {
+  const encoded = device.syncTag?.bitrate;
+  if (encoded === undefined) {
+    // No authoritative recorded bitrate in the sync tag — opt out rather than
+    // guess from the unreliable DB bitrate.
+    return null;
+  }
+
+  const cap = target.presetBitrate;
+  if (!cap) {
+    // No lossy cap to enforce (e.g. a lossless target preset). Leave as-is.
+    return null;
+  }
+
+  if (encoded > cap) {
+    return {
+      reason: 'cap-down',
+      direction: 'down',
+      reEncodes: true,
+      targetBitrate: cap,
+      encodedBitrate: encoded,
+      sourceBitrate: source.bitrate,
+    };
+  }
+
+  // `encoded <= cap` — at or below the cap is a no-op here. Raising an
+  // under-cap lossy track up toward the cap is reserved for forthcoming
+  // bitrate-policy work; only the downward direction is active.
+  return null;
 }
 
 /**

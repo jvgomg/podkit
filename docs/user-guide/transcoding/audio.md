@@ -86,7 +86,7 @@ encoding = "cbr"
 | Source | Result |
 |--------|--------|
 | FLAC | AAC 256 kbps CBR |
-| MP3 320 | Copy as-is |
+| MP3 320 | AAC 256 kbps CBR (re-encoded down to the cap) |
 | OGG 192 | AAC 192 kbps CBR (capped at source bitrate) + warning |
 
 ## VBR vs CBR
@@ -110,6 +110,24 @@ encoding = "cbr"  # per device
 ### Incompatible Lossy Bitrate Capping
 
 When transcoding incompatible lossy sources (OGG, Opus), the effective bitrate is capped at the source file's bitrate to avoid creating a larger file with no quality benefit. For example, a 128 kbps OGG file transcoded with the `high` preset (256 kbps target) will be transcoded at 128 kbps, not 256 kbps.
+
+### Bitrate Cap Enforcement for Lossy Sources
+
+Lowering a device's quality (a smaller preset, or a lower custom bitrate) now shrinks the **lossy** tracks already on the device, not just lossless ones. When a lossy track's recorded bitrate is **above** the new cap, the next sync re-encodes it down to the cap; tracks at or below the cap are left untouched and copied as-is.
+
+| Source on device | Cap lowered to | Result |
+|------------------|----------------|--------|
+| MP3 320 kbps | `low` (128) | Re-encoded to AAC ~128 kbps |
+| MP3 128 kbps | `low` (128) | Left as-is (already at the cap) |
+| MP3 96 kbps | `low` (128) | Left as-is (already below the cap) |
+
+A few details worth knowing:
+
+- **The decision uses what podkit recorded, not a guess.** The cap comparison reads the bitrate podkit stored when it last wrote the track (its sync tag). A track podkit never wrote — synced by another tool, or before this feature existed — has no recorded bitrate, so it is left alone rather than re-encoded on a guess.
+- **It is idempotent.** After a cap-down re-encode, syncing again at the same cap does nothing — the track is already at the target.
+- **A fresh library converges over two syncs.** Cap enforcement applies to tracks already on the device. A newly added lossy track above the cap is copied as-is on the first sync, then re-encoded down on the next one — so a brand-new library settles to the cap after a second sync rather than on the first.
+- **Down only, for now.** This release enforces the cap in the *down* direction (shrinking over-cap tracks). Re-encoding lossy tracks *up* toward a raised cap is a separate, later change.
+- **`--skip-upgrades` still wins.** A purely additive device (`skipUpgrades`) never re-encodes existing files, including for cap-down.
 
 ## File Size Guidelines
 

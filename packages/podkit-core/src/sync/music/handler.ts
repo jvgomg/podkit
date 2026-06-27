@@ -423,7 +423,7 @@ export class MusicHandler implements ContentTypeHandler<
    *
    * Sync tag priority: if a track has a sync tag, exact comparison against the
    * current config. If no sync tag, fall back to bitrate tolerance detection
-   * (preserved in S0; removed in a later slice).
+   * (active for untagged lossless tracks; will be removed once sync tags are universal).
    *
    * This detector handles the *preset* dimension (quality / encoding / bitrate)
    * only. Codec dimension (lossy = ['aac'] vs ['opus']) is the responsibility
@@ -441,8 +441,30 @@ export class MusicHandler implements ContentTypeHandler<
     const target = qualityTargetFromConfig(this.config);
 
     partitionExisting(diff, (match) => {
-      // Only check lossless-source tracks (lossy are copied as-is in S0).
-      if (!isSourceLossless(match.source)) return null;
+      // Lossy sources take a dedicated cap-enforcement path. The classifier
+      // would route a compatible/device-native lossy source to a COPY, but a
+      // lossy cap-down must re-encode DOWN to the cap — so the classifier's
+      // routing is irrelevant here. classifyDeviceBound's lossy branch reads the
+      // authoritative recorded bitrate from the sync tag (cap-down only).
+      if (!isSourceLossless(match.source)) {
+        const change = classifyDeviceBound({
+          source: match.source,
+          device: match.device,
+          target,
+        });
+        if (!change) return null;
+        return {
+          reasons: ['quality-change'],
+          changes: [
+            {
+              field: 'bitrate' as const,
+              from: String(change.encodedBitrate ?? match.device.bitrate),
+              to: String(change.targetBitrate),
+            },
+          ],
+          qualityChange: change,
+        };
+      }
 
       const syncTag = match.device.syncTag;
       const classification = this.classifier.classify(match.source);
@@ -830,12 +852,50 @@ export class MusicHandler implements ContentTypeHandler<
     return this.factory.createRemove(device);
   }
 
+  /**
+   * Resolve the routing action for a file-replacement upgrade.
+   *
+   * Normally this is the classifier's decision for the source. The one exception
+   * is a lossy cap-DOWN: the classifier would COPY a compatible/device-native
+   * lossy source as-is, but a cap-down must re-encode it DOWN to the configured
+   * cap. Force a transcode at the resolved preset, recording the cap as the
+   * preset's `bitrateOverride` so the executor stamps the new encoded bitrate
+   * into the sync tag — making the next sync a no-op (idempotent). All other
+   * upgrades (source-improved, lossless-boundary, codec-changed, force-transcode,
+   * transfer-mode-changed) keep the classifier's routing unchanged.
+   */
+  private resolveUpgradeAction(
+    source: CollectionTrack,
+    qualityChange?: QualityChange
+  ): import('./classifier.js').MusicAction {
+    if (
+      qualityChange?.reason === 'cap-down' &&
+      qualityChange.reEncodes &&
+      !isSourceLossless(source) &&
+      this.config.resolvedQuality &&
+      this.config.resolvedQuality !== 'lossless'
+    ) {
+      const preset = {
+        name: this.config
+          .resolvedQuality as import('../engine/types.js').TranscodePresetRef['name'],
+        ...(this.config.resolvedLossyCodec && { targetCodec: this.config.resolvedLossyCodec }),
+        // Record the cap explicitly so the post-re-encode sync tag carries the
+        // new encoded bitrate (idempotency). presetBitrate already folds in any
+        // customBitrate via the config resolver.
+        ...(this.config.presetBitrate && { bitrateOverride: this.config.presetBitrate }),
+      };
+      return { type: 'transcode', preset };
+    }
+    return this.classifier.classify(source).action;
+  }
+
   planUpdate(
     source: CollectionTrack,
     device: DeviceTrack,
     reasons: UpdateReason[],
     changes?: MetadataChange[],
-    syncTag?: SyncTagData
+    syncTag?: SyncTagData,
+    qualityChange?: QualityChange
   ): MusicOperation[] {
     if (reasons.length === 0) return [];
 
@@ -863,7 +923,7 @@ export class MusicHandler implements ContentTypeHandler<
     // The path-mismatch will be detected again on the next sync and resolved
     // with a relocate — self-healing in two passes.
     if (isFileReplacementUpgrade(primaryReason as UpgradeReason)) {
-      const { action } = this.classifier.classify(source);
+      const action = this.resolveUpgradeAction(source, qualityChange);
       ops.push(this.factory.createUpgrade(source, device, primaryReason as UpgradeReason, action));
       return ops;
     }

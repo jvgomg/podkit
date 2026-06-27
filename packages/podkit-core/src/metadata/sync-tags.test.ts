@@ -602,6 +602,21 @@ describe('buildCopySyncTag', () => {
     });
   });
 
+  it('emits encoding as undefined so a merge clears any stale value', () => {
+    // A pure copy has no podkit-chosen encoding mode. The field must be present
+    // (as undefined) so that when an adapter persists the tag by merging
+    // ({...existingTag, ...update}), a stale encoding from a prior audio tag is
+    // cleared rather than retained — otherwise a transcode->copy transition
+    // would leave a phantom encoding and break re-sync idempotency.
+    const result = buildCopySyncTag('fast');
+    expect('encoding' in result).toBe(true);
+    expect(result.encoding).toBeUndefined();
+
+    const existingAudioTag = { quality: 'high', encoding: 'vbr' };
+    const merged = { ...existingAudioTag, ...result };
+    expect(merged.encoding).toBeUndefined();
+  });
+
   it('omits codec when not provided', () => {
     const result = buildCopySyncTag('fast');
     expect(result.codec).toBeUndefined();

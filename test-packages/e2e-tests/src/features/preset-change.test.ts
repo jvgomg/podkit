@@ -13,7 +13,8 @@ import { describe, it, expect } from 'bun:test';
 import { mkdtemp, rm, copyFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ensureFixturesExist } from '@podkit/e2e-shared';
+import { execSync } from 'node:child_process';
+import { ensureFixturesExist, requireFFmpeg } from '@podkit/e2e-shared';
 import { runCliJson } from '../helpers/cli-runner';
 import { withTarget, withMassStorageTarget } from '../targets';
 import { getTrackPath, Tracks, type AlbumDir } from '../helpers/fixtures';
@@ -434,4 +435,117 @@ device = "${stanza?.name ?? ''}"
       { preset: 'generic' }
     );
   }, 120000);
+
+  // Mass-storage lossy cap-down: lowering the bitrate cap re-encodes an existing
+  // LOSSY (MP3) track down to the new cap. Mass-storage stores the sync tag in a
+  // sidecar/comment rather than an iTunesDB, so this also pins that the
+  // sync-tag-as-truth cap enforcement works without a device database — and that
+  // a follow-up sync at the same cap is idempotent.
+  it('mass-storage lossy cap-down re-encodes down and converges across re-sync', async () => {
+    requireFFmpeg();
+    await withMassStorageTarget(
+      async (target) => {
+        const configDir = await mkdtemp(join(tmpdir(), 'podkit-capdown-ms-'));
+        const collectionDir = await mkdtemp(join(tmpdir(), 'podkit-capdown-src-'));
+        try {
+          // A 192 kbps MP3 — compatible-lossy on the generic preset (aac/mp3/flac),
+          // so it is copied as-is at the high cap.
+          execSync(
+            `ffmpeg -f lavfi -i "sine=frequency=440:sample_rate=44100:duration=2" ` +
+              `-metadata title="Cap Test" -metadata artist="Cap Artist" -metadata album="Cap Album" ` +
+              `-b:a 192k -y "${join(collectionDir, 'track.mp3')}"`,
+            { stdio: 'ignore' }
+          );
+
+          const stanza = target.deviceConfig();
+          const configPath = join(configDir, 'config.toml');
+          await writeFile(
+            configPath,
+            `version = 2
+
+quality = "high"
+
+[music.default]
+path = "${collectionDir}"
+
+${stanza?.toml ?? ''}
+
+[defaults]
+music = "default"
+device = "${stanza?.name ?? ''}"
+`
+          );
+
+          // Step 1: Initial sync at high — MP3 copied as-is.
+          const { result: result1, json: json1 } = await runCliJson<SyncOutput>([
+            '--config',
+            configPath,
+            'sync',
+            '--device',
+            stanza?.name ?? target.path,
+            '--json',
+          ]);
+          expect(result1.exitCode).toBe(0);
+          expect(json1?.success).toBe(true);
+          expect((await target.getTracks()).length).toBe(1);
+
+          // Step 2: Dry-run at quality=low — recorded 192 kbps exceeds the 128 cap,
+          // so exactly one cap-DOWN is reported.
+          const { json: dryJson } = await runCliJson<SyncOutput>([
+            '--config',
+            configPath,
+            'sync',
+            '--device',
+            stanza?.name ?? target.path,
+            '--quality',
+            'low',
+            '--dry-run',
+            '--json',
+          ]);
+          expect(dryJson?.plan?.updateBreakdown?.['quality-change-down'] ?? 0).toBe(1);
+          expect(dryJson?.plan?.tracksToAdd ?? 0).toBe(0);
+
+          // Step 3: Sync at low — re-encode down to the cap.
+          const { result: result3, json: json3 } = await runCliJson<SyncOutput>([
+            '--config',
+            configPath,
+            'sync',
+            '--device',
+            stanza?.name ?? target.path,
+            '--quality',
+            'low',
+            '--json',
+          ]);
+          expect(result3.exitCode).toBe(0);
+          expect(json3?.result?.completed).toBe(1);
+
+          // The on-device track is now re-encoded — its measured bitrate dropped
+          // from ~192 toward the 128 cap (track count unchanged).
+          const tracks = await target.getTracks();
+          expect(tracks.length).toBe(1);
+          expect(tracks[0]!.bitrate).toBeGreaterThan(0);
+          expect(tracks[0]!.bitrate).toBeLessThan(170);
+
+          // Step 4: Re-sync at low — idempotent (recorded bitrate now equals the cap).
+          const { json: json4 } = await runCliJson<SyncOutput>([
+            '--config',
+            configPath,
+            'sync',
+            '--device',
+            stanza?.name ?? target.path,
+            '--quality',
+            'low',
+            '--dry-run',
+            '--json',
+          ]);
+          expect(json4?.plan?.tracksToUpdate ?? 0).toBe(0);
+          expect(json4?.plan?.tracksToAdd ?? 0).toBe(0);
+        } finally {
+          await rm(configDir, { recursive: true, force: true });
+          await rm(collectionDir, { recursive: true, force: true });
+        }
+      },
+      { preset: 'generic' }
+    );
+  }, 180000);
 });

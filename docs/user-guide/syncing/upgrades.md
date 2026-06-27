@@ -51,7 +51,7 @@ When you change your quality preset (e.g., from `low` to `high`), podkit detects
 - **Preset upgrade**: iPod bitrate is significantly lower than the new preset target (e.g., switching from `low` at 128 kbps to `high` at 256 kbps)
 - **Preset downgrade**: iPod bitrate is significantly higher than the new preset target (e.g., switching from `high` at 256 kbps to `medium` at 192 kbps)
 
-This only affects lossless source tracks (FLAC, WAV, AIFF) that are transcoded during sync. Lossy source tracks (MP3, AAC) are copied as-is regardless of the quality preset.
+This affects lossless source tracks (FLAC, WAV, AIFF) in both directions. For **lossy** source tracks (MP3, AAC) the **down** direction is enforced too: lowering the cap re-encodes an over-cap lossy track down to the new cap (see [Bitrate Cap Enforcement for Lossy Sources](/user-guide/transcoding/audio#bitrate-cap-enforcement-for-lossy-sources)). Lossy tracks at or below the cap stay copied as-is, and re-encoding lossy tracks *up* toward a raised cap is not yet enabled.
 
 ### Tolerance
 
@@ -89,7 +89,7 @@ If you want every track re-encoded after an encoding mode change, use `--force-t
 podkit sync --force-transcode
 ```
 
-This re-transcodes all lossless-source tracks while preserving play counts, ratings, and playlist membership. Compatible lossy sources (MP3, AAC) are not affected — they are always copied as-is. Use `--dry-run` to preview what would be re-transcoded.
+This re-transcodes all lossless-source tracks while preserving play counts, ratings, and playlist membership. Compatible lossy sources (MP3, AAC) are not force-transcoded by this flag, but they are still subject to cap-down enforcement on a normal sync when their recorded bitrate exceeds the cap (see [Bitrate Cap Enforcement for Lossy Sources](/user-guide/transcoding/audio#bitrate-cap-enforcement-for-lossy-sources)). Use `--dry-run` to preview what would be re-transcoded.
 
 Like other file-replacement upgrades, preset changes are suppressed by `--skip-upgrades`.
 

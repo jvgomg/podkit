@@ -119,7 +119,8 @@ export class SyncPlanner<TSource, TDevice, TOp extends BaseOperation = SyncOpera
         update.device,
         reasons,
         update.changes,
-        update.syncTag
+        update.syncTag,
+        update.qualityChange
       );
       allOperations.push(...ops);
     }

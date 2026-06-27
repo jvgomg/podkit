@@ -3,9 +3,10 @@
  * its two bounds `classifySourceBound` / `classifyDeviceBound`).
  *
  * The classifier is pure, so the matrix of (transition × source type × tag
- * state) is covered exhaustively here without spinning up a sync. The table is
- * structured so later slices append rows (lossy cap-down/up,
- * encoding-mismatch, source-down-suppressed) rather than rewriting cases.
+ * state) is covered exhaustively here without spinning up a sync. New rows
+ * (lossy cap-up, encoding-mismatch, source-down-suppressed) will be added as
+ * those directions are enabled — the scaffold section at the bottom holds
+ * placeholders.
  *
  * Each case reads independently — it spells out its own source / device /
  * target and asserts the observable `{ reason, direction, reEncodes }`. No
@@ -22,7 +23,7 @@ import {
   type QualityChange,
   type QualityTarget,
 } from './upgrades.js';
-import { buildAudioSyncTag } from '../../metadata/sync-tags.js';
+import { buildAudioSyncTag, buildCopySyncTag } from '../../metadata/sync-tags.js';
 import { makeMockCollectionTrack, makeMockDeviceTrack } from '../../test-utils/tracks.js';
 import type { CollectionTrack } from '../../adapters/interface.js';
 import type { DeviceTrack } from '../../device/adapter.js';
@@ -131,11 +132,135 @@ describe('classifySourceBound', () => {
 // ---------------------------------------------------------------------------
 
 describe('classifyDeviceBound', () => {
-  test('lossy source -> null (copied as-is; cap does not apply in S0)', () => {
+  test('lossy source with no recorded sync-tag bitrate -> null (opt out; no DB guessing)', () => {
+    // The device DB bitrate (320) is deliberately NOT consulted for lossy — only
+    // the sync tag's recorded bitrate is authoritative, and there is none here.
     const source = makeMockCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 320 });
     const device = makeMockDeviceTrack({ filetype: 'MPEG audio file', bitrate: 320 });
 
-    expect(classifyDeviceBound({ source, device, target: target() })).toBeNull();
+    expect(
+      classifyDeviceBound({ source, device, target: target({ preset: 'low', presetBitrate: 96 }) })
+    ).toBeNull();
+  });
+
+  // -------------------------------------------------------------------------
+  // Lossy cap enforcement (cap-DOWN only). The device sync tag's recorded
+  // bitrate is the sole authoritative `encoded` value — the DB bitrate is never
+  // consulted for lossy.
+  // -------------------------------------------------------------------------
+  describe('lossy cap enforcement', () => {
+    test('recorded bitrate above the cap -> cap-down (down, re-encodes)', () => {
+      const source = makeMockCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 320 });
+      const device = makeMockDeviceTrack({
+        filetype: 'MPEG audio file',
+        bitrate: 320,
+        syncTag: buildCopySyncTag('fast', undefined, 'mp3', 320),
+      });
+
+      const change = classifyDeviceBound({
+        source,
+        device,
+        target: target({ preset: 'low', presetBitrate: 128 }),
+      });
+
+      expect(change).toMatchObject({
+        reason: 'cap-down',
+        direction: 'down',
+        reEncodes: true,
+      });
+      expect(change?.encodedBitrate).toBe(320);
+      expect(change?.targetBitrate).toBe(128);
+      expect(change?.sourceBitrate).toBe(320);
+    });
+
+    test('recorded bitrate equal to the cap -> null (in sync)', () => {
+      const source = makeMockCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 320 });
+      const device = makeMockDeviceTrack({
+        filetype: 'MPEG audio file',
+        bitrate: 128,
+        syncTag: buildCopySyncTag('fast', undefined, 'mp3', 128),
+      });
+
+      expect(
+        classifyDeviceBound({
+          source,
+          device,
+          target: target({ preset: 'low', presetBitrate: 128 }),
+        })
+      ).toBeNull();
+    });
+
+    test('recorded bitrate below the cap -> null (cap-up for lossy not yet enabled)', () => {
+      const source = makeMockCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 320 });
+      const device = makeMockDeviceTrack({
+        filetype: 'MPEG audio file',
+        bitrate: 96,
+        syncTag: buildCopySyncTag('fast', undefined, 'mp3', 96),
+      });
+
+      expect(
+        classifyDeviceBound({
+          source,
+          device,
+          target: target({ preset: 'high', presetBitrate: 256 }),
+        })
+      ).toBeNull();
+    });
+
+    test('no recorded bitrate in the sync tag -> null (cannot compare)', () => {
+      // A copy tag written before sync-tag bitrate recording carries no `bitrate=`.
+      const source = makeMockCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 320 });
+      const device = makeMockDeviceTrack({
+        filetype: 'MPEG audio file',
+        bitrate: 320,
+        syncTag: { quality: 'copy', transferMode: 'fast' },
+      });
+
+      expect(
+        classifyDeviceBound({
+          source,
+          device,
+          target: target({ preset: 'low', presetBitrate: 128 }),
+        })
+      ).toBeNull();
+    });
+
+    test('no configured cap (lossless target preset) -> null', () => {
+      const source = makeMockCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 320 });
+      const device = makeMockDeviceTrack({
+        filetype: 'MPEG audio file',
+        bitrate: 320,
+        syncTag: buildCopySyncTag('fast', undefined, 'mp3', 320),
+      });
+
+      expect(
+        classifyDeviceBound({
+          source,
+          device,
+          target: target({ preset: 'lossless', presetBitrate: 0, isAlacPreset: true }),
+        })
+      ).toBeNull();
+    });
+
+    test('a cap-down re-encode is idempotent: the new encoded bitrate matches the cap', () => {
+      // After a cap-down, the device track is re-encoded to the cap and the sync
+      // tag records the new bitrate (here a transcode tag at quality=low). The
+      // recorded bitrate now equals the cap, so the next sync is a no-op.
+      const source = makeMockCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 320 });
+      const device = makeMockDeviceTrack({
+        filetype: 'AAC audio file',
+        bitrate: 128,
+        syncTag: buildAudioSyncTag('low', 'vbr', 128, 'fast', 'aac'),
+      });
+
+      expect(
+        classifyDeviceBound({
+          source,
+          device,
+          target: target({ preset: 'low', presetBitrate: 128 }),
+        })
+      ).toBeNull();
+    });
   });
 
   describe('sync-tag exact comparison (authoritative)', () => {
@@ -193,7 +318,7 @@ describe('classifyDeviceBound', () => {
     });
   });
 
-  describe('untagged fallback (DB bitrate + tolerance — S0-preserved)', () => {
+  describe('untagged fallback (DB bitrate + tolerance — lossless only)', () => {
     test('device bitrate well below target -> cap-up', () => {
       const source = makeMockCollectionTrack({ fileType: 'flac', lossless: true });
       const device = makeMockDeviceTrack({ filetype: 'AAC audio file', bitrate: 128 });
@@ -332,7 +457,7 @@ describe('classifyQualityChange (composed)', () => {
     expect(classifyQualityChange({ source, device, target: target(), expectedSyncTag })).toBeNull();
   });
 
-  test('lossy copied-as-is track -> null (S0: no lossy cap enforcement)', () => {
+  test('untagged lossy track -> null (opted out; no DB-bitrate guessing)', () => {
     const source = makeMockCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 320 });
     const device = makeMockDeviceTrack({ filetype: 'MPEG audio file', bitrate: 320 });
 
@@ -344,27 +469,42 @@ describe('classifyQualityChange (composed)', () => {
       })
     ).toBeNull();
   });
+
+  test('tagged lossy track above the cap -> cap-down via the device bound', () => {
+    // The source bound is null (same-family copy, no bitrate climb), so the
+    // device bound fires the lossy cap-down.
+    const source = makeMockCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 320 });
+    const device = makeMockDeviceTrack({
+      filetype: 'MPEG audio file',
+      bitrate: 320,
+      syncTag: buildCopySyncTag('fast', undefined, 'mp3', 320),
+    });
+
+    const change = classifyQualityChange({
+      source,
+      device,
+      target: target({ preset: 'low', presetBitrate: 96 }),
+    });
+
+    expect(change).toMatchObject({ reason: 'cap-down', direction: 'down', reEncodes: true });
+    expect(change?.encodedBitrate).toBe(320);
+    expect(change?.targetBitrate).toBe(96);
+  });
 });
 
 // ---------------------------------------------------------------------------
-// Scaffold for later slices. These reasons/directions are part of the
-// classifier's vocabulary but are NOT produced in S0. The placeholders document
-// the intended rows so future slices add assertions rather than new structure.
+// Scaffold for forthcoming directions. These reasons are part of the
+// classifier's vocabulary but are not yet produced. The placeholders document
+// the intended rows so they can be filled in when the directions are enabled.
 // ---------------------------------------------------------------------------
 
-describe('later-slice scaffold (not produced in S0)', () => {
-  test.todo('lossy cap-down: lossy source above lowered cap -> cap-down (S1/S3)', () => {});
-  test.todo(
-    'lossy cap-up: lossy source below raised cap, source can supply -> cap-up (S1/S3)',
-    () => {}
-  );
-  test.todo('encoding-mismatch: CBR<->VBR flip fires regardless of bitrate (S2)', () => {});
-  test.todo(
-    'source-down-suppressed: worse source under match-cap -> reEncodes:false (S2)',
-    () => {}
-  );
+describe('not-yet-produced reasons (scaffold)', () => {
+  // Lossy cap-DOWN is implemented — see `classifyDeviceBound > lossy cap enforcement` above.
+  test.todo('lossy cap-up: lossy source below raised cap, source can supply -> cap-up', () => {});
+  test.todo('encoding-mismatch: CBR<->VBR flip fires regardless of bitrate', () => {});
+  test.todo('source-down-suppressed: worse source under match-cap -> reEncodes:false', () => {});
 
-  // Pin the type-level vocabulary so a later slice can't silently drop a reason.
+  // Pin the type-level vocabulary so a refactor can't silently drop a reason.
   test('the QualityChange vocabulary covers every reason/direction', () => {
     const reasons: QualityChange['reason'][] = [
       'format-mismatch',
@@ -381,5 +521,5 @@ describe('later-slice scaffold (not produced in S0)', () => {
   });
 });
 
-// Silence unused-import lint when fixtures are trimmed in a later slice.
+// Silence unused-import lint when scaffold fixtures are not yet consumed.
 export type _Fixtures = [CollectionTrack, DeviceTrack];

@@ -722,3 +722,123 @@ describe('self-healing sync: quality upgrade (MP3 bitrate increase)', () => {
     });
   }, 120000);
 });
+
+// =============================================================================
+// Lossy cap-down: lowering the device bitrate cap re-encodes an existing LOSSY
+// track down to the new cap.
+//
+// Lossy sources were previously copied as-is and never capped — lowering the cap
+// silently did nothing for them. The device-bound classifier now reads the lossy
+// track's recorded sync-tag bitrate and, when it exceeds the cap, re-encodes the
+// track down. The re-encoded sync tag records the new bitrate, so a follow-up
+// sync at the same cap is a no-op (idempotent).
+// =============================================================================
+
+describe('self-healing sync: lossy cap-down (bitrate cap enforcement)', () => {
+  it('lowering the cap re-encodes a lossy track down, then re-sync is idempotent', async () => {
+    requireFFmpeg();
+    await withTarget(async (target) => {
+      const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
+      const collectionDir = await mkdtemp(join(tmpdir(), 'podkit-cap-down-'));
+
+      try {
+        const trackMeta = {
+          title: 'Cap Test',
+          artist: 'Cap Artist',
+          album: 'Cap Album',
+        };
+
+        // Step 1: Sync a 192 kbps MP3 at quality=high (cap 256). The source is
+        // below the cap, so it is copied as-is (.mp3) and recorded as quality=copy
+        // bitrate=192 in the sync tag.
+        generateMp3AtBitrate(join(collectionDir, 'track.mp3'), trackMeta, 192);
+        const configPath = await createConfigFile(configDir, { source: collectionDir });
+
+        const { result: result1, json: json1 } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--quality',
+          'high',
+          '--json',
+        ]);
+        expect(result1.exitCode).toBe(0);
+        expect(json1?.result?.completed).toBe(1);
+
+        const mp3Files = (await findIpodMusicFiles(target.path)).filter((f) => f.endsWith('.mp3'));
+        expect(mp3Files).toHaveLength(1);
+
+        // Step 2: Dry-run at quality=low (cap 128) — the recorded 192 kbps now
+        // exceeds the cap, so the classifier reports exactly one cap-DOWN.
+        const { json: dryJson } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--quality',
+          'low',
+          '--dry-run',
+          '--json',
+        ]);
+        expect(dryJson?.plan?.updateBreakdown?.['quality-change-down']).toBe(1);
+        expect(dryJson?.plan?.tracksToAdd).toBe(0);
+
+        // Step 3: Sync at quality=low — re-encodes the track down to AAC at the cap.
+        const { result: result2, json: json2 } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--quality',
+          'low',
+          '--json',
+        ]);
+        expect(result2.exitCode).toBe(0);
+        expect(json2?.result?.completed).toBe(1);
+
+        // Track count unchanged (re-encode, not add), and the on-device file is now
+        // AAC (.m4a) — definitive proof the lossy track was re-encoded, not copied.
+        expect((await target.getTracks()).length).toBe(1);
+        const filesAfter = await findIpodMusicFiles(target.path);
+        expect(filesAfter.filter((f) => f.endsWith('.m4a'))).toHaveLength(1);
+        expect(filesAfter.filter((f) => f.endsWith('.mp3'))).toHaveLength(0);
+
+        // Step 4: Re-sync at quality=low — idempotent (the recorded bitrate now
+        // equals the cap, so nothing fires). Assert both the dry-run plan (no
+        // tracks queued) and a real re-sync (nothing executed).
+        const { json: idempotentDryJson } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--quality',
+          'low',
+          '--dry-run',
+          '--json',
+        ]);
+        expect(idempotentDryJson?.plan?.tracksToUpdate).toBe(0);
+        expect(idempotentDryJson?.plan?.tracksToAdd).toBe(0);
+
+        const { json: json3 } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--quality',
+          'low',
+          '--json',
+        ]);
+        expect(json3?.result?.completed).toBe(0);
+      } finally {
+        await rm(collectionDir, { recursive: true, force: true });
+        await rm(configDir, { recursive: true, force: true });
+      }
+    });
+  }, 180000);
+});

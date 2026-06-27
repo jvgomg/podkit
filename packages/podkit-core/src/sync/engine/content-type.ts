@@ -213,7 +213,13 @@ export interface ContentTypeHandler<TSource, TDevice, TOp extends BaseOperation 
     device: TDevice,
     reasons: UpdateReason[],
     changes?: MetadataChange[],
-    syncTag?: SyncTagData
+    syncTag?: SyncTagData,
+    /**
+     * Quality classifier result for this pair, when `reasons[0] === 'quality-change'`.
+     * Lets handlers route a lossy cap-down to a re-encode (transcode) rather than
+     * the classifier's default copy. Decoupled from the reason string.
+     */
+    qualityChange?: QualityChange
   ): TOp[];
 
   /** Estimate the output size in bytes for an operation */

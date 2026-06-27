@@ -305,7 +305,8 @@ export class VideoHandler implements ContentTypeHandler<
     device: DeviceVideo,
     reasons: UpdateReason[],
     _changes?: import('../engine/types.js').MetadataChange[],
-    _syncTag?: import('../../metadata/sync-tags.js').SyncTagData
+    _syncTag?: import('../../metadata/sync-tags.js').SyncTagData,
+    _qualityChange?: import('../engine/upgrades.js').QualityChange
   ): VideoOperation[] {
     if (reasons.length === 0) return [];
 

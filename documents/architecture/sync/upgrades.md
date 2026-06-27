@@ -34,9 +34,9 @@ for all music quality decisions. It returns a `QualityChange` object or `null`
 | `source-improved` | Same-family lossy source whose bitrate significantly exceeds the device copy (64 kbps absolute OR 1.5× relative) | `up` |
 | `cap-up` | Device's recorded encoding sits below the configured target — re-encode up | `up` |
 | `cap-down` | Device's recorded encoding sits above the configured target — re-encode down | `down` |
-| `format-mismatch` | _(S1/S2 scaffold — not produced in S0)_ Codec correctness precondition | `format-only` |
-| `encoding-mismatch` | _(S2 scaffold — not produced in S0)_ CBR/VBR flip | `format-only` |
-| `source-down-suppressed` | _(S2 scaffold — not produced in S0)_ Worse source the user opted NOT to follow down | — |
+| `format-mismatch` | _(reserved — not yet produced)_ Codec correctness precondition | `format-only` |
+| `encoding-mismatch` | _(reserved — not yet produced)_ CBR/VBR flip | `format-only` |
+| `source-down-suppressed` | _(reserved — not yet produced)_ Worse source the user opted NOT to follow down | — |
 
 The `QualityChange` object also carries: `direction`, `reEncodes` (false only
 for `source-down-suppressed`), `targetBitrate`, and optional
@@ -50,8 +50,8 @@ JSON array in the sync output.
 The classifier compares the device's **recorded encoded quality** against the
 **target** and against the **source** as separate, independent bounds — never
 collapsed to `min(source, target)`. Collapsing would make a source drop
-indistinguishable from a cap drop, which later slices must treat oppositely
-(cap-down re-encodes; source-down suppresses). The two bounds are:
+indistinguishable from a cap drop, which must be treated oppositely (cap-down
+re-encodes; source-down suppresses). The two bounds are:
 
 **Bound 1 — source-vs-device (`classifySourceBound`):** Upgrade-only.
 A much-improved source is followed up whether or not the user touched their cap.
@@ -59,8 +59,8 @@ A much-improved source is followed up whether or not the user touched their cap.
 **Bound 2 — device-vs-target (`classifyDeviceBound`):** The authoritative
 `encoded` value is the device's sync tag. When the sync tag is absent the
 classifier falls back to the device DB bitrate + tolerance
-(`detectBitratePresetMismatch`) — preserved for behaviour-parity in S0;
-removing the fallback is a later slice (S6).
+(`detectBitratePresetMismatch`). This fallback will be removed once lossy sync
+tags are written for pre-existing libraries.
 
 `classifyQualityChange` runs Bound 1 first; Bound 2 only fires when Bound 1
 returns null.
@@ -123,15 +123,57 @@ tag AND `expectedSyncTag` is provided, `syncTagMatchesConfig` compares them
 exactly. A match returns null; a mismatch produces `cap-up` or `cap-down` via
 `syncTagDirection`.
 
-**Untagged fallback (S0-preserved):** When no exact comparison is possible,
-the fallback is `detectBitratePresetMismatch(device.bitrate, target.presetBitrate,
-tolerance)`. This uses the device DB bitrate + a percentage tolerance (30% VBR,
-10% CBR). This fallback is preserved in S0 for behaviour-parity and will be
-removed in S6.
+**Untagged fallback:** When no exact comparison is possible, the fallback is
+`detectBitratePresetMismatch(device.bitrate, target.presetBitrate, tolerance)`.
+This uses the device DB bitrate + a percentage tolerance (30% VBR, 10% CBR).
+The fallback will be removed once lossy sync tags are written for pre-existing
+libraries.
 
 **ALAC preset shortcut:** When `target.isAlacPreset` is true and no sync tag
 is available, the comparison is format-based (not bitrate): if the device track
 is already ALAC, return null; otherwise return `cap-up`.
+
+The three paths above are the **lossless** ladder. Lossy sources branch off
+earlier — see below.
+
+### Lossy device-bound (`classifyLossyDeviceBound`, cap-down only)
+
+When the source is lossy, `classifyDeviceBound` delegates to
+`classifyLossyDeviceBound` instead of the lossless ladder. This path is
+deliberately narrow:
+
+- **`encoded` is the sync-tag bitrate and nothing else.** `encoded =
+  device.syncTag?.bitrate`. A lossy copy records its effective bitrate in the
+  copy tag (`buildCopySyncTag`); a re-encoded lossy track records the cap in its
+  audio tag (see below). The unreliable DB bitrate is **never** consulted for
+  lossy — there is no tolerance fallback and no guessing. A lossy track with no
+  recorded bitrate (an untagged track, or one added before sync-tag bitrate
+  recording) is opted out (returns null). An explicit adoption path via
+  `--force-sync-tags-transcode` is planned.
+- **Cap = `target.presetBitrate`.** The config resolver already folds
+  `customBitrate` into `presetBitrate` (`getPresetBitrate(preset, customBitrate)`),
+  so a custom cap is honoured for free. When there is no lossy cap (a lossless
+  target preset, `presetBitrate === 0`) the path returns null.
+- **Direction: DOWN only.** `encoded > cap` → `cap-down`. `encoded <= cap`
+  (at or below the cap) → null; raising an under-cap lossy track is reserved for
+  forthcoming bitrate-policy work.
+
+**Routing the re-encode.** A compatible/device-native lossy source would
+normally be *copied* by the classifier. A cap-down must instead *transcode it
+down*, so `MusicHandler.planUpdate` overrides the routing
+(`resolveUpgradeAction`): for a `cap-down` on a lossy source it builds a
+`transcode` action at the resolved preset with `bitrateOverride = presetBitrate`
+(the cap). The existing `transferUpgradeToIpod` executor runs it as an
+`upgrade-transcode` — no new executor code.
+
+**Idempotency.** The cap-down re-encode records the cap in the device's sync tag
+(`buildSyncTagForPreset` now passes the preset's `bitrateOverride` through to
+`buildAudioSyncTag`, symmetric with `expectedSyncTagFromClassification`). The
+next sync reads `encoded === cap`, so `encoded > cap` is false and the track is
+left alone. A second cap-down (lowering the cap again) re-fires correctly
+because the recorded bitrate is the *previous* cap, still above the *new* one.
+Verified on both an iPod (sync tag in the iTunesDB comment) and a mass-storage
+device (sync tag in the sidecar/comment) — no device database is required.
 
 ### Where the bitrate baseline comes from
 
@@ -152,26 +194,35 @@ tool), `bitrate = 0`. The `--force-sync-tags` backfill
 
 ---
 
-## 5. S0 scope (behaviour-preserving)
+## 5. Vocabulary rename and current reachability
 
-S0 is a vocabulary rename, not a behaviour change. The four reachable reasons
-(`lossless-boundary`, `source-improved`, `cap-up`, `cap-down`) map directly to
-the four old reason strings:
+The unified quality classifier replaced four separate reason strings with a
+single vocabulary. The four currently reachable reasons map directly to the old
+strings:
 
-| Old reason | New `qualityChange.reason` | New update reason |
+| Old reason | `qualityChange.reason` | Update reason |
 |---|---|---|
 | `format-upgrade` | `lossless-boundary` | `quality-change` |
 | `quality-upgrade` | `source-improved` | `quality-change` |
 | `preset-upgrade` | `cap-up` | `quality-change` |
 | `preset-downgrade` | `cap-down` | `quality-change` |
 
-**Lossy cap enforcement is dormant in S0.** `classifyDeviceBound` returns null
-for lossy sources, preserving the existing "lossy copied as-is" behaviour.
-S1/S3 will enable the lossy cap-down/up branches.
+**Lossy cap enforcement (cap-down).** `classifyDeviceBound` routes lossy sources
+to `classifyLossyDeviceBound` (see §4), which re-encodes an over-cap lossy track
+down to the cap. Raising an under-cap lossy track is not yet enabled. The
+lossless paths are unchanged.
 
-**Untagged DB-bitrate fallback is present in S0.** The tolerance-based
-`detectBitratePresetMismatch` path remains active. S6 will remove it once
-lossy sync tags are written for existing libraries.
+> **Sync-tag merge leak fixed with lossy cap-down.** `buildCopySyncTag` now
+> authoritatively emits `encoding: undefined` (mirroring `buildAudioSyncTag`'s
+> authoritative `bitrate` clear). The device adapters merge tags with
+> `{...existing, ...update}`, so a track transitioning transcode → copy would
+> otherwise keep a stale `encoding=vbr` from the prior audio tag. `undefined`
+> wins the merge and is dropped on serialization, keeping copy tags clean.
+
+**Untagged DB-bitrate fallback (lossless only).** The tolerance-based
+`detectBitratePresetMismatch` path remains active for lossless tracks without a
+sync tag. It will be removed once lossy sync tags are written for pre-existing
+libraries.
 
 ---
 
@@ -202,16 +253,16 @@ the `source-improved` upgrade.
 
 ## 7. Open work
 
-- **Lossy cap enforcement (S1/S3):** `classifyDeviceBound` has a dormant lossy
-  branch guarded by `if (!sourceLossless) return null`. S1 enables cap-down
-  for lossy, S3 enables cap-up.
-- **Encoding-mismatch (S2):** CBR/VBR flip fires regardless of bitrate — wired
-  before the bitrate compare in the sync-tag path.
-- **Source-down suppression (S2):** A worse source under a "match-cap" flag
-  produces `source-down-suppressed` with `reEncodes: false` instead of
+- **Lossy cap-up:** `classifyLossyDeviceBound` returns null at/below the cap.
+  The forthcoming direction will raise an under-cap lossy track toward the cap as
+  far as the source allows. (Cap-down is already active.)
+- **Encoding-mismatch:** CBR/VBR flip fires regardless of bitrate — will be
+  wired before the bitrate compare in the sync-tag path.
+- **Source-down suppression:** A worse source under a "match-cap" flag will
+  produce `source-down-suppressed` with `reEncodes: false` instead of
   re-encoding down.
-- **Untagged opt-out (S6):** Drop the DB-bitrate fallback once lossy sync tags
-  are written for pre-existing libraries.
+- **Untagged opt-out:** Drop the DB-bitrate fallback once lossy sync tags are
+  written for pre-existing libraries.
 
 ---
 

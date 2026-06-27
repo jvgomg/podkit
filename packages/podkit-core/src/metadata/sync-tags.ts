@@ -348,14 +348,13 @@ export function buildAudioSyncTag(
  *
  * Copy tracks use `quality=copy` and include the transfer mode, codec, artwork
  * hash, and — for lossy copies — the effective source `bitrate`. Recording the
- * bitrate on a copy gives later quality slices an authoritative `encoded` value
- * for the device-side bound without re-probing.
+ * bitrate on a copy gives the device-side bound an authoritative `encoded` value
+ * for lossy cap enforcement without re-probing.
  *
- * NOTE: adding `bitrate` is purely additive going forward — lossy sources never
- * flow through the device-vs-target (preset) bound in S0, and the
- * `--force-sync-tags` copy path keys on artwork hash, not bitrate — so a
- * pre-existing copy tag without a bitrate does NOT trigger a sync-tag-write or
- * re-encode on the next sync. New copies simply start carrying it.
+ * NOTE: adding `bitrate` is purely additive going forward — the `--force-sync-tags`
+ * copy path keys on artwork hash, not bitrate — so a pre-existing copy tag
+ * without a bitrate does NOT trigger a sync-tag-write or re-encode on the next
+ * sync. New copies simply start carrying it.
  *
  * @param transferMode - Transfer mode used: 'fast' | 'optimized' | 'portable'
  * @param artworkHash - Artwork content hash (8-char hex), if available
@@ -371,6 +370,16 @@ export function buildCopySyncTag(
 ): SyncTagData {
   const data: SyncTagData = {
     quality: 'copy',
+    // Authoritatively clear `encoding`. A pure copy has no podkit-chosen encoding
+    // mode, but the device adapters' `writeSyncTag` merges existing tag fields
+    // with the update (`{...existing, ...update}`). A track transitioning
+    // transcode -> copy (e.g. a cap was raised so a previously re-encoded lossy
+    // track is now copied) would otherwise keep the stale `encoding=vbr` left by
+    // the prior audio tag. Emitting `encoding: undefined` lets the update win and
+    // drop it. This mirrors `buildAudioSyncTag`'s authoritative `bitrate` clear.
+    // `undefined` is dropped on serialization, so the persisted copy tag stays
+    // clean.
+    encoding: undefined,
     transferMode,
   };
 
@@ -378,8 +387,9 @@ export function buildCopySyncTag(
     data.codec = codec;
   }
 
-  // TODO(S1): record encoding mode for copied lossy — the source's CBR/VBR mode
-  // is not reliably known without new probing, which S0 deliberately avoids.
+  // The source's CBR/VBR mode is not reliably known without new probing (which
+  // copy operations deliberately avoid), so a copy never records an `encoding`
+  // mode — see the authoritative `encoding: undefined` above.
   if (bitrate !== undefined) {
     data.bitrate = bitrate;
   }

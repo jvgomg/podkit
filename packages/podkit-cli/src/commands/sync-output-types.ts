@@ -79,7 +79,7 @@ export interface UpdateBreakdown {
   'metadata-changed'?: number;
   // Music quality axis — direction-split (replaces format-upgrade /
   // quality-upgrade / preset-upgrade / preset-downgrade). `-suppressed` counts
-  // source-down changes the policy left alone (none produced in S0).
+  // source-down changes the policy left alone (not yet produced).
   'quality-change-up'?: number;
   'quality-change-down'?: number;
   'quality-change-suppressed'?: number;
@@ -102,7 +102,7 @@ export interface UpdateBreakdown {
  *
  * Carries the classifier's decision for a single track so external tooling can
  * surface the full quality picture — including `source-down-suppressed` entries
- * the sync left alone (none produced in S0, but the wire shape exists).
+ * the sync left alone (not yet produced, but the wire shape exists).
  */
 export interface QualityChangeInfo {
   track: string;
@@ -175,7 +175,7 @@ export interface SyncOutput {
     updateBreakdown?: UpdateBreakdown;
     /**
      * Per-track quality classifier decisions (music). Includes
-     * `source-down-suppressed` entries (none in S0). Present when the plan
+     * `source-down-suppressed` entries (not yet produced). Present when the plan
      * produced any quality change.
      */
     qualityChanges?: QualityChangeInfo[];

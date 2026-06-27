@@ -101,7 +101,8 @@ export class MusicTransferOps {
       const syncTag = this.buildSyncTagForPreset(
         operation.preset.name,
         operation.preset.targetCodec,
-        ctx
+        ctx,
+        operation.preset.bitrateOverride
       );
       if (syncTag) {
         trackInput.syncTag = syncTag;
@@ -110,8 +111,8 @@ export class MusicTransferOps {
 
     // Write sync tag for copy operations (direct-copy and optimized-copy).
     // Record the effective bitrate (transcoder output when present — optimized
-    // copy may re-encode — else the source's reported bitrate) so later quality
-    // slices have authoritative `encoded` data for lossy copies.
+    // copy may re-encode — else the source's reported bitrate) so the device-side
+    // bound has authoritative `encoded` data for lossy cap enforcement.
     if (
       (operation.type === 'add-direct-copy' || operation.type === 'add-optimized-copy') &&
       ctx.syncTagConfig
@@ -334,7 +335,8 @@ export class MusicTransferOps {
       const syncTag = this.buildSyncTagForPreset(
         operation.preset.name,
         operation.preset.targetCodec,
-        ctx
+        ctx,
+        operation.preset.bitrateOverride
       );
       if (syncTag) {
         foundTrack = this.device.writeSyncTag(foundTrack, syncTag);
@@ -410,7 +412,8 @@ export class MusicTransferOps {
   private buildSyncTagForPreset(
     presetName: string,
     targetCodec: string | undefined,
-    ctx: ExecutionContext
+    ctx: ExecutionContext,
+    bitrateOverride?: number
   ): SyncTagData | undefined {
     if (!ctx.syncTagConfig) {
       return undefined;
@@ -419,7 +422,12 @@ export class MusicTransferOps {
     return buildAudioSyncTag(
       presetName,
       ctx.syncTagConfig.encodingMode,
-      ctx.syncTagConfig.customBitrate,
+      // Prefer the preset's explicit bitrate override over the config-wide custom
+      // bitrate. A lossy cap-down transcode sets `bitrateOverride` to the cap so
+      // the recorded sync-tag bitrate matches the new encoded value, making the
+      // next sync idempotent. Symmetric with `expectedSyncTagFromClassification`,
+      // which also prefers `preset.bitrateOverride ?? customBitrate`.
+      bitrateOverride ?? ctx.syncTagConfig.customBitrate,
       ctx.transferMode,
       targetCodec
     );

@@ -23,7 +23,7 @@ Audio and video preset change detection share the same core comparison via `dete
 3. For `max` preset on ALAC-capable devices, use format detection instead of bitrate comparison
 4. Ignore tracks with bitrates below a minimum threshold (default 64 kbps) to avoid false positives from short files or corrupt metadata
 
-**Audio-specific:** Only lossless source tracks are checked — lossy sources (MP3, AAC) are copied as-is regardless of preset.
+**Audio-specific:** Lossless source tracks are checked in both directions via the tolerance comparison above. Lossy sources (MP3, AAC) take a separate, sync-tag-driven path (`classifyLossyDeviceBound`): a lossy track whose recorded sync-tag bitrate exceeds the cap is re-encoded **down** to the cap (down direction only); lossy tracks at or below the cap stay copied as-is. The DB-bitrate tolerance comparison is not used for lossy.
 
 **Video-specific:** All videos are transcoded, so all existing videos are checked. Videos needing re-transcoding are removed and re-added (no user data to preserve).
 

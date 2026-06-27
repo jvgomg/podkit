@@ -323,6 +323,39 @@ describe('MusicHandler', () => {
       expect(ops.length).toBe(1);
       expect(ops[0]!.type).toBe('upgrade-direct-copy');
     });
+
+    test('routes a lossy cap-down to upgrade-transcode (re-encode down), not copy', () => {
+      // Same device/source as the direct-copy case above — the ONLY difference is
+      // the cap-down qualityChange, which must flip the routing from copy to a
+      // re-encode capped at the target preset.
+      const h = createMusicHandler(
+        makeConfig({
+          quality: 'low',
+          capabilities: makeCapabilities({
+            supportedAudioCodecs: ['aac', 'mp3'],
+            artworkSources: ['database'],
+          }),
+        })
+      );
+      const source = makeCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 320 });
+      const device = makeDeviceTrack({ filetype: 'MPEG audio file', bitrate: 320 });
+      const ops = h.planUpdate(source, device, ['quality-change'], undefined, undefined, {
+        reason: 'cap-down',
+        direction: 'down',
+        reEncodes: true,
+        targetBitrate: 128,
+        encodedBitrate: 320,
+        sourceBitrate: 320,
+      });
+      expect(ops.length).toBe(1);
+      expect(ops[0]!.type).toBe('upgrade-transcode');
+      // The transcode preset carries the cap so the re-encoded sync tag records
+      // the new bitrate (idempotency).
+      const op = ops[0]!;
+      if (op.type === 'upgrade-transcode') {
+        expect(op.preset.bitrateOverride).toBe(128);
+      }
+    });
   });
 
   describe('estimateSize', () => {
