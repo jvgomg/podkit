@@ -105,7 +105,7 @@ cd tools/libgpod-macos
 This will:
 1. Install Homebrew dependencies (libplist, gdk-pixbuf, autoconf, etc.)
 2. Download libgpod 0.8.3 source and required patches
-3. Build and install to `~/.local`
+3. Build and install to `~/.local` (configured `--without-libusb` — podkit does not use libgpod's USB path; all iPod USB I/O lives in `@podkit/ipod-firmware`)
 
 ### Step 4: Configure Environment
 

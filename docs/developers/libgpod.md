@@ -19,6 +19,10 @@ libgpod is a C library for reading and writing the iTunes database (iTunesDB) on
 | **Current Version** | 0.8.3 |
 | **Status** | Maintenance mode (stable, infrequent updates) |
 
+:::note
+`@podkit/libgpod-node` is built with `--without-libusb`. libgpod's USB code path (`itdb_read_sysinfo_extended_from_usb`) is not used by podkit; all iPod USB and firmware inquiry is handled by `@podkit/ipod-firmware` (koffi SCSI/IOKit + the `usb` npm package). libusb is not a build or runtime dependency of the native binding.
+:::
+
 ## IpodDatabase Abstraction
 
 **For application code, use `IpodDatabase` from `@podkit/core` instead of `@podkit/libgpod-node` directly.**

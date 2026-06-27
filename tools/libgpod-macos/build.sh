@@ -133,6 +133,9 @@ extract_and_patch() {
     log_info "  Applying libplist patch..."
     patch -p1 < "$DOWNLOAD_DIR/libgpod-libplist.patch"
 
+    log_info "  Adding --without-libusb opt-out (podkit reads SysInfoExtended via @podkit/ipod-firmware)..."
+    "$SCRIPT_DIR/../prebuild/disable-libgpod-libusb.sh" configure.ac
+
     log_info "Patching complete"
 }
 
@@ -158,7 +161,8 @@ configure_build() {
         --disable-udev \
         --disable-pygobject \
         --with-python=no \
-        --without-hal
+        --without-hal \
+        --without-libusb
 
     log_info "Configuration complete"
 }

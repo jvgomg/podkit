@@ -149,6 +149,9 @@ if [ "$OS" = "Darwin" ]; then
     curl -sL -o libplist.patch "https://raw.githubusercontent.com/pld-linux/libgpod/master/libgpod-libplist.patch"
     patch -p0 < callout.patch
     patch -p1 < libplist.patch
+    # podkit never calls itdb_read_sysinfo_extended_from_usb (USB SysInfoExtended
+    # reads live in @podkit/ipod-firmware), so keep libusb out of libgpod entirely.
+    "$REPO_ROOT/tools/prebuild/disable-libgpod-libusb.sh" configure.ac
 
     # Use Homebrew pkg-config paths — same as tools/libgpod-macos/build.sh
     LIBPLIST_PREFIX="$(brew --prefix libplist)"
@@ -162,9 +165,8 @@ if [ "$OS" = "Darwin" ]; then
       --enable-static --disable-shared \
       --disable-more-warnings --disable-silent-rules \
       --disable-udev --disable-pygobject \
-      --with-python=no --without-hal
-    # Build only the library (src/), not tools — avoids HAVE_LIBUSB auto-detect
-    # leaking a Homebrew-libusb dynamic link into a tool binary we don't ship.
+      --with-python=no --without-hal --without-libusb
+    # Build only the library (src/), not tools.
     make -C src -j"$NPROC"
     make -C src install
     make install-pkgconfigDATA
@@ -493,6 +495,9 @@ elif [ "$OS" = "Linux" ]; then
     curl -sL -o libplist.patch "https://raw.githubusercontent.com/pld-linux/libgpod/master/libgpod-libplist.patch"
     patch -p0 < callout.patch
     patch -p1 < libplist.patch
+    # podkit never calls itdb_read_sysinfo_extended_from_usb (USB SysInfoExtended
+    # reads live in @podkit/ipod-firmware), so keep libusb out of libgpod entirely.
+    "$REPO_ROOT/tools/prebuild/disable-libgpod-libusb.sh" configure.ac
 
     # Point pkg-config at our static deps so configure finds glib, gdk-pixbuf, libplist
     export PKG_CONFIG_PATH="$STATIC_PKG_PATH"
@@ -509,7 +514,7 @@ elif [ "$OS" = "Linux" ]; then
       --enable-static --disable-shared \
       --disable-more-warnings --disable-silent-rules \
       --disable-udev --disable-pygobject \
-      --with-python=no --without-hal
+      --with-python=no --without-hal --without-libusb
     # Build only the library (src/), not tools — the tools need complex static
     # linking of all transitive deps which autotools can't handle well.
     make -C src -j"$NPROC"
