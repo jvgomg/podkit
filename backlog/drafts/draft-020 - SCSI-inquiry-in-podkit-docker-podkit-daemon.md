@@ -1,10 +1,10 @@
 ---
-id: TASK-296
+id: DRAFT-020
 title: SCSI inquiry in podkit-docker + podkit-daemon
-status: To Do
+status: Draft
 assignee: []
 created_date: '2026-05-03 12:46'
-updated_date: '2026-06-15 10:44'
+updated_date: '2026-06-27 19:06'
 labels:
   - device-capability-architecture
   - docker
@@ -12,6 +12,9 @@ labels:
 milestone: m-22
 dependencies:
   - TASK-292
+references:
+  - backlog/docs/doc-052 - PRD-podkit-docker-alignment.md
+  - backlog/docs/doc-053 - podkit-docker-testing-strategy.md
 documentation:
   - backlog/docs/doc-030 - PRD-Device-Capability-Architecture.md
   - backlog/docs/doc-032 - Spec-Phase-1-ipod-firmware-SCSI-delivery.md
@@ -76,3 +79,9 @@ Parent PRD: doc-030 (PRD: Device Capability Architecture).
 - [ ] #9 Documents that the host udev rule (TASK-292.12) does not apply inside the container; container root has access to whatever devices are exposed via --device or cgroup
 - [ ] #10 Security review notes: which exposure strategies escalate privileges, which are safe-by-default, recommendation for the daemon case
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Beyond-scope for the m-22 alignment release (doc-052 Out of Scope) — moved to Draft. The alignment release blesses **USB inquiry** in-container as the one-time setup tier; SCSI inquiry stays here. Re-frame this task's value around **which devices it unlocks**: SCSI is the inquiry fallback for older iPods that stall on USB inquiry, so SCSI-in-container is specifically about being able to *set up* (write SysInfoExtended for) those older iPods inside Docker — not just scanning. Keep the device-support description concrete when this is pulled into a release. Carries the heaviest privilege/security cost in the epic (/dev bind + cgroup-rule + security review), which is why it is deferred.
+<!-- SECTION:NOTES:END -->
