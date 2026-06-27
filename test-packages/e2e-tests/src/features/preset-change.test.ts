@@ -10,9 +10,9 @@
  */
 
 import { describe, it, expect } from 'bun:test';
-import { mkdtemp, rm, copyFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, copyFile, writeFile, readdir, rename } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, extname } from 'node:path';
 import { execSync } from 'node:child_process';
 import { ensureFixturesExist, requireFFmpeg } from '@podkit/e2e-shared';
 import { gpodTool } from '@podkit/gpod-testing';
@@ -785,9 +785,12 @@ device = "${stanza?.name ?? ''}"
 // normal sync leaves it alone (no re-encode storm). Only the explicit
 // `--force-sync-tags-transcode` flag adopts it, routing it to a re-encode.
 //
-// These arms use `--dry-run` so they assert the routing decision against a real
-// device database without performing the (file-backed) re-encode. Execution +
-// idempotency of the adopted tag are covered by the core unit/handler tests.
+// The iPod arm uses `--dry-run` to assert the routing decision against a real
+// device database (a file-backed re-encode is not driven against the dummy DB).
+// The mass-storage arm runs the real re-encode end to end — the untagged file is
+// adopted (re-encoded, an authoritative sync tag written) and a follow-up sync
+// converges — since mass-storage stores the sync tag in the file's own comment
+// and needs no device database.
 // =============================================================================
 
 describe('untagged-track adoption (--force-sync-tags-transcode)', () => {
@@ -873,4 +876,158 @@ describe('untagged-track adoption (--force-sync-tags-transcode)', () => {
       }
     });
   }, 120000);
+
+  // Audio files under `root`, recursively, whatever codec/extension.
+  async function findDeviceAudioFiles(root: string): Promise<string[]> {
+    const exts = new Set(['.mp3', '.m4a', '.aac', '.flac', '.ogg', '.opus', '.wav', '.aiff']);
+    const found: string[] = [];
+    async function walk(dir: string): Promise<void> {
+      let entries;
+      try {
+        entries = await readdir(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const e of entries) {
+        const p = join(dir, e.name);
+        if (e.isDirectory()) await walk(p);
+        else if (exts.has(extname(e.name).toLowerCase())) found.push(p);
+      }
+    }
+    await walk(root);
+    return found;
+  }
+
+  // The comment of the single on-device audio file under `root`, or '' if none.
+  // The podkit sync tag lives in the file comment on mass-storage, so this reads
+  // it back across whatever codec/extension the adoption re-encode produced.
+  async function deviceFileComment(root: string): Promise<string> {
+    const found = await findDeviceAudioFiles(root);
+    if (found.length === 0) return '';
+    return execSync(
+      `ffprobe -v quiet -show_entries format_tags=comment:stream_tags=comment ` +
+        `-of default=nw=1:nk=1 "${found[0]}"`
+    )
+      .toString()
+      .trim();
+  }
+
+  // Clear the comment (and thus any sync tag) on the single on-device file,
+  // keeping every other tag, without re-encoding — turning a podkit-written
+  // track back into a pre-feature / third-party one podkit never tagged.
+  async function stripDeviceComment(root: string): Promise<void> {
+    const [file] = await findDeviceAudioFiles(root);
+    if (!file) throw new Error('no on-device audio file to strip');
+    const tmp = `${file}.stripped${extname(file)}`;
+    execSync(`ffmpeg -v quiet -i "${file}" -map_metadata 0 -metadata comment= -c copy -y "${tmp}"`);
+    await rename(tmp, file);
+  }
+
+  // Mass-storage runs the adoption end to end: a genuinely untagged real file
+  // already on the device is left untouched by a normal sync, then re-encoded
+  // and tagged by --force-sync-tags-transcode, and a follow-up sync converges.
+  it('mass-storage adopts an untagged on-device track and converges across re-sync', async () => {
+    requireFFmpeg();
+    await withMassStorageTarget(
+      async (target) => {
+        const configDir = await mkdtemp(join(tmpdir(), 'podkit-adopt-ms-'));
+        const collectionDir = await mkdtemp(join(tmpdir(), 'podkit-adopt-ms-src-'));
+        try {
+          const meta =
+            `-metadata title="${TRACK_META.title}" -metadata artist="${TRACK_META.artist}" ` +
+            `-metadata album="${TRACK_META.album}" -metadata track="1"`;
+          // Source: a 192 kbps MP3 — compatible-lossy on the generic preset.
+          execSync(
+            `ffmpeg -f lavfi -i "sine=frequency=440:sample_rate=44100:duration=2" ${meta} ` +
+              `-b:a 192k -y "${join(collectionDir, 'track.mp3')}"`,
+            { stdio: 'ignore' }
+          );
+
+          const stanza = target.deviceConfig();
+          const configPath = join(configDir, 'config.toml');
+          await writeFile(
+            configPath,
+            `version = 2
+
+quality = "high"
+
+[music.default]
+path = "${collectionDir}"
+
+${stanza?.toml ?? ''}
+
+[defaults]
+music = "default"
+device = "${stanza?.name ?? ''}"
+`
+          );
+          const device = stanza?.name ?? target.path;
+          const musicRoot = target.musicRoot();
+
+          // Seed via a real sync (podkit lays the file out and writes a sync tag),
+          // then strip the comment so it reads as a track podkit never wrote.
+          const { result: seedResult } = await runCliJson<SyncOutput>([
+            '--config',
+            configPath,
+            'sync',
+            '--device',
+            device,
+            '--json',
+          ]);
+          expect(seedResult.exitCode).toBe(0);
+          expect((await target.getTracks()).length).toBe(1);
+          await stripDeviceComment(musicRoot);
+          expect(await deviceFileComment(musicRoot)).not.toContain('[podkit:');
+
+          // Step 1: Normal sync leaves the untagged track alone — no add, no
+          // update, no tag written (no re-encode storm).
+          const { json: normalJson } = await runCliJson<SyncOutput>([
+            '--config',
+            configPath,
+            'sync',
+            '--device',
+            device,
+            '--json',
+          ]);
+          expect(normalJson?.plan?.tracksToAdd ?? 0).toBe(0);
+          expect(normalJson?.plan?.tracksToUpdate ?? 0).toBe(0);
+          expect((await target.getTracks()).length).toBe(1);
+          expect(await deviceFileComment(musicRoot)).not.toContain('[podkit:');
+
+          // Step 2: --force-sync-tags-transcode adopts it — a real re-encode that
+          // writes an authoritative sync tag into the file comment.
+          const { result: adoptResult, json: adoptJson } = await runCliJson<SyncOutput>([
+            '--config',
+            configPath,
+            'sync',
+            '--device',
+            device,
+            '--force-sync-tags-transcode',
+            '--json',
+          ]);
+          expect(adoptResult.exitCode).toBe(0);
+          expect(adoptJson?.result?.completed ?? 0).toBe(1);
+          expect((await target.getTracks()).length).toBe(1);
+          expect(await deviceFileComment(musicRoot)).toContain('[podkit:');
+
+          // Step 3: Re-sync is a no-op — the track now carries an authoritative tag.
+          const { json: convergeJson } = await runCliJson<SyncOutput>([
+            '--config',
+            configPath,
+            'sync',
+            '--device',
+            device,
+            '--dry-run',
+            '--json',
+          ]);
+          expect(convergeJson?.plan?.tracksToUpdate ?? 0).toBe(0);
+          expect(convergeJson?.plan?.tracksToAdd ?? 0).toBe(0);
+        } finally {
+          await rm(configDir, { recursive: true, force: true });
+          await rm(collectionDir, { recursive: true, force: true });
+        }
+      },
+      { preset: 'generic' }
+    );
+  }, 180000);
 });
