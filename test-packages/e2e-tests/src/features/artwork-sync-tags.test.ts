@@ -509,7 +509,7 @@ describe('artwork sync tags (directory source)', () => {
         const dryBreakdown = dryJson?.plan?.updateBreakdown as
           | Record<string, number | undefined>
           | undefined;
-        expect(dryBreakdown?.['preset-downgrade']).toBe(3);
+        expect(dryBreakdown?.['quality-change-down']).toBe(3);
 
         // Actually sync at low quality
         const { result: syncResult } = await runCliJson<SyncOutput>([

@@ -105,19 +105,19 @@ EOF
 | Step | Action | Expected result |
 |------|--------|-----------------|
 | 1 | Sync at `low` | All tracks added, ~112-163 kbps |
-| 2 | Change to `high`, dry-run | All tracks: `preset-upgrade` |
+| 2 | Change to `high`, dry-run | All tracks: `quality-change-up` (`cap-up`) |
 | 3 | Sync at `high` | Re-transcoded to ~212-305 kbps |
 | 4 | Dry-run at `high` | **0 updates** (idempotent) |
 | 5a | **Non-ALAC device:** Change to `max`, dry-run | **0 updates** (`max` = same as `high` on non-ALAC devices) |
-| 5b | **ALAC-capable device:** Change to `max`, dry-run | All tracks: `preset-upgrade` (re-transcode to ALAC) |
+| 5b | **ALAC-capable device:** Change to `max`, dry-run | All tracks: `quality-change-up` (`cap-up`, re-transcode to ALAC) |
 | 6b | Sync at `max` on ALAC device | Re-transcoded to ALAC (lossless) |
 | 7b | Dry-run at `max` on ALAC device | **0 updates** (idempotent) |
-| 8 | Change to `low`, dry-run | All tracks: `preset-downgrade` |
+| 8 | Change to `low`, dry-run | All tracks: `quality-change-down` (`cap-down`) |
 | 9 | Sync at `low` | Re-transcoded to ~112-163 kbps |
 | 10 | Dry-run at `low` | **0 updates** (idempotent) |
 | 11 | `--skip-upgrades` | **0 updates** (suppressed) |
 | 12 | Change to `encoding = "cbr"` at `low` | 0 updates (same target bitrate) |
-| 13 | Change to `high` with `encoding = "cbr"` | All tracks: `preset-upgrade` |
+| 13 | Change to `high` with `encoding = "cbr"` | All tracks: `quality-change-up` (`cap-up`) |
 
 ### Video Test Setup
 
@@ -182,7 +182,7 @@ Use `--dry-run --json` to inspect audio planned operations:
 podkit --config /tmp/podkit-preset-test-config.toml sync --dry-run --json
 ```
 
-Check `plan.updateBreakdown` for `preset-upgrade` and `preset-downgrade` counts. Check `plan.tracksExisting` to verify idempotency.
+Check `plan.updateBreakdown` for `quality-change-up` and `quality-change-down` counts (sub-reason in `qualityChanges[].reason`: `cap-up`, `cap-down`, `lossless-boundary`, `source-improved`). Check `plan.tracksExisting` to verify idempotency.
 
 ## Test Results (March 2026)
 

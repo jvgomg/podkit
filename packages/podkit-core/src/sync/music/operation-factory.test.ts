@@ -65,23 +65,23 @@ describe('MusicOperationFactory', () => {
 
     test('direct-copy action produces upgrade-direct-copy with source, target, reason', () => {
       const action: MusicAction = { type: 'direct-copy' };
-      const op = factory.createUpgrade(source, target, 'format-upgrade', action);
+      const op = factory.createUpgrade(source, target, 'quality-change', action);
       expect(op).toEqual({
         type: 'upgrade-direct-copy',
         source,
         target,
-        reason: 'format-upgrade',
+        reason: 'quality-change',
       });
     });
 
     test('optimized-copy action produces upgrade-optimized-copy', () => {
       const action: MusicAction = { type: 'optimized-copy' };
-      const op = factory.createUpgrade(source, target, 'quality-upgrade', action);
+      const op = factory.createUpgrade(source, target, 'quality-change', action);
       expect(op).toEqual({
         type: 'upgrade-optimized-copy',
         source,
         target,
-        reason: 'quality-upgrade',
+        reason: 'quality-change',
       });
     });
 

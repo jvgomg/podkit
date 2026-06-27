@@ -19,8 +19,10 @@ import {
   isFileReplacementUpgrade,
   isSourceLossless,
   metadataValuesDiffer,
-  detectPresetChange,
+  classifyDeviceBound,
+  classifySourceBound,
 } from '../engine/upgrades.js';
+import type { QualityChange, QualityTarget } from '../engine/upgrades.js';
 import { normalizationToDb } from '../../metadata/normalization.js';
 import { calculateMusicOperationSize, categorizeSource, isLosslessSource } from './planner.js';
 import {
@@ -30,11 +32,7 @@ import {
   getTranscodeFiletypeLabel,
 } from './pipeline.js';
 import { estimateTransferTime } from '../engine/estimation.js';
-import {
-  buildAudioSyncTag,
-  syncTagMatchesConfig,
-  syncTagsEqual,
-} from '../../metadata/sync-tags.js';
+import { buildAudioSyncTag, syncTagsEqual } from '../../metadata/sync-tags.js';
 import type { SyncTagData } from '../../metadata/sync-tags.js';
 import type {
   MetadataChange,
@@ -64,18 +62,6 @@ import { MusicOperationFactory } from './operation-factory.js';
 // =============================================================================
 // Helpers
 // =============================================================================
-
-/**
- * Quality tier ordering for sync tag direction comparison.
- * Higher number = higher quality.
- */
-const QUALITY_TIER_ORDER: Record<string, number> = {
-  low: 0,
-  medium: 1,
-  high: 2,
-  max: 3, // video uses 'max' directly; audio resolves 'max' to 'lossless' or 'high' before tagging
-  lossless: 3,
-};
 
 /**
  * What the next sync would write into a track's syncTag, given the classifier's
@@ -110,34 +96,18 @@ export function expectedSyncTagFromClassification(
 }
 
 /**
- * Determine the direction of a sync tag mismatch.
- *
- * Compares old (iPod) and new (config) sync tags to decide if the preset
- * change is an upgrade or downgrade. Falls back to 'preset-upgrade' if
- * the direction cannot be determined.
+ * Build the QualityTarget the classifier compares against, from resolved config.
  */
-function determineSyncTagDirection(
-  oldTag: { quality: string; encoding?: string; bitrate?: number },
-  newTag: { quality: string; encoding?: string; bitrate?: number }
-): 'preset-upgrade' | 'preset-downgrade' {
-  const oldTier = QUALITY_TIER_ORDER[oldTag.quality] ?? -1;
-  const newTier = QUALITY_TIER_ORDER[newTag.quality] ?? -1;
-
-  if (newTier > oldTier) {
-    return 'preset-upgrade';
-  }
-  if (newTier < oldTier) {
-    return 'preset-downgrade';
-  }
-
-  // Same quality tier — encoding or bitrate change.
-  // If bitrate changed, use that for direction.
-  if (oldTag.bitrate !== undefined && newTag.bitrate !== undefined) {
-    return newTag.bitrate > oldTag.bitrate ? 'preset-upgrade' : 'preset-downgrade';
-  }
-
-  // Encoding mode change at same quality is a re-transcode (treat as upgrade)
-  return 'preset-upgrade';
+function qualityTargetFromConfig(config: ResolvedMusicConfig): QualityTarget {
+  return {
+    preset: config.resolvedQuality ?? '',
+    presetBitrate: config.presetBitrate ?? 0,
+    encoding: config.raw.encoding ?? 'vbr',
+    customBitrate: config.raw.customBitrate,
+    isAlacPreset: config.isAlacPreset ?? false,
+    resolvedLossyCodec: config.resolvedLossyCodec,
+    bitrateTolerance: config.raw.bitrateTolerance,
+  };
 }
 
 /**
@@ -273,20 +243,17 @@ export class MusicHandler implements ContentTypeHandler<
 
     let reasons = detectUpgrades(source, device) as UpdateReason[];
 
+    // Source-vs-device quality change (was format-upgrade / quality-upgrade).
+    // The unified classifier's source bound owns this; it lands as the headline
+    // `quality-change` reason. The full QualityChange payload is recomputed and
+    // attached in postProcessBuildChanges (Pass 0).
+    if (this.detectSourceQualityChange(source, device)) {
+      reasons.unshift('quality-change');
+    }
+
     // When the device doesn't support audio normalization, normalization updates are meaningless
     if (this.config.audioNormalization === 'none') {
       reasons = reasons.filter((r) => r !== 'normalization-update');
-    }
-
-    // When transcoding is active, lossless source → lossy iPod is expected
-    // ONLY if the iPod track is already in the target format (AAC).
-    // If the iPod track is MP3 (a compatible-lossy copy from before the source
-    // was upgraded to FLAC), that IS a genuine format upgrade opportunity.
-    if (reasons.includes('format-upgrade')) {
-      const ipodFamily = getIpodFormatFamily(device);
-      if (ipodFamily === 'aac') {
-        reasons = reasons.filter((r) => r !== 'format-upgrade');
-      }
     }
 
     // When forceTranscode is on and source is lossless, ensure file-replacement
@@ -306,6 +273,31 @@ export class MusicHandler implements ContentTypeHandler<
     }
 
     return reasons;
+  }
+
+  /**
+   * Source-vs-device quality change (the classifier's source bound), with the
+   * transcoding-active suppression applied.
+   *
+   * Behaviour-preserving: when the source is lossless and the device track is
+   * already in the target AAC format, the `lossless-boundary` change is the
+   * expected steady state of an active transcode pipeline (FLAC → AAC), NOT an
+   * upgrade — suppress it. An MP3-on-device copy (family 'mp3') still surfaces
+   * the change so the re-transcode the user expects fires. This mirrors the
+   * former `detectUpgrades` + AAC-family filter in `detectUpdates`.
+   */
+  private detectSourceQualityChange(
+    source: CollectionTrack,
+    device: DeviceTrack
+  ): QualityChange | null {
+    const change = classifySourceBound(source, device, this.config.presetBitrate ?? 0);
+    if (!change) return null;
+
+    if (change.reason === 'lossless-boundary' && getIpodFormatFamily(device) === 'aac') {
+      return null;
+    }
+
+    return change;
   }
 
   // ---- Post-processing ----
@@ -344,9 +336,37 @@ export class MusicHandler implements ContentTypeHandler<
    */
   private postProcessBuildChanges(diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack>): void {
     for (const update of diff.toUpdate) {
-      if (update.changes && update.changes.length > 0) continue; // already populated
-
       const reason = update.reasons[0];
+
+      // Attach the source-bound QualityChange payload (recomputed from the same
+      // pure helper detectUpdates used) and its display changes. Done before the
+      // already-populated guard so the payload lands even if changes pre-exist.
+      if (reason === 'quality-change' && !update.qualityChange) {
+        const change = this.detectSourceQualityChange(update.source, update.device);
+        if (change) {
+          update.qualityChange = change;
+          if (!update.changes || update.changes.length === 0) {
+            update.changes =
+              change.reason === 'lossless-boundary'
+                ? [
+                    {
+                      field: 'fileType',
+                      from: update.device.filetype ?? 'unknown',
+                      to: update.source.fileType,
+                    },
+                  ]
+                : [
+                    {
+                      field: 'bitrate',
+                      from: String(update.device.bitrate),
+                      to: String(update.source.bitrate ?? 'unknown'),
+                    },
+                  ];
+          }
+        }
+      }
+
+      if (update.changes && update.changes.length > 0) continue; // already populated
 
       if (reason === 'transform-apply') {
         // Build changes from device metadata → transformed source metadata
@@ -355,24 +375,6 @@ export class MusicHandler implements ContentTypeHandler<
       } else if (reason === 'transform-remove') {
         // Build changes from device metadata → original source metadata
         update.changes = buildMusicMetadataChanges(update.device, update.source);
-      } else if (reason === 'format-upgrade' || reason === 'quality-upgrade') {
-        // Build changes showing the format/quality difference
-        const changes: MetadataChange[] = [];
-        if (reason === 'format-upgrade') {
-          changes.push({
-            field: 'fileType',
-            from: update.device.filetype ?? 'unknown',
-            to: update.source.fileType,
-          });
-        }
-        if (reason === 'quality-upgrade') {
-          changes.push({
-            field: 'bitrate',
-            from: String(update.device.bitrate),
-            to: String(update.source.bitrate ?? 'unknown'),
-          });
-        }
-        update.changes = changes;
       } else if (reason === 'metadata-correction') {
         // Build changes for metadata fields that differ
         const changes: MetadataChange[] = [];
@@ -413,18 +415,20 @@ export class MusicHandler implements ContentTypeHandler<
   }
 
   /**
-   * Pass 1: Detect quality preset changes on existing tracks.
-   * When isAlacPreset is true, check format-based detection (no presetBitrate needed).
-   * Otherwise, when presetBitrate is provided, check bitrate.
-   * Tracks with a mismatch are moved from existing -> toUpdate.
+   * Pass 1: Detect device-vs-target quality changes on existing tracks (the
+   * device bound of the unified classifier — was `postProcessPresetChanges`).
+   * When isAlacPreset is true, uses format-based detection (no presetBitrate
+   * needed). Otherwise, when presetBitrate is provided, compares bitrate.
+   * Tracks with a change are moved from existing -> toUpdate as `quality-change`.
    *
-   * Sync tag priority: if a track has a sync tag, use exact comparison against
-   * the current config. If no sync tag, fall back to bitrate tolerance detection.
+   * Sync tag priority: if a track has a sync tag, exact comparison against the
+   * current config. If no sync tag, fall back to bitrate tolerance detection
+   * (preserved in S0; removed in a later slice).
    *
    * This detector handles the *preset* dimension (quality / encoding / bitrate)
    * only. Codec dimension (lossy = ['aac'] vs ['opus']) is the responsibility
    * of `postProcessCodecChanges`, so `syncTagMatchesConfig` does not compare
-   * codec — a codec change shows up via that detector, not as a preset-upgrade.
+   * codec — a codec change shows up via that detector, not as a quality-change.
    */
   private postProcessPresetChanges(diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack>): void {
     const shouldCheckPreset =
@@ -434,14 +438,10 @@ export class MusicHandler implements ContentTypeHandler<
     if (!shouldCheckPreset) return;
 
     const presetBitrate = this.config.presetBitrate ?? 0;
-    const presetChangeOptions = {
-      encodingMode: this.config.raw.encoding,
-      bitrateTolerance: this.config.raw.bitrateTolerance,
-      isAlacPreset: this.config.isAlacPreset,
-    };
+    const target = qualityTargetFromConfig(this.config);
 
     partitionExisting(diff, (match) => {
-      // Only check lossless-source tracks (lossy are copied as-is)
+      // Only check lossless-source tracks (lossy are copied as-is in S0).
       if (!isSourceLossless(match.source)) return null;
 
       const syncTag = match.device.syncTag;
@@ -460,25 +460,19 @@ export class MusicHandler implements ContentTypeHandler<
         resolvedLossyCodec: this.config.resolvedLossyCodec,
       });
 
-      let presetChange: 'preset-upgrade' | 'preset-downgrade' | null = null;
-      if (syncTag && expectedSyncTag) {
-        // Sync tag exists — use exact comparison
-        if (!syncTagMatchesConfig(syncTag, expectedSyncTag)) {
-          // Determine direction from quality tier comparison
-          presetChange = determineSyncTagDirection(syncTag, expectedSyncTag);
-        }
-        // else: sync tag matches -> in sync, presetChange stays null
-      } else {
-        // No sync tag on track, or no resolvedQuality in options — fall back to bitrate tolerance.
-        presetChange = detectPresetChange(
-          match.source,
-          match.device,
-          presetBitrate,
-          presetChangeOptions
-        );
-      }
+      // Device-vs-target bound only — the source bound was already evaluated
+      // (and AAC-suppressed) by detectUpdates in the match loop. Running the
+      // full classifier here would re-fire the source bound without that
+      // suppression and misclassify a transcoded FLAC→AAC track as
+      // lossless-boundary on every sync.
+      const change = classifyDeviceBound({
+        source: match.source,
+        device: match.device,
+        target,
+        expectedSyncTag,
+      });
 
-      if (!presetChange) return null;
+      if (!change) return null;
 
       // Derive the change record from what the classifier would *actually*
       // produce for this track, not the config-wide ALAC-preset flag. Under
@@ -510,7 +504,7 @@ export class MusicHandler implements ContentTypeHandler<
             },
           ];
 
-      return { reasons: [presetChange], changes };
+      return { reasons: ['quality-change'], changes, qualityChange: change };
     });
   }
 

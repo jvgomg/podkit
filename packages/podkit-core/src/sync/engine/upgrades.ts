@@ -12,6 +12,8 @@
 
 import type { CollectionTrack } from '../../adapters/interface.js';
 import type { EncodingMode } from '../../transcode/types.js';
+import type { SyncTagData } from '../../metadata/sync-tags.js';
+import { syncTagMatchesConfig } from '../../metadata/sync-tags.js';
 import { normalizationToDb } from '../../metadata/normalization.js';
 import type { DeviceTrack } from './types.js';
 import type { UpdateReason, UpgradeReason } from './types.js';
@@ -131,95 +133,349 @@ export function isSourceLossless(source: CollectionTrack): boolean {
   return getSourceFormatFamily(source) === 'lossless';
 }
 
+// =============================================================================
+// Unified quality classifier
+// =============================================================================
+
 /**
- * Check if a source track represents a quality upgrade over an iPod track.
+ * Reasons the unified quality classifier can produce.
  *
- * Returns `true` only when the source is **definitively better**, not merely different.
+ * Today (slice S0) only the four behaviour-preserving reasons are reachable:
+ * - `lossless-boundary` (was `format-upgrade`): a lossless source replacing a
+ *   lossy device copy.
+ * - `source-improved` (was `quality-upgrade`): a lossy source whose bitrate
+ *   climbed well above the device copy (same-family, 64 kbps / 1.5× threshold).
+ * - `cap-up` (was `preset-upgrade`): the device's recorded encoding sits below
+ *   the configured target — re-encode up.
+ * - `cap-down` (was `preset-downgrade`): the device's recorded encoding sits
+ *   above the configured target — re-encode down.
  *
- * Quality upgrade rules:
- * - Lossless source replacing lossy iPod track -> upgrade
- * - Higher bitrate lossy replacing lower bitrate lossy (same format family,
- *   >= 1.5x OR >= 64 kbps increase) -> upgrade
- * - Lossy -> lossy different format -> NOT an upgrade (transcoding between
- *   lossy formats loses quality)
- * - Lower or equal quality -> NOT an upgrade
- *
- * @param source - Track from the collection source
- * @param ipod - Matched track currently on the iPod
- * @returns True if the source is a quality upgrade over the iPod track
+ * The remaining reasons are scaffold for later slices and are NOT produced by
+ * S0:
+ * - `format-mismatch` / `encoding-mismatch`: precondition classes (CBR/VBR flip,
+ *   codec correctness) — wired in S1/S2.
+ * - `source-down-suppressed`: a worse source the user opted NOT to follow down —
+ *   wired in S2 (`reEncodes: false`).
  */
-export function isQualityUpgrade(source: CollectionTrack, ipod: DeviceTrack): boolean {
-  const sourceLossless = isSourceLossless(source);
-  const ipodLossless = isIpodTrackLossless(ipod);
+export type QualityChangeReason =
+  | 'format-mismatch'
+  | 'encoding-mismatch'
+  | 'lossless-boundary'
+  | 'cap-down'
+  | 'cap-up'
+  | 'source-improved'
+  | 'source-down-suppressed';
 
-  // If iPod format is unknown, we can't determine upgrade
-  if (ipodLossless === undefined) {
-    return false;
-  }
+/**
+ * Direction tag for a quality change. `format-only` marks a precondition-class
+ * re-encode (codec/encoding correctness) that isn't a bitrate move.
+ */
+export type QualityChangeDirection = 'up' | 'down' | 'format-only';
 
-  // Lossless replacing lossy is always an upgrade
-  if (sourceLossless && !ipodLossless) {
-    return true;
-  }
-
-  // Lossy replacing lossless is never an upgrade
-  if (!sourceLossless && ipodLossless) {
-    return false;
-  }
-
-  // Lossless replacing lossless — not an upgrade (already lossless)
-  if (sourceLossless && ipodLossless) {
-    return false;
-  }
-
-  // Both lossy — check if same format family and significant bitrate increase
-  const sourceFamily = getSourceFormatFamily(source);
-  const ipodFamily = getIpodFormatFamily(ipod);
-
-  // Cross-format lossy is never an upgrade (would lose quality transcoding)
-  if (sourceFamily !== ipodFamily) {
-    return false;
-  }
-
-  // Unknown format families can't be compared
-  if (sourceFamily === 'unknown' || ipodFamily === 'unknown') {
-    return false;
-  }
-
-  // Same format family — check bitrate
-  const sourceBitrate = source.bitrate;
-  const ipodBitrate = ipod.bitrate;
-
-  // Can't determine upgrade without bitrate info
-  if (!sourceBitrate || !ipodBitrate) {
-    return false;
-  }
-
-  // Must meet at least one threshold: 1.5x multiplier OR 64 kbps increase
-  const absoluteIncrease = sourceBitrate - ipodBitrate;
-  const relativeIncrease = sourceBitrate / ipodBitrate;
-
-  return (
-    absoluteIncrease >= MIN_BITRATE_INCREASE_KBPS || relativeIncrease >= MIN_BITRATE_MULTIPLIER
-  );
+/**
+ * The single shape the quality classifier returns. Descriptive bitrate /
+ * encoding fields feed the `quality-change` event and `qualityChanges[]` JSON.
+ */
+export interface QualityChange {
+  reason: QualityChangeReason;
+  direction: QualityChangeDirection;
+  /** Whether this change replaces the audio file. False only for `source-down-suppressed`. */
+  reEncodes: boolean;
+  /** The configured target bitrate (kbps) for the device's quality preset. */
+  targetBitrate: number;
+  /** Device-side truth: the bitrate the sync tag recorded podkit encoded (kbps). */
+  encodedBitrate?: number;
+  /** Source bitrate (kbps) reported by the collection adapter. */
+  sourceBitrate?: number;
+  fromEncoding?: EncodingMode;
+  toEncoding?: EncodingMode;
+  fromLossless?: boolean;
+  toLossless?: boolean;
 }
 
 /**
- * Detect all upgrade reasons for a matched source/iPod track pair.
+ * Target quality the device is configured to hold a track at.
+ */
+export interface QualityTarget {
+  /** Resolved preset name: 'lossless' | 'high' | 'medium' | 'low'. */
+  preset: string;
+  /** Target bitrate (kbps) for the preset (0 for lossless). */
+  presetBitrate: number;
+  /** Encoding mode the device targets. */
+  encoding: EncodingMode;
+  /**
+   * Custom bitrate override (kbps), when the user configured one. Folded into
+   * `presetBitrate` for S0's lossless paths, so nothing reads it yet; the lossy
+   * cap path (S1) consumes it directly. Kept so it isn't pruned before then.
+   */
+  customBitrate?: number;
+  /** Whether the resolved preset is ALAC (max on an ALAC-capable device). */
+  isAlacPreset: boolean;
+  /** Resolved lossy output codec (e.g. 'aac', 'opus'). */
+  resolvedLossyCodec?: string;
+  /**
+   * Custom bitrate tolerance ratio (0.0-1.0) for the untagged DB-bitrate
+   * fallback. Overrides the encoding-mode default. (S0-only; the fallback is
+   * removed in a later slice.)
+   */
+  bitrateTolerance?: number;
+}
+
+/**
+ * Bound 1 of the classifier: source-vs-device (the former `detectUpgrades`
+ * quality portion). Upgrade-only; preserves today's gating exactly.
+ *
+ * - lossless source replacing a lossy device copy -> `lossless-boundary`
+ * - same-family lossy source whose bitrate climbed significantly above the
+ *   device copy (64 kbps OR 1.5×) -> `source-improved`
+ * - everything else on this bound -> null
+ *
+ * Exported so the music handler's match-loop detection (`detectUpdates`) can run
+ * just this bound without also running the device-vs-target (preset) bound,
+ * which is owned by the post-process pass.
+ */
+export function classifySourceBound(
+  source: CollectionTrack,
+  device: DeviceTrack,
+  targetBitrate: number
+): QualityChange | null {
+  const sourceLossless = isSourceLossless(source);
+  const deviceLossless = isIpodTrackLossless(device);
+
+  if (deviceLossless !== undefined && sourceLossless && !deviceLossless) {
+    return {
+      reason: 'lossless-boundary',
+      direction: 'up',
+      reEncodes: true,
+      targetBitrate,
+      sourceBitrate: source.bitrate,
+      fromLossless: false,
+      toLossless: true,
+    };
+  }
+
+  if (deviceLossless === false && !sourceLossless) {
+    const sourceFamily = getSourceFormatFamily(source);
+    const deviceFamily = getIpodFormatFamily(device);
+    if (
+      sourceFamily === deviceFamily &&
+      sourceFamily !== 'unknown' &&
+      source.bitrate &&
+      device.bitrate
+    ) {
+      const absoluteIncrease = source.bitrate - device.bitrate;
+      const relativeIncrease = source.bitrate / device.bitrate;
+      if (
+        absoluteIncrease >= MIN_BITRATE_INCREASE_KBPS ||
+        relativeIncrease >= MIN_BITRATE_MULTIPLIER
+      ) {
+        return {
+          reason: 'source-improved',
+          direction: 'up',
+          reEncodes: true,
+          targetBitrate,
+          encodedBitrate: device.bitrate,
+          sourceBitrate: source.bitrate,
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * The single pure quality classifier.
+ *
+ * Consolidates the quality axis of music sync detection that previously lived
+ * in `detectUpgrades` (source-vs-device, up-only), `detectPresetChange`
+ * (device-vs-target, lossless-only) and `determineSyncTagDirection`
+ * (exact-when-tagged) into one function with one vocabulary.
+ *
+ * ## Three-bound model
+ *
+ * The classifier compares the device's recorded `encoded` quality against the
+ * `target` and against the `source` as **separate bounds** — never collapsed to
+ * `min(source, target)`. Collapsing would make a source drop indistinguishable
+ * from a cap drop, which later slices must treat oppositely (cap-down
+ * re-encodes; source-down suppresses).
+ *
+ * The authoritative `encoded` value is the device's sync tag. When the sync tag
+ * is absent the classifier falls back to the device DB bitrate + tolerance
+ * (`detectBitratePresetMismatch`) — preserved here for behaviour-parity (S0);
+ * removing the fallback is a later slice.
+ *
+ * ## S0 scope (behaviour-preserving)
+ *
+ * Only the four reasons produced today are reachable:
+ * `lossless-boundary`, `source-improved`, `cap-up`, `cap-down`. The lossy
+ * cap-enforcement, CBR/VBR (`encoding-mismatch`) and source-down
+ * (`source-down-suppressed`) branches are present but dormant — they return
+ * `null` for lossy bitrate moves, preserving today's "lossy copied as-is"
+ * behaviour. Later slices (S1/S2/S3) enable them.
+ *
+ * @returns The quality change, or `null` when the track is in sync.
+ */
+export function classifyQualityChange(input: {
+  source: CollectionTrack;
+  device: DeviceTrack;
+  target: QualityTarget;
+  /** What the next sync would write into the device's sync tag for this track. */
+  expectedSyncTag?: SyncTagData;
+}): QualityChange | null {
+  // Bound 1: source-vs-device (upgrade-only). A much-improved source is
+  // followed up whether or not the user touched their cap.
+  const sourceBound = classifySourceBound(input.source, input.device, input.target.presetBitrate);
+  if (sourceBound) return sourceBound;
+
+  // Bound 2: device-vs-target (the former detectPresetChange).
+  return classifyDeviceBound(input);
+}
+
+/**
+ * Bound 2 of the classifier: device-vs-target (the former `detectPresetChange`
+ * + `determineSyncTagDirection`). Compares the device's recorded encoding
+ * against the configured target, independently of the source bound.
+ *
+ * Exported so the music handler's post-process pass can run just this bound
+ * without re-running the source bound (which `detectUpdates` already ran in the
+ * match loop, with its own transcoding-active suppression).
+ *
+ * S0 preserves the lossless-only restriction: lossy sources are copied as-is,
+ * so the cap does not (yet) enter their decision — the lossy branch is
+ * intentionally dormant and returns null.
+ */
+export function classifyDeviceBound(input: {
+  source: CollectionTrack;
+  device: DeviceTrack;
+  target: QualityTarget;
+  expectedSyncTag?: SyncTagData;
+}): QualityChange | null {
+  const { source, device, target, expectedSyncTag } = input;
+
+  const sourceLossless = isSourceLossless(source);
+  const deviceLossless = isIpodTrackLossless(device);
+
+  if (!sourceLossless) {
+    // TODO(S1/S3): lossy cap enforcement — compare `encoded` vs `target` and
+    // `encoded` vs `source` as separate bounds here. Dormant in S0 to preserve
+    // "lossy copied as-is".
+    return null;
+  }
+
+  // Sync-tag-exact comparison takes priority over every bitrate/format fallback.
+  // When the device carries a sync tag AND we know what the next sync would
+  // write, the comparison is authoritative — the ALAC/tolerance fallbacks below
+  // are only consulted when this exact comparison can't be made. (This ordering
+  // matters: a per-track preset that fell back from ALAC to high+aac writes a
+  // `quality=high` tag, which must compare equal to its own expected tag rather
+  // than tripping the config-wide ALAC branch.)
+  const syncTag = device.syncTag;
+  if (syncTag && expectedSyncTag) {
+    // TODO(S2): encoding-mismatch (CBR/VBR) is a precondition class that fires
+    // even when bitrate matches — wire it here ahead of the bitrate compare.
+    if (syncTagMatchesConfig(syncTag, expectedSyncTag)) {
+      return null;
+    }
+    const direction = syncTagDirection(syncTag, expectedSyncTag);
+    return {
+      reason: direction === 'up' ? 'cap-up' : 'cap-down',
+      direction,
+      reEncodes: true,
+      targetBitrate: target.presetBitrate,
+      encodedBitrate: syncTag.bitrate,
+    };
+  }
+
+  // No exact tag comparison available. ALAC format-based detection: max preset
+  // on an ALAC-capable device — compare by format, not bitrate.
+  if (target.isAlacPreset) {
+    if (deviceLossless === true) {
+      return null; // device track already ALAC — in sync
+    }
+    return {
+      reason: 'cap-up',
+      direction: 'up',
+      reEncodes: true,
+      targetBitrate: target.presetBitrate,
+      toLossless: true,
+    };
+  }
+
+  // Untagged track — fall back to device DB bitrate + tolerance (S0-preserved;
+  // removed in a later slice). Keeps untagged lossless tracks comparable.
+  const tolerance =
+    target.bitrateTolerance ??
+    (target.encoding === 'cbr' ? DEFAULT_CBR_TOLERANCE : DEFAULT_VBR_TOLERANCE);
+  const mismatch = detectBitratePresetMismatch(device.bitrate, target.presetBitrate, tolerance);
+  if (!mismatch) return null;
+  const direction = mismatch === 'preset-upgrade' ? 'up' : 'down';
+  return {
+    reason: direction === 'up' ? 'cap-up' : 'cap-down',
+    direction,
+    reEncodes: true,
+    targetBitrate: target.presetBitrate,
+    encodedBitrate: device.bitrate,
+  };
+}
+
+/**
+ * Quality tier ordering for sync-tag direction comparison.
+ * Higher number = higher quality.
+ */
+const QUALITY_TIER_ORDER: Record<string, number> = {
+  low: 0,
+  medium: 1,
+  high: 2,
+  max: 3,
+  lossless: 3,
+};
+
+/**
+ * Decide whether a sync-tag preset change is an upgrade or downgrade.
+ *
+ * Compares the device's recorded tag against the expected (target) tag by
+ * quality tier, then by bitrate, falling back to 'up' for an encoding-mode flip
+ * at the same tier. Behaviour-identical to the former
+ * `determineSyncTagDirection` in the music handler.
+ */
+function syncTagDirection(
+  oldTag: { quality: string; encoding?: string; bitrate?: number },
+  newTag: { quality: string; encoding?: string; bitrate?: number }
+): 'up' | 'down' {
+  const oldTier = QUALITY_TIER_ORDER[oldTag.quality] ?? -1;
+  const newTier = QUALITY_TIER_ORDER[newTag.quality] ?? -1;
+
+  if (newTier > oldTier) return 'up';
+  if (newTier < oldTier) return 'down';
+
+  if (oldTag.bitrate !== undefined && newTag.bitrate !== undefined) {
+    return newTag.bitrate > oldTag.bitrate ? 'up' : 'down';
+  }
+
+  // Encoding-mode change at the same tier is a re-transcode (treat as up).
+  return 'up';
+}
+
+/**
+ * Detect all NON-QUALITY update reasons for a matched source/device track pair.
+ *
+ * The quality axis (lossless-boundary / source-improved / cap-up / cap-down) is
+ * owned by {@link classifyQualityChange}, not this function. `detectUpgrades`
+ * covers the supplementary axes only.
  *
  * Returns an array of upgrade reasons. An empty array means the tracks
  * are equivalent — no upgrade needed.
  *
  * Upgrade categories:
- * - `format-upgrade`: source is lossless, iPod has lossy
- * - `quality-upgrade`: same format family, significantly higher bitrate
  * - `artwork-added`: source has artwork (`hasArtwork === true`) and iPod track does not
  * - `artwork-removed`: source has no artwork (`hasArtwork === false`) but iPod does
+ * - `artwork-updated`: source artwork hash differs from the iPod sync tag hash
  * - `normalization-update`: source has normalization data, device value absent or differs
  * - `metadata-correction`: non-matching metadata fields differ
  *
  * **Reason ordering:** Reasons are pushed in priority order (most significant first):
- * format-upgrade > quality-upgrade > artwork-added > artwork-removed > artwork-updated > normalization-update > metadata-correction.
+ * artwork-added > artwork-removed > artwork-updated > normalization-update > metadata-correction.
  * The first reason (`reasons[0]`) is used as the primary/headline reason by the caller,
  * while all detected reasons are returned in the array for full context.
  *
@@ -231,36 +487,6 @@ export function detectUpgrades(source: CollectionTrack, ipod: DeviceTrack): Upgr
   // Reasons are pushed in priority order — most significant first.
   // The caller uses reasons[0] as the primary reason for display/categorization.
   const reasons: UpgradeReason[] = [];
-
-  // Format upgrade: lossless source replacing lossy iPod track
-  const sourceLossless = isSourceLossless(source);
-  const ipodLossless = isIpodTrackLossless(ipod);
-
-  if (ipodLossless !== undefined && sourceLossless && !ipodLossless) {
-    reasons.push('format-upgrade');
-  } else if (ipodLossless === false && !sourceLossless) {
-    // Quality upgrade: same format family, significantly higher bitrate
-    // (only checked when both are confirmed lossy and format-upgrade doesn't apply)
-    const sourceFamily = getSourceFormatFamily(source);
-    const ipodFamily = getIpodFormatFamily(ipod);
-
-    if (
-      sourceFamily === ipodFamily &&
-      sourceFamily !== 'unknown' &&
-      source.bitrate &&
-      ipod.bitrate
-    ) {
-      const absoluteIncrease = source.bitrate - ipod.bitrate;
-      const relativeIncrease = source.bitrate / ipod.bitrate;
-
-      if (
-        absoluteIncrease >= MIN_BITRATE_INCREASE_KBPS ||
-        relativeIncrease >= MIN_BITRATE_MULTIPLIER
-      ) {
-        reasons.push('quality-upgrade');
-      }
-    }
-  }
 
   // Artwork added: source has artwork and iPod track does not.
   // Only trigger when source.hasArtwork is explicitly true (not undefined),
@@ -388,9 +614,14 @@ export function isEmpty(value: unknown): boolean {
  * Check if an update reason requires file replacement (as opposed to metadata-only update).
  *
  * File replacement reasons involve transferring a new audio file to the iPod:
- * - format-upgrade: different format file
- * - quality-upgrade: higher bitrate file
+ * - quality-change: a re-encoding quality move (cap-up/down, lossless-boundary,
+ *   source-improved). A `source-down-suppressed` quality change does NOT appear
+ *   as a `quality-change` reason — it carries `reEncodes:false` and is routed
+ *   off the file-replacement path by the handler, so any `quality-change` reason
+ *   that reaches here is always a file replacement.
  * - artwork-added: file with embedded artwork
+ * - preset-upgrade / preset-downgrade: VIDEO preset re-transcode (audio uses
+ *   quality-change; video keeps these reasons)
  *
  * Metadata-only reasons update the iPod database without file transfer:
  * - artwork-updated: artwork bytes changed but track audio is the same (re-extract artwork only)
@@ -404,8 +635,7 @@ export function isEmpty(value: unknown): boolean {
  */
 export function isFileReplacementUpgrade(reason: UpdateReason): boolean {
   return (
-    reason === 'format-upgrade' ||
-    reason === 'quality-upgrade' ||
+    reason === 'quality-change' ||
     reason === 'artwork-added' ||
     reason === 'preset-upgrade' ||
     reason === 'preset-downgrade' ||
@@ -486,71 +716,4 @@ export function detectBitratePresetMismatch(
   }
 
   return null;
-}
-
-/**
- * Options for preset change detection.
- */
-export interface PresetChangeOptions {
-  /** Encoding mode (vbr or cbr). Determines default tolerance. */
-  encodingMode?: EncodingMode;
-  /** Custom tolerance ratio (0.0-1.0) overriding the default for the encoding mode. */
-  bitrateTolerance?: number;
-  /**
-   * When true, indicates this is an ALAC preset (max on an ALAC-capable device).
-   * Uses format-based detection instead of bitrate comparison:
-   * if the iPod track is ALAC, it's in sync; if it's AAC, it's a preset-upgrade.
-   */
-  isAlacPreset?: boolean;
-}
-
-/**
- * Detect if a matched audio track needs re-transcoding due to a quality preset change.
- *
- * This is separate from {@link detectUpgrades} which compares source vs iPod quality.
- * This function compares iPod bitrate against the *expected* bitrate for the current
- * quality preset, detecting when the user has changed their transcoding settings.
- *
- * Only applies to lossless source tracks — lossy sources are copied as-is regardless
- * of the quality preset, so preset changes don't affect them.
- *
- * For ALAC presets (max + ALAC-capable device), uses format-based detection:
- * if the iPod track is ALAC, it's in sync. If it's AAC, it needs re-transcoding
- * to ALAC (preset-upgrade).
- *
- * @param source - Track from the collection source
- * @param ipod - Matched track currently on the iPod
- * @param presetBitrate - Target bitrate (kbps) for the active quality preset
- * @param options - Optional parameters for encoding mode, tolerance, and ALAC detection
- * @returns `'preset-upgrade'` if iPod bitrate is below target, `'preset-downgrade'`
- *          if above target, or `null` if within tolerance
- */
-export function detectPresetChange(
-  source: CollectionTrack,
-  ipod: DeviceTrack,
-  presetBitrate: number,
-  options?: PresetChangeOptions
-): 'preset-upgrade' | 'preset-downgrade' | null {
-  // Only applies to lossless sources (lossy are copied as-is)
-  if (!isSourceLossless(source)) {
-    return null;
-  }
-
-  // ALAC format-based detection: max preset on ALAC-capable device
-  if (options?.isAlacPreset) {
-    const ipodLossless = isIpodTrackLossless(ipod);
-    if (ipodLossless === true) {
-      // iPod track is already ALAC — in sync
-      return null;
-    }
-    // iPod track is AAC (or unknown) — needs re-transcoding to ALAC
-    return 'preset-upgrade';
-  }
-
-  // Determine effective tolerance
-  const tolerance =
-    options?.bitrateTolerance ??
-    ((options?.encodingMode ?? 'vbr') === 'cbr' ? DEFAULT_CBR_TOLERANCE : DEFAULT_VBR_TOLERANCE);
-
-  return detectBitratePresetMismatch(ipod.bitrate, presetBitrate, tolerance);
 }

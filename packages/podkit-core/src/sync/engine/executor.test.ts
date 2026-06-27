@@ -833,7 +833,7 @@ describe('SyncExecutor', () => {
         type: 'video-upgrade',
         source: { filePath: name } as any,
         target: { filePath: name } as any,
-        reason: 'format-upgrade' as any,
+        reason: 'preset-upgrade',
       };
     }
 

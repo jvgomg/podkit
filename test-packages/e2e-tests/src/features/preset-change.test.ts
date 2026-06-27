@@ -168,10 +168,9 @@ describe('preset change detection', () => {
         // With skip-upgrades, no file-replacement upgrades should be planned
         expect(dryJson!.plan).toBeDefined();
         const breakdown = dryJson!.plan!.updateBreakdown ?? {};
-        expect(breakdown['format-upgrade'] ?? 0).toBe(0);
-        expect(breakdown['quality-upgrade'] ?? 0).toBe(0);
-        expect(breakdown['preset-upgrade'] ?? 0).toBe(0);
-        expect(breakdown['preset-downgrade'] ?? 0).toBe(0);
+        expect(breakdown['quality-change-up'] ?? 0).toBe(0);
+        expect(breakdown['quality-change-down'] ?? 0).toBe(0);
+        expect(breakdown['quality-change-suppressed'] ?? 0).toBe(0);
         expect(breakdown['artwork-added'] ?? 0).toBe(0);
       } finally {
         if (collectionDir) {
@@ -424,8 +423,8 @@ device = "${stanza?.name ?? ''}"
           expect(dryResult.exitCode).toBe(0);
 
           const breakdown = dryJson?.plan?.updateBreakdown ?? {};
-          expect(breakdown['preset-upgrade'] ?? 0).toBe(0);
-          expect(breakdown['preset-downgrade'] ?? 0).toBe(0);
+          expect(breakdown['quality-change-up'] ?? 0).toBe(0);
+          expect(breakdown['quality-change-down'] ?? 0).toBe(0);
           expect(dryJson?.plan?.tracksToTranscode ?? 0).toBe(0);
           expect(dryJson?.plan?.tracksToCopy ?? 0).toBe(0);
         } finally {

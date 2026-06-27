@@ -687,11 +687,11 @@ describe('self-healing sync: quality upgrade (MP3 bitrate increase)', () => {
           '--dry-run',
           '--json',
         ]);
-        expect(dryJson?.plan?.updateBreakdown?.['quality-upgrade']).toBe(1);
+        expect(dryJson?.plan?.updateBreakdown?.['quality-change-up']).toBe(1);
 
         // Step 3: Re-sync WITHOUT `--force-sync-tags`. The expectation
-        // is that the quality-upgrade gate fires now that both sides of
-        // the bitrate comparison are populated.
+        // is that the quality-change (source-improved, up) gate fires now that
+        // both sides of the bitrate comparison are populated.
         const { result: result2, json: json2 } = await runCliJson<SyncOutput>([
           '--config',
           configPath,

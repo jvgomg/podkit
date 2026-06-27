@@ -432,6 +432,48 @@ describe('MassStorageAdapter sync tag round-trip', () => {
     adapter3.close();
   });
 
+  test('transcode tag clears a stale copy-tag bitrate through the merge (idempotency)', async () => {
+    // Regression: a lossless source first direct-copied (copy tag records the
+    // source bitrate) then transcoded must not retain the stale copy bitrate.
+    // writeSyncTag merges existing fields with the update, so the transcode tag
+    // (which pins no bitrate for a non-custom preset) has to authoritatively
+    // clear it — otherwise the next sync's expected tag (no bitrate) mismatches
+    // and fires a phantom quality-change on every sync.
+    const relPath = `${MUSIC_DIR}/Artist/Album/01 - CapStable.flac`;
+    generateFlacOnDevice(mountPoint, relPath);
+
+    // Session 1: track was direct-copied — copy tag carries the source bitrate.
+    const adapter1 = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES);
+    adapter1.writeSyncTag(
+      adapter1.getTracks()[0]!,
+      buildCopySyncTag('fast', undefined, 'flac', 900)
+    );
+    await adapter1.save();
+    adapter1.close();
+
+    // Session 2: quality changed — re-transcode to high AAC (no custom bitrate).
+    const adapter2 = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES);
+    const tracks2 = adapter2.getTracks();
+    expect(tracks2[0]!.syncTag!.bitrate).toBe(900); // stale copy bitrate present
+    const updated = adapter2.writeSyncTag(
+      tracks2[0]!,
+      buildAudioSyncTag('high', 'vbr', undefined, 'fast', 'aac')
+    );
+    expect(updated.syncTag!.quality).toBe('high');
+    expect(updated.syncTag!.encoding).toBe('vbr');
+    expect(updated.syncTag!.bitrate).toBeUndefined(); // stale bitrate cleared
+    await adapter2.save();
+    adapter2.close();
+
+    // Session 3: the persisted transcode tag carries no bitrate, so a re-sync's
+    // expected tag (also no bitrate) compares equal — a true no-op.
+    const adapter3 = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES);
+    const parsed = parseSyncTag(adapter3.getTracks()[0]!.comment!);
+    expect(parsed!.quality).toBe('high');
+    expect(parsed!.bitrate).toBeUndefined();
+    adapter3.close();
+  });
+
   test('writeSyncTag with artworkHash: undefined removes the field', async () => {
     const relPath = `${MUSIC_DIR}/Artist/Album/01 - RemoveHash.flac`;
     generateFlacOnDevice(mountPoint, relPath);

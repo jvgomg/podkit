@@ -1,14 +1,14 @@
 ---
 title: 'sync: upgrades'
-description: How podkit detects when a track already on the device should be re-transferred — the format-upgrade vs quality-upgrade gates, why format-upgrade is suppressed during transcoding, and how the bitrate baseline gets backfilled.
+description: How podkit detects when a track already on the device should be re-transferred — the unified quality classifier, the three-bound model, and the bitrate baseline that keeps the device-bound precise.
 sidebar:
   order: 23
 ---
 
-How the sync engine decides that a track already on the device should
-be re-transferred from the source — the file-replacement upgrade gates
-(format-upgrade, quality-upgrade) and the bitrate baseline that one of
-them depends on.
+How the sync engine decides that a track already on the device should be
+re-transferred from the source — the unified quality classifier
+(`classifyQualityChange`) and the bitrate baseline that the device-bound
+depends on.
 
 This doc covers detection only. See
 [`planning.md`](./planning.md) for how the detected upgrade is turned
@@ -18,197 +18,215 @@ upgrade-time failures propagate.
 
 ---
 
-## 1. The two file-replacement upgrade gates
+## 1. The unified quality classifier
 
-`detectUpgrades(source, ipod)` in
-`packages/podkit-core/src/sync/engine/upgrades.ts` walks an `existing`
-match and emits zero or more `UpgradeReason`s. Two of those reasons are
-**file-replacement** — they cause the audio file on the device to be
-swapped out:
+`classifyQualityChange` (and its two exported bounds `classifySourceBound` /
+`classifyDeviceBound`) in
+`packages/podkit-core/src/sync/engine/upgrades.ts` is the single entry-point
+for all music quality decisions. It returns a `QualityChange` object or `null`
+(in-sync / no action needed).
 
-| Reason | Fires when | Operation produced |
+### Vocabulary (`QualityChangeReason`)
+
+| Reason | Fires when | Direction |
 |---|---|---|
-| `format-upgrade` | Source is lossless AND iPod track is lossy (different format family) | `upgrade-transcode` / `upgrade-direct-copy` / `upgrade-optimized-copy` per classifier action |
-| `quality-upgrade` | Same format family on both sides, source bitrate significantly higher than iPod bitrate | Same as above |
+| `lossless-boundary` | Source is lossless AND device copy is lossy | `up` |
+| `source-improved` | Same-family lossy source whose bitrate significantly exceeds the device copy (64 kbps absolute OR 1.5× relative) | `up` |
+| `cap-up` | Device's recorded encoding sits below the configured target — re-encode up | `up` |
+| `cap-down` | Device's recorded encoding sits above the configured target — re-encode down | `down` |
+| `format-mismatch` | _(S1/S2 scaffold — not produced in S0)_ Codec correctness precondition | `format-only` |
+| `encoding-mismatch` | _(S2 scaffold — not produced in S0)_ CBR/VBR flip | `format-only` |
+| `source-down-suppressed` | _(S2 scaffold — not produced in S0)_ Worse source the user opted NOT to follow down | — |
 
-Both gates rely on signals the iPod track carries through libgpod:
-`ipod.filetype` for format-upgrade, `ipod.bitrate` for quality-upgrade.
-If those fields are missing or zero, the gate silently no-ops.
+The `QualityChange` object also carries: `direction`, `reEncodes` (false only
+for `source-down-suppressed`), `targetBitrate`, and optional
+`encodedBitrate`, `sourceBitrate`, `fromLossless`, `toLossless`.
 
-The thresholds for quality-upgrade are:
+All of this feeds the `quality-change` update reason and the `qualityChanges[]`
+JSON array in the sync output.
 
-- `MIN_BITRATE_INCREASE_KBPS` = 64 (absolute delta), OR
-- `MIN_BITRATE_MULTIPLIER` = 1.5 (relative ratio).
+### The three-bound model
 
-Either passing fires the upgrade — so a 96 → 256 kbps source bump
-qualifies (delta 160, ratio 2.67), but 256 → 280 does not.
+The classifier compares the device's **recorded encoded quality** against the
+**target** and against the **source** as separate, independent bounds — never
+collapsed to `min(source, target)`. Collapsing would make a source drop
+indistinguishable from a cap drop, which later slices must treat oppositely
+(cap-down re-encodes; source-down suppresses). The two bounds are:
+
+**Bound 1 — source-vs-device (`classifySourceBound`):** Upgrade-only.
+A much-improved source is followed up whether or not the user touched their cap.
+
+**Bound 2 — device-vs-target (`classifyDeviceBound`):** The authoritative
+`encoded` value is the device's sync tag. When the sync tag is absent the
+classifier falls back to the device DB bitrate + tolerance
+(`detectBitratePresetMismatch`) — preserved for behaviour-parity in S0;
+removing the fallback is a later slice (S6).
+
+`classifyQualityChange` runs Bound 1 first; Bound 2 only fires when Bound 1
+returns null.
 
 ---
 
-## 2. Why format-upgrade is suppressed when transcoding is active
+## 2. How the update reason surfaces
 
-`MusicHandler.detectUpdates` strips `format-upgrade` from the reasons
-list when the iPod track is already in the AAC family
-(`handler.ts:285-290`):
+`detectUpgrades(source, ipod)` in `upgrades.ts` covers the NON-quality axes
+(artwork, normalization, metadata). The quality axis is owned by
+`classifyQualityChange`.
+
+The music handler (`handler.ts`) assembles reasons as:
+
+1. Run `classifySourceBound` in the match loop (`detectUpdates`). When it
+   returns non-null, push `'quality-change'` as the primary reason and stash
+   the `QualityChange` object in `DiffUpdateEntry.qualityChange`.
+2. Run `classifyDeviceBound` in the post-process pass
+   (`postProcessPresetChanges`). Same stash mechanism.
+
+`DiffUpdateEntry.reasons[0] === 'quality-change'` is the signal consumers
+(presenter, JSON output) use to branch on the quality axis. The specific
+sub-reason (lossless-boundary, cap-up, etc.) is always on `qualityChange.reason`.
+
+---
+
+## 3. Why `lossless-boundary` is suppressed when transcoding is active
+
+`MusicHandler.detectUpdates` strips `'quality-change'` (specifically the
+`lossless-boundary` sub-reason) from the reasons list when the device track is
+already in the AAC family. This was previously called `format-upgrade`
+suppression (`handler.ts:285-290`):
 
 ```ts
-if (reasons.includes('format-upgrade')) {
+if (reasons.includes('quality-change') && qualityChange?.reason === 'lossless-boundary') {
   const ipodFamily = getIpodFormatFamily(device);
   if (ipodFamily === 'aac') {
-    reasons = reasons.filter((r) => r !== 'format-upgrade');
+    reasons = reasons.filter((r) => r !== 'quality-change');
   }
 }
 ```
 
-This is **Working As Intended**. Rationale:
+This is **Working As Intended**. A FLAC source transcoded to AAC at `quality=high`
+produces an AAC `.m4a` on the device. Without this filter the classifier would
+see "source is lossless, device is lossy" and emit `lossless-boundary` on
+every subsequent sync, re-transcoding forever.
 
-A user with `quality=high` (or any non-lossless preset) and a FLAC source
-gets the transcode pipeline. The classifier routes the lossless source
-through `add-transcode` and produces an AAC `.m4a` on the device. The
-iPod track's filetype is then AAC, not FLAC. `detectUpgrades` would,
-without this filter, see "source is lossless, iPod is lossy" and emit
-`format-upgrade` on every subsequent sync — re-transcoding the same FLAC
-into the same AAC bytes forever.
-
-The MP3-on-iPod case (a compatible-lossy that was never transcoded)
-still fires `format-upgrade` legitimately because `getIpodFormatFamily`
-returns `'mp3'`, not `'aac'`. That triggers the re-transcode the user
-expects: replace the MP3 with the AAC that quality=high would now have
-chosen.
-
-Boundary: the filter does NOT consult the active preset; it consults the
-**iPod side**'s observed format. So switching from `quality=lossless` to
-`quality=high` does not silently leave existing ALAC tracks alone — that
-transition is owned by `postProcessPresetChanges` and the codec-change
-detector, which read the iPod track's stored sync tag rather than the
-filetype family.
+The MP3-on-device case is NOT filtered — `getIpodFormatFamily` returns `'mp3'`,
+not `'aac'`, so the `lossless-boundary` upgrade fires legitimately.
 
 ---
 
-## 3. Quality-upgrade and the bitrate baseline
+## 4. The device-bound and the bitrate baseline
 
-`quality-upgrade` requires BOTH sides of `source.bitrate && ipod.bitrate`
-to be truthy:
+`classifyDeviceBound` requires an authoritative `encoded` value on the device
+side. Two paths:
 
-```ts
-if (
-  sourceFamily === ipodFamily &&
-  sourceFamily !== 'unknown' &&
-  source.bitrate &&
-  ipod.bitrate
-) {
-  // threshold check…
-}
-```
+**Sync-tag exact comparison (authoritative):** When the device carries a sync
+tag AND `expectedSyncTag` is provided, `syncTagMatchesConfig` compares them
+exactly. A match returns null; a mismatch produces `cap-up` or `cap-down` via
+`syncTagDirection`.
 
-The iPod side comes from `IpodTrackImpl.bitrate`, which is `number`
-(not `number | undefined`) and defaults to `0` when libgpod has no
-stored value. So a zero on the iPod side silently disables the gate.
+**Untagged fallback (S0-preserved):** When no exact comparison is possible,
+the fallback is `detectBitratePresetMismatch(device.bitrate, target.presetBitrate,
+tolerance)`. This uses the device DB bitrate + a percentage tolerance (30% VBR,
+10% CBR). This fallback is preserved in S0 for behaviour-parity and will be
+removed in S6.
 
-### Where the iPod side comes from
+**ALAC preset shortcut:** When `target.isAlacPreset` is true and no sync tag
+is available, the comparison is format-based (not bitrate): if the device track
+is already ALAC, return null; otherwise return `cap-up`.
 
-For NEW copies (going forward), the executor writes `source.bitrate` to
-the iPod track record at add time. The path is
-`packages/podkit-core/src/sync/music/transfer.ts`'s
-`toDeviceTrackInput`, which passes `bitrate: track.bitrate` through to
-`DeviceAdapter.addTrack`. The iPod adapter forwards that to libgpod's
-`track->bitrate` field. The next sync's `getTracks()` reads it back, and
-both sides of the gate are populated.
+### Where the bitrate baseline comes from
 
-For UPGRADES (a previously-copied track replaced by a higher-bitrate
-source), `transferUpgradeToIpod` resolves the bitrate as `prepared.bitrate
-?? source.bitrate`. For `upgrade-direct-copy` the preparer doesn't
-re-encode, so `prepared.bitrate` is undefined and `source.bitrate` wins.
-Without this fallback a quality-upgrade replaces the file but leaves the
-iPod's bitrate field at the old value, causing the next sync to
-re-detect the same quality-upgrade in an infinite loop.
+For **new copies**, the executor writes `source.bitrate` to the device track
+record at add time (`toDeviceTrackInput` in `transfer.ts`). The next sync's
+`getTracks()` reads it back, and the device-bound comparison is populated.
 
-### Where the iPod side does NOT come from automatically
+For **upgrades**, `transferUpgradeToIpod` resolves the bitrate as
+`prepared.bitrate ?? source.bitrate`. For direct-copy upgrades the preparer
+doesn't re-encode, so `prepared.bitrate` is undefined and `source.bitrate`
+wins. Without this fallback a quality upgrade replaces the file but leaves the
+device bitrate at the old value, causing an infinite re-upgrade loop.
 
-A track that was added BEFORE this guarantee landed (or by a third-party
-tool that omitted the field, or by a libgpod version that didn't persist
-it) carries `bitrate = 0` and stays inert through the gate.
-
-The `--force-sync-tags` backfill (`handler.postProcessBitrateBaseline`)
-catches these. Gated identically to the artwork-hash baseline backfill:
-
-- Opt-in: an already-set-up iPod must not silently re-tag its entire
-  library after a podkit upgrade.
-- Idempotent: fires only when `ipod.bitrate === 0` and the source has
-  a bitrate to lend.
-- Mechanism: emits a `update-metadata` operation carrying the source
-  bitrate. `executeUpdateMetadata` propagates the field via
-  `updateTrack`. No file replacement.
-
-Symmetry with the artwork-hash baseline backfill in
-`postProcessSyncTags` is deliberate — both fields are "supplementary
-metadata the next sync's detectUpgrades needs to compare against", both
-are written on copy going forward, and both need an opt-in escape hatch
-for pre-existing tracks.
+For **pre-existing tracks** (added before this guarantee, or by a third-party
+tool), `bitrate = 0`. The `--force-sync-tags` backfill
+(`postProcessBitrateBaseline`) catches these with an opt-in, idempotent
+`update-metadata` pass. No file replacement.
 
 ---
 
-## 4. Interactions
+## 5. S0 scope (behaviour-preserving)
+
+S0 is a vocabulary rename, not a behaviour change. The four reachable reasons
+(`lossless-boundary`, `source-improved`, `cap-up`, `cap-down`) map directly to
+the four old reason strings:
+
+| Old reason | New `qualityChange.reason` | New update reason |
+|---|---|---|
+| `format-upgrade` | `lossless-boundary` | `quality-change` |
+| `quality-upgrade` | `source-improved` | `quality-change` |
+| `preset-upgrade` | `cap-up` | `quality-change` |
+| `preset-downgrade` | `cap-down` | `quality-change` |
+
+**Lossy cap enforcement is dormant in S0.** `classifyDeviceBound` returns null
+for lossy sources, preserving the existing "lossy copied as-is" behaviour.
+S1/S3 will enable the lossy cap-down/up branches.
+
+**Untagged DB-bitrate fallback is present in S0.** The tolerance-based
+`detectBitratePresetMismatch` path remains active. S6 will remove it once
+lossy sync tags are written for existing libraries.
+
+---
+
+## 6. Interactions
 
 ### With `--skip-upgrades`
 
-`MusicHandler.detectUpdates` filters out all file-replacement upgrades
-when `skipUpgrades` is set. Quality-upgrade and format-upgrade are both
-filtered. The bitrate baseline still backfills (it's metadata-only).
+`MusicHandler.detectUpdates` filters out all file-replacement upgrades when
+`skipUpgrades` is set. Both bounds of `classifyQualityChange` are suppressed.
+The bitrate baseline still backfills (it's metadata-only).
 
 ### With `--force-transcode`
 
-If the source is lossless and no file-replacement upgrade has been
-detected, `MusicHandler.detectUpdates` injects `force-transcode` as the
-primary reason. This routes through `createUpgrade` with the classifier
-action.
-
-`force-transcode` does not interact with bitrate — it always re-transcodes,
-so the bitrate-write happens at execute time via
-`transferUpgradeToIpod`'s normal `prepared.bitrate ?? source.bitrate`
-resolution.
+If the source is lossless and no file-replacement upgrade has been detected,
+`MusicHandler.detectUpdates` injects `force-transcode` as the primary reason.
+This bypasses the quality classifier entirely.
 
 ### With sync tags
 
 A track with a `quality=copy` sync tag is recognized as in-sync by
-`postProcessPresetChanges` even when the configured quality preset would
-otherwise transcode — the track is copyable, the user already opted in,
-so no re-encoding sweeps.
+`classifyDeviceBound`'s exact comparison, so preset changes don't re-encode it.
 
-The quality-upgrade gate runs INDEPENDENTLY of sync tags. A copy-tagged
-track whose source bitrate later rises significantly still triggers the
-file-replacement upgrade. Sync tags govern preset routing, not source-vs-
-device quality comparison.
+The source bound (`classifySourceBound`) runs independently of sync tags. A
+copy-tagged track whose source bitrate later rises significantly still triggers
+the `source-improved` upgrade.
 
 ---
 
-## 5. Open work
+## 7. Open work
 
-- Cap-lowering as a downgrade: today's classifier always routes
-  compatible-lossy sources as direct-copy regardless of the configured
-  bitrate cap. A user who lowers `quality` from `high` to `low` does not
-  see their existing 256 kbps MP3 copies re-transcoded down — the
-  source still carries 256 kbps, and the cap doesn't enter the upgrade
-  decision. Not addressed by this doc's gates. See backlog for a future
-  task that extends `detectPresetChange` to consider lossy sources.
-
-- Bitrate fidelity across VBR: the iPod stores a single integer.
-  Round-trip FLAC → AAC VBR → iPod loses the VBR distribution, so a
-  re-encode at the same nominal quality may shift the stored bitrate by
-  a few kbps. The 64 kbps absolute threshold absorbs this.
+- **Lossy cap enforcement (S1/S3):** `classifyDeviceBound` has a dormant lossy
+  branch guarded by `if (!sourceLossless) return null`. S1 enables cap-down
+  for lossy, S3 enables cap-up.
+- **Encoding-mismatch (S2):** CBR/VBR flip fires regardless of bitrate — wired
+  before the bitrate compare in the sync-tag path.
+- **Source-down suppression (S2):** A worse source under a "match-cap" flag
+  produces `source-down-suppressed` with `reEncodes: false` instead of
+  re-encoding down.
+- **Untagged opt-out (S6):** Drop the DB-bitrate fallback once lossy sync tags
+  are written for pre-existing libraries.
 
 ---
 
-## 6. References
+## 8. References
 
-- `packages/podkit-core/src/sync/engine/upgrades.ts` — `detectUpgrades`
-  + threshold constants
-- `packages/podkit-core/src/sync/music/handler.ts:285-290` —
-  format-upgrade transcoding-active filter
+- `packages/podkit-core/src/sync/engine/upgrades.ts` — `classifyQualityChange`,
+  `classifySourceBound`, `classifyDeviceBound`, `detectUpgrades`, threshold constants
+- `packages/podkit-core/src/sync/engine/upgrades.test.ts` — unit matrix for
+  the unified classifier
 - `packages/podkit-core/src/sync/music/handler.ts` —
-  `postProcessBitrateBaseline` + `postProcessSyncTags`
+  `detectUpdates` (match loop), `postProcessPresetChanges` (post-process pass),
+  `postProcessBitrateBaseline`, `postProcessSyncTags`
 - `packages/podkit-core/src/sync/music/transfer.ts` —
   `toDeviceTrackInput` (initial-add bitrate), `transferUpgradeToIpod`
   (upgrade bitrate resolution)
-- `test-packages/e2e-tests/src/features/upgrades.test.ts` — E2E pins
-  for format-upgrade and quality-upgrade
+- `test-packages/e2e-tests/src/features/upgrades.test.ts` — E2E pins for
+  the quality-change upgrade path
+- `backlog/docs/doc-051` — PRD for the bidirectional quality change feature

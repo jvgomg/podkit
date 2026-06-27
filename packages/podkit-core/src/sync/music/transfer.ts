@@ -108,13 +108,22 @@ export class MusicTransferOps {
       }
     }
 
-    // Write sync tag for copy operations (direct-copy and optimized-copy)
+    // Write sync tag for copy operations (direct-copy and optimized-copy).
+    // Record the effective bitrate (transcoder output when present — optimized
+    // copy may re-encode — else the source's reported bitrate) so later quality
+    // slices have authoritative `encoded` data for lossy copies.
     if (
       (operation.type === 'add-direct-copy' || operation.type === 'add-optimized-copy') &&
       ctx.syncTagConfig
     ) {
       const sourceCodec = fileTypeToAudioCodec(operation.source.fileType, operation.source.codec);
-      const copySyncTag = buildCopySyncTag(ctx.transferMode ?? 'fast', undefined, sourceCodec);
+      const effectiveBitrate = bitrate ?? operation.source.bitrate;
+      const copySyncTag = buildCopySyncTag(
+        ctx.transferMode ?? 'fast',
+        undefined,
+        sourceCodec,
+        effectiveBitrate
+      );
       trackInput.syncTag = copySyncTag;
     }
 
@@ -332,13 +341,21 @@ export class MusicTransferOps {
       }
     }
 
-    // Write sync tag for upgrade-direct-copy and upgrade-optimized-copy operations
+    // Write sync tag for upgrade-direct-copy and upgrade-optimized-copy
+    // operations. Record the effective bitrate (transcoder output when present,
+    // else the upgraded source's reported bitrate) — same resolution as the
+    // track-record bitrate above.
     if (
       (operation.type === 'upgrade-direct-copy' || operation.type === 'upgrade-optimized-copy') &&
       ctx.syncTagConfig
     ) {
       const sourceCodec = fileTypeToAudioCodec(operation.source.fileType, operation.source.codec);
-      const copySyncTag = buildCopySyncTag(ctx.transferMode ?? 'fast', undefined, sourceCodec);
+      const copySyncTag = buildCopySyncTag(
+        ctx.transferMode ?? 'fast',
+        undefined,
+        sourceCodec,
+        resolvedBitrate
+      );
       foundTrack = this.device.writeSyncTag(foundTrack, copySyncTag);
     }
 

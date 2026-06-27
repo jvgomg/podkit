@@ -35,6 +35,7 @@ import type {
   ScanWarningInfo,
   TransformInfo,
   UpdateBreakdown,
+  QualityChangeInfo,
   ResolvedCollection,
 } from './sync.js';
 import type {
@@ -45,6 +46,27 @@ import type {
 import { formatDuration, formatTransformsConfig } from './sync-presenter.js';
 import { codecsForOp } from './sync-decisions.js';
 import type { MusicCollectionConfig } from '../config/index.js';
+
+/**
+ * Map an update entry to the key it counts under in {@link UpdateBreakdown}.
+ *
+ * For `quality-change` the key is direction-split (`quality-change-up` /
+ * `-down` / `-suppressed`) read from the attached classifier payload — direction
+ * is authoritative on the payload, not re-derived. All other reasons key by the
+ * reason string directly.
+ */
+function breakdownKeyForUpdate(update: {
+  reasons: string[];
+  qualityChange?: { direction: 'up' | 'down' | 'format-only'; reEncodes: boolean };
+}): keyof UpdateBreakdown {
+  const reason = update.reasons[0]!;
+  if (reason === 'quality-change') {
+    const qc = update.qualityChange;
+    if (qc && !qc.reEncodes) return 'quality-change-suppressed';
+    return qc?.direction === 'down' ? 'quality-change-down' : 'quality-change-up';
+  }
+  return reason as keyof UpdateBreakdown;
+}
 
 /**
  * Group copy operations by source file type for display.
@@ -482,16 +504,17 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
     const normalization = config.capabilities?.audioNormalization ?? 'soundcheck';
 
     if (diff.toUpdate.length > 0) {
-      const updatesByReason = new Map<string, number>();
+      // Count by breakdown key so quality-change splits into per-direction
+      // counts (up / down / source-down suppressed).
+      const updatesByKey = new Map<string, number>();
       for (const update of diff.toUpdate) {
-        const reason = update.reasons[0]!;
-        const count = updatesByReason.get(reason) ?? 0;
-        updatesByReason.set(reason, count + 1);
+        const key = breakdownKeyForUpdate(update);
+        updatesByKey.set(key, (updatesByKey.get(key) ?? 0) + 1);
       }
       const reasonParts: string[] = [];
-      for (const [reason, count] of updatesByReason) {
-        let label = formatUpdateReason(reason);
-        if (reason === 'normalization-update' && normalization === 'replaygain') {
+      for (const [key, count] of updatesByKey) {
+        let label = formatUpdateReason(key);
+        if (key === 'normalization-update' && normalization === 'replaygain') {
           label = 'ReplayGain update';
         }
         reasonParts.push(`${label}: ${count}`);
@@ -499,6 +522,19 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
       out.print(
         `  Tracks to update: ${formatNumber(diff.toUpdate.length)} (${reasonParts.join(', ')})`
       );
+
+      // Verbose: list each quality-change track with its reason + direction.
+      if (out.isVerbose) {
+        for (const update of diff.toUpdate) {
+          const qc = update.qualityChange;
+          if (update.reasons[0] !== 'quality-change' || !qc) continue;
+          const arrow = qc.direction === 'down' ? '↓' : qc.direction === 'up' ? '↑' : '·';
+          const suffix = qc.reEncodes ? '' : ' (suppressed)';
+          out.print(
+            `    - ${update.source.artist ?? 'Unknown'} - ${update.source.title ?? 'Unknown'}: ${qc.reason} ${arrow}${suffix}`
+          );
+        }
+      }
     }
     out.newline();
 
@@ -680,10 +716,23 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
     }
 
     const updateBreakdown: UpdateBreakdown = {};
+    const qualityChanges: QualityChangeInfo[] = [];
     for (const update of diff.toUpdate) {
-      const reason = update.reasons[0]!;
-      const count = updateBreakdown[reason as keyof UpdateBreakdown] ?? 0;
-      updateBreakdown[reason as keyof UpdateBreakdown] = count + 1;
+      const key = breakdownKeyForUpdate(update);
+      updateBreakdown[key] = (updateBreakdown[key] ?? 0) + 1;
+
+      if (update.reasons[0] === 'quality-change' && update.qualityChange) {
+        const qc = update.qualityChange;
+        qualityChanges.push({
+          track: `${update.source.artist ?? 'Unknown'} - ${update.source.title ?? 'Unknown'}`,
+          reason: qc.reason,
+          direction: qc.direction,
+          reEncodes: qc.reEncodes,
+          targetBitrate: qc.targetBitrate,
+          ...(qc.encodedBitrate !== undefined && { encodedBitrate: qc.encodedBitrate }),
+          ...(qc.sourceBitrate !== undefined && { sourceBitrate: qc.sourceBitrate }),
+        });
+      }
     }
 
     let albumCount: number | undefined;
@@ -716,6 +765,7 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
           summary.upgradeArtworkCount,
         tracksToRelocate: summary.relocateCount > 0 ? summary.relocateCount : undefined,
         updateBreakdown: diff.toUpdate.length > 0 ? updateBreakdown : undefined,
+        qualityChanges: qualityChanges.length > 0 ? qualityChanges : undefined,
         tracksToTranscode: summary.addTranscodeCount,
         tracksToCopy: summary.addDirectCopyCount + summary.addOptimizedCopyCount,
         tracksExisting: diff.existing.length,

@@ -119,10 +119,14 @@ export function formatUpdateReason(reason: string): string {
       return 'Revert clean artists';
     case 'metadata-changed':
       return 'Metadata changed';
-    case 'format-upgrade':
-      return 'Format upgrade';
-    case 'quality-upgrade':
-      return 'Quality upgrade';
+    case 'quality-change':
+      return 'Quality change';
+    case 'quality-change-up':
+      return 'Quality change (up)';
+    case 'quality-change-down':
+      return 'Quality change (down)';
+    case 'quality-change-suppressed':
+      return 'Quality change (source-down suppressed)';
     case 'preset-upgrade':
       return 'Preset upgrade';
     case 'preset-downgrade':

@@ -77,8 +77,13 @@ export interface UpdateBreakdown {
   'transform-apply'?: number;
   'transform-remove'?: number;
   'metadata-changed'?: number;
-  'format-upgrade'?: number;
-  'quality-upgrade'?: number;
+  // Music quality axis — direction-split (replaces format-upgrade /
+  // quality-upgrade / preset-upgrade / preset-downgrade). `-suppressed` counts
+  // source-down changes the policy left alone (none produced in S0).
+  'quality-change-up'?: number;
+  'quality-change-down'?: number;
+  'quality-change-suppressed'?: number;
+  // Video quality axis — video keeps its own preset reasons.
   'preset-upgrade'?: number;
   'preset-downgrade'?: number;
   'force-transcode'?: number;
@@ -90,6 +95,24 @@ export interface UpdateBreakdown {
   'normalization-update'?: number;
   'metadata-correction'?: number;
   'force-metadata'?: number;
+}
+
+/**
+ * One entry in the per-collection `qualityChanges[]` JSON array.
+ *
+ * Carries the classifier's decision for a single track so external tooling can
+ * surface the full quality picture — including `source-down-suppressed` entries
+ * the sync left alone (none produced in S0, but the wire shape exists).
+ */
+export interface QualityChangeInfo {
+  track: string;
+  reason: string;
+  direction: 'up' | 'down' | 'format-only';
+  /** Whether the change re-encodes the file (false for source-down-suppressed). */
+  reEncodes: boolean;
+  targetBitrate: number;
+  encodedBitrate?: number;
+  sourceBitrate?: number;
 }
 
 /**
@@ -150,6 +173,12 @@ export interface SyncOutput {
     tracksToUpgrade: number;
     tracksToRelocate?: number;
     updateBreakdown?: UpdateBreakdown;
+    /**
+     * Per-track quality classifier decisions (music). Includes
+     * `source-down-suppressed` entries (none in S0). Present when the plan
+     * produced any quality change.
+     */
+    qualityChanges?: QualityChangeInfo[];
     tracksToTranscode: number;
     tracksToCopy: number;
     tracksExisting: number;

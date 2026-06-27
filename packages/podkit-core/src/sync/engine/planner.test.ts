@@ -86,12 +86,12 @@ function createMockHandler(
       if (nonSyncTagReasons.length === 0) return ops;
 
       const primary = nonSyncTagReasons[0];
-      if (primary === 'format-upgrade') {
+      if (primary === 'quality-change') {
         ops.push({
           type: 'upgrade-transcode',
           source: { filePath: source.name } as any,
           target: { filePath: device.name } as any,
-          reason: 'format-upgrade',
+          reason: 'quality-change',
           preset: { name: 'high' },
         });
         return ops;
@@ -327,7 +327,7 @@ describe('SyncPlanner', () => {
 
       const diff: UnifiedSyncDiff<TestSource, TestDevice> = {
         ...emptyDiff(),
-        toUpdate: [{ source: src('track-a'), device: dev('track-a'), reasons: ['format-upgrade'] }],
+        toUpdate: [{ source: src('track-a'), device: dev('track-a'), reasons: ['quality-change'] }],
       };
 
       const plan = planner.plan(diff);
@@ -447,7 +447,7 @@ describe('SyncPlanner', () => {
           {
             source: src('upgrade-track'),
             device: dev('upgrade-track'),
-            reasons: ['format-upgrade'],
+            reasons: ['quality-change'],
           },
         ],
       };
@@ -669,7 +669,7 @@ describe('orderOperations', () => {
         type: 'upgrade-transcode',
         source: {} as any,
         target: {} as any,
-        reason: 'format-upgrade',
+        reason: 'quality-change',
         preset: { name: 'high' },
       },
     ];

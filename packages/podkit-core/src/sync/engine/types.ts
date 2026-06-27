@@ -31,8 +31,13 @@ export type { DeviceTrack };
  * @see ADR-009 for full design context
  */
 export type UpgradeReason =
-  | 'format-upgrade'
-  | 'quality-upgrade'
+  // Unified music quality axis (replaces format-upgrade / quality-upgrade /
+  // preset-upgrade / preset-downgrade for audio). Produced by
+  // `classifyQualityChange`; direction + descriptive fields ride on the
+  // `QualityChange` payload attached to the diff entry, not the reason string.
+  | 'quality-change'
+  // Video quality axis — video keeps its own preset reasons (out of scope of
+  // the music quality-change unification).
   | 'preset-upgrade'
   | 'preset-downgrade'
   | 'codec-changed'
@@ -53,8 +58,8 @@ export type UpgradeReason =
  * - metadata-changed: Source metadata changed (for future use)
  * - force-transcode: User requested forced re-transcoding via --force-transcode
  * - sync-tag-write: Write/update sync tag in track comment field (metadata-only)
- * - format-upgrade: Source is lossless, iPod has lossy (file replacement)
- * - quality-upgrade: Same format family, significantly higher bitrate (file replacement)
+ * - quality-change: Music quality move (cap-up/down, lossless-boundary,
+ *   source-improved) — file replacement when reEncodes
  * - artwork-added: Source has artwork, iPod does not (file replacement)
  * - artwork-removed: Source no longer has artwork but iPod does (metadata-only)
  * - artwork-updated: Source artwork hash differs from iPod sync tag hash (metadata-only)

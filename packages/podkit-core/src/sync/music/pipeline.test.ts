@@ -2391,7 +2391,7 @@ describe('getMusicOperationDisplayName - upgrade', () => {
       type: 'upgrade-transcode',
       source: createCollectionTrack('Pink Floyd', 'Comfortably Numb', 'The Wall', 'flac'),
       target: createDeviceTrack('Pink Floyd', 'Comfortably Numb', 'The Wall'),
-      reason: 'format-upgrade',
+      reason: 'quality-change',
       preset: { name: 'high' },
     };
 
@@ -2422,7 +2422,7 @@ describe('upgrade operations - dry run', () => {
             lossless: true,
           }),
           target: existingTrack,
-          reason: 'format-upgrade',
+          reason: 'quality-change',
           preset: { name: 'high' },
         },
       ],
@@ -2458,7 +2458,7 @@ describe('upgrade operations - execution', () => {
     transcoder = createMockTranscoder();
   });
 
-  it('executes upgrade with transcode preset (format-upgrade)', async () => {
+  it('executes upgrade with transcode preset (quality-change)', async () => {
     const existingTrack = createDeviceTrack('Artist', 'Song', 'Album', {
       filePath: 'Music/EXISTING.m4a',
     });
@@ -2480,7 +2480,7 @@ describe('upgrade operations - execution', () => {
             duration: 200000,
           }),
           target: existingTrack,
-          reason: 'format-upgrade',
+          reason: 'quality-change',
           preset: { name: 'high' },
         },
       ],
@@ -2509,7 +2509,7 @@ describe('upgrade operations - execution', () => {
     expect(upgradeProgress).toBeDefined();
   });
 
-  it('executes upgrade without preset (copy-based quality-upgrade)', async () => {
+  it('executes upgrade without preset (copy-based quality-change)', async () => {
     const existingTrack = createDeviceTrack('Artist', 'Song', 'Album', {
       filePath: 'Music/EXISTING.m4a',
       bitrate: 128,
@@ -2529,7 +2529,7 @@ describe('upgrade operations - execution', () => {
             bitrate: 320,
           }),
           target: existingTrack,
-          reason: 'quality-upgrade',
+          reason: 'quality-change',
           // No preset — MP3 is copied directly
         },
       ],
@@ -2580,7 +2580,7 @@ describe('upgrade operations - execution', () => {
             normalization: { source: 'replaygain-track', trackGain: -7.35, soundcheckValue: 5432 },
           }),
           target: existingTrack,
-          reason: 'format-upgrade',
+          reason: 'quality-change',
           preset: { name: 'high' },
         },
       ],
@@ -2631,7 +2631,7 @@ describe('upgrade operations - execution', () => {
             lossless: true,
           }),
           target: targetTrack,
-          reason: 'format-upgrade',
+          reason: 'quality-change',
           preset: { name: 'high' },
         },
       ],
@@ -2671,7 +2671,7 @@ describe('upgrade operations - execution', () => {
             lossless: true,
           }),
           target: targetTrack,
-          reason: 'format-upgrade',
+          reason: 'quality-change',
           preset: { name: 'high' },
         },
       ],
@@ -2725,7 +2725,7 @@ describe('upgrade operations - execution', () => {
             genre: 'Rock',
           }),
           target: existingTrack,
-          reason: 'format-upgrade',
+          reason: 'quality-change',
           preset: { name: 'high' },
         },
       ],
@@ -3257,7 +3257,7 @@ describe('sync tag preservation after upgrade', () => {
             lossless: true,
           }),
           target: existingTrack,
-          reason: 'format-upgrade',
+          reason: 'quality-change',
           preset: { name: 'high' },
         },
       ],
@@ -3390,7 +3390,7 @@ describe('artwork during upgrade operations', () => {
             lossless: true,
           }),
           target: existingTrack,
-          reason: 'format-upgrade',
+          reason: 'quality-change',
           preset: { name: 'high' },
         },
       ],
@@ -3472,7 +3472,7 @@ describe('artwork during upgrade operations', () => {
             bitrate: 320,
           }),
           target: existingTrack,
-          reason: 'quality-upgrade',
+          reason: 'quality-change',
           // No preset — copy-based upgrade
         },
       ],
@@ -3617,7 +3617,7 @@ describe('copy sync tags', () => {
             bitrate: 320,
           }),
           target: existingTrack,
-          reason: 'quality-upgrade',
+          reason: 'quality-change',
         },
       ],
     };
@@ -3733,7 +3733,7 @@ describe('optimized copy operations', () => {
           type: 'upgrade-optimized-copy',
           source: createCollectionTrack('Artist', 'Song', 'Album', 'mp3'),
           target: existingTrack,
-          reason: 'format-upgrade',
+          reason: 'quality-change',
         },
       ],
     };

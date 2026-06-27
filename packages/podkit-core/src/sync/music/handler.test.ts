@@ -124,12 +124,7 @@ describe('MusicHandler', () => {
       const device = makeDeviceTrack({ bitrate: 128, filetype: 'MPEG audio file' });
       const reasons = h.detectUpdates(source, device);
       // File-replacement reasons should be filtered
-      const fileReplacement = [
-        'format-upgrade',
-        'quality-upgrade',
-        'artwork-added',
-        'force-transcode',
-      ];
+      const fileReplacement = ['quality-change', 'artwork-added', 'force-transcode'];
       for (const reason of reasons) {
         expect(fileReplacement).not.toContain(reason);
       }
@@ -248,7 +243,7 @@ describe('MusicHandler', () => {
     test('returns upgrade for file-replacement reason', () => {
       const source = makeCollectionTrack();
       const device = makeDeviceTrack();
-      const ops = handler.planUpdate(source, device, ['format-upgrade']);
+      const ops = handler.planUpdate(source, device, ['quality-change']);
       expect(ops.length).toBe(1);
       expect(ops[0]!.type).toBe('upgrade-transcode');
     });
@@ -308,7 +303,7 @@ describe('MusicHandler', () => {
       );
       const source = makeCollectionTrack({ fileType: 'mp3', lossless: false });
       const device = makeDeviceTrack();
-      const ops = h.planUpdate(source, device, ['format-upgrade']);
+      const ops = h.planUpdate(source, device, ['quality-change']);
       expect(ops.length).toBe(1);
       expect(ops[0]!.type).toBe('upgrade-optimized-copy');
     });
@@ -324,7 +319,7 @@ describe('MusicHandler', () => {
       );
       const source = makeCollectionTrack({ fileType: 'mp3', lossless: false });
       const device = makeDeviceTrack();
-      const ops = h.planUpdate(source, device, ['format-upgrade']);
+      const ops = h.planUpdate(source, device, ['quality-change']);
       expect(ops.length).toBe(1);
       expect(ops[0]!.type).toBe('upgrade-direct-copy');
     });
@@ -531,12 +526,13 @@ describe('MusicHandler', () => {
 
     test('does not add force-transcode when file-replacement upgrade already exists', () => {
       const h = createMusicHandler(makeConfig({ forceTranscode: true }));
-      // Lossless source with lossy device triggers format-upgrade, which is a file-replacement
-      // upgrade, so force-transcode is not added (redundant)
+      // Lossless source with lossy (MP3) device triggers a lossless-boundary
+      // quality-change, which is a file-replacement upgrade, so force-transcode
+      // is not added (redundant)
       const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
       const device = makeDeviceTrack({ filetype: 'MPEG audio file' });
       const reasons = h.detectUpdates(source, device);
-      expect(reasons).toContain('format-upgrade');
+      expect(reasons).toContain('quality-change');
       expect(reasons).not.toContain('force-transcode');
     });
 
@@ -889,12 +885,14 @@ describe('MusicHandler', () => {
         filePath: '/music/transcode-aac.flac',
       });
       const device = makeDeviceTrack({ filetype: 'AAC audio file' });
-      // Handler is always transcoding-aware, so AAC format-upgrade is suppressed
+      // Handler is always transcoding-aware, so the lossless-boundary
+      // quality-change is suppressed for an AAC device (steady state of an
+      // active FLAC→AAC transcode pipeline).
       const reasons = handler.detectUpdates(source, device);
-      expect(reasons).not.toContain('format-upgrade');
+      expect(reasons).not.toContain('quality-change');
     });
 
-    test('preserves format-upgrade for MP3 device', () => {
+    test('preserves quality-change for MP3 device', () => {
       const source = makeCollectionTrack({
         fileType: 'flac',
         lossless: true,
@@ -902,9 +900,9 @@ describe('MusicHandler', () => {
       });
       const device = makeDeviceTrack({ filetype: 'MPEG audio file' });
       // MP3 on iPod means the track was copied before the source was upgraded to FLAC.
-      // This IS a genuine upgrade opportunity.
+      // This IS a genuine upgrade opportunity (lossless-boundary quality-change).
       const reasons = handler.detectUpdates(source, device);
-      expect(reasons).toContain('format-upgrade');
+      expect(reasons).toContain('quality-change');
     });
   });
 
@@ -982,7 +980,8 @@ describe('MusicHandler', () => {
       h.postProcessDiff(diff);
 
       expect(diff.toUpdate).toHaveLength(1);
-      expect(diff.toUpdate[0]!.reasons[0]).toBe('preset-upgrade');
+      expect(diff.toUpdate[0]!.reasons[0]).toBe('quality-change');
+      expect(diff.toUpdate[0]!.qualityChange?.direction).toBe('up');
       expect(diff.toUpdate[0]!.changes).toContainEqual({
         field: 'bitrate',
         from: '128',
@@ -1000,7 +999,8 @@ describe('MusicHandler', () => {
       h.postProcessDiff(diff);
 
       expect(diff.toUpdate).toHaveLength(1);
-      expect(diff.toUpdate[0]!.reasons[0]).toBe('preset-downgrade');
+      expect(diff.toUpdate[0]!.reasons[0]).toBe('quality-change');
+      expect(diff.toUpdate[0]!.qualityChange?.direction).toBe('down');
       expect(diff.existing).toHaveLength(0);
     });
 
@@ -1069,7 +1069,8 @@ describe('MusicHandler', () => {
       h.postProcessDiff(diff);
 
       expect(diff.toUpdate).toHaveLength(1);
-      expect(diff.toUpdate[0]!.reasons[0]).toBe('preset-upgrade');
+      expect(diff.toUpdate[0]!.reasons[0]).toBe('quality-change');
+      expect(diff.toUpdate[0]!.qualityChange?.direction).toBe('up');
     });
 
     test('uses sync tag comparison — quality downgrade triggers preset-downgrade', () => {
@@ -1085,7 +1086,8 @@ describe('MusicHandler', () => {
       h.postProcessDiff(diff);
 
       expect(diff.toUpdate).toHaveLength(1);
-      expect(diff.toUpdate[0]!.reasons[0]).toBe('preset-downgrade');
+      expect(diff.toUpdate[0]!.reasons[0]).toBe('quality-change');
+      expect(diff.toUpdate[0]!.qualityChange?.direction).toBe('down');
     });
 
     test('no sync tag falls back to bitrate tolerance detection', () => {
@@ -1097,7 +1099,8 @@ describe('MusicHandler', () => {
       h.postProcessDiff(diff);
 
       expect(diff.toUpdate).toHaveLength(1);
-      expect(diff.toUpdate[0]!.reasons[0]).toBe('preset-upgrade');
+      expect(diff.toUpdate[0]!.reasons[0]).toBe('quality-change');
+      expect(diff.toUpdate[0]!.qualityChange?.direction).toBe('up');
     });
 
     test('detects ALAC format-based preset upgrade when isAlacPreset is true', () => {
@@ -1117,7 +1120,8 @@ describe('MusicHandler', () => {
       h.postProcessDiff(diff);
 
       expect(diff.toUpdate).toHaveLength(1);
-      expect(diff.toUpdate[0]!.reasons[0]).toBe('preset-upgrade');
+      expect(diff.toUpdate[0]!.reasons[0]).toBe('quality-change');
+      expect(diff.toUpdate[0]!.qualityChange?.direction).toBe('up');
       expect(diff.toUpdate[0]!.changes).toContainEqual({
         field: 'lossless',
         from: 'AAC audio file',
@@ -1247,7 +1251,8 @@ describe('MusicHandler', () => {
       h.postProcessDiff(diff);
 
       expect(diff.toUpdate).toHaveLength(1);
-      expect(diff.toUpdate[0]!.reasons[0]).toBe('preset-upgrade');
+      expect(diff.toUpdate[0]!.reasons[0]).toBe('quality-change');
+      expect(diff.toUpdate[0]!.qualityChange?.direction).toBe('up');
     });
 
     test('keeps ALAC track as existing when isAlacPreset is true', () => {

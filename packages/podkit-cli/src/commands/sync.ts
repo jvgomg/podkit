@@ -153,6 +153,7 @@ import type {
   ScanWarningInfo,
   TransformInfo,
   UpdateBreakdown,
+  QualityChangeInfo,
   VideoSummary,
   SyncOutput,
 } from './sync-output-types.js';
@@ -162,6 +163,7 @@ export type {
   ScanWarningInfo,
   TransformInfo,
   UpdateBreakdown,
+  QualityChangeInfo,
   VideoSummary,
   SyncOutput,
 } from './sync-output-types.js';

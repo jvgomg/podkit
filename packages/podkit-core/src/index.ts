@@ -116,17 +116,23 @@ export type { VideoOperation } from './sync/video/types.js';
 
 // Upgrade detection (self-healing sync)
 export {
-  isQualityUpgrade,
+  classifyQualityChange,
+  classifySourceBound,
+  classifyDeviceBound,
   detectUpgrades,
   isFileReplacementUpgrade,
   isSourceLossless,
-  detectPresetChange,
   detectBitratePresetMismatch,
   DEFAULT_VBR_TOLERANCE,
   DEFAULT_CBR_TOLERANCE,
   DEFAULT_MIN_PRESET_BITRATE,
 } from './sync/engine/upgrades.js';
-export type { PresetChangeOptions } from './sync/engine/upgrades.js';
+export type {
+  QualityChange,
+  QualityChangeReason,
+  QualityChangeDirection,
+  QualityTarget,
+} from './sync/engine/upgrades.js';
 
 // Music planning utilities
 export {

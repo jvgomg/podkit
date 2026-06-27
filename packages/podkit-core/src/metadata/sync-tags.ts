@@ -314,12 +314,22 @@ export function buildAudioSyncTag(
     quality: resolvedPreset,
   };
 
-  // Lossless has no encoding mode or bitrate
+  // Authoritatively declare the bitrate so a transcode tag REPLACES — rather
+  // than merges with — any stale `bitrate` left by a prior `quality=copy` tag on
+  // the same track. The device adapters' `writeSyncTag` merges existing tag
+  // fields with the update (`{...existing, ...update}`); emitting `bitrate`
+  // (even as `undefined`) lets the update win. Without this, a lossless source
+  // first direct-copied (the copy tag records the source bitrate) then
+  // transcoded would keep the stale copy bitrate, and the next sync's expected
+  // tag — which has no bitrate for a non-custom preset — would mismatch and fire
+  // a phantom quality-change on every sync. `undefined` is dropped on
+  // serialization, so the persisted tag stays clean.
   if (resolvedPreset !== 'lossless') {
     data.encoding = encodingMode ?? 'vbr';
-    if (customBitrate !== undefined) {
-      data.bitrate = customBitrate;
-    }
+    data.bitrate = customBitrate;
+  } else {
+    // Lossless pins no bitrate; clear any stale copy bitrate for the same reason.
+    data.bitrate = undefined;
   }
 
   if (codec) {
@@ -336,17 +346,28 @@ export function buildAudioSyncTag(
 /**
  * Build the SyncTagData for a copy operation (direct-copy or optimized-copy).
  *
- * Copy tracks use `quality=copy` (no encoding/bitrate) and include the
- * transfer mode and artwork hash.
+ * Copy tracks use `quality=copy` and include the transfer mode, codec, artwork
+ * hash, and — for lossy copies — the effective source `bitrate`. Recording the
+ * bitrate on a copy gives later quality slices an authoritative `encoded` value
+ * for the device-side bound without re-probing.
+ *
+ * NOTE: adding `bitrate` is purely additive going forward — lossy sources never
+ * flow through the device-vs-target (preset) bound in S0, and the
+ * `--force-sync-tags` copy path keys on artwork hash, not bitrate — so a
+ * pre-existing copy tag without a bitrate does NOT trigger a sync-tag-write or
+ * re-encode on the next sync. New copies simply start carrying it.
  *
  * @param transferMode - Transfer mode used: 'fast' | 'optimized' | 'portable'
  * @param artworkHash - Artwork content hash (8-char hex), if available
+ * @param codec - Source audio codec, if known
+ * @param bitrate - Effective bitrate (kbps) of the copied file, if known
  * @returns SyncTagData for the copy operation
  */
 export function buildCopySyncTag(
   transferMode: string,
   artworkHash?: string,
-  codec?: string
+  codec?: string,
+  bitrate?: number
 ): SyncTagData {
   const data: SyncTagData = {
     quality: 'copy',
@@ -355,6 +376,12 @@ export function buildCopySyncTag(
 
   if (codec) {
     data.codec = codec;
+  }
+
+  // TODO(S1): record encoding mode for copied lossy — the source's CBR/VBR mode
+  // is not reliably known without new probing, which S0 deliberately avoids.
+  if (bitrate !== undefined) {
+    data.bitrate = bitrate;
   }
 
   if (artworkHash) {

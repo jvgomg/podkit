@@ -10,6 +10,7 @@
 
 import type { SyncTagData } from '../../metadata/sync-tags.js';
 import type { BaseOperation, MetadataChange, SyncPlan, UpdateReason } from './types.js';
+import type { QualityChange } from './upgrades.js';
 import type { DryRunSummary, UnifiedSyncDiff } from './content-type.js';
 
 /**
@@ -19,6 +20,8 @@ export interface PartitionUpdateEntry {
   reasons: UpdateReason[];
   changes?: MetadataChange[];
   syncTag?: SyncTagData;
+  /** Quality classifier result when `reasons[0] === 'quality-change'`. */
+  qualityChange?: QualityChange;
 }
 
 /**

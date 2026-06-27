@@ -190,7 +190,12 @@ export type {
 export type { SyncTagData, SyncTagUpdate } from '@podkit/core';
 
 // Upgrade detection types
-export type { PresetChangeOptions } from '@podkit/core';
+export type {
+  QualityChange,
+  QualityChangeReason,
+  QualityChangeDirection,
+  QualityTarget,
+} from '@podkit/core';
 
 // Transform types
 export type {
@@ -1827,8 +1832,16 @@ export function extractSoundcheck(_track: any): any {
 // Upgrade detection (mock)
 // =============================================================================
 
-export function isQualityUpgrade(_source: any, _device: any): boolean {
-  return false;
+export function classifyQualityChange(_input: any): any {
+  return null;
+}
+
+export function classifySourceBound(_source: any, _device: any, _targetBitrate?: number): any {
+  return null;
+}
+
+export function classifyDeviceBound(_device: any, _cap: any, _targetBitrate?: number): any {
+  return null;
 }
 
 export function detectUpgrades(_source: any, _device: any): string[] {
@@ -1840,10 +1853,6 @@ export function isFileReplacementUpgrade(_source: any, _device: any): boolean {
 }
 
 export function isSourceLossless(_source: any): boolean {
-  return false;
-}
-
-export function detectPresetChange(_source: any, _device: any, _options?: any): boolean {
   return false;
 }
 

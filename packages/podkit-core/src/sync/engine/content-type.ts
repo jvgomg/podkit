@@ -10,6 +10,7 @@
 
 import type { DeviceAdapter } from '../../device/adapter.js';
 import type { SyncTagData } from '../../metadata/sync-tags.js';
+import type { QualityChange } from './upgrades.js';
 import type {
   BaseOperation,
   MetadataChange,
@@ -139,6 +140,14 @@ export interface UnifiedSyncDiff<TSource, TDevice> {
     changes?: MetadataChange[];
     /** Typed sync tag to write (replaces raw comment field changes) */
     syncTag?: SyncTagData;
+    /**
+     * Quality classifier result, present when `reasons[0] === 'quality-change'`.
+     * Carries direction + descriptive bitrate/encoding fields for the
+     * `quality-change` event and `qualityChanges[]` JSON. Decoupled from the
+     * reason string so the presenter reads direction authoritatively rather
+     * than re-deriving it.
+     */
+    qualityChange?: QualityChange;
   }>;
 }
 
