@@ -57,10 +57,19 @@ re-encodes; source-down suppresses). The two bounds are:
 A much-improved source is followed up whether or not the user touched their cap.
 
 **Bound 2 — device-vs-target (`classifyDeviceBound`):** The authoritative
-`encoded` value is the device's sync tag. When the sync tag is absent the
-classifier falls back to the device DB bitrate + tolerance
-(`detectBitratePresetMismatch`). This fallback will be removed once lossy sync
-tags are written for pre-existing libraries.
+`encoded` value is the device's sync tag, and nothing else. The sync tag is the
+**sole quality truth** — the only record of what podkit actually encoded. A
+track with no sync tag at all is **opted out**: this bound returns `null`. (A
+sync tag that records the quality tier and encoding but omits the bitrate is
+still authoritative on the lossless path — the exact comparison can detect an
+encoding-mode flip from it; only the lossy bound additionally needs a recorded
+bitrate and opts out without one.) There is no device-DB-bitrate fallback — the
+DB bitrate is an unreliable proxy (libgpod exposes no CBR/VBR signal), so podkit
+never guesses from it. Adopting an untagged track is an explicit, destructive
+opt-in via `--force-sync-tags-transcode` (see §4). The format-observable
+preconditions that do not need the tag (the lossless/lossy boundary and the ALAC
+format check) still fire for untagged tracks; only the bitrate guess is gone.
+See [ADR-022](../../../adr/adr-022-sync-tag-sole-quality-truth.md).
 
 `classifyQualityChange` runs Bound 1 first; Bound 2 only fires when Bound 1
 returns null.
@@ -143,8 +152,11 @@ Two design rules hold for all three:
 in-sync band on the **lossy source-bound comparison only** — the effective target
 in `classifyLossyDeviceBound` is derived from the ffprobe source bitrate, which
 can wobble between syncs. The recorded `encoded` value is deterministic (podkit
-wrote it), so it carries no tolerance. The lossless DB-bitrate fallback keeps its
-own separate `bitrateTolerance` knob (see §4).
+wrote it), so it carries no tolerance. The legacy `bitrateTolerance` knob (whose
+old role slackening the now-removed DB-bitrate fallback is gone) is reinterpreted
+as the default for both directions: `qualityTargetFromConfig` resolves
+`toleranceUp ?? bitrateTolerance` and `toleranceDown ?? bitrateTolerance`, so an
+explicit per-direction value wins and an unset value stays exact.
 
 ---
 
@@ -246,15 +258,18 @@ exactly. A match returns null. A mismatch is split: an encoding-mode (CBR/VBR)
 flip produces `encoding-mismatch` (a precondition — see §1a); otherwise the
 `qualityMoveDirection` of the tier/bitrate move yields `cap-up` or `cap-down`.
 
-**Untagged fallback:** When no exact comparison is possible, the fallback is
-`detectBitratePresetMismatch(device.bitrate, target.presetBitrate, tolerance)`.
-This uses the device DB bitrate + a percentage tolerance (30% VBR, 10% CBR).
-The fallback will be removed once lossy sync tags are written for pre-existing
-libraries.
+**Untagged → opted out:** When no exact comparison is possible and the ALAC
+shortcut below does not apply, this bound returns `null`. There is **no**
+DB-bitrate fallback: the sync tag is the sole quality truth, and a track podkit
+never wrote is left alone rather than guessed from the unreliable device-database
+bitrate (libgpod exposes no CBR/VBR signal). Adopting such a track is an explicit,
+destructive opt-in — see "Adopting untagged tracks" in §4 and
+[ADR-022](../../../adr/adr-022-sync-tag-sole-quality-truth.md).
 
 **ALAC preset shortcut:** When `target.isAlacPreset` is true and no sync tag
 is available, the comparison is format-based (not bitrate): if the device track
-is already ALAC, return null; otherwise return `cap-up`.
+is already ALAC, return null; otherwise return `cap-up`. (This is observable from
+the container, so it is not a DB-bitrate guess and applies to untagged tracks.)
 
 The three paths above are the **lossless** ladder. Lossy sources branch off
 earlier — see below.
@@ -353,7 +368,33 @@ device bitrate at the old value, causing an infinite re-upgrade loop.
 For **pre-existing tracks** (added before this guarantee, or by a third-party
 tool), `bitrate = 0`. The `--force-sync-tags` backfill
 (`postProcessBitrateBaseline`) catches these with an opt-in, idempotent
-`update-metadata` pass. No file replacement.
+`update-metadata` pass. No file replacement. (Note: this populates the device's
+record bitrate for the source bound; it does **not** synthesize a sync tag, so an
+otherwise-untagged track stays opted out of the device bound — see below.)
+
+### Adopting untagged tracks (`--force-sync-tags-transcode`)
+
+Because the device bound treats an untagged track as opted out (the sync tag is
+the sole quality truth; there is no DB-bitrate fallback), there is one explicit,
+destructive path that establishes ground truth for such tracks:
+`postProcessSyncTagsTranscode` (gated on `forceSyncTagsTranscode`). It runs as a
+post-process pass **before** the tag-only `postProcessSyncTags`, so when both
+flags are set it claims untagged tracks first (the transcode wins; no
+double-processing).
+
+For each matched track with **no** sync tag (`!syncTag` — a track podkit never
+wrote), the pass routes it to a `quality-change` re-encode targeting the resolved
+device quality. A track that carries any podkit sync tag is authoritative (its
+quality tier and encoding mode are recorded; a plain transcode tag legitimately
+omits the bitrate, which is implied by the preset) and is left to the classifier
+— it is never re-encoded here. It reuses the
+existing executor: a lossy source with a cap is re-encoded to `min(source, cap)`
+(carried as the change's `targetBitrate`, which `resolveUpgradeAction` stamps as
+the preset `bitrateOverride`); a lossless source is transcoded via the
+classifier's routing. `transferUpgradeToIpod` then writes the authoritative sync
+tag. After adoption the track carries a recorded bitrate, so the next ordinary
+sync sees it as tagged and the adoption pass skips it — idempotent. A track that
+already carries an authoritative tag is never touched here.
 
 ---
 
@@ -386,10 +427,12 @@ keeping the better device copy and reporting it via the report-only channel
 > otherwise keep a stale `encoding=vbr` from the prior audio tag. `undefined`
 > wins the merge and is dropped on serialization, keeping copy tags clean.
 
-**Untagged DB-bitrate fallback (lossless only).** The tolerance-based
-`detectBitratePresetMismatch` path remains active for lossless tracks without a
-sync tag. It will be removed once lossy sync tags are written for pre-existing
-libraries.
+**Untagged tracks are opted out.** There is no DB-bitrate fallback in either the
+lossless or lossy device bound: a track without an authoritative sync tag returns
+`null` from `classifyDeviceBound` and is left alone. `detectBitratePresetMismatch`
+survives only for **video** preset-change detection (video carries no sync tags
+and has a reliable container bitrate). Adoption of untagged audio tracks is the
+explicit `--force-sync-tags-transcode` path (see §4).
 
 ---
 
@@ -423,10 +466,10 @@ the `source-improved` upgrade.
 
 ## 7. Open work
 
-- **Untagged opt-out:** Drop the lossless DB-bitrate fallback once lossy sync
-  tags are written for pre-existing libraries. `--force-sync-tags-transcode`
-  (the explicit, destructive adoption path for untagged tracks) is the planned
-  enabler.
+- ~~**Untagged opt-out:** Drop the lossless DB-bitrate fallback.~~ Done: the
+  sync tag is the sole quality truth, untagged audio tracks are opted out of the
+  device bound, and `--force-sync-tags-transcode` is the explicit, destructive
+  adoption path (see §4 and [ADR-022](../../../adr/adr-022-sync-tag-sole-quality-truth.md)).
 - **Lossy encoding-mismatch eligibility:** the CBR/VBR precondition fires on the
   lossy cap path only for tracks podkit transcoded *with a recorded bitrate*
   (e.g. a prior cap move). A lossy transcode written without a bitrate override

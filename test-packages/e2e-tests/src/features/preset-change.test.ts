@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
 import { ensureFixturesExist, requireFFmpeg } from '@podkit/e2e-shared';
+import { gpodTool } from '@podkit/gpod-testing';
 import { runCliJson } from '../helpers/cli-runner';
 import { withTarget, withMassStorageTarget } from '../targets';
 import { getTrackPath, Tracks, type AlbumDir } from '../helpers/fixtures';
@@ -773,4 +774,103 @@ device = "${stanza?.name ?? ''}"
       { preset: 'generic' }
     );
   }, 180000);
+});
+
+// =============================================================================
+// Untagged-track adoption (--force-sync-tags-transcode)
+//
+// The sync tag is the sole quality truth. A track podkit never wrote (no sync
+// tag — here seeded directly into the iPod database via gpod-tool, mimicking a
+// third-party / pre-feature track) is opted out of the quality classifier: a
+// normal sync leaves it alone (no re-encode storm). Only the explicit
+// `--force-sync-tags-transcode` flag adopts it, routing it to a re-encode.
+//
+// These arms use `--dry-run` so they assert the routing decision against a real
+// device database without performing the (file-backed) re-encode. Execution +
+// idempotency of the adopted tag are covered by the core unit/handler tests.
+// =============================================================================
+
+describe('untagged-track adoption (--force-sync-tags-transcode)', () => {
+  const TRACK_META = { title: 'Adopt Me', artist: 'Untagged Artist', album: 'Adoption Album' };
+
+  async function seedUntaggedSource(): Promise<string> {
+    const collectionDir = await mkdtemp(join(tmpdir(), 'podkit-adopt-'));
+    const flacPath = join(collectionDir, 'adopt.flac');
+    execSync(
+      `ffmpeg -f lavfi -i "sine=frequency=440:sample_rate=44100:duration=2" ` +
+        `-metadata title="${TRACK_META.title}" ` +
+        `-metadata artist="${TRACK_META.artist}" ` +
+        `-metadata album="${TRACK_META.album}" ` +
+        `-metadata track="1" -y "${flacPath}"`,
+      { stdio: 'ignore' }
+    );
+    return collectionDir;
+  }
+
+  it('normal sync opts out an untagged track; --force-sync-tags-transcode adopts it', async () => {
+    requireFFmpeg();
+    await withTarget(async (target) => {
+      const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
+      let collectionDir: string | undefined;
+
+      try {
+        collectionDir = await seedUntaggedSource();
+        const configPath = await createConfigFile(configDir, {
+          source: collectionDir,
+          quality: 'high',
+        });
+
+        // Seed an untagged track straight into the iPod DB (no podkit sync tag).
+        await gpodTool.addTrack(target.path, {
+          title: TRACK_META.title,
+          artist: TRACK_META.artist,
+          album: TRACK_META.album,
+          trackNumber: 1,
+          bitrate: 900,
+          durationMs: 2000,
+          sampleRate: 44100,
+        });
+        expect((await target.getTracks()).length).toBe(1);
+
+        // Normal sync: the untagged track matches the source but is opted out of
+        // the quality classifier — no quality-change is planned (no re-encode
+        // storm). It is matched, not re-added.
+        const { json: normalJson } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--dry-run',
+          '--json',
+        ]);
+        expect(normalJson?.plan?.tracksToAdd).toBe(0);
+        const normalBreakdown = normalJson?.plan?.updateBreakdown ?? {};
+        expect(normalBreakdown['quality-change-up'] ?? 0).toBe(0);
+        expect(normalBreakdown['quality-change-down'] ?? 0).toBe(0);
+
+        // Adoption flag: the untagged track is routed to a re-encode
+        // (quality-change), establishing ground truth. The seeded copy reads as
+        // 900 kbps in the device DB; adopting it to the 256 kbps `high` cap is a
+        // downward move, so it is reported as a quality-change down.
+        const { json: adoptJson } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--force-sync-tags-transcode',
+          '--dry-run',
+          '--json',
+        ]);
+        expect(adoptJson?.plan?.tracksToAdd).toBe(0);
+        const adoptBreakdown = adoptJson?.plan?.updateBreakdown ?? {};
+        expect(adoptBreakdown['quality-change-down'] ?? 0).toBe(1);
+        expect(adoptBreakdown['quality-change-up'] ?? 0).toBe(0);
+      } finally {
+        if (collectionDir) await rm(collectionDir, { recursive: true, force: true });
+        await rm(configDir, { recursive: true, force: true });
+      }
+    });
+  }, 120000);
 });

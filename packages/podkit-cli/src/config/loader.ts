@@ -1914,6 +1914,11 @@ export function loadEnvConfig(): PartialConfig {
     config.forceSyncTags = parseBoolEnv(forceSyncTags);
   }
 
+  const forceSyncTagsTranscode = process.env[ENV_KEYS.forceSyncTagsTranscode];
+  if (forceSyncTagsTranscode !== undefined) {
+    config.forceSyncTagsTranscode = parseBoolEnv(forceSyncTagsTranscode);
+  }
+
   const checkArtwork = process.env[ENV_KEYS.checkArtwork];
   if (checkArtwork !== undefined) {
     config.checkArtwork = parseBoolEnv(checkArtwork);

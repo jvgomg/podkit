@@ -60,9 +60,9 @@ Use `--force-sync-tags` to write or update sync tags for all matched tracks with
 podkit sync --force-sync-tags
 ```
 
-This is a metadata-only operation. It's useful for:
+This is a metadata-only, **non-destructive** operation (no audio file is replaced). It's useful for:
 
-- Establishing sync tags on a library that was synced before sync tags existed
+- Establishing sync tags on tracks podkit already transcoded but synced before sync tags existed
 - Populating artwork fingerprints for [artwork change detection](/user-guide/syncing/artwork#artwork-change-detection) (combine with `--check-artwork`)
 
 ```bash
@@ -70,13 +70,21 @@ This is a metadata-only operation. It's useful for:
 podkit sync --force-sync-tags --check-artwork
 ```
 
+`--force-sync-tags` cannot recover the true bitrate and encoding of a track podkit never produced. To adopt genuinely untagged tracks, re-encode them to establish ground truth with the **destructive** `--force-sync-tags-transcode`:
+
+```bash
+podkit sync --force-sync-tags-transcode
+```
+
+This replaces the audio file of each untagged matched track with a fresh encode at your device quality target, then writes the authoritative sync tag. It is the only path that re-encodes for a missing sync tag, and it wins over `--force-sync-tags` for untagged tracks.
+
 ## How Sync Tags Are Used
 
 ### Preset change detection
 
 When you change your [quality preset](/reference/quality-presets) (e.g., `medium` to `high`), podkit compares the new target settings against each track's sync tag. If they don't match, the track is re-transcoded.
 
-Without sync tags, podkit falls back to comparing the track's bitrate against the target bitrate using a percentage tolerance (30% for VBR, 10% for CBR). This works but is less precise — VBR encoding naturally produces variable bitrates that can trigger false re-transcodes. Sync tags eliminate this ambiguity with an exact comparison.
+The sync tag is the **sole** record of what podkit encoded, so the comparison is exact. A track **without** a sync tag (one podkit never wrote) is **opted out** of preset change detection entirely — podkit leaves it alone rather than guessing from the device's stored bitrate, which is an unreliable proxy (it carries no CBR/VBR signal). This means upgrading podkit on a library of untagged tracks does not trigger a wave of re-transcodes. Adopt those tracks deliberately with `--force-sync-tags-transcode` (above).
 
 The `transfer` field is informational only — it records which transfer mode was used when the track was processed, but changes to `transferMode` do not trigger re-transcoding. Use `--force-transfer-mode` to re-process tracks when changing transfer mode.
 
@@ -94,7 +102,7 @@ When `--check-artwork` is enabled, podkit computes a fingerprint of each track's
 | `◐` | Partial | Has sync tag but missing artwork fingerprint |
 | `✗` | Missing | No sync tag at all |
 
-Tracks without sync tags still sync normally — they just use the bitrate tolerance fallback for preset change detection and can't participate in artwork change detection.
+Tracks without sync tags still sync normally — they are simply opted out of preset change detection (left alone until adopted) and can't participate in artwork change detection. Use `--force-sync-tags-transcode` to adopt them.
 
 ## Forward Compatibility
 

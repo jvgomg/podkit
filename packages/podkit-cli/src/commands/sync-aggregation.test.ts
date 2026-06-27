@@ -63,6 +63,7 @@ function buildMusicDryRunOutput(ctx: {
     forceTranscode: false,
     forceTransferMode: false,
     forceSyncTags: false,
+    forceSyncTagsTranscode: false,
     forceMetadata: false,
     checkArtwork: false,
     transcoder: null as never,

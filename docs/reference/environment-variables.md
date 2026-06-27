@@ -19,9 +19,10 @@ podkit settings can be overridden via environment variables. These take preceden
 | `PODKIT_TRANSFER_MODE` | Transfer mode: `fast`, `optimized`, or `portable`. Controls whether extra file data is preserved or stripped (overrides config file `transferMode`) |
 | `PODKIT_FORCE_TRANSFER_MODE` | Force re-processing of all tracks when changing transfer mode (`true`/`false`) |
 | `PODKIT_CUSTOM_BITRATE` | Override target bitrate for AAC encoding, 64-320 kbps (overrides config file `customBitrate`) |
-| `PODKIT_BITRATE_TOLERANCE` | Override preset change detection tolerance, 0.0-1.0 (overrides config file `bitrateTolerance`) |
+| `PODKIT_BITRATE_TOLERANCE` | Source-bound tolerance damper, 0.0-1.0 (default for `toleranceUp`/`toleranceDown`; overrides config file `bitrateTolerance`) |
 | `PODKIT_FORCE_TRANSCODE` | Force re-transcoding of all lossless-source tracks (`true`/`false`) |
 | `PODKIT_FORCE_SYNC_TAGS` | Write sync tags to all matched transcoded tracks without re-transcoding (`true`/`false`) |
+| `PODKIT_FORCE_SYNC_TAGS_TRANSCODE` | Adopt untagged tracks by re-encoding them and writing authoritative sync tags (`true`/`false`, destructive) |
 | `PODKIT_ARTWORK` | Default artwork setting (overrides config file `artwork`) |
 | `PODKIT_CHECK_ARTWORK` | Enable artwork change detection (`true`/`false`, overrides config file `checkArtwork`) |
 | `PODKIT_SKIP_UPGRADES` | Skip file-replacement upgrades during sync (`true`/`false`, overrides config file `skipUpgrades`) |

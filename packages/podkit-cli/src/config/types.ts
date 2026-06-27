@@ -421,6 +421,8 @@ export interface PodkitConfig {
   forceTransferMode?: boolean;
   /** Write sync tags to all matched transcoded tracks without re-transcoding (CLI/env only) */
   forceSyncTags?: boolean;
+  /** Adopt untagged tracks by re-encoding them and writing authoritative sync tags (CLI/env only, destructive) */
+  forceSyncTagsTranscode?: boolean;
   /** Detect artwork changes by comparing content hashes (can be overridden per-device) */
   checkArtwork?: boolean;
   /**

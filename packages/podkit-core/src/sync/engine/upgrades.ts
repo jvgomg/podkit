@@ -324,12 +324,6 @@ export interface QualityTarget {
   /** Resolved lossy output codec (e.g. 'aac', 'opus'). */
   resolvedLossyCodec?: string;
   /**
-   * Custom bitrate tolerance ratio (0.0-1.0) for the untagged DB-bitrate
-   * fallback. Overrides the encoding-mode default. The fallback itself will be
-   * removed once lossy sync tags are written for pre-existing libraries.
-   */
-  bitrateTolerance?: number;
-  /**
    * Source-bound upward tolerance ratio (0.0-1.0). Damps a trivial upward
    * wobble in the ffprobe-reported source bitrate so it does not churn a cap-up.
    * Applies ONLY to the lossy source-bound comparison; default 0 = exact.
@@ -432,10 +426,11 @@ function computeSourceBound(
  * from a cap drop, which must be treated oppositely (cap-down re-encodes;
  * source-down suppresses).
  *
- * The authoritative `encoded` value is the device's sync tag. When the sync tag
- * is absent the classifier falls back to the device DB bitrate + tolerance
- * (`detectBitratePresetMismatch`). This fallback will be removed once lossy sync
- * tags are written for pre-existing libraries.
+ * The authoritative `encoded` value is the device's sync tag and nothing else.
+ * When the sync tag is absent the track is opted out (the classifier returns
+ * `null`): there is no DB-bitrate fallback, because the iPod-DB bitrate is an
+ * unreliable proxy (libgpod exposes no VBR signal). Adopting an untagged track
+ * is an explicit, destructive opt-in via `--force-sync-tags-transcode`.
  *
  * ## Currently reachable reasons
  *
@@ -602,21 +597,13 @@ function computeDeviceBound(input: {
     };
   }
 
-  // Untagged track — fall back to device DB bitrate + tolerance. Keeps untagged
-  // lossless tracks comparable; will be removed once sync tags are universal.
-  const tolerance =
-    target.bitrateTolerance ??
-    (target.encoding === 'cbr' ? DEFAULT_CBR_TOLERANCE : DEFAULT_VBR_TOLERANCE);
-  const mismatch = detectBitratePresetMismatch(device.bitrate, target.presetBitrate, tolerance);
-  if (!mismatch) return null;
-  const direction = mismatch === 'preset-upgrade' ? 'up' : 'down';
-  return {
-    reason: direction === 'up' ? 'cap-up' : 'cap-down',
-    direction,
-    reEncodes: true,
-    targetBitrate: target.presetBitrate,
-    encodedBitrate: device.bitrate,
-  };
+  // Untagged lossless track — opted out. The sync tag is the sole quality truth;
+  // a track podkit did not write carries no authoritative recorded encoding, so
+  // there is no comparison to make. The iPod-DB bitrate is an unreliable proxy
+  // (libgpod exposes no VBR signal) and is deliberately NOT consulted — there is
+  // no guessing. Adoption of such tracks is an explicit, destructive opt-in via
+  // `--force-sync-tags-transcode`, never automatic.
+  return null;
 }
 
 /**
@@ -1011,8 +998,13 @@ export function isFileReplacementUpgrade(reason: UpdateReason): boolean {
 }
 
 // =============================================================================
-// Preset Change Detection (shared between audio and video)
+// Preset Change Detection (VIDEO only)
 // =============================================================================
+//
+// Audio quality detection no longer uses bitrate-vs-tolerance: the sync tag is
+// the sole quality truth and untagged audio tracks are opted out (see
+// `classifyDeviceBound`). The helper below remains for VIDEO preset change
+// detection, which still compares the device bitrate against the target.
 
 /**
  * Default tolerance for VBR encoding as a ratio of the preset target bitrate.
@@ -1026,14 +1018,6 @@ export function isFileReplacementUpgrade(reason: UpdateReason): boolean {
 export const DEFAULT_VBR_TOLERANCE = 0.3;
 
 /**
- * Default tolerance for CBR encoding as a ratio of the preset target bitrate.
- *
- * CBR bitrates are stable, so a tighter tolerance (10%) can reliably
- * detect adjacent tier changes.
- */
-export const DEFAULT_CBR_TOLERANCE = 0.1;
-
-/**
  * Default minimum iPod bitrate (kbps) below which preset change detection
  * is skipped. Very short audio files can produce extremely low reported
  * bitrates (e.g., 17 kbps for a 2-second file) that don't reflect encoding
@@ -1044,7 +1028,8 @@ export const DEFAULT_MIN_PRESET_BITRATE = 64;
 /**
  * Compare an iPod track's bitrate against a preset target to detect a mismatch.
  *
- * Used by both audio and video preset change detection. Returns the direction
+ * Used by VIDEO preset change detection. (Audio uses the sync-tag classifier in
+ * `classifyDeviceBound` and has no DB-bitrate fallback.) Returns the direction
  * of the mismatch, or null if the bitrate is within tolerance.
  *
  * The tolerance is a ratio (0.0-1.0) of the preset target bitrate, converted

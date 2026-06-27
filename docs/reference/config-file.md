@@ -112,7 +112,7 @@ These apply to all devices unless overridden at the device level.
 | `encoding` | string | `"vbr"` | Encoding mode for lossy transcoding: `vbr` (variable bitrate) or `cbr` (constant bitrate). VBR produces better quality per MB; CBR produces predictable file sizes and more reliable preset change detection. Applies to whichever codec the [preference stack](/user-guide/transcoding/codec-preferences) resolves. |
 | `transferMode` | string | `"fast"` | Transfer mode controlling how extra file data (e.g. embedded artwork) is handled, and — for iPod — whether on-disk file tags are kept in sync with the iTunesDB. See [Transfer Mode](#transfer-mode) below. |
 | `customBitrate` | integer | - | Override the preset's target bitrate (64-320 kbps). Ignored when `max` resolves to ALAC. |
-| `bitrateTolerance` | number | - | Override the automatic preset change detection tolerance (0.0-1.0). Default is 0.3 (30%) for VBR and 0.1 (10%) for CBR. |
+| `bitrateTolerance` | number | - | Source-bound tolerance damper (0.0-1.0). Acts as the default for both `[bitrate].toleranceUp` and `toleranceDown` when those are unset; the per-direction values win when set. (Its former role slackening the removed device-database bitrate fallback is gone — see [`bitrate.sync`](#bitrate-sync-policy).) Default unset = exact. |
 | `artwork` | boolean | `true` | Include album artwork during sync |
 | `checkArtwork` | boolean | `false` | Detect artwork changes between syncs (added, removed, or replaced). For Subsonic sources, adds one HTTP request per unique album during scanning. Consider using the `--check-artwork` CLI flag for periodic checks instead of enabling permanently on large libraries. |
 | `tips` | boolean | `true` | Show contextual tips (e.g., Sound Check, eject reminders). Also controllable via `--no-tips` flag or `PODKIT_TIPS=false`. |
@@ -203,7 +203,14 @@ Notes:
 - **Tolerances are opt-in churn dampers.** `toleranceUp` / `toleranceDown` are
   ratios (0.0-1.0) applied only to the comparison against the source bitrate, so a
   trivial wobble in the probed source bitrate between syncs doesn't trigger a
-  pointless re-encode. The default `0` means exact.
+  pointless re-encode. The default `0` means exact. The legacy `bitrateTolerance`
+  setting (see below) acts as the default for both directions when these are not set.
+- **Untagged tracks are opted out.** Quality detection is driven entirely by the
+  [sync tag](/reference/sync-tags) podkit writes — the only authoritative record of
+  what it encoded. A track podkit never wrote (no sync tag) is left alone by all
+  `sync` modes; there is no fallback to the unreliable device-database bitrate.
+  Adopt such tracks deliberately with
+  [`--force-sync-tags-transcode`](/reference/cli-commands#sync).
 
 ## Codec Preferences
 
@@ -335,7 +342,7 @@ quality = "max"               # Use --device <path> to specify mount point
 | `encoding` | string | no | global `encoding` | Encoding mode override: `vbr` or `cbr` |
 | `transferMode` | string | no | global `transferMode` | Transfer mode override: `fast`, `optimized`, or `portable`. See [Transfer Mode](#transfer-mode) for the device-specific contract (file-tag writes differ between iPod and mass-storage). |
 | `customBitrate` | integer | no | global `customBitrate` | Override the preset's target bitrate for this device |
-| `bitrateTolerance` | number | no | global `bitrateTolerance` | Override preset change detection tolerance for this device |
+| `bitrateTolerance` | number | no | global `bitrateTolerance` | Source-bound tolerance damper for this device (default for `toleranceUp`/`toleranceDown`) |
 | `bitrate` | table | no | global `[bitrate]` | Bitrate-change policy block (`[devices.<name>.bitrate]`). See [Bitrate Sync Policy](#bitrate-sync-policy). |
 | `artwork` | boolean | no | global `artwork` | Artwork override for this device |
 | `checkArtwork` | boolean | no | global `checkArtwork` | Detect changed artwork for this device |

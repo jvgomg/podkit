@@ -126,7 +126,6 @@ export {
   isSourceLossless,
   detectBitratePresetMismatch,
   DEFAULT_VBR_TOLERANCE,
-  DEFAULT_CBR_TOLERANCE,
   DEFAULT_MIN_PRESET_BITRATE,
 } from './sync/engine/upgrades.js';
 export type {

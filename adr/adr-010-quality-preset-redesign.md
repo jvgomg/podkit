@@ -13,6 +13,8 @@ sidebar:
 
 Supersedes the preset portion of [ADR-003](/developers/adr/adr-003-transcoding) and the preset change detection portion of [ADR-009](/developers/adr/adr-009-self-healing-sync).
 
+> **Superseded in part (2026-06-27):** the "percentage-based preset change detection" section below — specifically the **DB-bitrate + tolerance fallback for untagged audio tracks** — is removed by [ADR-022](/developers/adr/adr-022-sync-tag-sole-quality-truth). For audio, the sync tag is now the sole quality truth: untagged tracks are opted out rather than guessed from the iPod database bitrate, and the `bitrateTolerance` knob is reinterpreted as a source-bound damper. The device-aware preset model, the sync-tag format, and the tolerance approach for **video** all still stand.
+
 ## Context
 
 The current quality preset system has 9 presets (`lossless`, `max`, `max-cbr`, `high`, `high-cbr`, `medium`, `medium-cbr`, `low`, `low-cbr`) and several problems:

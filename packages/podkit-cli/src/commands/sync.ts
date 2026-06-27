@@ -142,6 +142,7 @@ interface SyncOptions {
   forceTranscode?: boolean;
   forceTransferMode?: boolean;
   forceSyncTags?: boolean;
+  forceSyncTagsTranscode?: boolean;
   forceMetadata?: boolean;
   checkArtwork?: boolean;
   delete?: boolean;
@@ -339,6 +340,10 @@ export const syncCommand = new Command('sync')
   .option(
     '--force-sync-tags',
     'ensure sync tag consistency by writing tags to all matched transcoded tracks without re-transcoding'
+  )
+  .option(
+    '--force-sync-tags-transcode',
+    'adopt untagged tracks by re-encoding them to the device quality and writing the authoritative sync tag (destructive)'
   )
   .option(
     '--force-metadata',
@@ -1162,6 +1167,8 @@ export async function runSync(
         forceTranscode: options.forceTranscode ?? config.forceTranscode ?? false,
         forceTransferMode: options.forceTransferMode ?? config.forceTransferMode ?? false,
         forceSyncTags: options.forceSyncTags ?? config.forceSyncTags ?? false,
+        forceSyncTagsTranscode:
+          options.forceSyncTagsTranscode ?? config.forceSyncTagsTranscode ?? false,
         forceMetadata: options.forceMetadata ?? false,
         checkArtwork: decisions.checkArtwork.value,
         transcoder,

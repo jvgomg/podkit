@@ -1877,7 +1877,6 @@ export function applyBitrateSyncPolicy(
 }
 
 export const DEFAULT_VBR_TOLERANCE = 0.15;
-export const DEFAULT_CBR_TOLERANCE = 0.05;
 export const DEFAULT_MIN_PRESET_BITRATE = 64;
 
 export const DEFAULT_LOSSY_STACK = ['opus', 'aac', 'mp3'];

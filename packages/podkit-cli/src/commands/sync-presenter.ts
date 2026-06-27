@@ -100,6 +100,7 @@ export interface MusicContentConfig {
   forceTranscode: boolean;
   forceTransferMode: boolean;
   forceSyncTags: boolean;
+  forceSyncTagsTranscode: boolean;
   forceMetadata: boolean;
   checkArtwork: boolean;
   transcoder: ReturnType<typeof import('@podkit/core').createFFmpegTranscoder>;

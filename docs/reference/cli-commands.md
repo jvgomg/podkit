@@ -135,7 +135,8 @@ podkit sync [options]
 | `--check-artwork` | Detect changed artwork by comparing fingerprints between syncs |
 | `--skip-upgrades` | Skip file-replacement upgrades for changed source files |
 | `--force-transcode` | Re-transcode all lossless-source tracks regardless of bitrate match |
-| `--force-sync-tags` | Write sync tags to all matched transcoded tracks without re-transcoding |
+| `--force-sync-tags` | Write sync tags to all matched transcoded tracks without re-transcoding (tag-only, non-destructive) |
+| `--force-sync-tags-transcode` | Adopt untagged tracks by **re-encoding** them to the device quality target and writing the authoritative sync tag (bitrate + encoding). The only path that re-encodes for a missing sync tag — explicit and destructive. Wins over `--force-sync-tags` for untagged tracks |
 | `--force-metadata` | Rewrite metadata on all matched tracks without re-transcoding or re-transferring files |
 | `--delete` | Remove managed tracks from device that are not in the source |
 | `--eject` | Eject iPod after successful sync |

@@ -158,7 +158,9 @@ Sync tags are metadata stored in the iPod track's comment field that record exac
 [podkit:v1 quality=high encoding=vbr]
 ```
 
-When a sync tag is present, podkit uses exact comparison instead of bitrate tolerance to detect preset changes. This eliminates all false positives from VBR bitrate variance and reliably detects any change in quality, encoding mode, or custom bitrate.
+The sync tag is the **sole** record of what podkit encoded, so detection is an exact comparison against your current settings. This eliminates all false positives from VBR bitrate variance and reliably detects any change in quality, encoding mode, or custom bitrate.
+
+**Untagged tracks are left alone.** A track that podkit never wrote — one synced before sync tags existed, or added by another tool — has no sync tag, so there is no reliable way to know what it was encoded at (the iPod database bitrate is an unreliable proxy, and it carries no CBR/VBR signal at all). Rather than guess, podkit **opts such tracks out** of bitrate and encoding-mode checks: an ordinary sync never re-encodes them. This means upgrading podkit on a library of untagged tracks does **not** trigger a surprise wave of re-encodes. To bring untagged tracks into line deliberately, see [`--force-sync-tags-transcode`](#adopting-untagged-tracks-force-sync-tags-transcode) below.
 
 #### Sync Tag Consistency
 
@@ -166,7 +168,7 @@ A sync tag is "consistent" when it accurately reflects the track's actual state 
 
 Consistency is maintained progressively: every sync writes tags to newly transcoded tracks and updates tags on upgraded tracks. You can check the current consistency breakdown with `podkit device music`, which shows how many tracks are fully consistent, missing artwork hashes, or missing sync tags entirely. To bring all tracks into consistency at once, use `--force-sync-tags`.
 
-**Gradual rollout:** Sync tags are written automatically to all newly transcoded tracks. Existing tracks on your iPod (synced before sync tags were introduced) will continue using bitrate-based detection until they are re-transcoded.
+**Gradual rollout:** Sync tags are written automatically to all newly transcoded tracks. Existing tracks on your iPod (synced before sync tags were introduced) are opted out of quality detection until they are tagged — either progressively as they are re-transcoded for another reason, or deliberately via one of the flags below.
 
 To immediately tag all existing transcoded tracks with your current preset info (without re-transcoding them), use `--force-sync-tags`:
 
@@ -174,13 +176,27 @@ To immediately tag all existing transcoded tracks with your current preset info 
 podkit sync --force-sync-tags
 ```
 
-This writes sync tags to all matched lossless-source tracks on the iPod. Future syncs will then use exact comparison for those tracks. Use `--dry-run` to preview what would be tagged:
+This writes sync tags to all matched lossless-source tracks on the iPod — a **tag-only, non-destructive** operation (no audio file is replaced). Future syncs will then use exact comparison for those tracks. Use `--dry-run` to preview what would be tagged:
 
 ```bash
 podkit sync --force-sync-tags --dry-run
 ```
 
 Copied lossy tracks (MP3, AAC) that are not transcoded may also receive a minimal sync tag with `quality=copy` when artwork hashes are written. This records the artwork baseline without implying any transcoding took place.
+
+#### Adopting untagged tracks (`--force-sync-tags-transcode`)
+
+`--force-sync-tags` can only tag tracks podkit already produced; it cannot recover the true bitrate and encoding mode of a track podkit never wrote. For those genuinely untagged tracks there is one explicit, **destructive** adoption path:
+
+```bash
+podkit sync --force-sync-tags-transcode
+```
+
+This **re-encodes** untagged matched tracks to your device's current quality target, then writes the authoritative sync tag (bitrate + encoding). It is the only place where a missing sync tag triggers a re-encode, and it is never automatic — you opt in. Because it replaces audio files, preview it first with `--dry-run`.
+
+After a track is adopted it carries a sync tag, so the next ordinary sync sees it as tagged and leaves it alone (the adoption is idempotent — re-running does nothing).
+
+If you pass both `--force-sync-tags` and `--force-sync-tags-transcode`, the transcode flag wins for untagged tracks (they are adopted by re-encoding, not merely tagged).
 
 Sync tags coexist with any existing text in the comment field — they don't overwrite user comments.
 

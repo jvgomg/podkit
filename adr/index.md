@@ -29,6 +29,7 @@ This section contains Architecture Decision Records (ADRs) documenting significa
 | [ADR-019](/developers/adr/adr-019-music-pipeline-engine-symmetry) | MusicPipeline ↔ engine/executor Symmetry | Proposed | 2026-06-12 |
 | [ADR-020](/developers/adr/adr-020-ipod-identity-structured-fields) | Structured iPod Identity Fields | Accepted | 2026-06-20 |
 | [ADR-021](/developers/adr/adr-021-cli-bun-binary-distribution) | CLI Distributes as a Bun Binary Only | Accepted | 2026-06-22 |
+| [ADR-022](/developers/adr/adr-022-sync-tag-sole-quality-truth) | The Sync Tag Is the Sole Quality Truth | Accepted | 2026-06-27 |
 
 ## What is an ADR?
 

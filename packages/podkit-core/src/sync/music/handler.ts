@@ -22,7 +22,7 @@ import {
   classifyDeviceBound,
   classifySourceBound,
 } from '../engine/upgrades.js';
-import type { QualityChange, QualityTarget } from '../engine/upgrades.js';
+import type { QualityChange, QualityChangeDirection, QualityTarget } from '../engine/upgrades.js';
 import { normalizationToDb } from '../../metadata/normalization.js';
 import { calculateMusicOperationSize, categorizeSource, isLosslessSource } from './planner.js';
 import {
@@ -97,6 +97,13 @@ export function expectedSyncTagFromClassification(
 
 /**
  * Build the QualityTarget the classifier compares against, from resolved config.
+ *
+ * The legacy `bitrateTolerance` knob (which once slackened the now-removed
+ * DB-bitrate fallback) is reinterpreted here as the symmetric default for the
+ * source-bound tolerances: a user who set `bitrateTolerance` still gets a
+ * (now source-bound) damper, while an explicit `toleranceUp`/`toleranceDown`
+ * always wins. The classifier applies `?? 0` at the comparison, so an unset
+ * value stays exact.
  */
 function qualityTargetFromConfig(config: ResolvedMusicConfig): QualityTarget {
   return {
@@ -106,9 +113,8 @@ function qualityTargetFromConfig(config: ResolvedMusicConfig): QualityTarget {
     customBitrate: config.raw.customBitrate,
     isAlacPreset: config.isAlacPreset ?? false,
     resolvedLossyCodec: config.resolvedLossyCodec,
-    bitrateTolerance: config.raw.bitrateTolerance,
-    toleranceUp: config.raw.toleranceUp,
-    toleranceDown: config.raw.toleranceDown,
+    toleranceUp: config.raw.toleranceUp ?? config.raw.bitrateTolerance,
+    toleranceDown: config.raw.toleranceDown ?? config.raw.bitrateTolerance,
   };
 }
 
@@ -344,6 +350,12 @@ export class MusicHandler implements ContentTypeHandler<
 
     // Pass 2: Force transcode sweep
     this.postProcessForceTranscode(diff);
+
+    // Pass 2.5: Adopt untagged tracks by re-encoding (--force-sync-tags-transcode).
+    // Runs before the tag-only sync-tag pass so that, when both flags are set,
+    // the destructive adoption claims untagged tracks first (precedence) and the
+    // tag-only pass below never re-processes them.
+    this.postProcessSyncTagsTranscode(diff);
 
     // Pass 3: Transfer mode mismatch detection
     this.postProcessTransferMode(diff);
@@ -678,6 +690,82 @@ export class MusicHandler implements ContentTypeHandler<
         changes: [
           { field: 'bitrate', from: String(match.device.bitrate ?? 'unknown'), to: 'forced' },
         ],
+      };
+    });
+  }
+
+  /**
+   * Pass 2.5: Adopt untagged tracks (`--force-sync-tags-transcode`).
+   *
+   * The sync tag is the sole quality truth, so a track podkit never wrote (no
+   * sync tag, or a tag without a recorded bitrate) is opted out of the normal
+   * quality classifier — it is left alone on every ordinary sync. This pass is
+   * the ONE explicit, destructive adoption path: it routes those untagged
+   * tracks to a re-encode (`quality-change` → `upgrade-transcode`) targeting the
+   * resolved device quality, so the executor establishes true bitrate + encoding
+   * ground truth and writes the authoritative sync tag.
+   *
+   * Idempotency: once adopted, a track carries a sync tag, so the next run's
+   * `if (syncTag)` guard in this pass skips it and the normal classifier owns it
+   * (a re-sync is a no-op). A track that ALREADY carries a sync tag is never
+   * touched here — it is left to the classifier.
+   *
+   * Scope: ONLY genuinely untagged tracks (`!syncTag`) — a track podkit never
+   * wrote. A track that carries any podkit sync tag is authoritative: its quality
+   * tier and encoding mode are recorded (a plain transcode tag legitimately omits
+   * the bitrate, which is implied by the preset, and a `copy` tag legitimately
+   * omits the encoding), so it is left to the classifier rather than re-encoded.
+   * Re-encoding tagged tracks here would needlessly re-transcode the entire
+   * already-tagged library.
+   */
+  private postProcessSyncTagsTranscode(diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack>): void {
+    if (!(this.config.raw.forceSyncTagsTranscode && this.config.resolvedQuality)) return;
+
+    const cap = this.config.presetBitrate ?? 0;
+
+    partitionExisting(diff, (match) => {
+      const syncTag = match.device.syncTag;
+      if (syncTag) return null;
+
+      // Force a re-encode from the source. For lossy sources with a cap the
+      // effective ceiling is min(source, cap); `resolveUpgradeAction` reads this
+      // off the attached `qualityChange` and stamps it as the preset's
+      // bitrateOverride so the post-adoption tag matches the next sync (no-op).
+      // For lossless sources the classifier owns routing (transcode to the
+      // resolved lossless/lossy preset) and ignores this payload.
+      const lossy = !isSourceLossless(match.source);
+      const effectiveTarget = lossy && cap > 0 ? Math.min(match.source.bitrate ?? cap, cap) : cap;
+
+      // The adoption re-encode bypasses the policy gate, so the direction is
+      // descriptive only — it labels the move for the change summary and JSON.
+      // Read the device's DB bitrate purely for that display (it is not used to
+      // decide anything). Adopting an over-cap track moves it down.
+      const deviceBitrate = match.device.bitrate ?? 0;
+      const direction: QualityChangeDirection =
+        effectiveTarget > deviceBitrate
+          ? 'up'
+          : effectiveTarget < deviceBitrate
+            ? 'down'
+            : 'format-only';
+
+      const qualityChange: QualityChange = {
+        reason: direction === 'down' ? 'cap-down' : 'cap-up',
+        direction,
+        reEncodes: true,
+        targetBitrate: effectiveTarget,
+        sourceBitrate: match.source.bitrate,
+      };
+
+      return {
+        reasons: ['quality-change'],
+        changes: [
+          {
+            field: 'bitrate' as const,
+            from: String(match.device.bitrate ?? 'unknown'),
+            to: effectiveTarget ? String(effectiveTarget) : 'adopt',
+          },
+        ],
+        qualityChange,
       };
     });
   }

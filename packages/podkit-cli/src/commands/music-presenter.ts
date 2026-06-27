@@ -257,6 +257,7 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
       forceTranscode: config.forceTranscode,
       forceMetadata: config.forceMetadata,
       forceSyncTags: config.forceSyncTags,
+      forceSyncTagsTranscode: config.forceSyncTagsTranscode,
       forceTransferMode: config.forceTransferMode,
       skipUpgrades: config.skipUpgrades,
       adapter: this.sourceAdapter,

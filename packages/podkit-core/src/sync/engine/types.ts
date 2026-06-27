@@ -455,12 +455,6 @@ export interface DiffOptions {
   encodingMode?: EncodingMode;
 
   /**
-   * Custom bitrate tolerance ratio (0.0-1.0) for preset change detection.
-   * Overrides the default tolerance for the encoding mode.
-   */
-  bitrateTolerance?: number;
-
-  /**
    * When true, indicates the current preset resolves to ALAC (max + ALAC-capable device).
    * Uses format-based detection instead of bitrate comparison for preset changes.
    */

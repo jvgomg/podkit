@@ -523,37 +523,43 @@ describe('classifyDeviceBound', () => {
     });
   });
 
-  describe('untagged fallback (DB bitrate + tolerance — lossless only)', () => {
-    test('device bitrate well below target -> cap-up', () => {
+  describe('untagged tracks are opted out (no DB-bitrate fallback)', () => {
+    // The sync tag is the sole quality truth. A track podkit did not write (no
+    // sync tag) carries no authoritative recorded bitrate/encoding, so it is
+    // opted out of the device-vs-target bound entirely — there is no guessing
+    // from the unreliable iPod-DB bitrate (libgpod exposes no VBR signal).
+
+    test('untagged lossless, device bitrate well below target -> null', () => {
       const source = makeMockCollectionTrack({ fileType: 'flac', lossless: true });
       const device = makeMockDeviceTrack({ filetype: 'AAC audio file', bitrate: 128 });
 
-      const change = classifyDeviceBound({ source, device, target: target() });
-
-      expect(change).toMatchObject({ reason: 'cap-up', direction: 'up' });
+      expect(classifyDeviceBound({ source, device, target: target() })).toBeNull();
     });
 
-    test('device bitrate well above target -> cap-down', () => {
+    test('untagged lossless, device bitrate well above target -> null', () => {
       const source = makeMockCollectionTrack({ fileType: 'flac', lossless: true });
       const device = makeMockDeviceTrack({ filetype: 'AAC audio file', bitrate: 256 });
 
-      const change = classifyDeviceBound({
-        source,
-        device,
-        target: target({ preset: 'low', presetBitrate: 96 }),
-      });
-
-      expect(change).toMatchObject({
-        reason: 'cap-down',
-        direction: 'down',
-      });
+      expect(
+        classifyDeviceBound({
+          source,
+          device,
+          target: target({ preset: 'low', presetBitrate: 96 }),
+        })
+      ).toBeNull();
     });
 
-    test('device bitrate within tolerance of target -> null', () => {
-      const source = makeMockCollectionTrack({ fileType: 'flac', lossless: true });
-      const device = makeMockDeviceTrack({ filetype: 'AAC audio file', bitrate: 240 });
+    test('untagged lossy, device bitrate well above target -> null', () => {
+      const source = makeMockCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 320 });
+      const device = makeMockDeviceTrack({ filetype: 'MPEG audio file', bitrate: 320 });
 
-      expect(classifyDeviceBound({ source, device, target: target() })).toBeNull();
+      expect(
+        classifyDeviceBound({
+          source,
+          device,
+          target: target({ preset: 'low', presetBitrate: 96 }),
+        })
+      ).toBeNull();
     });
   });
 

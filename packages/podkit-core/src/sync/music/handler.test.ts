@@ -1042,10 +1042,16 @@ describe('MusicHandler', () => {
       };
     }
 
-    test('moves lossless-source track from existing to toUpdate with preset-upgrade', () => {
+    test('moves a tagged lossless-source track from existing to toUpdate with preset-upgrade', () => {
       const h = createMusicHandler(makeConfig({ quality: 'high' }));
       const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
-      const device = makeDeviceTrack({ filetype: 'AAC audio file', bitrate: 128 });
+      const device = makeDeviceTrack({
+        filetype: 'AAC audio file',
+        bitrate: 128,
+        // Recorded at a lower tier than the configured target — sync-tag-exact
+        // comparison detects the upgrade (no DB-bitrate fallback involved).
+        syncTag: parseSyncTag('[podkit:v1 quality=low encoding=vbr]') ?? undefined,
+      });
       const diff = makePresetDiff(source, device);
 
       h.postProcessDiff(diff);
@@ -1061,10 +1067,14 @@ describe('MusicHandler', () => {
       expect(diff.existing).toHaveLength(0);
     });
 
-    test('moves lossless-source track from existing to toUpdate with preset-downgrade', () => {
+    test('moves a tagged lossless-source track from existing to toUpdate with preset-downgrade', () => {
       const h = createMusicHandler(makeConfig({ quality: 'low' }));
       const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
-      const device = makeDeviceTrack({ filetype: 'AAC audio file', bitrate: 256 });
+      const device = makeDeviceTrack({
+        filetype: 'AAC audio file',
+        bitrate: 256,
+        syncTag: parseSyncTag('[podkit:v1 quality=high encoding=vbr]') ?? undefined,
+      });
       const diff = makePresetDiff(source, device);
 
       h.postProcessDiff(diff);
@@ -1075,7 +1085,7 @@ describe('MusicHandler', () => {
       expect(diff.existing).toHaveLength(0);
     });
 
-    test('leaves lossless-source track in existing when bitrate is within tolerance', () => {
+    test('leaves an untagged lossless-source track in existing (opted out)', () => {
       const h = createMusicHandler(makeConfig({ quality: 'high' }));
       const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
       const device = makeDeviceTrack({ filetype: 'AAC audio file', bitrate: 240 });
@@ -1201,7 +1211,9 @@ describe('MusicHandler', () => {
       expect(diff.toUpdate[0]!.qualityChange?.direction).toBe('down');
     });
 
-    test('no sync tag falls back to bitrate tolerance detection', () => {
+    test('no sync tag: untagged track is opted out (no DB-bitrate fallback)', () => {
+      // The sync tag is the sole quality truth. An untagged track (one podkit
+      // never wrote) is left alone — no guessing from the iPod-DB bitrate.
       const h = createMusicHandler(makeConfig({ quality: 'high', encoding: 'vbr' }));
       const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
       const device = makeDeviceTrack({ filetype: 'AAC audio file', bitrate: 128 });
@@ -1209,9 +1221,8 @@ describe('MusicHandler', () => {
 
       h.postProcessDiff(diff);
 
-      expect(diff.toUpdate).toHaveLength(1);
-      expect(diff.toUpdate[0]!.reasons[0]).toBe('quality-change');
-      expect(diff.toUpdate[0]!.qualityChange?.direction).toBe('up');
+      expect(diff.toUpdate).toHaveLength(0);
+      expect(diff.existing).toHaveLength(1);
     });
 
     test('detects ALAC format-based preset upgrade when isAlacPreset is true', () => {
@@ -2014,5 +2025,134 @@ describe('MusicHandler.executeBatch — artwork forwarding', () => {
     // never reach the pipeline as `undefined` for a future feature to detect.
     const options = await captureExecuteOptions(makeConfig());
     expect(options.artwork).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// --force-sync-tags-transcode (adoption of untagged tracks)
+// ---------------------------------------------------------------------------
+
+describe('postProcessSyncTagsTranscode (--force-sync-tags-transcode)', () => {
+  function makeDiff(
+    source: CollectionTrack,
+    device: DeviceTrack
+  ): UnifiedSyncDiff<CollectionTrack, DeviceTrack> {
+    return { toAdd: [], toRemove: [], existing: [{ source, device }], toUpdate: [] };
+  }
+
+  test('adopts an untagged lossless track: re-encode (quality-change → upgrade-transcode)', () => {
+    const h = createMusicHandler(makeConfig({ forceSyncTagsTranscode: true }));
+    const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
+    const device = makeDeviceTrack({ filetype: 'AAC audio file', bitrate: 256 }); // no syncTag
+
+    const diff = makeDiff(source, device);
+    h.postProcessDiff(diff);
+
+    expect(diff.existing).toHaveLength(0);
+    expect(diff.toUpdate).toHaveLength(1);
+    expect(diff.toUpdate[0]!.reasons[0]).toBe('quality-change');
+
+    const ops = h.planUpdate(
+      source,
+      device,
+      diff.toUpdate[0]!.reasons,
+      diff.toUpdate[0]!.changes,
+      diff.toUpdate[0]!.syncTag,
+      diff.toUpdate[0]!.qualityChange
+    );
+    expect(ops[0]!.type).toBe('upgrade-transcode');
+  });
+
+  test('adopts an untagged lossy track by re-encoding to min(source, cap)', () => {
+    const h = createMusicHandler(makeConfig({ quality: 'high', forceSyncTagsTranscode: true }));
+    const source = makeCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 320 });
+    const device = makeDeviceTrack({ filetype: 'MPEG audio file', bitrate: 320 }); // no syncTag
+
+    const diff = makeDiff(source, device);
+    h.postProcessDiff(diff);
+
+    expect(diff.toUpdate).toHaveLength(1);
+    expect(diff.toUpdate[0]!.reasons[0]).toBe('quality-change');
+
+    const ops = h.planUpdate(
+      source,
+      device,
+      diff.toUpdate[0]!.reasons,
+      diff.toUpdate[0]!.changes,
+      diff.toUpdate[0]!.syncTag,
+      diff.toUpdate[0]!.qualityChange
+    );
+    expect(ops[0]!.type).toBe('upgrade-transcode');
+    const op = ops[0]!;
+    if (op.type === 'upgrade-transcode') {
+      // Effective ceiling: min(source 320, cap 256) = 256.
+      expect(op.preset.bitrateOverride).toBe(256);
+    }
+  });
+
+  test('leaves an already-tagged track alone (idempotent — not re-adopted)', () => {
+    const h = createMusicHandler(makeConfig({ quality: 'high', forceSyncTagsTranscode: true }));
+    // A copied lossy track whose recorded bitrate already matches the effective
+    // target — authoritative and in sync, so neither the classifier nor the
+    // adoption pass touches it.
+    const source = makeCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 200 });
+    const device = makeDeviceTrack({
+      filetype: 'MPEG audio file',
+      bitrate: 200,
+      syncTag:
+        parseSyncTag('[podkit:v1 quality=copy transfer=fast bitrate=200 codec=mp3]') ?? undefined,
+    });
+
+    const diff = makeDiff(source, device);
+    h.postProcessDiff(diff);
+
+    expect(diff.existing).toHaveLength(1);
+    expect(diff.toUpdate).toHaveLength(0);
+  });
+
+  test('does NOT re-adopt a normally-tagged transcode track (tag without a bitrate field)', () => {
+    // A plain `quality=high` transcode tag legitimately omits the bitrate (it is
+    // implied by the preset). Such a track is authoritative and must NOT be
+    // re-encoded by the adoption pass — otherwise the flag would re-transcode the
+    // entire already-tagged library.
+    const h = createMusicHandler(makeConfig({ quality: 'high', forceSyncTagsTranscode: true }));
+    const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
+    const device = makeDeviceTrack({
+      filetype: 'AAC audio file',
+      bitrate: 256,
+      syncTag: parseSyncTag('[podkit:v1 quality=high encoding=vbr codec=aac]') ?? undefined,
+    });
+
+    const diff = makeDiff(source, device);
+    h.postProcessDiff(diff);
+
+    expect(diff.existing).toHaveLength(1);
+    expect(diff.toUpdate).toHaveLength(0);
+  });
+
+  test('does nothing to untagged tracks when the flag is off (no re-encode storm)', () => {
+    const h = createMusicHandler(makeConfig()); // no flag
+    const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
+    const device = makeDeviceTrack({ filetype: 'AAC audio file', bitrate: 256 }); // no syncTag
+
+    const diff = makeDiff(source, device);
+    h.postProcessDiff(diff);
+
+    expect(diff.existing).toHaveLength(1);
+    expect(diff.toUpdate).toHaveLength(0);
+  });
+
+  test('precedence: transcode flag wins over tag-only for untagged tracks', () => {
+    const h = createMusicHandler(makeConfig({ forceSyncTags: true, forceSyncTagsTranscode: true }));
+    const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
+    const device = makeDeviceTrack({ filetype: 'AAC audio file', bitrate: 256 }); // no syncTag
+
+    const diff = makeDiff(source, device);
+    h.postProcessDiff(diff);
+
+    expect(diff.toUpdate).toHaveLength(1);
+    // Re-encode (quality-change), NOT the tag-only sync-tag-write path.
+    expect(diff.toUpdate[0]!.reasons).toContain('quality-change');
+    expect(diff.toUpdate[0]!.reasons).not.toContain('sync-tag-write');
   });
 });

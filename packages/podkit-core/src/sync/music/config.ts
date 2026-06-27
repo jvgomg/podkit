@@ -53,7 +53,13 @@ export interface MusicSyncConfig {
   /** Explicit bitrate override in kbps */
   customBitrate?: number;
 
-  /** Tolerance for preset change detection (kbps) */
+  /**
+   * Legacy source-bound tolerance damper (ratio 0.0-1.0). Reinterpreted: its
+   * original role slackening the (now-removed) DB-bitrate fallback is gone. It
+   * now acts as the symmetric default for the source-bound lossy comparison —
+   * `toleranceUp`/`toleranceDown` win when set, otherwise this value applies to
+   * both directions. Default (unset) = exact match against the recorded target.
+   */
   bitrateTolerance?: number;
 
   /**
@@ -98,8 +104,17 @@ export interface MusicSyncConfig {
   /** Force metadata update on all tracks */
   forceMetadata?: boolean;
 
-  /** Force sync tag rewrite on all tracks */
+  /** Force sync tag rewrite on all tracks (tag-only, no re-encoding) */
   forceSyncTags?: boolean;
+
+  /**
+   * Adopt untagged tracks by RE-ENCODING them to the resolved device quality and
+   * writing the authoritative sync tag. Unlike `forceSyncTags` (tag-only,
+   * non-destructive), this replaces the audio file — it is the only path where a
+   * missing sync tag triggers an expensive, destructive re-encode, and it is
+   * never automatic. When both flags are set, this wins for untagged tracks.
+   */
+  forceSyncTagsTranscode?: boolean;
 
   /** Force transfer mode re-evaluation on all tracks */
   forceTransferMode?: boolean;
