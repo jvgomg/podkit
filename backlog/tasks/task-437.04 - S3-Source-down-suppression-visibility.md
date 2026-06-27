@@ -4,6 +4,7 @@ title: 'S3: Source-down suppression + visibility'
 status: To Do
 assignee: []
 created_date: '2026-06-25 22:37'
+updated_date: '2026-06-27 17:25'
 labels:
   - sync
   - transcoding
@@ -40,3 +41,9 @@ When the **source** got worse (re-ripped lower) but the cap is unchanged (`encod
 - [ ] #7 User docs updated (explain source-down suppression + how to opt in via match-all, forward-ref S4)
 - [ ] #8 Architecture doc upgrades.md updated for source-down handling
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+EDGE from S1 review (must handle here): once lossy cap-down is active, a device copy whose sync-tag records a bitrate ABOVE the cap will fire cap-down even if the SOURCE has since degraded BELOW the cap (e.g. recorded 320, source re-ripped to 100, cap 128). That re-encodes 128 from a 100k source = lossy->lossy upsample of degraded audio. The three-bound model is the fix: the effective target is min(source, cap); when source < cap the target is the source and re-encoding is pointless/destructive -> this is SOURCE-DOWN territory, suppress by default (the S3 behaviour). So S3 must refine the lossy device-bound: cap-down only when min(source,cap) < encoded AND the result isn't just following a degraded source down. Add an e2e: recorded-above-cap + source-degraded-below-cap under default policy -> suppressed, not re-encoded.
+<!-- SECTION:NOTES:END -->
