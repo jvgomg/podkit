@@ -1154,3 +1154,184 @@ describe('self-healing sync: source-down suppression (degraded source)', () => {
     });
   }, 180000);
 });
+
+// =============================================================================
+// Bitrate-sync policy modes: the per-run `--bitrate-sync` override controls
+// which directions re-encode. `match-all` follows a degraded source down;
+// `off` freezes bitrates (preconditions aside).
+// =============================================================================
+
+describe('self-healing sync: bitrate-sync policy modes', () => {
+  it('match-all follows a degraded source down and converges across re-sync', async () => {
+    requireFFmpeg();
+    await withTarget(async (target) => {
+      const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
+      const collectionDir = await mkdtemp(join(tmpdir(), 'podkit-match-all-'));
+
+      try {
+        const trackMeta = { title: 'Follow Down', artist: 'Source Artist', album: 'Source Album' };
+
+        // Step 1: sync a 192 kbps MP3 at quality=high (cap 256) — copied at 192.
+        generateMp3AtBitrate(join(collectionDir, 'track.mp3'), trackMeta, 192);
+        const configPath = await createConfigFile(configDir, { source: collectionDir });
+
+        const { json: json1 } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--quality',
+          'high',
+          '--json',
+        ]);
+        expect(json1?.result?.completed).toBe(1);
+
+        // Step 2: re-rip the source LOWER (96 kbps). Default match-cap would
+        // suppress this; match-all opts in to following it down.
+        generateMp3AtBitrate(join(collectionDir, 'track.mp3'), trackMeta, 96);
+
+        // Step 3: dry-run under match-all — the source-down now FIRES as a down
+        // move (re-encodes), not a suppressed report.
+        const { json: dryJson } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--quality',
+          'high',
+          '--bitrate-sync',
+          'match-all',
+          '--dry-run',
+          '--json',
+        ]);
+        expect(dryJson?.plan?.updateBreakdown?.['quality-change-down'] ?? 0).toBe(1);
+        expect(dryJson?.plan?.updateBreakdown?.['quality-change-suppressed'] ?? 0).toBe(0);
+        expect(dryJson?.plan?.tracksToUpdate ?? 0).toBe(1);
+
+        // Step 4: real sync under match-all re-encodes down to the source.
+        const { json: realJson } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--quality',
+          'high',
+          '--bitrate-sync',
+          'match-all',
+          '--json',
+        ]);
+        expect(realJson?.result?.completed).toBe(1);
+
+        // Step 5: re-sync under match-all is a no-op — the followed-down copy now
+        // matches the source, so the write and compare paths agree (idempotent).
+        const { json: reJson } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--quality',
+          'high',
+          '--bitrate-sync',
+          'match-all',
+          '--json',
+        ]);
+        expect(reJson?.result?.completed).toBe(0);
+        expect((await target.getTracks()).length).toBe(1);
+      } finally {
+        await rm(collectionDir, { recursive: true, force: true });
+        await rm(configDir, { recursive: true, force: true });
+      }
+    });
+  }, 180000);
+
+  it('off freezes a bitrate cap-down (reports it suppressed, re-encodes nothing)', async () => {
+    requireFFmpeg();
+    await withTarget(async (target) => {
+      const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
+      const collectionDir = await mkdtemp(join(tmpdir(), 'podkit-off-'));
+
+      try {
+        const trackMeta = {
+          title: 'Frozen Bitrate',
+          artist: 'Source Artist',
+          album: 'Source Album',
+        };
+
+        // Step 1: sync a 320 kbps MP3 at quality=high (cap 256) — copied at 320.
+        generateMp3AtBitrate(join(collectionDir, 'track.mp3'), trackMeta, 320);
+        const configPath = await createConfigFile(configDir, { source: collectionDir });
+
+        const { json: json1 } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--quality',
+          'high',
+          '--json',
+        ]);
+        expect(json1?.result?.completed).toBe(1);
+
+        // Step 2: lower the cap to quality=low (128). Under the default this is a
+        // cap-down; the control dry-run confirms it would fire.
+        const { json: controlJson } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--quality',
+          'low',
+          '--dry-run',
+          '--json',
+        ]);
+        expect(controlJson?.plan?.updateBreakdown?.['quality-change-down'] ?? 0).toBe(1);
+
+        // Step 3: with --bitrate-sync off, the cap-down is suppressed — reported,
+        // not acted on. No track is moved to the update set.
+        const { json: offJson } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--quality',
+          'low',
+          '--bitrate-sync',
+          'off',
+          '--dry-run',
+          '--json',
+        ]);
+        expect(offJson?.plan?.updateBreakdown?.['quality-change-down'] ?? 0).toBe(0);
+        expect(offJson?.plan?.updateBreakdown?.['quality-change-suppressed'] ?? 0).toBe(1);
+        expect(offJson?.plan?.tracksToUpdate ?? 0).toBe(0);
+
+        // Step 4: real sync under off is a no-op; the 320 kbps copy is untouched.
+        const { json: realJson } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--quality',
+          'low',
+          '--bitrate-sync',
+          'off',
+          '--json',
+        ]);
+        expect(realJson?.result?.completed).toBe(0);
+        const filesAfter = await findIpodMusicFiles(target.path);
+        expect(filesAfter.filter((f) => f.endsWith('.mp3'))).toHaveLength(1);
+        expect(filesAfter.filter((f) => f.endsWith('.m4a'))).toHaveLength(0);
+      } finally {
+        await rm(collectionDir, { recursive: true, force: true });
+        await rm(configDir, { recursive: true, force: true });
+      }
+    });
+  }, 180000);
+});

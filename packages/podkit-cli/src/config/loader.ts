@@ -46,12 +46,14 @@ import {
   DEFAULT_SHOW_LANGUAGE_CONFIG,
   VIDEO_QUALITY_PRESETS,
   TRANSFER_MODES,
+  BITRATE_SYNC_MODES,
   isValidTransferMode,
   DEVICE_TYPES,
   AUDIO_CODECS,
   ARTWORK_SOURCES,
   CODEC_METADATA,
 } from './types.js';
+import type { BitrateConfig } from './types.js';
 import type { ReadinessUnsupportedReason } from '@podkit/device-types';
 
 /** Valid `ReadinessUnsupportedReason['kind']` values (kept in sync with the union). */
@@ -245,6 +247,67 @@ function parseBoolean(args: {
 }
 
 /**
+ * Parse and validate a `[bitrate]` / `[devices.<name>.bitrate]` block.
+ *
+ * Returns a validated {@link BitrateConfig}, or `undefined` when the block holds
+ * nothing recognised. Throws a context-tagged error for an invalid `sync` value
+ * or an out-of-range tolerance, matching the surrounding scalar validators. A
+ * non-table value for the whole block is a hard type error.
+ */
+function parseBitrateBlock(raw: unknown, context: string): BitrateConfig | undefined {
+  if (raw === undefined) {
+    return undefined;
+  }
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    throw new Error(`Invalid type for "bitrate" in ${context}. Expected a table.`);
+  }
+
+  const rawBlock = raw as { sync?: unknown; toleranceUp?: unknown; toleranceDown?: unknown };
+  const result: BitrateConfig = {};
+
+  parseStringEnum({
+    raw: rawBlock.sync,
+    field: 'bitrate.sync',
+    context,
+    valid: BITRATE_SYNC_MODES,
+    throwOnWrongType: true,
+    assign: (v) => {
+      result.sync = v;
+    },
+  });
+
+  parseNumberInRange({
+    raw: rawBlock.toleranceUp,
+    field: 'bitrate.toleranceUp',
+    context,
+    min: 0.0,
+    max: 1.0,
+    rangeText: 'Must be a number between 0.0 and 1.0.',
+    assign: (v) => {
+      result.toleranceUp = v;
+    },
+  });
+
+  parseNumberInRange({
+    raw: rawBlock.toleranceDown,
+    field: 'bitrate.toleranceDown',
+    context,
+    min: 0.0,
+    max: 1.0,
+    rangeText: 'Must be a number between 0.0 and 1.0.',
+    assign: (v) => {
+      result.toleranceDown = v;
+    },
+  });
+
+  return result.sync === undefined &&
+    result.toleranceUp === undefined &&
+    result.toleranceDown === undefined
+    ? undefined
+    : result;
+}
+
+/**
  * Validate a raw value as a per-device collection default and assign it.
  *
  * Accepts a collection name (any string) or the boolean `false` (explicit
@@ -368,6 +431,11 @@ export function loadConfigFile(configPath: string): PartialConfig | undefined {
       config.bitrateTolerance = v;
     },
   });
+
+  const globalBitrate = parseBitrateBlock(parsed.bitrate, '[bitrate]');
+  if (globalBitrate) {
+    config.bitrate = globalBitrate;
+  }
 
   parseBoolean({
     raw: parsed.artwork,
@@ -1278,6 +1346,12 @@ function parseDevices(
         device.skipUpgrades = v;
       },
     });
+
+    // Parse optional bitrate-change policy block
+    const deviceBitrate = parseBitrateBlock(rawDevice.bitrate, `[devices.${name}.bitrate]`);
+    if (deviceBitrate) {
+      device.bitrate = deviceBitrate;
+    }
 
     // Parse optional codec preferences
     if (rawDevice.codec !== undefined) {
@@ -2247,17 +2321,14 @@ function loadEnvCollections(): {
  * Note: --source is still accepted as a CLI option for sync command
  * but is handled directly by the command, not stored in config.
  */
-export function loadCliConfig(
-  globalOpts: GlobalOptions,
-  commandOpts?: {
-    quality?: string;
-    audioQuality?: string;
-    videoQuality?: string;
-    encoding?: string;
-    artwork?: boolean;
-    skipUpgrades?: boolean;
-  }
-): PartialConfig {
+export function loadCliConfig(commandOpts?: {
+  quality?: string;
+  audioQuality?: string;
+  videoQuality?: string;
+  encoding?: string;
+  artwork?: boolean;
+  skipUpgrades?: boolean;
+}): PartialConfig {
   const config: PartialConfig = {};
 
   // Command-specific options
@@ -2331,6 +2402,11 @@ export function mergeConfigs(...configs: PartialConfig[]): PodkitConfig {
     }
     if (config.bitrateTolerance !== undefined) {
       merged.bitrateTolerance = config.bitrateTolerance;
+    }
+    if (config.bitrate !== undefined) {
+      // Merge the bitrate-policy block field-by-field so a later layer can set
+      // only `sync` (or only a tolerance) without dropping the others.
+      merged.bitrate = { ...merged.bitrate, ...config.bitrate };
     }
     if (config.artwork !== undefined) {
       merged.artwork = config.artwork;
@@ -2424,6 +2500,11 @@ export function mergeConfigs(...configs: PartialConfig[]): PodkitConfig {
                   },
                 }
               : existingDevice.videoTransforms,
+            // Deep merge bitrate so a later layer can override one field
+            // (e.g. sync mode) without clobbering another layer's tolerances
+            bitrate: deviceConfig.bitrate
+              ? { ...existingDevice.bitrate, ...deviceConfig.bitrate }
+              : existingDevice.bitrate,
           };
         } else {
           merged.devices[name] = deviceConfig;
@@ -2500,7 +2581,7 @@ export function loadConfig(
   configsToMerge.push(envConfig);
 
   // Load CLI options
-  const cliConfig = loadCliConfig(globalOpts, commandOpts);
+  const cliConfig = loadCliConfig(commandOpts);
   configsToMerge.push(cliConfig);
 
   // Merge all sources

@@ -129,6 +129,44 @@ describe('MusicHandler', () => {
         expect(fileReplacement).not.toContain(reason);
       }
     });
+
+    test('does not fire source-improved for a same-family source above the cap (cap path owns it)', () => {
+      // quality=high → cap 256. A same-family AAC source @320 sits above the cap;
+      // its device copy already records the cap (256, after an earlier cap-down).
+      // A cap-unaware source bound would copy the over-cap source back and
+      // oscillate against the next cap-down, so detectUpdates must not report it.
+      const source = makeCollectionTrack({
+        fileType: 'm4a',
+        codec: 'aac',
+        lossless: false,
+        bitrate: 320,
+      });
+      const device = makeDeviceTrack({
+        filetype: 'AAC audio file',
+        bitrate: 256,
+        syncTag:
+          parseSyncTag('[podkit:v1 quality=high encoding=vbr bitrate=256 codec=aac]') ?? undefined,
+      });
+      expect(handler.detectUpdates(source, device)).not.toContain('quality-change');
+    });
+
+    test('still fires for a within-cap same-family improvement (source <= cap)', () => {
+      // Source @256 is within the cap and well above the recorded 96 — a genuine
+      // improvement to follow up.
+      const source = makeCollectionTrack({
+        fileType: 'm4a',
+        codec: 'aac',
+        lossless: false,
+        bitrate: 256,
+      });
+      const device = makeDeviceTrack({
+        filetype: 'AAC audio file',
+        bitrate: 96,
+        syncTag:
+          parseSyncTag('[podkit:v1 quality=low encoding=vbr bitrate=96 codec=aac]') ?? undefined,
+      });
+      expect(handler.detectUpdates(source, device)).toContain('quality-change');
+    });
   });
 
   describe('planAdd', () => {

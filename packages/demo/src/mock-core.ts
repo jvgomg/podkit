@@ -1860,6 +1860,22 @@ export function detectBitratePresetMismatch(_source: any, _device: any, _options
   return false;
 }
 
+export const BITRATE_SYNC_MODES = [
+  'off',
+  'match-cap',
+  'match-all',
+  'up-only',
+  'down-only',
+] as const;
+
+export function applyBitrateSyncPolicy(
+  _direction: any,
+  _reason: any,
+  _mode: any
+): 'fire' | 'suppress-log' {
+  return 'fire';
+}
+
 export const DEFAULT_VBR_TOLERANCE = 0.15;
 export const DEFAULT_CBR_TOLERANCE = 0.05;
 export const DEFAULT_MIN_PRESET_BITRATE = 64;

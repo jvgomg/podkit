@@ -39,6 +39,24 @@ describe('sync command', () => {
       expect(skipUpgradesOption?.required).toBe(false);
       expect(skipUpgradesOption?.optional).toBe(false);
     });
+
+    it('has --bitrate-sync value option restricted to the five policy modes', () => {
+      const options = syncCommand.options;
+      const bitrateSyncOption = options.find((opt) => opt.long === '--bitrate-sync');
+      expect(bitrateSyncOption).toBeDefined();
+      expect(bitrateSyncOption?.attributeName()).toBe('bitrateSync');
+      // Value option: takes an argument and has no synthesised default, so an
+      // unpassed flag is absent and the resolved device policy wins.
+      expect(bitrateSyncOption?.required).toBe(true);
+      expect(bitrateSyncOption?.defaultValue).toBeUndefined();
+      expect(bitrateSyncOption?.argChoices).toEqual([
+        'off',
+        'match-cap',
+        'match-all',
+        'up-only',
+        'down-only',
+      ]);
+    });
   });
 });
 

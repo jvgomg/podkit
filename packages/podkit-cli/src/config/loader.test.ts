@@ -175,6 +175,91 @@ quality = "invalid"
       expect(() => loadConfigFile(configPath)).toThrow(/Invalid encoding value/);
     });
 
+    // bitrate-change policy block
+    describe('bitrate policy block', () => {
+      it('parses a global [bitrate] block with sync and tolerances', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[bitrate]
+sync = "match-all"
+toleranceUp = 0.05
+toleranceDown = 0.1
+`)
+        );
+
+        const result = loadConfigFile(configPath);
+        expect(result?.bitrate).toEqual({
+          sync: 'match-all',
+          toleranceUp: 0.05,
+          toleranceDown: 0.1,
+        });
+      });
+
+      it('accepts every valid sync mode', () => {
+        const modes = ['off', 'match-cap', 'match-all', 'up-only', 'down-only'] as const;
+        for (const mode of modes) {
+          const configPath = path.join(tempDir, 'config.toml');
+          fs.writeFileSync(configPath, v(`[bitrate]\nsync = "${mode}"`));
+          expect(loadConfigFile(configPath)?.bitrate?.sync).toBe(mode);
+        }
+      });
+
+      it('throws on an invalid sync value naming the field and valid values', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(configPath, v(`[bitrate]\nsync = "sometimes"`));
+
+        expect(() => loadConfigFile(configPath)).toThrow(
+          /Invalid bitrate\.sync value "sometimes".*match-cap/s
+        );
+      });
+
+      it('throws on an out-of-range tolerance', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(configPath, v(`[bitrate]\ntoleranceUp = 1.5`));
+
+        expect(() => loadConfigFile(configPath)).toThrow(/Invalid bitrate\.toleranceUp value/);
+      });
+
+      it('parses a per-device [devices.x.bitrate] block', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[devices.terapod]
+volumeUuid = "ABC-123"
+
+[devices.terapod.bitrate]
+sync = "down-only"
+toleranceDown = 0.2
+`)
+        );
+
+        const result = loadConfigFile(configPath);
+        expect(result?.devices?.terapod?.bitrate).toEqual({
+          sync: 'down-only',
+          toleranceDown: 0.2,
+        });
+      });
+
+      it('reports the device context in an invalid per-device sync error', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[devices.terapod]
+volumeUuid = "ABC-123"
+
+[devices.terapod.bitrate]
+sync = "nope"
+`)
+        );
+
+        expect(() => loadConfigFile(configPath)).toThrow(/\[devices\.terapod\.bitrate\]/);
+      });
+    });
+
     // transferMode tests
     it('parses transferMode = "fast"', () => {
       const configPath = path.join(tempDir, 'config.toml');
@@ -2737,149 +2822,50 @@ device = "terapod"
 
   describe('loadCliConfig', () => {
     it('returns empty config with no options', () => {
-      const globalOpts: GlobalOptions = {
-        verbose: 0,
-        quiet: false,
-        json: false,
-        color: true,
-        tips: true,
-        tty: false,
-      };
-      const result = loadCliConfig(globalOpts);
-      expect(result).toEqual({});
+      expect(loadCliConfig()).toEqual({});
     });
 
     it('extracts quality from command options', () => {
-      const globalOpts: GlobalOptions = {
-        verbose: 0,
-        quiet: false,
-        json: false,
-        color: true,
-        tips: true,
-        tty: false,
-      };
-      const commandOpts = { quality: 'low' };
-      const result = loadCliConfig(globalOpts, commandOpts);
-      expect(result.quality).toBe('low');
+      expect(loadCliConfig({ quality: 'low' }).quality).toBe('low');
     });
 
     it('extracts artwork from command options', () => {
-      const globalOpts: GlobalOptions = {
-        verbose: 0,
-        quiet: false,
-        json: false,
-        color: true,
-        tips: true,
-        tty: false,
-      };
-      const commandOpts = { artwork: false };
-      const result = loadCliConfig(globalOpts, commandOpts);
-      expect(result.artwork).toBe(false);
+      expect(loadCliConfig({ artwork: false }).artwork).toBe(false);
     });
 
     it('extracts skipUpgrades from command options', () => {
-      const globalOpts: GlobalOptions = {
-        verbose: 0,
-        quiet: false,
-        json: false,
-        color: true,
-        tips: true,
-        tty: false,
-      };
-      const commandOpts = { skipUpgrades: true };
-      const result = loadCliConfig(globalOpts, commandOpts);
-      expect(result.skipUpgrades).toBe(true);
+      expect(loadCliConfig({ skipUpgrades: true }).skipUpgrades).toBe(true);
     });
 
     it('ignores invalid quality in command options', () => {
-      const globalOpts: GlobalOptions = {
-        verbose: 0,
-        quiet: false,
-        json: false,
-        color: true,
-        tips: true,
-        tty: false,
-      };
-      const commandOpts = { quality: 'invalid' };
-      const result = loadCliConfig(globalOpts, commandOpts);
-      expect(result.quality).toBeUndefined();
+      expect(loadCliConfig({ quality: 'invalid' }).quality).toBeUndefined();
     });
 
     // All quality presets via CLI
     const cliPresets = ['max', 'high', 'medium', 'low'] as const;
     for (const preset of cliPresets) {
       it(`extracts quality = "${preset}" from command options`, () => {
-        const globalOpts: GlobalOptions = {
-          verbose: 0,
-          quiet: false,
-          json: false,
-          color: true,
-          tips: true,
-          tty: false,
-        };
-        const commandOpts = { quality: preset };
-        const result = loadCliConfig(globalOpts, commandOpts);
-        expect(result.quality).toBe(preset);
+        expect(loadCliConfig({ quality: preset }).quality).toBe(preset);
       });
     }
 
     // encoding option via CLI
     it('extracts encoding from command options', () => {
-      const globalOpts: GlobalOptions = {
-        verbose: 0,
-        quiet: false,
-        json: false,
-        color: true,
-        tips: true,
-        tty: false,
-      };
-      const commandOpts = { encoding: 'cbr' };
-      const result = loadCliConfig(globalOpts, commandOpts);
-      expect(result.encoding).toBe('cbr');
+      expect(loadCliConfig({ encoding: 'cbr' }).encoding).toBe('cbr');
     });
 
     it('ignores invalid encoding in command options', () => {
-      const globalOpts: GlobalOptions = {
-        verbose: 0,
-        quiet: false,
-        json: false,
-        color: true,
-        tips: true,
-        tty: false,
-      };
-      const commandOpts = { encoding: 'invalid' };
-      const result = loadCliConfig(globalOpts, commandOpts);
-      expect(result.encoding).toBeUndefined();
+      expect(loadCliConfig({ encoding: 'invalid' }).encoding).toBeUndefined();
     });
 
     // audioQuality option via CLI
     it('extracts audioQuality from command options', () => {
-      const globalOpts: GlobalOptions = {
-        verbose: 0,
-        quiet: false,
-        json: false,
-        color: true,
-        tips: true,
-        tty: false,
-      };
-      const commandOpts = { audioQuality: 'max' };
-      const result = loadCliConfig(globalOpts, commandOpts);
-      expect(result.audioQuality).toBe('max');
+      expect(loadCliConfig({ audioQuality: 'max' }).audioQuality).toBe('max');
     });
 
     // videoQuality option via CLI
     it('extracts videoQuality from command options', () => {
-      const globalOpts: GlobalOptions = {
-        verbose: 0,
-        quiet: false,
-        json: false,
-        color: true,
-        tips: true,
-        tty: false,
-      };
-      const commandOpts = { videoQuality: 'medium' };
-      const result = loadCliConfig(globalOpts, commandOpts);
-      expect(result.videoQuality).toBe('medium');
+      expect(loadCliConfig({ videoQuality: 'medium' }).videoQuality).toBe('medium');
     });
   });
 
@@ -2909,6 +2895,30 @@ device = "terapod"
       const second: PartialConfig = {}; // no quality
       const result = mergeConfigs(first, second);
       expect(result.quality).toBe('low');
+    });
+
+    it('merges the global bitrate-policy block field-by-field', () => {
+      // Regression: the global [bitrate] block must survive merging — otherwise
+      // a top-level `sync` setting is silently dropped and never resolves.
+      const first: PartialConfig = { bitrate: { sync: 'off', toleranceUp: 0.1 } };
+      const second: PartialConfig = { bitrate: { sync: 'match-all' } };
+      const result = mergeConfigs(first, second);
+      expect(result.bitrate?.sync).toBe('match-all'); // later layer wins
+      expect(result.bitrate?.toleranceUp).toBe(0.1); // untouched field preserved
+    });
+
+    it('merges a per-device bitrate block field-by-field', () => {
+      // Same survival guarantee as the global block: a later layer overriding
+      // one device bitrate field must not clobber another layer's fields.
+      const first: PartialConfig = {
+        devices: { terapod: { bitrate: { sync: 'off', toleranceUp: 0.1 } } },
+      };
+      const second: PartialConfig = {
+        devices: { terapod: { bitrate: { sync: 'match-all' } } },
+      };
+      const result = mergeConfigs(first, second);
+      expect(result.devices?.terapod?.bitrate?.sync).toBe('match-all'); // later layer wins
+      expect(result.devices?.terapod?.bitrate?.toleranceUp).toBe(0.1); // untouched field preserved
     });
 
     it('merges skipUpgrades from partial config', () => {

@@ -28,6 +28,12 @@ tips = true                  # Show contextual tips
 skipUpgrades = false         # Skip file-replacement upgrades for changed source files
 allowEmptyPlaylist = false   # Allow headless syncs to proceed when a playlist resolves to zero tracks
 
+# Bitrate-change policy (defaults shown — omit to use these)
+[bitrate]
+sync = "match-cap"           # off | match-cap | match-all | up-only | down-only
+toleranceUp = 0.0            # source-bound upward tolerance (0.0-1.0)
+toleranceDown = 0.0          # source-bound downward tolerance (0.0-1.0)
+
 # Codec preferences (defaults shown — omit to use these)
 [codec]
 lossy = ["opus", "aac", "mp3"]
@@ -61,6 +67,10 @@ videoQuality = "high"        # Video override for this device
 encoding = "vbr"             # Encoding mode override for this device
 transferMode = "fast"        # Transfer mode override for this device
 artwork = true
+
+# Per-device bitrate-change policy
+[devices.<name>.bitrate]
+sync = "match-cap"
 
 # Per-device codec preferences
 [devices.<name>.codec]
@@ -152,6 +162,48 @@ files in these formats are transcoded to a managed codec (typically
 AAC, ALAC, or FLAC depending on the codec preference stack) before
 being placed on the device. iPod is exempt — libgpod and the iTunesDB
 handle metadata for WAV/AIFF tracks on iPod natively.
+
+## Bitrate Sync Policy
+
+The `[bitrate]` block controls how syncs re-encode tracks already on the device
+when their quality drifts from the device's target — for example after you lower
+the bitrate cap, re-rip a source at a different bitrate, or switch encoding mode.
+Set it globally under `[bitrate]` or per-device under `[devices.<name>.bitrate]`
+(the device block overrides the global one). Override it for a single run with
+the [`--bitrate-sync`](/reference/cli-commands#sync) flag.
+
+```toml
+[bitrate]
+sync = "match-cap"     # off | match-cap | match-all | up-only | down-only
+toleranceUp = 0.0      # damp trivial source-bitrate drift upward (0.0-1.0)
+toleranceDown = 0.0    # damp trivial source-bitrate drift downward (0.0-1.0)
+```
+
+| `sync` mode | Cap raised / source improved (up) | Cap lowered (down) | Source re-ripped lower than the device copy |
+|-------------|-----------------------------------|--------------------|---------------------------------------------|
+| `match-cap` (default) | re-encode up | re-encode down | **keep** the better copy, report it |
+| `match-all` | re-encode up | re-encode down | follow the source **down** |
+| `up-only` | re-encode up | leave as-is | leave as-is |
+| `down-only` | leave as-is | re-encode down | leave as-is |
+| `off` | leave as-is | leave as-is | leave as-is |
+
+Notes:
+
+- **Format and encoding corrections are not bitrate moves.** Switching the device
+  between lossy and lossless, or flipping encoding mode (`vbr` ↔ `cbr`), re-encodes
+  for correctness in *every* mode, including `off`. Only bitrate-driven re-encoding
+  is governed by `sync`.
+- **`skipUpgrades` outranks `sync`.** A device with `skipUpgrades = true` never
+  replaces an existing file for any quality reason — not even a format or encoding
+  correction. Use it for a curated, purely-additive device; use `sync = "off"` to
+  freeze bitrates while still letting format/encoding corrections through.
+- **Source-down is never destructive by default.** Under `match-cap` a source
+  re-ripped *lower* than the device copy leaves the good copy in place and reports
+  the situation; `match-all` is the explicit opt-in to follow it down.
+- **Tolerances are opt-in churn dampers.** `toleranceUp` / `toleranceDown` are
+  ratios (0.0-1.0) applied only to the comparison against the source bitrate, so a
+  trivial wobble in the probed source bitrate between syncs doesn't trigger a
+  pointless re-encode. The default `0` means exact.
 
 ## Codec Preferences
 
@@ -284,6 +336,7 @@ quality = "max"               # Use --device <path> to specify mount point
 | `transferMode` | string | no | global `transferMode` | Transfer mode override: `fast`, `optimized`, or `portable`. See [Transfer Mode](#transfer-mode) for the device-specific contract (file-tag writes differ between iPod and mass-storage). |
 | `customBitrate` | integer | no | global `customBitrate` | Override the preset's target bitrate for this device |
 | `bitrateTolerance` | number | no | global `bitrateTolerance` | Override preset change detection tolerance for this device |
+| `bitrate` | table | no | global `[bitrate]` | Bitrate-change policy block (`[devices.<name>.bitrate]`). See [Bitrate Sync Policy](#bitrate-sync-policy). |
 | `artwork` | boolean | no | global `artwork` | Artwork override for this device |
 | `checkArtwork` | boolean | no | global `checkArtwork` | Detect changed artwork for this device |
 | `skipUpgrades` | boolean | no | global `skipUpgrades` | Skip file-replacement upgrades for this device |

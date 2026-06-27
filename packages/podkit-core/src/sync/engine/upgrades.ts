@@ -151,12 +151,15 @@ export function isSourceLossless(source: CollectionTrack): boolean {
  *   above the configured target — re-encode down.
  *
  * - `source-down-suppressed`: the source has degraded below the device copy, so
- *   re-encoding down would destroy quality. The good device copy is deliberately
- *   kept (`reEncodes: false`) and the situation is reported rather than acted on.
+ *   re-encoding down would destroy quality. The good device copy is kept
+ *   (`reEncodes: false`) and reported — unless the `match-all` policy opts in to
+ *   following the source down, which flips it to `reEncodes: true`.
+ * - `encoding-mismatch`: the device's recorded CBR/VBR mode differs from the
+ *   target — a precondition class that re-encodes for correctness regardless of
+ *   bitrate policy. Produced on the lossless sync-tag-exact path.
  *
- * The remaining reasons are defined in the vocabulary but not yet produced:
- * - `format-mismatch` / `encoding-mismatch`: precondition classes for codec
- *   correctness and CBR/VBR flip — reserved for forthcoming bitrate-policy work.
+ * One reason remains defined but not yet produced:
+ * - `format-mismatch`: codec-correctness precondition, reserved for future work.
  */
 export type QualityChangeReason =
   | 'format-mismatch'
@@ -172,6 +175,92 @@ export type QualityChangeReason =
  * re-encode (codec/encoding correctness) that isn't a bitrate move.
  */
 export type QualityChangeDirection = 'up' | 'down' | 'format-only';
+
+/**
+ * Per-device bitrate-change policy.
+ *
+ * - `match-cap` (default): re-encode in both directions to hold the cap, but
+ *   keep a better device copy when the source has degraded below it.
+ * - `match-all`: follow the source in every direction, including down.
+ * - `up-only` / `down-only`: restrict bitrate re-encoding to one direction.
+ * - `off`: no bitrate-driven re-encoding at all (preconditions still fire).
+ */
+export const BITRATE_SYNC_MODES = [
+  'off',
+  'match-cap',
+  'match-all',
+  'up-only',
+  'down-only',
+] as const;
+
+export type BitrateSyncMode = (typeof BITRATE_SYNC_MODES)[number];
+
+/**
+ * The pure policy gate: maps `(direction, reason, mode)` to whether the change
+ * should re-encode (`'fire'`) or be reported without acting (`'suppress-log'`).
+ *
+ * Precondition classes — `encoding-mismatch`, `lossless-boundary`,
+ * `format-mismatch` — bypass the gate and always fire: they are correctness
+ * (codec / encoding / lossless boundary), not bitrate preference, so a
+ * `bitrate.sync = off` user still gets format-correct files. (The `skipUpgrades`
+ * master veto, which suppresses even preconditions, is applied upstream of this
+ * gate, not here.)
+ *
+ * The bitrate reasons map by direction: `cap-up` / `source-improved` are up
+ * moves, `cap-down` is a down move, and `source-down-suppressed` is the
+ * degraded-source row that only the opt-in `match-all` follows.
+ */
+export function applyBitrateSyncPolicy(
+  direction: QualityChangeDirection,
+  reason: QualityChangeReason,
+  mode: BitrateSyncMode
+): 'fire' | 'suppress-log' {
+  // Preconditions are correctness, not bitrate policy — always re-encode.
+  if (
+    reason === 'encoding-mismatch' ||
+    reason === 'lossless-boundary' ||
+    reason === 'format-mismatch'
+  ) {
+    return 'fire';
+  }
+
+  // A degraded source is followed down only when the user opts in.
+  if (reason === 'source-down-suppressed') {
+    return mode === 'match-all' ? 'fire' : 'suppress-log';
+  }
+
+  // Remaining reasons are bitrate moves gated per direction. `cap-up` and
+  // `source-improved` are up; `cap-down` is down.
+  const isUp = direction === 'up';
+  switch (mode) {
+    case 'match-cap':
+    case 'match-all':
+      return 'fire';
+    case 'up-only':
+      return isUp ? 'fire' : 'suppress-log';
+    case 'down-only':
+      return isUp ? 'suppress-log' : 'fire';
+    case 'off':
+      return 'suppress-log';
+  }
+}
+
+/**
+ * Apply the policy gate to a freshly-computed change, setting `reEncodes` from
+ * the gate decision. The change is still returned when suppressed so it can be
+ * reported (and counted) — only `reEncodes` flips.
+ *
+ * A change that crosses INTO lossless (`toLossless`) always fires regardless of
+ * mode: lossy→lossless is a quality-boundary correctness decision, not a bitrate
+ * preference, so it behaves like a precondition even when the reason carries a
+ * directional label (the ALAC device-bound upgrade is reported as `cap-up`).
+ */
+function gateChange(change: QualityChange, mode: BitrateSyncMode): QualityChange {
+  change.reEncodes =
+    change.toLossless === true ||
+    applyBitrateSyncPolicy(change.direction, change.reason, mode) === 'fire';
+  return change;
+}
 
 /**
  * The single shape the quality classifier returns. Descriptive bitrate /
@@ -219,6 +308,18 @@ export interface QualityTarget {
    * removed once lossy sync tags are written for pre-existing libraries.
    */
   bitrateTolerance?: number;
+  /**
+   * Source-bound upward tolerance ratio (0.0-1.0). Damps a trivial upward
+   * wobble in the ffprobe-reported source bitrate so it does not churn a cap-up.
+   * Applies ONLY to the lossy source-bound comparison; default 0 = exact.
+   */
+  toleranceUp?: number;
+  /**
+   * Source-bound downward tolerance ratio (0.0-1.0). Damps a trivial downward
+   * wobble in the ffprobe-reported source bitrate so it does not churn a
+   * cap-down. Applies ONLY to the lossy source-bound comparison; default 0.
+   */
+  toleranceDown?: number;
 }
 
 /**
@@ -235,6 +336,16 @@ export interface QualityTarget {
  * which is owned by the post-process pass.
  */
 export function classifySourceBound(
+  source: CollectionTrack,
+  device: DeviceTrack,
+  targetBitrate: number,
+  mode: BitrateSyncMode = 'match-cap'
+): QualityChange | null {
+  const change = computeSourceBound(source, device, targetBitrate);
+  return change ? gateChange(change, mode) : null;
+}
+
+function computeSourceBound(
   source: CollectionTrack,
   device: DeviceTrack,
   targetBitrate: number
@@ -307,11 +418,12 @@ export function classifySourceBound(
  *
  * ## Currently reachable reasons
  *
- * Five reasons are currently produced: `lossless-boundary`, `source-improved`,
- * `cap-up`, `cap-down`, and `source-down-suppressed` (the only one that does NOT
- * re-encode — it reports a degraded source while keeping the better device copy).
- * The CBR/VBR (`encoding-mismatch`) branch exists in the vocabulary but is not yet
- * enabled — it returns `null`, preserving the current behaviour for that case.
+ * Six reasons are produced: `lossless-boundary`, `source-improved`, `cap-up`,
+ * `cap-down`, `source-down-suppressed` (the only one that does NOT re-encode by
+ * default — it reports a degraded source while keeping the better device copy,
+ * unless `match-all` follows it down), and `encoding-mismatch` (the CBR/VBR
+ * precondition on the lossless sync-tag path). Only `format-mismatch` remains
+ * unreached.
  *
  * @returns The quality change, or `null` when the track is in sync.
  */
@@ -321,14 +433,23 @@ export function classifyQualityChange(input: {
   target: QualityTarget;
   /** What the next sync would write into the device's sync tag for this track. */
   expectedSyncTag?: SyncTagData;
+  /** Per-device bitrate-change policy (default `match-cap`). */
+  policy?: BitrateSyncMode;
 }): QualityChange | null {
+  const mode = input.policy ?? 'match-cap';
+
   // Bound 1: source-vs-device (upgrade-only). A much-improved source is
   // followed up whether or not the user touched their cap.
-  const sourceBound = classifySourceBound(input.source, input.device, input.target.presetBitrate);
+  const sourceBound = classifySourceBound(
+    input.source,
+    input.device,
+    input.target.presetBitrate,
+    mode
+  );
   if (sourceBound) return sourceBound;
 
   // Bound 2: device-vs-target (the former detectPresetChange).
-  return classifyDeviceBound(input);
+  return classifyDeviceBound({ ...input, policy: mode });
 }
 
 /**
@@ -352,6 +473,18 @@ export function classifyDeviceBound(input: {
   device: DeviceTrack;
   target: QualityTarget;
   expectedSyncTag?: SyncTagData;
+  /** Per-device bitrate-change policy (default `match-cap`). */
+  policy?: BitrateSyncMode;
+}): QualityChange | null {
+  const change = computeDeviceBound(input);
+  return change ? gateChange(change, input.policy ?? 'match-cap') : null;
+}
+
+function computeDeviceBound(input: {
+  source: CollectionTrack;
+  device: DeviceTrack;
+  target: QualityTarget;
+  expectedSyncTag?: SyncTagData;
 }): QualityChange | null {
   const { source, device, target, expectedSyncTag } = input;
 
@@ -371,14 +504,17 @@ export function classifyDeviceBound(input: {
   // than tripping the config-wide ALAC branch.)
   const syncTag = device.syncTag;
   if (syncTag && expectedSyncTag) {
-    // encoding-mismatch (CBR/VBR) is a precondition class that fires even when
-    // bitrate matches — reserved for forthcoming bitrate-policy work.
     if (syncTagMatchesConfig(syncTag, expectedSyncTag)) {
       return null;
     }
+    // An encoding-mode (CBR/VBR) flip is a precondition class: it re-encodes for
+    // correctness even when the bitrate cap is unchanged, and it takes the
+    // headline reason over any concurrent tier move (a single re-encode
+    // satisfies both). Direction still tags the result for display.
+    const encodingChanged = (syncTag.encoding ?? 'vbr') !== (expectedSyncTag.encoding ?? 'vbr');
     const direction = syncTagDirection(syncTag, expectedSyncTag);
     return {
-      reason: direction === 'up' ? 'cap-up' : 'cap-down',
+      reason: encodingChanged ? 'encoding-mismatch' : direction === 'up' ? 'cap-up' : 'cap-down',
       direction,
       reEncodes: true,
       targetBitrate: target.presetBitrate,
@@ -481,16 +617,26 @@ function classifyLossyDeviceBound(
   }
 
   // The effective target bounds both directions by what the source can supply.
-  // Without a source bitrate there is nothing to compare against, so the track is
-  // left alone (no DB-bitrate guessing).
+  // Without a known source bitrate there is nothing to compare against, so the
+  // track is left alone (no DB-bitrate guessing). A bitrate of 0 is the adapters'
+  // "not populated" sentinel and is treated the same as unknown.
   const sourceBitrate = source.bitrate;
-  if (sourceBitrate === undefined) {
+  if (!sourceBitrate) {
     return null;
   }
 
   const effectiveTarget = Math.min(sourceBitrate, cap);
 
-  if (encoded < effectiveTarget) {
+  // Source-bound tolerance: the effective target is derived from the ffprobe
+  // source bitrate, which can wobble between syncs (especially for VBR). The
+  // opt-in tolerances widen the in-sync band around the effective target so a
+  // trivial source drift does not churn a re-encode. Default 0 = exact. This is
+  // the ONLY tolerance the lossy path consults — the recorded `encoded` is
+  // deterministic (podkit wrote it), so there is no tolerance on that side.
+  const upThreshold = effectiveTarget * (1 - (target.toleranceUp ?? 0));
+  const downThreshold = effectiveTarget * (1 + (target.toleranceDown ?? 0));
+
+  if (encoded < upThreshold) {
     return {
       reason: 'cap-up',
       direction: 'up',
@@ -501,7 +647,7 @@ function classifyLossyDeviceBound(
     };
   }
 
-  if (encoded > effectiveTarget) {
+  if (encoded > downThreshold) {
     if (sourceBitrate >= cap) {
       // The source can supply the cap — re-encode down to it.
       return {

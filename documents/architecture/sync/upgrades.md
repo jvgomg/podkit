@@ -34,13 +34,13 @@ for all music quality decisions. It returns a `QualityChange` object or `null`
 | `source-improved` | Same-family lossy source whose bitrate significantly exceeds the device copy (64 kbps absolute OR 1.5× relative) | `up` |
 | `cap-up` | Device's recorded encoding sits below the effective target — re-encode up | `up` |
 | `cap-down` | Device's recorded encoding sits above the cap AND the source can supply the cap — re-encode down | `down` |
-| `source-down-suppressed` | Source has degraded below the cap — the device copy is better than the source can produce; keep it and report (`reEncodes: false`) | `down` |
+| `source-down-suppressed` | Source has degraded below the cap — the device copy is better than the source can produce; by default keep it and report (`reEncodes: false`), unless `match-all` opts in to following it down | `down` |
+| `encoding-mismatch` | Device's recorded encoding mode (CBR/VBR) differs from the target — a precondition that re-encodes for correctness regardless of bitrate policy | `up` / `down` |
 | `format-mismatch` | _(reserved — not yet produced)_ Codec correctness precondition | `format-only` |
-| `encoding-mismatch` | _(reserved — not yet produced)_ CBR/VBR flip | `format-only` |
 
-The `QualityChange` object also carries: `direction`, `reEncodes` (false only
-for `source-down-suppressed`), `targetBitrate`, and optional
-`encodedBitrate`, `sourceBitrate`, `fromLossless`, `toLossless`.
+The `QualityChange` object also carries: `direction`, `reEncodes` (whether the
+change re-encodes the file — set by the **policy gate**, see §1a), `targetBitrate`,
+and optional `encodedBitrate`, `sourceBitrate`, `fromLossless`, `toLossless`.
 
 All of this feeds the `quality-change` update reason and the `qualityChanges[]`
 JSON array in the sync output.
@@ -67,6 +67,62 @@ returns null.
 
 ---
 
+## 1a. The policy gate
+
+What a bound *detects* (the reason) is kept separate from whether the sync is
+*allowed to act on it* (the policy). `applyBitrateSyncPolicy(direction, reason,
+mode)` is a pure mapping from `(QualityChangeDirection, QualityChangeReason,
+BitrateSyncMode)` to `'fire' | 'suppress-log'`, tested exhaustively in
+`bitrate-sync-policy.test.ts`. Each bound computes its natural change, then
+`gateChange` sets `reEncodes = applyBitrateSyncPolicy(...) === 'fire'`. A
+suppressed change is still **returned** (so it can be reported and counted) —
+only `reEncodes` flips to `false`.
+
+The five `BitrateSyncMode` values map per direction:
+
+| Mode | up (`cap-up` / `source-improved`) | down (`cap-down`) | source-down (`source-down-suppressed`) |
+|---|---|---|---|
+| `match-cap` (default) | fire | fire | suppress-log |
+| `match-all` | fire | fire | **fire** (follow the source down) |
+| `up-only` | fire | suppress-log | suppress-log |
+| `down-only` | suppress-log | fire | suppress-log |
+| `off` | suppress-log | suppress-log | suppress-log |
+
+**Precondition classes bypass the gate and always fire:** `encoding-mismatch`,
+`lossless-boundary`, and `format-mismatch` are correctness (codec / encoding mode
+/ lossless boundary), not bitrate preference, so they re-encode even under `off`.
+
+The policy is resolved per device (`[bitrate].sync`, default `match-cap`),
+cascading device → global → default, and is overridable per run with
+`--bitrate-sync`. It threads into `classifyQualityChange` / `classifyDeviceBound`
+/ `classifySourceBound` as an optional `policy` field that defaults to
+`match-cap`, so callers that omit it get the documented default behaviour.
+
+### Policy ladder (master veto preserved)
+
+```
+skipUpgrades (additive-only)  → never replace a file, even for preconditions
+bitrate.sync = off            → preconditions fire; no bitrate moves
+bitrate.sync = match-cap/...  → + bitrate moves per direction policy
+```
+
+`skipUpgrades` sits **above** `bitrate.sync` and is enforced upstream of the gate
+(in `detectUpdates` and the `postProcessPresetChanges` early-return): it filters
+out every file-replacement reason, including preconditions. `bitrate.sync = off`
+is the narrower veto that freezes bitrate moves while still letting
+format/encoding corrections through.
+
+### Source-bound tolerance
+
+`QualityTarget.toleranceUp` / `toleranceDown` (default 0 = exact) widen the
+in-sync band on the **lossy source-bound comparison only** — the effective target
+in `classifyLossyDeviceBound` is derived from the ffprobe source bitrate, which
+can wobble between syncs. The recorded `encoded` value is deterministic (podkit
+wrote it), so it carries no tolerance. The lossless DB-bitrate fallback keeps its
+own separate `bitrateTolerance` knob (see §4).
+
+---
+
 ## 2. How the update reason surfaces
 
 `detectUpgrades(source, ipod)` in `upgrades.ts` covers the NON-quality axes
@@ -75,28 +131,34 @@ returns null.
 
 The music handler (`handler.ts`) assembles reasons as:
 
-1. Run `classifySourceBound` in the match loop (`detectUpdates`). When it
-   returns non-null, push `'quality-change'` as the primary reason and stash
-   the `QualityChange` object in `DiffUpdateEntry.qualityChange`.
-2. Run `classifyDeviceBound` in the post-process pass
-   (`postProcessPresetChanges`). Same stash mechanism.
+1. Run `classifySourceBound` (with the device policy) in the match loop
+   (`detectUpdates`). When it returns a change **that fires** (`reEncodes`), push
+   `'quality-change'` as the primary reason and stash the `QualityChange` object
+   in `DiffUpdateEntry.qualityChange`. A policy-suppressed source-bound change
+   (e.g. `source-improved` under `down-only`/`off`) is left in `existing`.
+2. Run `classifyDeviceBound` (with the device policy) in the post-process pass
+   (`postProcessPresetChanges`). Same stash mechanism; a suppressed change takes
+   the report-only channel below.
 
 `DiffUpdateEntry.reasons[0] === 'quality-change'` is the signal consumers
 (presenter, JSON output) use to branch on the quality axis. The specific
 sub-reason (lossless-boundary, cap-up, etc.) is always on `qualityChange.reason`.
 
-### The report-but-don't-execute path (`source-down-suppressed`)
+### The report-but-don't-execute path (suppressed changes)
 
-A `source-down-suppressed` change carries `reEncodes: false`: it must be
-**visible but never acted on**. Routing it through `toUpdate` would create an
-operation and inflate `tracksToUpdate`, so it takes a separate channel.
+Any change with `reEncodes: false` must be **visible but never acted on** —
+whether the default `source-down-suppressed` or a bitrate move the policy gate
+suppressed (e.g. a `cap-down` under `up-only`/`off`). Routing it through
+`toUpdate` would create an operation and inflate `tracksToUpdate`, so it takes a
+separate channel.
 
 `UnifiedSyncDiff.reportOnlyQualityChanges` holds these entries
-(`{ source, device, qualityChange }`). In `postProcessPresetChanges`, when the
-lossy device-bound returns a change with `reEncodes === false`, the handler
-pushes it onto `reportOnlyQualityChanges` and returns `null` from the
-`partitionExisting` callback — so the track stays in `existing` (no operation, no
-file work, never counted toward `tracksToUpdate`/`tracksToUpgrade`).
+(`{ source, device, qualityChange }`). In `postProcessPresetChanges`, when either
+the lossy or the lossless device-bound returns a change with
+`reEncodes === false`, the handler pushes it onto `reportOnlyQualityChanges` and
+returns `null` from the `partitionExisting` callback — so the track stays in
+`existing` (no operation, no file work, never counted toward
+`tracksToUpdate`/`tracksToUpgrade`).
 
 The presenter (`music-presenter.ts`) reads this channel alongside `toUpdate`:
 
@@ -200,15 +262,18 @@ deliberately narrow:
       cap 128) — a naive `encoded > cap` rule would wrongly fire cap-down there.
   - `encoded === effectiveTarget` → null (in sync).
 
-  Suppression is the default for a degraded source. Following the source down
-  instead is left to a future opt-in policy.
+  Suppression is the default (`match-cap`) for a degraded source. The `match-all`
+  policy opts in to following the source down: the gate flips the
+  `source-down-suppressed` change to `reEncodes: true` and the executor re-encodes
+  to `targetBitrate` (the source bitrate). See §1a.
 
 **Routing the re-encode.** A compatible/device-native lossy source would
-normally be *copied* by the classifier. A cap move must instead *transcode* it,
-so `MusicHandler.planUpdate` overrides the routing (`resolveUpgradeAction`): for
-a `cap-down` or `cap-up` on a lossy source it builds a `transcode` action at the
-resolved preset with `bitrateOverride = qualityChange.targetBitrate` — the cap
-for cap-down, or `min(source, cap)` for cap-up. (The override comes from the
+normally be *copied* by the classifier. A bitrate move that fires must instead
+*transcode* it, so `MusicHandler.planUpdate` overrides the routing
+(`resolveUpgradeAction`): for a `cap-down`, `cap-up`, or a `match-all`
+followed `source-down-suppressed` on a lossy source it builds a `transcode`
+action at the resolved preset with `bitrateOverride = qualityChange.targetBitrate`
+— the cap for cap-down, or `min(source, cap)` for cap-up / followed source-down. (The override comes from the
 change, not the config-wide preset bitrate, because the cap-up target may be the
 source bitrate when the source supplies less than the cap.) The re-encode reads
 the **source** file via the existing `transferUpgradeToIpod` executor (run as an
@@ -249,8 +314,9 @@ tool), `bitrate = 0`. The `--force-sync-tags` backfill
 ## 5. Vocabulary rename and current reachability
 
 The unified quality classifier replaced four separate reason strings with a
-single vocabulary. The four currently reachable reasons map directly to the old
-strings:
+single vocabulary. The four original reasons map directly to the old strings
+(`source-down-suppressed` and `encoding-mismatch` are additionally reachable —
+see §1a and §4):
 
 | Old reason | `qualityChange.reason` | Update reason |
 |---|---|---|
@@ -283,11 +349,14 @@ libraries.
 
 ## 6. Interactions
 
-### With `--skip-upgrades`
+### With `--skip-upgrades` and `bitrate.sync`
 
-`MusicHandler.detectUpdates` filters out all file-replacement upgrades when
-`skipUpgrades` is set. Both bounds of `classifyQualityChange` are suppressed.
-The bitrate baseline still backfills (it's metadata-only).
+These are two rungs of the same ladder (see §1a). `MusicHandler.detectUpdates`
+filters out **all** file-replacement upgrades when `skipUpgrades` is set — every
+bound, including precondition reasons — for a purely additive device. The
+bitrate baseline still backfills (it's metadata-only). `bitrate.sync = off` is the
+narrower veto: it suppresses bitrate moves only, while format/encoding-mode
+preconditions still re-encode for correctness.
 
 ### With `--force-transcode`
 
@@ -308,15 +377,16 @@ the `source-improved` upgrade.
 
 ## 7. Open work
 
-- **Encoding-mismatch:** CBR/VBR flip fires regardless of bitrate — will be
-  wired before the bitrate compare in the sync-tag path.
-- **Follow-source-down policy:** Source-down is suppressed by default. A future
-  opt-in policy could choose to follow a degraded source down instead of keeping
-  the better device copy; the classifier already carries the
-  `source-down-suppressed` change (with the effective target = source bitrate) it
-  would need.
-- **Untagged opt-out:** Drop the DB-bitrate fallback once lossy sync tags are
-  written for pre-existing libraries.
+- **Untagged opt-out:** Drop the lossless DB-bitrate fallback once lossy sync
+  tags are written for pre-existing libraries. `--force-sync-tags-transcode`
+  (the explicit, destructive adoption path for untagged tracks) is the planned
+  enabler.
+- **Lossy encoding-mismatch:** the CBR/VBR precondition currently fires on the
+  lossless sync-tag-exact path; the lossy cap path compares bitrate only, so a
+  pure encoding flip on a lossy-source track is not yet detected.
+- **Source lossy → lossless detection:** re-rip MP3→FLAC at the same target
+  bitrate re-encoding up — out of scope here; the sync tag already carries source
+  codec to make it possible later.
 
 ---
 
@@ -325,7 +395,12 @@ the `source-improved` upgrade.
 - `packages/podkit-core/src/sync/engine/upgrades.ts` — `classifyQualityChange`,
   `classifySourceBound`, `classifyDeviceBound`, `detectUpgrades`, threshold constants
 - `packages/podkit-core/src/sync/engine/upgrades.test.ts` — unit matrix for
-  the unified classifier
+  the unified classifier (incl. policy threading + tolerance)
+- `packages/podkit-core/src/sync/engine/bitrate-sync-policy.test.ts` — exhaustive
+  `applyBitrateSyncPolicy` gate matrix (every reason × every mode)
+- `packages/podkit-cli/src/config/` — `[bitrate]` schema (`types.ts`),
+  validation (`loader.ts`), and device → global → `match-cap` resolution
+  (`resolve.ts`); `--bitrate-sync` override in `commands/sync.ts`
 - `packages/podkit-core/src/sync/music/handler.ts` —
   `detectUpdates` (match loop), `postProcessPresetChanges` (post-process pass),
   `postProcessBitrateBaseline`, `postProcessSyncTags`

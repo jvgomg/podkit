@@ -9,6 +9,7 @@
  * @module
  */
 
+import type { BitrateSyncMode } from '../engine/upgrades.js';
 import type { FFmpegTranscoder } from '../../transcode/ffmpeg.js';
 import type { QualityPreset, EncodingMode, TransferMode } from '../../transcode/types.js';
 import { getPresetBitrate, getCodecPresetBitrate } from '../../transcode/types.js';
@@ -54,6 +55,24 @@ export interface MusicSyncConfig {
 
   /** Tolerance for preset change detection (kbps) */
   bitrateTolerance?: number;
+
+  /**
+   * Per-device bitrate-change policy controlling which quality-change directions
+   * re-encode. Defaults to `match-cap` when omitted.
+   */
+  bitrateSync?: BitrateSyncMode;
+
+  /**
+   * Source-bound upward tolerance ratio (0.0-1.0) for the lossy cap comparison.
+   * Damps trivial ffprobe source-bitrate drift. Default 0 (exact).
+   */
+  toleranceUp?: number;
+
+  /**
+   * Source-bound downward tolerance ratio (0.0-1.0) for the lossy cap
+   * comparison. Damps trivial ffprobe source-bitrate drift. Default 0 (exact).
+   */
+  toleranceDown?: number;
 
   /**
    * Transfer mode controlling how files are prepared for the device
@@ -130,6 +149,9 @@ export interface ResolvedMusicConfig {
 
   /** Target bitrate for the resolved preset (from `getPresetBitrate()`) */
   readonly presetBitrate: number;
+
+  /** Resolved bitrate-change policy (defaults to `match-cap`). */
+  readonly bitrateSync: BitrateSyncMode;
 
   /** Whether the device supports ALAC playback */
   readonly deviceSupportsAlac: boolean;
@@ -296,6 +318,7 @@ export function resolveMusicConfig(config: MusicSyncConfig): ResolvedMusicConfig
     isAlacPreset,
     resolvedQuality,
     presetBitrate,
+    bitrateSync: config.bitrateSync ?? 'match-cap',
     deviceSupportsAlac,
     transferMode,
     artworkResize,

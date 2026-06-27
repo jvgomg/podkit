@@ -119,6 +119,8 @@ export {
   classifyQualityChange,
   classifySourceBound,
   classifyDeviceBound,
+  applyBitrateSyncPolicy,
+  BITRATE_SYNC_MODES,
   detectUpgrades,
   isFileReplacementUpgrade,
   isSourceLossless,
@@ -132,6 +134,7 @@ export type {
   QualityChangeReason,
   QualityChangeDirection,
   QualityTarget,
+  BitrateSyncMode,
 } from './sync/engine/upgrades.js';
 
 // Music planning utilities

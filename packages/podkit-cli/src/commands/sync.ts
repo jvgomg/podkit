@@ -36,7 +36,13 @@ import type {
   VideoCollectionConfig,
   DeviceConfig,
 } from '../config/index.js';
-import { QUALITY_PRESETS, ENCODING_MODES, CONTENT_TYPES, TRANSFER_MODES } from '../config/index.js';
+import {
+  QUALITY_PRESETS,
+  ENCODING_MODES,
+  BITRATE_SYNC_MODES,
+  CONTENT_TYPES,
+  TRANSFER_MODES,
+} from '../config/index.js';
 import { resolveDeviceSettings } from '../config/resolve.js';
 import {
   resolveDevicePath,
@@ -128,6 +134,7 @@ interface SyncOptions {
   audioQuality?: QualityPreset;
   videoQuality?: VideoQualityPreset;
   encoding?: string;
+  bitrateSync?: string;
   transferMode?: string;
   filter?: string;
   artwork?: boolean;
@@ -310,6 +317,12 @@ export const syncCommand = new Command('sync')
     ).choices([...QUALITY_PRESETS])
   )
   .addOption(new Option('--encoding <mode>', 'audio encoding mode').choices([...ENCODING_MODES]))
+  .addOption(
+    new Option(
+      '--bitrate-sync <mode>',
+      'bitrate-change policy: off, match-cap (default), match-all, up-only, or down-only — overrides the device policy for this run'
+    ).choices([...BITRATE_SYNC_MODES])
+  )
   .addOption(
     new Option(
       '--transfer-mode <mode>',
@@ -547,6 +560,14 @@ export async function runSync(
         : resolved.transferMode.value,
       customBitrate: resolved.customBitrate.value,
       bitrateTolerance: resolved.bitrateTolerance.value,
+      // `--bitrate-sync` overrides the resolved device policy for this run only.
+      // The flag has no Commander default, so an unpassed flag is absent here and
+      // the resolved device → global → match-cap chain wins.
+      bitrateSync: options.bitrateSync
+        ? (options.bitrateSync as import('@podkit/core').BitrateSyncMode)
+        : resolved.bitrateSync.value,
+      toleranceUp: resolved.toleranceUp.value,
+      toleranceDown: resolved.toleranceDown.value,
     };
   }
 
@@ -568,6 +589,9 @@ export async function runSync(
   let effectiveTransferMode = derived.transferMode;
   let effectiveCustomBitrate = derived.customBitrate;
   let effectiveBitrateTolerance = derived.bitrateTolerance;
+  let effectiveBitrateSync = derived.bitrateSync;
+  let effectiveToleranceUp = derived.toleranceUp;
+  let effectiveToleranceDown = derived.toleranceDown;
   let cleanArtistsResolutionReason: CleanArtistsResolutionReason | undefined;
   let transformWarnings: TransformWarning[] = [];
 
@@ -621,6 +645,9 @@ export async function runSync(
     effectiveTransferMode = derived.transferMode;
     effectiveCustomBitrate = derived.customBitrate;
     effectiveBitrateTolerance = derived.bitrateTolerance;
+    effectiveBitrateSync = derived.bitrateSync;
+    effectiveToleranceUp = derived.toleranceUp;
+    effectiveToleranceDown = derived.toleranceDown;
 
     // Re-derive device type after auto-match (the matched device may have a type)
     deviceType = deviceConfig?.type;
@@ -1126,6 +1153,9 @@ export async function runSync(
         effectiveTransferMode,
         effectiveCustomBitrate,
         effectiveBitrateTolerance,
+        effectiveBitrateSync,
+        effectiveToleranceUp,
+        effectiveToleranceDown,
         deviceSupportsAlac,
         effectiveArtwork,
         skipUpgrades: effectiveSkipUpgrades,

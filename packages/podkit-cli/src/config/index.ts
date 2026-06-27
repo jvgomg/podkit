@@ -49,6 +49,7 @@ export type { DeviceType, TranscodeTargetCodec } from './types.js';
 export {
   QUALITY_PRESETS,
   ENCODING_MODES,
+  BITRATE_SYNC_MODES,
   TRANSFER_MODES,
   CONTENT_TYPES,
   VIDEO_QUALITY_PRESETS,

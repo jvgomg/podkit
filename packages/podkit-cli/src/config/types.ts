@@ -20,10 +20,12 @@ export type {
   DeviceArtworkSource,
   TranscodeTargetCodec,
   ContentPaths,
+  BitrateSyncMode,
 } from '@podkit/core';
 export {
   QUALITY_PRESETS,
   ENCODING_MODES,
+  BITRATE_SYNC_MODES,
   TRANSFER_MODES,
   CONTENT_TYPES,
   VIDEO_QUALITY_PRESETS,
@@ -49,6 +51,7 @@ import type {
   AudioNormalizationMode,
   DeviceArtworkSource,
   TranscodeTargetCodec,
+  BitrateSyncMode,
 } from '@podkit/core';
 import type { ReadinessUnsupportedReason } from '@podkit/device-types';
 import type { MassStoragePreset } from '@podkit/devices-mass-storage';
@@ -175,6 +178,33 @@ export interface VideoCollectionConfig {
  * format = "feat. {}"
  * ```
  */
+/**
+ * Bitrate-change policy block, settable globally (`[bitrate]`) and per-device
+ * (`[devices.<name>.bitrate]`). The device block overrides the global one.
+ *
+ * @example
+ * ```toml
+ * [devices.terapod.bitrate]
+ * sync = "match-cap"   # off | match-cap | match-all | up-only | down-only
+ * toleranceUp = 0.0
+ * toleranceDown = 0.0
+ * ```
+ */
+export interface BitrateConfig {
+  /**
+   * Quality-change sync policy. Defaults to `match-cap` when unset.
+   * - `off`: never re-encode for a bitrate change (format/encoding still fire)
+   * - `match-cap`: hold the cap both ways, keep a better copy on source-down
+   * - `match-all`: follow the source in every direction, including down
+   * - `up-only` / `down-only`: restrict bitrate re-encoding to one direction
+   */
+  sync?: BitrateSyncMode;
+  /** Source-bound upward tolerance ratio (0.0-1.0). Default 0 (exact). */
+  toleranceUp?: number;
+  /** Source-bound downward tolerance ratio (0.0-1.0). Default 0 (exact). */
+  toleranceDown?: number;
+}
+
 export interface DeviceConfig {
   /** Volume UUID for device auto-detection (optional — required only for auto-detection) */
   volumeUuid?: string;
@@ -217,6 +247,12 @@ export interface DeviceConfig {
   customBitrate?: number;
   /** Bitrate tolerance ratio for preset change detection (overrides global) */
   bitrateTolerance?: number;
+  /**
+   * Bitrate-change policy block (`[devices.<name>.bitrate]`): the quality-change
+   * sync mode plus optional source-bound tolerances. Overrides the global
+   * `[bitrate]` block.
+   */
+  bitrate?: BitrateConfig;
   /** Whether to sync artwork to this device */
   artwork?: boolean;
   /** Detect artwork changes by comparing content hashes (overrides global) */
@@ -371,6 +407,8 @@ export interface PodkitConfig {
    * Overrides the default tolerance for the encoding mode.
    */
   bitrateTolerance?: number;
+  /** Global bitrate-change policy block (`[bitrate]`), overridable per-device */
+  bitrate?: BitrateConfig;
   /** Include artwork in sync (global default, can be overridden per-device) */
   artwork: boolean;
   /** Skip file-replacement upgrades during sync (global default, can be overridden per-device) */
@@ -522,6 +560,16 @@ export interface ConfigFileCodecPreference {
 }
 
 /**
+ * Raw bitrate-change policy block as parsed from TOML (`[bitrate]` /
+ * `[devices.<name>.bitrate]`). Values are validated by the loader.
+ */
+export interface ConfigFileBitrate {
+  sync?: string;
+  toleranceUp?: number;
+  toleranceDown?: number;
+}
+
+/**
  * Raw music collection config as parsed from TOML
  */
 export interface ConfigFileMusicCollection {
@@ -561,6 +609,7 @@ export interface ConfigFileDevice {
   encoding?: string;
   customBitrate?: number;
   bitrateTolerance?: number;
+  bitrate?: ConfigFileBitrate;
   artwork?: boolean;
   checkArtwork?: boolean;
   transferMode?: string;
@@ -685,6 +734,7 @@ export interface ConfigFileContent {
   encoding?: string;
   customBitrate?: number;
   bitrateTolerance?: number;
+  bitrate?: ConfigFileBitrate;
   artwork?: boolean;
   checkArtwork?: boolean;
   transferMode?: string;

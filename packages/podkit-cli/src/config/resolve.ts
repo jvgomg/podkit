@@ -14,6 +14,7 @@ import type {
   DeviceCapabilities,
   EncodingMode,
   TransferMode,
+  BitrateSyncMode,
 } from '@podkit/core';
 import { resolveChain, type Resolved, type CapabilitySource } from '@podkit/device-types';
 import type { DeviceConfig, PodkitConfig } from './types.js';
@@ -85,6 +86,12 @@ export interface ResolvedDeviceSettings {
   transferMode: ResolvedValue<TransferMode>;
   customBitrate: ResolvedValue<number | undefined>;
   bitrateTolerance: ResolvedValue<number | undefined>;
+  /** Bitrate-change policy: device `[bitrate].sync` → global → `match-cap`. */
+  bitrateSync: ResolvedValue<BitrateSyncMode>;
+  /** Source-bound upward tolerance: device → global → undefined (exact). */
+  toleranceUp: ResolvedValue<number | undefined>;
+  /** Source-bound downward tolerance: device → global → undefined (exact). */
+  toleranceDown: ResolvedValue<number | undefined>;
 }
 
 // =============================================================================
@@ -219,6 +226,21 @@ export function resolveDeviceSettings(
     bitrateTolerance: resolveSimple(
       config.bitrateTolerance,
       deviceConfig.bitrateTolerance,
+      undefined
+    ),
+    bitrateSync: resolveSimple<BitrateSyncMode>(
+      config.bitrate?.sync,
+      deviceConfig.bitrate?.sync,
+      'match-cap'
+    ),
+    toleranceUp: resolveSimple(
+      config.bitrate?.toleranceUp,
+      deviceConfig.bitrate?.toleranceUp,
+      undefined
+    ),
+    toleranceDown: resolveSimple(
+      config.bitrate?.toleranceDown,
+      deviceConfig.bitrate?.toleranceDown,
       undefined
     ),
   };
