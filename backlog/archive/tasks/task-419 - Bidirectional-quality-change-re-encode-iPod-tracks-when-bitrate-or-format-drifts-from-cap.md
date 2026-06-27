@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-06-10 14:45'
+updated_date: '2026-06-25 22:25'
 labels:
   - sync
   - transcoding
@@ -17,6 +18,9 @@ references:
   - packages/podkit-core/src/sync/music/handler.ts
   - packages/podkit-core/src/sync/music/classifier.ts
   - packages/podkit-core/src/sync/music/transfer.ts
+  - >-
+    backlog/docs/doc-051 -
+    Bidirectional-quality-change-extend-cap-enforcement-to-lossy-unify-the-quality-classifier.md
 priority: medium
 ordinal: 134000
 ---
@@ -168,3 +172,9 @@ No explicit migration. Behaviour changes on first sync after upgrade — that's 
 - [ ] #9 Documents/architecture/sync/upgrades.md updated to describe bidirectional behaviour, the five `bitrate.sync` modes, and source-down handling
 - [ ] #10 E2E tests in `upgrades.test.ts` cover: cap-down re-encodes; cap-up + sufficient source re-encodes; source-down under match-cap leaves track alone; source-down under match-all re-encodes; bitrate.sync=off blocks bitrate re-encode but format-mismatch still fires
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+PRD written: doc-051. **Premise correction** — this task assumed only the upgrade direction fires today. Codebase reality (ADR-010): bidirectional, sync-tag-exact preset-change detection ALREADY exists for lossless sources (detectPresetChange + determineSyncTagDirection). The real gap is narrower: (1) lossy sources are copied as-is and never cap-enforced (`if (!isSourceLossless) return null` in postProcessPresetChanges); (2) the three detection paths (detectUpgrades / detectPresetChange / determineSyncTagDirection) need unifying into one pure classifier; (3) per-direction `bitrate.sync` policy + dropping the DB-bitrate tolerance fallback (untagged = opted out; --force-sync-tags-transcode to adopt). Reconcile ACs against doc-051 before implementing — several are already satisfied for lossless.
+<!-- SECTION:NOTES:END -->
