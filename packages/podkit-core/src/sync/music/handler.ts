@@ -915,11 +915,12 @@ export class MusicHandler implements ContentTypeHandler<
    * Resolve the routing action for a file-replacement upgrade.
    *
    * Normally this is the classifier's decision for the source. The exception is
-   * a lossy bitrate move that fired: cap-DOWN, cap-UP, or a source-down that the
-   * `match-all` policy chose to follow. The classifier would COPY a
-   * compatible/device-native lossy source as-is, but a bitrate move must
-   * RE-ENCODE it — down to the configured cap, up from the source toward the
-   * effective ceiling `min(source, cap)`, or down to the (degraded) source under
+   * a lossy re-encode that fired on the device bound: cap-DOWN, cap-UP, a CBR/VBR
+   * `encoding-mismatch`, or a source-down that the `match-all` policy chose to
+   * follow. The classifier would COPY a compatible/device-native lossy source
+   * as-is, but these must RE-ENCODE it — down to the configured cap, up from the
+   * source toward the effective ceiling `min(source, cap)`, to the same effective
+   * target with a flipped encoding mode, or down to the (degraded) source under
    * `match-all`. Force a transcode at the resolved preset, recording the change's
    * effective target bitrate as the preset's `bitrateOverride` so the executor
    * stamps the new encoded bitrate into the sync tag — making the next sync a
@@ -936,6 +937,7 @@ export class MusicHandler implements ContentTypeHandler<
     if (
       (qualityChange?.reason === 'cap-down' ||
         qualityChange?.reason === 'cap-up' ||
+        qualityChange?.reason === 'encoding-mismatch' ||
         qualityChange?.reason === 'source-down-suppressed') &&
       qualityChange.reEncodes &&
       !isSourceLossless(source) &&

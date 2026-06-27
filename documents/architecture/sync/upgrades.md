@@ -30,12 +30,12 @@ for all music quality decisions. It returns a `QualityChange` object or `null`
 
 | Reason | Fires when | Direction |
 |---|---|---|
-| `lossless-boundary` | Source is lossless AND device copy is lossy | `up` |
+| `lossless-boundary` | The track crosses the lossless/lossy boundary: source is lossless AND device copy is lossy (`up`, source bound), OR device copy is lossless AND the target is now a lossy preset (`down`, device bound). A precondition — re-encodes regardless of bitrate policy | `up` / `down` |
 | `source-improved` | Same-family lossy source whose bitrate significantly exceeds the device copy (64 kbps absolute OR 1.5× relative) | `up` |
 | `cap-up` | Device's recorded encoding sits below the effective target — re-encode up | `up` |
 | `cap-down` | Device's recorded encoding sits above the cap AND the source can supply the cap — re-encode down | `down` |
 | `source-down-suppressed` | Source has degraded below the cap — the device copy is better than the source can produce; by default keep it and report (`reEncodes: false`), unless `match-all` opts in to following it down | `down` |
-| `encoding-mismatch` | Device's recorded encoding mode (CBR/VBR) differs from the target — a precondition that re-encodes for correctness regardless of bitrate policy | `up` / `down` |
+| `encoding-mismatch` | Device's recorded encoding mode (CBR/VBR) differs from the target — a precondition that re-encodes for correctness regardless of bitrate policy. Fires on both the lossless sync-tag-exact path and the lossy cap path (the latter only for tracks podkit transcoded, which carry a recorded encoding) | `format-only` (pure flip) / `up` / `down` (when a tier move coincides) |
 | `format-mismatch` | _(reserved — not yet produced)_ Codec correctness precondition | `format-only` |
 
 The `QualityChange` object also carries: `direction`, `reEncodes` (whether the
@@ -111,6 +111,31 @@ bitrate.sync = match-cap/...  → + bitrate moves per direction policy
 out every file-replacement reason, including preconditions. `bitrate.sync = off`
 is the narrower veto that freezes bitrate moves while still letting
 format/encoding corrections through.
+
+### Precondition classes
+
+Three reasons are **correctness** re-encodes, not bitrate preference, so they
+bypass the policy gate and re-encode even under `bitrate.sync = off` (still vetoed
+by `skipUpgrades`):
+
+| Reason | Axis | Where detected | Direction |
+|---|---|---|---|
+| `lossless-boundary` | lossy/lossless boundary (observable from codec: device filetype + source) | source bound (`up`) and device bound (`down`) | `up` / `down` |
+| `encoding-mismatch` | CBR/VBR encoding mode (sync-tag `encoding` only — libgpod exposes no VBR signal) | device bound, lossless and lossy paths | `format-only`, or `up`/`down` when a tier move coincides |
+| `format-mismatch` | codec correctness | _reserved_ (codec changes are handled by the separate `postProcessCodecChanges` pass) | `format-only` |
+
+Two design rules hold for all three:
+
+- **The precondition takes the headline.** When an encoding flip coincides with a
+  tier/bitrate move, a single re-encode satisfies both, so `encoding-mismatch` is
+  the reason and the direction reflects the coincident move (else `format-only`).
+- **Only podkit-written tracks are eligible.** `encoding-mismatch` reads the
+  encoding mode podkit recorded; a direct copy clears `encoding`
+  (`buildCopySyncTag`) and an untagged track has none, so neither is re-encoded on
+  an encoding-mode change — re-encoding a faithful copy would be a lossy-to-lossy
+  degradation. The lossless/lossy boundary is the exception: it is observable from
+  the codec without a tag (filetype fallback), though the sync tag is still read
+  first so a lossy transcode on a lossless-looking container is not misread.
 
 ### Source-bound tolerance
 
@@ -204,10 +229,22 @@ not `'aac'`, so the `lossless-boundary` upgrade fires legitimately.
 `classifyDeviceBound` requires an authoritative `encoded` value on the device
 side. Two paths:
 
+**Lossless→lossy boundary (precondition, checked first):** Before any of the
+paths below, the lossless-source device bound checks whether the device copy is
+lossless while the target is now a lossy preset. The device copy's losslessness is
+read tag-first (`isDeviceCopyLossless`: `quality=lossless` tag → lossless, an
+explicit lossy transcode tag → lossy, `copy`/untagged → filetype), so a lossy
+transcode on a lossless-looking container is not misread. When it crosses, the
+result is `lossless-boundary` with direction `down` — re-encode down to the cap
+regardless of bitrate policy. This is the mirror of the source bound's
+lossy→lossless `up` crossing. (After the re-encode the device copy is lossy, so
+the crossing does not re-fire — the next sync sees a lossy device tag and matches.)
+
 **Sync-tag exact comparison (authoritative):** When the device carries a sync
 tag AND `expectedSyncTag` is provided, `syncTagMatchesConfig` compares them
-exactly. A match returns null; a mismatch produces `cap-up` or `cap-down` via
-`syncTagDirection`.
+exactly. A match returns null. A mismatch is split: an encoding-mode (CBR/VBR)
+flip produces `encoding-mismatch` (a precondition — see §1a); otherwise the
+`qualityMoveDirection` of the tier/bitrate move yields `cap-up` or `cap-down`.
 
 **Untagged fallback:** When no exact comparison is possible, the fallback is
 `detectBitratePresetMismatch(device.bitrate, target.presetBitrate, tolerance)`.
@@ -236,6 +273,15 @@ deliberately narrow:
   track with no recorded bitrate (an untagged track, or one added before
   sync-tag bitrate recording) is opted out (returns null). An explicit adoption
   path via `--force-sync-tags-transcode` is planned.
+- **Encoding-mode (CBR/VBR) flip is a precondition here too.** After the
+  `encoded`/cap/source guards, if the device's recorded `encoding` differs from
+  the target encoding the path returns `encoding-mismatch` (a precondition —
+  re-encodes under every policy mode). Only a track podkit transcoded carries a
+  recorded `encoding`; a copy tag clears it, so a faithful copy is never
+  re-encoded on a mode change. The re-encode targets `min(source, cap)` so the
+  rewritten tag matches the next sync's comparison (idempotent), and a coincident
+  cap move shares the single re-encode (direction reflects that move, else
+  `format-only`).
 - **Cap = `target.presetBitrate`.** The config resolver already folds
   `customBitrate` into `presetBitrate` (`getPresetBitrate(preset, customBitrate)`),
   so a custom cap is honoured for free. When there is no lossy cap (a lossless
@@ -381,9 +427,13 @@ the `source-improved` upgrade.
   tags are written for pre-existing libraries. `--force-sync-tags-transcode`
   (the explicit, destructive adoption path for untagged tracks) is the planned
   enabler.
-- **Lossy encoding-mismatch:** the CBR/VBR precondition currently fires on the
-  lossless sync-tag-exact path; the lossy cap path compares bitrate only, so a
-  pure encoding flip on a lossy-source track is not yet detected.
+- **Lossy encoding-mismatch eligibility:** the CBR/VBR precondition fires on the
+  lossy cap path only for tracks podkit transcoded *with a recorded bitrate*
+  (e.g. a prior cap move). A lossy transcode written without a bitrate override
+  (no custom bitrate, no cap move — e.g. an OGG→AAC transcode at a bare preset)
+  records `encoding` but no `bitrate`, so it is opted out by the `encoded`
+  guard. Universal lossy bitrate recording would close this; tracked with the
+  untagged opt-out above.
 - **Source lossy → lossless detection:** re-rip MP3→FLAC at the same target
   bitrate re-encoding up — out of scope here; the sync tag already carries source
   codec to make it possible later.

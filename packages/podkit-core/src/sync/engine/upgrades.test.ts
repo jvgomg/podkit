@@ -3,9 +3,10 @@
  * its two bounds `classifySourceBound` / `classifyDeviceBound`).
  *
  * The classifier is pure, so the matrix of (transition × source type × tag
- * state) is covered exhaustively here without spinning up a sync. The
- * encoding-mismatch row will be added when that direction is enabled — the
- * scaffold section at the bottom holds its placeholder.
+ * state) is covered exhaustively here without spinning up a sync. The precondition
+ * classes — CBR/VBR `encoding-mismatch` (lossless and lossy paths) and the
+ * `lossless-boundary` crossing in both directions — are covered alongside the
+ * bitrate moves; only `format-mismatch` remains reserved (see the bottom block).
  *
  * Each case reads independently — it spells out its own source / device /
  * target and asserts the observable `{ reason, direction, reEncodes }`. No
@@ -473,6 +474,31 @@ describe('classifyDeviceBound', () => {
       });
     });
 
+    test('same tier, a newly-added lower custom bitrate -> cap-down (not mislabelled cap-up)', () => {
+      // The device tag is quality=high with no custom bitrate; the target adds a
+      // custom bitrate (128) below the high nominal. The tier is unchanged and the
+      // old tag carries no bitrate, so the direction is resolved from effective
+      // bitrates. Pinned under `off`: a cap-down is suppressed, but a mislabelled
+      // cap-up would also be suppressed — so assert the down direction directly
+      // under the default policy where it fires.
+      const source = makeMockCollectionTrack({ fileType: 'flac', lossless: true });
+      const device = makeMockDeviceTrack({
+        filetype: 'AAC audio file',
+        bitrate: 256,
+        syncTag: buildAudioSyncTag('high', 'vbr'),
+      });
+      const expectedSyncTag = buildAudioSyncTag('high', 'vbr', 128);
+
+      const change = classifyDeviceBound({
+        source,
+        device,
+        target: target({ preset: 'high', presetBitrate: 256, customBitrate: 128 }),
+        expectedSyncTag,
+      });
+
+      expect(change).toMatchObject({ reason: 'cap-down', direction: 'down', reEncodes: true });
+    });
+
     test('tag above target tier -> cap-down', () => {
       const source = makeMockCollectionTrack({ fileType: 'flac', lossless: true });
       const device = makeMockDeviceTrack({
@@ -859,7 +885,7 @@ describe('bitrate-sync policy threading', () => {
 // ---------------------------------------------------------------------------
 
 describe('encoding-mismatch (precondition)', () => {
-  test('VBR->CBR flip at the same tier -> encoding-mismatch, fires under off', () => {
+  test('lossless source: VBR->CBR flip at the same tier -> encoding-mismatch (format-only), fires under off', () => {
     const source = makeMockCollectionTrack({ fileType: 'flac', lossless: true });
     const device = makeMockDeviceTrack({
       filetype: 'AAC audio file',
@@ -876,7 +902,330 @@ describe('encoding-mismatch (precondition)', () => {
       policy: 'off',
     });
 
-    expect(change).toMatchObject({ reason: 'encoding-mismatch', reEncodes: true });
+    // A pure encoding flip (same tier, same bitrate) tags `format-only` — it is
+    // not a bitrate move.
+    expect(change).toMatchObject({
+      reason: 'encoding-mismatch',
+      direction: 'format-only',
+      reEncodes: true,
+    });
+  });
+
+  test('lossless source: encoding flip that coincides with a tier move keeps that direction', () => {
+    const source = makeMockCollectionTrack({ fileType: 'flac', lossless: true });
+    const device = makeMockDeviceTrack({
+      filetype: 'AAC audio file',
+      bitrate: 256,
+      syncTag: buildAudioSyncTag('high', 'vbr'),
+    });
+    const expectedSyncTag = buildAudioSyncTag('low', 'cbr');
+
+    const change = classifyDeviceBound({
+      source,
+      device,
+      target: target({ preset: 'low', presetBitrate: 96, encoding: 'cbr' }),
+      expectedSyncTag,
+      policy: 'off',
+    });
+
+    // Encoding flipped AND the tier dropped: a single re-encode satisfies both,
+    // encoding-mismatch is the headline, and the direction reflects the move.
+    expect(change).toMatchObject({
+      reason: 'encoding-mismatch',
+      direction: 'down',
+      reEncodes: true,
+    });
+  });
+
+  // The gap: the lossy device-bound previously compared bitrate only, so a pure
+  // CBR<->VBR flip on a track podkit transcoded (recorded encoding + bitrate) was
+  // never detected. It must re-encode for correctness under every policy mode.
+  test('lossy source: VBR->CBR flip at the cap -> encoding-mismatch (format-only), fires under off', () => {
+    // The device copy was a prior cap-down to AAC at 128 (recorded encoding=vbr,
+    // bitrate=128). Source 320 > cap 128, so the effective target is the cap and
+    // the recorded bitrate already sits at it — only the encoding mode changed.
+    const source = makeMockCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 320 });
+    const device = makeMockDeviceTrack({
+      filetype: 'AAC audio file',
+      bitrate: 128,
+      syncTag: buildAudioSyncTag('low', 'vbr', 128, 'fast', 'aac'),
+    });
+
+    const change = classifyDeviceBound({
+      source,
+      device,
+      target: target({ preset: 'low', presetBitrate: 128, encoding: 'cbr' }),
+      policy: 'off',
+    });
+
+    expect(change).toMatchObject({
+      reason: 'encoding-mismatch',
+      direction: 'format-only',
+      reEncodes: true,
+    });
+    expect(change?.targetBitrate).toBe(128);
+    expect(change?.fromEncoding).toBe('vbr');
+    expect(change?.toEncoding).toBe('cbr');
+  });
+
+  test('lossy source: encoding flip coinciding with a cap-down keeps direction down', () => {
+    // Recorded 200 > effective target min(320, 128) = 128, AND the encoding flips.
+    // The single re-encode satisfies both; encoding-mismatch is the headline and
+    // the direction reflects the down move.
+    const source = makeMockCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 320 });
+    const device = makeMockDeviceTrack({
+      filetype: 'AAC audio file',
+      bitrate: 200,
+      syncTag: buildAudioSyncTag('medium', 'vbr', 200, 'fast', 'aac'),
+    });
+
+    const change = classifyDeviceBound({
+      source,
+      device,
+      target: target({ preset: 'low', presetBitrate: 128, encoding: 'cbr' }),
+      policy: 'off',
+    });
+
+    expect(change).toMatchObject({
+      reason: 'encoding-mismatch',
+      direction: 'down',
+      reEncodes: true,
+    });
+    expect(change?.targetBitrate).toBe(128);
+  });
+
+  test('lossy source: encoding flip coinciding with a cap-up keeps direction up', () => {
+    // Recorded 96 < effective target min(320, 256) = 256, AND the encoding flips.
+    const source = makeMockCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 320 });
+    const device = makeMockDeviceTrack({
+      filetype: 'AAC audio file',
+      bitrate: 96,
+      syncTag: buildAudioSyncTag('low', 'vbr', 96, 'fast', 'aac'),
+    });
+
+    const change = classifyDeviceBound({
+      source,
+      device,
+      target: target({ preset: 'high', presetBitrate: 256, encoding: 'cbr' }),
+      policy: 'off',
+    });
+
+    expect(change).toMatchObject({
+      reason: 'encoding-mismatch',
+      direction: 'up',
+      reEncodes: true,
+    });
+    expect(change?.targetBitrate).toBe(256);
+  });
+
+  test('lossy source: encoding flip fires under every bitrate-sync mode', () => {
+    const source = makeMockCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 320 });
+    const buildDevice = () =>
+      makeMockDeviceTrack({
+        filetype: 'AAC audio file',
+        bitrate: 128,
+        syncTag: buildAudioSyncTag('low', 'vbr', 128, 'fast', 'aac'),
+      });
+
+    for (const policy of ['off', 'match-cap', 'match-all', 'up-only', 'down-only'] as const) {
+      const change = classifyDeviceBound({
+        source,
+        device: buildDevice(),
+        target: target({ preset: 'low', presetBitrate: 128, encoding: 'cbr' }),
+        policy,
+      });
+      expect(change).toMatchObject({ reason: 'encoding-mismatch', reEncodes: true });
+    }
+  });
+
+  test('lossy source degraded below the cap with an encoding flip -> source-down, not a destructive re-encode', () => {
+    // The device holds a 128 kbps VBR copy (a prior cap-down). The source was
+    // later re-ripped down to 100 kbps and the user switched to CBR. Honouring
+    // the flip would re-encode the good 128 kbps copy down to the 100 kbps
+    // source — quality loss. This is a source-down situation: under match-cap
+    // the better copy is kept and reported; only match-all follows it down.
+    const source = makeMockCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 100 });
+    const buildDevice = () =>
+      makeMockDeviceTrack({
+        filetype: 'AAC audio file',
+        bitrate: 128,
+        syncTag: buildAudioSyncTag('low', 'vbr', 128, 'fast', 'aac'),
+      });
+
+    const kept = classifyDeviceBound({
+      source,
+      device: buildDevice(),
+      target: target({ preset: 'low', presetBitrate: 128, encoding: 'cbr' }),
+    });
+    expect(kept).toMatchObject({
+      reason: 'source-down-suppressed',
+      direction: 'down',
+      reEncodes: false,
+    });
+
+    // match-all opts into following the source down; that re-encode adopts the
+    // new encoding mode as a side effect.
+    const followed = classifyDeviceBound({
+      source,
+      device: buildDevice(),
+      target: target({ preset: 'low', presetBitrate: 128, encoding: 'cbr' }),
+      policy: 'match-all',
+    });
+    expect(followed).toMatchObject({ reason: 'source-down-suppressed', reEncodes: true });
+  });
+
+  test('lossy copy with no recorded encoding -> no encoding-mismatch (a copy has no podkit encoding)', () => {
+    // A direct copy clears `encoding` (buildCopySyncTag), so an encoding-mode
+    // change must NOT re-encode it — that would be a lossy-to-lossy degradation
+    // of a faithful copy.
+    const source = makeMockCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 128 });
+    const device = makeMockDeviceTrack({
+      filetype: 'MPEG audio file',
+      bitrate: 128,
+      syncTag: buildCopySyncTag('fast', undefined, 'mp3', 128),
+    });
+
+    expect(
+      classifyDeviceBound({
+        source,
+        device,
+        target: target({ preset: 'low', presetBitrate: 128, encoding: 'cbr' }),
+      })
+    ).toBeNull();
+  });
+
+  test('lossy source: matching encoding (no flip) does not fire encoding-mismatch', () => {
+    // Same encoding, recorded bitrate at the cap — fully in sync.
+    const source = makeMockCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 320 });
+    const device = makeMockDeviceTrack({
+      filetype: 'AAC audio file',
+      bitrate: 128,
+      syncTag: buildAudioSyncTag('low', 'vbr', 128, 'fast', 'aac'),
+    });
+
+    expect(
+      classifyDeviceBound({
+        source,
+        device,
+        target: target({ preset: 'low', presetBitrate: 128, encoding: 'vbr' }),
+      })
+    ).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// lossless-boundary down: the target switched to a lossy preset while the device
+// copy is still lossless. Crossing the lossless/lossy boundary is a precondition
+// (correctness), so it re-encodes DOWN to the cap even under `off`.
+// ---------------------------------------------------------------------------
+
+describe('lossless-boundary down (precondition)', () => {
+  test('lossless device copy + lossy target -> lossless-boundary down, fires under off', () => {
+    // Source FLAC, device copy still ALAC (sync tag quality=lossless), target now
+    // a lossy preset. Previously this fired a policy-gated cap-down (suppressed
+    // under off); it must be a precondition that always re-encodes down.
+    const source = makeMockCollectionTrack({ fileType: 'flac', lossless: true });
+    const device = makeMockDeviceTrack({
+      filetype: 'Apple Lossless audio file',
+      bitrate: 900,
+      syncTag: buildAudioSyncTag('lossless'),
+    });
+    const expectedSyncTag = buildAudioSyncTag('high', 'vbr');
+
+    const change = classifyDeviceBound({
+      source,
+      device,
+      target: target({ preset: 'high', presetBitrate: 256 }),
+      expectedSyncTag,
+      policy: 'off',
+    });
+
+    expect(change).toMatchObject({
+      reason: 'lossless-boundary',
+      direction: 'down',
+      reEncodes: true,
+      fromLossless: true,
+      toLossless: false,
+    });
+    expect(change?.targetBitrate).toBe(256);
+  });
+
+  test('direct-copied ALAC (quality=copy, lossless filetype) + lossy target -> lossless-boundary down', () => {
+    // A directly-copied ALAC source carries a quality=copy tag; its losslessness
+    // is read from the filetype fallback. Switching to a lossy target crosses the
+    // boundary.
+    const source = makeMockCollectionTrack({ fileType: 'flac', lossless: true });
+    const device = makeMockDeviceTrack({
+      filetype: 'Apple Lossless audio file',
+      bitrate: 900,
+      syncTag: buildCopySyncTag('fast', undefined, 'alac'),
+    });
+
+    const change = classifyDeviceBound({
+      source,
+      device,
+      target: target({ preset: 'high', presetBitrate: 256 }),
+      policy: 'off',
+    });
+
+    expect(change).toMatchObject({
+      reason: 'lossless-boundary',
+      direction: 'down',
+      reEncodes: true,
+    });
+  });
+
+  test('untagged lossless device copy + lossy target -> lossless-boundary down', () => {
+    // No sync tag: the device copy's losslessness is read from the filetype.
+    const source = makeMockCollectionTrack({ fileType: 'flac', lossless: true });
+    const device = makeMockDeviceTrack({ filetype: 'Apple Lossless audio file', bitrate: 900 });
+
+    const change = classifyDeviceBound({
+      source,
+      device,
+      target: target({ preset: 'high', presetBitrate: 256 }),
+      policy: 'off',
+    });
+
+    expect(change).toMatchObject({
+      reason: 'lossless-boundary',
+      direction: 'down',
+      reEncodes: true,
+    });
+  });
+
+  test('ALAC-filetype device tagged as a lossy transcode is NOT treated as lossless (tag is authoritative)', () => {
+    // A contrived but important case: the filetype reads ALAC yet the sync tag
+    // says quality=high (a lossy transcode). The tag wins — no boundary crossing,
+    // and an exact-match tag is simply in sync.
+    const source = makeMockCollectionTrack({ fileType: 'flac', lossless: true });
+    const device = makeMockDeviceTrack({
+      filetype: 'Apple Lossless audio file',
+      bitrate: 256,
+      syncTag: buildAudioSyncTag('high', 'vbr'),
+    });
+    const expectedSyncTag = buildAudioSyncTag('high', 'vbr');
+
+    expect(classifyDeviceBound({ source, device, target: target(), expectedSyncTag })).toBeNull();
+  });
+
+  test('lossless device copy + lossless target -> not a boundary crossing (in sync)', () => {
+    const source = makeMockCollectionTrack({ fileType: 'flac', lossless: true });
+    const device = makeMockDeviceTrack({
+      filetype: 'Apple Lossless audio file',
+      bitrate: 900,
+      syncTag: buildAudioSyncTag('lossless'),
+    });
+    const expectedSyncTag = buildAudioSyncTag('lossless');
+
+    expect(
+      classifyDeviceBound({
+        source,
+        device,
+        target: target({ preset: 'lossless', presetBitrate: 0, isAlacPreset: true }),
+        expectedSyncTag,
+      })
+    ).toBeNull();
   });
 });
 
@@ -963,15 +1312,14 @@ describe('source-bound tolerance (lossy cap path)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Scaffold for forthcoming directions. These reasons are part of the
-// classifier's vocabulary but are not yet produced. The placeholders document
-// the intended rows so they can be filled in when the directions are enabled.
+// Reserved vocabulary. `format-mismatch` (codec-correctness precondition) is part
+// of the classifier's vocabulary but is not yet produced — codec changes are
+// detected separately by the handler's codec-change pass. Every other reason,
+// including both encoding-mismatch paths and the lossless-boundary crossing in
+// both directions, is exercised above.
 // ---------------------------------------------------------------------------
 
-describe('not-yet-produced reasons (scaffold)', () => {
-  // Lossy cap enforcement (both directions), source-down suppression, and the
-  // CBR<->VBR encoding-mismatch precondition are implemented above.
-
+describe('reserved vocabulary', () => {
   // Pin the type-level vocabulary so a refactor can't silently drop a reason.
   test('the QualityChange vocabulary covers every reason/direction', () => {
     const reasons: QualityChange['reason'][] = [

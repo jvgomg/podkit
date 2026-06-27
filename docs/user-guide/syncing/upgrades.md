@@ -86,7 +86,11 @@ See the [Config File Reference](/reference/config-file) for details.
 
 ### Switching encoding mode
 
-The iPod database stores a track's bitrate but not whether it was encoded with VBR or CBR. When you switch encoding mode at the same quality preset, podkit uses the tolerance for your new mode to decide what to re-transcode:
+Switching the encoding mode (`vbr` ↔ `cbr`) is a **correctness re-encode**, not a bitrate-policy move. podkit records the encoding mode it used in each track's [sync tag](#sync-tags), so when you flip the mode it re-encodes every affected track to match — **in every `bitrate.sync` mode, including `off`**. Freezing bitrates with `bitrate.sync = off` keeps your bitrates put but still lets an encoding-mode change take effect, because a CBR file where you asked for VBR (or vice versa) is simply the wrong encoding. The same applies to switching the device between lossy and lossless: crossing that boundary always re-encodes for correctness, regardless of `bitrate.sync`.
+
+These corrections are still subject to the master switch — `--skip-upgrades` (or `skipUpgrades = true`) blocks them along with every other file-replacement upgrade. See [Bitrate Sync Policy](/reference/config-file#bitrate-sync-policy) for the full ladder.
+
+For tracks podkit never wrote (no sync tag — synced by another tool, or before sync tags existed), there is no recorded encoding mode to compare against. Those fall back to the legacy bitrate tolerance, which the iPod database makes only a rough proxy for the encoding mode:
 
 - **VBR to CBR**: The tighter CBR tolerance (10%) catches tracks whose VBR bitrate landed far from the target. Tracks that happen to be close to the target are left alone — they're already at the right quality. Typically 40–60% of tracks are re-transcoded.
 - **CBR to VBR**: The wider VBR tolerance (30%) means existing CBR tracks (at the exact target bitrate) are well within range and left alone. This is the right behaviour — a CBR file at the target bitrate is already excellent quality. New tracks added in future syncs will use VBR.

@@ -1248,6 +1248,221 @@ describe('self-healing sync: bitrate-sync policy modes', () => {
     });
   }, 180000);
 
+  it('an encoding-mode flip (CBR<->VBR) re-encodes a lossy track even under off, and skip-upgrades blocks it', async () => {
+    requireFFmpeg();
+    await withTarget(async (target) => {
+      const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
+      const collectionDir = await mkdtemp(join(tmpdir(), 'podkit-encoding-flip-'));
+
+      try {
+        const trackMeta = { title: 'Encoding Flip', artist: 'Mode Artist', album: 'Mode Album' };
+
+        // Step 1: get the device into a state where podkit transcoded the lossy
+        // track (so its sync tag records encoding=vbr + a bitrate). A 320 kbps MP3
+        // synced twice at quality=low: first copies as-is (recorded 320), second
+        // caps DOWN to AAC at 128 (recorded encoding=vbr bitrate=128).
+        generateMp3AtBitrate(join(collectionDir, 'track.mp3'), trackMeta, 320);
+        const configPath = await createConfigFile(configDir, { source: collectionDir });
+
+        for (let i = 0; i < 2; i++) {
+          const { result } = await runCliJson<SyncOutput>([
+            '--config',
+            configPath,
+            'sync',
+            '--device',
+            target.path,
+            '--quality',
+            'low',
+            '--json',
+          ]);
+          expect(result.exitCode).toBe(0);
+        }
+        // The cap-down produced an AAC (.m4a) device copy.
+        expect(
+          (await findIpodMusicFiles(target.path)).filter((f) => f.endsWith('.m4a'))
+        ).toHaveLength(1);
+
+        // Step 2: flip the encoding mode to CBR with bitrate moves frozen (off).
+        // The bitrate is unchanged (still the 128 cap), so this is a precondition
+        // re-encode — it must fire even though bitrate.sync = off.
+        const { json: offJson } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--quality',
+          'low',
+          '--encoding',
+          'cbr',
+          '--bitrate-sync',
+          'off',
+          '--dry-run',
+          '--json',
+        ]);
+        expect(offJson?.plan?.tracksToUpdate).toBe(1);
+        expect(offJson?.plan?.tracksToAdd).toBe(0);
+        expect(offJson?.plan?.updateBreakdown?.['quality-change-suppressed'] ?? 0).toBe(0);
+
+        // Step 3: --skip-upgrades is the master veto — it blocks even preconditions.
+        const { json: skipJson } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--quality',
+          'low',
+          '--encoding',
+          'cbr',
+          '--skip-upgrades',
+          '--dry-run',
+          '--json',
+        ]);
+        expect(skipJson?.plan?.tracksToUpdate ?? 0).toBe(0);
+
+        // Step 4: real re-encode under off, then a re-sync at the same settings is
+        // a no-op — the rewritten tag records encoding=cbr, so write and compare agree.
+        const { json: realJson } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--quality',
+          'low',
+          '--encoding',
+          'cbr',
+          '--bitrate-sync',
+          'off',
+          '--json',
+        ]);
+        expect(realJson?.result?.completed).toBe(1);
+
+        const { json: reJson } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--quality',
+          'low',
+          '--encoding',
+          'cbr',
+          '--bitrate-sync',
+          'off',
+          '--json',
+        ]);
+        expect(reJson?.result?.completed).toBe(0);
+        expect((await target.getTracks()).length).toBe(1);
+      } finally {
+        await rm(collectionDir, { recursive: true, force: true });
+        await rm(configDir, { recursive: true, force: true });
+      }
+    });
+  }, 240000);
+
+  it('a lossless->lossy boundary re-encodes down even under off, and skip-upgrades blocks it', async () => {
+    requireFFmpeg();
+    await withTarget(async (target) => {
+      const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
+      const collectionDir = await mkdtemp(join(tmpdir(), 'podkit-lossless-boundary-'));
+
+      try {
+        const trackMeta = { title: 'Boundary', artist: 'Lossless Artist', album: 'Lossless Album' };
+
+        // Step 1: sync a FLAC at quality=max — on the iPod (ALAC-capable) this
+        // resolves to lossless, so the device copy is lossless (ALAC), recorded
+        // with a quality=lossless sync tag.
+        generateFlac(join(collectionDir, 'track.flac'), trackMeta);
+        const configPath = await createConfigFile(configDir, { source: collectionDir });
+
+        const { json: json1 } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--quality',
+          'max',
+          '--json',
+        ]);
+        expect(json1?.result?.completed).toBe(1);
+        const losslessBitrate = (await target.getTracks())[0]!.bitrate;
+
+        // Step 2: switch the target to a lossy preset with bitrate moves frozen
+        // (off). Crossing the lossless/lossy boundary is a correctness re-encode,
+        // so it must fire DOWN to the cap even under off.
+        const { json: offJson } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--quality',
+          'high',
+          '--bitrate-sync',
+          'off',
+          '--dry-run',
+          '--json',
+        ]);
+        expect(offJson?.plan?.tracksToUpdate).toBe(1);
+        expect(offJson?.plan?.updateBreakdown?.['quality-change-down'] ?? 0).toBe(1);
+        expect(offJson?.plan?.updateBreakdown?.['quality-change-suppressed'] ?? 0).toBe(0);
+
+        // Step 3: --skip-upgrades blocks even this precondition.
+        const { json: skipJson } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--quality',
+          'high',
+          '--skip-upgrades',
+          '--dry-run',
+          '--json',
+        ]);
+        expect(skipJson?.plan?.tracksToUpdate ?? 0).toBe(0);
+
+        // Step 4: real re-encode under off — the device copy drops to lossy AAC
+        // (bitrate below the lossless copy). A re-sync is then a no-op (idempotent).
+        const { json: realJson } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--quality',
+          'high',
+          '--bitrate-sync',
+          'off',
+          '--json',
+        ]);
+        expect(realJson?.result?.completed).toBe(1);
+        const lossyBitrate = (await target.getTracks())[0]!.bitrate;
+        expect(lossyBitrate).toBeLessThan(losslessBitrate);
+
+        const { json: reJson } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--quality',
+          'high',
+          '--bitrate-sync',
+          'off',
+          '--json',
+        ]);
+        expect(reJson?.result?.completed).toBe(0);
+      } finally {
+        await rm(collectionDir, { recursive: true, force: true });
+        await rm(configDir, { recursive: true, force: true });
+      }
+    });
+  }, 240000);
+
   it('off freezes a bitrate cap-down (reports it suppressed, re-encodes nothing)', async () => {
     requireFFmpeg();
     await withTarget(async (target) => {

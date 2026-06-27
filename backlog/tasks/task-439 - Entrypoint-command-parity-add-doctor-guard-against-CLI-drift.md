@@ -1,9 +1,10 @@
 ---
 id: TASK-439
 title: 'Entrypoint command-parity: add doctor + guard against CLI drift'
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-06-27 19:03'
+updated_date: '2026-06-27 21:21'
 labels:
   - docker
   - entrypoint

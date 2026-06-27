@@ -105,6 +105,25 @@ function isIpodTrackLossless(ipod: DeviceTrack): boolean | undefined {
 }
 
 /**
+ * Whether the device's copy of a track is lossless, read **tag-first**.
+ *
+ * The sync tag is authoritative: a `quality=lossless` tag means lossless; an
+ * explicit lossy transcode tag (`high`/`medium`/`low`) means lossy even when the
+ * filetype string happens to read as lossless (a contrived but real edge — a
+ * track whose recorded encode disagrees with its container label). For a direct
+ * `copy` tag (the file is whatever the source was) or an untagged track, the
+ * filetype is the only signal, so it is the fallback.
+ *
+ * Returns `undefined` when neither the tag nor the filetype can decide.
+ */
+function isDeviceCopyLossless(device: DeviceTrack): boolean | undefined {
+  const tagQuality = device.syncTag?.quality;
+  if (tagQuality === 'lossless') return true;
+  if (tagQuality !== undefined && tagQuality !== 'copy') return false;
+  return isIpodTrackLossless(device);
+}
+
+/**
  * Determine the format family of an iPod track from its filetype string.
  */
 export function getIpodFormatFamily(ipod: DeviceTrack): FormatFamily {
@@ -156,7 +175,9 @@ export function isSourceLossless(source: CollectionTrack): boolean {
  *   following the source down, which flips it to `reEncodes: true`.
  * - `encoding-mismatch`: the device's recorded CBR/VBR mode differs from the
  *   target — a precondition class that re-encodes for correctness regardless of
- *   bitrate policy. Produced on the lossless sync-tag-exact path.
+ *   bitrate policy. Produced on both the lossless sync-tag-exact path and the
+ *   lossy cap path (the latter only for tracks podkit transcoded, which carry a
+ *   recorded encoding mode; a faithful copy clears it and is left alone).
  *
  * One reason remains defined but not yet produced:
  * - `format-mismatch`: codec-correctness precondition, reserved for future work.
@@ -422,8 +443,8 @@ function computeSourceBound(
  * `cap-down`, `source-down-suppressed` (the only one that does NOT re-encode by
  * default — it reports a degraded source while keeping the better device copy,
  * unless `match-all` follows it down), and `encoding-mismatch` (the CBR/VBR
- * precondition on the lossless sync-tag path). Only `format-mismatch` remains
- * unreached.
+ * precondition, on both the lossless sync-tag path and the lossy cap path). Only
+ * `format-mismatch` remains unreached.
  *
  * @returns The quality change, or `null` when the track is in sync.
  */
@@ -495,6 +516,25 @@ function computeDeviceBound(input: {
     return classifyLossyDeviceBound(source, device, target);
   }
 
+  // Crossing the lossless/lossy boundary is a precondition (correctness), not a
+  // bitrate move: a lossless device copy whose target is now a lossy preset must
+  // re-encode DOWN to the cap even when bitrate moves are frozen (`off`). This is
+  // the mirror of the source-bound lossy→lossless `up` crossing. The device
+  // copy's losslessness is read tag-first (authoritative) so a lossy transcode
+  // tagged on a lossless-looking container is not misread as a boundary crossing.
+  const targetLossless = target.isAlacPreset || target.preset === 'lossless';
+  if (!targetLossless && isDeviceCopyLossless(device) === true) {
+    return {
+      reason: 'lossless-boundary',
+      direction: 'down',
+      reEncodes: true,
+      targetBitrate: target.presetBitrate,
+      encodedBitrate: device.syncTag?.bitrate,
+      fromLossless: true,
+      toLossless: false,
+    };
+  }
+
   // Sync-tag-exact comparison takes priority over every bitrate/format fallback.
   // When the device carries a sync tag AND we know what the next sync would
   // write, the comparison is authoritative — the ALAC/tolerance fallbacks below
@@ -509,12 +549,37 @@ function computeDeviceBound(input: {
     }
     // An encoding-mode (CBR/VBR) flip is a precondition class: it re-encodes for
     // correctness even when the bitrate cap is unchanged, and it takes the
-    // headline reason over any concurrent tier move (a single re-encode
-    // satisfies both). Direction still tags the result for display.
+    // headline reason over any concurrent tier move (a single re-encode satisfies
+    // both). A pure flip (no tier/bitrate move) tags `format-only`; a flip that
+    // coincides with a tier move keeps that move's direction for display.
     const encodingChanged = (syncTag.encoding ?? 'vbr') !== (expectedSyncTag.encoding ?? 'vbr');
-    const direction = syncTagDirection(syncTag, expectedSyncTag);
+    const move = qualityMoveDirection(syncTag, expectedSyncTag);
+    if (encodingChanged) {
+      return {
+        reason: 'encoding-mismatch',
+        direction: move ?? 'format-only',
+        reEncodes: true,
+        targetBitrate: target.presetBitrate,
+        encodedBitrate: syncTag.bitrate,
+        fromEncoding: (syncTag.encoding ?? 'vbr') as EncodingMode,
+        toEncoding: (expectedSyncTag.encoding ?? 'vbr') as EncodingMode,
+      };
+    }
+    // Not an encoding flip — `syncTagMatchesConfig` was false, so quality or
+    // bitrate moved. `qualityMoveDirection` resolves tier-then-bitrate moves, but
+    // returns null when the tier is equal and one side's tag bitrate is absent
+    // (e.g. adding or removing a custom bitrate at the same tier). Resolve that
+    // from effective bitrates, treating an absent tag bitrate as the preset
+    // nominal (`target.presetBitrate`, which equals both tiers' nominal when the
+    // tier is unchanged), so a lowered custom bitrate is labelled `cap-down` — not
+    // mislabelled `cap-up` and then wrongly suppressed under `off`/`up-only`.
+    const direction =
+      move ??
+      ((expectedSyncTag.bitrate ?? target.presetBitrate) < (syncTag.bitrate ?? target.presetBitrate)
+        ? 'down'
+        : 'up');
     return {
-      reason: encodingChanged ? 'encoding-mismatch' : direction === 'up' ? 'cap-up' : 'cap-down',
+      reason: direction === 'up' ? 'cap-up' : 'cap-down',
       direction,
       reEncodes: true,
       targetBitrate: target.presetBitrate,
@@ -636,6 +701,48 @@ function classifyLossyDeviceBound(
   const upThreshold = effectiveTarget * (1 - (target.toleranceUp ?? 0));
   const downThreshold = effectiveTarget * (1 + (target.toleranceDown ?? 0));
 
+  // Encoding-mode (CBR/VBR) flip is a precondition class on the lossy path too:
+  // it re-encodes for correctness regardless of bitrate policy. Only a track
+  // podkit transcoded carries a recorded encoding mode — a direct copy clears it
+  // (`buildCopySyncTag`), so a faithful copy is never re-encoded just because the
+  // mode changed (that would be a lossy-to-lossy degradation). The single
+  // re-encode also satisfies any concurrent cap move, so encoding-mismatch takes
+  // the headline; the direction reflects that move (else `format-only`). The
+  // re-encode targets `effectiveTarget`, so the rewritten tag matches the next
+  // sync's comparison (idempotent).
+  const recordedEncoding = device.syncTag?.encoding;
+  if (recordedEncoding !== undefined && recordedEncoding !== target.encoding) {
+    const direction: QualityChangeDirection =
+      encoded < upThreshold ? 'up' : encoded > downThreshold ? 'down' : 'format-only';
+    // When the device copy is already better than the degraded source can
+    // produce, honouring the encoding flip would mean re-encoding down to the
+    // worse source. That is a source-down situation: classify it as such so the
+    // policy gate decides (match-all follows the source down — and that
+    // re-encode still adopts the new encoding mode; the other policies keep the
+    // better copy untouched). Only the down direction degrades; up/format-only
+    // re-encode at or above the current quality, so the flip fires there.
+    if (direction === 'down' && sourceBitrate < cap) {
+      return {
+        reason: 'source-down-suppressed',
+        direction: 'down',
+        reEncodes: false,
+        targetBitrate: effectiveTarget,
+        encodedBitrate: encoded,
+        sourceBitrate,
+      };
+    }
+    return {
+      reason: 'encoding-mismatch',
+      direction,
+      reEncodes: true,
+      targetBitrate: effectiveTarget,
+      encodedBitrate: encoded,
+      sourceBitrate,
+      fromEncoding: recordedEncoding as EncodingMode,
+      toEncoding: target.encoding,
+    };
+  }
+
   if (encoded < upThreshold) {
     return {
       reason: 'cap-up',
@@ -689,29 +796,30 @@ const QUALITY_TIER_ORDER: Record<string, number> = {
 };
 
 /**
- * Decide whether a sync-tag preset change is an upgrade or downgrade.
- *
- * Compares the device's recorded tag against the expected (target) tag by
- * quality tier, then by bitrate, falling back to 'up' for an encoding-mode flip
- * at the same tier. Behaviour-identical to the former
- * `determineSyncTagDirection` in the music handler.
+ * Decide the direction of a sync-tag quality move: by quality tier first, then by
+ * bitrate. Returns `null` when neither the tier nor the bitrate moved (e.g. a
+ * pure encoding-mode flip at the same tier), so callers can tag that as
+ * `format-only` or apply their own fallback.
  */
-function syncTagDirection(
-  oldTag: { quality: string; encoding?: string; bitrate?: number },
-  newTag: { quality: string; encoding?: string; bitrate?: number }
-): 'up' | 'down' {
+function qualityMoveDirection(
+  oldTag: { quality: string; bitrate?: number },
+  newTag: { quality: string; bitrate?: number }
+): 'up' | 'down' | null {
   const oldTier = QUALITY_TIER_ORDER[oldTag.quality] ?? -1;
   const newTier = QUALITY_TIER_ORDER[newTag.quality] ?? -1;
 
   if (newTier > oldTier) return 'up';
   if (newTier < oldTier) return 'down';
 
-  if (oldTag.bitrate !== undefined && newTag.bitrate !== undefined) {
+  if (
+    oldTag.bitrate !== undefined &&
+    newTag.bitrate !== undefined &&
+    oldTag.bitrate !== newTag.bitrate
+  ) {
     return newTag.bitrate > oldTag.bitrate ? 'up' : 'down';
   }
 
-  // Encoding-mode change at the same tier is a re-transcode (treat as up).
-  return 'up';
+  return null;
 }
 
 /**
