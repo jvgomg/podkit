@@ -136,7 +136,7 @@ is already ALAC, return null; otherwise return `cap-up`.
 The three paths above are the **lossless** ladder. Lossy sources branch off
 earlier — see below.
 
-### Lossy device-bound (`classifyLossyDeviceBound`, cap-down only)
+### Lossy device-bound (`classifyLossyDeviceBound`, both directions)
 
 When the source is lossy, `classifyDeviceBound` delegates to
 `classifyLossyDeviceBound` instead of the lossless ladder. This path is
@@ -144,36 +144,54 @@ deliberately narrow:
 
 - **`encoded` is the sync-tag bitrate and nothing else.** `encoded =
   device.syncTag?.bitrate`. A lossy copy records its effective bitrate in the
-  copy tag (`buildCopySyncTag`); a re-encoded lossy track records the cap in its
-  audio tag (see below). The unreliable DB bitrate is **never** consulted for
-  lossy — there is no tolerance fallback and no guessing. A lossy track with no
-  recorded bitrate (an untagged track, or one added before sync-tag bitrate
-  recording) is opted out (returns null). An explicit adoption path via
-  `--force-sync-tags-transcode` is planned.
+  copy tag (`buildCopySyncTag`); a re-encoded lossy track records its effective
+  target in its audio tag (see below). The unreliable DB bitrate is **never**
+  consulted for lossy — there is no tolerance fallback and no guessing. A lossy
+  track with no recorded bitrate (an untagged track, or one added before
+  sync-tag bitrate recording) is opted out (returns null). An explicit adoption
+  path via `--force-sync-tags-transcode` is planned.
 - **Cap = `target.presetBitrate`.** The config resolver already folds
   `customBitrate` into `presetBitrate` (`getPresetBitrate(preset, customBitrate)`),
   so a custom cap is honoured for free. When there is no lossy cap (a lossless
   target preset, `presetBitrate === 0`) the path returns null.
-- **Direction: DOWN only.** `encoded > cap` → `cap-down`. `encoded <= cap`
-  (at or below the cap) → null; raising an under-cap lossy track is reserved for
-  forthcoming bitrate-policy work.
+- **Effective target = `min(source.bitrate, cap)`.** The upward ceiling is
+  bounded by what the source can supply — re-encoding up to the full cap when the
+  source only provides less would inflate the file with no quality gain. The
+  source bitrate is required for the up direction; without it the up direction
+  returns null (nothing to raise toward).
+- **Direction: BOTH.**
+  - `encoded > cap` → `cap-down` (re-encode down to the cap).
+  - `encoded < min(source, cap)` → `cap-up` (re-encode up from the source toward
+    the effective ceiling).
+  - `min(source, cap) <= encoded <= cap` → null (in sync). This includes the
+    **source-degraded** case (`source < encoded <= cap`): when the source was
+    re-ripped *below* the device copy, the better existing copy is deliberately
+    kept rather than re-encoded down to the worse source. Acting on a degraded
+    source is a separate concern, not handled here.
 
 **Routing the re-encode.** A compatible/device-native lossy source would
-normally be *copied* by the classifier. A cap-down must instead *transcode it
-down*, so `MusicHandler.planUpdate` overrides the routing
-(`resolveUpgradeAction`): for a `cap-down` on a lossy source it builds a
-`transcode` action at the resolved preset with `bitrateOverride = presetBitrate`
-(the cap). The existing `transferUpgradeToIpod` executor runs it as an
-`upgrade-transcode` — no new executor code.
+normally be *copied* by the classifier. A cap move must instead *transcode* it,
+so `MusicHandler.planUpdate` overrides the routing (`resolveUpgradeAction`): for
+a `cap-down` or `cap-up` on a lossy source it builds a `transcode` action at the
+resolved preset with `bitrateOverride = qualityChange.targetBitrate` — the cap
+for cap-down, or `min(source, cap)` for cap-up. (The override comes from the
+change, not the config-wide preset bitrate, because the cap-up target may be the
+source bitrate when the source supplies less than the cap.) The re-encode reads
+the **source** file via the existing `transferUpgradeToIpod` executor (run as an
+`upgrade-transcode`), so the up direction genuinely recovers quality rather than
+re-compressing the smaller on-device copy — no new executor code.
 
-**Idempotency.** The cap-down re-encode records the cap in the device's sync tag
-(`buildSyncTagForPreset` now passes the preset's `bitrateOverride` through to
+**Idempotency.** The re-encode records the effective target in the device's sync
+tag (`buildSyncTagForPreset` passes the preset's `bitrateOverride` through to
 `buildAudioSyncTag`, symmetric with `expectedSyncTagFromClassification`). The
-next sync reads `encoded === cap`, so `encoded > cap` is false and the track is
-left alone. A second cap-down (lowering the cap again) re-fires correctly
-because the recorded bitrate is the *previous* cap, still above the *new* one.
-Verified on both an iPod (sync tag in the iTunesDB comment) and a mass-storage
-device (sync tag in the sidecar/comment) — no device database is required.
+next sync reads `encoded === min(source, cap)`, so neither `encoded > cap` nor
+`encoded < min(source, cap)` holds and the track is left alone. This holds even
+when the effective target was the **source** bitrate (cap-up bounded by a source
+below the cap): the recorded bitrate equals the source, so the next sync is a
+no-op. A second cap move (changing the cap again) re-fires correctly because the
+recorded bitrate is the *previous* effective target. Verified on both an iPod
+(sync tag in the iTunesDB comment) and a mass-storage device (sync tag in the
+sidecar/comment) — no device database is required.
 
 ### Where the bitrate baseline comes from
 
@@ -207,10 +225,11 @@ strings:
 | `preset-upgrade` | `cap-up` | `quality-change` |
 | `preset-downgrade` | `cap-down` | `quality-change` |
 
-**Lossy cap enforcement (cap-down).** `classifyDeviceBound` routes lossy sources
-to `classifyLossyDeviceBound` (see §4), which re-encodes an over-cap lossy track
-down to the cap. Raising an under-cap lossy track is not yet enabled. The
-lossless paths are unchanged.
+**Lossy cap enforcement (both directions).** `classifyDeviceBound` routes lossy
+sources to `classifyLossyDeviceBound` (see §4), which re-encodes an over-cap lossy
+track down to the cap and an under-cap lossy track up from the source toward
+`min(source, cap)`. A source that degraded below the device copy is left alone.
+The lossless paths are unchanged.
 
 > **Sync-tag merge leak fixed with lossy cap-down.** `buildCopySyncTag` now
 > authoritatively emits `encoding: undefined` (mirroring `buildAudioSyncTag`'s
@@ -253,9 +272,6 @@ the `source-improved` upgrade.
 
 ## 7. Open work
 
-- **Lossy cap-up:** `classifyLossyDeviceBound` returns null at/below the cap.
-  The forthcoming direction will raise an under-cap lossy track toward the cap as
-  far as the source allows. (Cap-down is already active.)
 - **Encoding-mismatch:** CBR/VBR flip fires regardless of bitrate — will be
   wired before the bitrate compare in the sync-tag path.
 - **Source-down suppression:** A worse source under a "match-cap" flag will

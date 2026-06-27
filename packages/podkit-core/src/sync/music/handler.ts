@@ -443,9 +443,10 @@ export class MusicHandler implements ContentTypeHandler<
     partitionExisting(diff, (match) => {
       // Lossy sources take a dedicated cap-enforcement path. The classifier
       // would route a compatible/device-native lossy source to a COPY, but a
-      // lossy cap-down must re-encode DOWN to the cap — so the classifier's
-      // routing is irrelevant here. classifyDeviceBound's lossy branch reads the
-      // authoritative recorded bitrate from the sync tag (cap-down only).
+      // lossy cap move must re-encode (DOWN to the cap, or UP from the source
+      // toward min(source, cap)) — so the classifier's routing is irrelevant
+      // here. classifyDeviceBound's lossy branch reads the authoritative recorded
+      // bitrate from the sync tag.
       if (!isSourceLossless(match.source)) {
         const change = classifyDeviceBound({
           source: match.source,
@@ -855,12 +856,16 @@ export class MusicHandler implements ContentTypeHandler<
   /**
    * Resolve the routing action for a file-replacement upgrade.
    *
-   * Normally this is the classifier's decision for the source. The one exception
-   * is a lossy cap-DOWN: the classifier would COPY a compatible/device-native
-   * lossy source as-is, but a cap-down must re-encode it DOWN to the configured
-   * cap. Force a transcode at the resolved preset, recording the cap as the
-   * preset's `bitrateOverride` so the executor stamps the new encoded bitrate
-   * into the sync tag — making the next sync a no-op (idempotent). All other
+   * Normally this is the classifier's decision for the source. The exception is
+   * a lossy cap move (cap-DOWN or cap-UP): the classifier would COPY a
+   * compatible/device-native lossy source as-is, but a cap move must RE-ENCODE
+   * it — down to the configured cap, or up from the source toward the effective
+   * ceiling `min(source, cap)`. Force a transcode at the resolved preset,
+   * recording the change's effective target bitrate as the preset's
+   * `bitrateOverride` so the executor stamps the new encoded bitrate into the
+   * sync tag — making the next sync a no-op (idempotent). The cap-up target may
+   * be the source bitrate (when the source supplies less than the cap), so the
+   * override comes from the change, not the config-wide preset bitrate. All other
    * upgrades (source-improved, lossless-boundary, codec-changed, force-transcode,
    * transfer-mode-changed) keep the classifier's routing unchanged.
    */
@@ -869,20 +874,21 @@ export class MusicHandler implements ContentTypeHandler<
     qualityChange?: QualityChange
   ): import('./classifier.js').MusicAction {
     if (
-      qualityChange?.reason === 'cap-down' &&
+      (qualityChange?.reason === 'cap-down' || qualityChange?.reason === 'cap-up') &&
       qualityChange.reEncodes &&
       !isSourceLossless(source) &&
       this.config.resolvedQuality &&
       this.config.resolvedQuality !== 'lossless'
     ) {
+      // The effective target the classifier computed: the cap for cap-down,
+      // min(source, cap) for cap-up. Recorded as bitrateOverride so the
+      // post-re-encode sync tag carries the new encoded bitrate (idempotency).
+      const targetBitrate = qualityChange.targetBitrate;
       const preset = {
         name: this.config
           .resolvedQuality as import('../engine/types.js').TranscodePresetRef['name'],
         ...(this.config.resolvedLossyCodec && { targetCodec: this.config.resolvedLossyCodec }),
-        // Record the cap explicitly so the post-re-encode sync tag carries the
-        // new encoded bitrate (idempotency). presetBitrate already folds in any
-        // customBitrate via the config resolver.
-        ...(this.config.presetBitrate && { bitrateOverride: this.config.presetBitrate }),
+        ...(targetBitrate && { bitrateOverride: targetBitrate }),
       };
       return { type: 'transcode', preset };
     }

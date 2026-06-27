@@ -842,3 +842,134 @@ describe('self-healing sync: lossy cap-down (bitrate cap enforcement)', () => {
     });
   }, 180000);
 });
+
+// =============================================================================
+// Lossy cap-up: raising the device bitrate cap re-encodes an existing LOSSY
+// track back UP, bounded by what the source can supply.
+//
+// A track that was previously capped down to a small AAC copy is re-encoded up
+// from the original (higher-bitrate) source when the cap is raised — never past
+// the source. The re-encoded sync tag records the new effective bitrate, so a
+// follow-up sync at the same cap is a no-op (idempotent).
+// =============================================================================
+
+describe('self-healing sync: lossy cap-up (bitrate cap enforcement)', () => {
+  it('raising the cap re-encodes a lossy track up toward the source, then re-sync is idempotent', async () => {
+    requireFFmpeg();
+    await withTarget(async (target) => {
+      const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
+      const collectionDir = await mkdtemp(join(tmpdir(), 'podkit-cap-up-'));
+
+      try {
+        const trackMeta = {
+          title: 'Cap Up Test',
+          artist: 'Cap Artist',
+          album: 'Cap Album',
+        };
+
+        // A 320 kbps MP3 source — plenty of headroom above any preset cap.
+        generateMp3AtBitrate(join(collectionDir, 'track.mp3'), trackMeta, 320);
+        const configPath = await createConfigFile(configDir, { source: collectionDir });
+
+        // Step 1: Sync at quality=low. First sync copies the MP3 as-is (recorded
+        // 320), second sync caps it DOWN to a small AAC copy (~128). After this,
+        // the device holds an AAC track recorded well below a raised cap.
+        for (let i = 0; i < 2; i++) {
+          const { result } = await runCliJson<SyncOutput>([
+            '--config',
+            configPath,
+            'sync',
+            '--device',
+            target.path,
+            '--quality',
+            'low',
+            '--json',
+          ]);
+          expect(result.exitCode).toBe(0);
+        }
+
+        const cappedTracks = await target.getTracks();
+        expect(cappedTracks.length).toBe(1);
+        expect(cappedTracks[0]!.bitrate).toBeGreaterThan(0);
+        // The on-device file is now AAC (the cap-down re-encode).
+        const m4aAfterDown = (await findIpodMusicFiles(target.path)).filter((f) =>
+          f.endsWith('.m4a')
+        );
+        expect(m4aAfterDown).toHaveLength(1);
+
+        // Step 2: Dry-run at quality=high (cap 256). The recorded 128 (the prior
+        // cap) sits below min(source 320, cap 256) = 256, so exactly one cap-UP
+        // is reported. (Cross-family: MP3 source, AAC device copy — the source
+        // bound can't fire, so the device bound owns this.)
+        const { json: dryJson } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--quality',
+          'high',
+          '--dry-run',
+          '--json',
+        ]);
+        expect(dryJson?.plan?.updateBreakdown?.['quality-change-up']).toBe(1);
+        expect(dryJson?.plan?.tracksToAdd).toBe(0);
+
+        // Step 3: Sync at quality=high — re-encode up from the source to the cap.
+        const { result: result3, json: json3 } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--quality',
+          'high',
+          '--json',
+        ]);
+        expect(result3.exitCode).toBe(0);
+        expect(json3?.result?.completed).toBe(1);
+
+        // Track count unchanged (re-encode, not add); still AAC. The on-device
+        // bitrate is now higher than the capped-down copy — observable proof the
+        // track was re-encoded UP toward the source, not merely left in place.
+        const upTracks = await target.getTracks();
+        expect(upTracks.length).toBe(1);
+        expect(upTracks[0]!.bitrate).toBeGreaterThan(cappedTracks[0]!.bitrate);
+
+        // Step 4: Re-sync at quality=high — idempotent. This is the load-bearing
+        // assertion: if the up re-encode had NOT recorded the new target bitrate,
+        // the next sync would re-fire cap-up (tracksToUpdate=1). Zero proves the
+        // write/compare symmetry — the recorded bitrate now equals the effective
+        // target.
+        const { json: idempotentDryJson } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--quality',
+          'high',
+          '--dry-run',
+          '--json',
+        ]);
+        expect(idempotentDryJson?.plan?.tracksToUpdate).toBe(0);
+        expect(idempotentDryJson?.plan?.tracksToAdd).toBe(0);
+
+        const { json: json5 } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--quality',
+          'high',
+          '--json',
+        ]);
+        expect(json5?.result?.completed).toBe(0);
+      } finally {
+        await rm(collectionDir, { recursive: true, force: true });
+        await rm(configDir, { recursive: true, force: true });
+      }
+    });
+  }, 240000);
+});

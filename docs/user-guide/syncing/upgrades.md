@@ -51,7 +51,7 @@ When you change your quality preset (e.g., from `low` to `high`), podkit detects
 - **Preset upgrade**: iPod bitrate is significantly lower than the new preset target (e.g., switching from `low` at 128 kbps to `high` at 256 kbps)
 - **Preset downgrade**: iPod bitrate is significantly higher than the new preset target (e.g., switching from `high` at 256 kbps to `medium` at 192 kbps)
 
-This affects lossless source tracks (FLAC, WAV, AIFF) in both directions. For **lossy** source tracks (MP3, AAC) the **down** direction is enforced too: lowering the cap re-encodes an over-cap lossy track down to the new cap (see [Bitrate Cap Enforcement for Lossy Sources](/user-guide/transcoding/audio#bitrate-cap-enforcement-for-lossy-sources)). Lossy tracks at or below the cap stay copied as-is, and re-encoding lossy tracks *up* toward a raised cap is not yet enabled.
+This affects lossless source tracks (FLAC, WAV, AIFF) in both directions. For **lossy** source tracks (MP3, AAC) the cap is now enforced in **both directions** too: lowering the cap re-encodes an over-cap lossy track down to the new cap, and raising the cap re-encodes an under-cap lossy track back up from the source — bounded by what the source can supply (`min(source, cap)`), never higher (see [Bitrate Cap Enforcement for Lossy Sources](/user-guide/transcoding/audio#bitrate-cap-enforcement-for-lossy-sources)). Lossy tracks already at the effective target stay as-is, and a source that was re-ripped *lower* is not followed down — the better device copy is kept.
 
 ### Tolerance
 

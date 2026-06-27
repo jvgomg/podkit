@@ -113,21 +113,30 @@ When transcoding incompatible lossy sources (OGG, Opus), the effective bitrate i
 
 ### Bitrate Cap Enforcement for Lossy Sources
 
-Lowering a device's quality (a smaller preset, or a lower custom bitrate) now shrinks the **lossy** tracks already on the device, not just lossless ones. When a lossy track's recorded bitrate is **above** the new cap, the next sync re-encodes it down to the cap; tracks at or below the cap are left untouched and copied as-is.
+Changing a device's quality (a different preset, or a different custom bitrate) now brings the **lossy** tracks already on the device into line with the new target, not just lossless ones — in **both directions**:
 
-| Source on device | Cap lowered to | Result |
+- **Lowering the cap** re-encodes a lossy track whose recorded bitrate is **above** the new cap down to the cap.
+- **Raising the cap** re-encodes a lossy track whose recorded bitrate is **below** the target back up from the source — but only as far as the source can actually supply. The effective ceiling is the *lower* of the new cap and the source's own bitrate (`min(source, cap)`). Raising the cap above what the source provides re-encodes only up to the source, never higher.
+
+Tracks already sitting at the effective target are left untouched.
+
+| Source on device | Cap changed to | Result |
 |------------------|----------------|--------|
-| MP3 320 kbps | `low` (128) | Re-encoded to AAC ~128 kbps |
+| MP3 320 kbps | `low` (128) | Re-encoded down to AAC ~128 kbps |
 | MP3 128 kbps | `low` (128) | Left as-is (already at the cap) |
-| MP3 96 kbps | `low` (128) | Left as-is (already below the cap) |
+| AAC 96 kbps (source MP3 320) | `high` (256) | Re-encoded up to AAC ~256 kbps (cap is the ceiling) |
+| AAC 96 kbps (source MP3 200) | `high` (256) | Re-encoded up to AAC ~200 kbps (source is the ceiling) |
+| AAC 192 kbps (source re-ripped to MP3 96) | `high` (256) | Left as-is — the good copy is kept, not re-encoded down to the worse source |
 
 A few details worth knowing:
 
+- **Raising the cap recovers quality from the source.** The up-direction re-encode reads the original source file, not the smaller copy already on the device, so it genuinely recovers quality up to the effective ceiling.
+- **It never exceeds the source.** Because the ceiling is `min(source, cap)`, raising the cap above the source's own bitrate re-encodes only up to the source — there is no point inflating a file beyond the quality the source can supply.
+- **A worse source is not followed down.** If you re-rip a source at a *lower* bitrate but leave the cap alone, podkit keeps the better copy already on the device rather than re-encoding it down to the worse source.
 - **The decision uses what podkit recorded, not a guess.** The cap comparison reads the bitrate podkit stored when it last wrote the track (its sync tag). A track podkit never wrote — synced by another tool, or before this feature existed — has no recorded bitrate, so it is left alone rather than re-encoded on a guess.
-- **It is idempotent.** After a cap-down re-encode, syncing again at the same cap does nothing — the track is already at the target.
+- **It is idempotent.** After a re-encode (up or down), syncing again at the same cap does nothing — the track is already at the effective target.
 - **A fresh library converges over two syncs.** Cap enforcement applies to tracks already on the device. A newly added lossy track above the cap is copied as-is on the first sync, then re-encoded down on the next one — so a brand-new library settles to the cap after a second sync rather than on the first.
-- **Down only, for now.** This release enforces the cap in the *down* direction (shrinking over-cap tracks). Re-encoding lossy tracks *up* toward a raised cap is a separate, later change.
-- **`--skip-upgrades` still wins.** A purely additive device (`skipUpgrades`) never re-encodes existing files, including for cap-down.
+- **`--skip-upgrades` still wins.** A purely additive device (`skipUpgrades`) never re-encodes existing files, in either direction.
 
 ## File Size Guidelines
 

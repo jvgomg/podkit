@@ -4,9 +4,8 @@
  *
  * The classifier is pure, so the matrix of (transition × source type × tag
  * state) is covered exhaustively here without spinning up a sync. New rows
- * (lossy cap-up, encoding-mismatch, source-down-suppressed) will be added as
- * those directions are enabled — the scaffold section at the bottom holds
- * placeholders.
+ * (encoding-mismatch, source-down-suppressed) will be added as those directions
+ * are enabled — the scaffold section at the bottom holds placeholders.
  *
  * Each case reads independently — it spells out its own source / device /
  * target and asserts the observable `{ reason, direction, reEncodes }`. No
@@ -144,9 +143,10 @@ describe('classifyDeviceBound', () => {
   });
 
   // -------------------------------------------------------------------------
-  // Lossy cap enforcement (cap-DOWN only). The device sync tag's recorded
+  // Lossy cap enforcement (both directions). The device sync tag's recorded
   // bitrate is the sole authoritative `encoded` value — the DB bitrate is never
-  // consulted for lossy.
+  // consulted for lossy. The effective target is min(source, cap): re-encoding
+  // up never exceeds what the source can supply.
   // -------------------------------------------------------------------------
   describe('lossy cap enforcement', () => {
     test('recorded bitrate above the cap -> cap-down (down, re-encodes)', () => {
@@ -190,12 +190,129 @@ describe('classifyDeviceBound', () => {
       ).toBeNull();
     });
 
-    test('recorded bitrate below the cap -> null (cap-up for lossy not yet enabled)', () => {
+    test('recorded bitrate below the cap, source can supply the cap -> cap-up bounded by the cap', () => {
+      // Source 320 > cap 256, so the effective target is the cap (256). The
+      // device copy at 96 sits below it — re-encode up to 256.
       const source = makeMockCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 320 });
       const device = makeMockDeviceTrack({
-        filetype: 'MPEG audio file',
+        filetype: 'AAC audio file',
         bitrate: 96,
-        syncTag: buildCopySyncTag('fast', undefined, 'mp3', 96),
+        syncTag: buildAudioSyncTag('low', 'vbr', 96, 'fast', 'aac'),
+      });
+
+      const change = classifyDeviceBound({
+        source,
+        device,
+        target: target({ preset: 'high', presetBitrate: 256 }),
+      });
+
+      expect(change).toMatchObject({
+        reason: 'cap-up',
+        direction: 'up',
+        reEncodes: true,
+      });
+      expect(change?.encodedBitrate).toBe(96);
+      expect(change?.targetBitrate).toBe(256);
+      expect(change?.sourceBitrate).toBe(320);
+    });
+
+    test('recorded bitrate below the cap, source supplies less than the cap -> cap-up bounded by the source', () => {
+      // Source 200 < cap 256, so the effective target is the source (200), not
+      // the cap. Re-encoding up to the full cap would inflate the file with no
+      // quality gain.
+      const source = makeMockCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 200 });
+      const device = makeMockDeviceTrack({
+        filetype: 'AAC audio file',
+        bitrate: 96,
+        syncTag: buildAudioSyncTag('low', 'vbr', 96, 'fast', 'aac'),
+      });
+
+      const change = classifyDeviceBound({
+        source,
+        device,
+        target: target({ preset: 'high', presetBitrate: 256 }),
+      });
+
+      expect(change).toMatchObject({
+        reason: 'cap-up',
+        direction: 'up',
+        reEncodes: true,
+      });
+      expect(change?.targetBitrate).toBe(200);
+      expect(change?.encodedBitrate).toBe(96);
+      expect(change?.sourceBitrate).toBe(200);
+    });
+
+    test('recorded bitrate equal to the effective target -> null (in sync)', () => {
+      // Source 200 < cap 256 → effective target 200. The device copy already
+      // sits at 200, so there is nothing to raise.
+      const source = makeMockCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 200 });
+      const device = makeMockDeviceTrack({
+        filetype: 'AAC audio file',
+        bitrate: 200,
+        syncTag: buildAudioSyncTag('medium', 'vbr', 200, 'fast', 'aac'),
+      });
+
+      expect(
+        classifyDeviceBound({
+          source,
+          device,
+          target: target({ preset: 'high', presetBitrate: 256 }),
+        })
+      ).toBeNull();
+    });
+
+    test('source degraded below the device copy (source < encoded <= cap) -> null (keep the good copy)', () => {
+      // The source re-ripped down to 96 while the device copy is a healthy 192,
+      // still under the 256 cap. Re-encoding down to the worse source would
+      // destroy quality, so the better existing copy is kept.
+      const source = makeMockCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 96 });
+      const device = makeMockDeviceTrack({
+        filetype: 'AAC audio file',
+        bitrate: 192,
+        syncTag: buildAudioSyncTag('medium', 'vbr', 192, 'fast', 'aac'),
+      });
+
+      expect(
+        classifyDeviceBound({
+          source,
+          device,
+          target: target({ preset: 'high', presetBitrate: 256 }),
+        })
+      ).toBeNull();
+    });
+
+    test('recorded bitrate below the cap but no source bitrate -> null (nothing to raise toward)', () => {
+      // Without a source bitrate the upward ceiling is unknown — leave the track
+      // alone rather than guess.
+      const source = makeMockCollectionTrack({
+        fileType: 'mp3',
+        lossless: false,
+        bitrate: undefined,
+      });
+      const device = makeMockDeviceTrack({
+        filetype: 'AAC audio file',
+        bitrate: 96,
+        syncTag: buildAudioSyncTag('low', 'vbr', 96, 'fast', 'aac'),
+      });
+
+      expect(
+        classifyDeviceBound({
+          source,
+          device,
+          target: target({ preset: 'high', presetBitrate: 256 }),
+        })
+      ).toBeNull();
+    });
+
+    test('a cap-up re-encode is idempotent: the new encoded bitrate matches the effective target', () => {
+      // After a cap-up to min(source, cap) = source (200), the sync tag records
+      // 200. The next sync sees encoded == effective target and does nothing.
+      const source = makeMockCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 200 });
+      const device = makeMockDeviceTrack({
+        filetype: 'AAC audio file',
+        bitrate: 200,
+        syncTag: buildAudioSyncTag('high', 'vbr', 200, 'fast', 'aac'),
       });
 
       expect(
@@ -470,6 +587,30 @@ describe('classifyQualityChange (composed)', () => {
     ).toBeNull();
   });
 
+  test('cross-family lossy below a raised cap -> cap-up via the device bound', () => {
+    // A 320 kbps MP3 source whose device copy is a 128 kbps AAC (a different
+    // family). The source bound can't fire (cross-family comparison returns
+    // null), so the device bound owns this: the recorded 128 sits below
+    // min(320, 256) = 256, so re-encode up to the cap. This is exactly the case
+    // the source bound misses — the two bounds are complementary.
+    const source = makeMockCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 320 });
+    const device = makeMockDeviceTrack({
+      filetype: 'AAC audio file',
+      bitrate: 128,
+      syncTag: buildAudioSyncTag('low', 'vbr', 128, 'fast', 'aac'),
+    });
+
+    const change = classifyQualityChange({
+      source,
+      device,
+      target: target({ preset: 'high', presetBitrate: 256 }),
+    });
+
+    expect(change).toMatchObject({ reason: 'cap-up', direction: 'up', reEncodes: true });
+    expect(change?.encodedBitrate).toBe(128);
+    expect(change?.targetBitrate).toBe(256);
+  });
+
   test('tagged lossy track above the cap -> cap-down via the device bound', () => {
     // The source bound is null (same-family copy, no bitrate climb), so the
     // device bound fires the lossy cap-down.
@@ -499,8 +640,8 @@ describe('classifyQualityChange (composed)', () => {
 // ---------------------------------------------------------------------------
 
 describe('not-yet-produced reasons (scaffold)', () => {
-  // Lossy cap-DOWN is implemented — see `classifyDeviceBound > lossy cap enforcement` above.
-  test.todo('lossy cap-up: lossy source below raised cap, source can supply -> cap-up', () => {});
+  // Lossy cap enforcement (both directions) is implemented — see
+  // `classifyDeviceBound > lossy cap enforcement` above.
   test.todo('encoding-mismatch: CBR<->VBR flip fires regardless of bitrate', () => {});
   test.todo('source-down-suppressed: worse source under match-cap -> reEncodes:false', () => {});
 

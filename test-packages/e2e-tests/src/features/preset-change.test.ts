@@ -548,4 +548,124 @@ device = "${stanza?.name ?? ''}"
       { preset: 'generic' }
     );
   }, 180000);
+
+  // Mass-storage lossy cap-up, source-bounded: raising the cap re-encodes an
+  // under-cap lossy track back up, but only as far as the source can supply
+  // (min(source, cap) = source when the source is below the cap). This pins the
+  // up direction on a device with no iTunesDB (sync tag in the sidecar/comment),
+  // exercises the source-bounded edge, and confirms idempotency at that edge.
+  it('mass-storage lossy cap-up re-encodes up bounded by the source and converges across re-sync', async () => {
+    requireFFmpeg();
+    await withMassStorageTarget(
+      async (target) => {
+        const configDir = await mkdtemp(join(tmpdir(), 'podkit-capup-ms-'));
+        const collectionDir = await mkdtemp(join(tmpdir(), 'podkit-capup-src-'));
+        try {
+          // A 200 kbps MP3 — below the high cap (256), so a cap-up is bounded by
+          // the source (200), not the cap.
+          execSync(
+            `ffmpeg -f lavfi -i "sine=frequency=440:sample_rate=44100:duration=2" ` +
+              `-metadata title="Cap Up" -metadata artist="Cap Artist" -metadata album="Cap Album" ` +
+              `-b:a 200k -y "${join(collectionDir, 'track.mp3')}"`,
+            { stdio: 'ignore' }
+          );
+
+          const stanza = target.deviceConfig();
+          const configPath = join(configDir, 'config.toml');
+          await writeFile(
+            configPath,
+            `version = 2
+
+quality = "low"
+
+[music.default]
+path = "${collectionDir}"
+
+${stanza?.toml ?? ''}
+
+[defaults]
+music = "default"
+device = "${stanza?.name ?? ''}"
+`
+          );
+
+          // Step 1: Sync at quality=low twice. First copies the MP3 as-is (200),
+          // second caps it DOWN to a small AAC copy (~128) — leaving an AAC track
+          // recorded below the high cap.
+          for (let i = 0; i < 2; i++) {
+            const { result } = await runCliJson<SyncOutput>([
+              '--config',
+              configPath,
+              'sync',
+              '--device',
+              stanza?.name ?? target.path,
+              '--json',
+            ]);
+            expect(result.exitCode).toBe(0);
+          }
+          const cappedTracks = await target.getTracks();
+          expect(cappedTracks.length).toBe(1);
+          expect(cappedTracks[0]!.bitrate).toBeGreaterThan(0);
+
+          // Step 2: Dry-run at quality=high (cap 256). The recorded 128 (the prior
+          // cap) sits below min(source 200, cap 256) = 200, so exactly one cap-UP
+          // is reported — the effective ceiling is the source (200), not the cap.
+          const { json: dryJson } = await runCliJson<SyncOutput>([
+            '--config',
+            configPath,
+            'sync',
+            '--device',
+            stanza?.name ?? target.path,
+            '--quality',
+            'high',
+            '--dry-run',
+            '--json',
+          ]);
+          expect(dryJson?.plan?.updateBreakdown?.['quality-change-up'] ?? 0).toBe(1);
+          expect(dryJson?.plan?.tracksToAdd ?? 0).toBe(0);
+
+          // Step 3: Sync at quality=high — re-encode up from the source toward
+          // the source ceiling (200), not the full 256 cap.
+          const { result: result3, json: json3 } = await runCliJson<SyncOutput>([
+            '--config',
+            configPath,
+            'sync',
+            '--device',
+            stanza?.name ?? target.path,
+            '--quality',
+            'high',
+            '--json',
+          ]);
+          expect(result3.exitCode).toBe(0);
+          expect(json3?.result?.completed).toBe(1);
+
+          const upTracks = await target.getTracks();
+          expect(upTracks.length).toBe(1);
+          expect(upTracks[0]!.bitrate).toBeGreaterThan(0);
+
+          // Step 4: Re-sync at quality=high — idempotent at the source-bounded
+          // edge. The recorded effective target is the source bitrate (200, below
+          // the 256 cap); zero queued tracks proves the re-encode recorded that
+          // source-bounded target rather than re-firing on the next sync.
+          const { json: json4 } = await runCliJson<SyncOutput>([
+            '--config',
+            configPath,
+            'sync',
+            '--device',
+            stanza?.name ?? target.path,
+            '--quality',
+            'high',
+            '--dry-run',
+            '--json',
+          ]);
+          expect(json4?.plan?.tracksToUpdate ?? 0).toBe(0);
+          expect(json4?.plan?.tracksToAdd ?? 0).toBe(0);
+        } finally {
+          await rm(configDir, { recursive: true, force: true });
+          await rm(collectionDir, { recursive: true, force: true });
+        }
+      },
+      { preset: 'generic' }
+    );
+  }, 240000);
 });
