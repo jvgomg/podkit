@@ -113,7 +113,7 @@ When transcoding incompatible lossy sources (OGG, Opus), the effective bitrate i
 
 ### Bitrate Cap Enforcement for Lossy Sources
 
-Changing a device's quality (a different preset, or a different custom bitrate) now brings the **lossy** tracks already on the device into line with the new target, not just lossless ones — in **both directions**:
+The cap applies both when **adding** a new lossy track and when a device's quality changes (a different preset, or a different custom bitrate) brings the **lossy** tracks already on the device into line with the new target — not just lossless ones, and in **both directions**:
 
 - **Lowering the cap** re-encodes a lossy track whose recorded bitrate is **above** the new cap down to the cap.
 - **Raising the cap** re-encodes a lossy track whose recorded bitrate is **below** the target back up from the source — but only as far as the source can actually supply. The effective ceiling is the *lower* of the new cap and the source's own bitrate (`min(source, cap)`). Raising the cap above what the source provides re-encodes only up to the source, never higher.
@@ -137,7 +137,7 @@ A few details worth knowing:
 - **Source-down is reported, not silent.** Each kept-but-degraded track is surfaced so you can see it happened: the dry-run/summary shows a per-collection "Source-down suppressed" count (`-v` lists each affected track with its device-vs-source bitrates), and `sync --json` lists each one in the collection's `qualityChanges[]` array with `reason: "source-down-suppressed"` and `reEncodes: false`, counted under `updateBreakdown["quality-change-suppressed"]`. These tracks are never queued for re-transfer.
 - **The decision uses what podkit recorded, not a guess.** The cap comparison reads the bitrate podkit stored when it last wrote the track (its sync tag). A track podkit never wrote — synced by another tool, or before this feature existed — has no recorded bitrate, so it is left alone rather than re-encoded on a guess.
 - **It is idempotent.** After a re-encode (up or down), syncing again at the same cap does nothing — the track is already at the effective target.
-- **A fresh library converges over two syncs.** Cap enforcement applies to tracks already on the device. A newly added lossy track above the cap is copied as-is on the first sync, then re-encoded down on the next one — so a brand-new library settles to the cap after a second sync rather than on the first.
+- **A fresh library converges in one sync.** Cap enforcement applies on the **first add** too: a newly added lossy track whose bitrate is above the cap is re-encoded down to the cap as it is added, rather than copied as-is and re-encoded on a later sync. A brand-new over-cap library lands at the cap in a single sync. (Sources at or below the cap, and sources with an unknown bitrate, are still copied verbatim — no needless re-encode.) This is also a downward move, so under `bitrate.sync = off` or `up-only` the over-cap source is copied as-is, just as a cap-down on an existing track is suppressed there.
 - **`--skip-upgrades` still wins.** A purely additive device (`skipUpgrades`) never re-encodes existing files, in either direction.
 
 ## File Size Guidelines

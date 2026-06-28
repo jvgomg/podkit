@@ -353,6 +353,28 @@ recorded bitrate is the *previous* effective target. Verified on both an iPod
 (sync tag in the iTunesDB comment) and a mass-storage device (sync tag in the
 sidecar/comment) — no device database is required.
 
+### Cap enforcement on the add path
+
+The cap is not only a device-bound (already-on-device) concern: the **add** path
+enforces it too, so a brand-new over-cap lossy source lands at the cap in a
+single sync rather than converging over two. This lives in the add-time routing
+module, not this device-bound classifier: `MusicTrackClassifier`
+(`sync/music/classifier.ts`) would normally *copy* a
+compatible/device-native lossy source, but when the source bitrate is known and
+exceeds the cap it instead returns a `transcode` action with
+`bitrateOverride = min(source.bitrate, cap)` and the resolved lossy codec — the
+**same** action a later `cap-down` would produce for that source. Because the
+written tag (`buildSyncTagForPreset`) and the device-bound's expected comparison
+both record that bitrate, the next sync sees `encoded === min(source, cap)` and
+is a no-op (idempotent — the same property proven for the device-bound re-encode
+above). The classifier holds the copy path (no add-cap) when the source is at/
+below the cap, when the source bitrate is unknown, when there is no lossy cap
+(lossless target), and — because the add-cap is a downward bitrate move — when
+the bitrate-sync policy would suppress a `cap-down` (`off` / `up-only`), so the
+policy ladder applies symmetrically to add and re-sync. The lossy-to-lossy
+warning surface is unchanged: a compatible-lossy cap (e.g. MP3→AAC) does not
+raise the OGG/Opus `lossy-to-lossy` warning, matching the device-bound cap-down.
+
 ### Where the bitrate baseline comes from
 
 For **new copies**, the executor writes `source.bitrate` to the device track

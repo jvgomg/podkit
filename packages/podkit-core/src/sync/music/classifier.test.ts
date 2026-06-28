@@ -14,6 +14,8 @@ function makeContext(overrides: Partial<ClassifierContext> = {}): ClassifierCont
     deviceSupportsAlac: false,
     resolvedQuality: 'high',
     transferMode: 'fast',
+    presetBitrate: 0,
+    bitrateSync: 'match-cap',
     ...overrides,
   };
 }
@@ -204,6 +206,214 @@ describe('MusicTrackClassifier', () => {
     });
   });
 
+  describe('lossy bitrate cap on add', () => {
+    test('MP3 above the cap → transcode down to the cap on first add', () => {
+      const classifier = new MusicTrackClassifier(
+        makeContext({ presetBitrate: 128, resolvedQuality: 'low' })
+      );
+      const track = makeTrack({
+        fileType: 'mp3',
+        filePath: '/music/loud.mp3',
+        lossless: false,
+        bitrate: 320,
+      });
+      const result = classifier.classify(track);
+
+      expect(result.sourceCategory).toBe('compatible-lossy');
+      expect(result.action).toEqual({
+        type: 'transcode',
+        preset: { name: 'low', bitrateOverride: 128 },
+      });
+    });
+
+    test('MP3 above the cap on a device that plays MP3 natively → transcode down to the cap', () => {
+      const classifier = new MusicTrackClassifier(
+        makeContext({
+          supportedAudioCodecs: ['mp3', 'aac'],
+          resolvedLossyCodec: 'aac',
+          presetBitrate: 128,
+          resolvedQuality: 'low',
+        })
+      );
+      const track = makeTrack({
+        fileType: 'mp3',
+        filePath: '/music/loud.mp3',
+        lossless: false,
+        bitrate: 320,
+      });
+      const result = classifier.classify(track);
+
+      // Device-native lossy sources are routed through the same cap: the on-add
+      // transcode mirrors what the device-bound cap-down would later produce
+      // (same codec + cap), so a fresh over-cap library converges in one sync.
+      expect(result.deviceNative).toBe(true);
+      expect(result.action).toEqual({
+        type: 'transcode',
+        preset: { name: 'low', targetCodec: 'aac', bitrateOverride: 128 },
+      });
+      // A cap-down is an intentional bitrate move, not the OGG/Opus lossy-to-lossy
+      // warning case — same as the device-bound cap-down path.
+      expect(result.warnLossyToLossy).toBe(false);
+    });
+
+    test('MP3 at the cap → copy as-is (no needless lossy re-encode)', () => {
+      const classifier = new MusicTrackClassifier(
+        makeContext({ presetBitrate: 256, resolvedQuality: 'high' })
+      );
+      const track = makeTrack({
+        fileType: 'mp3',
+        filePath: '/music/exact.mp3',
+        lossless: false,
+        bitrate: 256,
+      });
+      const result = classifier.classify(track);
+
+      expect(result.action).toEqual({ type: 'direct-copy' });
+    });
+
+    test('MP3 below the cap → copy as-is', () => {
+      const classifier = new MusicTrackClassifier(
+        makeContext({ presetBitrate: 256, resolvedQuality: 'high' })
+      );
+      const track = makeTrack({
+        fileType: 'mp3',
+        filePath: '/music/quiet.mp3',
+        lossless: false,
+        bitrate: 192,
+      });
+      const result = classifier.classify(track);
+
+      expect(result.action).toEqual({ type: 'direct-copy' });
+    });
+
+    test('MP3 with unknown bitrate → copy as-is (never transcode blindly)', () => {
+      const classifier = new MusicTrackClassifier(
+        makeContext({ presetBitrate: 128, resolvedQuality: 'low' })
+      );
+      const track = makeTrack({
+        fileType: 'mp3',
+        filePath: '/music/unknown.mp3',
+        lossless: false,
+        bitrate: 0,
+      });
+      const result = classifier.classify(track);
+
+      expect(result.action).toEqual({ type: 'direct-copy' });
+    });
+
+    test('no cap configured (presetBitrate 0 — defensive zero-cap guard) → copy as-is', () => {
+      const classifier = new MusicTrackClassifier(makeContext({ presetBitrate: 0 }));
+      const track = makeTrack({
+        fileType: 'mp3',
+        filePath: '/music/loud.mp3',
+        lossless: false,
+        bitrate: 320,
+      });
+      const result = classifier.classify(track);
+
+      expect(result.action).toEqual({ type: 'direct-copy' });
+    });
+
+    test('lossy source under a lossless target (cap ~900) → copy as-is, not capped', () => {
+      // A lossless quality resolves to the ALAC preset's nominal (~900 kbps), so
+      // a real lossy source (320) stays under the cap and is copied untouched —
+      // the at/below-cap guard, not a zero cap, is what protects it.
+      const classifier = new MusicTrackClassifier(
+        makeContext({ presetBitrate: 900, resolvedQuality: 'lossless' })
+      );
+      const track = makeTrack({
+        fileType: 'mp3',
+        filePath: '/music/loud.mp3',
+        lossless: false,
+        bitrate: 320,
+      });
+      const result = classifier.classify(track);
+
+      expect(result.action).toEqual({ type: 'direct-copy' });
+    });
+
+    test('MP3 above the cap but bitrate-sync off → copy as-is (no add-path re-encode)', () => {
+      const classifier = new MusicTrackClassifier(
+        makeContext({ presetBitrate: 128, resolvedQuality: 'low', bitrateSync: 'off' })
+      );
+      const track = makeTrack({
+        fileType: 'mp3',
+        filePath: '/music/loud.mp3',
+        lossless: false,
+        bitrate: 320,
+      });
+      const result = classifier.classify(track);
+
+      expect(result.action).toEqual({ type: 'direct-copy' });
+    });
+
+    test('MP3 above the cap but bitrate-sync up-only → copy as-is (never re-encode down)', () => {
+      const classifier = new MusicTrackClassifier(
+        makeContext({ presetBitrate: 128, resolvedQuality: 'low', bitrateSync: 'up-only' })
+      );
+      const track = makeTrack({
+        fileType: 'mp3',
+        filePath: '/music/loud.mp3',
+        lossless: false,
+        bitrate: 320,
+      });
+      const result = classifier.classify(track);
+
+      expect(result.action).toEqual({ type: 'direct-copy' });
+    });
+
+    test('MP3 above the cap with bitrate-sync match-all → transcode down to the cap', () => {
+      const classifier = new MusicTrackClassifier(
+        makeContext({ presetBitrate: 128, resolvedQuality: 'low', bitrateSync: 'match-all' })
+      );
+      const track = makeTrack({
+        fileType: 'mp3',
+        filePath: '/music/loud.mp3',
+        lossless: false,
+        bitrate: 320,
+      });
+      const result = classifier.classify(track);
+
+      expect(result.action).toEqual({
+        type: 'transcode',
+        preset: { name: 'low', bitrateOverride: 128 },
+      });
+    });
+
+    test('MP3 above the cap with bitrate-sync down-only → transcode down to the cap', () => {
+      const classifier = new MusicTrackClassifier(
+        makeContext({ presetBitrate: 128, resolvedQuality: 'low', bitrateSync: 'down-only' })
+      );
+      const track = makeTrack({
+        fileType: 'mp3',
+        filePath: '/music/loud.mp3',
+        lossless: false,
+        bitrate: 320,
+      });
+      const result = classifier.classify(track);
+
+      expect(result.action).toEqual({
+        type: 'transcode',
+        preset: { name: 'low', bitrateOverride: 128 },
+      });
+    });
+
+    test('capped add does not raise a lossy-to-lossy warning (consistent with cap-down)', () => {
+      const classifier = new MusicTrackClassifier(
+        makeContext({ presetBitrate: 128, resolvedQuality: 'low' })
+      );
+      const track = makeTrack({
+        fileType: 'mp3',
+        filePath: '/music/loud.mp3',
+        lossless: false,
+        bitrate: 320,
+      });
+      const result = classifier.classify(track);
+
+      expect(result.warnLossyToLossy).toBe(false);
+    });
+  });
+
   describe('caching', () => {
     test('classify same track twice returns cached result', () => {
       const classifier = new MusicTrackClassifier(makeContext());
@@ -257,6 +467,8 @@ describe('MusicTrackClassifier', () => {
       expect(ctx.customBitrate).toBe(192);
       expect(ctx.primaryArtworkSource).toBe('database');
       expect(ctx.transferMode).toBe('fast');
+      expect(ctx.presetBitrate).toBe(256);
+      expect(ctx.bitrateSync).toBe('match-cap');
     });
 
     test('passes resolvedLossyCodec and resolvedLosslessStack from config', () => {

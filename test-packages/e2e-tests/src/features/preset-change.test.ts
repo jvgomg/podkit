@@ -550,6 +550,102 @@ device = "${stanza?.name ?? ''}"
     );
   }, 180000);
 
+  // Mass-storage lossy cap on first add: a brand-new lossy (MP3) source above
+  // the cap is re-encoded DOWN to the cap on the FIRST sync, not copied as-is
+  // and capped on the next one. This is where the real re-encode + single-sync
+  // convergence is exercised — mass-storage stores the sync tag in the
+  // sidecar/comment, so it also pins that the first-add cap records the cap
+  // (idempotent re-sync) without a device database.
+  it('mass-storage re-encodes an over-cap lossy source down on first add and converges in one sync', async () => {
+    requireFFmpeg();
+    await withMassStorageTarget(
+      async (target) => {
+        const configDir = await mkdtemp(join(tmpdir(), 'podkit-capadd-ms-'));
+        const collectionDir = await mkdtemp(join(tmpdir(), 'podkit-capadd-src-'));
+        try {
+          // A 320 kbps MP3 — compatible-lossy on the generic preset (aac/mp3/flac)
+          // and well above the quality=low cap (128).
+          execSync(
+            `ffmpeg -f lavfi -i "sine=frequency=440:sample_rate=44100:duration=2" ` +
+              `-metadata title="Cap Add" -metadata artist="Cap Artist" -metadata album="Cap Album" ` +
+              `-b:a 320k -y "${join(collectionDir, 'track.mp3')}"`,
+            { stdio: 'ignore' }
+          );
+
+          const stanza = target.deviceConfig();
+          const configPath = join(configDir, 'config.toml');
+          await writeFile(
+            configPath,
+            `version = 2
+
+quality = "low"
+
+[music.default]
+path = "${collectionDir}"
+
+${stanza?.toml ?? ''}
+
+[defaults]
+music = "default"
+device = "${stanza?.name ?? ''}"
+`
+          );
+          const device = stanza?.name ?? target.path;
+
+          // Step 1: Dry-run — the over-cap MP3 is queued as a TRANSCODE, not a copy.
+          const { json: dryJson } = await runCliJson<SyncOutput>([
+            '--config',
+            configPath,
+            'sync',
+            '--device',
+            device,
+            '--dry-run',
+            '--json',
+          ]);
+          expect(dryJson?.plan?.tracksToAdd ?? 0).toBe(1);
+          expect(dryJson?.plan?.tracksToTranscode ?? 0).toBe(1);
+          expect(dryJson?.plan?.tracksToCopy ?? 0).toBe(0);
+
+          // Step 2: Real sync — one track added, re-encoded down to the cap.
+          const { result: result1, json: json1 } = await runCliJson<SyncOutput>([
+            '--config',
+            configPath,
+            'sync',
+            '--device',
+            device,
+            '--json',
+          ]);
+          expect(result1.exitCode).toBe(0);
+          expect(json1?.result?.completed).toBe(1);
+
+          // The on-device track is AAC at the cap — its measured bitrate sits well
+          // below the 320 kbps source (proof it was re-encoded, not copied).
+          const tracks = await target.getTracks();
+          expect(tracks.length).toBe(1);
+          expect(tracks[0]!.bitrate).toBeGreaterThan(0);
+          expect(tracks[0]!.bitrate).toBeLessThan(170);
+
+          // Step 3: Re-sync — idempotent in a single pass (no second-sync cap-down).
+          const { json: convergeJson } = await runCliJson<SyncOutput>([
+            '--config',
+            configPath,
+            'sync',
+            '--device',
+            device,
+            '--dry-run',
+            '--json',
+          ]);
+          expect(convergeJson?.plan?.tracksToAdd ?? 0).toBe(0);
+          expect(convergeJson?.plan?.tracksToUpdate ?? 0).toBe(0);
+        } finally {
+          await rm(configDir, { recursive: true, force: true });
+          await rm(collectionDir, { recursive: true, force: true });
+        }
+      },
+      { preset: 'generic' }
+    );
+  }, 180000);
+
   // Mass-storage lossy cap-up, source-bounded: raising the cap re-encodes an
   // under-cap lossy track back up, but only as far as the source can supply
   // (min(source, cap) = source when the source is below the cap). This pins the

@@ -21,6 +21,8 @@ import type { CollectionTrack } from '../../adapters/interface.js';
 import type { AudioCodec } from '@podkit/device-types';
 import type { SourceCategory, TranscodePresetRef } from '../engine/types.js';
 import type { ResolvedMusicConfig } from './config.js';
+import type { BitrateSyncMode } from '../engine/upgrades.js';
+import { applyBitrateSyncPolicy } from '../engine/upgrades.js';
 import { categorizeSource, isDeviceCompatible, fileTypeToAudioCodec } from './planner.js';
 import type { TranscodeTargetCodec } from '../../transcode/codecs.js';
 import { CODEC_METADATA } from '../../transcode/codecs.js';
@@ -69,6 +71,24 @@ export interface ClassifierContext {
   readonly deviceSupportsAlac: boolean;
   /** Resolved quality label ('lossless' | 'high' | 'medium' | 'low') */
   readonly resolvedQuality: string;
+  /**
+   * Target bitrate (kbps) for the resolved quality — the lossy cap. A
+   * compatible/device-native lossy source whose bitrate exceeds this cap is
+   * transcoded down to it on first add, instead of copied as-is and re-encoded
+   * down on the next sync. A lossless target resolves to the ALAC preset's
+   * nominal (~900 kbps), well above any real lossy source, so lossy sources stay
+   * under it and are copied untouched (`0` is only a defensive
+   * unconfigured-cap fallback, not produced by any real preset).
+   */
+  readonly presetBitrate: number;
+  /**
+   * Per-device bitrate-change policy. The on-add cap is a downward bitrate move,
+   * so it is gated by the same policy as a device-bound cap-down: it fires under
+   * `match-cap`/`match-all`/`down-only` and is held (copied as-is) under
+   * `off`/`up-only`, keeping "freeze bitrates" / "never re-encode down" honest on
+   * the add path too. Defaults to `match-cap`.
+   */
+  readonly bitrateSync: BitrateSyncMode;
   /** Custom bitrate override in kbps */
   readonly customBitrate?: number;
   /** Where the device reads artwork from */
@@ -124,7 +144,7 @@ export class MusicTrackClassifier {
         deviceNative,
         isLossless,
         warnLossyToLossy,
-        action: this.resolveCopyAction(),
+        action: this.resolveCopyOrCapAction(track, isLossless),
       };
     }
 
@@ -135,7 +155,7 @@ export class MusicTrackClassifier {
         deviceNative,
         isLossless,
         warnLossyToLossy,
-        action: this.resolveCopyAction(),
+        action: this.resolveCopyOrCapAction(track, isLossless),
       };
     }
 
@@ -170,13 +190,7 @@ export class MusicTrackClassifier {
     }
 
     // 4-5. Transcode with resolved preset (lossy transcoding)
-    const preset: TranscodePresetRef = {
-      name: presetName as TranscodePresetRef['name'],
-      ...(this.ctx.resolvedLossyCodec && { targetCodec: this.ctx.resolvedLossyCodec }),
-      ...(this.ctx.customBitrate !== undefined && {
-        bitrateOverride: this.ctx.customBitrate,
-      }),
-    };
+    const preset = this.buildLossyPreset(this.ctx.customBitrate);
 
     return {
       sourceCategory,
@@ -251,6 +265,81 @@ export class MusicTrackClassifier {
   }
 
   /**
+   * Build a lossy `TranscodePresetRef` at the resolved quality + codec.
+   *
+   * Shared by the lossy-transcode path (4–5) and the on-add cap so the two keep
+   * the same shape — a drift between them (e.g. a different codec or a dropped
+   * `bitrateOverride`) would silently break cap idempotency. `bitrateOverride` is
+   * spread only when defined, mirroring the device-bound cap-down preset built in
+   * `MusicHandler.resolveUpgradeAction`.
+   */
+  private buildLossyPreset(bitrateOverride?: number): TranscodePresetRef {
+    return {
+      name: this.resolvePresetName() as TranscodePresetRef['name'],
+      ...(this.ctx.resolvedLossyCodec && { targetCodec: this.ctx.resolvedLossyCodec }),
+      ...(bitrateOverride !== undefined && { bitrateOverride }),
+    };
+  }
+
+  /**
+   * Resolve the action for a source that would otherwise be copied as-is.
+   *
+   * A lossy source whose bitrate exceeds the device's lossy cap is transcoded
+   * DOWN to the cap on first add, mirroring the device-bound cap-down upgrade
+   * path, so a brand-new over-cap library lands at the cap in a single sync
+   * rather than converging over two. Everything else is copied verbatim.
+   */
+  private resolveCopyOrCapAction(track: CollectionTrack, isLossless: boolean): MusicAction {
+    return this.resolveLossyCapTranscode(track, isLossless) ?? this.resolveCopyAction();
+  }
+
+  /**
+   * Build the on-add cap-down transcode for a lossy source above the cap, or
+   * `undefined` to leave it copied as-is.
+   *
+   * Guards (each keeps a source on the copy path):
+   * - lossless sources are never capped — re-encoding them is the lossless
+   *   stack's job, not a bitrate cap;
+   * - no cap configured (`presetBitrate === 0`) — a defensive fallback; no real
+   *   preset produces 0 (a lossless target resolves to ~900, and lossy sources
+   *   fall under it via the at/below-cap guard below);
+   * - unknown source bitrate (`0`/undefined — the adapters' "not populated"
+   *   sentinel) — never transcode blindly;
+   * - source at/below the cap — copying is lossless-for-the-bytes, re-encoding
+   *   would only degrade it for no benefit (this is also what keeps a lossy
+   *   source under a lossless ~900 cap copied untouched);
+   * - the bitrate-sync policy would not fire a downward move (`off`/`up-only`) —
+   *   the cap is a quality preference under that policy, not a hard device
+   *   constraint, so the source is copied as-is just as a device-bound cap-down
+   *   would be suppressed.
+   *
+   * When it does fire, the action matches what {@link classifyLossyDeviceBound}'s
+   * cap-down would later produce for the same source — the resolved lossy preset
+   * and codec with `bitrateOverride = min(source.bitrate, cap)` — so the written
+   * sync tag records the cap and the next sync is a no-op (idempotent).
+   */
+  private resolveLossyCapTranscode(
+    track: CollectionTrack,
+    isLossless: boolean
+  ): MusicAction | undefined {
+    if (isLossless) return undefined;
+
+    const cap = this.ctx.presetBitrate;
+    if (!cap) return undefined;
+
+    const sourceBitrate = track.bitrate;
+    if (!sourceBitrate || sourceBitrate <= cap) return undefined;
+
+    // A downward bitrate move — gate it on the same policy as a device-bound
+    // cap-down so `off`/`up-only` keep the over-cap source copied as-is.
+    if (applyBitrateSyncPolicy('down', 'cap-down', this.ctx.bitrateSync) !== 'fire') {
+      return undefined;
+    }
+
+    return { type: 'transcode', preset: this.buildLossyPreset(Math.min(sourceBitrate, cap)) };
+  }
+
+  /**
    * Resolve the copy action based on artwork source and transfer mode.
    *
    * - Embedded artwork devices always need optimized-copy (FFmpeg resize)
@@ -292,6 +381,8 @@ export function classifierFromConfig(config: ResolvedMusicConfig): ClassifierCon
     supportedAudioCodecs: config.supportedAudioCodecs,
     deviceSupportsAlac: config.deviceSupportsAlac,
     resolvedQuality: config.resolvedQuality,
+    presetBitrate: config.presetBitrate,
+    bitrateSync: config.bitrateSync,
     customBitrate: config.raw.customBitrate,
     primaryArtworkSource: config.primaryArtworkSource,
     transferMode: config.transferMode,
