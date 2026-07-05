@@ -140,7 +140,7 @@ contents and diffing.
 ## References
 
 - [ADR-024](../../adr/adr-024-device-access-tiers.md) — why the shuffle 3g/4g are `read-only`, not `unsupported`.
-- [generations.md](generations.md) — which generations write `iTunesSD` *(pending)*.
+- [generations.md](generations.md) — the generation × support matrix; why the shuffle 3g/4g are `read-only`.
 - doc-056 — PRD: Device Access Tiers.
 - External: the iPod-linux / itunesdb.org `bdhs` notes (partial; 🔶 much of the record interior).
 - podkit does not have an `iTunesSD` parser; `@podkit/ipod-db` parses `iTunesDB` and `ArtworkDB` only.

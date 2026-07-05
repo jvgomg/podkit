@@ -23,7 +23,7 @@ that says which device uses it.
 | `itunesdb.md` | `iTunesDB` (mhbd/mhsd/mhit chunk tree) | Yes — `@podkit/ipod-db` *(doc: backfill pending)* |
 | `artworkdb.md` | `ArtworkDB` + `.ithmb` image blobs | Yes — `@podkit/ipod-db` *(doc: backfill pending)* |
 | `checksums.md` | hashAB / hash58 / hash72 by generation | Yes *(doc: backfill pending)* |
-| `generations.md` | generation × {DB files, checksum, access, verified} matrix | — *(the spine)* |
+| [generations.md](generations.md) | generation × {access, verified} support matrix | — *(the spine — generated from code)* |
 
 `generations.md` is the **spine**: it is generated-from / test-pinned-to the
 `getSupportMatrix()` export of the `@podkit/devices-ipod` generation table, so

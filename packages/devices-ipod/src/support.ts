@@ -44,3 +44,23 @@ export function getSupportMatrix(): SupportMatrixRow[] {
     };
   });
 }
+
+/**
+ * Render {@link getSupportMatrix} as a GitHub-flavoured Markdown table.
+ *
+ * The single source of truth for the generation matrix printed in
+ * `documents/formats/generations.md`: a drift test pins the doc's generated
+ * region to this output, so the reference and the table can never diverge.
+ *
+ * Row order is the generation table's own insertion order (deterministic), and
+ * a row with no `note` renders an em dash so every column stays populated.
+ */
+export function renderSupportMatrixMarkdown(): string {
+  const header = '| Generation | ID | Access | Verified | Note |';
+  const divider = '| --- | --- | --- | --- | --- |';
+  const rows = getSupportMatrix().map(
+    (row) =>
+      `| ${row.displayName} | \`${row.generation}\` | ${row.access} | ${row.verified} | ${row.note ?? '—'} |`
+  );
+  return [header, divider, ...rows].join('\n');
+}

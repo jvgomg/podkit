@@ -105,7 +105,11 @@ export { resolveIpodModel, type ResolveModelInput } from './resolve.js';
 
 // ── Support matrix ──────────────────────────────────────────────────────────────
 
-export { resolveGenerationSupport, getSupportMatrix } from './support.js';
+export {
+  resolveGenerationSupport,
+  getSupportMatrix,
+  renderSupportMatrixMarkdown,
+} from './support.js';
 
 // ── Label formatters ──────────────────────────────────────────────────────────
 
