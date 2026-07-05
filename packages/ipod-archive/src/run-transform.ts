@@ -49,6 +49,7 @@ import { writePlaylists, type WrittenPlaylist, type PlaylistFailure } from './pl
 import {
   ArchiveReport,
   computeLibraryStats,
+  listeningStatsFrom,
   renderReadme,
   type ReportStage1,
   type ReportStage2,
@@ -542,10 +543,11 @@ export async function runTransform(
         error: f.error,
       })),
     };
-    let report = ArchiveReport.forTransform(stage2);
+    const stats = computeLibraryStats(allTracks);
+
+    let report = ArchiveReport.forTransform(stage2).withListening(listeningStatsFrom(stats));
     if (opts.dumpReport) report = report.withStage1(opts.dumpReport);
 
-    const stats = computeLibraryStats(allTracks);
     const readme = renderReadme({
       identity,
       dumpDate,

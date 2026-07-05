@@ -16,6 +16,7 @@ import type { Track } from '@podkit/libgpod-node';
 import {
   ArchiveReport,
   computeLibraryStats,
+  listeningStatsFrom,
   renderReadme,
   formatBytes,
   formatDuration,
@@ -139,6 +140,93 @@ describe('computeLibraryStats', () => {
     expect(stats.earliestAdded).toBeNull();
     expect(stats.latestAdded).toBeNull();
     expect(stats.topArtists).toEqual([]);
+    expect(stats.totalPlayCount).toBe(0);
+    expect(stats.totalSkipCount).toBe(0);
+    expect(stats.topPlayedTracks).toEqual([]);
+    expect(stats.topPlayedArtists).toEqual([]);
+    expect(stats.topSkippedTracks).toEqual([]);
+    expect(stats.topSkippedArtists).toEqual([]);
+  });
+});
+
+describe('computeLibraryStats — listening stats', () => {
+  test('totals, per-track and per-artist rollups for plays and skips', () => {
+    const stats = computeLibraryStats([
+      track({ title: 'Hit', artist: 'A', playCount: 50, skipCount: 1 }),
+      track({ title: 'Deep Cut', artist: 'A', playCount: 5, skipCount: 20 }),
+      track({ title: 'Single', artist: 'B', playCount: 10, skipCount: 3 }),
+      track({ title: 'Never Played', artist: 'B', playCount: 0, skipCount: 0 }),
+    ]);
+
+    expect(stats.totalPlayCount).toBe(65);
+    expect(stats.totalSkipCount).toBe(24);
+
+    // Tracks ranked by play count; zero-play tracks excluded.
+    expect(stats.topPlayedTracks).toEqual([
+      { title: 'Hit', artist: 'A', count: 50 },
+      { title: 'Single', artist: 'B', count: 10 },
+      { title: 'Deep Cut', artist: 'A', count: 5 },
+    ]);
+    // Artist play counts summed across their tracks.
+    expect(stats.topPlayedArtists).toEqual([
+      { artist: 'A', count: 55 },
+      { artist: 'B', count: 10 },
+    ]);
+    // Tracks ranked by skip count; zero-skip tracks excluded.
+    expect(stats.topSkippedTracks).toEqual([
+      { title: 'Deep Cut', artist: 'A', count: 20 },
+      { title: 'Single', artist: 'B', count: 3 },
+      { title: 'Hit', artist: 'A', count: 1 },
+    ]);
+    expect(stats.topSkippedArtists).toEqual([
+      { artist: 'A', count: 21 },
+      { artist: 'B', count: 3 },
+    ]);
+  });
+
+  test('caps: top 10 played / skipped tracks, top 5 played / 6 skipped artists', () => {
+    // 12 distinct artists, each one track, descending play & skip counts.
+    const tracks = Array.from({ length: 12 }, (_, i) =>
+      track({
+        title: `T${String(i).padStart(2, '0')}`,
+        artist: `Artist${String(i).padStart(2, '0')}`,
+        playCount: 100 - i,
+        skipCount: 100 - i,
+      })
+    );
+    const stats = computeLibraryStats(tracks);
+
+    expect(stats.topPlayedTracks).toHaveLength(10);
+    expect(stats.topSkippedTracks).toHaveLength(10);
+    expect(stats.topPlayedArtists).toHaveLength(5);
+    expect(stats.topSkippedArtists).toHaveLength(6);
+    // Highest first.
+    expect(stats.topPlayedTracks[0]).toEqual({ title: 'T00', artist: 'Artist00', count: 100 });
+    expect(stats.topPlayedArtists[0]).toEqual({ artist: 'Artist00', count: 100 });
+  });
+
+  test('ties break by title then artist (tracks) and by artist (artists)', () => {
+    const stats = computeLibraryStats([
+      track({ title: 'Zeta', artist: 'Q', playCount: 7 }),
+      track({ title: 'Alpha', artist: 'Q', playCount: 7 }),
+    ]);
+    expect(stats.topPlayedTracks).toEqual([
+      { title: 'Alpha', artist: 'Q', count: 7 },
+      { title: 'Zeta', artist: 'Q', count: 7 },
+    ]);
+  });
+
+  test('nameless track/artist fall back to display placeholders', () => {
+    const stats = computeLibraryStats([
+      track({ title: null, artist: null, playCount: 3, skipCount: 2 }),
+    ]);
+    expect(stats.topPlayedTracks).toEqual([
+      { title: 'Untitled', artist: 'Unknown Artist', count: 3 },
+    ]);
+    expect(stats.topPlayedArtists).toEqual([{ artist: 'Unknown Artist', count: 3 }]);
+    expect(stats.topSkippedTracks).toEqual([
+      { title: 'Untitled', artist: 'Unknown Artist', count: 2 },
+    ]);
   });
 });
 
@@ -235,6 +323,33 @@ describe('ArchiveReport — populated buckets', () => {
       },
     ]);
     expect(json.stage2?.playlistFailures).toHaveLength(1);
+  });
+
+  test('json carries listening stats when attached, else null', () => {
+    // Absent by default — a report built without listening stats reports null.
+    expect(ArchiveReport.forTransform(stage2).toJson().listening).toBeNull();
+
+    const listening = listeningStatsFrom(
+      computeLibraryStats([
+        track({ title: 'Anthem', artist: 'Band', playCount: 40, skipCount: 2 }),
+        track({ title: 'Filler', artist: 'Band', playCount: 1, skipCount: 15 }),
+      ])
+    );
+    const json = ArchiveReport.forTransform(stage2).withListening(listening).toJson();
+    expect(json.listening).toEqual({
+      totalPlayCount: 41,
+      totalSkipCount: 17,
+      topPlayedTracks: [
+        { title: 'Anthem', artist: 'Band', count: 40 },
+        { title: 'Filler', artist: 'Band', count: 1 },
+      ],
+      topPlayedArtists: [{ artist: 'Band', count: 41 }],
+      topSkippedTracks: [
+        { title: 'Filler', artist: 'Band', count: 15 },
+        { title: 'Anthem', artist: 'Band', count: 2 },
+      ],
+      topSkippedArtists: [{ artist: 'Band', count: 17 }],
+    });
   });
 
   test('markdown bucket order is deterministic regardless of input order', () => {
@@ -360,6 +475,48 @@ describe('renderReadme', () => {
     expect(md).toContain('- Band (2)');
     // Date-added range uses the two timestamps' UTC dates.
     expect(md).toContain('2020-09-13 – 2023-11-14');
+  });
+
+  test('renders listening stats: totals plus top played / skipped sections', () => {
+    const listenStats = computeLibraryStats([
+      track({ title: 'Anthem', artist: 'Band', playCount: 40, skipCount: 2 }),
+      track({ title: 'Filler', artist: 'Band', playCount: 1, skipCount: 15 }),
+    ]);
+    const md = renderReadme({
+      identity: {},
+      dumpDate: 0,
+      podkitVersion: 'unknown',
+      stats: listenStats,
+    });
+
+    // Totals live in the Library table.
+    expect(md).toContain('| Total plays | 41 |');
+    expect(md).toContain('| Total skips | 17 |');
+    // Per-line counts, pluralised.
+    expect(md).toContain('### Top played tracks');
+    expect(md).toContain('- Anthem — Band (40 plays)');
+    expect(md).toContain('### Top played artists');
+    expect(md).toContain('- Band (41 plays)');
+    expect(md).toContain('### Top skipped tracks');
+    expect(md).toContain('- Filler — Band (15 skips)');
+    expect(md).toContain('### Top skipped artists');
+    expect(md).toContain('- Band (17 skips)');
+  });
+
+  test('omits listening sections when the device has no play/skip history', () => {
+    const md = renderReadme({
+      identity: {},
+      dumpDate: 0,
+      podkitVersion: 'unknown',
+      stats: computeLibraryStats([track({ title: 'T', artist: 'A', playCount: 0, skipCount: 0 })]),
+    });
+    // Totals still shown (zeroed), but the top-N sections are suppressed.
+    expect(md).toContain('| Total plays | 0 |');
+    expect(md).toContain('| Total skips | 0 |');
+    expect(md).not.toContain('### Top played tracks');
+    expect(md).not.toContain('### Top skipped tracks');
+    expect(md).not.toContain('### Top played artists');
+    expect(md).not.toContain('### Top skipped artists');
   });
 
   test('degrades every absent identity field to a dash', () => {

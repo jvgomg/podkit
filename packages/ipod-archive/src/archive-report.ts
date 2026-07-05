@@ -35,6 +35,18 @@ export const REPORT_MARKDOWN_LIST_CAP = 50;
 /** Number of top artists surfaced in the README's library stats. */
 export const README_TOP_ARTISTS = 10;
 
+/** Number of most-played tracks surfaced in the README's listening stats. */
+export const README_TOP_PLAYED_TRACKS = 10;
+
+/** Number of most-played artists surfaced in the README's listening stats. */
+export const README_TOP_PLAYED_ARTISTS = 5;
+
+/** Number of most-skipped tracks surfaced in the README's listening stats. */
+export const README_TOP_SKIPPED_TRACKS = 10;
+
+/** Number of most-skipped artists surfaced in the README's listening stats. */
+export const README_TOP_SKIPPED_ARTISTS = 6;
+
 // ── Bucket shapes ────────────────────────────────────────────────────────────
 
 /** A stage-1 file that failed to copy (path + reason). */
@@ -106,6 +118,26 @@ export interface ReportStage2 {
   playlistFailures: ReportPlaylistFailure[];
 }
 
+/**
+ * Listening statistics for `report.json` — the machine-readable counterpart of
+ * the README's listening section. A projection of {@link LibraryStats} carrying
+ * the totals and the four ranked lists (see {@link listeningStatsFrom}).
+ */
+export interface ReportListeningStats {
+  /** Sum of every track's play count. */
+  totalPlayCount: number;
+  /** Sum of every track's skip count. */
+  totalSkipCount: number;
+  /** Most-played tracks (descending), zero-play tracks excluded. */
+  topPlayedTracks: TrackListenStat[];
+  /** Most-played artists by summed play count (descending). */
+  topPlayedArtists: ArtistListenStat[];
+  /** Most-skipped tracks (descending), zero-skip tracks excluded. */
+  topSkippedTracks: TrackListenStat[];
+  /** Most-skipped artists by summed skip count (descending). */
+  topSkippedArtists: ArtistListenStat[];
+}
+
 /** The full machine-readable report structure (`report.json`). */
 export interface ReportJson {
   /**
@@ -115,6 +147,11 @@ export interface ReportJson {
   stage1: ReportStage1 | null;
   /** Stage-2 buckets. `null` only for a dump-only run (no transform ran). */
   stage2: ReportStage2 | null;
+  /**
+   * Listening stats derived from the library, or `null` when unavailable (a
+   * dump-only run computes no library stats).
+   */
+  listening: ReportListeningStats | null;
 }
 
 // ── Library stats (README) ───────────────────────────────────────────────────
@@ -125,6 +162,30 @@ export interface ArtistTrackCount {
   artist: string;
   /** Number of tracks attributed to this artist. */
   trackCount: number;
+}
+
+/**
+ * A track in a listening-stats ranking (most played / most skipped). `count` is
+ * the play or skip count depending on which list the entry belongs to.
+ */
+export interface TrackListenStat {
+  /** Display title (`Untitled` when the track carries no title). */
+  title: string;
+  /** Display artist (`Unknown Artist` when the track carries no artist). */
+  artist: string;
+  /** Play or skip count for this track (always > 0 — zero-count tracks are excluded). */
+  count: number;
+}
+
+/**
+ * An artist in a listening-stats ranking (most played / most skipped). `count`
+ * is the summed play or skip count across all of that artist's tracks.
+ */
+export interface ArtistListenStat {
+  /** Display artist (`Unknown Artist` when absent on every track). */
+  artist: string;
+  /** Summed play or skip count across this artist's tracks (always > 0). */
+  count: number;
 }
 
 /**
@@ -154,10 +215,41 @@ export interface LibraryStats {
    * Ties break alphabetically by artist name so the list is deterministic.
    */
   topArtists: ArtistTrackCount[];
+  /** Sum of every track's `playCount`. */
+  totalPlayCount: number;
+  /** Sum of every track's `skipCount`. */
+  totalSkipCount: number;
+  /**
+   * Most-played tracks (descending play count), capped at
+   * {@link README_TOP_PLAYED_TRACKS}. Tracks never played are excluded. Ties
+   * break by title then artist so the list is deterministic.
+   */
+  topPlayedTracks: TrackListenStat[];
+  /**
+   * Most-played artists by summed play count (descending), capped at
+   * {@link README_TOP_PLAYED_ARTISTS}. Artists with zero total plays are
+   * excluded. Ties break alphabetically by artist name.
+   */
+  topPlayedArtists: ArtistListenStat[];
+  /**
+   * Most-skipped tracks (descending skip count), capped at
+   * {@link README_TOP_SKIPPED_TRACKS}. Tracks never skipped are excluded. Ties
+   * break by title then artist.
+   */
+  topSkippedTracks: TrackListenStat[];
+  /**
+   * Most-skipped artists by summed skip count (descending), capped at
+   * {@link README_TOP_SKIPPED_ARTISTS}. Artists with zero total skips are
+   * excluded. Ties break alphabetically by artist name.
+   */
+  topSkippedArtists: ArtistListenStat[];
 }
 
 /** Display fallback for a track with no artist. */
 const UNKNOWN_ARTIST = 'Unknown Artist';
+
+/** Display fallback for a track with no title. */
+const UNTITLED = 'Untitled';
 
 /**
  * Stable, locale-independent string order by UTF-16 code point. Used for every
@@ -183,10 +275,16 @@ export function computeLibraryStats(tracks: readonly Track[]): LibraryStats {
   let totalDurationMs = 0;
   let earliestAdded: number | null = null;
   let latestAdded: number | null = null;
+  let totalPlayCount = 0;
+  let totalSkipCount = 0;
 
   const distinctArtistSet = new Set<string>();
   const distinctAlbumSet = new Set<string>();
   const artistCounts = new Map<string, number>();
+  const artistPlayCounts = new Map<string, number>();
+  const artistSkipCounts = new Map<string, number>();
+  const playedTracks: TrackListenStat[] = [];
+  const skippedTracks: TrackListenStat[] = [];
 
   for (const track of tracks) {
     totalSizeBytes += track.size > 0 ? track.size : 0;
@@ -207,6 +305,23 @@ export function computeLibraryStats(tracks: readonly Track[]): LibraryStats {
     // nameless tracks are not silently dropped from the rollup.
     const rollupArtist = artist || UNKNOWN_ARTIST;
     artistCounts.set(rollupArtist, (artistCounts.get(rollupArtist) ?? 0) + 1);
+
+    // Listening stats. Only positive counts contribute to a ranking — a track
+    // never played (or skipped) is not "top" anything, so it's excluded from the
+    // per-track lists and the per-artist rollups alike.
+    const displayTitle = track.title?.trim() || UNTITLED;
+    const plays = track.playCount > 0 ? track.playCount : 0;
+    const skips = track.skipCount > 0 ? track.skipCount : 0;
+    totalPlayCount += plays;
+    totalSkipCount += skips;
+    if (plays > 0) {
+      playedTracks.push({ title: displayTitle, artist: rollupArtist, count: plays });
+      artistPlayCounts.set(rollupArtist, (artistPlayCounts.get(rollupArtist) ?? 0) + plays);
+    }
+    if (skips > 0) {
+      skippedTracks.push({ title: displayTitle, artist: rollupArtist, count: skips });
+      artistSkipCounts.set(rollupArtist, (artistSkipCounts.get(rollupArtist) ?? 0) + skips);
+    }
   }
 
   const topArtists = [...artistCounts.entries()]
@@ -226,7 +341,58 @@ export function computeLibraryStats(tracks: readonly Track[]): LibraryStats {
     earliestAdded,
     latestAdded,
     topArtists,
+    totalPlayCount,
+    totalSkipCount,
+    topPlayedTracks: rankTracks(playedTracks, README_TOP_PLAYED_TRACKS),
+    topPlayedArtists: rankArtists(artistPlayCounts, README_TOP_PLAYED_ARTISTS),
+    topSkippedTracks: rankTracks(skippedTracks, README_TOP_SKIPPED_TRACKS),
+    topSkippedArtists: rankArtists(artistSkipCounts, README_TOP_SKIPPED_ARTISTS),
   };
+}
+
+/**
+ * Project the listening subset of {@link LibraryStats} into the report's shape.
+ * The README renders these from `LibraryStats` directly; `report.json` carries
+ * this narrower projection so tooling gets the same numbers without the
+ * library-wide totals.
+ */
+export function listeningStatsFrom(stats: LibraryStats): ReportListeningStats {
+  return {
+    totalPlayCount: stats.totalPlayCount,
+    totalSkipCount: stats.totalSkipCount,
+    topPlayedTracks: stats.topPlayedTracks,
+    topPlayedArtists: stats.topPlayedArtists,
+    topSkippedTracks: stats.topSkippedTracks,
+    topSkippedArtists: stats.topSkippedArtists,
+  };
+}
+
+/**
+ * Rank listening-stat tracks by count (descending), capped at `limit`. Ties
+ * break by title then artist so the ordering is deterministic across hosts.
+ */
+function rankTracks(tracks: readonly TrackListenStat[], limit: number): TrackListenStat[] {
+  return [...tracks]
+    .sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      const byTitle = compareStable(a.title, b.title);
+      return byTitle !== 0 ? byTitle : compareStable(a.artist, b.artist);
+    })
+    .slice(0, limit);
+}
+
+/**
+ * Rank summed per-artist listening counts (descending), capped at `limit`. Ties
+ * break alphabetically by artist name.
+ */
+function rankArtists(counts: ReadonlyMap<string, number>, limit: number): ArtistListenStat[] {
+  return [...counts.entries()]
+    .map(([artist, count]) => ({ artist, count }))
+    .sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      return compareStable(a.artist, b.artist);
+    })
+    .slice(0, limit);
 }
 
 // ── Human-readable formatting helpers ─────────────────────────────────────────
@@ -357,6 +523,8 @@ export function renderReadme(opts: RenderReadmeOptions): string {
   lines.push(
     row('Date added range', `${formatDate(stats.earliestAdded)} – ${formatDate(stats.latestAdded)}`)
   );
+  lines.push(row('Total plays', String(stats.totalPlayCount)));
+  lines.push(row('Total skips', String(stats.totalSkipCount)));
   lines.push('');
 
   if (stats.topArtists.length > 0) {
@@ -368,7 +536,51 @@ export function renderReadme(opts: RenderReadmeOptions): string {
     lines.push('');
   }
 
+  // Listening stats. Each section renders only when it has entries, so a device
+  // with no play/skip history (or firmware that never recorded it) stays clean.
+  renderListenTracks(lines, 'Top played tracks', stats.topPlayedTracks, 'play');
+  renderListenArtists(lines, 'Top played artists', stats.topPlayedArtists, 'play');
+  renderListenTracks(lines, 'Top skipped tracks', stats.topSkippedTracks, 'skip');
+  renderListenArtists(lines, 'Top skipped artists', stats.topSkippedArtists, 'skip');
+
   return lines.join('\n');
+}
+
+/** Pluralise a listening-stat count, e.g. `1 play` / `40 plays` / `17 skips`. */
+function formatListenCount(count: number, noun: 'play' | 'skip'): string {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`;
+}
+
+/** Append a `### <heading>` section listing ranked tracks, or nothing when empty. */
+function renderListenTracks(
+  lines: string[],
+  heading: string,
+  items: readonly TrackListenStat[],
+  noun: 'play' | 'skip'
+): void {
+  if (items.length === 0) return;
+  lines.push(`### ${heading}`);
+  lines.push('');
+  for (const { title, artist, count } of items) {
+    lines.push(`- ${title} — ${artist} (${formatListenCount(count, noun)})`);
+  }
+  lines.push('');
+}
+
+/** Append a `### <heading>` section listing ranked artists, or nothing when empty. */
+function renderListenArtists(
+  lines: string[],
+  heading: string,
+  items: readonly ArtistListenStat[],
+  noun: 'play' | 'skip'
+): void {
+  if (items.length === 0) return;
+  lines.push(`### ${heading}`);
+  lines.push('');
+  for (const { artist, count } of items) {
+    lines.push(`- ${artist} (${formatListenCount(count, noun)})`);
+  }
+  lines.push('');
 }
 
 // ── ArchiveReport accumulator + renderer ──────────────────────────────────────
@@ -386,7 +598,8 @@ export function renderReadme(opts: RenderReadmeOptions): string {
 export class ArchiveReport {
   private constructor(
     private readonly stage1: ReportStage1 | null,
-    private readonly stage2: ReportStage2 | null
+    private readonly stage2: ReportStage2 | null,
+    private readonly listening: ReportListeningStats | null = null
   ) {}
 
   /** Build a transform-stage report from the stage-2 buckets (stage-1 absent). */
@@ -404,12 +617,20 @@ export class ArchiveReport {
    * default run threads stage-1's classification/failures into the transform.
    */
   withStage1(stage1: ReportStage1): ArchiveReport {
-    return new ArchiveReport(normalizeStage1(stage1), this.stage2);
+    return new ArchiveReport(normalizeStage1(stage1), this.stage2, this.listening);
+  }
+
+  /**
+   * Return a copy of this report carrying listening stats — the machine-readable
+   * counterpart of the README's listening section (see {@link listeningStatsFrom}).
+   */
+  withListening(listening: ReportListeningStats): ArchiveReport {
+    return new ArchiveReport(this.stage1, this.stage2, listening);
   }
 
   /** The full, untruncated machine-readable structure. */
   toJson(): ReportJson {
-    return { stage1: this.stage1, stage2: this.stage2 };
+    return { stage1: this.stage1, stage2: this.stage2, listening: this.listening };
   }
 
   /**

@@ -795,7 +795,22 @@ export async function runDoctorDiagnostics(
     out.result<DoctorOutput>(output, () => {
       out.print(`podkit doctor — checking iPod at ${devicePath}`);
       out.newline();
-      out.error('Device is not supported by podkit.');
+      const genId =
+        readinessResult.usbModel?.generationId ?? readinessResult.deviceModel?.generationId;
+      const readOnly =
+        !!genId &&
+        (IPOD_GENERATION_IDS as readonly string[]).includes(genId) &&
+        resolveGenerationSupport(genId as IpodGenerationId).access === 'read-only';
+      if (readOnly) {
+        // A read-only device (shuffle 3g/4g, nano 6g) can't be repaired or
+        // synced, but it is readable and archivable — frame it that way rather
+        // than as a flat "not supported" rejection.
+        out.print(
+          'This device is read-only — podkit can read and back it up, but cannot repair or sync it.'
+        );
+      } else {
+        out.error('Device is not supported by podkit.');
+      }
       const unsupported = readinessResult.unsupported;
       if (unsupported) {
         out.newline();
@@ -806,17 +821,9 @@ export async function runDoctorDiagnostics(
           }
         }
       }
-      // Read-only devices (shuffle 3g/4g, nano 6g) can't be repaired, but the
-      // user isn't stuck — podkit can still read and back them up.
-      const genId =
-        readinessResult.usbModel?.generationId ?? readinessResult.deviceModel?.generationId;
-      if (
-        genId &&
-        (IPOD_GENERATION_IDS as readonly string[]).includes(genId) &&
-        resolveGenerationSupport(genId as IpodGenerationId).access === 'read-only'
-      ) {
+      if (readOnly) {
         out.newline();
-        out.print('podkit can still read and back up this device — run `podkit device archive`.');
+        out.print('Back it up with: podkit device archive');
       }
       out.newline();
       out.print(`See: ${unsupported?.docsUrl ?? DOCS_URLS.supportedDevices}`);
