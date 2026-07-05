@@ -1,0 +1,41 @@
+---
+import { getSupportMatrix } from '@podkit/devices-ipod';
+
+// Renders the iPod generations at a given access tier straight from
+// `getSupportMatrix()` (@podkit/devices-ipod) — the same authoritative matrix
+// the runtime access gate consults. Passing `access="read-only"` or
+// `access="none"` keeps the Read-only / Unsupported sections in the docs from
+// drifting away from what podkit actually refuses to sync.
+interface Props {
+  access: 'read-only' | 'none';
+  /** Fallback reason shown when a generation carries no matrix note. */
+  fallbackReason: string;
+}
+
+const { access, fallbackReason } = Astro.props;
+
+const rows = getSupportMatrix().filter((row) => row.access === access);
+
+function confidenceDisplay(verified: string): string {
+  return verified === 'hardware' ? '✅ Hardware-verified' : '❔ Inferred';
+}
+---
+
+<table>
+  <thead>
+    <tr>
+      <th>Device</th>
+      <th>Reason</th>
+      <th>Confidence</th>
+    </tr>
+  </thead>
+  <tbody>
+    {rows.map((row) => (
+      <tr>
+        <td>{row.displayName}</td>
+        <td>{row.note ?? fallbackReason}</td>
+        <td>{confidenceDisplay(row.verified)}</td>
+      </tr>
+    ))}
+  </tbody>
+</table>

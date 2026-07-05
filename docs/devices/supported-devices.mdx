@@ -6,6 +6,7 @@ sidebar:
 ---
 
 import DeviceCompatibilityTable from '@components/DeviceCompatibilityTable.astro';
+import IpodAccessTable from '@components/IpodAccessTable.astro';
 import TestingDetails from '@components/TestingDetails.astro';
 
 podkit syncs music to two categories of portable player:
@@ -108,7 +109,11 @@ Mass-storage sync writes files directly to the device filesystem instead of goin
 
 podkit uses [libgpod](https://github.com/fadingred/libgpod) for iPod database management. libgpod works with iPods that use **USB Mass Storage mode** with the **iTunesDB** database format.
 
-Devices that use iOS sync protocols (iPod Touch, iPhone, iPad) or require iTunes-specific authentication (buttonless Shuffles) are not supported by libgpod and therefore not supported by podkit.
+iPod support comes in three tiers, because reading a device and writing to it are different operations:
+
+- **Full** — podkit reads *and* syncs the device. This is every classic, mini, nano (1st–5th gen), photo, video, and shuffle (1st–2nd gen) iPod.
+- **Read-only** — podkit reads the library and can [archive](/user-guide/devices/archive) it, but **cannot sync**. The buttonless shuffles (3rd/4th gen) keep a libgpod-readable `iTunesDB`, but their `iTunesSD` playback database needs an iTunes authentication hash libgpod cannot produce. The nano 6th gen writes a database format libgpod cannot write. Reading and archiving these is entirely safe; only writes are refused.
+- **Unsupported** — podkit cannot use the device at all. iOS devices (iPod Touch, iPhone, iPad) don't mount as mass storage, and the nano 7th gen uses a database format libgpod neither reads nor writes.
 
 ### How We Test iPods
 
@@ -126,29 +131,40 @@ These simulated databases exercise the same libgpod code paths as real hardware 
 
 ### Confidence Levels
 
+Every generation in the tables below carries a **confidence** badge recording how well we know its behaviour. It is independent of the sync tier — it says nothing about whether a device can sync, only how the claim was established:
+
 | Level | Meaning |
 |-------|---------|
-| ✅ **Verified** | Confirmed working with real hardware by a contributor |
-| 🧪 **Simulated** | Has automated E2E test coverage with simulated database |
-| ❔ **Expected** | Should work based on libgpod support, but not yet tested |
+| ✅ **Hardware-verified** | Confirmed on a real device by a contributor |
+| ❔ **Inferred** | Derived from libgpod's tables and podkit's automated simulated-database tests, but not yet confirmed on physical hardware |
+
+If you own a device marked ❔ **Inferred** and it works (or doesn't), [let us know](#confirming-your-ipod-works) — a single report upgrades the record to hardware-verified.
 
 ### iPod Compatibility
 
 <DeviceCompatibilityTable />
 
+### Read-only iPods
+
+Some iPods can be **read and archived but not synced**. podkit discovers them, lists their music, and can copy their entire library to an [archive](/user-guide/devices/archive) — but any write operation (`sync`, `device init`) is refused up front with a clear reason, so nothing is ever silently degraded.
+
+<IpodAccessTable access="read-only" fallbackReason="Read-only: libgpod cannot write this device's playback database." />
+
+Reach for `podkit device archive` to preserve one of these devices:
+
+```bash
+podkit device archive -d "/Volumes/IPOD"
+```
+
+Why read but not write? The buttonless shuffles (3rd/4th gen) keep a libgpod-readable `iTunesDB` alongside the `iTunesSD` playback database the firmware actually plays from. Reading the `iTunesDB` is fine, but writing a valid `iTunesSD` needs an iTunes authentication hash libgpod cannot produce. The nano 6th gen's write path is likewise unsupported by libgpod, while its read is merely untested — so podkit permits the safe read and refuses the write.
+
 ### Unsupported iPods
 
-The following devices **cannot** be supported by podkit:
+These devices **cannot be used by podkit at all** — they neither mount as USB mass storage nor expose a database libgpod can read or write:
 
-| Device | Reason |
-|--------|--------|
-| iPod Nano 6th Gen | Different database format (touch screen square design) |
-| iPod Nano 7th Gen | Different database format (tall touch screen) |
-| iPod Shuffle 3rd Gen | Buttonless; requires iTunes authentication hash |
-| iPod Shuffle 4th Gen | Buttonless; requires iTunes authentication hash |
-| iPod Touch (all) | Uses iOS sync protocol; iTunesDB requires cryptographic signing |
-| iPhone (all) | Uses iOS sync protocol |
-| iPad (all) | Uses iOS sync protocol |
+<IpodAccessTable access="none" fallbackReason="Not usable via libgpod — no readable iTunesDB over USB mass storage." />
+
+The nano 7th gen uses a database format libgpod neither reads nor writes. The iPod Touch — and, for the same reason, **all iPhones and iPads** — use Apple's iOS sync protocol instead of USB mass storage. (iPhones and iPads aren't iPods, so they don't appear in the generation matrix above.)
 
 #### Why Can't iOS Devices Be Supported?
 
@@ -187,7 +203,7 @@ iPods with [iFlash](https://www.iflash.xyz/) or similar SD card adapters are ful
 
 ### Confirming Your iPod Works
 
-If you have an iPod model marked as ❔ and successfully use it with podkit, please help us verify support:
+If you have an iPod model marked ❔ **Inferred** and successfully use it with podkit, please help us verify support:
 
 1. **Report success**: Open an issue or PR noting your model number and any observations
 2. **Model number**: Found in Settings > About on the iPod, or on the device's back
@@ -214,6 +230,20 @@ If podkit shows your iPod as "Unknown Generation":
 
 - **macOS**: See [macOS Mounting Issues](/troubleshooting/macos-mounting)
 - **Linux**: Ensure you have appropriate udev rules; see libgpod documentation
+
+#### iPod Shuffle Reported as Not Mounted
+
+Earlier versions reported a connected iPod shuffle (3rd/4th gen) as "connected but not mounted," even while it was plugged in and readable. A shuffle now **discovers correctly**: podkit surfaces its whole-disk volume, recognises it as an iPod, and lists its music.
+
+Because the shuffle is [read-only](#read-only-ipods), only **syncing** is refused — with an explicit reason, not a mount error. You can still read and archive it:
+
+```bash
+podkit device music -d "/Volumes/IPOD"   # lists tracks
+podkit device archive -d "/Volumes/IPOD" # preserves the library
+podkit sync -d "/Volumes/IPOD"           # refused: read-only device
+```
+
+If a shuffle still reports as unmounted, confirm the volume is mounted in Finder and that `iPod_Control/` exists at its root.
 
 ## See Also
 

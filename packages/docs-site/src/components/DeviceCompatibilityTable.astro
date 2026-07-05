@@ -1,12 +1,66 @@
 ---
 import { GENERATION_INFO } from '@podkit/compatibility';
+import { getSupportMatrix } from '@podkit/devices-ipod';
 
-function getConfidenceDisplay(confidence: string): string {
-  switch (confidence) {
-    case 'verified': return '✅ Verified';
-    case 'simulated': return '🧪 Simulated';
-    default: return '❔ Expected';
+// Sync tier and confidence are sourced from `getSupportMatrix()` in
+// `@podkit/devices-ipod` — the single authoritative support matrix — so this
+// table can never drift from the code that actually gates device behaviour.
+//
+// The two datasets use different generation-id namespaces: `@podkit/compatibility`
+// keys rows by libgpod's `IpodGeneration` (e.g. `video_1`), while the support
+// matrix keys by the canonical `IpodGenerationId` (e.g. `video_5g`). The
+// crosswalk below only bridges the *keys*; every displayed Sync/Confidence
+// value comes straight from the matrix. A missing mapping fails the build
+// loudly rather than silently rendering a blank cell.
+const GENERATION_ID_CROSSWALK: Record<string, string> = {
+  first: 'classic_1g',
+  second: 'classic_2g',
+  third: 'classic_3g',
+  fourth: 'classic_4g',
+  photo: 'photo',
+  video_1: 'video_5g',
+  video_2: 'video_5_5g',
+  classic_1: 'classic_6g',
+  classic_2: 'classic_6g',
+  classic_3: 'classic_7g',
+  nano_1: 'nano_1g',
+  nano_2: 'nano_2g',
+  nano_3: 'nano_3g',
+  nano_4: 'nano_4g',
+  nano_5: 'nano_5g',
+  mini_1: 'mini_1g',
+  mini_2: 'mini_2g',
+  shuffle_1: 'shuffle_1g',
+  shuffle_2: 'shuffle_2g',
+};
+
+const matrixById = new Map(getSupportMatrix().map((row) => [row.generation, row]));
+
+function resolveSupport(generation: string) {
+  const canonicalId = GENERATION_ID_CROSSWALK[generation];
+  const support = canonicalId ? matrixById.get(canonicalId) : undefined;
+  if (!support) {
+    throw new Error(
+      `DeviceCompatibilityTable: no support-matrix entry for compatibility generation "${generation}" ` +
+        `(mapped to "${canonicalId ?? '<unmapped>'}"). Update the crosswalk or getSupportMatrix().`
+    );
   }
+  return support;
+}
+
+function syncDisplay(access: string): string {
+  switch (access) {
+    case 'syncable':
+      return '✅ Full';
+    case 'read-only':
+      return '📖 Read-only';
+    default:
+      return '🚫 Unsupported';
+  }
+}
+
+function confidenceDisplay(verified: string): string {
+  return verified === 'hardware' ? '✅ Hardware-verified' : '❔ Inferred';
 }
 
 function featureDisplay(supported: boolean): string {
@@ -23,20 +77,25 @@ function featureDisplay(supported: boolean): string {
       <th>Artwork</th>
       <th>Video</th>
       <th>Playlists</th>
+      <th>Sync</th>
       <th>Confidence</th>
     </tr>
   </thead>
   <tbody>
-    {GENERATION_INFO.map((gen) => (
-      <tr>
-        <td>{gen.displayName}</td>
-        <td><code>{gen.models.join(', ')}</code></td>
-        <td>{featureDisplay(gen.features.music)}</td>
-        <td>{featureDisplay(gen.features.artwork)}</td>
-        <td>{featureDisplay(gen.features.video)}</td>
-        <td>{featureDisplay(gen.features.playlists)}</td>
-        <td>{getConfidenceDisplay(gen.confidence)}</td>
-      </tr>
-    ))}
+    {GENERATION_INFO.map((gen) => {
+      const support = resolveSupport(gen.generation);
+      return (
+        <tr>
+          <td>{gen.displayName}</td>
+          <td><code>{gen.models.join(', ')}</code></td>
+          <td>{featureDisplay(gen.features.music)}</td>
+          <td>{featureDisplay(gen.features.artwork)}</td>
+          <td>{featureDisplay(gen.features.video)}</td>
+          <td>{featureDisplay(gen.features.playlists)}</td>
+          <td>{syncDisplay(support.access)}</td>
+          <td>{confidenceDisplay(support.verified)}</td>
+        </tr>
+      );
+    })}
   </tbody>
 </table>
