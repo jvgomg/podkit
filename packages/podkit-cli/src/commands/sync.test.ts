@@ -40,22 +40,30 @@ describe('sync command', () => {
       expect(skipUpgradesOption?.optional).toBe(false);
     });
 
-    it('has --bitrate-sync value option restricted to the five policy modes', () => {
+    it('has --bitrate-reduce value option restricted to the reduce modes', () => {
       const options = syncCommand.options;
-      const bitrateSyncOption = options.find((opt) => opt.long === '--bitrate-sync');
-      expect(bitrateSyncOption).toBeDefined();
-      expect(bitrateSyncOption?.attributeName()).toBe('bitrateSync');
+      const reduceOption = options.find((opt) => opt.long === '--bitrate-reduce');
+      expect(reduceOption).toBeDefined();
+      expect(reduceOption?.attributeName()).toBe('bitrateReduce');
       // Value option: takes an argument and has no synthesised default, so an
-      // unpassed flag is absent and the resolved device policy wins.
-      expect(bitrateSyncOption?.required).toBe(true);
-      expect(bitrateSyncOption?.defaultValue).toBeUndefined();
-      expect(bitrateSyncOption?.argChoices).toEqual([
-        'off',
-        'match-cap',
-        'match-all',
-        'up-only',
-        'down-only',
-      ]);
+      // unpassed flag is absent and the resolved device → global chain wins.
+      expect(reduceOption?.required).toBe(true);
+      expect(reduceOption?.defaultValue).toBeUndefined();
+      expect(reduceOption?.argChoices).toEqual(['auto', 'always', 'never']);
+    });
+
+    it('has --bitrate-tolerance value option that parses to a number', () => {
+      const options = syncCommand.options;
+      const toleranceOption = options.find((opt) => opt.long === '--bitrate-tolerance');
+      expect(toleranceOption).toBeDefined();
+      expect(toleranceOption?.attributeName()).toBe('bitrateTolerance');
+      expect(toleranceOption?.required).toBe(true);
+      expect(toleranceOption?.defaultValue).toBeUndefined();
+    });
+
+    it('no longer has the removed --bitrate-sync option', () => {
+      const options = syncCommand.options;
+      expect(options.find((opt) => opt.long === '--bitrate-sync')).toBeUndefined();
     });
   });
 });

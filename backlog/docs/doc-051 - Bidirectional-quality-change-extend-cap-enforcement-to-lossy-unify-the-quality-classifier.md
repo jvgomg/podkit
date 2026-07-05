@@ -197,6 +197,13 @@ Design rules baked into the classifier:
 
 ### Policy gate
 
+> **Superseded by [ADR-023](../../../adr/adr-023-lossy-reduction-down-only.md) (2026-06-30).**
+> The five-mode `BitrateSyncMode` gate (`match-cap`, `match-all`, `up-only`, `down-only`, `off`)
+> and the `[bitrate].sync` / `toleranceUp` / `toleranceDown` config keys are **removed**.
+> Lossy reduction is now down-only (`[bitrate].reduce = auto | always | never`; default
+> `auto` follows the transfer mode). The policy-gate section below describes the
+> **original design intent** — retained as historical context only.
+
 A small pure mapping from `(direction, reason, BitrateSyncMode)` → `fire | suppress-log`.
 Kept as a distinct, independently-tested concern from "what changed":
 
@@ -225,6 +232,12 @@ bitrate.sync = match-cap/...  → + bitrate moves per direction policy
 It sits above `bitrate.sync` and vetoes everything including preconditions.
 
 ### Config schema
+
+> **Superseded by [ADR-023](../../../adr/adr-023-lossy-reduction-down-only.md) (2026-06-30).**
+> `[bitrate].sync`, `toleranceUp`, `toleranceDown`, and `--bitrate-sync` are **removed**.
+> The shipped config is `[bitrate].reduce = auto | always | never` and
+> `[bitrate].tolerance = 0.25` (fraction of cap). See the Config schema below for
+> historical context only.
 
 Per device, under the existing device-config block:
 

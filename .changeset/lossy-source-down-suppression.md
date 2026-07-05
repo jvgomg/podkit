@@ -15,4 +15,4 @@ Suppressed changes are visible without creating any work:
 - The default text summary shows a per-collection "Source-down suppressed" count; `-v` lists each affected track with its device/source bitrates.
 - The track is never moved into `tracksToUpdate`/`tracksToUpgrade` and no file work runs — a suppressed track is a stable no-op across repeated syncs.
 
-Suppression is the default. Following the source down instead is left to a future opt-in policy. Works on both iPod and mass-storage devices.
+Suppression is the default and the only behaviour — down-only reduction means podkit never follows a degraded source down automatically. Works on both iPod and mass-storage devices.

@@ -30,6 +30,7 @@ This section contains Architecture Decision Records (ADRs) documenting significa
 | [ADR-020](/developers/adr/adr-020-ipod-identity-structured-fields) | Structured iPod Identity Fields | Accepted | 2026-06-20 |
 | [ADR-021](/developers/adr/adr-021-cli-bun-binary-distribution) | CLI Distributes as a Bun Binary Only | Accepted | 2026-06-22 |
 | [ADR-022](/developers/adr/adr-022-sync-tag-sole-quality-truth) | The Sync Tag Is the Sole Quality Truth | Accepted | 2026-06-27 |
+| [ADR-023](/developers/adr/adr-023-lossy-reduction-down-only) | Lossy Reduction Is a Down-Only, Transfer-Mode-Defaulted Axis | Accepted | 2026-06-30 |
 
 ## What is an ADR?
 

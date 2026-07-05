@@ -49,6 +49,10 @@ import {
   codecOutcome,
   copyOpKind,
   resolvedLossyCodec,
+  reductionAxis,
+  DEFAULT_REDUCE_TOLERANCE,
+  QUALITY_CAP_KBPS,
+  FIXTURE_SOURCE_BITRATE_KBPS,
   TRANSFER_MODES,
   type TransferMode,
 } from './reference-model.js';
@@ -133,21 +137,35 @@ export function codecCellLabel(cell: CodecCell): string {
 }
 
 /**
- * Transfer mode only changes the *copy* sub-type, and only on devices whose
- * primary artwork source is not `embedded` (embedded-art devices always
- * `optimized-copy`). So we assert the full product at `fast`, and add the
- * `optimized`/`portable` modes only where they can differ: the iPod
- * (database-artwork) under a single codec config. Everything else is pruned —
- * these are all `redundant` (structural) skips, never deferred bugs.
+ * Transfer mode affects two things here, both exercised on the iPod
+ * (database-artwork) under a single codec config — everything else is a
+ * `redundant` (structural) skip, never a deferred bug:
+ *
+ * 1. The *copy* sub-type (`direct-copy` vs `optimized-copy`), which only differs
+ *    on devices whose primary artwork source is not `embedded` (embedded-art
+ *    devices always `optimized-copy`).
+ * 2. The lossy reduction default (ADR-023): `auto` follows the mode, so
+ *    `optimized` → convert and `fast`/`portable` → preserve. Under `convert` an
+ *    over-cap device-native lossy source flips copy → transcode. The iPod /
+ *    aac-first / `optimized` cells exercise both branches of that gate from one
+ *    fixture set: the 256k AAC source reduces (over the 160 band at quality=low)
+ *    while the ~105k MP3 source stays a copy (under the band). The reduce
+ *    decision is source-vs-cap, not device-specific, so re-running it on the
+ *    other devices' native sources would be redundant.
+ *
+ * So we assert the full product at `fast`, and add the `optimized`/`portable`
+ * modes only on the iPod under `aac-first`.
  */
 export function skipCodecCell(cell: CodecCell): SkipDecision | null {
   if (cell.transferMode === 'fast') return null;
   if (cell.device !== 'ipod-MA147') {
-    return skipRedundant('transfer mode alters the copy op-type only on database-artwork devices');
+    return skipRedundant(
+      'transfer mode alters only the copy op-type + the device-independent reduce gate; both exercised on the iPod'
+    );
   }
   if (cell.config !== 'aac-first') {
     return skipRedundant(
-      'transfer-mode effect is codec-independent; exercised under aac-first only'
+      'transfer-mode effect (copy sub-type + reduce default) is codec-config-independent; exercised under aac-first only'
     );
   }
   return null;
@@ -217,7 +235,17 @@ export interface CodecObserved extends Record<string, unknown> {
 export function predictCodec(cell: CodecCell): CodecExpected {
   const spec = DEVICE_SPEC_BY_ID[cell.device];
   const config = CODEC_CONFIG_BY_ID[cell.config];
-  const outcome = codecOutcome(cell.format, spec.capabilities, spec.kind, config.lossy, 'low');
+  // The codec config never writes a `[bitrate]` block, so `reduce` is `auto` and
+  // the axis follows the transfer mode: `optimized` → convert, `fast`/`portable`
+  // → preserve. Under `convert` an over-cap device-native lossy source reduces
+  // (transcodes) instead of copying — at quality=low (cap 128) that flips the
+  // 256k AAC source on the iPod to an `add-transcode` (ADR-023).
+  const outcome = codecOutcome(cell.format, spec.capabilities, spec.kind, config.lossy, 'low', {
+    axis: reductionAxis('auto', cell.transferMode),
+    sourceBitrate: FIXTURE_SOURCE_BITRATE_KBPS[cell.format],
+    cap: QUALITY_CAP_KBPS.low,
+    tolerance: DEFAULT_REDUCE_TOLERANCE,
+  });
   const resolved = resolvedLossyCodec(config.lossy, spec.capabilities, spec.kind) ?? null;
 
   let addOp: string;

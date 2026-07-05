@@ -1,10 +1,10 @@
 ---
 id: TASK-437.05
 title: 'S4: bitrate.sync policy + config schema + CLI override'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-06-25 22:38'
-updated_date: '2026-06-27 23:10'
+updated_date: '2026-06-30 16:53'
 labels:
   - sync
   - transcoding
@@ -91,4 +91,6 @@ Final gates: lint clean; FULL `turbo run typecheck` 36/36; @podkit/core unit 335
 Team-lead review pass (Sonnet) + fixes: caught that mergeConfigs deep-merged the global [bitrate] block but still spread the per-device [devices.x.bitrate] block wholesale — a later config layer overriding one bitrate field (e.g. sync) would clobber another layer's tolerances. Fixed with field-by-field device-bitrate merge + a regression test mirroring the global-block test. Reviewer verified idempotency (same-family lossy cap oscillation fix, match-all source-down target bitrate), the full 35-cell gate table, off-lets-preconditions-fire, skipUpgrades-above-gate, and the CLI option-source guard — all correct. Pre-existing dead param loadCliConfig(globalOpts) left as-is (unrelated to this change; would ripple an exported signature across all call-sites). Gates green: lint 0/0, full typecheck 36/36, @podkit/core 3351 pass, podkit cli unit pass, e2e dummy 47 pass (upgrades/preset-change/mass-storage-sync/artwork-sync-tags).
 
 AC#5 retro-checked now satisfied: the source-bound tolerance landed in this slice, and the legacy bitrateTolerance reinterpretation (DB-fallback role gone) was completed in the sibling slice that removed the DB-bitrate fallback — bitrateTolerance is now wired as the symmetric fallback for the source-bound toleranceUp/toleranceDown in qualityTargetFromConfig (toleranceUp ?? bitrateTolerance, toleranceDown ?? bitrateTolerance), and QualityTarget no longer carries a fallback bitrateTolerance. The DB-bitrate fallback path is gone for audio.
+
+SUPERSEDED by ADR-023 / TASK-453 (2026-06-30). The five-mode [bitrate].sync policy + applyBitrateSyncPolicy gate this slice added is DELETED by the redesign and replaced by [bitrate].reduce (auto|always|never) + [bitrate].tolerance, with transfer mode setting the reduction default. Kept as history of the shipped (RED) branch; deleted in TASK-453.02/.03. Redundant: do not treat as live.
 <!-- SECTION:NOTES:END -->

@@ -247,10 +247,8 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
       capabilities: config.capabilities,
       encoding: config.effectiveEncoding,
       customBitrate: config.effectiveCustomBitrate,
-      bitrateTolerance: config.effectiveBitrateTolerance,
-      bitrateSync: config.effectiveBitrateSync,
-      toleranceUp: config.effectiveToleranceUp,
-      toleranceDown: config.effectiveToleranceDown,
+      reduce: config.effectiveReduce,
+      tolerance: config.effectiveTolerance,
       transferMode: config.effectiveTransferMode,
       artwork: config.effectiveArtwork,
       transforms: config.effectiveTransforms,
@@ -568,10 +566,18 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
       }
     }
 
-    // Source-down suppressed: reported but never acted on (the source degraded
-    // below the better device copy). These stay in `existing`, so they appear as
-    // a dedicated count rather than under "Tracks to update".
-    const suppressed = diff.reportOnlyQualityChanges ?? [];
+    // Report-only quality changes: reported but never acted on. They stay in
+    // `existing`, so they appear as dedicated counts rather than under "Tracks to
+    // update". Two distinct signals share the channel:
+    //   - `source-down-suppressed`: the source degraded below the better device
+    //     copy (kept the device copy).
+    //   - `below-cap`: a previously-reduced track sits below a raised cap;
+    //     down-only never lifts it automatically.
+    const reportOnly = diff.reportOnlyQualityChanges ?? [];
+    const suppressed = reportOnly.filter(
+      (e) => e.qualityChange.reason === 'source-down-suppressed'
+    );
+    const belowCap = reportOnly.filter((e) => e.qualityChange.reason === 'below-cap');
     if (suppressed.length > 0) {
       out.print(`  Source-down suppressed: ${formatNumber(suppressed.length)} (kept device copy)`);
       if (out.isVerbose) {
@@ -583,6 +589,24 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
               : '';
           out.print(
             `    - ${entry.source.artist ?? 'Unknown'} - ${entry.source.title ?? 'Unknown'}: ${qc.reason}${bitrates}`
+          );
+        }
+      }
+    }
+    if (belowCap.length > 0) {
+      const plural = belowCap.length === 1 ? '' : 's';
+      out.print(
+        `  ${formatNumber(belowCap.length)} track${plural} below your quality target; \`--force-transcode\` to lift them`
+      );
+      if (out.isVerbose) {
+        for (const entry of belowCap) {
+          const qc = entry.qualityChange;
+          const at =
+            qc.encodedBitrate !== undefined
+              ? ` [${qc.encodedBitrate} kbps vs cap ${qc.targetBitrate} kbps]`
+              : '';
+          out.print(
+            `    - ${entry.source.artist ?? 'Unknown'} - ${entry.source.title ?? 'Unknown'}${at}`
           );
         }
       }
@@ -777,12 +801,18 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
       }
     }
 
-    // Report-only quality changes (source-down suppressed): visible in the
-    // breakdown count and qualityChanges[] JSON, but never an operation — the
-    // track stayed in `existing`, so it is NOT counted in tracksToUpdate.
+    // Report-only quality changes: visible in the breakdown count and
+    // qualityChanges[] JSON, but never an operation — the track stayed in
+    // `existing`, so it is NOT counted in tracksToUpdate. The breakdown key splits
+    // the two report-only signals: `below-cap` (a previously-reduced track below a
+    // raised cap) from `source-down-suppressed` (a source degraded below the
+    // device copy).
     for (const entry of diff.reportOnlyQualityChanges ?? []) {
-      updateBreakdown['quality-change-suppressed'] =
-        (updateBreakdown['quality-change-suppressed'] ?? 0) + 1;
+      const key =
+        entry.qualityChange.reason === 'below-cap'
+          ? 'quality-change-below-cap'
+          : 'quality-change-suppressed';
+      updateBreakdown[key] = (updateBreakdown[key] ?? 0) + 1;
       qualityChanges.push(qualityChangeInfo(entry.source, entry.qualityChange));
     }
 
@@ -829,7 +859,7 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
             : undefined,
         albumCount,
         artistCount,
-        // Pre-sync sweep summary (TASK-398). Only present on the FIRST
+        // Pre-sync sweep summary. Only present on the FIRST
         // collection's plan per device sync; subsequent collections
         // serialize `undefined`. Lives under `plan` rather than at the
         // top of the output to keep the device-level pre-flight scoped

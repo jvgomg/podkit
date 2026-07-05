@@ -90,10 +90,8 @@ export interface MusicContentConfig {
   effectiveEncoding: EncodingMode | undefined;
   effectiveTransferMode: TransferMode | undefined;
   effectiveCustomBitrate: number | undefined;
-  effectiveBitrateTolerance: number | undefined;
-  effectiveBitrateSync: import('@podkit/core').BitrateSyncMode;
-  effectiveToleranceUp: number | undefined;
-  effectiveToleranceDown: number | undefined;
+  effectiveReduce: import('../config/types.js').ReduceMode;
+  effectiveTolerance: number;
   deviceSupportsAlac: boolean;
   effectiveArtwork: boolean;
   skipUpgrades: boolean;

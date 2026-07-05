@@ -40,10 +40,8 @@ const BASE_SETTINGS: ResolvedDeviceSettings = {
   encoding: { value: undefined, source: 'default' },
   transferMode: { value: 'fast', source: 'default' },
   customBitrate: { value: undefined, source: 'default' },
-  bitrateTolerance: { value: undefined, source: 'default' },
-  bitrateSync: { value: 'match-cap', source: 'default' },
-  toleranceUp: { value: undefined, source: 'default' },
-  toleranceDown: { value: undefined, source: 'default' },
+  reduce: { value: 'auto', source: 'default' },
+  tolerance: { value: 0.25, source: 'default' },
 };
 
 const PRESET_CAPS: ResolvedDeviceCapabilities = {

@@ -1,10 +1,10 @@
 ---
 id: TASK-437.06
 title: 'S5: Precondition re-encodes — CBR/VBR flip + lossy/lossless boundary'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-06-25 22:38'
-updated_date: '2026-06-27 21:25'
+updated_date: '2026-06-29 09:00'
 labels:
   - sync
   - transcoding

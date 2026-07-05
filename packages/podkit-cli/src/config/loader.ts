@@ -46,7 +46,7 @@ import {
   DEFAULT_SHOW_LANGUAGE_CONFIG,
   VIDEO_QUALITY_PRESETS,
   TRANSFER_MODES,
-  BITRATE_SYNC_MODES,
+  REDUCE_MODES,
   isValidTransferMode,
   DEVICE_TYPES,
   AUDIO_CODECS,
@@ -192,31 +192,6 @@ function parseIntegerInRange(args: {
 }
 
 /**
- * Validate a raw value against an inclusive numeric range and assign it.
- *
- * Reproduces: `Invalid ${field} value "${value}" in ${context}. ${rangeText}`
- * Unlike {@link parseIntegerInRange} this does not require an integer.
- */
-function parseNumberInRange(args: {
-  raw: unknown;
-  field: string;
-  context: string;
-  min: number;
-  max: number;
-  rangeText: string;
-  assign: (value: number) => void;
-}): void {
-  const { raw, field, context, min, max, rangeText, assign } = args;
-  if (raw === undefined) {
-    return;
-  }
-  if (typeof raw !== 'number' || raw < min || raw > max) {
-    throw new Error(`Invalid ${field} value "${String(raw)}" in ${context}. ` + rangeText);
-  }
-  assign(raw);
-}
-
-/**
  * Validate a raw value as a boolean and assign it.
  *
  * Reproduces: `Invalid type for "${field}" in ${context}. Expected boolean, got ${typeof}.`
@@ -247,12 +222,14 @@ function parseBoolean(args: {
 }
 
 /**
- * Parse and validate a `[bitrate]` / `[devices.<name>.bitrate]` block.
+ * Parse and validate a `[bitrate]` / `[devices.<name>.bitrate]` block (ADR-023).
  *
  * Returns a validated {@link BitrateConfig}, or `undefined` when the block holds
- * nothing recognised. Throws a context-tagged error for an invalid `sync` value
- * or an out-of-range tolerance, matching the surrounding scalar validators. A
- * non-table value for the whole block is a hard type error.
+ * nothing recognised. Throws a context-tagged error for an invalid `reduce`
+ * value or a negative `tolerance`, matching the surrounding scalar validators. A
+ * non-table value for the whole block is a hard type error. The removed
+ * `sync` / `toleranceUp` / `toleranceDown` keys are rejected with a message
+ * naming their replacement.
  */
 function parseBitrateBlock(raw: unknown, context: string): BitrateConfig | undefined {
   if (raw === undefined) {
@@ -262,49 +239,48 @@ function parseBitrateBlock(raw: unknown, context: string): BitrateConfig | undef
     throw new Error(`Invalid type for "bitrate" in ${context}. Expected a table.`);
   }
 
-  const rawBlock = raw as { sync?: unknown; toleranceUp?: unknown; toleranceDown?: unknown };
+  const rawBlock = raw as {
+    reduce?: unknown;
+    tolerance?: unknown;
+    sync?: unknown;
+    toleranceUp?: unknown;
+    toleranceDown?: unknown;
+  };
+
+  // Reject the removed lossy-policy keys with a pointer to their replacements.
+  for (const removed of ['sync', 'toleranceUp', 'toleranceDown'] as const) {
+    if (rawBlock[removed] !== undefined) {
+      throw new Error(
+        `"bitrate.${removed}" in ${context} was removed. Use "[bitrate].reduce" ` +
+          `(auto | always | never) and "[bitrate].tolerance" instead.`
+      );
+    }
+  }
+
   const result: BitrateConfig = {};
 
   parseStringEnum({
-    raw: rawBlock.sync,
-    field: 'bitrate.sync',
+    raw: rawBlock.reduce,
+    field: 'bitrate.reduce',
     context,
-    valid: BITRATE_SYNC_MODES,
+    valid: REDUCE_MODES,
     throwOnWrongType: true,
     assign: (v) => {
-      result.sync = v;
+      result.reduce = v;
     },
   });
 
-  parseNumberInRange({
-    raw: rawBlock.toleranceUp,
-    field: 'bitrate.toleranceUp',
-    context,
-    min: 0.0,
-    max: 1.0,
-    rangeText: 'Must be a number between 0.0 and 1.0.',
-    assign: (v) => {
-      result.toleranceUp = v;
-    },
-  });
+  if (rawBlock.tolerance !== undefined) {
+    if (typeof rawBlock.tolerance !== 'number' || rawBlock.tolerance < 0) {
+      throw new Error(
+        `Invalid bitrate.tolerance value "${String(rawBlock.tolerance)}" in ${context}. ` +
+          `Must be a number >= 0 (fraction of the cap; 0 = exact).`
+      );
+    }
+    result.tolerance = rawBlock.tolerance;
+  }
 
-  parseNumberInRange({
-    raw: rawBlock.toleranceDown,
-    field: 'bitrate.toleranceDown',
-    context,
-    min: 0.0,
-    max: 1.0,
-    rangeText: 'Must be a number between 0.0 and 1.0.',
-    assign: (v) => {
-      result.toleranceDown = v;
-    },
-  });
-
-  return result.sync === undefined &&
-    result.toleranceUp === undefined &&
-    result.toleranceDown === undefined
-    ? undefined
-    : result;
+  return result.reduce === undefined && result.tolerance === undefined ? undefined : result;
 }
 
 /**
@@ -417,18 +393,6 @@ export function loadConfigFile(configPath: string): PartialConfig | undefined {
     rangeText: 'Must be an integer between 64 and 320.',
     assign: (v) => {
       config.customBitrate = v;
-    },
-  });
-
-  parseNumberInRange({
-    raw: parsed.bitrateTolerance,
-    field: 'bitrateTolerance',
-    context: 'config',
-    min: 0.0,
-    max: 1.0,
-    rangeText: 'Must be a number between 0.0 and 1.0.',
-    assign: (v) => {
-      config.bitrateTolerance = v;
     },
   });
 
@@ -1289,19 +1253,6 @@ function parseDevices(
       },
     });
 
-    // Parse optional bitrateTolerance
-    parseNumberInRange({
-      raw: rawDevice.bitrateTolerance,
-      field: 'bitrateTolerance',
-      context: `[devices.${name}]`,
-      min: 0.0,
-      max: 1.0,
-      rangeText: 'Must be a number between 0.0 and 1.0.',
-      assign: (v) => {
-        device.bitrateTolerance = v;
-      },
-    });
-
     // Parse optional artwork
     parseBoolean({
       raw: rawDevice.artwork,
@@ -1891,11 +1842,18 @@ export function loadEnvConfig(): PartialConfig {
     }
   }
 
+  // `[bitrate].reduce` / `[bitrate].tolerance` (ADR-023). Both env vars feed the
+  // nested bitrate block; invalid values are silently ignored (env-layer convention).
+  const bitrateReduce = process.env[ENV_KEYS.bitrateReduce];
+  if (bitrateReduce !== undefined && (REDUCE_MODES as readonly string[]).includes(bitrateReduce)) {
+    config.bitrate = { ...config.bitrate, reduce: bitrateReduce as (typeof REDUCE_MODES)[number] };
+  }
+
   const bitrateTolerance = process.env[ENV_KEYS.bitrateTolerance];
   if (bitrateTolerance !== undefined) {
     const parsed = parseFloat(bitrateTolerance);
-    if (!isNaN(parsed) && parsed >= 0.0 && parsed <= 1.0) {
-      config.bitrateTolerance = parsed;
+    if (!isNaN(parsed) && parsed >= 0) {
+      config.bitrate = { ...config.bitrate, tolerance: parsed };
     }
   }
 
@@ -2405,12 +2363,9 @@ export function mergeConfigs(...configs: PartialConfig[]): PodkitConfig {
     if (config.customBitrate !== undefined) {
       merged.customBitrate = config.customBitrate;
     }
-    if (config.bitrateTolerance !== undefined) {
-      merged.bitrateTolerance = config.bitrateTolerance;
-    }
     if (config.bitrate !== undefined) {
-      // Merge the bitrate-policy block field-by-field so a later layer can set
-      // only `sync` (or only a tolerance) without dropping the others.
+      // Merge the lossy-reduction block field-by-field so a later layer can set
+      // only `reduce` (or only `tolerance`) without dropping the other.
       merged.bitrate = { ...merged.bitrate, ...config.bitrate };
     }
     if (config.artwork !== undefined) {

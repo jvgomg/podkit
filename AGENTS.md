@@ -129,6 +129,12 @@ When a refactor changes a convention, update the relevant architecture doc in th
 
 The architecture docs are distinct from the rough-edges journals in `backlog/docs/doc-NNN-*.md` (working catalogue of *what's still smelly*) and from ADRs in `adr/` (decision log frozen at decision time). Don't duplicate content across them — link.
 
+## Design Principles
+
+`documents/principles/` holds the *why* layer above ADRs — the behavioural promises podkit makes to a user's library (e.g. never silently degrade, settings are ceilings, the source is truth) and the philosophy behind the metadata/artwork (transfer mode) and bitrate/codec (transcoding) axes. **Read [documents/principles/README.md](documents/principles/README.md) before changing user-facing sync/transcoding behaviour**, and lift a new cross-cutting promise into a principle when an ADR reveals one.
+
+Principles are the *why*; ADRs decide *how* to honour them; architecture docs *wire* them; PRDs must *conform*. Link, never duplicate.
+
 ## Feature Requests & GitHub Discussions
 
 Feature requests are managed through GitHub Discussions (Ideas category), with links in the documentation and backlog tasks. **See [agents/feature-requests.md](agents/feature-requests.md) for the complete guide** covering:

@@ -4,7 +4,7 @@ title: 'S2: Lossy cap-up / source-improved re-encode'
 status: Done
 assignee: []
 created_date: '2026-06-25 22:37'
-updated_date: '2026-06-27 17:56'
+updated_date: '2026-06-30 16:53'
 labels:
   - sync
   - transcoding
@@ -75,4 +75,6 @@ Deliberately left for later (unchanged, still return null): CBR/VBR encoding-mis
 Gates: lint 0/0; build @podkit/core + podkit; unit @podkit/core (3295 pass) + podkit (1902 pass); e2e dummy upgrades+preset-change+mass-storage-sync+artwork-sync-tags = 42 pass / 0 fail.
 
 Reviewed (Sonnet): APPROVE-WITH-NITS, no blocking — gating correct at all boundaries, source-degraded suppression provably safe + tested, idempotency symmetric incl the min(source,cap)=source edge, re-encode reads source not device file, no double-fire with source-improved, no scope leak, no slice labels in diff. Lead folded in two nits: source-bounded unit case now asserts encodedBitrate/sourceBitrate (parallel with its sibling); cap-up e2e now asserts upTracks bitrate > cappedTracks bitrate (observable proof of the up re-encode, not just idempotency). Skipped: carry-over truthy-check on targetBitrate (type makes 0 impossible), redundant real-sync-after-dry-run step (harmless, stronger). Re-verified: classifier unit 36/0, e2e upgrades 9/0.
+
+SUPERSEDED by ADR-023 / TASK-453 (2026-06-30). The lossy cap-up / source-improved upward re-encode this slice added is REMOVED by the redesign — reduction is now down-only. Kept as history of the shipped (RED) branch; the behaviour is deleted in TASK-453.02. Redundant: do not treat as live.
 <!-- SECTION:NOTES:END -->

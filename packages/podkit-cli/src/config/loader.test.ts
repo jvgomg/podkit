@@ -38,6 +38,7 @@ describe('config loader', () => {
     delete process.env[ENV_KEYS.encoding];
     delete process.env[ENV_KEYS.transferMode];
     delete process.env[ENV_KEYS.customBitrate];
+    delete process.env[ENV_KEYS.bitrateReduce];
     delete process.env[ENV_KEYS.bitrateTolerance];
     delete process.env[ENV_KEYS.artwork];
     delete process.env[ENV_KEYS.cleanArtists];
@@ -175,51 +176,74 @@ quality = "invalid"
       expect(() => loadConfigFile(configPath)).toThrow(/Invalid encoding value/);
     });
 
-    // bitrate-change policy block
-    describe('bitrate policy block', () => {
-      it('parses a global [bitrate] block with sync and tolerances', () => {
+    // lossy-reduction block (ADR-023)
+    describe('bitrate reduction block', () => {
+      it('parses a global [bitrate] block with reduce and tolerance', () => {
         const configPath = path.join(tempDir, 'config.toml');
         fs.writeFileSync(
           configPath,
           v(`
 [bitrate]
-sync = "match-all"
-toleranceUp = 0.05
-toleranceDown = 0.1
+reduce = "always"
+tolerance = 0.4
 `)
         );
 
         const result = loadConfigFile(configPath);
         expect(result?.bitrate).toEqual({
-          sync: 'match-all',
-          toleranceUp: 0.05,
-          toleranceDown: 0.1,
+          reduce: 'always',
+          tolerance: 0.4,
         });
       });
 
-      it('accepts every valid sync mode', () => {
-        const modes = ['off', 'match-cap', 'match-all', 'up-only', 'down-only'] as const;
+      it('accepts every valid reduce mode', () => {
+        const modes = ['auto', 'always', 'never'] as const;
         for (const mode of modes) {
           const configPath = path.join(tempDir, 'config.toml');
-          fs.writeFileSync(configPath, v(`[bitrate]\nsync = "${mode}"`));
-          expect(loadConfigFile(configPath)?.bitrate?.sync).toBe(mode);
+          fs.writeFileSync(configPath, v(`[bitrate]\nreduce = "${mode}"`));
+          expect(loadConfigFile(configPath)?.bitrate?.reduce).toBe(mode);
         }
       });
 
-      it('throws on an invalid sync value naming the field and valid values', () => {
+      it('accepts tolerance = 0 (exact)', () => {
         const configPath = path.join(tempDir, 'config.toml');
-        fs.writeFileSync(configPath, v(`[bitrate]\nsync = "sometimes"`));
+        fs.writeFileSync(configPath, v(`[bitrate]\ntolerance = 0`));
+        expect(loadConfigFile(configPath)?.bitrate?.tolerance).toBe(0);
+      });
+
+      it('throws on an invalid reduce value naming the field and valid values', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(configPath, v(`[bitrate]\nreduce = "sometimes"`));
 
         expect(() => loadConfigFile(configPath)).toThrow(
-          /Invalid bitrate\.sync value "sometimes".*match-cap/s
+          /Invalid bitrate\.reduce value "sometimes".*auto/s
         );
       });
 
-      it('throws on an out-of-range tolerance', () => {
+      it('throws on a negative tolerance', () => {
         const configPath = path.join(tempDir, 'config.toml');
-        fs.writeFileSync(configPath, v(`[bitrate]\ntoleranceUp = 1.5`));
+        fs.writeFileSync(configPath, v(`[bitrate]\ntolerance = -0.1`));
 
-        expect(() => loadConfigFile(configPath)).toThrow(/Invalid bitrate\.toleranceUp value/);
+        expect(() => loadConfigFile(configPath)).toThrow(/Invalid bitrate\.tolerance value/);
+      });
+
+      it('rejects the removed [bitrate].sync key, naming the replacement', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(configPath, v(`[bitrate]\nsync = "match-cap"`));
+
+        expect(() => loadConfigFile(configPath)).toThrow(
+          /"bitrate\.sync".*was removed.*\[bitrate\]\.reduce.*\[bitrate\]\.tolerance/s
+        );
+      });
+
+      it('rejects the removed toleranceUp / toleranceDown keys', () => {
+        for (const key of ['toleranceUp', 'toleranceDown'] as const) {
+          const configPath = path.join(tempDir, 'config.toml');
+          fs.writeFileSync(configPath, v(`[bitrate]\n${key} = 0.1`));
+          expect(() => loadConfigFile(configPath)).toThrow(
+            new RegExp(`"bitrate\\.${key}".*was removed`, 's')
+          );
+        }
       });
 
       it('parses a per-device [devices.x.bitrate] block', () => {
@@ -231,19 +255,19 @@ toleranceDown = 0.1
 volumeUuid = "ABC-123"
 
 [devices.terapod.bitrate]
-sync = "down-only"
-toleranceDown = 0.2
+reduce = "never"
+tolerance = 0.2
 `)
         );
 
         const result = loadConfigFile(configPath);
         expect(result?.devices?.terapod?.bitrate).toEqual({
-          sync: 'down-only',
-          toleranceDown: 0.2,
+          reduce: 'never',
+          tolerance: 0.2,
         });
       });
 
-      it('reports the device context in an invalid per-device sync error', () => {
+      it('reports the device context in an invalid per-device reduce error', () => {
         const configPath = path.join(tempDir, 'config.toml');
         fs.writeFileSync(
           configPath,
@@ -252,7 +276,7 @@ toleranceDown = 0.2
 volumeUuid = "ABC-123"
 
 [devices.terapod.bitrate]
-sync = "nope"
+reduce = "nope"
 `)
         );
 
@@ -313,22 +337,6 @@ sync = "nope"
       fs.writeFileSync(configPath, v(`customBitrate = 400`));
 
       expect(() => loadConfigFile(configPath)).toThrow(/Invalid customBitrate/);
-    });
-
-    // bitrateTolerance tests
-    it('parses bitrateTolerance option', () => {
-      const configPath = path.join(tempDir, 'config.toml');
-      fs.writeFileSync(configPath, v(`bitrateTolerance = 0.25`));
-
-      const result = loadConfigFile(configPath);
-      expect(result?.bitrateTolerance).toBe(0.25);
-    });
-
-    it('throws on bitrateTolerance above 1.0', () => {
-      const configPath = path.join(tempDir, 'config.toml');
-      fs.writeFileSync(configPath, v(`bitrateTolerance = 1.5`));
-
-      expect(() => loadConfigFile(configPath)).toThrow(/Invalid bitrateTolerance/);
     });
 
     // audioQuality tests
@@ -2456,16 +2464,28 @@ device = "terapod"
       expect(result.customBitrate).toBeUndefined();
     });
 
-    it('reads PODKIT_BITRATE_TOLERANCE with valid value', () => {
-      process.env[ENV_KEYS.bitrateTolerance] = '0.25';
+    it('reads PODKIT_BITRATE_TOLERANCE into [bitrate].tolerance', () => {
+      process.env[ENV_KEYS.bitrateTolerance] = '0.4';
       const result = loadEnvConfig();
-      expect(result.bitrateTolerance).toBe(0.25);
+      expect(result.bitrate?.tolerance).toBe(0.4);
     });
 
-    it('ignores PODKIT_BITRATE_TOLERANCE with invalid value', () => {
-      process.env[ENV_KEYS.bitrateTolerance] = '2.0';
+    it('ignores PODKIT_BITRATE_TOLERANCE with a negative value', () => {
+      process.env[ENV_KEYS.bitrateTolerance] = '-0.1';
       const result = loadEnvConfig();
-      expect(result.bitrateTolerance).toBeUndefined();
+      expect(result.bitrate?.tolerance).toBeUndefined();
+    });
+
+    it('reads PODKIT_BITRATE_REDUCE into [bitrate].reduce', () => {
+      process.env[ENV_KEYS.bitrateReduce] = 'always';
+      const result = loadEnvConfig();
+      expect(result.bitrate?.reduce).toBe('always');
+    });
+
+    it('ignores PODKIT_BITRATE_REDUCE with an invalid value', () => {
+      process.env[ENV_KEYS.bitrateReduce] = 'sometimes';
+      const result = loadEnvConfig();
+      expect(result.bitrate?.reduce).toBeUndefined();
     });
 
     it('reads PODKIT_CLEAN_ARTISTS=true', () => {
@@ -2897,28 +2917,28 @@ device = "terapod"
       expect(result.quality).toBe('low');
     });
 
-    it('merges the global bitrate-policy block field-by-field', () => {
+    it('merges the global bitrate reduction block field-by-field', () => {
       // Regression: the global [bitrate] block must survive merging — otherwise
-      // a top-level `sync` setting is silently dropped and never resolves.
-      const first: PartialConfig = { bitrate: { sync: 'off', toleranceUp: 0.1 } };
-      const second: PartialConfig = { bitrate: { sync: 'match-all' } };
+      // a top-level `reduce` setting is silently dropped and never resolves.
+      const first: PartialConfig = { bitrate: { reduce: 'never', tolerance: 0.1 } };
+      const second: PartialConfig = { bitrate: { reduce: 'always' } };
       const result = mergeConfigs(first, second);
-      expect(result.bitrate?.sync).toBe('match-all'); // later layer wins
-      expect(result.bitrate?.toleranceUp).toBe(0.1); // untouched field preserved
+      expect(result.bitrate?.reduce).toBe('always'); // later layer wins
+      expect(result.bitrate?.tolerance).toBe(0.1); // untouched field preserved
     });
 
     it('merges a per-device bitrate block field-by-field', () => {
       // Same survival guarantee as the global block: a later layer overriding
       // one device bitrate field must not clobber another layer's fields.
       const first: PartialConfig = {
-        devices: { terapod: { bitrate: { sync: 'off', toleranceUp: 0.1 } } },
+        devices: { terapod: { bitrate: { reduce: 'never', tolerance: 0.1 } } },
       };
       const second: PartialConfig = {
-        devices: { terapod: { bitrate: { sync: 'match-all' } } },
+        devices: { terapod: { bitrate: { reduce: 'always' } } },
       };
       const result = mergeConfigs(first, second);
-      expect(result.devices?.terapod?.bitrate?.sync).toBe('match-all'); // later layer wins
-      expect(result.devices?.terapod?.bitrate?.toleranceUp).toBe(0.1); // untouched field preserved
+      expect(result.devices?.terapod?.bitrate?.reduce).toBe('always'); // later layer wins
+      expect(result.devices?.terapod?.bitrate?.tolerance).toBe(0.1); // untouched field preserved
     });
 
     it('merges skipUpgrades from partial config', () => {

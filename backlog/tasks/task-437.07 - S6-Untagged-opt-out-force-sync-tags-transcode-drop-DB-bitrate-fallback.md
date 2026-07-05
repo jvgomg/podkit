@@ -1,10 +1,10 @@
 ---
 id: TASK-437.07
 title: 'S6: Untagged opt-out + --force-sync-tags-transcode + drop DB-bitrate fallback'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-06-25 22:38'
-updated_date: '2026-06-27 23:23'
+updated_date: '2026-06-29 09:00'
 labels:
   - sync
   - transcoding

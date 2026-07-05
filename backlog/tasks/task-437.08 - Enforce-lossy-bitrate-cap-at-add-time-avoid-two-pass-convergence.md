@@ -1,10 +1,10 @@
 ---
 id: TASK-437.08
 title: Enforce lossy bitrate cap at add time (avoid two-pass convergence)
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-06-27 17:25'
-updated_date: '2026-06-28 09:08'
+updated_date: '2026-06-29 17:03'
 labels:
   - sync
   - transcoding
@@ -59,4 +59,6 @@ Deliverables: changeset `.changeset/lossy-cap-on-add.md` (minor podkit + @podkit
 Sonnet review: no blockers; nits addressed (preset-builder extraction, match-all coverage). Noted side-effect: a non-quality-change file-replacement (e.g. transfer-mode-changed) on an over-cap compatible-lossy source previously copied the over-cap file back via the resolveUpgradeAction fallback; it now caps via the classifier — quality-change still wins as primaryReason so this only affects the genuinely-no-quality-change fallback.
 
 Team-lead review pass (Sonnet) + fixes. No blockers. Reviewer verified idempotency (add-path bitrateOverride = min(source,cap) uses the same formula as classifyLossyDeviceBound's effectiveTarget, with the shared buildLossyPreset preventing drift -> re-sync no-op is structural, not coincidental), all four guards, the policy-gating judgment call (add-cap gated by applyBitrateSyncPolicy('down','cap-down',mode) so off/up-only copy as-is, consistent with device-bound cap-down -- the cap is a quality preference, not a hard device constraint), the two modified pre-existing tests (legitimate -- they previously leaned on the old two-pass copy-as-is wart to seed an over-cap device copy; now seeded via a higher-cap first sync, core assertions unchanged), the device-native lossless safety, and the benign transfer-mode-changed side-effect (now converges a sync earlier; quality-change still wins as primaryReason). Fixes I applied (3 SHOULD-FIX, all from one real inaccuracy): a lossless target resolves to presetBitrate ~900, NOT 0, so the `!cap` guard is a defensive fallback (no real preset is 0) and lossless protection actually comes from the at/below-cap guard (320 <= 900 -> copy). Corrected the ClassifierContext.presetBitrate docstring and the resolveLossyCapTranscode guard comment; renamed the misleading 'lossless target -> presetBitrate 0' test to a zero-cap-guard test and ADDED a real-production lossless test (presetBitrate 900, 320 kbps MP3 -> direct-copy); added the missing ctx.bitrateSync passthrough assertion to classifierFromConfig; and added warnLossyToLossy=false to the device-native cap test (NIT). Gates green: classifier 34 pass, lint OK, full typecheck 36/36, @podkit/core unit pass, e2e dummy 53 pass.
+
+SUPERSEDED / regressed: this slice's add-path cap was later found to break 16 codec-matrix cells (codec.test.ts / codec-preference.test.ts) — it transcodes device-native lossy sources that must be copied, violating ADR-010 ("compatible lossy → copy as-is") and ignoring transfer mode. The branch is currently RED because of this. The behaviour is being reconsidered under the redesign in TASK-437.09 (transfer-mode-primary, down-only, two-tolerance), which will revert/reshape this add-path cap (fast = copy, never reduce). Do not treat this slice's behaviour as final.
 <!-- SECTION:NOTES:END -->

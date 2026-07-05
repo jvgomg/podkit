@@ -20,12 +20,10 @@ export type {
   DeviceArtworkSource,
   TranscodeTargetCodec,
   ContentPaths,
-  BitrateSyncMode,
 } from '@podkit/core';
 export {
   QUALITY_PRESETS,
   ENCODING_MODES,
-  BITRATE_SYNC_MODES,
   TRANSFER_MODES,
   CONTENT_TYPES,
   VIDEO_QUALITY_PRESETS,
@@ -51,10 +49,18 @@ import type {
   AudioNormalizationMode,
   DeviceArtworkSource,
   TranscodeTargetCodec,
-  BitrateSyncMode,
 } from '@podkit/core';
 import type { ReadinessUnsupportedReason } from '@podkit/device-types';
 import type { MassStoragePreset } from '@podkit/devices-mass-storage';
+
+/**
+ * Lossy-reduction modes for `[bitrate].reduce` / `--bitrate-reduce`. The CLI
+ * surface for the down-only lossy-reduction axis (ADR-023): `auto` follows the
+ * transfer mode, `always` converts (reduces over-cap lossy), `never` preserves.
+ * Mirrors `@podkit/core`'s `ReductionMode`.
+ */
+export const REDUCE_MODES = ['auto', 'always', 'never'] as const;
+export type ReduceMode = (typeof REDUCE_MODES)[number];
 
 /**
  * Codec preference configuration
@@ -179,30 +185,31 @@ export interface VideoCollectionConfig {
  * ```
  */
 /**
- * Bitrate-change policy block, settable globally (`[bitrate]`) and per-device
- * (`[devices.<name>.bitrate]`). The device block overrides the global one.
+ * Lossy-reduction block, settable globally (`[bitrate]`) and per-device
+ * (`[devices.<name>.bitrate]`). The device block overrides the global one
+ * (ADR-023).
  *
  * @example
  * ```toml
  * [devices.terapod.bitrate]
- * sync = "match-cap"   # off | match-cap | match-all | up-only | down-only
- * toleranceUp = 0.0
- * toleranceDown = 0.0
+ * reduce = "auto"      # auto (follow transfer mode) | always (convert) | never (preserve)
+ * tolerance = 0.25     # reduce only when source exceeds the cap by > this fraction (0 = exact)
  * ```
  */
 export interface BitrateConfig {
   /**
-   * Quality-change sync policy. Defaults to `match-cap` when unset.
-   * - `off`: never re-encode for a bitrate change (format/encoding still fire)
-   * - `match-cap`: hold the cap both ways, keep a better copy on source-down
-   * - `match-all`: follow the source in every direction, including down
-   * - `up-only` / `down-only`: restrict bitrate re-encoding to one direction
+   * Lossy-reduction setting. Defaults to `auto` when unset.
+   * - `auto`: follow the transfer mode (`optimized` → convert, `fast`/`portable` → preserve)
+   * - `always`: convert — reduce an over-cap device-native lossy source to the cap
+   * - `never`: preserve — keep the original codec + bitrate where the device plays it
    */
-  sync?: BitrateSyncMode;
-  /** Source-bound upward tolerance ratio (0.0-1.0). Default 0 (exact). */
-  toleranceUp?: number;
-  /** Source-bound downward tolerance ratio (0.0-1.0). Default 0 (exact). */
-  toleranceDown?: number;
+  reduce?: ReduceMode;
+  /**
+   * Source-proximity tolerance as a fraction of the cap (>= 0). A device-native
+   * source is reduced only when `source > cap × (1 + tolerance)`. Default 0.25;
+   * 0 = exact.
+   */
+  tolerance?: number;
 }
 
 export interface DeviceConfig {
@@ -245,12 +252,9 @@ export interface DeviceConfig {
   encoding?: EncodingMode;
   /** Custom bitrate override in kbps (overrides global) */
   customBitrate?: number;
-  /** Bitrate tolerance ratio for preset change detection (overrides global) */
-  bitrateTolerance?: number;
   /**
-   * Bitrate-change policy block (`[devices.<name>.bitrate]`): the quality-change
-   * sync mode plus optional source-bound tolerances. Overrides the global
-   * `[bitrate]` block.
+   * Lossy-reduction block (`[devices.<name>.bitrate]`): the `reduce` axis plus
+   * `tolerance`. Overrides the global `[bitrate]` block.
    */
   bitrate?: BitrateConfig;
   /** Whether to sync artwork to this device */
@@ -402,12 +406,7 @@ export interface PodkitConfig {
    * Overrides the preset's target bitrate for lossy encoding.
    */
   customBitrate?: number;
-  /**
-   * Bitrate tolerance ratio (0.0-1.0) for preset change detection.
-   * Overrides the default tolerance for the encoding mode.
-   */
-  bitrateTolerance?: number;
-  /** Global bitrate-change policy block (`[bitrate]`), overridable per-device */
+  /** Global lossy-reduction block (`[bitrate]`), overridable per-device (ADR-023) */
   bitrate?: BitrateConfig;
   /** Include artwork in sync (global default, can be overridden per-device) */
   artwork: boolean;
@@ -562,13 +561,13 @@ export interface ConfigFileCodecPreference {
 }
 
 /**
- * Raw bitrate-change policy block as parsed from TOML (`[bitrate]` /
- * `[devices.<name>.bitrate]`). Values are validated by the loader.
+ * Raw lossy-reduction block as parsed from TOML (`[bitrate]` /
+ * `[devices.<name>.bitrate]`). Values are validated by the loader, which also
+ * rejects the removed `sync` / `toleranceUp` / `toleranceDown` keys.
  */
 export interface ConfigFileBitrate {
-  sync?: string;
-  toleranceUp?: number;
-  toleranceDown?: number;
+  reduce?: string;
+  tolerance?: number;
 }
 
 /**
@@ -610,7 +609,6 @@ export interface ConfigFileDevice {
   videoQuality?: string;
   encoding?: string;
   customBitrate?: number;
-  bitrateTolerance?: number;
   bitrate?: ConfigFileBitrate;
   artwork?: boolean;
   checkArtwork?: boolean;
@@ -735,7 +733,6 @@ export interface ConfigFileContent {
   videoQuality?: string;
   encoding?: string;
   customBitrate?: number;
-  bitrateTolerance?: number;
   bitrate?: ConfigFileBitrate;
   artwork?: boolean;
   checkArtwork?: boolean;

@@ -454,50 +454,49 @@ describe('resolveDeviceSettings', () => {
       expect(result.customBitrate).toEqual({ value: 192, source: 'global' });
     });
 
-    it('resolves bitrateTolerance through chain', () => {
-      const config = makeConfig();
-      const device: DeviceConfig = { bitrateTolerance: 0.1 };
-
-      const result = resolveDeviceSettings(config, 'test', device, FULL_CAPABILITIES, false, false);
-
-      expect(result.bitrateTolerance).toEqual({ value: 0.1, source: 'device' });
-    });
-
-    it('defaults bitrateSync to match-cap when unset everywhere', () => {
+    it('defaults reduce to auto when unset everywhere', () => {
       const config = makeConfig();
       const device: DeviceConfig = {};
 
       const result = resolveDeviceSettings(config, 'test', device, FULL_CAPABILITIES, false, false);
 
-      expect(result.bitrateSync).toEqual({ value: 'match-cap', source: 'default' });
+      expect(result.reduce).toEqual({ value: 'auto', source: 'default' });
     });
 
-    it('uses device bitrate.sync over global', () => {
-      const config = makeConfig({ bitrate: { sync: 'off' } });
-      const device: DeviceConfig = { bitrate: { sync: 'match-all' } };
-
-      const result = resolveDeviceSettings(config, 'test', device, FULL_CAPABILITIES, false, false);
-
-      expect(result.bitrateSync).toEqual({ value: 'match-all', source: 'device' });
-    });
-
-    it('falls back to the global bitrate.sync', () => {
-      const config = makeConfig({ bitrate: { sync: 'up-only' } });
+    it('defaults tolerance to 0.25 when unset everywhere', () => {
+      const config = makeConfig();
       const device: DeviceConfig = {};
 
       const result = resolveDeviceSettings(config, 'test', device, FULL_CAPABILITIES, false, false);
 
-      expect(result.bitrateSync).toEqual({ value: 'up-only', source: 'global' });
+      expect(result.tolerance).toEqual({ value: 0.25, source: 'default' });
     });
 
-    it('resolves source-bound tolerances through the chain', () => {
-      const config = makeConfig({ bitrate: { toleranceUp: 0.05 } });
-      const device: DeviceConfig = { bitrate: { toleranceDown: 0.1 } };
+    it('uses device bitrate.reduce over global', () => {
+      const config = makeConfig({ bitrate: { reduce: 'never' } });
+      const device: DeviceConfig = { bitrate: { reduce: 'always' } };
 
       const result = resolveDeviceSettings(config, 'test', device, FULL_CAPABILITIES, false, false);
 
-      expect(result.toleranceUp).toEqual({ value: 0.05, source: 'global' });
-      expect(result.toleranceDown).toEqual({ value: 0.1, source: 'device' });
+      expect(result.reduce).toEqual({ value: 'always', source: 'device' });
+    });
+
+    it('falls back to the global bitrate.reduce', () => {
+      const config = makeConfig({ bitrate: { reduce: 'always' } });
+      const device: DeviceConfig = {};
+
+      const result = resolveDeviceSettings(config, 'test', device, FULL_CAPABILITIES, false, false);
+
+      expect(result.reduce).toEqual({ value: 'always', source: 'global' });
+    });
+
+    it('resolves tolerance through the chain (device over global)', () => {
+      const config = makeConfig({ bitrate: { tolerance: 0.05 } });
+      const device: DeviceConfig = { bitrate: { tolerance: 0.1 } };
+
+      const result = resolveDeviceSettings(config, 'test', device, FULL_CAPABILITIES, false, false);
+
+      expect(result.tolerance).toEqual({ value: 0.1, source: 'device' });
     });
   });
 });

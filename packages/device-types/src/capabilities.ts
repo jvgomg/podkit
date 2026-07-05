@@ -120,6 +120,20 @@ export interface DeviceCapabilities {
   /** Audio codecs the device can play natively without transcoding */
   supportedAudioCodecs: AudioCodec[];
   /**
+   * Maximum lossy audio bitrate (kbps) the device can play, when the device
+   * declares one. Absent → unbounded (the device imposes no ceiling beyond the
+   * configured quality preset).
+   *
+   * A **hard device constraint**, distinct from the quality preset (a user
+   * preference). The lossy-reduction seam folds it into the effective ceiling on
+   * every transcode target — `min(quality cap, maxAudioBitrate)` — and, because a
+   * device cannot store or play a track above it, it forces a device-native
+   * source that exceeds it to be reduced even under `preserve` (the reduction axis
+   * is a preference; a device constraint is enforced regardless). It only ever
+   * lowers a target, never lifts one.
+   */
+  maxAudioBitrate?: number;
+  /**
    * Per-codec container constraints.
    *
    * Optional. When set for a codec, restricts the set of containers podkit

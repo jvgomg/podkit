@@ -130,29 +130,11 @@ describe('MusicHandler', () => {
       }
     });
 
-    test('does not fire source-improved for a same-family source above the cap (cap path owns it)', () => {
-      // quality=high → cap 256. A same-family AAC source @320 sits above the cap;
-      // its device copy already records the cap (256, after an earlier cap-down).
-      // A cap-unaware source bound would copy the over-cap source back and
-      // oscillate against the next cap-down, so detectUpdates must not report it.
-      const source = makeCollectionTrack({
-        fileType: 'm4a',
-        codec: 'aac',
-        lossless: false,
-        bitrate: 320,
-      });
-      const device = makeDeviceTrack({
-        filetype: 'AAC audio file',
-        bitrate: 256,
-        syncTag:
-          parseSyncTag('[podkit:v1 quality=high encoding=vbr bitrate=256 codec=aac]') ?? undefined,
-      });
-      expect(handler.detectUpdates(source, device)).not.toContain('quality-change');
-    });
-
-    test('still fires for a within-cap same-family improvement (source <= cap)', () => {
-      // Source @256 is within the cap and well above the recorded 96 — a genuine
-      // improvement to follow up.
+    test('a higher-bitrate same-family lossy source is not a quality-change on the source bound', () => {
+      // ADR-023 is down-only: re-encoding a lossy source up cannot recover
+      // discarded information, so a climbed source bitrate is never a
+      // source-bound quality-change. (A genuinely re-ripped file folds into
+      // content-change detection instead.)
       const source = makeCollectionTrack({
         fileType: 'm4a',
         codec: 'aac',
@@ -165,7 +147,7 @@ describe('MusicHandler', () => {
         syncTag:
           parseSyncTag('[podkit:v1 quality=low encoding=vbr bitrate=96 codec=aac]') ?? undefined,
       });
-      expect(handler.detectUpdates(source, device)).toContain('quality-change');
+      expect(handler.detectUpdates(source, device)).not.toContain('quality-change');
     });
   });
 
@@ -392,6 +374,37 @@ describe('MusicHandler', () => {
       const op = ops[0]!;
       if (op.type === 'upgrade-transcode') {
         expect(op.preset.bitrateOverride).toBe(128);
+      }
+    });
+
+    test('routes a forced cap-up (below-cap lift) to upgrade-transcode, not copy', () => {
+      // A track previously reduced under a lower cap, lifted by --force-transcode
+      // to a raised cap, arrives as a `cap-up` re-encode. It must re-encode UP to
+      // the new cap, not copy the source verbatim (which would leave the device at
+      // the old bitrate and need a second pass).
+      const h = createMusicHandler(
+        makeConfig({
+          quality: 'high',
+          capabilities: makeCapabilities({
+            supportedAudioCodecs: ['aac', 'mp3'],
+            artworkSources: ['database'],
+          }),
+        })
+      );
+      const source = makeCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 320 });
+      const device = makeDeviceTrack({ filetype: 'MPEG audio file', bitrate: 128 });
+      const ops = h.planUpdate(source, device, ['quality-change'], undefined, undefined, {
+        reason: 'cap-up',
+        direction: 'up',
+        reEncodes: true,
+        targetBitrate: 256,
+        encodedBitrate: 128,
+      });
+      expect(ops.length).toBe(1);
+      expect(ops[0]!.type).toBe('upgrade-transcode');
+      const op = ops[0]!;
+      if (op.type === 'upgrade-transcode') {
+        expect(op.preset.bitrateOverride).toBe(256);
       }
     });
   });
@@ -1121,12 +1134,11 @@ describe('MusicHandler', () => {
       expect(diff.toUpdate).toHaveLength(0);
     });
 
-    test('a degraded lossy source is reported (report-only), not moved to toUpdate', () => {
-      // Source re-ripped down to 96 (below the 128 cap) while the device copy
-      // still records 112. Re-encoding down to the worse source would destroy
-      // quality, so it is suppressed: the track stays in `existing` (no
-      // operation, no tracksToUpdate bump) but surfaces via the report-only
-      // channel so the situation is visible.
+    test('a recorded copy within the cap is left in sync, not re-encoded (down-only)', () => {
+      // The device holds a 112 kbps AAC copy recorded under the 128 cap. The
+      // recorded bitrate is the sole truth: it is at-or-below the cap, so the
+      // down-only reduction leaves it alone (no re-encode, no report). The source
+      // bitrate is irrelevant to the device bound.
       const h = createMusicHandler(makeConfig({ quality: 'low' }));
       const source = makeCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 96 });
       const device = makeDeviceTrack({
@@ -1139,26 +1151,234 @@ describe('MusicHandler', () => {
 
       h.postProcessDiff(diff);
 
-      // Not acted on: stays in existing, never enters toUpdate.
       expect(diff.existing).toHaveLength(1);
       expect(diff.toUpdate).toHaveLength(0);
+      expect(diff.reportOnlyQualityChanges ?? []).toHaveLength(0);
+    });
 
-      // But it IS reported via the report-only channel.
-      expect(diff.reportOnlyQualityChanges).toHaveLength(1);
-      const reported = diff.reportOnlyQualityChanges![0]!;
-      expect(reported.qualityChange).toMatchObject({
+    test('source re-ripped below the device copy -> reported, kept in existing, NO operation', () => {
+      // Bad re-rip: the device holds a 256 kbps copy podkit recorded, but the
+      // source is now 128 kbps. podkit keeps the better device copy and reports
+      // the situation; it must NEVER re-encode down to the worse source.
+      const h = createMusicHandler(makeConfig({ quality: 'low' }));
+      const source = makeCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 128 });
+      const device = makeDeviceTrack({
+        filetype: 'MPEG audio file',
+        bitrate: 256,
+        syncTag:
+          parseSyncTag('[podkit:v1 quality=copy transferMode=fast codec=mp3 bitrate=256]') ??
+          undefined,
+      });
+      const diff = makePresetDiff(source, device);
+
+      h.postProcessDiff(diff);
+
+      expect(diff.toUpdate).toHaveLength(0);
+      expect(diff.existing).toHaveLength(1);
+      const reports = diff.reportOnlyQualityChanges ?? [];
+      expect(reports).toHaveLength(1);
+      expect(reports[0]!.qualityChange).toMatchObject({
         reason: 'source-down-suppressed',
-        direction: 'down',
+        reEncodes: false,
+        encodedBitrate: 256,
+        sourceBitrate: 128,
+      });
+    });
+
+    test('source-down + a concurrent metadata-correction -> update kept, source-down still reported', () => {
+      // The track is already headed to toUpdate for an in-place metadata rewrite
+      // (audio untouched). Its source-down would otherwise go unreported because
+      // the preset pass only scans `existing`. The report is surfaced without
+      // altering the update — the better device audio is still kept.
+      const h = createMusicHandler(makeConfig({ quality: 'low' }));
+      const source = makeCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 128 });
+      const device = makeDeviceTrack({
+        filetype: 'MPEG audio file',
+        bitrate: 256,
+        syncTag:
+          parseSyncTag('[podkit:v1 quality=copy transferMode=fast codec=mp3 bitrate=256]') ??
+          undefined,
+      });
+      const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
+        toAdd: [],
+        toRemove: [],
+        existing: [],
+        toUpdate: [
+          {
+            source,
+            device,
+            reasons: ['metadata-correction'],
+            changes: [{ field: 'artist', from: 'Old', to: 'New' }],
+          },
+        ],
+      };
+
+      h.postProcessDiff(diff);
+
+      // The metadata update is untouched (audio kept in place).
+      expect(diff.toUpdate).toHaveLength(1);
+      expect(diff.toUpdate[0]!.reasons).toEqual(['metadata-correction']);
+      // The source-down is now visible.
+      const reports = diff.reportOnlyQualityChanges ?? [];
+      expect(reports).toHaveLength(1);
+      expect(reports[0]!.qualityChange).toMatchObject({
+        reason: 'source-down-suppressed',
         reEncodes: false,
       });
-      expect(reported.qualityChange.encodedBitrate).toBe(112);
-      expect(reported.qualityChange.sourceBitrate).toBe(96);
+    });
 
-      // No operation is planned for it.
-      const ops = diff.existing.flatMap((m) =>
-        h.planUpdate(m.source, m.device, [], undefined, undefined, undefined)
+    test('source-down + a file-replacement update (artwork) -> NOT reported (audio re-derived)', () => {
+      // When the update re-derives the file from the source (a file replacement),
+      // the device audio is NOT kept, so a "kept the better copy" report would
+      // misrepresent the outcome — it is deliberately skipped.
+      const h = createMusicHandler(makeConfig({ quality: 'low' }));
+      const source = makeCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 128 });
+      const device = makeDeviceTrack({
+        filetype: 'MPEG audio file',
+        bitrate: 256,
+        syncTag:
+          parseSyncTag('[podkit:v1 quality=copy transferMode=fast codec=mp3 bitrate=256]') ??
+          undefined,
+      });
+      const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
+        toAdd: [],
+        toRemove: [],
+        existing: [],
+        toUpdate: [{ source, device, reasons: ['artwork-added'], changes: [] }],
+      };
+
+      h.postProcessDiff(diff);
+
+      expect(diff.reportOnlyQualityChanges ?? []).toHaveLength(0);
+    });
+
+    test('previously-reduced track below a raised cap -> reported below-cap, kept in existing', () => {
+      // The device holds a track podkit reduced to `low` (96). The cap is now
+      // `high` (256). Down-only never lifts it automatically; it is reported so
+      // the user can `--force-transcode` to lift it. No operation is created.
+      const h = createMusicHandler(makeConfig({ quality: 'high' }));
+      const source = makeCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 320 });
+      const device = makeDeviceTrack({
+        filetype: 'AAC audio file',
+        bitrate: 96,
+        syncTag:
+          parseSyncTag('[podkit:v1 quality=low encoding=vbr codec=aac bitrate=96]') ?? undefined,
+      });
+      const diff = makePresetDiff(source, device);
+
+      h.postProcessDiff(diff);
+
+      expect(diff.toUpdate).toHaveLength(0);
+      expect(diff.existing).toHaveLength(1);
+      const reports = diff.reportOnlyQualityChanges ?? [];
+      expect(reports).toHaveLength(1);
+      expect(reports[0]!.qualityChange).toMatchObject({
+        reason: 'below-cap',
+        direction: 'up',
+        reEncodes: false,
+        targetBitrate: 256,
+        encodedBitrate: 96,
+      });
+    });
+
+    test('--force-transcode lifts a below-cap track up to the new cap (re-encodes from source)', () => {
+      // With --force-transcode the user explicitly opts into re-deriving the
+      // below-cap track from the (better) 320 source up to the new 256 cap.
+      const h = createMusicHandler(makeConfig({ quality: 'high', forceTranscode: true }));
+      const source = makeCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 320 });
+      const device = makeDeviceTrack({
+        filetype: 'AAC audio file',
+        bitrate: 96,
+        syncTag:
+          parseSyncTag('[podkit:v1 quality=low encoding=vbr codec=aac bitrate=96]') ?? undefined,
+      });
+      const diff = makePresetDiff(source, device);
+
+      h.postProcessDiff(diff);
+
+      expect(diff.toUpdate).toHaveLength(1);
+      expect(diff.toUpdate[0]!.reasons[0]).toBe('quality-change');
+      // A forced lift is emitted as a `cap-up` re-encode so resolveUpgradeAction
+      // re-encodes up to the new cap instead of copying the source verbatim.
+      expect(diff.toUpdate[0]!.qualityChange).toMatchObject({
+        reason: 'cap-up',
+        reEncodes: true,
+        direction: 'up',
+        targetBitrate: 256,
+      });
+      // The planned operation re-encodes (not a copy), capped at the new bitrate.
+      const liftOps = h.planUpdate(
+        source,
+        device,
+        diff.toUpdate[0]!.reasons,
+        diff.toUpdate[0]!.changes,
+        undefined,
+        diff.toUpdate[0]!.qualityChange
       );
-      expect(ops).toHaveLength(0);
+      expect(liftOps[0]!.type).toBe('upgrade-transcode');
+      // Lifted, not reported.
+      expect(diff.reportOnlyQualityChanges ?? []).toHaveLength(0);
+      expect(diff.existing).toHaveLength(0);
+    });
+
+    test('--force-transcode does NOT lift a below-cap track when the source cannot supply more', () => {
+      // The source was itself re-ripped to a low bitrate (80) below the device's
+      // recorded 96. Even with --force-transcode there is nothing better to lift
+      // to, so the track is reported (never lifted), and the device copy is kept.
+      const h = createMusicHandler(makeConfig({ quality: 'high', forceTranscode: true }));
+      const source = makeCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 80 });
+      const device = makeDeviceTrack({
+        filetype: 'AAC audio file',
+        bitrate: 96,
+        syncTag:
+          parseSyncTag('[podkit:v1 quality=low encoding=vbr codec=aac bitrate=96]') ?? undefined,
+      });
+      const diff = makePresetDiff(source, device);
+
+      h.postProcessDiff(diff);
+
+      expect(diff.toUpdate).toHaveLength(0);
+      const reports = diff.reportOnlyQualityChanges ?? [];
+      expect(reports).toHaveLength(1);
+      expect(reports[0]!.qualityChange).toMatchObject({ reason: 'below-cap', reEncodes: false });
+    });
+
+    test('--force-transcode lift is bounded by the source bitrate, never inflated up to the cap', () => {
+      // Recorded 128, source 192, raised cap 256. The source is better than the
+      // device copy (so it lifts) but only offers 192 — re-encoding it up to 256
+      // would inflate a lossy file without recovering quality (ADR-023 §2). The
+      // lift target is min(source 192, cap 256) = 192.
+      const h = createMusicHandler(makeConfig({ quality: 'high', forceTranscode: true }));
+      const source = makeCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 192 });
+      const device = makeDeviceTrack({
+        filetype: 'AAC audio file',
+        bitrate: 128,
+        syncTag:
+          parseSyncTag('[podkit:v1 quality=low encoding=vbr codec=aac bitrate=128]') ?? undefined,
+      });
+      const diff = makePresetDiff(source, device);
+
+      h.postProcessDiff(diff);
+
+      expect(diff.toUpdate).toHaveLength(1);
+      expect(diff.toUpdate[0]!.qualityChange).toMatchObject({
+        reason: 'cap-up',
+        reEncodes: true,
+        targetBitrate: 192,
+      });
+      const ops = h.planUpdate(
+        source,
+        device,
+        diff.toUpdate[0]!.reasons,
+        diff.toUpdate[0]!.changes,
+        undefined,
+        diff.toUpdate[0]!.qualityChange
+      );
+      expect(ops[0]!.type).toBe('upgrade-transcode');
+      const op = ops[0]!;
+      if (op.type === 'upgrade-transcode') {
+        expect(op.preset.bitrateOverride).toBe(192);
+      }
     });
 
     test('uses sync tag comparison when resolvedQuality is provided — match keeps as existing', () => {
@@ -2063,16 +2283,26 @@ describe('postProcessSyncTagsTranscode (--force-sync-tags-transcode)', () => {
     expect(ops[0]!.type).toBe('upgrade-transcode');
   });
 
-  test('adopts an untagged lossy track by re-encoding to min(source, cap)', () => {
-    const h = createMusicHandler(makeConfig({ quality: 'high', forceSyncTagsTranscode: true }));
-    const source = makeCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 320 });
-    const device = makeDeviceTrack({ filetype: 'MPEG audio file', bitrate: 320 }); // no syncTag
+  test('adopts an over-cap untagged lossy track through the seam (convert → cap-down to the cap)', () => {
+    // The adoption target is computed by the shared lossy-reduction seam, not an
+    // inline min(). With `reduce: 'always'` (convert) a source clearly past the
+    // tolerance band reduces to the cap: min(source 400, cap 256) = 256. The
+    // direction is the seam's actual reduction — DOWN — so it emits `cap-down`,
+    // never `cap-up`. (400 > 256×1.25=320, so this is a genuine reduction, not a
+    // within-tolerance copy.)
+    const h = createMusicHandler(
+      makeConfig({ quality: 'high', reduce: 'always', forceSyncTagsTranscode: true })
+    );
+    const source = makeCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 400 });
+    const device = makeDeviceTrack({ filetype: 'MPEG audio file', bitrate: 400 }); // no syncTag
 
     const diff = makeDiff(source, device);
     h.postProcessDiff(diff);
 
     expect(diff.toUpdate).toHaveLength(1);
     expect(diff.toUpdate[0]!.reasons[0]).toBe('quality-change');
+    expect(diff.toUpdate[0]!.qualityChange?.reason).toBe('cap-down');
+    expect(diff.toUpdate[0]!.qualityChange?.direction).toBe('down');
 
     const ops = h.planUpdate(
       source,
@@ -2085,9 +2315,150 @@ describe('postProcessSyncTagsTranscode (--force-sync-tags-transcode)', () => {
     expect(ops[0]!.type).toBe('upgrade-transcode');
     const op = ops[0]!;
     if (op.type === 'upgrade-transcode') {
-      // Effective ceiling: min(source 320, cap 256) = 256.
+      // Effective ceiling from the seam: min(source 320, cap 256) = 256.
       expect(op.preset.bitrateOverride).toBe(256);
     }
+  });
+
+  test('over-cap adoption emits cap-down even when the device DB bitrate sits below the target', () => {
+    // The pre-seam code labelled direction from the unreliable device DB bitrate,
+    // which could mislabel a genuine reduction as `cap-up`. The seam compares the
+    // target to the SOURCE, so an over-cap source is always a DOWN reduction
+    // regardless of what the DB bitrate happens to read.
+    const h = createMusicHandler(
+      makeConfig({ quality: 'high', reduce: 'always', forceSyncTagsTranscode: true })
+    );
+    const source = makeCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 400 });
+    // DB bitrate (100) is below the cap (256) — the old code would have said `up`.
+    const device = makeDeviceTrack({ filetype: 'MPEG audio file', bitrate: 100 });
+
+    const diff = makeDiff(source, device);
+    h.postProcessDiff(diff);
+
+    expect(diff.toUpdate).toHaveLength(1);
+    expect(diff.toUpdate[0]!.qualityChange?.reason).toBe('cap-down');
+    expect(diff.toUpdate[0]!.qualityChange?.direction).toBe('down');
+  });
+
+  test('preserve-necessity adoption uses the efficiency-matched seam target', () => {
+    // Default reduce=auto + transferMode=fast → preserve. A Vorbis source the
+    // device cannot play (an iPod-centric fallback treats ogg as incompatible) is
+    // a forced cross-codec transcode (necessity), so the seam matches the source's
+    // quality in the target codec via the efficiency table:
+    // round(vorbis 224 × eff[aac 1.0] / eff[vorbis 0.9]) = 249, bounded by cap 256.
+    const h = createMusicHandler(makeConfig({ quality: 'high', forceSyncTagsTranscode: true }));
+    const source = makeCollectionTrack({
+      fileType: 'ogg',
+      codec: 'vorbis',
+      lossless: false,
+      bitrate: 224,
+    });
+    const device = makeDeviceTrack({ filetype: 'Ogg Vorbis audio file', bitrate: 224 });
+
+    const diff = makeDiff(source, device);
+    h.postProcessDiff(diff);
+
+    expect(diff.toUpdate).toHaveLength(1);
+    expect(diff.toUpdate[0]!.qualityChange?.targetBitrate).toBe(249);
+
+    const ops = h.planUpdate(
+      source,
+      device,
+      diff.toUpdate[0]!.reasons,
+      diff.toUpdate[0]!.changes,
+      diff.toUpdate[0]!.syncTag,
+      diff.toUpdate[0]!.qualityChange
+    );
+    const op = ops[0]!;
+    if (op.type === 'upgrade-transcode') {
+      expect(op.preset.bitrateOverride).toBe(249);
+    }
+  });
+
+  test('device-native preserve adoption is tag-only (no needless re-encode)', () => {
+    // A source the device plays natively, under preserve, is kept untouched by the
+    // seam. Adoption then records the authoritative copy tag (with the source
+    // bitrate, so the device-bound re-sync is a no-op) instead of re-encoding.
+    const caps = makeCapabilities({ supportedAudioCodecs: ['mp3', 'aac'] });
+    const h = createMusicHandler(
+      makeConfig({ quality: 'high', capabilities: caps, forceSyncTagsTranscode: true })
+    );
+    const source = makeCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 320 });
+    const device = makeDeviceTrack({ filetype: 'MPEG audio file', bitrate: 320 });
+
+    const diff = makeDiff(source, device);
+    h.postProcessDiff(diff);
+
+    expect(diff.toUpdate).toHaveLength(1);
+    const update = diff.toUpdate[0]!;
+    expect(update.reasons).toContain('sync-tag-write');
+    expect(update.reasons).not.toContain('quality-change');
+    expect(update.syncTag?.quality).toBe('copy');
+    expect(update.syncTag?.bitrate).toBe(320);
+
+    const ops = h.planUpdate(source, device, update.reasons, update.changes, update.syncTag);
+    expect(ops[0]!.type).toBe('update-sync-tag');
+  });
+
+  test('adoption of an at-or-below-cap incompatible codec is a format-mismatch, not cap-up', () => {
+    // A Vorbis source the device cannot play, at 200 kbps (below the 256 cap),
+    // under convert: min(200, 256) = 200 = the source. The re-encode is a pure
+    // codec change (ogg → aac) with no bitrate move, so it is labelled
+    // `format-mismatch` — NOT the misleading `cap-up` a same-bitrate move used to
+    // report. It still re-encodes (the codec must change).
+    const h = createMusicHandler(
+      makeConfig({ quality: 'high', reduce: 'always', forceSyncTagsTranscode: true })
+    );
+    const source = makeCollectionTrack({
+      fileType: 'ogg',
+      codec: 'vorbis',
+      lossless: false,
+      bitrate: 200,
+    });
+    const device = makeDeviceTrack({ filetype: 'Ogg Vorbis audio file', bitrate: 200 });
+
+    const diff = makeDiff(source, device);
+    h.postProcessDiff(diff);
+
+    expect(diff.toUpdate).toHaveLength(1);
+    expect(diff.toUpdate[0]!.qualityChange).toMatchObject({
+      reason: 'format-mismatch',
+      direction: 'format-only',
+      reEncodes: true,
+      targetBitrate: 200,
+    });
+
+    const ops = h.planUpdate(
+      source,
+      device,
+      diff.toUpdate[0]!.reasons,
+      diff.toUpdate[0]!.changes,
+      diff.toUpdate[0]!.syncTag,
+      diff.toUpdate[0]!.qualityChange
+    );
+    expect(ops[0]!.type).toBe('upgrade-transcode');
+    const op = ops[0]!;
+    if (op.type === 'upgrade-transcode') {
+      expect(op.preset.bitrateOverride).toBe(200);
+    }
+  });
+
+  test('maxAudioBitrate clamps a preserve-necessity adoption target', () => {
+    // A device declaring a lower maxAudioBitrate clamps the efficiency-matched
+    // adoption target: opus 96 → aac would target round(96 / 0.75) = 128, but a
+    // device max of 112 lowers it to 112.
+    const caps = makeCapabilities({ supportedAudioCodecs: ['aac'], maxAudioBitrate: 112 });
+    const h = createMusicHandler(
+      makeConfig({ quality: 'high', capabilities: caps, forceSyncTagsTranscode: true })
+    );
+    const source = makeCollectionTrack({ fileType: 'opus', lossless: false, bitrate: 96 });
+    const device = makeDeviceTrack({ filetype: 'AAC audio file', bitrate: 96 });
+
+    const diff = makeDiff(source, device);
+    h.postProcessDiff(diff);
+
+    expect(diff.toUpdate).toHaveLength(1);
+    expect(diff.toUpdate[0]!.qualityChange?.targetBitrate).toBe(112);
   });
 
   test('leaves an already-tagged track alone (idempotent — not re-adopted)', () => {

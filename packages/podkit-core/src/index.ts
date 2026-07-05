@@ -119,8 +119,6 @@ export {
   classifyQualityChange,
   classifySourceBound,
   classifyDeviceBound,
-  applyBitrateSyncPolicy,
-  BITRATE_SYNC_MODES,
   detectUpgrades,
   isFileReplacementUpgrade,
   isSourceLossless,
@@ -133,8 +131,16 @@ export type {
   QualityChangeReason,
   QualityChangeDirection,
   QualityTarget,
-  BitrateSyncMode,
 } from './sync/engine/upgrades.js';
+
+// Lossy reduction — the down-only, transfer-mode-defaulted bitrate axis (ADR-023)
+export { resolveLossyReduction, resolveReductionAxis } from './sync/engine/lossy-reduction.js';
+export type {
+  LossyReductionInput,
+  LossyReductionResult,
+  ReductionAxis,
+  ReductionMode,
+} from './sync/engine/lossy-reduction.js';
 
 // Music planning utilities
 export {

@@ -113,32 +113,38 @@ When transcoding incompatible lossy sources (OGG, Opus), the effective bitrate i
 
 ### Bitrate Cap Enforcement for Lossy Sources
 
-The cap applies both when **adding** a new lossy track and when a device's quality changes (a different preset, or a different custom bitrate) brings the **lossy** tracks already on the device into line with the new target — not just lossless ones, and in **both directions**:
+The cap applies both when **adding** a new lossy track and when an existing track's recorded bitrate drifts above the cap (e.g. after lowering the preset). Reduction is **down-only**: podkit never re-encodes a lossy track upward automatically — re-encoding a lossy source up cannot recover discarded information.
 
-- **Lowering the cap** re-encodes a lossy track whose recorded bitrate is **above** the new cap down to the cap.
-- **Raising the cap** re-encodes a lossy track whose recorded bitrate is **below** the target back up from the source — but only as far as the source can actually supply. The effective ceiling is the *lower* of the new cap and the source's own bitrate (`min(source, cap)`). Raising the cap above what the source provides re-encodes only up to the source, never higher.
+**Lowering the cap** re-encodes a lossy track whose recorded bitrate is **above** the new cap down to the cap. Tracks at or below the cap stay untouched.
 
-Tracks already sitting at the effective target are left untouched.
+**Raising the cap** does not re-encode existing lossy tracks automatically. Tracks previously reduced to a lower preset sit below the new target and are surfaced as a `below-cap` report:
+
+```
+N tracks below your quality target — re-sync with --force-transcode to lift them
+```
+
+To re-encode those tracks up to the new cap, run `podkit sync --force-transcode`.
 
 | Source on device | Cap changed to | Result |
 |------------------|----------------|--------|
 | MP3 320 kbps | `low` (128) | Re-encoded down to AAC ~128 kbps |
 | MP3 128 kbps | `low` (128) | Left as-is (already at the cap) |
-| AAC 96 kbps (source MP3 320) | `high` (256) | Re-encoded up to AAC ~256 kbps (cap is the ceiling) |
-| AAC 96 kbps (source MP3 200) | `high` (256) | Re-encoded up to AAC ~200 kbps (source is the ceiling) |
-| AAC 192 kbps (source re-ripped to MP3 96) | `high` (256) | Left as-is — the good copy is kept, not re-encoded down to the worse source (reported as source-down suppressed) |
-| AAC 320 kbps (source re-ripped to MP3 100) | `low` (128) | Left as-is — the source can no longer supply the cap, so the good copy is kept (reported as source-down suppressed) |
+| AAC 128 kbps (previously reduced from MP3 320) | `high` (256) | Reported as below-cap; use `--force-transcode` to lift |
+| AAC 192 kbps (source re-ripped to MP3 96) | `high` (256) | Left as-is — the good copy is kept (reported as source-down suppressed) |
+| AAC 320 kbps (source re-ripped to MP3 100) | `low` (128) | Left as-is — source can no longer supply the cap (reported as source-down suppressed) |
 
 A few details worth knowing:
 
-- **Raising the cap recovers quality from the source.** The up-direction re-encode reads the original source file, not the smaller copy already on the device, so it genuinely recovers quality up to the effective ceiling.
-- **It never exceeds the source.** Because the ceiling is `min(source, cap)`, raising the cap above the source's own bitrate re-encodes only up to the source — there is no point inflating a file beyond the quality the source can supply.
-- **A worse source is not followed down (by default).** If you re-rip a source at a *lower* bitrate, podkit keeps the better copy already on the device rather than re-encoding it down to the worse source — this is the default, because re-encoding down would destroy quality for no benefit. It applies even when the device copy's recorded bitrate is *above* the cap but the source has since dropped *below* it: the source can no longer supply the cap, so re-encoding from it would only be a lossy-to-lossy downgrade of already-degraded audio. (A future opt-in policy may let you choose to follow the source down instead.)
-- **Source-down is reported, not silent.** Each kept-but-degraded track is surfaced so you can see it happened: the dry-run/summary shows a per-collection "Source-down suppressed" count (`-v` lists each affected track with its device-vs-source bitrates), and `sync --json` lists each one in the collection's `qualityChanges[]` array with `reason: "source-down-suppressed"` and `reEncodes: false`, counted under `updateBreakdown["quality-change-suppressed"]`. These tracks are never queued for re-transfer.
+- **Reduction is down-only.** A lossy track never gets re-encoded upward by ordinary sync. A worse source is never followed down. Both directions keep the better copy and report the situation.
+- **A worse source is not followed down.** If you re-rip a source at a *lower* bitrate, podkit keeps the better copy already on the device rather than re-encoding it down to the worse source. It applies even when the device copy's recorded bitrate is *above* the cap but the source has since dropped *below* the cap — the source can no longer supply the cap, so re-encoding from it would be a lossy-to-lossy downgrade of degraded audio. Each such track is reported as `source-down-suppressed`.
+- **Source-down is reported, not silent.** The dry-run/summary shows a per-collection "Source-down suppressed" count (`-v` lists each affected track with its device-vs-source bitrates), and `sync --json` lists each one in the collection's `qualityChanges[]` array with `reason: "source-down-suppressed"` and `reEncodes: false`, counted under `updateBreakdown["quality-change-suppressed"]`. These tracks are never queued for re-transfer.
 - **The decision uses what podkit recorded, not a guess.** The cap comparison reads the bitrate podkit stored when it last wrote the track (its sync tag). A track podkit never wrote — synced by another tool, or before this feature existed — has no recorded bitrate, so it is left alone rather than re-encoded on a guess.
-- **It is idempotent.** After a re-encode (up or down), syncing again at the same cap does nothing — the track is already at the effective target.
-- **A fresh library converges in one sync.** Cap enforcement applies on the **first add** too: a newly added lossy track whose bitrate is above the cap is re-encoded down to the cap as it is added, rather than copied as-is and re-encoded on a later sync. A brand-new over-cap library lands at the cap in a single sync. (Sources at or below the cap, and sources with an unknown bitrate, are still copied verbatim — no needless re-encode.) This is also a downward move, so under `bitrate.sync = off` or `up-only` the over-cap source is copied as-is, just as a cap-down on an existing track is suppressed there.
-- **`--skip-upgrades` still wins.** A purely additive device (`skipUpgrades`) never re-encodes existing files, in either direction.
+- **It is idempotent.** After a cap-down re-encode, syncing again at the same cap does nothing — the track is already at the cap.
+- **A fresh library converges in one sync.** Cap enforcement applies on the **first add** too: a newly added lossy track whose bitrate is above the cap (by more than the `[bitrate].tolerance`, default 25%) is re-encoded down to the cap as it is added. Sources at or below the cap, sources only slightly above it (within tolerance), and sources with an unknown bitrate are copied verbatim — no needless re-encode.
+
+- **The cap is a target, not a hard trim — files can sit slightly above it.** The tolerance exists so podkit does not churn audio (a lossy re-encode always loses a little quality) for a trivial space saving. With the default `tolerance = 0.25`, a device-native source up to 25% over the cap is **kept as-is**, so at `high` (256 kbps) you may see copied tracks up to ~320 kbps on the device. Only sources **more than** 25% over the cap are reduced. Set `[bitrate].tolerance = 0` if you want the cap enforced exactly (any source above the cap is reduced), at the cost of re-encoding tracks that are barely over.
+- **The reduction axis controls whether copies are capped.** When `[bitrate].reduce = preserve` (or `reduce = auto` with `transferMode = fast` or `portable`), a device-native lossy source is copied as-is even when above the cap. An incompatible-codec source (e.g. OGG on an AAC-only device) must be transcoded regardless; the cap still applies there.
+- **`--skip-upgrades` still wins.** A purely additive device (`skipUpgrades`) never re-encodes existing files.
 
 ## File Size Guidelines
 

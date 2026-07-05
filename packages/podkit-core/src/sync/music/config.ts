@@ -9,7 +9,6 @@
  * @module
  */
 
-import type { BitrateSyncMode } from '../engine/upgrades.js';
 import type { FFmpegTranscoder } from '../../transcode/ffmpeg.js';
 import type { QualityPreset, EncodingMode, TransferMode } from '../../transcode/types.js';
 import { getPresetBitrate, getCodecPresetBitrate } from '../../transcode/types.js';
@@ -21,6 +20,8 @@ import type { RetryConfig } from './pipeline.js';
 import type { TranscodeTargetCodec } from '../../transcode/codecs.js';
 import type { EncoderAvailability, CodecResolutionError } from '../../transcode/codec-resolver.js';
 import { resolveCodecPreferences, isCodecResolutionError } from '../../transcode/codec-resolver.js';
+import type { ReductionMode, ReductionAxis } from '../engine/lossy-reduction.js';
+import { resolveReductionAxis } from '../engine/lossy-reduction.js';
 
 // =============================================================================
 // Public Config
@@ -54,31 +55,21 @@ export interface MusicSyncConfig {
   customBitrate?: number;
 
   /**
-   * Legacy source-bound tolerance damper (ratio 0.0-1.0). Reinterpreted: its
-   * original role slackening the (now-removed) DB-bitrate fallback is gone. It
-   * now acts as the symmetric default for the source-bound lossy comparison —
-   * `toleranceUp`/`toleranceDown` win when set, otherwise this value applies to
-   * both directions. Default (unset) = exact match against the recorded target.
+   * Lossy-reduction setting (`[bitrate].reduce`). `auto` (default) follows the
+   * transfer mode; `always` converts (reduces over-cap lossy); `never`
+   * preserves. Resolved into a concrete {@link ReductionAxis} by
+   * `resolveMusicConfig`.
+   * @default 'auto'
    */
-  bitrateTolerance?: number;
+  reduce?: ReductionMode;
 
   /**
-   * Per-device bitrate-change policy controlling which quality-change directions
-   * re-encode. Defaults to `match-cap` when omitted.
+   * Source-proximity tolerance (`[bitrate].tolerance`) as a fraction of the cap.
+   * A device-native source is reduced only when `source > cap × (1 + tolerance)`
+   * (0 = exact). Guards wobbly ffprobe source bitrates on the add path.
+   * @default 0.25
    */
-  bitrateSync?: BitrateSyncMode;
-
-  /**
-   * Source-bound upward tolerance ratio (0.0-1.0) for the lossy cap comparison.
-   * Damps trivial ffprobe source-bitrate drift. Default 0 (exact).
-   */
-  toleranceUp?: number;
-
-  /**
-   * Source-bound downward tolerance ratio (0.0-1.0) for the lossy cap
-   * comparison. Damps trivial ffprobe source-bitrate drift. Default 0 (exact).
-   */
-  toleranceDown?: number;
+  tolerance?: number;
 
   /**
    * Transfer mode controlling how files are prepared for the device
@@ -165,11 +156,33 @@ export interface ResolvedMusicConfig {
   /** Target bitrate for the resolved preset (from `getPresetBitrate()`) */
   readonly presetBitrate: number;
 
-  /** Resolved bitrate-change policy (defaults to `match-cap`). */
-  readonly bitrateSync: BitrateSyncMode;
+  /**
+   * The resolved lossy-reduction behaviour (`convert` | `preserve`), computed
+   * once here from `[bitrate].reduce` + the transfer mode. Threaded to both the
+   * add-path classifier and the re-sync device-bound quality target so a track
+   * is never decided one way on add and a different way on re-sync.
+   */
+  readonly reductionAxis: ReductionAxis;
+
+  /**
+   * Source-proximity tolerance (fraction of the cap) for the add-path lossy
+   * reduction. The re-sync device-bound comparison is always exact (0); this is
+   * the add-path's source-side guard only.
+   * @default 0.25
+   */
+  readonly reductionTolerance: number;
 
   /** Whether the device supports ALAC playback */
   readonly deviceSupportsAlac: boolean;
+
+  /**
+   * Device maximum lossy audio bitrate (kbps), when the device declares one
+   * (`capabilities.maxAudioBitrate`). `undefined` → unbounded. Threaded to both
+   * the add-path classifier and the re-sync device-bound quality target so the
+   * shared lossy-reduction seam clamps a preserve-necessity target the same way
+   * on add and on re-sync.
+   */
+  readonly deviceMaxBitrate?: number;
 
   /** Effective transfer mode (defaulted to `'fast'`) */
   readonly transferMode: TransferMode;
@@ -232,6 +245,13 @@ export function resolveMusicConfig(config: MusicSyncConfig): ResolvedMusicConfig
   const deviceSupportsAlac = supportedAudioCodecs?.includes('alac') ?? false;
 
   const transferMode: TransferMode = config.transferMode ?? 'fast';
+
+  // Resolve the lossy-reduction axis + tolerance ONCE, here. The add path
+  // (classifier) and the re-sync device-bound (quality target) both read the
+  // resolved axis from this config, so neither re-resolves it and the two can
+  // never disagree on whether to reduce a track.
+  const reductionAxis: ReductionAxis = resolveReductionAxis(config.reduce ?? 'auto', transferMode);
+  const reductionTolerance: number = config.tolerance ?? 0.25;
 
   // Artwork resize is only relevant when the device's primary artwork source
   // is 'embedded' — those devices read artwork from the audio file itself,
@@ -333,8 +353,10 @@ export function resolveMusicConfig(config: MusicSyncConfig): ResolvedMusicConfig
     isAlacPreset,
     resolvedQuality,
     presetBitrate,
-    bitrateSync: config.bitrateSync ?? 'match-cap',
+    reductionAxis,
+    reductionTolerance,
     deviceSupportsAlac,
+    deviceMaxBitrate: config.capabilities?.maxAudioBitrate,
     transferMode,
     artworkResize,
     sidecarResize,

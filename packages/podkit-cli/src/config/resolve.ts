@@ -14,10 +14,9 @@ import type {
   DeviceCapabilities,
   EncodingMode,
   TransferMode,
-  BitrateSyncMode,
 } from '@podkit/core';
 import { resolveChain, type Resolved, type CapabilitySource } from '@podkit/device-types';
-import type { DeviceConfig, PodkitConfig } from './types.js';
+import type { DeviceConfig, PodkitConfig, ReduceMode } from './types.js';
 
 // =============================================================================
 // Types
@@ -85,13 +84,10 @@ export interface ResolvedDeviceSettings {
   encoding: ResolvedValue<EncodingMode | undefined>;
   transferMode: ResolvedValue<TransferMode>;
   customBitrate: ResolvedValue<number | undefined>;
-  bitrateTolerance: ResolvedValue<number | undefined>;
-  /** Bitrate-change policy: device `[bitrate].sync` → global → `match-cap`. */
-  bitrateSync: ResolvedValue<BitrateSyncMode>;
-  /** Source-bound upward tolerance: device → global → undefined (exact). */
-  toleranceUp: ResolvedValue<number | undefined>;
-  /** Source-bound downward tolerance: device → global → undefined (exact). */
-  toleranceDown: ResolvedValue<number | undefined>;
+  /** Lossy-reduction axis: device `[bitrate].reduce` → global → `auto`. */
+  reduce: ResolvedValue<ReduceMode>;
+  /** Source-proximity tolerance: device `[bitrate].tolerance` → global → 0.25. */
+  tolerance: ResolvedValue<number>;
 }
 
 // =============================================================================
@@ -223,25 +219,11 @@ export function resolveDeviceSettings(
       'fast' as TransferMode
     ),
     customBitrate: resolveSimple(config.customBitrate, deviceConfig.customBitrate, undefined),
-    bitrateTolerance: resolveSimple(
-      config.bitrateTolerance,
-      deviceConfig.bitrateTolerance,
-      undefined
-    ),
-    bitrateSync: resolveSimple<BitrateSyncMode>(
-      config.bitrate?.sync,
-      deviceConfig.bitrate?.sync,
-      'match-cap'
-    ),
-    toleranceUp: resolveSimple(
-      config.bitrate?.toleranceUp,
-      deviceConfig.bitrate?.toleranceUp,
-      undefined
-    ),
-    toleranceDown: resolveSimple(
-      config.bitrate?.toleranceDown,
-      deviceConfig.bitrate?.toleranceDown,
-      undefined
+    reduce: resolveSimple<ReduceMode>(config.bitrate?.reduce, deviceConfig.bitrate?.reduce, 'auto'),
+    tolerance: resolveSimple<number>(
+      config.bitrate?.tolerance,
+      deviceConfig.bitrate?.tolerance,
+      0.25
     ),
   };
 }

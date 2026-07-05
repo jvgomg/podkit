@@ -6,13 +6,17 @@
  * the decision tree from the handler's `planAdd()` / `planUpdate()` into a
  * single, independently testable module.
  *
- * ## Decision Tree (ADR-010)
+ * ## Decision Tree (ADR-010, ADR-023)
  *
- * 1. Device natively supports the codec -> copy (direct or optimized)
- * 2. Compatible lossy (MP3, AAC) -> copy (direct or optimized)
+ * 1. Device natively supports the codec -> copy or reduce via the lossy-reduction seam
+ * 2. Compatible lossy (MP3, AAC) -> copy or reduce via the lossy-reduction seam
  * 3. Lossless + preset 'lossless' + source is ALAC -> direct copy
  * 4. Lossless -> transcode with resolved preset
- * 5. Incompatible lossy (OGG, Opus) -> transcode with bitrate capped at source
+ * 5. Incompatible lossy (OGG, Opus) -> transcode via the lossy-reduction seam
+ *
+ * The lossy bitrate decision (copy vs reduce, and the target bitrate) lives in
+ * one pure seam — {@link resolveLossyReduction} — shared with the re-sync and
+ * adoption paths, so a track is never decided two ways (ADR-023).
  *
  * @module
  */
@@ -21,8 +25,8 @@ import type { CollectionTrack } from '../../adapters/interface.js';
 import type { AudioCodec } from '@podkit/device-types';
 import type { SourceCategory, TranscodePresetRef } from '../engine/types.js';
 import type { ResolvedMusicConfig } from './config.js';
-import type { BitrateSyncMode } from '../engine/upgrades.js';
-import { applyBitrateSyncPolicy } from '../engine/upgrades.js';
+import { resolveLossyReduction } from '../engine/lossy-reduction.js';
+import type { ReductionAxis } from '../engine/lossy-reduction.js';
 import { categorizeSource, isDeviceCompatible, fileTypeToAudioCodec } from './planner.js';
 import type { TranscodeTargetCodec } from '../../transcode/codecs.js';
 import { CODEC_METADATA } from '../../transcode/codecs.js';
@@ -81,24 +85,34 @@ export interface ClassifierContext {
    * unconfigured-cap fallback, not produced by any real preset).
    */
   readonly presetBitrate: number;
-  /**
-   * Per-device bitrate-change policy. The on-add cap is a downward bitrate move,
-   * so it is gated by the same policy as a device-bound cap-down: it fires under
-   * `match-cap`/`match-all`/`down-only` and is held (copied as-is) under
-   * `off`/`up-only`, keeping "freeze bitrates" / "never re-encode down" honest on
-   * the add path too. Defaults to `match-cap`.
-   */
-  readonly bitrateSync: BitrateSyncMode;
   /** Custom bitrate override in kbps */
   readonly customBitrate?: number;
   /** Where the device reads artwork from */
   readonly primaryArtworkSource?: 'database' | 'embedded' | 'sidecar';
   /** Transfer mode for file preparation */
   readonly transferMode: 'fast' | 'optimized' | 'portable';
+  /**
+   * Resolved lossy-reduction axis (`convert` reduces over-cap device-native
+   * lossy; `preserve` copies it untouched). Resolved once in
+   * `resolveMusicConfig` from `[bitrate].reduce` + the transfer mode.
+   */
+  readonly reductionAxis: ReductionAxis;
+  /**
+   * Source-proximity tolerance (fraction of the cap) for the add-path reduce
+   * gate: a device-native source is reduced only when `source > cap × (1 + tol)`.
+   */
+  readonly reductionTolerance: number;
   /** Resolved codec for lossy transcoding */
   readonly resolvedLossyCodec?: TranscodeTargetCodec;
   /** Resolved lossless stack */
   readonly resolvedLosslessStack?: (TranscodeTargetCodec | 'source')[];
+  /**
+   * Device maximum lossy audio bitrate (kbps), when the device declares one.
+   * `undefined` → unbounded. Passed to the lossy-reduction seam as `deviceMax`,
+   * where it clamps only the preserve-necessity target (the one row that can
+   * land above the source bitrate).
+   */
+  readonly deviceMaxBitrate?: number;
 }
 
 // =============================================================================
@@ -189,15 +203,27 @@ export class MusicTrackClassifier {
       };
     }
 
-    // 4-5. Transcode with resolved preset (lossy transcoding)
-    const preset = this.buildLossyPreset(this.ctx.customBitrate);
+    // 4. Lossless source at a lossy preset → transcode at the resolved preset
+    //    (the lossless→lossy boundary; the cap is the preset's nominal bitrate).
+    if (isLossless) {
+      return {
+        sourceCategory,
+        deviceNative,
+        isLossless,
+        warnLossyToLossy,
+        action: { type: 'transcode', preset: this.buildLossyPreset(this.ctx.customBitrate) },
+      };
+    }
 
+    // 5. Incompatible lossy (necessity) → the device cannot play the codec, so a
+    //    transcode is unavoidable. Routed through the same lossy-reduction seam
+    //    as the copy path so the full ADR-023 table is exercised in one place.
     return {
       sourceCategory,
       deviceNative,
       isLossless,
       warnLossyToLossy,
-      action: { type: 'transcode', preset },
+      action: this.resolveLossyAction(track, false),
     };
   }
 
@@ -282,61 +308,61 @@ export class MusicTrackClassifier {
   }
 
   /**
-   * Resolve the action for a source that would otherwise be copied as-is.
-   *
-   * A lossy source whose bitrate exceeds the device's lossy cap is transcoded
-   * DOWN to the cap on first add, mirroring the device-bound cap-down upgrade
-   * path, so a brand-new over-cap library lands at the cap in a single sync
-   * rather than converging over two. Everything else is copied verbatim.
+   * Resolve the action for a lossy source that is otherwise a copy candidate
+   * (device-native or compatible-lossy). Lossless sources are copied directly —
+   * they never enter the lossy-reduction seam.
    */
   private resolveCopyOrCapAction(track: CollectionTrack, isLossless: boolean): MusicAction {
-    return this.resolveLossyCapTranscode(track, isLossless) ?? this.resolveCopyAction();
+    if (isLossless) return this.resolveCopyAction();
+    return this.resolveLossyAction(track, true);
   }
 
   /**
-   * Build the on-add cap-down transcode for a lossy source above the cap, or
-   * `undefined` to leave it copied as-is.
+   * Resolve a lossy source's action through the shared lossy-reduction seam
+   * ({@link resolveLossyReduction}) — the single owner of the ADR-023 down-only,
+   * cap-bounded target-bitrate table.
    *
-   * Guards (each keeps a source on the copy path):
-   * - lossless sources are never capped — re-encoding them is the lossless
-   *   stack's job, not a bitrate cap;
-   * - no cap configured (`presetBitrate === 0`) — a defensive fallback; no real
-   *   preset produces 0 (a lossless target resolves to ~900, and lossy sources
-   *   fall under it via the at/below-cap guard below);
-   * - unknown source bitrate (`0`/undefined — the adapters' "not populated"
-   *   sentinel) — never transcode blindly;
-   * - source at/below the cap — copying is lossless-for-the-bytes, re-encoding
-   *   would only degrade it for no benefit (this is also what keeps a lossy
-   *   source under a lossless ~900 cap copied untouched);
-   * - the bitrate-sync policy would not fire a downward move (`off`/`up-only`) —
-   *   the cap is a quality preference under that policy, not a hard device
-   *   constraint, so the source is copied as-is just as a device-bound cap-down
-   *   would be suppressed.
+   * `deviceNative` is the copy-path flag: `true` for a source the device plays
+   * as-is (preserve copies it; convert reduces it only when it exceeds the
+   * tolerance band), `false` for an incompatible codec the device cannot play
+   * (a necessity transcode). The seam decides copy-vs-transcode and the target
+   * bitrate; this method maps that onto a {@link MusicAction} and handles the
+   * inputs the seam excludes:
+   * - no known source bitrate, or no configured cap (`presetBitrate === 0`, a
+   *   defensive fallback no real preset produces): a copy candidate is copied
+   *   verbatim (never transcode blindly), while a necessity transcode falls back
+   *   to the resolved preset's own nominal bitrate.
    *
-   * When it does fire, the action matches what {@link classifyLossyDeviceBound}'s
-   * cap-down would later produce for the same source — the resolved lossy preset
-   * and codec with `bitrateOverride = min(source.bitrate, cap)` — so the written
-   * sync tag records the cap and the next sync is a no-op (idempotent).
+   * The reduction axis and tolerance are resolved once in `resolveMusicConfig`
+   * (from `[bitrate].reduce` / `[bitrate].tolerance` + the transfer mode) and
+   * read straight off the context here, so add and re-sync share one resolution.
    */
-  private resolveLossyCapTranscode(
-    track: CollectionTrack,
-    isLossless: boolean
-  ): MusicAction | undefined {
-    if (isLossless) return undefined;
-
+  private resolveLossyAction(track: CollectionTrack, deviceNative: boolean): MusicAction {
     const cap = this.ctx.presetBitrate;
-    if (!cap) return undefined;
-
     const sourceBitrate = track.bitrate;
-    if (!sourceBitrate || sourceBitrate <= cap) return undefined;
 
-    // A downward bitrate move — gate it on the same policy as a device-bound
-    // cap-down so `off`/`up-only` keep the over-cap source copied as-is.
-    if (applyBitrateSyncPolicy('down', 'cap-down', this.ctx.bitrateSync) !== 'fire') {
-      return undefined;
+    if (!sourceBitrate || !cap) {
+      return deviceNative
+        ? this.resolveCopyAction()
+        : { type: 'transcode', preset: this.buildLossyPreset(this.ctx.customBitrate) };
     }
 
-    return { type: 'transcode', preset: this.buildLossyPreset(Math.min(sourceBitrate, cap)) };
+    const result = resolveLossyReduction({
+      sourceCodec: fileTypeToAudioCodec(track.fileType, track.codec) ?? 'aac',
+      sourceBitrate,
+      deviceNative,
+      // When no lossy codec is resolved, the preset omits targetCodec and the
+      // transcoder defaults to AAC; the seam's efficiency match defaults to the
+      // same 'aac' so the computed bitrate matches the codec actually produced.
+      targetCodec: this.ctx.resolvedLossyCodec ?? 'aac',
+      cap,
+      axis: this.ctx.reductionAxis,
+      ...(this.ctx.deviceMaxBitrate !== undefined && { deviceMax: this.ctx.deviceMaxBitrate }),
+      tolerance: this.ctx.reductionTolerance,
+    });
+
+    if (result.action === 'copy') return this.resolveCopyAction();
+    return { type: 'transcode', preset: this.buildLossyPreset(result.bitrate) };
   }
 
   /**
@@ -382,11 +408,13 @@ export function classifierFromConfig(config: ResolvedMusicConfig): ClassifierCon
     deviceSupportsAlac: config.deviceSupportsAlac,
     resolvedQuality: config.resolvedQuality,
     presetBitrate: config.presetBitrate,
-    bitrateSync: config.bitrateSync,
     customBitrate: config.raw.customBitrate,
     primaryArtworkSource: config.primaryArtworkSource,
     transferMode: config.transferMode,
+    reductionAxis: config.reductionAxis,
+    reductionTolerance: config.reductionTolerance,
     resolvedLossyCodec: config.resolvedLossyCodec,
     resolvedLosslessStack: config.resolvedLosslessStack,
+    deviceMaxBitrate: config.deviceMaxBitrate,
   };
 }

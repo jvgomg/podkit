@@ -127,7 +127,8 @@ podkit sync [options]
 | `--audio-quality <preset>` | Audio-specific quality override: `max`, `high`, `medium`, `low` |
 | `--video-quality <preset>` | Video-specific quality override: `max`, `high`, `medium`, `low` |
 | `--encoding <mode>` | Encoding mode: `vbr` (default) or `cbr` |
-| `--bitrate-sync <mode>` | Bitrate-change policy for this run: `off`, `match-cap` (default), `match-all`, `up-only`, or `down-only`. Overrides the device's [`[bitrate].sync`](/reference/config-file#bitrate-sync-policy) setting. Controls which directions an existing track is re-encoded when its quality drifts from the target (format/encoding corrections still apply regardless) |
+| `--bitrate-reduce <mode>` | Lossy reduction mode for this run: `auto` (default), `always`, or `never`. Overrides the device's [`[bitrate].reduce`](/reference/config-file#lossy-reduction) setting. `auto` follows the transfer mode (`optimized` converts; `fast`/`portable` preserve). `always` reduces all over-cap device-native lossy sources. `never` preserves all device-native lossy sources regardless of cap. |
+| `--bitrate-tolerance <fraction>` | Source-proximity tolerance for lossy reduction on this run (e.g. `0.25` means reduce only when source exceeds cap by more than 25%). Overrides the device's [`[bitrate].tolerance`](/reference/config-file#lossy-reduction) setting. |
 | `--transfer-mode <mode>` | Transfer mode: `fast` (default), `optimized`, or `portable`. Controls whether extra file data is preserved or stripped during sync |
 | `--force-transfer-mode` | Re-process all tracks when changing transfer mode |
 | `--filter <pattern>` | Only sync tracks matching pattern |
@@ -896,7 +897,7 @@ That's all most users need.
 | `podkit sync --quality <TAB>` | `max`, `high`, `medium`, `low` |
 | `podkit sync --type <TAB>` | `music`, `video` |
 | `podkit sync --encoding <TAB>` | `vbr`, `cbr` |
-| `podkit sync --bitrate-sync <TAB>` | `off`, `match-cap`, `match-all`, `up-only`, `down-only` |
+| `podkit sync --bitrate-reduce <TAB>` | `auto`, `always`, `never` |
 | `podkit device music --format <TAB>` | `table`, `json`, `csv` |
 | `podkit sync -d <TAB>` | Device names from your config file |
 | `podkit sync -c <TAB>` | Collection names from your config file |

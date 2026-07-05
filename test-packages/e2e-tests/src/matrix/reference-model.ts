@@ -87,6 +87,106 @@ export const PIPELINES: readonly Pipeline[] = ['prefer-copy', 'transcode-aac'];
 /** The action podkit takes for a source: copy the file or transcode it. */
 export type AudioAction = 'copy' | 'transcode';
 
+// ---------------------------------------------------------------------------
+// Lossy reduction axis (ADR-023)
+// ---------------------------------------------------------------------------
+
+/**
+ * The user-overridable lossy-reduction setting (`[bitrate].reduce`). Mirrors
+ * podkit's `ReductionMode`.
+ */
+export type ReductionMode = 'auto' | 'always' | 'never';
+
+/**
+ * The resolved reduction behaviour for a device-native lossy source. Mirrors
+ * podkit's `ReductionAxis`: `convert` reduces an over-cap source down to the
+ * cap; `preserve` copies it untouched.
+ */
+export type ReductionAxis = 'convert' | 'preserve';
+
+/**
+ * Independent mirror of podkit's `resolveReductionAxis` (ADR-023 §1): an
+ * explicit `[bitrate].reduce` wins, else `auto` follows the transfer mode —
+ * `optimized` converts (cut the file down), `fast`/`portable` preserve.
+ *
+ * Re-implemented here (not imported from `@podkit/core`) so the matrix
+ * prediction stays independent of the system under test (doc-039 §"The
+ * reference model").
+ */
+export function reductionAxis(reduce: ReductionMode, transferMode: TransferMode): ReductionAxis {
+  if (reduce === 'always') return 'convert';
+  if (reduce === 'never') return 'preserve';
+  return transferMode === 'optimized' ? 'convert' : 'preserve';
+}
+
+/** Default source-proximity tolerance (`[bitrate].tolerance`), a fraction of the cap. */
+export const DEFAULT_REDUCE_TOLERANCE = 0.25;
+
+/**
+ * The quality preset's lossy bitrate cap (kbps) — the hard ceiling that bounds
+ * every reduction target. `lossless` carries no lossy cap (a lossy source under
+ * a lossless preset is always copied), modelled as `+Infinity`.
+ */
+export const QUALITY_CAP_KBPS: Record<'lossless' | 'high' | 'medium' | 'low', number> = {
+  lossless: Number.POSITIVE_INFINITY,
+  high: 256,
+  medium: 192,
+  low: 128,
+};
+
+/**
+ * Source bitrate (kbps) of each multi-format fixture track, as podkit's
+ * directory adapter (music-metadata `format.bitrate`, rounded to kbps) reports
+ * it. Only the lossy rows are load-bearing for the reduction axis — a lossless
+ * source never enters reduction — but every format is listed so the table is a
+ * complete picture of the fixture set.
+ *
+ * Measured from the generated `multi-format` fixtures (encoder args in
+ * `audio-multi-format.ts`): aac is CBR 256k (the short sine reports ~218); mp3
+ * `-q:a 0` VBR collapses to ~105 on a pure tone; vorbis `-q:a 7` reports its
+ * ~224 nominal; opus 128k reports ~116. The reduce gate is `source > cap ×
+ * (1 + tol)`; with a `low` cap (128) and `tol` 0.25 the band is 160, so only
+ * aac/vorbis clear it. The margins are wide (aac 218, mp3 105) so the asserted
+ * device-native decisions are stable against encoder wobble across regenerations.
+ */
+export const FIXTURE_SOURCE_BITRATE_KBPS: Record<Format, number> = {
+  wav: 1411,
+  aiff: 1411,
+  flac: 700,
+  alac: 700,
+  mp3: 105,
+  aac: 218,
+  ogg: 224,
+  opus: 116,
+};
+
+/** The reduction inputs a codec cell needs to predict copy-vs-reduce. */
+export interface ReductionContext {
+  /** Resolved reduction axis (`convert` reduces over-cap lossy; `preserve` copies). */
+  axis: ReductionAxis;
+  /** Source bitrate (kbps) as the adapter reports it. */
+  sourceBitrate: number;
+  /** Quality-preset bitrate cap (kbps) — the hard ceiling. */
+  cap: number;
+  /** Source-proximity tolerance (fraction of the cap). */
+  tolerance: number;
+}
+
+/**
+ * The copy-vs-transcode action for a **lossy** source under the reduction axis
+ * (ADR-023 §3). An incompatible-codec source (`deviceNative === false`) is a
+ * necessity transcode under either axis. A device-native source is copied under
+ * `preserve`; under `convert` it is reduced only when its bitrate exceeds
+ * `cap × (1 + tol)`. Independent mirror of `resolveLossyReduction` at the
+ * op-type granularity (the matrix asserts op type + output codec, not the exact
+ * reduced kbps).
+ */
+export function lossyReductionAction(deviceNative: boolean, ctx: ReductionContext): AudioAction {
+  if (!deviceNative) return 'transcode';
+  if (ctx.axis === 'preserve') return 'copy';
+  return ctx.sourceBitrate > ctx.cap * (1 + ctx.tolerance) ? 'transcode' : 'copy';
+}
+
 /** Source format → the codec name podkit classifies it as. */
 const FORMAT_CODEC: Record<Format, AudioCodec> = {
   wav: 'wav',
@@ -215,15 +315,33 @@ export interface CodecOutcome {
 /**
  * Predict the copy-vs-transcode action and the resulting output extension for
  * a (format, device, lossy stack, quality) cell — the codec concern's core.
+ *
+ * The base decision ({@link audioActionCore}) yields `copy` for a device-native
+ * source and `transcode` for an incompatible codec or a lossless-source
+ * downgrade. The lossy reduction axis (ADR-023) is then layered on top: a
+ * device-native **lossy** source the base decision would copy is reduced to a
+ * transcode when the cell is `convert` and the source exceeds the cap band.
+ * Lossless copies and necessity transcodes are unaffected — preserve/convert
+ * agree at the op-type level for those.
  */
 export function codecOutcome(
   format: Format,
   capabilities: DeviceCapabilities,
   kind: DeviceKind,
   lossyStack: readonly AudioCodec[],
-  resolvedQuality: 'lossless' | 'high' | 'medium' | 'low'
+  resolvedQuality: 'lossless' | 'high' | 'medium' | 'low',
+  reduction: ReductionContext
 ): CodecOutcome {
-  const action = audioActionCore(format, capabilities, kind, resolvedQuality);
+  const baseAction = audioActionCore(format, capabilities, kind, resolvedQuality);
+  const isLossless = LOSSLESS_FORMATS.has(format);
+
+  // A device-native lossy copy is the only base decision the reduction axis can
+  // flip: under `convert` an over-cap source reduces (transcodes) instead of
+  // copying. `deviceNative === true` is implied by `baseAction === 'copy'` for a
+  // lossy format.
+  const action =
+    baseAction === 'copy' && !isLossless ? lossyReductionAction(true, reduction) : baseAction;
+
   if (action === 'copy') {
     return { action, codec: undefined, extension: SOURCE_EXTENSION[format] };
   }

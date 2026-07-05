@@ -78,12 +78,15 @@ export interface UpdateBreakdown {
   'transform-remove'?: number;
   'metadata-changed'?: number;
   // Music quality axis — direction-split (replaces format-upgrade /
-  // quality-upgrade / preset-upgrade / preset-downgrade). `-suppressed` counts
-  // source-down changes the sync reported but deliberately left alone (the
-  // source degraded below the better device copy).
+  // quality-upgrade / preset-upgrade / preset-downgrade). The two report-only
+  // keys cover changes the sync surfaced but deliberately did NOT act on:
+  // `-suppressed` is a source degraded below the better device copy
+  // (source-down-suppressed); `-below-cap` is a previously-reduced track sitting
+  // below a raised cap (down-only never lifts it automatically).
   'quality-change-up'?: number;
   'quality-change-down'?: number;
   'quality-change-suppressed'?: number;
+  'quality-change-below-cap'?: number;
   // Video quality axis — video keeps its own preset reasons.
   'preset-upgrade'?: number;
   'preset-downgrade'?: number;

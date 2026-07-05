@@ -28,11 +28,10 @@ tips = true                  # Show contextual tips
 skipUpgrades = false         # Skip file-replacement upgrades for changed source files
 allowEmptyPlaylist = false   # Allow headless syncs to proceed when a playlist resolves to zero tracks
 
-# Bitrate-change policy (defaults shown — omit to use these)
+# Lossy reduction (defaults shown — omit to use these)
 [bitrate]
-sync = "match-cap"           # off | match-cap | match-all | up-only | down-only
-toleranceUp = 0.0            # source-bound upward tolerance (0.0-1.0)
-toleranceDown = 0.0          # source-bound downward tolerance (0.0-1.0)
+reduce = "auto"              # auto | always | never
+tolerance = 0.25             # source-proximity tolerance (fraction of cap)
 
 # Codec preferences (defaults shown — omit to use these)
 [codec]
@@ -68,9 +67,9 @@ encoding = "vbr"             # Encoding mode override for this device
 transferMode = "fast"        # Transfer mode override for this device
 artwork = true
 
-# Per-device bitrate-change policy
+# Per-device lossy reduction
 [devices.<name>.bitrate]
-sync = "match-cap"
+reduce = "auto"
 
 # Per-device codec preferences
 [devices.<name>.codec]
@@ -112,7 +111,7 @@ These apply to all devices unless overridden at the device level.
 | `encoding` | string | `"vbr"` | Encoding mode for lossy transcoding: `vbr` (variable bitrate) or `cbr` (constant bitrate). VBR produces better quality per MB; CBR produces predictable file sizes and more reliable preset change detection. Applies to whichever codec the [preference stack](/user-guide/transcoding/codec-preferences) resolves. |
 | `transferMode` | string | `"fast"` | Transfer mode controlling how extra file data (e.g. embedded artwork) is handled, and — for iPod — whether on-disk file tags are kept in sync with the iTunesDB. See [Transfer Mode](#transfer-mode) below. |
 | `customBitrate` | integer | - | Override the preset's target bitrate (64-320 kbps). Ignored when `max` resolves to ALAC. |
-| `bitrateTolerance` | number | - | Source-bound tolerance damper (0.0-1.0). Acts as the default for both `[bitrate].toleranceUp` and `toleranceDown` when those are unset; the per-direction values win when set. (Its former role slackening the removed device-database bitrate fallback is gone — see [`bitrate.sync`](#bitrate-sync-policy).) Default unset = exact. |
+| `[bitrate].tolerance` | number | `0.25` | Source-proximity tolerance for lossy reduction on the add path (fraction of the cap). Reduce only when `source > cap × (1 + tolerance)`. Applies only when the reduction axis is `convert`. See [Lossy Reduction](#lossy-reduction). |
 | `artwork` | boolean | `true` | Include album artwork during sync |
 | `checkArtwork` | boolean | `false` | Detect artwork changes between syncs (added, removed, or replaced). For Subsonic sources, adds one HTTP request per unique album during scanning. Consider using the `--check-artwork` CLI flag for periodic checks instead of enabling permanently on large libraries. |
 | `tips` | boolean | `true` | Show contextual tips (e.g., Sound Check, eject reminders). Also controllable via `--no-tips` flag or `PODKIT_TIPS=false`. |
@@ -163,54 +162,76 @@ AAC, ALAC, or FLAC depending on the codec preference stack) before
 being placed on the device. iPod is exempt — libgpod and the iTunesDB
 handle metadata for WAV/AIFF tracks on iPod natively.
 
-## Bitrate Sync Policy
+## Lossy Reduction
 
-The `[bitrate]` block controls how syncs re-encode tracks already on the device
-when their quality drifts from the device's target — for example after you lower
-the bitrate cap, re-rip a source at a different bitrate, or switch encoding mode.
-Set it globally under `[bitrate]` or per-device under `[devices.<name>.bitrate]`
-(the device block overrides the global one). Override it for a single run with
-the [`--bitrate-sync`](/reference/cli-commands#sync) flag.
+The `[bitrate]` block controls when podkit re-encodes a device-native lossy source
+(MP3, AAC) to fit the quality cap. Set it globally under `[bitrate]` or per-device
+under `[devices.<name>.bitrate]` (the device block overrides the global one).
+Override `reduce` for a single run with
+[`--bitrate-reduce`](/reference/cli-commands#sync); override `tolerance` with
+[`--bitrate-tolerance`](/reference/cli-commands#sync).
 
 ```toml
 [bitrate]
-sync = "match-cap"     # off | match-cap | match-all | up-only | down-only
-toleranceUp = 0.0      # damp trivial source-bitrate drift upward (0.0-1.0)
-toleranceDown = 0.0    # damp trivial source-bitrate drift downward (0.0-1.0)
+reduce = "auto"        # auto | always | never
+tolerance = 0.25       # source-proximity tolerance (fraction of cap, default 0.25)
 ```
 
-| `sync` mode | Cap raised / source improved (up) | Cap lowered (down) | Source re-ripped lower than the device copy |
-|-------------|-----------------------------------|--------------------|---------------------------------------------|
-| `match-cap` (default) | re-encode up | re-encode down | **keep** the better copy, report it |
-| `match-all` | re-encode up | re-encode down | follow the source **down** |
-| `up-only` | re-encode up | leave as-is | leave as-is |
-| `down-only` | leave as-is | re-encode down | leave as-is |
-| `off` | leave as-is | leave as-is | leave as-is |
+### `[bitrate].reduce`
 
-Notes:
+| Value | Behaviour |
+|-------|-----------|
+| `auto` (default) | Follows the transfer mode: `optimized` converts (reduces over-cap sources); `fast` and `portable` preserve (copy device-native lossy as-is). |
+| `always` | Always reduce an over-cap device-native lossy source down to the cap. |
+| `never` | Always preserve — copy device-native lossy sources untouched, even if above the cap. |
 
-- **Format and encoding corrections are not bitrate moves.** Switching the device
-  between lossy and lossless, or flipping encoding mode (`vbr` ↔ `cbr`), re-encodes
-  for correctness in *every* mode, including `off`. Only bitrate-driven re-encoding
-  is governed by `sync`.
-- **`skipUpgrades` outranks `sync`.** A device with `skipUpgrades = true` never
-  replaces an existing file for any quality reason — not even a format or encoding
-  correction. Use it for a curated, purely-additive device; use `sync = "off"` to
-  freeze bitrates while still letting format/encoding corrections through.
-- **Source-down is never destructive by default.** Under `match-cap` a source
-  re-ripped *lower* than the device copy leaves the good copy in place and reports
-  the situation; `match-all` is the explicit opt-in to follow it down.
-- **Tolerances are opt-in churn dampers.** `toleranceUp` / `toleranceDown` are
-  ratios (0.0-1.0) applied only to the comparison against the source bitrate, so a
-  trivial wobble in the probed source bitrate between syncs doesn't trigger a
-  pointless re-encode. The default `0` means exact. The legacy `bitrateTolerance`
-  setting (see below) acts as the default for both directions when these are not set.
-- **Untagged tracks are opted out.** Quality detection is driven entirely by the
-  [sync tag](/reference/sync-tags) podkit writes — the only authoritative record of
-  what it encoded. A track podkit never wrote (no sync tag) is left alone by all
-  `sync` modes; there is no fallback to the unreliable device-database bitrate.
-  Adopt such tracks deliberately with
-  [`--force-sync-tags-transcode`](/reference/cli-commands#sync).
+**Lossy reduction is down-only.** Re-encoding a lossy source up cannot recover
+discarded information (ADR-023), so podkit never does it automatically. When you
+raise the cap, tracks previously reduced below the new cap are surfaced as a
+`below-cap` report ("N tracks below your quality target; `--force-transcode` to
+lift them") and left alone — re-lifting is an explicit opt-in with `--force-transcode`.
+
+**The cap is a hard ceiling.** Even on the `preserve` axis, a source the device
+cannot play natively (an incompatible codec) must be transcoded; the cap still
+applies to that forced transcode.
+
+**The `preserve` axis and an incompatible source.** When a device cannot play the
+source codec natively (e.g. OGG on a device that only supports AAC/MP3), a transcode
+is unavoidable regardless of the `reduce` setting. `preserve` targets
+`min(round(source × eff[target] / eff[source]), cap)` — quality-matching in the
+forced codec, still bounded by the cap. `always`/`auto`→convert targets
+`min(source, cap)` — file-size first.
+
+### `[bitrate].tolerance`
+
+A fraction of the cap (default `0.25`). On the **add path**, a device-native
+lossy source is reduced only when `source > cap × (1 + tolerance)`. A source within
+25% of the cap is copied as-is. Set `tolerance = 0` for exact cap enforcement
+(reduce every source at all above the cap).
+
+On re-sync, the recorded-vs-cap comparison uses `tolerance: 0` (exact) — the sync
+tag records what podkit actually encoded, so there is no ffprobe wobble to damp.
+
+### Source-down is never destructive
+
+When a source is re-ripped to a **lower** bitrate than the device copy, podkit
+keeps the better copy and reports the situation (a `source-down-suppressed` entry
+in `qualityChanges[]` and a per-collection count in the summary). It never
+re-encodes the good copy down to a worse source.
+
+### Untagged tracks are opted out
+
+Quality detection is driven entirely by the [sync tag](/reference/sync-tags) podkit
+writes — the only authoritative record of what it encoded. A track podkit never
+wrote (no sync tag) is left alone; there is no fallback to the unreliable
+device-database bitrate. Adopt such tracks deliberately with
+[`--force-sync-tags-transcode`](/reference/cli-commands#sync).
+
+### `skipUpgrades` is the master veto
+
+A device with `skipUpgrades = true` never replaces an existing file for any
+quality reason — including format corrections and the lossless/lossy boundary
+crossing. Use it for a curated, purely-additive device.
 
 ## Codec Preferences
 
@@ -342,8 +363,7 @@ quality = "max"               # Use --device <path> to specify mount point
 | `encoding` | string | no | global `encoding` | Encoding mode override: `vbr` or `cbr` |
 | `transferMode` | string | no | global `transferMode` | Transfer mode override: `fast`, `optimized`, or `portable`. See [Transfer Mode](#transfer-mode) for the device-specific contract (file-tag writes differ between iPod and mass-storage). |
 | `customBitrate` | integer | no | global `customBitrate` | Override the preset's target bitrate for this device |
-| `bitrateTolerance` | number | no | global `bitrateTolerance` | Source-bound tolerance damper for this device (default for `toleranceUp`/`toleranceDown`) |
-| `bitrate` | table | no | global `[bitrate]` | Bitrate-change policy block (`[devices.<name>.bitrate]`). See [Bitrate Sync Policy](#bitrate-sync-policy). |
+| `bitrate` | table | no | global `[bitrate]` | Lossy reduction block (`[devices.<name>.bitrate]`). See [Lossy Reduction](#lossy-reduction). |
 | `artwork` | boolean | no | global `artwork` | Artwork override for this device |
 | `checkArtwork` | boolean | no | global `checkArtwork` | Detect changed artwork for this device |
 | `skipUpgrades` | boolean | no | global `skipUpgrades` | Skip file-replacement upgrades for this device |

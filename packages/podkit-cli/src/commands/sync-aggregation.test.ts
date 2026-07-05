@@ -7,9 +7,34 @@
 
 import { describe, expect, it } from 'bun:test';
 import { OutputContext } from '../output/index.js';
+import type { OutputSink } from '../output/types.js';
 import { MusicPresenter } from './music-presenter.js';
 import type { MusicContentConfig } from './sync-presenter.js';
 import type { SyncOutput } from './sync.js';
+
+function makeMusicContentConfig(effectiveQuality = 'high'): MusicContentConfig {
+  return {
+    type: 'music',
+    effectiveTransforms: { cleanArtists: { enabled: false, format: '', drop: false, ignore: [] } },
+    effectiveQuality: effectiveQuality as never,
+    effectiveTransferMode: undefined,
+    effectiveEncoding: undefined,
+    effectiveCustomBitrate: undefined,
+    effectiveReduce: 'auto',
+    effectiveTolerance: 0.25,
+    deviceSupportsAlac: false,
+    effectiveArtwork: true,
+    skipUpgrades: false,
+    forceTranscode: false,
+    forceTransferMode: false,
+    forceSyncTags: false,
+    forceSyncTagsTranscode: false,
+    forceMetadata: false,
+    checkArtwork: false,
+    transcoder: null as never,
+    effectiveCodecPreference: { lossy: [], lossless: [] },
+  };
+}
 
 /**
  * Create a silent JSON OutputContext for testing
@@ -53,10 +78,8 @@ function buildMusicDryRunOutput(ctx: {
     effectiveTransferMode: undefined,
     effectiveEncoding: undefined,
     effectiveCustomBitrate: undefined,
-    effectiveBitrateTolerance: undefined,
-    effectiveBitrateSync: 'match-cap',
-    effectiveToleranceUp: undefined,
-    effectiveToleranceDown: undefined,
+    effectiveReduce: 'auto',
+    effectiveTolerance: 0.25,
     deviceSupportsAlac: false,
     effectiveArtwork: true,
     skipUpgrades: ctx.skipUpgrades,
@@ -338,5 +361,136 @@ describe('SyncOutput type structure', () => {
     expect(output.plan?.videoSummary?.movieCount).toBe(2);
     expect(output.plan?.videoSummary?.showCount).toBe(1);
     expect(output.plan?.videoSummary?.episodeCount).toBe(3);
+  });
+});
+
+describe('report-only quality changes in dry-run JSON', () => {
+  // A report-only change lives in `reportOnlyQualityChanges` (the track stays in
+  // `existing`), so it must surface in the breakdown + qualityChanges[] WITHOUT
+  // inflating tracksToUpdate — the report-but-never-execute guarantee.
+  function ctxWithReportOnly(
+    entries: Array<{
+      reason: string;
+      direction: 'up' | 'down' | 'format-only';
+      targetBitrate: number;
+      encodedBitrate?: number;
+      sourceBitrate?: number;
+    }>
+  ) {
+    const ctx = createMusicDryRunCtx([]);
+    ctx.diff.reportOnlyQualityChanges = entries.map((qc, i) => ({
+      source: { artist: `Artist ${i}`, title: `Title ${i}` },
+      device: {},
+      qualityChange: { reEncodes: false, ...qc },
+    }));
+    return ctx;
+  }
+
+  it('source-down-suppressed counts under quality-change-suppressed, never tracksToUpdate', () => {
+    const ctx = ctxWithReportOnly([
+      {
+        reason: 'source-down-suppressed',
+        direction: 'down',
+        targetBitrate: 128,
+        encodedBitrate: 256,
+        sourceBitrate: 128,
+      },
+    ]);
+
+    const output = buildMusicDryRunOutput(ctx);
+
+    expect(output.plan?.tracksToUpdate).toBe(0);
+    expect(output.plan?.updateBreakdown?.['quality-change-suppressed']).toBe(1);
+    expect(output.plan?.updateBreakdown?.['quality-change-below-cap']).toBeUndefined();
+    expect(output.plan?.qualityChanges?.[0]).toMatchObject({
+      reason: 'source-down-suppressed',
+      reEncodes: false,
+    });
+  });
+
+  it('below-cap counts under quality-change-below-cap, never tracksToUpdate', () => {
+    const ctx = ctxWithReportOnly([
+      { reason: 'below-cap', direction: 'up', targetBitrate: 256, encodedBitrate: 96 },
+    ]);
+
+    const output = buildMusicDryRunOutput(ctx);
+
+    expect(output.plan?.tracksToUpdate).toBe(0);
+    expect(output.plan?.updateBreakdown?.['quality-change-below-cap']).toBe(1);
+    expect(output.plan?.updateBreakdown?.['quality-change-suppressed']).toBeUndefined();
+    expect(output.plan?.qualityChanges?.[0]).toMatchObject({
+      reason: 'below-cap',
+      reEncodes: false,
+      targetBitrate: 256,
+    });
+  });
+
+  it('text dry-run surfaces a low-noise aggregate below-cap line naming --force-transcode', () => {
+    class BufferSink implements OutputSink {
+      chunks: string[] = [];
+      write(chunk: string): boolean {
+        this.chunks.push(chunk);
+        return true;
+      }
+      get text(): string {
+        return this.chunks.join('');
+      }
+    }
+    const stdout = new BufferSink();
+    const out = new OutputContext({
+      mode: 'text',
+      quiet: false,
+      verbose: 0,
+      color: false,
+      tips: false,
+      tty: false,
+      stdout,
+      stderr: new BufferSink(),
+    });
+
+    const ctx = createMusicDryRunCtx([]);
+    ctx.diff.reportOnlyQualityChanges = [
+      {
+        source: { artist: 'A', title: 'X' },
+        device: {},
+        qualityChange: {
+          reason: 'below-cap',
+          direction: 'up',
+          reEncodes: false,
+          targetBitrate: 256,
+          encodedBitrate: 96,
+        },
+      },
+      {
+        source: { artist: 'B', title: 'Y' },
+        device: {},
+        qualityChange: {
+          reason: 'below-cap',
+          direction: 'up',
+          reEncodes: false,
+          targetBitrate: 256,
+          encodedBitrate: 128,
+        },
+      },
+    ];
+
+    new MusicPresenter().renderDryRunText(
+      out,
+      '/music',
+      '/ipod',
+      ctx.diff as never,
+      ctx.plan as never,
+      ctx.summary as never,
+      null,
+      true,
+      false,
+      makeMusicContentConfig(),
+      ctx.core as never,
+      []
+    );
+
+    // One aggregate line for both tracks (low-noise), naming the real flag.
+    expect(stdout.text).toContain('2 tracks below your quality target');
+    expect(stdout.text).toContain('--force-transcode');
   });
 });

@@ -5,25 +5,36 @@ sidebar:
   order: 6
 ---
 
-When a user changes their quality preset, podkit compares iPod track bitrate against the current preset target to detect mismatches and re-transcode affected tracks. Detection uses a percentage-based tolerance (30% for VBR, 10% for CBR) that adapts to the encoding mode. Because encoding produces content-dependent bitrates (especially audio VBR), this detection requires real-device testing beyond what automated unit and E2E tests can verify.
+When a user changes their quality preset, podkit detects that existing tracks don't match the new target and re-transcodes them on the next sync. Because encoding produces content-dependent bitrates (especially audio VBR), detection logic requires real-device testing beyond what automated unit and E2E tests can verify.
 
 ## Why Device Testing Is Needed
 
-- **Audio VBR variance is content-dependent.** The `aac_at` encoder on macOS produces bitrates that vary by track content. The percentage-based tolerance (30% for VBR, 10% for CBR) was chosen based on empirical data, but new content or encoder versions could shift the ranges.
+- **Audio VBR variance is content-dependent.** The `aac_at` encoder on macOS produces bitrates that vary by track content. Detection relies on the sync tag (exact comparison) for tagged tracks; bitrate comparison is only a fallback for pre-tag tracks.
 - **Video CRF variance depends on content complexity.** Video uses CRF encoding with a bitrate cap. The actual bitrate is very consistent in practice (±4 kbps observed) but could vary more with extreme content.
 - **Dummy iPod bitrates are unreliable.** The libgpod-based test iPods store very low bitrate values (~14-17 kbps) for short test fixtures, making automated E2E detection testing impractical. Unit tests cover the detection logic; device tests verify it end-to-end.
 - **Encoder mapping correctness.** The `aac_at` encoder uses an inverted quality scale (0=best, 14=worst) compared to the native `aac` encoder (5=best). This was discovered through device testing and would not have been caught by unit tests alone.
 
 ## Detection Approach
 
-Audio and video preset change detection share the same core comparison via `detectBitratePresetMismatch()` in `upgrades.ts`:
+**Audio:**
 
-1. Compare iPod track bitrate against the current preset's target bitrate
-2. If the difference exceeds a percentage-based tolerance (30% for VBR, 10% for CBR), flag for re-transcoding
-3. For `max` preset on ALAC-capable devices, use format detection instead of bitrate comparison
-4. Ignore tracks with bitrates below a minimum threshold (default 64 kbps) to avoid false positives from short files or corrupt metadata
+The quality classifier (`classifyQualityChange` in `upgrades.ts`) uses the sync tag as the sole truth:
 
-**Audio-specific:** Lossless source tracks are checked in both directions via the tolerance comparison above. Lossy sources (MP3, AAC) take a separate, sync-tag-driven path (`classifyLossyDeviceBound`) that enforces the cap in **both directions**: a lossy track whose recorded sync-tag bitrate exceeds the cap is re-encoded **down** to the cap, and one below `min(source, cap)` is re-encoded **up** from the source toward that effective ceiling (never above the source). A source that degraded below the device copy is left alone. The DB-bitrate tolerance comparison is not used for lossy.
+1. For tagged tracks, compare the sync tag's quality tier and recorded bitrate against the current target — exact, no tolerance.
+2. For `max` preset on ALAC-capable devices, use format detection instead of bitrate comparison.
+3. Untagged tracks are opted out of bitrate/encoding detection (no DB-bitrate fallback).
+
+Lossy sources (MP3, AAC) take the `classifyLossyDeviceBound` path via the shared `resolveLossyReduction` seam — **down-only**:
+
+- A lossy track whose recorded sync-tag bitrate exceeds the cap is re-encoded **down** to the cap (`cap-down`).
+- A lossy track that was previously reduced and sits below a raised cap is surfaced as a `below-cap` report (never auto-lifted; use `--force-transcode`).
+- A source that degraded below the device copy is reported as `source-down-suppressed` (kept, not re-encoded).
+
+The DB-bitrate tolerance comparison is not used for lossy tracks.
+
+**Video:**
+
+All videos are transcoded. `detectBitratePresetMismatch()` in `upgrades.ts` compares the stored container bitrate against the current preset target using a percentage-based tolerance (30% for VBR, 10% for CBR). All existing videos need re-transcoding on a preset change (remove + re-add; no user data to preserve).
 
 **Video-specific:** All videos are transcoded, so all existing videos are checked. Videos needing re-transcoding are removed and re-added (no user data to preserve).
 
@@ -105,11 +116,11 @@ EOF
 | Step | Action | Expected result |
 |------|--------|-----------------|
 | 1 | Sync at `low` | All tracks added, ~112-163 kbps |
-| 2 | Change to `high`, dry-run | All tracks: `quality-change-up` (`cap-up`) |
+| 2 | Change to `high`, dry-run | All lossless-source tracks: `quality-change-up` (`cap-up`); FLAC-sourced AAC tracks at `low` are below the `high` cap — the `cap-up` fires because the preset tier changed |
 | 3 | Sync at `high` | Re-transcoded to ~212-305 kbps |
 | 4 | Dry-run at `high` | **0 updates** (idempotent) |
 | 5a | **Non-ALAC device:** Change to `max`, dry-run | **0 updates** (`max` = same as `high` on non-ALAC devices) |
-| 5b | **ALAC-capable device:** Change to `max`, dry-run | All tracks: `quality-change-up` (`cap-up`, re-transcode to ALAC) |
+| 5b | **ALAC-capable device:** Change to `max`, dry-run | All tracks: `quality-change-up` (`cap-up`, lossless-source preset upgrade to ALAC) |
 | 6b | Sync at `max` on ALAC device | Re-transcoded to ALAC (lossless) |
 | 7b | Dry-run at `max` on ALAC device | **0 updates** (idempotent) |
 | 8 | Change to `low`, dry-run | All tracks: `quality-change-down` (`cap-down`) |
@@ -182,7 +193,7 @@ Use `--dry-run --json` to inspect audio planned operations:
 podkit --config /tmp/podkit-preset-test-config.toml sync --dry-run --json
 ```
 
-Check `plan.updateBreakdown` for `quality-change-up` and `quality-change-down` counts (sub-reason in `qualityChanges[].reason`: `cap-up`, `cap-down`, `lossless-boundary`, `source-improved`). Check `plan.tracksExisting` to verify idempotency.
+Check `plan.updateBreakdown` for `quality-change-up` and `quality-change-down` counts (active re-encodes) and `quality-change-suppressed` (report-only). Sub-reasons in `qualityChanges[].reason`: `lossless-boundary`, `cap-up` (lossless-source only), `cap-down`, `encoding-mismatch` (lossless-source only), `source-down-suppressed` (report-only), `below-cap` (report-only). Check `plan.tracksExisting` to verify idempotency.
 
 ## Test Results (March 2026)
 

@@ -61,6 +61,7 @@ export const ENV_KEYS = {
   videoQuality: `${ENV_PREFIX}VIDEO_QUALITY`,
   encoding: `${ENV_PREFIX}ENCODING`,
   customBitrate: `${ENV_PREFIX}CUSTOM_BITRATE`,
+  bitrateReduce: `${ENV_PREFIX}BITRATE_REDUCE`,
   bitrateTolerance: `${ENV_PREFIX}BITRATE_TOLERANCE`,
   forceTranscode: `${ENV_PREFIX}FORCE_TRANSCODE`,
   forceTransferMode: `${ENV_PREFIX}FORCE_TRANSFER_MODE`,

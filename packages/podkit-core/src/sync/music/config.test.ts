@@ -267,6 +267,55 @@ describe('resolveMusicConfig', () => {
     });
   });
 
+  describe('lossy reduction axis + tolerance', () => {
+    it('reduce "auto" + optimized → convert', () => {
+      const resolved = resolveMusicConfig(makeConfig({ transferMode: 'optimized' }));
+      expect(resolved.reductionAxis).toBe('convert');
+    });
+
+    it('reduce "auto" + fast → preserve', () => {
+      const resolved = resolveMusicConfig(makeConfig({ transferMode: 'fast' }));
+      expect(resolved.reductionAxis).toBe('preserve');
+    });
+
+    it('reduce "auto" + portable → preserve', () => {
+      const resolved = resolveMusicConfig(makeConfig({ transferMode: 'portable' }));
+      expect(resolved.reductionAxis).toBe('preserve');
+    });
+
+    it('defaults to "auto" (no reduce set) → follows transfer mode', () => {
+      const resolved = resolveMusicConfig(makeConfig({ transferMode: 'optimized' }));
+      expect(resolved.reductionAxis).toBe('convert');
+    });
+
+    it('explicit "always" → convert regardless of transfer mode', () => {
+      const resolved = resolveMusicConfig(makeConfig({ reduce: 'always', transferMode: 'fast' }));
+      expect(resolved.reductionAxis).toBe('convert');
+    });
+
+    it('explicit "never" → preserve regardless of transfer mode', () => {
+      const resolved = resolveMusicConfig(
+        makeConfig({ reduce: 'never', transferMode: 'optimized' })
+      );
+      expect(resolved.reductionAxis).toBe('preserve');
+    });
+
+    it('reductionTolerance defaults to 0.25', () => {
+      const resolved = resolveMusicConfig(makeConfig());
+      expect(resolved.reductionTolerance).toBe(0.25);
+    });
+
+    it('reductionTolerance uses the provided value', () => {
+      const resolved = resolveMusicConfig(makeConfig({ tolerance: 0.5 }));
+      expect(resolved.reductionTolerance).toBe(0.5);
+    });
+
+    it('reductionTolerance 0 (exact) is honoured', () => {
+      const resolved = resolveMusicConfig(makeConfig({ tolerance: 0 }));
+      expect(resolved.reductionTolerance).toBe(0);
+    });
+  });
+
   describe('codec preference resolution', () => {
     const allEncoders = {
       hasEncoder: () => true,

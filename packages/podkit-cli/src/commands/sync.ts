@@ -25,7 +25,7 @@
  * ```
  */
 import { existsSync } from '../utils/fs.js';
-import { Command, Option } from 'commander';
+import { Command, Option, InvalidArgumentError } from 'commander';
 import { getContext } from '../context.js';
 import type {
   QualityPreset,
@@ -39,10 +39,11 @@ import type {
 import {
   QUALITY_PRESETS,
   ENCODING_MODES,
-  BITRATE_SYNC_MODES,
+  REDUCE_MODES,
   CONTENT_TYPES,
   TRANSFER_MODES,
 } from '../config/index.js';
+import type { ReduceMode } from '../config/index.js';
 import { resolveDeviceSettings } from '../config/resolve.js';
 import {
   resolveDevicePath,
@@ -99,12 +100,7 @@ import { MusicPresenter } from './music-presenter.js';
 import { VideoPresenter } from './video-presenter.js';
 import { openDevice } from './open-device.js';
 import { mergedPresets } from '../config/preset-registry.js';
-import {
-  genericSyncCollection,
-  type MusicContentConfig,
-  type VideoContentConfig,
-  type GenericSyncResult,
-} from './sync-presenter.js';
+import type { MusicContentConfig, VideoContentConfig } from './sync-presenter.js';
 import { runCollectionPhase } from './sync-collection-phase.js';
 import { buildSyncDecisions } from './sync-decisions.js';
 import { printInterruptedSummary, printSuccessSummary } from './sync-summary-render.js';
@@ -134,7 +130,8 @@ interface SyncOptions {
   audioQuality?: QualityPreset;
   videoQuality?: VideoQualityPreset;
   encoding?: string;
-  bitrateSync?: string;
+  bitrateReduce?: string;
+  bitrateTolerance?: number;
   transferMode?: string;
   filter?: string;
   artwork?: boolean;
@@ -155,16 +152,7 @@ interface SyncOptions {
 // for sync.ts's own internal use and re-exported so existing consumers
 // (test surface in ../types.ts, the music/video presenters) keep their
 // familiar `from './sync.js'` import paths.
-import type {
-  ErrorInfo,
-  WarningInfo,
-  ScanWarningInfo,
-  TransformInfo,
-  UpdateBreakdown,
-  QualityChangeInfo,
-  VideoSummary,
-  SyncOutput,
-} from './sync-output-types.js';
+import type { ErrorInfo, SyncOutput } from './sync-output-types.js';
 export type {
   ErrorInfo,
   WarningInfo,
@@ -255,7 +243,7 @@ function getEffectiveVideoTransforms(
   };
 }
 
-// Quality/audio/video/artwork/encoding/transferMode/customBitrate/bitrateTolerance
+// Quality/audio/video/artwork/encoding/transferMode/customBitrate/reduce/tolerance
 // resolution is handled by resolveDeviceSettings() from config/resolve.ts.
 
 // =============================================================================
@@ -320,9 +308,21 @@ export const syncCommand = new Command('sync')
   .addOption(new Option('--encoding <mode>', 'audio encoding mode').choices([...ENCODING_MODES]))
   .addOption(
     new Option(
-      '--bitrate-sync <mode>',
-      'bitrate-change policy: off, match-cap (default), match-all, up-only, or down-only — overrides the device policy for this run'
-    ).choices([...BITRATE_SYNC_MODES])
+      '--bitrate-reduce <mode>',
+      'lossy reduction: auto (follow transfer mode, default), always (convert), or never (preserve) — overrides config for this run'
+    ).choices([...REDUCE_MODES])
+  )
+  .addOption(
+    new Option(
+      '--bitrate-tolerance <fraction>',
+      'reduce only when the source exceeds the cap by more than this fraction (>= 0; 0 = exact) — overrides config for this run'
+    ).argParser((value) => {
+      const parsed = Number.parseFloat(value);
+      if (Number.isNaN(parsed) || parsed < 0) {
+        throw new InvalidArgumentError('Must be a number >= 0 (fraction of the cap; 0 = exact).');
+      }
+      return parsed;
+    })
   )
   .addOption(
     new Option(
@@ -564,15 +564,15 @@ export async function runSync(
         ? (options.transferMode as import('@podkit/core').TransferMode)
         : resolved.transferMode.value,
       customBitrate: resolved.customBitrate.value,
-      bitrateTolerance: resolved.bitrateTolerance.value,
-      // `--bitrate-sync` overrides the resolved device policy for this run only.
-      // The flag has no Commander default, so an unpassed flag is absent here and
-      // the resolved device → global → match-cap chain wins.
-      bitrateSync: options.bitrateSync
-        ? (options.bitrateSync as import('@podkit/core').BitrateSyncMode)
-        : resolved.bitrateSync.value,
-      toleranceUp: resolved.toleranceUp.value,
-      toleranceDown: resolved.toleranceDown.value,
+      // `--bitrate-reduce` / `--bitrate-tolerance` override the resolved
+      // device → global → default chain for this run only. Neither flag has a
+      // Commander default, so an unpassed flag is absent here and the resolved
+      // chain wins (`reduce` → 'auto', `tolerance` → 0.25).
+      reduce: options.bitrateReduce ? (options.bitrateReduce as ReduceMode) : resolved.reduce.value,
+      tolerance:
+        options.bitrateTolerance !== undefined
+          ? options.bitrateTolerance
+          : resolved.tolerance.value,
     };
   }
 
@@ -593,10 +593,8 @@ export async function runSync(
   let effectiveEncoding = derived.encoding;
   let effectiveTransferMode = derived.transferMode;
   let effectiveCustomBitrate = derived.customBitrate;
-  let effectiveBitrateTolerance = derived.bitrateTolerance;
-  let effectiveBitrateSync = derived.bitrateSync;
-  let effectiveToleranceUp = derived.toleranceUp;
-  let effectiveToleranceDown = derived.toleranceDown;
+  let effectiveReduce = derived.reduce;
+  let effectiveTolerance = derived.tolerance;
   let cleanArtistsResolutionReason: CleanArtistsResolutionReason | undefined;
   let transformWarnings: TransformWarning[] = [];
 
@@ -649,10 +647,8 @@ export async function runSync(
     effectiveEncoding = derived.encoding;
     effectiveTransferMode = derived.transferMode;
     effectiveCustomBitrate = derived.customBitrate;
-    effectiveBitrateTolerance = derived.bitrateTolerance;
-    effectiveBitrateSync = derived.bitrateSync;
-    effectiveToleranceUp = derived.toleranceUp;
-    effectiveToleranceDown = derived.toleranceDown;
+    effectiveReduce = derived.reduce;
+    effectiveTolerance = derived.tolerance;
 
     // Re-derive device type after auto-match (the matched device may have a type)
     deviceType = deviceConfig?.type;
@@ -1157,10 +1153,8 @@ export async function runSync(
         effectiveEncoding,
         effectiveTransferMode,
         effectiveCustomBitrate,
-        effectiveBitrateTolerance,
-        effectiveBitrateSync,
-        effectiveToleranceUp,
-        effectiveToleranceDown,
+        effectiveReduce,
+        effectiveTolerance,
         deviceSupportsAlac,
         effectiveArtwork,
         skipUpgrades: effectiveSkipUpgrades,

@@ -127,6 +127,8 @@ export function formatUpdateReason(reason: string): string {
       return 'Quality change (down)';
     case 'quality-change-suppressed':
       return 'Quality change (source-down suppressed)';
+    case 'quality-change-below-cap':
+      return 'Below quality target (force-transcode to lift)';
     case 'preset-upgrade':
       return 'Preset upgrade';
     case 'preset-downgrade':

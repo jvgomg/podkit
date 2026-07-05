@@ -24,7 +24,14 @@ import {
 } from '../engine/upgrades.js';
 import type { QualityChange, QualityChangeDirection, QualityTarget } from '../engine/upgrades.js';
 import { normalizationToDb } from '../../metadata/normalization.js';
-import { calculateMusicOperationSize, categorizeSource, isLosslessSource } from './planner.js';
+import {
+  calculateMusicOperationSize,
+  categorizeSource,
+  isLosslessSource,
+  isDeviceCompatible,
+  fileTypeToAudioCodec,
+} from './planner.js';
+import { resolveLossyReduction } from '../engine/lossy-reduction.js';
 import {
   MusicPipeline,
   getMusicOperationDisplayName,
@@ -32,7 +39,7 @@ import {
   getTranscodeFiletypeLabel,
 } from './pipeline.js';
 import { estimateTransferTime } from '../engine/estimation.js';
-import { buildAudioSyncTag, syncTagsEqual } from '../../metadata/sync-tags.js';
+import { buildAudioSyncTag, buildCopySyncTag, syncTagsEqual } from '../../metadata/sync-tags.js';
 import type { SyncTagData } from '../../metadata/sync-tags.js';
 import type {
   MetadataChange,
@@ -98,12 +105,10 @@ export function expectedSyncTagFromClassification(
 /**
  * Build the QualityTarget the classifier compares against, from resolved config.
  *
- * The legacy `bitrateTolerance` knob (which once slackened the now-removed
- * DB-bitrate fallback) is reinterpreted here as the symmetric default for the
- * source-bound tolerances: a user who set `bitrateTolerance` still gets a
- * (now source-bound) damper, while an explicit `toleranceUp`/`toleranceDown`
- * always wins. The classifier applies `?? 0` at the comparison, so an unset
- * value stays exact.
+ * The reduction axis is the single one resolved in `resolveMusicConfig` (from
+ * `[bitrate].reduce` + the transfer mode). The add path reads that same resolved
+ * axis off the classifier context, so add and re-sync can never disagree on
+ * whether to reduce a track — the disagreement the shared seam exists to prevent.
  */
 function qualityTargetFromConfig(config: ResolvedMusicConfig): QualityTarget {
   return {
@@ -113,8 +118,9 @@ function qualityTargetFromConfig(config: ResolvedMusicConfig): QualityTarget {
     customBitrate: config.raw.customBitrate,
     isAlacPreset: config.isAlacPreset ?? false,
     resolvedLossyCodec: config.resolvedLossyCodec,
-    toleranceUp: config.raw.toleranceUp ?? config.raw.bitrateTolerance,
-    toleranceDown: config.raw.toleranceDown ?? config.raw.bitrateTolerance,
+    axis: config.reductionAxis,
+    reductionTolerance: config.reductionTolerance,
+    ...(config.deviceMaxBitrate !== undefined && { deviceMax: config.deviceMaxBitrate }),
   };
 }
 
@@ -256,13 +262,12 @@ export class MusicHandler implements ContentTypeHandler<
     // `quality-change` reason. The full QualityChange payload is recomputed and
     // attached in postProcessBuildChanges (Pass 0).
     //
-    // Only route as an update when the policy gate fires (`reEncodes`). A
-    // suppressed source-bound change (e.g. a source improvement under
-    // `bitrate.sync = down-only`/`off`) is left in `existing`; for a sync-tagged
-    // track the device bound then surfaces it via the report-only channel. An
-    // untagged track is opted out of the device bound entirely, so a suppressed
-    // improvement on it is silently left alone — consistent with the untagged
-    // opt-out elsewhere.
+    // Only route as an update when the change re-encodes (`reEncodes`). A
+    // report-only change (one that keeps the better device copy) is left in
+    // `existing`; for a sync-tagged track the device bound then surfaces it via
+    // the report-only channel. An untagged track is opted out of the device bound
+    // entirely, so such a change on it is silently left alone — consistent with
+    // the untagged opt-out elsewhere.
     const sourceQc = this.detectSourceQualityChange(source, device);
     if (sourceQc?.reEncodes) {
       reasons.unshift('quality-change');
@@ -311,25 +316,11 @@ export class MusicHandler implements ContentTypeHandler<
       source,
       device,
       this.config.presetBitrate ?? 0,
-      this.config.bitrateSync
+      this.config.reductionTolerance
     );
     if (!change) return null;
 
     if (change.reason === 'lossless-boundary' && getIpodFormatFamily(device) === 'aac') {
-      return null;
-    }
-
-    // A lossy source whose bitrate exceeds the cap is owned by the device-bound
-    // cap path, not the (cap-unaware) source bound. The source bound compares the
-    // raw source bitrate against the device's DB bitrate; after a cap-down the
-    // device sits AT the cap, so for a same-family source still above the cap the
-    // source bound would fire `source-improved` and COPY the over-cap source back
-    // — re-exceeding the cap and oscillating against the next sync's cap-down.
-    // The device bound handles this correctly: it reads the authoritative sync-tag
-    // bitrate and re-encodes from the source to `min(source, cap)`. With no lossy
-    // cap (a lossless target) the legacy source-improved copy is left in place.
-    const cap = this.config.presetBitrate ?? 0;
-    if (change.reason === 'source-improved' && cap > 0 && (source.bitrate ?? 0) > cap) {
       return null;
     }
 
@@ -344,6 +335,9 @@ export class MusicHandler implements ContentTypeHandler<
 
     // Pass 1: Preset change detection
     this.postProcessPresetChanges(diff);
+
+    // Pass 1.4: Surface source-down for metadata-only updates (kept in place).
+    this.postProcessSourceDownReports(diff);
 
     // Pass 1.5: Codec change detection
     this.postProcessCodecChanges(diff);
@@ -483,24 +477,93 @@ export class MusicHandler implements ContentTypeHandler<
     const target = qualityTargetFromConfig(this.config);
 
     partitionExisting(diff, (match) => {
-      // Lossy sources take a dedicated cap-enforcement path. The classifier
-      // would route a compatible/device-native lossy source to a COPY, but a
-      // lossy cap move must re-encode (DOWN to the cap, or UP from the source
-      // toward min(source, cap)) — so the classifier's routing is irrelevant
-      // here. classifyDeviceBound's lossy branch reads the authoritative recorded
-      // bitrate from the sync tag.
+      // Lossy sources take the down-only cap-reduction path. The classifier would
+      // route a compatible/device-native lossy source to a COPY, but a convert
+      // over-cap move must re-encode DOWN to the cap — so the classifier's routing
+      // is irrelevant here. classifyDeviceBound's lossy branch reads the
+      // authoritative recorded bitrate from the sync tag and reuses the shared
+      // lossy-reduction seam (exact recorded-vs-cap), so the add path and re-sync
+      // never disagree.
       if (!isSourceLossless(match.source)) {
+        // Source bound first: a source re-ripped below the device's recorded copy
+        // (`source-down-suppressed`) must keep the better device copy. Reported,
+        // never re-encoded — re-encoding down to the worse source would destroy
+        // quality. The configured source-proximity tolerance damps ffprobe wobble.
+        const sourceChange = classifySourceBound(
+          match.source,
+          match.device,
+          presetBitrate,
+          this.config.reductionTolerance
+        );
+        if (sourceChange && !sourceChange.reEncodes) {
+          (diff.reportOnlyQualityChanges ??= []).push({
+            source: match.source,
+            device: match.device,
+            qualityChange: sourceChange,
+          });
+          return null;
+        }
+
+        // Device bound: the down-only cap reduction plus the below-raised-cap
+        // report. classifyDeviceBound reads the authoritative recorded bitrate
+        // from the sync tag and reuses the shared lossy-reduction seam (exact
+        // recorded-vs-cap), so the add path and re-sync never disagree.
         const change = classifyDeviceBound({
           source: match.source,
           device: match.device,
           target,
-          policy: this.config.bitrateSync,
         });
         if (!change) return null;
-        // A source-down change (the source re-ripped below the device copy) is
-        // report-only: keep the better device copy in `existing`, surface it via
-        // the report-only channel, and create NO operation. Returning null here
-        // leaves the track in `existing` so it never inflates tracksToUpdate.
+
+        // Below a raised cap: a previously-reduced track sits below the new cap.
+        // Down-only never auto-lifts it. With `--force-transcode` the user
+        // explicitly opts into re-deriving it from the (better) source up to the
+        // new cap — but only when the source can actually supply more than the
+        // recorded bitrate. Otherwise it is reported, never lifted.
+        if (change.reason === 'below-cap') {
+          const sourceCanLift = (match.source.bitrate ?? 0) > (change.encodedBitrate ?? 0);
+          if (this.config.raw.forceTranscode && sourceCanLift) {
+            // A forced lift re-derives the track from the (better) source. The
+            // target is bounded by what the SOURCE actually offers as well as the
+            // cap: re-encoding a lossy source ABOVE its own bitrate would inflate
+            // the file without recovering any quality (ADR-023 §2). So a 192 kbps
+            // source lifted toward a 256 cap lands at 192, not 256.
+            const liftTarget = Math.min(
+              match.source.bitrate ?? change.targetBitrate,
+              change.targetBitrate
+            );
+            // Emit it as a `cap-up` so `resolveUpgradeAction` re-encodes (recording
+            // the target as the preset's bitrateOverride) instead of copying the
+            // source verbatim. `below-cap` stays a purely report-only reason.
+            return {
+              reasons: ['quality-change'],
+              changes: [
+                {
+                  field: 'bitrate' as const,
+                  from: String(change.encodedBitrate ?? match.device.bitrate),
+                  to: String(liftTarget),
+                },
+              ],
+              qualityChange: {
+                ...change,
+                reason: 'cap-up',
+                reEncodes: true,
+                direction: 'up',
+                targetBitrate: liftTarget,
+              },
+            };
+          }
+          (diff.reportOnlyQualityChanges ??= []).push({
+            source: match.source,
+            device: match.device,
+            qualityChange: change,
+          });
+          return null;
+        }
+
+        // Any other report-only change (`reEncodes: false`) keeps the existing
+        // copy in `existing` and creates NO operation, so it never inflates
+        // tracksToUpdate.
         if (!change.reEncodes) {
           (diff.reportOnlyQualityChanges ??= []).push({
             source: match.source,
@@ -548,16 +611,14 @@ export class MusicHandler implements ContentTypeHandler<
         device: match.device,
         target,
         expectedSyncTag,
-        policy: this.config.bitrateSync,
       });
 
       if (!change) return null;
 
-      // A policy-suppressed change (e.g. a lossless preset move under
-      // `bitrate.sync = off`/`up-only`) keeps the existing copy: report it via
-      // the report-only channel and create no operation. Preconditions
-      // (encoding/lossless boundary) always carry `reEncodes: true` and fall
-      // through to the re-encode path below.
+      // A report-only change (`reEncodes: false`) keeps the existing copy: report
+      // it via the report-only channel and create no operation. Lossless device
+      // moves and preconditions (encoding/lossless boundary) always carry
+      // `reEncodes: true` and fall through to the re-encode path below.
       if (!change.reEncodes) {
         (diff.reportOnlyQualityChanges ??= []).push({
           source: match.source,
@@ -599,6 +660,48 @@ export class MusicHandler implements ContentTypeHandler<
 
       return { reasons: ['quality-change'], changes, qualityChange: change };
     });
+  }
+
+  /**
+   * Pass 1.4: Surface `source-down-suppressed` for tracks already headed to
+   * `toUpdate` for a metadata-only reason.
+   *
+   * The preset pass reports source-down only for tracks it leaves in `existing`.
+   * A track that ALSO has an in-place metadata change is moved to `toUpdate` by
+   * the match loop, so its source-down would otherwise go unreported. A
+   * metadata-correction rewrites tags in place — it is NOT a file replacement — so
+   * the device audio is kept and the safety guarantee holds; this only adds the
+   * missing visibility line. A track being re-derived from the source (any
+   * file-replacement upgrade — artwork, force-transcode, codec/preset change) is
+   * skipped: its audio is replaced, so "kept the better copy" would not describe
+   * the outcome.
+   */
+  private postProcessSourceDownReports(diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack>): void {
+    const shouldCheckPreset =
+      !(this.config.raw.skipUpgrades ?? false) &&
+      (this.config.isAlacPreset || this.config.presetBitrate);
+    if (!shouldCheckPreset) return;
+
+    const presetBitrate = this.config.presetBitrate ?? 0;
+
+    for (const update of diff.toUpdate) {
+      if (isSourceLossless(update.source)) continue;
+      // Only when the audio is kept in place — a file replacement re-derives it
+      // from the (worse) source, so a "kept the better copy" report would not hold.
+      if (update.reasons.some((reason) => isFileReplacementUpgrade(reason))) continue;
+      const change = classifySourceBound(
+        update.source,
+        update.device,
+        presetBitrate,
+        this.config.reductionTolerance
+      );
+      if (!change || change.reEncodes || change.reason !== 'source-down-suppressed') continue;
+      (diff.reportOnlyQualityChanges ??= []).push({
+        source: update.source,
+        device: update.device,
+        qualityChange: change,
+      });
+    }
   }
 
   /**
@@ -700,10 +803,19 @@ export class MusicHandler implements ContentTypeHandler<
    * The sync tag is the sole quality truth, so a track podkit never wrote (no
    * sync tag, or a tag without a recorded bitrate) is opted out of the normal
    * quality classifier — it is left alone on every ordinary sync. This pass is
-   * the ONE explicit, destructive adoption path: it routes those untagged
-   * tracks to a re-encode (`quality-change` → `upgrade-transcode`) targeting the
-   * resolved device quality, so the executor establishes true bitrate + encoding
-   * ground truth and writes the authoritative sync tag.
+   * the ONE explicit, destructive adoption path: it claims those untagged tracks
+   * and writes the authoritative sync tag.
+   *
+   * The lossy target is computed by the shared {@link resolveLossyReduction}
+   * seam (the same down-only, cap-bounded table the add and re-sync paths use),
+   * so an adopted track is decided exactly as it would have been on add. When the
+   * seam reduces or forces a cross-codec re-encode, the track is re-encoded
+   * (`quality-change` → `upgrade-transcode`) and the executor establishes true
+   * bitrate + encoding ground truth. When the seam keeps a device-native source
+   * untouched (preserve, or within the convert tolerance), the track is adopted
+   * tag-only — its authoritative copy tag is stamped without a needless
+   * re-encode. Lossless sources always re-encode to the resolved preset (the
+   * classifier owns that routing).
    *
    * Idempotency: once adopted, a track carries a sync tag, so the next run's
    * `if (syncTag)` guard in this pass skips it and the normal classifier owns it
@@ -727,19 +839,101 @@ export class MusicHandler implements ContentTypeHandler<
       const syncTag = match.device.syncTag;
       if (syncTag) return null;
 
-      // Force a re-encode from the source. For lossy sources with a cap the
-      // effective ceiling is min(source, cap); `resolveUpgradeAction` reads this
-      // off the attached `qualityChange` and stamps it as the preset's
-      // bitrateOverride so the post-adoption tag matches the next sync (no-op).
-      // For lossless sources the classifier owns routing (transcode to the
-      // resolved lossless/lossy preset) and ignores this payload.
-      const lossy = !isSourceLossless(match.source);
-      const effectiveTarget = lossy && cap > 0 ? Math.min(match.source.bitrate ?? cap, cap) : cap;
+      // A lossy source with a known bitrate and a configured cap routes its
+      // adoption target through the shared lossy-reduction seam — the single
+      // owner of the down-only, cap-bounded target-bitrate table — so a track is
+      // never adopted to one bitrate and re-decided to a different one on the next
+      // sync. (Lossless sources, and lossy sources with no usable bitrate or no
+      // cap, fall through to the cap fallback below, where the classifier owns the
+      // actual routing.)
+      const sourceBitrate = match.source.bitrate;
+      if (!isSourceLossless(match.source) && cap > 0 && sourceBitrate && sourceBitrate > 0) {
+        const sourceCodec =
+          fileTypeToAudioCodec(match.source.fileType, match.source.codec) ?? 'aac';
+        // Determine device-native the SAME way the add-path classifier does: a
+        // natively-supported codec OR a `compatible-lossy` source (categorizeSource
+        // falls back to the iPod-centric set when the device declares no codecs, so
+        // an unconfigured device still copies AAC/MP3 rather than needlessly
+        // re-encoding it). isDeviceCompatible alone returns false for undefined
+        // codecs, which would wrongly force a necessity transcode here.
+        const deviceNative =
+          isDeviceCompatible(match.source, this.config.supportedAudioCodecs) ||
+          categorizeSource(match.source, this.config.supportedAudioCodecs) === 'compatible-lossy';
+        const result = resolveLossyReduction({
+          sourceCodec,
+          sourceBitrate,
+          deviceNative,
+          targetCodec: this.config.resolvedLossyCodec ?? 'aac',
+          cap,
+          axis: this.config.reductionAxis,
+          ...(this.config.deviceMaxBitrate !== undefined && {
+            deviceMax: this.config.deviceMaxBitrate,
+          }),
+          tolerance: this.config.reductionTolerance,
+        });
 
-      // The adoption re-encode bypasses the policy gate, so the direction is
-      // descriptive only — it labels the move for the change summary and JSON.
-      // Read the device's DB bitrate purely for that display (it is not used to
-      // decide anything). Adopting an over-cap track moves it down.
+        if (result.action === 'copy') {
+          // The seam keeps a device-native source untouched (preserve, or convert
+          // within the tolerance band): adopt it tag-only — record the
+          // authoritative copy tag (with the source bitrate, so the device-bound
+          // re-sync is a no-op) rather than perform a needless re-encode.
+          //
+          // Artwork hash is deliberately NOT recorded: tag-only adoption transfers
+          // no artwork bytes, so stamping the source hash would suppress the normal
+          // artwork-added detection and the artwork would never be transferred. A
+          // later ordinary sync discovers and transfers it (matching the other
+          // copy-tag writer).
+          const copyTag = buildCopySyncTag(
+            this.config.transferMode,
+            undefined,
+            sourceCodec,
+            sourceBitrate
+          );
+          return { reasons: ['sync-tag-write'], changes: [], syncTag: copyTag };
+        }
+
+        // Re-encode to the seam's target. `resolveUpgradeAction` stamps it as the
+        // preset's `bitrateOverride` so the post-adoption tag matches the next
+        // sync (no-op). The direction is descriptive: the seam target relative to
+        // the source (an untagged track carries no recorded bitrate to compare
+        // against). An over-cap source reduces DOWN (`cap-down`); a
+        // preserve-necessity target may exceed the source to hold its quality in a
+        // less-efficient codec, which reads as `up`. A target EQUAL to the source
+        // is a pure forced codec change (`format-mismatch`) — no bitrate move, so
+        // it is not labelled a quality up/down.
+        const effectiveTarget = result.bitrate;
+        const direction: QualityChangeDirection =
+          effectiveTarget < sourceBitrate
+            ? 'down'
+            : effectiveTarget > sourceBitrate
+              ? 'up'
+              : 'format-only';
+        const qualityChange: QualityChange = {
+          reason:
+            direction === 'down' ? 'cap-down' : direction === 'up' ? 'cap-up' : 'format-mismatch',
+          direction,
+          reEncodes: true,
+          targetBitrate: effectiveTarget,
+          sourceBitrate,
+        };
+        return {
+          reasons: ['quality-change'],
+          changes: [
+            {
+              field: 'bitrate' as const,
+              from: String(match.device.bitrate ?? 'unknown'),
+              to: String(effectiveTarget),
+            },
+          ],
+          qualityChange,
+        };
+      }
+
+      // Fallback: a lossless source (the classifier transcodes it to the resolved
+      // lossless/lossy preset and ignores this payload), or a lossy source with no
+      // usable bitrate / no cap — force a re-encode at the cap. The direction here
+      // is descriptive only; the device's DB bitrate labels the move for display.
+      const effectiveTarget = cap;
       const deviceBitrate = match.device.bitrate ?? 0;
       const direction: QualityChangeDirection =
         effectiveTarget > deviceBitrate
@@ -1002,20 +1196,17 @@ export class MusicHandler implements ContentTypeHandler<
   /**
    * Resolve the routing action for a file-replacement upgrade.
    *
-   * Normally this is the classifier's decision for the source. The exception is
-   * a lossy re-encode that fired on the device bound: cap-DOWN, cap-UP, a CBR/VBR
-   * `encoding-mismatch`, or a source-down that the `match-all` policy chose to
-   * follow. The classifier would COPY a compatible/device-native lossy source
-   * as-is, but these must RE-ENCODE it — down to the configured cap, up from the
-   * source toward the effective ceiling `min(source, cap)`, to the same effective
-   * target with a flipped encoding mode, or down to the (degraded) source under
-   * `match-all`. Force a transcode at the resolved preset, recording the change's
-   * effective target bitrate as the preset's `bitrateOverride` so the executor
+   * Normally this is the classifier's decision for the source. The exception is a
+   * lossy re-encode that fired against the device's recorded quality: a `cap-down`
+   * (the down-only over-cap reduction), or the adoption pass's `cap-up`/`cap-down`
+   * forced re-encode. The classifier would COPY a compatible/device-native lossy
+   * source as-is, but these must RE-ENCODE it — down to the cap (`cap-down`), or to
+   * the adoption target. Force a transcode at the resolved preset, recording the
+   * change's target bitrate as the preset's `bitrateOverride` so the executor
    * stamps the new encoded bitrate into the sync tag — making the next sync a
-   * no-op (idempotent). The target may be the source bitrate (cap-up bounded by
-   * the source, or a followed source-down), so the override comes from the
-   * change, not the config-wide preset bitrate. All other upgrades
-   * (source-improved, lossless-boundary, codec-changed, force-transcode,
+   * no-op (idempotent). The override comes from the change, not the config-wide
+   * preset bitrate (the adoption target may be `min(source, cap)`). All other
+   * upgrades (lossless-boundary, codec-changed, force-transcode,
    * transfer-mode-changed) keep the classifier's routing unchanged.
    */
   private resolveUpgradeAction(
@@ -1025,16 +1216,16 @@ export class MusicHandler implements ContentTypeHandler<
     if (
       (qualityChange?.reason === 'cap-down' ||
         qualityChange?.reason === 'cap-up' ||
-        qualityChange?.reason === 'encoding-mismatch' ||
-        qualityChange?.reason === 'source-down-suppressed') &&
+        qualityChange?.reason === 'format-mismatch') &&
       qualityChange.reEncodes &&
       !isSourceLossless(source) &&
       this.config.resolvedQuality &&
       this.config.resolvedQuality !== 'lossless'
     ) {
-      // The effective target the classifier computed: the cap for cap-down,
-      // min(source, cap) for cap-up. Recorded as bitrateOverride so the
-      // post-re-encode sync tag carries the new encoded bitrate (idempotency).
+      // The target the classifier/adoption computed: the cap for a down-only
+      // reduction, the adoption target, or a forced same-bitrate codec change
+      // (`format-mismatch`). Recorded as bitrateOverride so the post-re-encode sync
+      // tag carries the new encoded bitrate (idempotency).
       const targetBitrate = qualityChange.targetBitrate;
       const preset = {
         name: this.config

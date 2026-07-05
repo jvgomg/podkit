@@ -58,8 +58,8 @@ export type UpgradeReason =
  * - metadata-changed: Source metadata changed (for future use)
  * - force-transcode: User requested forced re-transcoding via --force-transcode
  * - sync-tag-write: Write/update sync tag in track comment field (metadata-only)
- * - quality-change: Music quality move (cap-up/down, lossless-boundary,
- *   source-improved) — file replacement when reEncodes
+ * - quality-change: Music quality move (cap-up/down, lossless-boundary) — file
+ *   replacement when reEncodes
  * - artwork-added: Source has artwork, iPod does not (file replacement)
  * - artwork-removed: Source no longer has artwork but iPod does (metadata-only)
  * - artwork-updated: Source artwork hash differs from iPod sync tag hash (metadata-only)

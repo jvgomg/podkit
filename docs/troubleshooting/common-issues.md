@@ -108,11 +108,52 @@ For EPROTO errors specifically: unplug the iPod, wait a few seconds, then reconn
 
 ## Sync Issues
 
+### `[bitrate].sync` key rejected on startup
+
+**Symptoms:** podkit reports a config error: `[bitrate].sync is not a valid key`.
+
+**Cause:** The `[bitrate].sync` config key (which used to accept `match-cap`, `match-all`, `up-only`, `down-only`, `off`) has been replaced by `[bitrate].reduce` (`auto`, `always`, `never`). The old key is no longer accepted.
+
+**Solution:** Replace the old block with the new one in your config file:
+
+```toml
+# Before (no longer valid):
+[bitrate]
+sync = "match-cap"
+toleranceUp = 0.1
+toleranceDown = 0.1
+
+# After:
+[bitrate]
+reduce = "auto"    # auto | always | never
+tolerance = 0.25   # source-proximity tolerance (fraction of cap)
+```
+
+The default (`auto`) follows the transfer mode: `optimized` converts (reduces over-cap lossy sources); `fast` and `portable` preserve (copy device-native lossy as-is). For the same behaviour as the old `match-cap`, set `reduce = "always"`. See [Lossy Reduction](/reference/config-file#lossy-reduction) for the full reference.
+
+### Raised the quality cap but lossy tracks didn't get re-encoded up
+
+**Symptoms:** You raised your quality preset (e.g., from `medium` to `high`), but MP3/AAC tracks that were previously reduced to the old cap stayed at their smaller bitrate.
+
+**Cause:** Lossy reduction is **down-only**. Re-encoding a lossy track up cannot recover discarded information, so podkit never does it automatically. When you raise the cap, previously-reduced tracks sit below the new target and are surfaced as a `below-cap` report:
+
+```
+N tracks below your quality target — re-sync with --force-transcode to lift them
+```
+
+**Solution:** If you want to re-encode those tracks up to the new cap, run:
+
+```bash
+podkit sync --force-transcode
+```
+
+This re-encodes all lossless-source tracks (and lifts any `below-cap` lossy tracks to the cap). Preview with `--dry-run` first. Play counts, ratings, and playlist membership are preserved.
+
 ### Tracks keep re-transcoding on every sync
 
 **Symptoms:** Some tracks are re-transcoded every time you sync, even though nothing has changed.
 
-**Cause:** VBR encoding produces content-dependent bitrates that can vary from the preset's target. When the actual bitrate falls outside the detection tolerance, podkit thinks the preset has changed and re-transcodes the track. The new transcode produces a similarly variable bitrate, creating a cycle.
+**Cause:** For lossless-source tracks, if a sync tag is missing, podkit falls back to a bitrate comparison which can produce false positives with VBR encoding. For lossy tracks, if the add-path tolerance is tight, a source with a bitrate slightly above the cap gets reduced on every add.
 
 **Solutions:**
 
@@ -121,11 +162,12 @@ For EPROTO errors specifically: unplug the iPod, wait a few seconds, then reconn
    podkit sync --force-sync-tags
    ```
    This tags all existing tracks with your current preset info. Future syncs use exact comparison for tagged tracks. See [Track Upgrades — Sync Tags](/user-guide/syncing/upgrades#sync-tags) for details.
-2. **Increase the tolerance.** The default VBR tolerance is 30%. You can raise it in your config:
+2. **Increase the source-proximity tolerance** (for lossy tracks cycling near the cap):
    ```toml
-   bitrateTolerance = 0.4  # 40% tolerance
+   [bitrate]
+   tolerance = 0.30    # only reduce when source exceeds cap by more than 30%
    ```
-3. **Switch to CBR encoding.** CBR produces stable bitrates that don't trigger false positives:
+3. **Switch to CBR encoding.** CBR produces stable bitrates that don't trigger false positives on lossless tracks:
    ```toml
    encoding = "cbr"
    ```
@@ -143,11 +185,11 @@ This preserves play counts, ratings, and playlist membership. Preview with `--dr
 
 **Symptoms:** You switched from VBR to CBR (or vice versa) at the same quality preset, but only some tracks were re-transcoded.
 
-**Cause:** The iPod database stores a track's bitrate but not how it was encoded. podkit detects changes by comparing the stored bitrate against the current preset target. When switching VBR to CBR, the tighter CBR tolerance catches tracks whose VBR bitrate landed far from the target, but tracks that are already close are left alone. When switching CBR to VBR, existing tracks at the exact target bitrate are well within VBR tolerance and are left as-is.
+**Cause:** Encoding-mode detection is exact for lossless-source tracks that carry a sync tag — podkit compares the recorded encoding mode against the current target. For tagged tracks, any change triggers a re-encode. For untagged lossless tracks (synced before sync tags existed), podkit uses a bitrate comparison, which may not catch every track.
 
-This is expected behaviour — tracks left alone are already at the right quality. New tracks added in future syncs will use the new encoding mode.
+Lossy tracks (MP3, AAC) are **never** re-encoded for an encoding-mode change — a CBR/VBR flip on a lossy source is a lossy→lossy degradation that can grow the file with no quality benefit. The mode change applies to future adds only.
 
-**If you need every track re-encoded**, use `--force-transcode`:
+**If you need every lossless-source track re-encoded**, use `--force-transcode`:
 
 ```bash
 podkit sync --force-transcode

@@ -19,7 +19,8 @@ podkit settings can be overridden via environment variables. These take preceden
 | `PODKIT_TRANSFER_MODE` | Transfer mode: `fast`, `optimized`, or `portable`. Controls whether extra file data is preserved or stripped (overrides config file `transferMode`) |
 | `PODKIT_FORCE_TRANSFER_MODE` | Force re-processing of all tracks when changing transfer mode (`true`/`false`) |
 | `PODKIT_CUSTOM_BITRATE` | Override target bitrate for AAC encoding, 64-320 kbps (overrides config file `customBitrate`) |
-| `PODKIT_BITRATE_TOLERANCE` | Source-bound tolerance damper, 0.0-1.0 (default for `toleranceUp`/`toleranceDown`; overrides config file `bitrateTolerance`) |
+| `PODKIT_BITRATE_REDUCE` | Lossy reduction mode: `auto`, `always`, or `never` (overrides config file `[bitrate].reduce`) |
+| `PODKIT_BITRATE_TOLERANCE` | Source-proximity tolerance for lossy reduction, as a fraction of the cap (e.g. `0.25`; overrides config file `[bitrate].tolerance`) |
 | `PODKIT_FORCE_TRANSCODE` | Force re-transcoding of all lossless-source tracks (`true`/`false`) |
 | `PODKIT_FORCE_SYNC_TAGS` | Write sync tags to all matched transcoded tracks without re-transcoding (`true`/`false`) |
 | `PODKIT_FORCE_SYNC_TAGS_TRANSCODE` | Adopt untagged tracks by re-encoding them and writing authoritative sync tags (`true`/`false`, destructive) |

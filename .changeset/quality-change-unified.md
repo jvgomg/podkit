@@ -36,10 +36,12 @@ The old `format-upgrade`, `quality-upgrade`, `preset-upgrade`, and
 ### Per-collection `qualityChanges[]`
 
 Each music collection block now includes a `qualityChanges[]` array when
-quality moves are planned. Each entry carries `track`, `direction`,
-`reason` (classifier reason: `lossless-boundary`, `source-improved`,
-`cap-up`, `cap-down`), `targetBitrate`, and optional `sourceBitrate`
-/ `encodedBitrate` for diagnostics.
+quality moves are planned or suppressed. Each entry carries `track`, `direction`,
+`reason` (classifier reason: `lossless-boundary`, `cap-up` [lossless-source only],
+`cap-down`, `encoding-mismatch` [lossless-source only], `source-down-suppressed`,
+`below-cap`), `targetBitrate`, and optional `sourceBitrate` / `encodedBitrate`
+for diagnostics. The `reEncodes` field distinguishes active re-encodes from
+report-only entries (`source-down-suppressed` and `below-cap`).
 
 ### `@podkit/core` exports
 
@@ -51,14 +53,16 @@ quality moves are planned. Each entry carries `track`, `direction`,
 | Old key / reason | New key / reason |
 |-----------------|-----------------|
 | `format-upgrade` | `quality-change` (direction: `up`, reason: `lossless-boundary`) |
-| `quality-upgrade` | `quality-change` (direction: `up`, reason: `source-improved`) |
-| `preset-upgrade` | `quality-change` (direction: `up`, reason: `cap-up`) |
+| `quality-upgrade` | removed — `source-improved` is gone (ADR-023); a changed source folds into content-change |
+| `preset-upgrade` | `quality-change` (direction: `up`, reason: `cap-up`, lossless-source only) |
 | `preset-downgrade` | `quality-change` (direction: `down`, reason: `cap-down`) |
 | `updateBreakdown["format-upgrade"]` | `updateBreakdown["quality-change-up"]` |
 | `updateBreakdown["preset-upgrade"]` | `updateBreakdown["quality-change-up"]` |
 | `updateBreakdown["preset-downgrade"]` | `updateBreakdown["quality-change-down"]` |
 
-Inspect `update.qualityChange.reason` for the specific sub-reason when you
-need to distinguish lossless-boundary from cap-up.
+Report-only entries (`reEncodes: false`) appear in `qualityChanges[]` and are
+counted under `updateBreakdown["quality-change-suppressed"]`. Inspect
+`update.qualityChange.reason` for the specific sub-reason when you need to
+distinguish lossless-boundary from cap-up, or source-down-suppressed from below-cap.
 
 Per CLI breaking-change convention this is a minor bump.

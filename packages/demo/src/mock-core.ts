@@ -1836,11 +1836,21 @@ export function classifyQualityChange(_input: any): any {
   return null;
 }
 
-export function classifySourceBound(_source: any, _device: any, _targetBitrate?: number): any {
+export function classifySourceBound(
+  _source: any,
+  _device: any,
+  _targetBitrate?: number,
+  _tolerance?: number
+): any {
   return null;
 }
 
-export function classifyDeviceBound(_device: any, _cap: any, _targetBitrate?: number): any {
+export function classifyDeviceBound(_input: {
+  source: any;
+  device: any;
+  target: any;
+  expectedSyncTag?: any;
+}): any {
   return null;
 }
 
@@ -1860,20 +1870,14 @@ export function detectBitratePresetMismatch(_source: any, _device: any, _options
   return false;
 }
 
-export const BITRATE_SYNC_MODES = [
-  'off',
-  'match-cap',
-  'match-all',
-  'up-only',
-  'down-only',
-] as const;
+export function resolveReductionAxis(_reduce: any, _transferMode: any): 'convert' | 'preserve' {
+  return 'preserve';
+}
 
-export function applyBitrateSyncPolicy(
-  _direction: any,
-  _reason: any,
-  _mode: any
-): 'fire' | 'suppress-log' {
-  return 'fire';
+export function resolveLossyReduction(
+  _input: any
+): { action: 'copy' } | { action: 'transcode'; bitrate: number } {
+  return { action: 'copy' };
 }
 
 export const DEFAULT_VBR_TOLERANCE = 0.15;
