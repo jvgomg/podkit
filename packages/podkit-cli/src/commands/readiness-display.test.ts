@@ -1,11 +1,55 @@
 import { describe, it, expect } from 'bun:test';
-import type { ReadinessStageResult } from '@podkit/core';
+import type {
+  ReadinessStageResult,
+  ReadinessResult,
+  ReadinessUnsupportedReason,
+} from '@podkit/core';
 import {
   stageMarker,
   collectReadinessIssues,
   formatReadinessLevel,
   formatReadinessSummaryLines,
+  readinessAccess,
+  formatReadOnlyLines,
 } from './readiness-display.js';
+
+describe('readinessAccess', () => {
+  const mk = (generationId: string): ReadinessResult =>
+    ({
+      level: 'unsupported',
+      stages: [],
+      usbModel: { generationId },
+    }) as unknown as ReadinessResult;
+
+  it('resolves read-only for a shuffle 4g', () => {
+    expect(readinessAccess(mk('shuffle_4g'))).toBe('read-only');
+  });
+  it('resolves syncable for a classic', () => {
+    expect(readinessAccess(mk('classic_6g'))).toBe('syncable');
+  });
+  it('resolves none for an iPod touch', () => {
+    expect(readinessAccess(mk('touch_5g'))).toBe('none');
+  });
+  it('is undefined when no generation is known', () => {
+    expect(
+      readinessAccess({ level: 'unsupported', stages: [] } as unknown as ReadinessResult)
+    ).toBeUndefined();
+  });
+});
+
+describe('formatReadOnlyLines', () => {
+  it('frames the device as readable/archivable and points at device archive', () => {
+    const lines = formatReadOnlyLines({
+      kind: 'unsupported-device',
+      headline: 'needs iTunes authentication',
+      docsUrl: 'https://example.test/docs',
+    } as ReadinessUnsupportedReason);
+    expect(lines[0]).toMatch(/read-only/i);
+    expect(lines.some((l) => l.includes('device archive'))).toBe(true);
+    expect(lines.some((l) => l.includes('needs iTunes authentication'))).toBe(true);
+    expect(lines.some((l) => l.startsWith('See:'))).toBe(true);
+  });
+});
 
 // ── stageMarker ─────────────────────────────────────────────────────────────
 

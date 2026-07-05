@@ -36,6 +36,8 @@ import {
   formatReadinessLevel,
   formatReadinessSummaryLines,
   formatUnsupportedReasonLines,
+  readinessAccess,
+  formatReadOnlyLines,
 } from './readiness-display.js';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -303,6 +305,17 @@ function pushReadinessBlock(
   readiness: ReadinessResult,
   deviceName: string
 ): void {
+  // Read-only device (shuffle 3g/4g, nano 6g): the stage table is misleading
+  // (the USB connection and mount are fine — only writing is refused), so skip
+  // it and render the honest read-only framing that points at `device archive`.
+  if (readinessAccess(readiness) === 'read-only') {
+    for (const line of formatReadOnlyLines(readiness.unsupported)) {
+      lines.push(`  ${line}`);
+    }
+    lines.push('');
+    return;
+  }
+
   for (const line of formatReadinessSummaryLines(stages)) {
     lines.push(line);
   }

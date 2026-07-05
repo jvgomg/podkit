@@ -9,9 +9,42 @@ import { STAGE_DISPLAY_NAMES, DOCS_URLS } from '@podkit/core';
 import type {
   ReadinessStageResult,
   ReadinessLevel,
+  ReadinessResult,
   ReadinessUnsupportedReason,
 } from '@podkit/core';
+import {
+  resolveGenerationSupport,
+  IPOD_GENERATION_IDS,
+  type IpodGenerationId,
+  type DeviceAccess,
+} from '@podkit/devices-ipod';
 import type { OutputContext } from '../output/index.js';
+
+/**
+ * The device's access tier resolved from a readiness result's model, or
+ * `undefined` when no generation is known. Prefers the USB-derived model (the
+ * PID is available even in path-mode without SysInfo) over the SysInfo model.
+ * Read-only vs none is the distinction the displays need but the readiness
+ * `level` (`unsupported`) doesn't carry.
+ */
+export function readinessAccess(readiness: ReadinessResult): DeviceAccess | undefined {
+  const genId = readiness.usbModel?.generationId ?? readiness.deviceModel?.generationId;
+  if (!genId || !(IPOD_GENERATION_IDS as readonly string[]).includes(genId)) return undefined;
+  return resolveGenerationSupport(genId as IpodGenerationId).access;
+}
+
+/**
+ * Honest presentation lines for a read-only device: it is readable and
+ * archivable — only syncing is refused — so point the user at `device archive`
+ * rather than framing it as an unusable "not supported" device.
+ */
+export function formatReadOnlyLines(unsupported: ReadinessUnsupportedReason | undefined): string[] {
+  const lines = ['Read-only — podkit can read and archive this device, but cannot sync to it.'];
+  if (unsupported?.headline) lines.push(`Reason: ${unsupported.headline}`);
+  lines.push('Back it up with: podkit device archive');
+  if (unsupported?.docsUrl) lines.push(`See: ${unsupported.docsUrl}`);
+  return lines;
+}
 
 // ── Stage marker ────────────────────────────────────────────────────────────
 
