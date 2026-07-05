@@ -107,13 +107,21 @@ function readIdentity(db: Database, ipodRoot: string): DumpDeviceIdentity {
   if (sysInfo?.identity.familyId !== undefined) identity.familyId = sysInfo.identity.familyId;
 
   // libgpod device capabilities — model/generation/capacity. Best-effort: if
-  // libgpod can't classify the device these come back as 'unknown' / 0.
+  // libgpod can't classify the device these come back as sentinels — 'unknown'
+  // / 'Unknown' / 'Invalid' (the last for devices absent from its info table,
+  // e.g. an iPod shuffle) / 0. Treat every sentinel as "not known" so the
+  // archive never surfaces "Invalid" as if it were a real model.
+  const isKnown = (v: string | null | undefined): v is string => {
+    if (!v) return false;
+    const lower = v.toLowerCase();
+    return lower !== 'unknown' && lower !== 'invalid';
+  };
   try {
     const caps = db.getDeviceCapabilities();
-    if (caps.model && caps.model !== 'unknown') identity.model = caps.model;
-    if (caps.generation && caps.generation !== 'unknown') identity.generation = caps.generation;
-    if (caps.modelName && caps.modelName !== 'Unknown') identity.modelName = caps.modelName;
-    if (caps.modelNumber) identity.modelNumber = caps.modelNumber;
+    if (isKnown(caps.model)) identity.model = caps.model;
+    if (isKnown(caps.generation)) identity.generation = caps.generation;
+    if (isKnown(caps.modelName)) identity.modelName = caps.modelName;
+    if (isKnown(caps.modelNumber)) identity.modelNumber = caps.modelNumber;
     const capacity = db.device.capacity;
     if (capacity > 0) identity.capacityGb = capacity;
   } catch {
