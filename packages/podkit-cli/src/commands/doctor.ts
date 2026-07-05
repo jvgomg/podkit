@@ -29,6 +29,11 @@ import {
   resolveEffectiveDevice,
 } from '../device-resolver.js';
 import type { DeviceConfig } from '../config/types.js';
+import {
+  resolveGenerationSupport,
+  IPOD_GENERATION_IDS,
+  type IpodGenerationId,
+} from '@podkit/devices-ipod';
 import { OutputContext } from '../output/index.js';
 import { CliError, runAction, type CliErrorOutput } from '../errors.js';
 import { loadCoreOrFail, type CoreLoaderDeps } from '../handler-deps.js';
@@ -800,6 +805,18 @@ export async function runDoctorDiagnostics(
             out.print(`  ${line}`);
           }
         }
+      }
+      // Read-only devices (shuffle 3g/4g, nano 6g) can't be repaired, but the
+      // user isn't stuck — podkit can still read and back them up.
+      const genId =
+        readinessResult.usbModel?.generationId ?? readinessResult.deviceModel?.generationId;
+      if (
+        genId &&
+        (IPOD_GENERATION_IDS as readonly string[]).includes(genId) &&
+        resolveGenerationSupport(genId as IpodGenerationId).access === 'read-only'
+      ) {
+        out.newline();
+        out.print('podkit can still read and back up this device — run `podkit device archive`.');
       }
       out.newline();
       out.print(`See: ${unsupported?.docsUrl ?? DOCS_URLS.supportedDevices}`);
