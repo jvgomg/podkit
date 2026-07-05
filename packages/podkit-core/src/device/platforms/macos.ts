@@ -916,7 +916,8 @@ Replace diskXsY with your actual device identifier`;
    *   <string>disk6s2</string>
    */
   private parseDiskIdentifiers(plistOutput: string): string[] {
-    const identifiers: string[] = [];
+    const partitions: string[] = [];
+    const wholeDisks: string[] = [];
 
     // Match <key>DeviceIdentifier</key> followed by <string>...</string>
     // The [\s\S]*? allows for whitespace/newlines between tags
@@ -927,13 +928,24 @@ Replace diskXsY with your actual device identifier`;
       const captured = match[1];
       if (!captured) continue;
       const id = captured.trim();
-      // Only include partition identifiers (diskXsY), not whole disks (diskX)
       if (/^disk\d+s\d+$/.test(id)) {
-        identifiers.push(id);
+        partitions.push(id); // partition, e.g. disk5s2
+      } else if (/^disk\d+$/.test(id)) {
+        wholeDisks.push(id); // whole disk, e.g. disk4
       }
     }
 
-    return identifiers;
+    // Partitions are always user-visible volumes. A whole disk is normally a
+    // container, not a volume — except when the device writes its filesystem to
+    // the bare disk with no partition map (some iPod shuffles do this: the
+    // volume is `disk4`, not `disk4s1`). Surface such a whole disk only when it
+    // has no partition of its own; otherwise it is a container we skip. Whether
+    // the surfaced disk is actually a mounted volume is decided downstream by
+    // `getPlatformDeviceInfo`, which returns null for non-volumes.
+    const disksWithPartitions = new Set(partitions.map((p) => p.replace(/s\d+$/, '')));
+    const partitionlessWholeDisks = wholeDisks.filter((d) => !disksWithPartitions.has(d));
+
+    return [...partitions, ...partitionlessWholeDisks];
   }
 }
 

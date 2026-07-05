@@ -197,3 +197,72 @@ describe('MacOSDeviceManager.setVolumeLabel', () => {
     await expect(manager.setVolumeLabel('/Volumes/IPOD', 'X')).rejects.toThrow(/Resource busy/);
   });
 });
+
+describe('MacOSDeviceManager.scan whole-disk volumes', () => {
+  // Some iPod shuffles write their filesystem to the bare disk (`disk4`) with
+  // no partition map, so the mounted volume is a whole disk — not `disk4s1`.
+  // Enumeration must surface such a whole disk, while a normal disk that DOES
+  // have partitions must still be represented by its partitions, never the
+  // container disk itself.
+  const listPlist = [
+    '<plist><dict><key>AllDisksAndPartitions</key><array>',
+    '<dict><key>DeviceIdentifier</key><string>disk4</string>',
+    '<key>MountPoint</key><string>/Volumes/NIKKI POD</string></dict>',
+    '<dict><key>DeviceIdentifier</key><string>disk5</string>',
+    '<key>Partitions</key><array>',
+    '<dict><key>DeviceIdentifier</key><string>disk5s2</string></dict>',
+    '</array></dict>',
+    '</array></dict></plist>',
+  ].join('\n');
+
+  const infoFor: Record<string, string> = {
+    disk4: [
+      'Device Identifier:        disk4',
+      'Volume Name:              NIKKI POD',
+      'Mounted:                  Yes',
+      'Mount Point:              /Volumes/NIKKI POD',
+      'Volume UUID:              50D938CA-2681-3CE1-9162-AAB0109B3B71',
+      'File System Personality:  MS-DOS FAT32',
+      'Media Type:               iPod',
+    ].join('\n'),
+    disk5s2: [
+      'Device Identifier:        disk5s2',
+      'Volume Name:              DATA',
+      'Mounted:                  Yes',
+      'Mount Point:              /Volumes/DATA',
+      'Volume UUID:              1111-2222-3333-4444',
+      'File System Personality:  APFS',
+      'Media Type:               Generic',
+    ].join('\n'),
+  };
+
+  it('surfaces a partitionless whole-disk iPod volume; skips a partitioned container disk', async () => {
+    const { runner, calls } = recordingRunner({
+      diskutil: (args) => {
+        if (args[0] === 'list') return { stdout: listPlist, stderr: '', exitCode: 0 };
+        if (args[0] === 'info') {
+          const out = infoFor[args[1] ?? ''];
+          return out
+            ? { stdout: out, stderr: '', exitCode: 0 }
+            : { stdout: '', stderr: 'no such disk', exitCode: 1 };
+        }
+        return { stdout: '', stderr: 'unexpected', exitCode: 1 };
+      },
+    });
+    const manager = new MacOSDeviceManager({ subprocess: runner });
+
+    const ipods = await manager.scan();
+
+    // The whole-disk shuffle-style volume is discovered as a mounted iPod.
+    const shuffle = ipods.find((d) => d.identifier === 'disk4');
+    expect(shuffle).toBeDefined();
+    expect(shuffle!.isMounted).toBe(true);
+    expect(shuffle!.mountPoint).toBe('/Volumes/NIKKI POD');
+
+    // The container disk that HAS a partition is never queried as a whole disk;
+    // its partition represents it instead.
+    const infoIds = calls.filter((c) => c.args[0] === 'info').map((c) => c.args[1]);
+    expect(infoIds).toContain('disk4');
+    expect(infoIds).not.toContain('disk5');
+  });
+});

@@ -57,9 +57,15 @@ Keeping the two axes orthogonal is deliberate: the safety gate stays a clean tri
 
 nano 6g is `read-only`, not `none`, on purpose: its write is confidently unsupported but its read is merely **untested**, and a read is non-destructive. Permitting the read attempt lets reality supply the missing evidence (success or a clean failure) rather than forbidding a safe operation on a guess.
 
-### 3. Discovery classifies read-only as a real iPod
+### 3. Enumeration surfaces whole-disk iPod volumes
 
-A `read-only` generation classifies as **`kind: 'ipod'`** — it *is* a mounted iPod — so the existing block-correlation path maps its volume automatically. `kind: 'unsupported'` shrinks to mean **`access: 'none'`** (iOS, nano 7g — devices with no mountable volume to orphan). **No new correlation logic is added**; the "USB only" bug was upstream misclassification, and fixing the classification fixes the mapping.
+*(This decision was rewritten after diagnosing the reported shuffle live; the original premise — that the shuffle was mis-classified `kind: 'unsupported'` and that fixing the classification would fix the mapping — was wrong. See below.)*
+
+An unsupported iPod is **already** `kind: 'ipod'` carrying an `unsupportedReason`; `kind: 'unsupported'` is reserved for non-iPod devices (Sony, unrecognised USB). So the "connected but not mounted" report was **not** a classification problem. The real cause is in the **macOS block enumeration**: the iPod shuffle 4g writes its filesystem to the *bare disk* (`disk4`) with no partition map, and podkit's enumerator only collected partition identifiers (`diskNsM`), explicitly dropping whole disks (`diskN`). The mounted volume therefore never reached the classifier/reconciler at all — it was invisible to discovery, while path-mode (`diskutil info <path>` directly) still read it. That asymmetry is exactly what the reporter saw.
+
+The fix is narrow: the macOS enumerator now also surfaces a **partitionless whole disk** (a `diskN` with no `diskNsM` sibling) so a bare-disk iPod volume enters enumeration, gets recognised (`mediaType === 'iPod'` / the existing `iPod_Control` probe), and correlates to its USB entry by disk identifier — becoming a single **mounted** `kind: 'ipod'` record. No change to block↔USB correlation, which never skipped unsupported iPods in the first place.
+
+The `access` tier is threaded through discovery/resolution so downstream can tell `read-only` from `none`; see §4.
 
 ### 4. Access is enforced once, at device resolution
 
