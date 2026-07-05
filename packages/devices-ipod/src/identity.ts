@@ -65,10 +65,12 @@ export function identify(input: IpodModelInput): IpodModel | undefined {
       if (!entry) return undefined;
       const gen = GENERATIONS[entry.generation];
       const displayName = formatIpodLabel({ family: gen.family, ordinal: gen.ordinal });
-      // Check unsupported PID table first, then fall back to generation flag.
+      // Check unsupported PID table first, then fall back to the access tier.
       const headline =
         lookupUnsupportedReason(input.productId) ??
-        (!gen.supported ? `${displayName} is not a podkit-supported generation.` : undefined);
+        (gen.support.access !== 'syncable'
+          ? `${displayName} is not a podkit-supported generation.`
+          : undefined);
       const unsupportedReason = headline
         ? buildUnsupportedReason(headline, entry.generation)
         : undefined;
@@ -97,9 +99,10 @@ export function identify(input: IpodModelInput): IpodModel | undefined {
       // Re-derive stripped model number for the modelNumber field
       const upper = input.modelNumStr.toUpperCase();
       const stripped = /^[MPF]/.test(upper) ? upper.slice(1) : upper;
-      const headline = !gen.supported
-        ? `${displayName} is not a podkit-supported generation.`
-        : undefined;
+      const headline =
+        gen.support.access !== 'syncable'
+          ? `${displayName} is not a podkit-supported generation.`
+          : undefined;
       const unsupportedReason = headline
         ? buildUnsupportedReason(headline, entry.generation)
         : undefined;
@@ -132,9 +135,10 @@ export function identify(input: IpodModelInput): IpodModel | undefined {
         color: variant.color,
         variant: variant.variant,
       });
-      const headline = !gen.supported
-        ? `${displayName} is not a podkit-supported generation.`
-        : undefined;
+      const headline =
+        gen.support.access !== 'syncable'
+          ? `${displayName} is not a podkit-supported generation.`
+          : undefined;
       const unsupportedReason = headline
         ? buildUnsupportedReason(headline, variant.generation)
         : undefined;

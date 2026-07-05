@@ -18,6 +18,10 @@ export type {
   IpodGenerationId,
   IpodGenerationIdLike,
   IpodGeneration,
+  DeviceAccess,
+  SupportVerification,
+  GenerationSupport,
+  SupportMatrixRow,
   IpodModel,
   IpodModelSource,
   IpodModelVariant,
@@ -98,6 +102,10 @@ export {
 // ── Model resolver ────────────────────────────────────────────────────────────
 
 export { resolveIpodModel, type ResolveModelInput } from './resolve.js';
+
+// ── Support matrix ──────────────────────────────────────────────────────────────
+
+export { resolveGenerationSupport, getSupportMatrix } from './support.js';
 
 // ── Label formatters ──────────────────────────────────────────────────────────
 

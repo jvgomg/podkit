@@ -13,7 +13,8 @@
  * Parity with the legacy `createIpodCapabilities(libgpodInfo)` adapter
  * is asserted in `capabilities.test.ts` for every generation that has a
  * libgpod equivalent. Generations that map to libgpod's `unknown` (nano 7G,
- * touch 5G–7G) are sourced exclusively from this table and have `supported: false`.
+ * touch 5G–7G) are sourced exclusively from this table and carry
+ * `support.access: 'none'`.
  *
  * @module
  */
@@ -26,7 +27,7 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     family: 'iPod',
     ordinal: 1,
     checksumType: 'none',
-    supported: true,
+    support: { access: 'syncable', verified: 'inferred' },
     supportsAlac: false,
     supportsVideo: false,
     artworkMaxResolution: null,
@@ -36,7 +37,7 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     family: 'iPod',
     ordinal: 2,
     checksumType: 'none',
-    supported: true,
+    support: { access: 'syncable', verified: 'inferred' },
     supportsAlac: false,
     supportsVideo: false,
     artworkMaxResolution: null,
@@ -46,7 +47,7 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     family: 'iPod',
     ordinal: 3,
     checksumType: 'none',
-    supported: true,
+    support: { access: 'syncable', verified: 'inferred' },
     supportsAlac: false,
     supportsVideo: false,
     artworkMaxResolution: null,
@@ -56,7 +57,7 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     family: 'iPod',
     ordinal: 4,
     checksumType: 'none',
-    supported: true,
+    support: { access: 'syncable', verified: 'inferred' },
     supportsAlac: true,
     supportsVideo: false,
     artworkMaxResolution: null,
@@ -66,7 +67,7 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     family: 'iPod Photo',
     ordinal: null,
     checksumType: 'none',
-    supported: true,
+    support: { access: 'syncable', verified: 'inferred' },
     supportsAlac: true,
     supportsVideo: false,
     // 220x176 colour screen; ArtworkDB stores 320x240 thumbnails
@@ -77,7 +78,7 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     family: 'iPod Video',
     ordinal: 5,
     checksumType: 'none',
-    supported: true,
+    support: { access: 'syncable', verified: 'inferred' },
     supportsAlac: true,
     supportsVideo: true,
     artworkMaxResolution: 320,
@@ -87,7 +88,7 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     family: 'iPod Video',
     ordinal: 5.5,
     checksumType: 'none',
-    supported: true,
+    support: { access: 'syncable', verified: 'inferred' },
     supportsAlac: true,
     supportsVideo: true,
     artworkMaxResolution: 320,
@@ -97,7 +98,7 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     family: 'iPod Classic',
     ordinal: 6,
     checksumType: 'hash58',
-    supported: true,
+    support: { access: 'syncable', verified: 'inferred' },
     supportsAlac: true,
     supportsVideo: true,
     artworkMaxResolution: 320,
@@ -107,7 +108,7 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     family: 'iPod Classic',
     ordinal: 7,
     checksumType: 'hash58',
-    supported: true,
+    support: { access: 'syncable', verified: 'inferred' },
     supportsAlac: true,
     supportsVideo: true,
     artworkMaxResolution: 320,
@@ -117,7 +118,7 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     family: 'iPod mini',
     ordinal: 1,
     checksumType: 'none',
-    supported: true,
+    support: { access: 'syncable', verified: 'inferred' },
     supportsAlac: false,
     supportsVideo: false,
     artworkMaxResolution: null,
@@ -127,7 +128,7 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     family: 'iPod mini',
     ordinal: 2,
     checksumType: 'none',
-    supported: true,
+    support: { access: 'syncable', verified: 'inferred' },
     supportsAlac: true,
     supportsVideo: false,
     artworkMaxResolution: null,
@@ -137,7 +138,7 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     family: 'iPod nano',
     ordinal: 1,
     checksumType: 'none',
-    supported: true,
+    support: { access: 'syncable', verified: 'inferred' },
     supportsAlac: false,
     supportsVideo: false,
     artworkMaxResolution: 176, // 176x132
@@ -147,7 +148,7 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     family: 'iPod nano',
     ordinal: 2,
     checksumType: 'none',
-    supported: true,
+    support: { access: 'syncable', verified: 'inferred' },
     supportsAlac: false,
     supportsVideo: false,
     artworkMaxResolution: 176, // 176x132
@@ -157,7 +158,7 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     family: 'iPod nano',
     ordinal: 3,
     checksumType: 'hash58',
-    supported: true,
+    support: { access: 'syncable', verified: 'inferred' },
     supportsAlac: true,
     supportsVideo: true,
     artworkMaxResolution: 320, // 320x240 widescreen
@@ -167,7 +168,7 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     family: 'iPod nano',
     ordinal: 4,
     checksumType: 'hash58',
-    supported: true,
+    support: { access: 'syncable', verified: 'inferred' },
     supportsAlac: true,
     supportsVideo: true,
     artworkMaxResolution: 240, // 240x320 portrait
@@ -177,7 +178,7 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     family: 'iPod nano',
     ordinal: 5,
     checksumType: 'hash72',
-    supported: true,
+    support: { access: 'syncable', verified: 'inferred' },
     supportsAlac: true,
     supportsVideo: true,
     artworkMaxResolution: 240, // 240x376
@@ -187,9 +188,14 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     family: 'iPod nano',
     ordinal: 6,
     checksumType: 'hashAB',
-    // libgpod has entries for nano_6 but cannot write its iTunesDB format.
-    // Multi-touch nano with no video playback hardware.
-    supported: false,
+    // Multi-touch nano with no video playback hardware. Write is a format
+    // libgpod cannot produce; read has never been exercised on hardware, so
+    // it stays read-only (a read is non-destructive) rather than none.
+    support: {
+      access: 'read-only',
+      verified: 'inferred',
+      note: 'Write unsupported (iTunesDB format); read untested on hardware.',
+    },
     supportsAlac: false,
     supportsVideo: false,
     artworkMaxResolution: 240, // 240x240
@@ -199,9 +205,9 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     family: 'iPod nano',
     ordinal: 7,
     checksumType: 'hashAB',
-    // Not in libgpod's ipod_info_table — libgpod cannot sync this device.
+    // Not in libgpod's ipod_info_table — no mountable database podkit can use.
     // Hardware specs preserved here for diagnostics (ALAC + video capable).
-    supported: false,
+    support: { access: 'none', verified: 'inferred' },
     supportsAlac: true,
     supportsVideo: true,
     artworkMaxResolution: 240, // 240x432
@@ -211,7 +217,7 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     family: 'iPod shuffle',
     ordinal: 1,
     checksumType: 'none',
-    supported: true,
+    support: { access: 'syncable', verified: 'inferred' },
     supportsAlac: false,
     supportsVideo: false,
     artworkMaxResolution: null,
@@ -221,7 +227,7 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     family: 'iPod shuffle',
     ordinal: 2,
     checksumType: 'none',
-    supported: true,
+    support: { access: 'syncable', verified: 'inferred' },
     supportsAlac: false,
     supportsVideo: false,
     artworkMaxResolution: null,
@@ -231,8 +237,12 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     family: 'iPod shuffle',
     ordinal: 3,
     checksumType: 'none',
-    // libgpod has ipod_info_table entries but requires iTunes authentication.
-    supported: false,
+    // Same family as the 4g (read-only) but not itself hardware-probed.
+    support: {
+      access: 'read-only',
+      verified: 'inferred',
+      note: 'Reads iTunesDB; iTunesSD playback DB needs iTunes authentication libgpod cannot produce.',
+    },
     supportsAlac: false,
     supportsVideo: false,
     artworkMaxResolution: null,
@@ -242,8 +252,14 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     family: 'iPod shuffle',
     ordinal: 4,
     checksumType: 'none',
-    // libgpod has ipod_info_table entries but requires iTunes authentication.
-    supported: false,
+    // Confirmed on hardware: readable iTunesDB alongside the iTunesSD the
+    // firmware plays from. Writing a valid iTunesSD needs an iTunes
+    // authentication hash libgpod cannot produce, so read-only.
+    support: {
+      access: 'read-only',
+      verified: 'hardware',
+      note: 'Reads iTunesDB; iTunesSD playback DB needs iTunes authentication libgpod cannot produce.',
+    },
     supportsAlac: false,
     supportsVideo: false,
     artworkMaxResolution: null,
@@ -255,7 +271,7 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     checksumType: 'hash72',
     // libgpod has ipod_info_table entries (A623/A627/B376) but uses Apple's
     // proprietary sync protocol — cannot be accessed via disk mode.
-    supported: false,
+    support: { access: 'none', verified: 'inferred' },
     supportsAlac: true,
     supportsVideo: true,
     artworkMaxResolution: 320,
@@ -267,7 +283,7 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     checksumType: 'hash72',
     // libgpod has ipod_info_table entries (B528/B531/B533/C086) but uses
     // Apple's proprietary sync protocol — cannot be accessed via disk mode.
-    supported: false,
+    support: { access: 'none', verified: 'inferred' },
     supportsAlac: true,
     supportsVideo: true,
     artworkMaxResolution: 320,
@@ -279,7 +295,7 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     checksumType: 'hash72',
     // libgpod has ipod_info_table entries (C008/C011) but uses Apple's
     // proprietary sync protocol — cannot be accessed via disk mode.
-    supported: false,
+    support: { access: 'none', verified: 'inferred' },
     supportsAlac: true,
     supportsVideo: true,
     artworkMaxResolution: 320,
@@ -291,7 +307,7 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     checksumType: 'hashAB',
     // libgpod has ipod_info_table entries (C540/C544/C547) but uses Apple's
     // proprietary sync protocol — cannot be accessed via disk mode.
-    supported: false,
+    support: { access: 'none', verified: 'inferred' },
     supportsAlac: true,
     supportsVideo: true,
     artworkMaxResolution: 320,
@@ -303,7 +319,7 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     checksumType: 'none',
     // Not in libgpod's ipod_info_table. Also uses Apple's proprietary sync
     // protocol — cannot be accessed via disk mode.
-    supported: false,
+    support: { access: 'none', verified: 'inferred' },
     supportsAlac: true,
     supportsVideo: true,
     artworkMaxResolution: 320,
@@ -315,7 +331,7 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     checksumType: 'none',
     // Not in libgpod's ipod_info_table. Also uses Apple's proprietary sync
     // protocol — cannot be accessed via disk mode.
-    supported: false,
+    support: { access: 'none', verified: 'inferred' },
     supportsAlac: true,
     supportsVideo: true,
     artworkMaxResolution: 320,
@@ -327,7 +343,7 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     checksumType: 'none',
     // Not in libgpod's ipod_info_table. Also uses Apple's proprietary sync
     // protocol — cannot be accessed via disk mode.
-    supported: false,
+    support: { access: 'none', verified: 'inferred' },
     supportsAlac: true,
     supportsVideo: true,
     artworkMaxResolution: 320,

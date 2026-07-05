@@ -38,7 +38,8 @@ import { SUPPORTED_DEVICES_DOCS_URL } from '../build-unsupported-reason.js';
 const SHUFFLE_REASON =
   'iPod shuffle 3rd/4th gen requires iTunes authentication, which podkit cannot perform.';
 
-const NANO_6G_REASON = 'iPod nano 6th gen uses an iTunesDB format podkit cannot read or write.';
+const NANO_6G_REASON =
+  'iPod nano 6th gen uses an iTunesDB format podkit cannot write; read access is untested.';
 
 const NANO_7G_REASON = 'iPod nano 7th gen is not a podkit-supported device.';
 

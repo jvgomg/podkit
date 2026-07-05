@@ -56,9 +56,10 @@ export interface ResolveModelInput {
 function synthesizeFromGeneration(genId: IpodGenerationId): IpodModel {
   const gen = GENERATIONS[genId];
   const displayName = formatIpodLabel({ family: gen.family, ordinal: gen.ordinal });
-  const unsupportedReason = gen.supported
-    ? undefined
-    : buildUnsupportedReason(`${displayName} is not a podkit-supported generation.`, genId);
+  const unsupportedReason =
+    gen.support.access === 'syncable'
+      ? undefined
+      : buildUnsupportedReason(`${displayName} is not a podkit-supported generation.`, genId);
   return {
     displayName,
     generationId: genId,

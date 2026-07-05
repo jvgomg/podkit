@@ -17,6 +17,11 @@ import {
 } from '@podkit/core';
 import type { DiscoveredDevice, ReadinessLevel } from '@podkit/core';
 import type { ResolvedDeviceCapabilities } from '@podkit/device-types';
+import {
+  resolveGenerationSupport,
+  IPOD_GENERATION_IDS,
+  type IpodGenerationId,
+} from '@podkit/devices-ipod';
 import { openDevice, isMassStorageDevice, displayForConfig } from '../open-device.js';
 import { mergedPresets } from '../../config/preset-registry.js';
 import { formatReadinessLevel, collectReadinessIssues, printIssues } from '../readiness-display.js';
@@ -544,6 +549,19 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
           printSummaryRow(out, 'Model', `${liveStatus.model.name}${capacityStr} - ${genStr}`);
         } else if (!isMassStorage && !liveStatus.model && liveStatus.mounted) {
           printSummaryRow(out, 'Model', 'Unknown \u2014 SysInfo missing');
+        }
+
+        // Support line \u2014 the resolved generation's access tier plus its
+        // verification provenance. Purely informational: `access` gates
+        // behavior elsewhere, `verified` gates nothing and rides along as a
+        // confidence badge (e.g. `read-only (hardware-verified)`).
+        if (!isMassStorage && readinessData?.model) {
+          const genId = readinessData.model.generationId;
+          if ((IPOD_GENERATION_IDS as readonly string[]).includes(genId)) {
+            const support = resolveGenerationSupport(genId as IpodGenerationId);
+            const confidence = support.verified === 'hardware' ? 'hardware-verified' : 'inferred';
+            printSummaryRow(out, 'Support', `${support.access} (${confidence})`);
+          }
         }
 
         // Readiness line — short status only

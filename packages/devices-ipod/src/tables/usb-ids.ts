@@ -15,9 +15,9 @@
  * are intentionally excluded -- those are recovery-mode endpoints, not disk-mode devices.
  *
  * Devices that podkit cannot sync (e.g. nano 6G, nano 7G, all Touch generations)
- * are still listed here for identification purposes. The unsupported flag lives
- * on `IpodGeneration.supported` (see `tables/generations.ts`) and the
- * canonical PID-keyed reason map is `tables/unsupported.ts`.
+ * are still listed here for identification purposes. The access tier lives on
+ * `IpodGeneration.support` (see `tables/generations.ts`) and the canonical
+ * PID-keyed reason map is `tables/unsupported.ts`.
  *
  * @module
  */

@@ -50,7 +50,8 @@ Keeping the two axes orthogonal is deliberate: the safety gate stays a clean tri
 | Generation | `access` | `verified` |
 |---|---|---|
 | Classic / nano (1g–5g) / mini / video — existing syncable | `syncable` | `hardware` where tested, else `inferred` |
-| **Shuffle 3g / 4g** | **`read-only`** | `hardware` |
+| **Shuffle 4g** | **`read-only`** | `hardware` |
+| **Shuffle 3g** | **`read-only`** | `inferred` — same family as the 4g, not itself hardware-probed |
 | **nano 6g** | **`read-only`** | `inferred` — write known-unsupported; read never tested |
 | nano 7g, iPod touch / iPhone / iPad, not-in-libgpod-table | `none` | `inferred` (or `hardware` where confirmed) |
 

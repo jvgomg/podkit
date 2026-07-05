@@ -110,8 +110,8 @@ export interface IpodModel {
   readonly source: IpodModelSource;
   /**
    * When present, this device is identified but cannot be synced by podkit.
-   * Populated when `IpodGeneration.supported === false` or the USB product ID
-   * appears in UNSUPPORTED_IPOD_PRODUCT_IDS. The shape is the canonical
+   * Populated when the generation's `support.access` is not `syncable` or the
+   * USB product ID appears in UNSUPPORTED_IPOD_PRODUCT_IDS. The shape is the canonical
    * {@link ReadinessUnsupportedReason} — readiness, CLI errors, and JSON
    * envelopes all consume it directly.
    */
