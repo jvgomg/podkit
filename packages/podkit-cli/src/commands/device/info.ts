@@ -255,11 +255,29 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
             openedDeviceResult?.isIpodDevice ?? !isMassStorageDevice(device?.type);
           if (liveStatus?.mounted && readinessIsIpod && manager.isSupported) {
             try {
+              // Prefer the USB-correlated discovered iPod (carries the USB
+              // classification → generation / access tier) over a bare block
+              // device. Without it, a device whose model lives only in its USB
+              // PID (e.g. a shuffle with no SysInfo) reads as "Unknown
+              // Generation". Mirrors doctor's readiness resolution.
+              let discoveredForReadiness: import('@podkit/core').DiscoveredDeviceIpod | undefined;
+              try {
+                const discovered = await core.discoverConnectedDevices({
+                  deviceManager: manager,
+                  massStoragePresets: mergedPresets(getContext().config),
+                });
+                discoveredForReadiness = discovered.find(
+                  (d): d is import('@podkit/core').DiscoveredDeviceIpod =>
+                    d.kind === 'ipod' && d.block?.mountPoint === resolveResult.path
+                );
+              } catch {
+                // Discovery unavailable — fall back to the block-only device.
+              }
               const matchingBlock =
                 resolveResult.deviceInfo ??
                 synthesizePathModeDeviceInfo(resolveResult.path, liveStatus.volumeUuid);
               const readiness = await core.checkReadiness({
-                device: core.ipodFromBlock(matchingBlock),
+                device: discoveredForReadiness ?? core.ipodFromBlock(matchingBlock),
                 ipod: openedDeviceResult?.ipod,
               });
               const bestModel = readiness.deviceModel ?? readiness.usbModel;
@@ -555,17 +573,34 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
         // verification provenance. Purely informational: `access` gates
         // behavior elsewhere, `verified` gates nothing and rides along as a
         // confidence badge (e.g. `read-only (hardware-verified)`).
-        if (!isMassStorage && readinessData?.model) {
-          const genId = readinessData.model.generationId;
-          if ((IPOD_GENERATION_IDS as readonly string[]).includes(genId)) {
-            const support = resolveGenerationSupport(genId as IpodGenerationId);
-            const confidence = support.verified === 'hardware' ? 'hardware-verified' : 'inferred';
-            printSummaryRow(out, 'Support', `${support.access} (${confidence})`);
-          }
+        const genSupport =
+          !isMassStorage &&
+          readinessData?.model &&
+          (IPOD_GENERATION_IDS as readonly string[]).includes(readinessData.model.generationId)
+            ? resolveGenerationSupport(readinessData.model.generationId as IpodGenerationId)
+            : undefined;
+        if (genSupport) {
+          const confidence = genSupport.verified === 'hardware' ? 'hardware-verified' : 'inferred';
+          printSummaryRow(out, 'Support', `${genSupport.access} (${confidence})`);
         }
 
         // Readiness line — short status only
-        if (!isMassStorage && readinessData) {
+        if (!isMassStorage && readinessData && genSupport?.access === 'read-only') {
+          // A read-only device (shuffle 3g/4g, nano 6g) is readable and
+          // archivable; only syncing is refused. Frame it honestly rather than
+          // as "not supported" / "needs repair".
+          printSummaryRow(
+            out,
+            'Readiness',
+            'Read-only — readable and archivable; syncing not supported'
+          );
+          if (readinessData.unsupported) {
+            printSummaryRow(out, 'Reason', readinessData.unsupported.headline);
+          }
+          out.print(
+            `${' '.repeat(2 + SUMMARY_LABEL_WIDTH + 2)}Back it up with: podkit device archive`
+          );
+        } else if (!isMassStorage && readinessData) {
           const levelLabel =
             readinessData.level === 'ready'
               ? 'Ready'
@@ -597,8 +632,11 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
           infoIssues.push(...readinessIssues);
         }
 
-        // Collect validation issues for the Issues zone (iPod only)
-        if (!isMassStorage && liveStatus.validation) {
+        // Collect validation issues for the Issues zone (iPod only). Skip for
+        // a read-only device: its libgpod-derived validation ("could not
+        // identify model") contradicts the read-only framing, which already
+        // identified the generation from the USB PID.
+        if (!isMassStorage && liveStatus.validation && genSupport?.access !== 'read-only') {
           for (const issue of liveStatus.validation.issues) {
             infoIssues.push({
               marker: issue.type === 'unsupported_device' ? '\u2717' : '!',
@@ -629,6 +667,7 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
         if (isCapsPeerSection) out.newline();
         if (
           !isMassStorage &&
+          genSupport?.access !== 'read-only' &&
           resolvedDeviceCapabilities &&
           liveStatus.capabilities &&
           liveStatus.model
