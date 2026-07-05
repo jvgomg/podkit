@@ -205,7 +205,7 @@ describe('computeLibraryStats — listening stats', () => {
     expect(stats.topPlayedArtists[0]).toEqual({ artist: 'Artist00', count: 100 });
   });
 
-  test('ties break by title then artist (tracks) and by artist (artists)', () => {
+  test('track ties break by title then artist', () => {
     const stats = computeLibraryStats([
       track({ title: 'Zeta', artist: 'Q', playCount: 7 }),
       track({ title: 'Alpha', artist: 'Q', playCount: 7 }),
@@ -213,6 +213,22 @@ describe('computeLibraryStats — listening stats', () => {
     expect(stats.topPlayedTracks).toEqual([
       { title: 'Alpha', artist: 'Q', count: 7 },
       { title: 'Zeta', artist: 'Q', count: 7 },
+    ]);
+  });
+
+  test('artist ties break alphabetically by artist name', () => {
+    // Two artists with an equal summed play count (and equal skip count).
+    const stats = computeLibraryStats([
+      track({ title: 'a', artist: 'Zebra', playCount: 4, skipCount: 4 }),
+      track({ title: 'b', artist: 'Aardvark', playCount: 4, skipCount: 4 }),
+    ]);
+    expect(stats.topPlayedArtists).toEqual([
+      { artist: 'Aardvark', count: 4 },
+      { artist: 'Zebra', count: 4 },
+    ]);
+    expect(stats.topSkippedArtists).toEqual([
+      { artist: 'Aardvark', count: 4 },
+      { artist: 'Zebra', count: 4 },
     ]);
   });
 

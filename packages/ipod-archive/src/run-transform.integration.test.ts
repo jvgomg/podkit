@@ -110,6 +110,9 @@ interface SeededTrack {
   albumArtist: string;
   trackNumber: number;
   source: string;
+  /** Optional listening history seeded onto the track (defaults to 0). */
+  playCount?: number;
+  skipCount?: number;
 }
 
 /**
@@ -128,6 +131,14 @@ async function seedDump(tracks: SeededTrack[], withNoAudioTrack: boolean): Promi
       trackNumber: t.trackNumber,
     });
     db.copyTrackToDevice(h, t.source);
+    // Listening history is applied via updateTrack (addTrack input does not
+    // carry play/skip counts) after the copy so it isn't reset by the transfer.
+    if (t.playCount !== undefined || t.skipCount !== undefined) {
+      db.updateTrack(h, {
+        ...(t.playCount !== undefined ? { playCount: t.playCount } : {}),
+        ...(t.skipCount !== undefined ? { skipCount: t.skipCount } : {}),
+      });
+    }
   }
   if (withNoAudioTrack) {
     // A metadata-only track with no file → null ipodPath → "no audio" bucket.
@@ -161,6 +172,8 @@ describe('runTransform — fixture dump', () => {
           albumArtist: 'The Band',
           trackNumber: 1,
           source: MP3,
+          playCount: 40,
+          skipCount: 2,
         },
         {
           title: 'Second Song',
@@ -169,6 +182,8 @@ describe('runTransform — fixture dump', () => {
           albumArtist: 'The Band',
           trackNumber: 2,
           source: M4A,
+          playCount: 5,
+          skipCount: 9,
         },
       ],
       true
@@ -228,6 +243,13 @@ describe('runTransform — fixture dump', () => {
     // Stats cover the full catalogue (3 tracks: 2 with audio + 1 no-audio).
     expect(readme).toContain('| Tracks | 3 |');
     expect(readme).toContain('### Top artists');
+    // Listening stats are wired end-to-end from the seeded play/skip counts.
+    expect(readme).toContain('| Total plays | 45 |');
+    expect(readme).toContain('| Total skips | 11 |');
+    expect(readme).toContain('### Top played tracks');
+    expect(readme).toContain('- First Song — The Artist (40 plays)');
+    expect(readme).toContain('### Top skipped tracks');
+    expect(readme).toContain('- Second Song — The Artist (9 skips)');
 
     // The no-audio track shows up in the report's no-audio bucket; the two
     // tracks here carry no embedded artwork, so they appear in no-artwork.
@@ -241,11 +263,24 @@ describe('runTransform — fixture dump', () => {
     const reportJson = JSON.parse(await readFile(result.reportJsonPath, 'utf8')) as {
       stage1: unknown;
       stage2: { noAudio: Array<{ title: string }>; noArtwork: unknown[] };
+      listening: {
+        totalPlayCount: number;
+        totalSkipCount: number;
+        topPlayedTracks: Array<{ title: string; artist: string; count: number }>;
+      } | null;
     };
     expect(reportJson.stage1).toBeNull();
     expect(reportJson.stage2.noAudio).toHaveLength(1);
     expect(reportJson.stage2.noAudio[0]?.title).toBe('Lonely Track');
     expect(reportJson.stage2.noArtwork).toHaveLength(2);
+    // report.json carries the same listening stats as the README.
+    expect(reportJson.listening?.totalPlayCount).toBe(45);
+    expect(reportJson.listening?.totalSkipCount).toBe(11);
+    expect(reportJson.listening?.topPlayedTracks[0]).toEqual({
+      title: 'First Song',
+      artist: 'The Artist',
+      count: 40,
+    });
   });
 
   test('folds threaded stage-1 buckets into the emitted report', async () => {
