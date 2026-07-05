@@ -21,7 +21,7 @@
 import { GENERATIONS } from './tables/generations.js';
 import { lookupByUsbId, lookupBySerial, lookupByModelNumber } from './lookups.js';
 import { lookupUnsupportedReason } from './tables/unsupported.js';
-import { buildUnsupportedReason } from './build-unsupported-reason.js';
+import { buildUnsupportedReason, accessLimitationHeadline } from './build-unsupported-reason.js';
 import { formatIpodLabel } from './format.js';
 import type { IpodModel, IpodModelSource } from './types.js';
 
@@ -68,9 +68,7 @@ export function identify(input: IpodModelInput): IpodModel | undefined {
       // Check unsupported PID table first, then fall back to the access tier.
       const headline =
         lookupUnsupportedReason(input.productId) ??
-        (gen.support.access !== 'syncable'
-          ? `${displayName} is not a podkit-supported generation.`
-          : undefined);
+        accessLimitationHeadline(displayName, gen.support);
       const unsupportedReason = headline
         ? buildUnsupportedReason(headline, entry.generation)
         : undefined;
@@ -99,10 +97,7 @@ export function identify(input: IpodModelInput): IpodModel | undefined {
       // Re-derive stripped model number for the modelNumber field
       const upper = input.modelNumStr.toUpperCase();
       const stripped = /^[MPF]/.test(upper) ? upper.slice(1) : upper;
-      const headline =
-        gen.support.access !== 'syncable'
-          ? `${displayName} is not a podkit-supported generation.`
-          : undefined;
+      const headline = accessLimitationHeadline(displayName, gen.support);
       const unsupportedReason = headline
         ? buildUnsupportedReason(headline, entry.generation)
         : undefined;
@@ -135,10 +130,7 @@ export function identify(input: IpodModelInput): IpodModel | undefined {
         color: variant.color,
         variant: variant.variant,
       });
-      const headline =
-        gen.support.access !== 'syncable'
-          ? `${displayName} is not a podkit-supported generation.`
-          : undefined;
+      const headline = accessLimitationHeadline(displayName, gen.support);
       const unsupportedReason = headline
         ? buildUnsupportedReason(headline, variant.generation)
         : undefined;

@@ -16,7 +16,7 @@ import { identify } from './identity.js';
 import { lookupByFamilyId, lookupByUsbId } from './lookups.js';
 import { lookupByLibgpodName } from './tables/libgpod-mapping.js';
 import { GENERATIONS } from './tables/generations.js';
-import { buildUnsupportedReason } from './build-unsupported-reason.js';
+import { buildUnsupportedReason, accessLimitationHeadline } from './build-unsupported-reason.js';
 import { formatIpodLabel } from './format.js';
 import type { IpodModel, IpodGenerationId } from './types.js';
 
@@ -56,10 +56,8 @@ export interface ResolveModelInput {
 function synthesizeFromGeneration(genId: IpodGenerationId): IpodModel {
   const gen = GENERATIONS[genId];
   const displayName = formatIpodLabel({ family: gen.family, ordinal: gen.ordinal });
-  const unsupportedReason =
-    gen.support.access === 'syncable'
-      ? undefined
-      : buildUnsupportedReason(`${displayName} is not a podkit-supported generation.`, genId);
+  const limitation = accessLimitationHeadline(displayName, gen.support);
+  const unsupportedReason = limitation ? buildUnsupportedReason(limitation, genId) : undefined;
   return {
     displayName,
     generationId: genId,

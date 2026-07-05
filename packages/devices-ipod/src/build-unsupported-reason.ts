@@ -14,6 +14,7 @@
  */
 
 import type { ReadinessUnsupportedReason, IpodGenerationId } from '@podkit/device-types';
+import type { GenerationSupport } from './types.js';
 
 /**
  * Canonical docs page describing podkit's supported devices. Hardcoded here
@@ -73,4 +74,27 @@ export function buildUnsupportedReason(
     headline,
     docsUrl: SUPPORTED_DEVICES_DOCS_URL,
   };
+}
+
+/**
+ * Headline explaining a generation's access limitation, worded by tier.
+ *
+ * `read-only` devices are told they can still be read and archived — only
+ * syncing is refused — so the user reaches for `device archive` rather than
+ * concluding the device is unusable. `none` is a flat refusal. Returns
+ * `undefined` for `syncable` (nothing to explain). This is the single source
+ * of the refusal wording across the identify cascade.
+ */
+export function accessLimitationHeadline(
+  displayName: string,
+  support: GenerationSupport
+): string | undefined {
+  switch (support.access) {
+    case 'syncable':
+      return undefined;
+    case 'read-only':
+      return `${displayName} is read-only — podkit can read and archive it (\`podkit device archive\`), but cannot sync to it.`;
+    case 'none':
+      return `${displayName} is not a podkit-supported generation.`;
+  }
 }
