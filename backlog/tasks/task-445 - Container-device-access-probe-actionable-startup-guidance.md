@@ -4,6 +4,7 @@ title: Container device-access probe + actionable startup guidance
 status: To Do
 assignee: []
 created_date: '2026-06-27 19:04'
+updated_date: '2026-06-29 08:27'
 labels:
   - docker
   - entrypoint
@@ -32,3 +33,9 @@ Keep the entrypoint bash thin; put the logic in a unit-testable module invoked f
 - [ ] #3 Guidance distinguishes the path-baseline case from the USB-setup case
 - [ ] #4 Does not block startup — informational, not fatal
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Handoff note (from TASK-447): TASK-447 (Tier-1 tests) depends on this. Build the container device-access probe as a pure, table-tested module (given a filesystem/proc view -> reports /ipod mounted? /dev/bus/usb? /dev/sg*? + guidance), with external-behavior tests — that doubles as the Tier-1 unit test for this module (447 AC#2/#3). The entrypoint already derives its command list from the CLI (TASK-439); the probe is the startup device-access guidance piece.
+<!-- SECTION:NOTES:END -->

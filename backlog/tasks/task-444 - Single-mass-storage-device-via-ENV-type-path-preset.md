@@ -4,6 +4,7 @@ title: Single mass-storage device via ENV (type + path + preset)
 status: To Do
 assignee: []
 created_date: '2026-06-27 19:04'
+updated_date: '2026-06-29 08:27'
 labels:
   - config
   - docker
@@ -32,3 +33,9 @@ This is the first slice of the broader ENV↔config parity direction (full multi
 - [ ] #4 ENV-only daemon mode auto-syncs the declared single mass-storage device
 - [ ] #5 Documented in the environment-variables reference + Docker docs
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Handoff note (from TASK-447): TASK-447 (Tier-1 tests) depends on this. When you build the mass-storage ENV mapper, put it in a pure, table-tested module (external behavior, no impl coupling) so it satisfies TASK-447 AC#2/#3 — that's the Tier-1 unit test for this module. The unknown-model guard + readiness classifier are already done (440, 447).
+<!-- SECTION:NOTES:END -->
