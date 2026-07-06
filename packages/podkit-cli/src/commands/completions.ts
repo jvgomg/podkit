@@ -388,7 +388,10 @@ function extractCommandTree(cmd: Command): CommandInfo {
   });
 
   const subcommands: CommandInfo[] = cmd.commands
-    .filter((sub: Command) => sub.name() !== 'completions' && sub.name() !== '__complete')
+    .filter(
+      (sub: Command) =>
+        sub.name() !== 'completions' && sub.name() !== '__complete' && sub.name() !== 'help'
+    )
     .map((sub: Command) => extractCommandTree(sub));
 
   return {
@@ -702,9 +705,49 @@ export function loadCompletionConfig(): Record<string, any> | undefined {
   }
 }
 
+/**
+ * Top-level command names a user can invoke, including aliases.
+ *
+ * The single source of truth for "what podkit subcommands exist" — read live
+ * from the registered command tree, so it can never drift from the CLI. The
+ * Docker entrypoint consumes this (via `podkit __complete commands`) to decide
+ * whether the first argument is a podkit subcommand or a raw shell command,
+ * rather than maintaining a hand-written list that silently goes stale when a
+ * new command is added (the bug that made `docker run podkit doctor` fail).
+ *
+ * Excludes the internal `__complete` helper and Commander's auto-generated
+ * `help` command — neither is a routable user command in the container.
+ */
+export function listTopLevelCommandNames(program: Command): string[] {
+  const names: string[] = [];
+  for (const cmd of program.commands) {
+    const name = cmd.name();
+    if (name === '__complete' || name === 'help') continue;
+    names.push(name, ...cmd.aliases());
+  }
+  return names;
+}
+
 export const completeCommand = new Command('__complete')
   .description('completion helper (internal)')
   .helpOption(false);
+
+completeCommand
+  .command('commands')
+  .description('list top-level command names (and aliases)')
+  .action(() => {
+    const program = completeCommand.parent;
+    if (!program) {
+      // Should never happen in a real invocation (main.ts attaches this to the
+      // program). Throw so Commander surfaces it (stderr + non-zero exit) rather
+      // than emitting an empty list the Docker entrypoint would mistake for "no
+      // commands" — and without a direct stderr write (conventions.md §2a).
+      throw new Error('__complete commands: no parent program attached');
+    }
+    for (const name of listTopLevelCommandNames(program)) {
+      console.log(name);
+    }
+  });
 
 completeCommand
   .command('devices')

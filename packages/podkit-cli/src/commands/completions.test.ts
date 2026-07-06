@@ -12,6 +12,7 @@ import {
   completeCommand,
   loadCompletionConfig,
   completionsCommand,
+  listTopLevelCommandNames,
 } from './completions.js';
 import { addSubcommand } from './device/add.js';
 
@@ -260,6 +261,51 @@ describe('completions', () => {
       expect(completeCommand.commands.map((c) => c.name())).toContain('collections');
       expect(completeCommand.commands.map((c) => c.name())).toContain('music-collections');
       expect(completeCommand.commands.map((c) => c.name())).toContain('video-collections');
+      expect(completeCommand.commands.map((c) => c.name())).toContain('commands');
+    });
+  });
+
+  describe('listTopLevelCommandNames', () => {
+    it('lists every top-level command name plus aliases', () => {
+      const program = new Command();
+      program.command('sync').description('sync');
+      program.command('doctor').description('doctor');
+      program.command('eject').alias('unmount').description('eject');
+
+      const names = listTopLevelCommandNames(program);
+
+      expect(names).toContain('sync');
+      expect(names).toContain('doctor');
+      expect(names).toContain('eject');
+      expect(names).toContain('unmount'); // alias must route too
+    });
+
+    it('excludes the internal __complete helper and the auto-generated help command', () => {
+      const program = new Command();
+      program.command('sync').description('sync');
+      program.command('__complete').description('internal');
+
+      const names = listTopLevelCommandNames(program);
+
+      expect(names).toContain('sync');
+      expect(names).not.toContain('__complete');
+      expect(names).not.toContain('help');
+    });
+
+    it('the real CLI emits doctor (the routing bug this fixes) and hides internals', () => {
+      // Pins the actual `podkit __complete commands` invocation the Docker
+      // entrypoint shells out to — guards against a command being un-registered
+      // or mis-nested under __complete. Runs the real program as a subprocess
+      // because main.ts parses on import.
+      const mainPath = path.resolve(import.meta.dir, '../main.ts');
+      const proc = Bun.spawnSync(['bun', 'run', mainPath, '__complete', 'commands']);
+      expect(proc.exitCode).toBe(0);
+      const names = proc.stdout.toString().trim().split('\n');
+      expect(names).toContain('doctor');
+      expect(names).toContain('sync');
+      expect(names).toContain('device');
+      expect(names).not.toContain('__complete');
+      expect(names).not.toContain('help');
     });
   });
 

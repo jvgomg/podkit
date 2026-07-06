@@ -40,8 +40,24 @@ chown podkit:podkit /ipod 2>/dev/null || true
 # Command handling
 # -----------------------------------------------------------------------------
 
-# List of known podkit subcommands
-PODKIT_COMMANDS="sync device collection init migrate eject mount unmount completions daemon"
+# List of known podkit subcommands.
+#
+# Derived live from the CLI itself (`podkit __complete commands`) so the
+# entrypoint can never drift from the binary — a newly-added command is routed
+# automatically, with no hand-maintained list to forget (the bug that made
+# `docker run podkit doctor` fall through to the raw shell).
+#
+# `|| true` keeps `set -e` from aborting the container if the query fails; the
+# fallback list (with `doctor` included) keeps routing correct in that degraded
+# case rather than silently sending every subcommand to the raw shell. `daemon`
+# is appended separately: it routes to the podkit-daemon binary, not a podkit
+# subcommand, so the CLI does not advertise it.
+DERIVED_COMMANDS="$(podkit __complete commands 2>/dev/null || true)"
+if [ -z "$DERIVED_COMMANDS" ]; then
+  echo "[podkit entrypoint] WARNING: could not derive command list from the CLI; using built-in fallback" >&2
+  DERIVED_COMMANDS="sync device collection init migrate eject mount unmount doctor completions"
+fi
+PODKIT_COMMANDS="$DERIVED_COMMANDS daemon"
 
 # Check if the first argument is a podkit subcommand
 is_podkit_command() {
@@ -62,7 +78,7 @@ if is_podkit_command "${1:-}"; then
     HAS_PATH=false
     for arg in "$@"; do
       case "$arg" in
-        --path) HAS_PATH=true ;;
+        --path | --path=*) HAS_PATH=true ;;
       esac
     done
 
@@ -79,7 +95,7 @@ if is_podkit_command "${1:-}"; then
     HAS_DEVICE=false
     for arg in "$@"; do
       case "$arg" in
-        --device|-d) HAS_DEVICE=true ;;
+        --device | -d | --device=*) HAS_DEVICE=true ;;
       esac
     done
 
