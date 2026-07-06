@@ -23,9 +23,6 @@
  * @module
  */
 
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
 import {
   resolveIpodModel,
   getChecksumTypeByModelNumber,
@@ -34,13 +31,12 @@ import {
 } from '@podkit/devices-ipod';
 import {
   readSysInfoExtended,
+  readSysInfoModelNumber,
   ensureSysInfoExtended,
-  SYSINFO_PATH,
   type SysInfoExtendedResult,
 } from '@podkit/ipod-firmware';
 import type { DeviceCapabilities } from '@podkit/device-types';
 
-import { existsSync } from 'node:fs';
 import { resolveUsbDeviceFromPath, hasCompleteUsbFingerprint } from './usb-path-resolution.js';
 import type { CompleteUsbDevice } from './usb-path-resolution.js';
 import { identifyCapabilities } from './resolve-capabilities.js';
@@ -79,22 +75,6 @@ export interface IpodIdentityAssessment {
   readonly usbFingerprint: CompleteUsbDevice | null;
   /** ModelNumStr extracted from classic SysInfo on disk (e.g. `MA147`), when available. */
   readonly sysInfoModelNumber: string | undefined;
-}
-
-// =============================================================================
-// Internal helpers
-// =============================================================================
-
-function readSysInfoModelNumber(mountPoint: string): string | undefined {
-  const sysInfoPath = join(mountPoint, SYSINFO_PATH);
-  if (!existsSync(sysInfoPath)) return undefined;
-  try {
-    const content = readFileSync(sysInfoPath, 'utf-8');
-    const match = content.match(/ModelNumStr:\s*(\S+)/);
-    return match?.[1];
-  } catch {
-    return undefined;
-  }
 }
 
 // =============================================================================

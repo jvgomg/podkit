@@ -387,6 +387,66 @@ describe('runDeviceArchive', () => {
     expect(result.stage).toBe('dump');
   });
 
+  it('captures live device identity and passes it to runDump for persistence', async () => {
+    const ctx = makeContext();
+    const { out, exitCode } = makeOut();
+
+    let seenCaptured: unknown;
+    const fakeRunDump: DeviceArchiveDeps['runDump'] = async (_volumeRoot, destDir, opts) => {
+      seenCaptured = opts?.capturedIdentity;
+      return {
+        outputDir: path.join(destDir, 'TERAPOD-x'),
+        rawDumpDir: path.join(destDir, 'TERAPOD-x', 'raw dump'),
+        manifestPath: path.join(destDir, 'TERAPOD-x', 'raw dump', 'manifest.sha256'),
+        identity: {},
+        classification: { copy: ['iPod_Control'], junk: [], foreign: [] },
+        manifest: [{ sha256: 'a'.repeat(64), relativePath: 'iPod_Control/x' }],
+        failures: [],
+        report: { foreignSkipped: [], dumpFailures: [] },
+        reportMarkdownPath: path.join(destDir, 'TERAPOD-x', 'report.md'),
+        reportJsonPath: path.join(destDir, 'TERAPOD-x', 'report.json'),
+      };
+    };
+
+    // A core stub whose assessIpodIdentity resolves a USB-only shuffle — the case
+    // that only a live capture can identify (no on-disk SysInfo).
+    const fakeCore = {
+      assessIpodIdentity: async () => ({
+        model: {
+          displayName: 'iPod shuffle (4th Generation)',
+          generationId: 'shuffle_4g',
+          family: 'iPod shuffle',
+          ordinal: 4,
+          checksumType: 'none',
+          source: 'usb',
+        },
+        existing: null,
+        usbFingerprint: { serialNumber: 'SHUF999' },
+      }),
+    } as unknown as typeof import('@podkit/core');
+
+    const deps: DeviceArchiveDeps = {
+      loadCore: async () => fakeCore,
+      getDeviceManager: () => fakeManager(),
+      discoverConnectedDevices: fakeDiscover([mountedIpod('TERAPOD', volume)]),
+      runDump: fakeRunDump,
+    };
+
+    await runWithContext(ctx, () =>
+      runAction(out, () => runDeviceArchive(dest, { dumpOnly: true }, out, deps))
+    );
+
+    expect(exitCode.get()).not.toBe(1);
+    expect(seenCaptured).toEqual({
+      schemaVersion: 1,
+      displayName: 'iPod shuffle (4th Generation)',
+      generationId: 'shuffle_4g',
+      family: 'iPod shuffle',
+      ordinal: 4,
+      serialNumber: 'SHUF999',
+    });
+  });
+
   it('auto-detect: multiple mounted iPods → MULTIPLE_IPODS', async () => {
     const ctx = makeContext();
     const { out, stdout, exitCode } = makeOut();

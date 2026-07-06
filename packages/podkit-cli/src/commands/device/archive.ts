@@ -18,8 +18,10 @@ import {
   runArchive,
   runDump,
   runTransform,
+  captureIdentity,
   type ArchiveProgressEvent,
   type ArchiveProgressCallback,
+  type CapturedDeviceIdentity,
   type DumpDeviceIdentity,
   type TransformStats,
 } from '@podkit/ipod-archive';
@@ -133,15 +135,25 @@ export async function runDeviceArchive(
 
   const volumeLabel = basename(volumeRoot);
 
+  // Resolve the device's identity now, while it is connected — the transform
+  // runs device-free and cannot reach USB. Persisted into the dump by stage 1.
+  const capturedIdentity = await captureDeviceIdentity(volumeRoot, out, deps);
+
   // `--dump-only` stops after stage 1; the bare invocation runs both stages.
   if (options.dumpOnly) {
-    await runDumpStage(volumeRoot, destDir, { deviceName, volumeLabel }, out, deps);
+    await runDumpStage(
+      volumeRoot,
+      destDir,
+      { deviceName, volumeLabel, capturedIdentity },
+      out,
+      deps
+    );
     return;
   }
   await runBothStages(
     volumeRoot,
     destDir,
-    { deviceName, volumeLabel, podkitVersion: resolvePodkitVersion() },
+    { deviceName, volumeLabel, capturedIdentity, podkitVersion: resolvePodkitVersion() },
     out,
     deps
   );
@@ -321,6 +333,48 @@ async function selectAutoDetectedIpod(
 }
 
 /**
+ * Resolve the connected iPod's full identity while it is still live, so it can
+ * be persisted into the dump. This is the only moment USB is available — the
+ * transform runs device-free, and devices with no on-disk `SysInfo` (every iPod
+ * shuffle) are identifiable *only* over USB. Delegates to core's
+ * `assessIpodIdentity` (disk + USB cascade), the same path `device info` uses.
+ *
+ * Best-effort: any failure (unsupported platform, USB correlation miss) returns
+ * `undefined`, and the transform falls back to offline resolution. Returns
+ * `undefined` rather than an empty capture when nothing identifying was found,
+ * so an empty artifact never shadows offline resolution.
+ */
+async function captureDeviceIdentity(
+  volumeRoot: string,
+  out: OutputContext,
+  deps: DeviceArchiveDeps
+): Promise<CapturedDeviceIdentity | undefined> {
+  try {
+    const core = await loadCoreOrFail(deps, DeviceErrorCodes.CORE_LOAD_FAILED);
+    const assessment = await core.assessIpodIdentity(volumeRoot);
+    const serialNumber =
+      assessment.existing?.serialNumber ?? assessment.usbFingerprint?.serialNumber;
+    const firewireGuid = assessment.existing?.firewireGuid;
+    if (!assessment.model && !serialNumber && !firewireGuid) return undefined;
+    return captureIdentity(assessment.model, {
+      ...(serialNumber ? { serialNumber } : {}),
+      ...(firewireGuid ? { firewireGuid } : {}),
+    });
+  } catch (err) {
+    // Best-effort: capture never blocks the archive (the transform still resolves
+    // identity offline). Surface the reason under --verbose so a genuine failure
+    // isn't wholly silent.
+    if (out.isVerbose) {
+      out.print(
+        `Note: could not capture live device identity (${err instanceof Error ? err.message : String(err)}). ` +
+          `Identity will be resolved from the dump instead.`
+      );
+    }
+    return undefined;
+  }
+}
+
+/**
  * Which invocation the progress renderer is decorating, used only to pick the
  * destination-header verb (the bare run *archives*, `--dump-only` only *dumps*).
  */
@@ -437,7 +491,7 @@ function printLibraryBreakdown(out: OutputContext, stats: TransformStats): void 
 async function runDumpStage(
   volumeRoot: string,
   destDir: string,
-  opts: { deviceName: string; volumeLabel: string },
+  opts: { deviceName: string; volumeLabel: string; capturedIdentity?: CapturedDeviceIdentity },
   out: OutputContext,
   deps: DeviceArchiveDeps
 ): Promise<void> {
@@ -491,7 +545,12 @@ async function runDumpStage(
 async function runBothStages(
   volumeRoot: string,
   destDir: string,
-  opts: { deviceName: string; volumeLabel: string; podkitVersion: string },
+  opts: {
+    deviceName: string;
+    volumeLabel: string;
+    podkitVersion: string;
+    capturedIdentity?: CapturedDeviceIdentity;
+  },
   out: OutputContext,
   deps: DeviceArchiveDeps
 ): Promise<void> {

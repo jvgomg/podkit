@@ -21,6 +21,7 @@ import { runTransform } from './run-transform.js';
 import { writeTrack } from './tag-writer.js';
 import { retagWithFfmpeg, runFfmpegDefault } from './ffmpeg-tag.js';
 import { loadDump } from './dump-loader.js';
+import { captureIdentity, writeCapturedIdentity } from './device-identity.js';
 import { IpodArchiveError } from './errors.js';
 import { rgbaToPng } from './artwork/rgba-to-png.js';
 
@@ -626,6 +627,87 @@ describe('loadDump', () => {
     const err = await loadDump(dump).catch((e) => e);
     expect(err).toBeInstanceOf(IpodArchiveError);
     expect((err as IpodArchiveError).code).toBe('DUMP_NOT_READABLE');
+  });
+
+  test('captured podkit-device.json is authoritative, overriding libgpod', async () => {
+    dump = await seedDump(
+      [{ title: 'A', artist: 'B', album: 'C', albumArtist: 'D', trackNumber: 1, source: MP3 }],
+      false
+    );
+    // Simulate stage-1 live capture of a shuffle (libgpod cannot classify it).
+    await writeCapturedIdentity(
+      dump,
+      captureIdentity(
+        {
+          displayName: 'iPod shuffle (4th Generation)',
+          generationId: 'shuffle_4g',
+          family: 'iPod shuffle',
+          ordinal: 4,
+          checksumType: 'none',
+          source: 'usb',
+        },
+        { serialNumber: 'SHUF12345' }
+      )
+    );
+
+    const loaded = await loadDump(dump);
+    try {
+      expect(loaded.identity.modelName).toBe('iPod shuffle (4th Generation)');
+      expect(loaded.identity.generation).toBe('shuffle_4g');
+      expect(loaded.identity.serialNumber).toBe('SHUF12345');
+    } finally {
+      loaded.db.close();
+    }
+  });
+
+  test('a model-less capture (serial only) does not shadow offline model resolution', async () => {
+    dump = await seedDump(
+      [{ title: 'A', artist: 'B', album: 'C', albumArtist: 'D', trackNumber: 1, source: MP3 }],
+      false
+    );
+    // Live capture read a serial but could not classify the model (null model).
+    await writeCapturedIdentity(dump, captureIdentity(null, { serialNumber: 'SERIALONLY1' }));
+    // The dump still carries a classic SysInfo that resolves the model offline.
+    await mkdir(join(dump, 'iPod_Control', 'Device'), { recursive: true });
+    await writeFile(
+      join(dump, 'iPod_Control', 'Device', 'SysInfo'),
+      'ModelNumStr: MA477\n',
+      'utf8'
+    );
+
+    const loaded = await loadDump(dump);
+    try {
+      // Model resolves offline (not blocked by the serial-only capture)...
+      expect(loaded.identity.generation).toBe('nano_2g');
+      expect(loaded.identity.modelName).toContain('iPod nano');
+      // ...and the captured serial is still surfaced.
+      expect(loaded.identity.serialNumber).toBe('SERIALONLY1');
+    } finally {
+      loaded.db.close();
+    }
+  });
+
+  test('offline resolution reads classic SysInfo ModelNumStr when uncaptured', async () => {
+    dump = await seedDump(
+      [{ title: 'A', artist: 'B', album: 'C', albumArtist: 'D', trackNumber: 1, source: MP3 }],
+      false
+    );
+    // No podkit-device.json; a classic SysInfo carries the model number. This
+    // resolves via @podkit/devices-ipod even when libgpod would return Invalid.
+    await mkdir(join(dump, 'iPod_Control', 'Device'), { recursive: true });
+    await writeFile(
+      join(dump, 'iPod_Control', 'Device', 'SysInfo'),
+      'ModelNumStr: MA477\n',
+      'utf8'
+    );
+
+    const loaded = await loadDump(dump);
+    try {
+      expect(loaded.identity.modelName).toContain('iPod nano');
+      expect(loaded.identity.generation).toBe('nano_2g');
+    } finally {
+      loaded.db.close();
+    }
   });
 });
 

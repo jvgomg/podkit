@@ -496,6 +496,9 @@ export function renderReadme(opts: RenderReadmeOptions): string {
   lines.push('| --- | --- |');
   lines.push(row('Model', orDash(identity.modelName ?? identity.model)));
   lines.push(row('Model number', orDash(identity.modelNumber)));
+  // Colour only appears when a variant-level model resolved it — it's redundant
+  // for generation-only identity and would just add a dash row.
+  if (identity.color) lines.push(row('Colour', identity.color));
   lines.push(row('Serial', orDash(identity.serialNumber)));
   lines.push(row('Generation', orDash(identity.generation)));
   lines.push(

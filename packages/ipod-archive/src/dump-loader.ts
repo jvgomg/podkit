@@ -19,36 +19,16 @@
 import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Database } from '@podkit/libgpod-node';
-import { readSysInfoExtended } from '@podkit/ipod-firmware';
 import { IpodArchiveError } from './errors.js';
 import { RAW_DUMP_SUBDIR } from './run-dump.js';
+import { resolveDumpIdentity, type DumpDeviceIdentity } from './device-identity.js';
 
 /** Marker directory that identifies an iPod root inside a dump. */
 const IPOD_CONTROL_DIR = 'iPod_Control';
 
-/**
- * Device identity surfaced from a dump. Every field is best-effort and may be
- * absent when the dump lacks `SysInfoExtended` or libgpod can't classify the
- * model.
- */
-export interface DumpDeviceIdentity {
-  /** Apple serial number (from `SysInfoExtended`). */
-  serialNumber?: string;
-  /** FireWire GUID (from `SysInfoExtended`). */
-  firewireGuid?: string;
-  /** Apple FamilyID integer (from `SysInfoExtended`). */
-  familyId?: number;
-  /** libgpod model identifier (e.g. `video_white`), or `unknown`. */
-  model?: string;
-  /** libgpod generation identifier (e.g. `video_1`), or `unknown`. */
-  generation?: string;
-  /** Human-readable model name (e.g. `iPod Video (60GB)`). */
-  modelName?: string;
-  /** Model number string (e.g. `MA147`), when libgpod resolves one. */
-  modelNumber?: string;
-  /** Capacity in GB, when libgpod knows it. */
-  capacityGb?: number;
-}
+// The device-identity render contract + resolution live in `device-identity.ts`.
+// Re-exported here so existing importers (`archive-report`, `index`) are stable.
+export type { DumpDeviceIdentity } from './device-identity.js';
 
 /** Everything a transform needs from a loaded dump. */
 export interface LoadedDump {
@@ -93,47 +73,11 @@ async function resolveIpodRoot(dumpDir: string): Promise<string> {
 }
 
 /**
- * Read best-effort device identity for the dump's iPod root.
- *
- * `readSysInfoExtended` never throws — it returns null when the file is absent.
- * libgpod device capabilities are read from the already-open database.
- */
-function readIdentity(db: Database, ipodRoot: string): DumpDeviceIdentity {
-  const identity: DumpDeviceIdentity = {};
-
-  const sysInfo = readSysInfoExtended(ipodRoot);
-  if (sysInfo?.serialNumber) identity.serialNumber = sysInfo.serialNumber;
-  if (sysInfo?.firewireGuid) identity.firewireGuid = sysInfo.firewireGuid;
-  if (sysInfo?.identity.familyId !== undefined) identity.familyId = sysInfo.identity.familyId;
-
-  // libgpod device capabilities — model/generation/capacity. Best-effort: if
-  // libgpod can't classify the device these come back as sentinels — 'unknown'
-  // / 'Unknown' / 'Invalid' (the last for devices absent from its info table,
-  // e.g. an iPod shuffle) / 0. Treat every sentinel as "not known" so the
-  // archive never surfaces "Invalid" as if it were a real model.
-  const isKnown = (v: string | null | undefined): v is string => {
-    if (!v) return false;
-    const lower = v.toLowerCase();
-    return lower !== 'unknown' && lower !== 'invalid';
-  };
-  try {
-    const caps = db.getDeviceCapabilities();
-    if (isKnown(caps.model)) identity.model = caps.model;
-    if (isKnown(caps.generation)) identity.generation = caps.generation;
-    if (isKnown(caps.modelName)) identity.modelName = caps.modelName;
-    if (isKnown(caps.modelNumber)) identity.modelNumber = caps.modelNumber;
-    const capacity = db.device.capacity;
-    if (capacity > 0) identity.capacityGb = capacity;
-  } catch {
-    // Capability read failed — leave model/generation/capacity unset. The
-    // database itself parsed, so this is non-fatal for the transform.
-  }
-
-  return identity;
-}
-
-/**
  * Open a raw dump and surface its database + identity + iPod root.
+ *
+ * Identity is resolved by {@link resolveDumpIdentity}: the captured
+ * `podkit-device.json` (if the dump carries one), else offline model
+ * resolution, else libgpod capabilities.
  *
  * @param dumpDir - the named archive dir (containing `raw dump/`) or a directory
  *   that itself contains `iPod_Control`.
@@ -154,11 +98,11 @@ export async function loadDump(dumpDir: string): Promise<LoadedDump> {
     );
   }
 
-  // Hand the open database to the caller only once identity reading succeeds;
-  // if it throws, close the db first so the handle never leaks. (readIdentity
-  // is defensive today, but this keeps the ownership contract honest.)
+  // Hand the open database to the caller only once identity resolution succeeds;
+  // if it throws, close the db first so the handle never leaks. The captured
+  // artifact is read from `dumpDir` (the named dir), not `ipodRoot` (`raw dump/`).
   try {
-    const identity = readIdentity(db, ipodRoot);
+    const identity = await resolveDumpIdentity({ db, ipodRoot, dumpDir });
     return { db, identity, ipodRoot };
   } catch (err) {
     db.close();

@@ -100,6 +100,7 @@ export {
 // SysInfoExtended file I/O
 export {
   readSysInfoExtended,
+  readSysInfoModelNumber,
   writeSysInfoExtended,
   ensureSysInfoExtended,
   SYSINFO_EXTENDED_PATH,

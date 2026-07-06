@@ -159,6 +159,11 @@ export {
 
 // ── Dump loading ───────────────────────────────────────────────────────────────
 export { loadDump, type LoadedDump, type DumpDeviceIdentity } from './dump-loader.js';
+export {
+  captureIdentity,
+  type CapturedDeviceIdentity,
+  DEVICE_IDENTITY_FILENAME,
+} from './device-identity.js';
 
 // ── Orchestrators ──────────────────────────────────────────────────────────────
 export {

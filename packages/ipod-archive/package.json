@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@podkit/device-types": "workspace:*",
+    "@podkit/devices-ipod": "workspace:*",
     "@podkit/ipod-firmware": "workspace:*",
     "@podkit/libgpod-node": "workspace:*",
     "node-taglib-sharp": "^6.0.1",

@@ -134,15 +134,16 @@ export function validateXml(xml: string): { valid: boolean; error?: string } {
 // ── Classic SysInfo helper ───────────────────────────────────────────────────
 
 /**
- * Read the classic SysInfo file next to SysInfoExtended and pull its
- * `ModelNumStr`. Returns undefined on any read/parse failure — the caller
- * always treats this as best-effort and never propagates errors.
+ * Read the classic `iPod_Control/Device/SysInfo` file's `ModelNumStr` (e.g.
+ * `MA477`), or undefined when the file is absent/unreadable/has no such line.
  *
- * Why we read it: SysInfoExtended often lacks ModelNumStr (mini 2G, nano 2G,
- * older devices store identity but not the model variant). The classic file
- * carries the variant identifier for free — same disk, same trip.
+ * Standalone from {@link readSysInfoExtended}: the extended plist is frequently
+ * absent on second-hand iPods while the classic SysInfo file survives, so
+ * callers that need the model variant read this directly (SysInfoExtended often
+ * lacks ModelNumStr — mini 2G, nano 2G, older devices). Best-effort — never
+ * throws.
  */
-function readSysInfoModelNumStr(mountPoint: string): string | undefined {
+export function readSysInfoModelNumber(mountPoint: string): string | undefined {
   try {
     const content = fs.readFileSync(join(mountPoint, SYSINFO_PATH), 'utf-8');
     const match = content.match(/ModelNumStr:\s*(\S+)/);
@@ -204,7 +205,7 @@ export function readSysInfoExtended(mountPoint: string): SysInfoExtendedResult |
   } catch {
     // Malformed XML — file is present but unparseable. We may still have a
     // SysInfo neighbour that gives us a model number.
-    const sysInfoModel = readSysInfoModelNumStr(mountPoint);
+    const sysInfoModel = readSysInfoModelNumber(mountPoint);
     if (sysInfoModel) identity.modelNumStr = sysInfoModel;
     return buildResult(true, 'existing', identity);
   }
@@ -231,7 +232,7 @@ export function readSysInfoExtended(mountPoint: string): SysInfoExtendedResult |
   // Always check classic SysInfo for ModelNumStr — variant identifier (capacity,
   // colour) for older devices whose SysInfoExtended carries identity but no model.
   if (!identity.modelNumStr) {
-    const sysInfoModel = readSysInfoModelNumStr(mountPoint);
+    const sysInfoModel = readSysInfoModelNumber(mountPoint);
     if (sysInfoModel) identity.modelNumStr = sysInfoModel;
   }
 

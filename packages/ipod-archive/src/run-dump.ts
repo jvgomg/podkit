@@ -31,6 +31,7 @@ import {
 import { buildOutputDirName, type OutputNameIdentity } from './output-naming.js';
 import { ArchiveReport, type ReportStage1 } from './archive-report.js';
 import type { ArchiveProgressCallback } from './progress-events.js';
+import { writeCapturedIdentity, type CapturedDeviceIdentity } from './device-identity.js';
 
 /** Subdirectory under the named output dir that holds the lossless copy. */
 export const RAW_DUMP_SUBDIR = 'raw dump';
@@ -70,6 +71,15 @@ export interface RunDumpOptions {
    * and `dump:done` after the copy. Optional; never affects the result.
    */
   onProgress?: ArchiveProgressCallback;
+  /**
+   * Device identity resolved live at dump time (the device is connected during
+   * stage 1). When provided, it is persisted as `podkit-device.json` at the
+   * output-dir root so the transform can render full identity even for devices
+   * whose model exists only over USB (every iPod shuffle carries no on-disk
+   * `SysInfo`). The leaf package does not resolve this itself — the CLI, which
+   * has `@podkit/core`, hands it in as plain data.
+   */
+  capturedIdentity?: CapturedDeviceIdentity;
 }
 
 /** Device identity surfaced for naming (and, later, the README). */
@@ -197,6 +207,13 @@ export async function runDump(
   });
 
   opts.onProgress?.({ kind: 'dump:done', fileCount: manifest.length });
+
+  // Persist the live-resolved identity beside `raw dump/` so the transform (and
+  // any later `--from-dump`) can render full device identity. Written even for
+  // `--dump-only` so the artifact always travels with the dump.
+  if (opts.capturedIdentity) {
+    await writeCapturedIdentity(outputDir, opts.capturedIdentity);
+  }
 
   // The stage-1 buckets, surfaced both for the report files written here (so a
   // `--dump-only` user still gets a paper trail) and for threading into a
