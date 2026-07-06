@@ -1,9 +1,10 @@
 ---
 id: TASK-458.08
 title: '[HITL] Real-device verification — iPod shuffle 4g end-to-end'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-07-05 14:24'
+updated_date: '2026-07-06 22:27'
 labels:
   - device-capability
   - read-only
@@ -34,11 +35,11 @@ Parent: TASK-458. PRD: doc-056. ADR: adr/adr-024-device-access-tiers.md.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 `device scan` shows the mounted shuffle as a mounted read-only iPod with its volume path (no "USB only", no "not mounted")
-- [ ] #2 `device info` shows read-only + hardware-verified
-- [ ] #3 `device archive` (auto-detect AND -d path) archives the shuffle successfully
-- [ ] #4 `device music` lists its tracks
-- [ ] #5 `sync` on the shuffle hard-errors with DEVICE_READ_ONLY and the real reason
-- [ ] #6 `doctor` diagnoses the shuffle; `doctor --repair` refuses cleanly
-- [ ] #7 A normal writable iPod still syncs unaffected
+- [x] #1 `device scan` shows the mounted shuffle as a mounted read-only iPod with its volume path (no "USB only", no "not mounted")
+- [x] #2 `device info` shows read-only + hardware-verified
+- [x] #3 `device archive` (auto-detect AND -d path) archives the shuffle successfully
+- [x] #4 `device music` lists its tracks
+- [x] #5 `sync` on the shuffle hard-errors with DEVICE_READ_ONLY and the real reason
+- [x] #6 `doctor` diagnoses the shuffle; `doctor --repair` refuses cleanly
+- [x] #7 A normal writable iPod still syncs unaffected
 <!-- AC:END -->

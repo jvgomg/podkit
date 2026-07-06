@@ -1,10 +1,10 @@
 ---
 id: TASK-458
 title: 'Device Access Tiers — read-only support, provenance & format docs (epic)'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-07-05 14:22'
-updated_date: '2026-07-05 22:55'
+updated_date: '2026-07-06 22:27'
 labels:
   - device-capability
   - read-only
@@ -38,11 +38,13 @@ ADR-024 and the format corpus scaffold (`documents/formats/README.md` + `ituness
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 All 7 AFK sub-tasks are Done and merged
+- [x] #1 All 7 AFK sub-tasks are Done and merged
 - [x] #2 A mounted iPod shuffle 4g is discovered, readable, and archivable; sync/init/add refuse with DEVICE_READ_ONLY; no "connected but not mounted" for a mounted device
 - [x] #3 Public supported-devices matrix and internal generations matrix are both fed by getSupportMatrix() and cannot drift
-- [ ] #4 HITL capstone (sub-task 8) verified on real hardware
+- [x] #4 HITL capstone (sub-task 8) verified on real hardware
 <!-- AC:END -->
+
+
 
 ## Implementation Notes
 
