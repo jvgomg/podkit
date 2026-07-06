@@ -41,29 +41,7 @@ import type { DiscoveredDeviceIpod, PlatformDeviceInfo } from '@podkit/core';
 import { DeviceErrorCodes } from './error-codes.js';
 import { resolveDeviceArg } from './shared.js';
 import type { DeviceArchiveOutput } from './output-types.js';
-
-/**
- * Build-time version define, injected by the standalone-binary build (same
- * define `main.ts` reads). Undefined under `bun run` / tests, where it degrades
- * to `'unknown'` in the catalogue's `device` row.
- */
-declare const PODKIT_VERSION: string | undefined;
-
-/**
- * The podkit version recorded in the archive. The standalone binary injects
- * `PODKIT_VERSION` at build time; under `bun run` / tests that define is absent,
- * so fall back to the CLI package's own version (mirrors how `main.ts` resolves
- * `--version`) rather than surfacing `'unknown'`.
- */
-async function resolvePodkitVersion(): Promise<string> {
-  if (typeof PODKIT_VERSION !== 'undefined') return PODKIT_VERSION;
-  try {
-    const pkg = await import('../../../package.json', { with: { type: 'json' } });
-    return pkg.default.version ?? 'unknown';
-  } catch {
-    return 'unknown';
-  }
-}
+import { resolvePodkitVersion } from '../../version.js';
 
 interface ArchiveOptions {
   /** Run stage 1 (raw dump) only. */
@@ -163,7 +141,7 @@ export async function runDeviceArchive(
   await runBothStages(
     volumeRoot,
     destDir,
-    { deviceName, volumeLabel, capturedSysInfoXml, podkitVersion: await resolvePodkitVersion() },
+    { deviceName, volumeLabel, capturedSysInfoXml, podkitVersion: resolvePodkitVersion() },
     out,
     deps
   );
@@ -718,7 +696,7 @@ async function runTransformStage(
   let result;
   try {
     result = await transformFn(dumpDir, {
-      podkitVersion: await resolvePodkitVersion(),
+      podkitVersion: resolvePodkitVersion(),
       ...(onProgress ? { onProgress } : {}),
     });
   } catch (err) {

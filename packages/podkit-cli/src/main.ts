@@ -22,12 +22,9 @@ import type { GlobalOptions } from './config/index.js';
 import { setContext } from './context.js';
 import { stripDefaultOptionValues } from './utils/option-source.js';
 
-declare const PODKIT_VERSION: string | undefined;
+import { resolvePodkitVersion } from './version.js';
 
-const version =
-  typeof PODKIT_VERSION !== 'undefined'
-    ? PODKIT_VERSION
-    : (await import('../package.json', { with: { type: 'json' } })).default.version;
+const version = resolvePodkitVersion();
 
 const program = new Command();
 
