@@ -441,6 +441,22 @@ export class AbortError extends Error {
   }
 }
 
+// Mirrors @podkit/core's unknown-iPod-model guard. The demo never resolves a
+// real device, so the mock just needs the exports to exist (parity check) — the
+// runtime behaviour is exercised in podkit-core's own tests.
+export class UnknownIpodModelError extends Error {
+  override readonly name = 'UnknownIpodModelError' as const;
+  readonly code = 'UNKNOWN_IPOD_MODEL' as const;
+  constructor(readonly identity: unknown) {
+    super('Could not identify this iPod model from its on-disk identity.');
+  }
+}
+
+export function assertKnownIpodModel<T>(model: T | null, identity: unknown): T {
+  if (model) return model;
+  throw new UnknownIpodModelError(identity);
+}
+
 // =============================================================================
 // Mock IpodTrack implementation
 // =============================================================================
