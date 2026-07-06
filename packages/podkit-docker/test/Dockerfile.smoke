@@ -1,0 +1,40 @@
+# Tier-3 smoke image (doc-053).
+#
+# NOT the shipped image. The production image (../Dockerfile) is Alpine/musl and
+# copies prebuilt musl binaries from the CI static-deps pipeline. That pipeline
+# is not reproducible on a dev macOS host, so this smoke image is built from the
+# locally-produced *glibc* Lima-builder binaries on a glibc base. It is a
+# representative image whose job is to catch the "image drifted from the CLI"
+# class — entrypoint/command-parity, ffmpeg presence, the binaries actually
+# running. Byte-fidelity to the shipped Alpine image is Tier-5 / CI territory.
+#
+# The build context is a tiny staging dir assembled by image-smoke.sh
+# (entrypoint.sh + the two binaries) — deliberately NOT the repo root, so the
+# build doesn't ship node_modules/.git to the daemon.
+FROM debian:bookworm-slim
+
+ENV PUID=1000 \
+    PGID=1000 \
+    TZ=Etc/UTC \
+    PODKIT_CONFIG=/config/config.toml \
+    PODKIT_TIPS=false
+
+# Runtime deps mirroring the shipped image's contract:
+#   bash, ffmpeg, lsblk (util-linux), shadow's groupadd/useradd (passwd), tzdata.
+# The shipped Alpine image uses `su-exec`; Debian ships the CLI-compatible
+# `gosu`, symlinked so the entrypoint's `su-exec` calls work unchanged.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      bash ffmpeg util-linux passwd gosu tzdata ca-certificates && \
+    rm -rf /var/lib/apt/lists/* && \
+    ln -sf "$(command -v gosu)" /usr/local/bin/su-exec && \
+    mkdir -p /config /music /ipod
+
+COPY --chmod=755 entrypoint.sh /entrypoint.sh
+COPY --chmod=755 podkit /usr/local/bin/podkit
+COPY --chmod=755 podkit-daemon /usr/local/bin/podkit-daemon
+
+VOLUME /config
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["sync"]
