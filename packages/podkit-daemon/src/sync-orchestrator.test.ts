@@ -719,4 +719,59 @@ describe('SyncOrchestrator with mass-storage no-op runners', () => {
     expect(result.json?.success).toBe(true);
     expect(result.duration).toBe(0);
   });
+
+  describe('readiness classification (notify-and-skip)', () => {
+    it('emits actionable needs-setup guidance, not a generic Sync Error, when sync refuses an unidentified iPod', async () => {
+      const notifications: { title: string; body: string }[] = [];
+      const cli = createMockCli({
+        sync: failResult<SyncOutput>({
+          success: false,
+          dryRun: false,
+          error: 'Could not identify this iPod model from its on-disk identity.',
+          code: 'UNKNOWN_IPOD_MODEL',
+        }),
+      });
+      const orchestrator = new SyncOrchestrator({
+        ...cli,
+        notify: {
+          notify: async (title: string, body: string) => {
+            notifications.push({ title, body });
+          },
+        },
+      });
+
+      await orchestrator.handleDeviceAppeared(makeDevice());
+
+      // The daemon inherits the CLI's refusal (TASK-440) and turns it into a
+      // clear, actionable notification rather than a scary generic failure.
+      expect(notifications.some((n) => n.title === 'Sync Error')).toBe(false);
+      const guidance = notifications.find((n) => n.body.includes('device add'));
+      expect(guidance).toBeDefined();
+      expect(guidance!.title).toBe('Device Needs Setup');
+      expect(guidance!.body).toContain('doctor --repair sysinfo-extended');
+    });
+
+    it('keeps the generic Sync Error path for an unclassified failure', async () => {
+      const notifications: { title: string; body: string }[] = [];
+      const cli = createMockCli({
+        sync: failResult<SyncOutput>({
+          success: false,
+          dryRun: false,
+          error: 'something broke',
+        }),
+      });
+      const orchestrator = new SyncOrchestrator({
+        ...cli,
+        notify: {
+          notify: async (title: string, body: string) => {
+            notifications.push({ title, body });
+          },
+        },
+      });
+
+      await orchestrator.handleDeviceAppeared(makeDevice());
+
+      expect(notifications.some((n) => n.title === 'Sync Error')).toBe(true);
+    });
+  });
 });

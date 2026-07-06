@@ -66,6 +66,8 @@ export interface SyncOutput {
     duration: number;
   };
   error?: string;
+  /** Typed error code from the CLI's `--json` envelope (e.g. UNKNOWN_IPOD_MODEL). */
+  code?: string;
 }
 
 /** Subset of EjectOutput the daemon cares about */

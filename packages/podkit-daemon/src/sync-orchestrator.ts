@@ -24,7 +24,19 @@ import {
   formatPostSyncNotification,
   formatErrorNotification,
 } from './notification-formatter.js';
+import {
+  classifyReadiness,
+  formatReadinessNotification,
+  type DaemonReadiness,
+} from './readiness-classifier.js';
 import { log } from './logger.js';
+
+/** Notification title for a non-ready, non-error readiness status. */
+const READINESS_TITLE: Record<Exclude<DaemonReadiness, 'ready' | 'error'>, string> = {
+  'needs-setup': 'Device Needs Setup',
+  'needs-init': 'Device Needs Init',
+  unsupported: 'Device Not Supported',
+};
 
 /**
  * Exit code emitted by `podkit sync` when another podkit process holds the
@@ -276,13 +288,35 @@ export class SyncOrchestrator {
           }
         } else {
           // Exit code 1 (or other non-zero, non-130, non-2): hard command error.
-          const reason = this._deviceDisconnected ? 'device disconnected' : 'sync';
-          const error = syncResult.json?.error ?? syncResult.stderr.trim() ?? 'Unknown sync error';
-          log('error', `Sync failed for ${device.name}: ${error}`, {
-            deviceDisconnected: this._deviceDisconnected,
+          // Classify the outcome: a device that the CLI refused because it
+          // needs setup / init / is unsupported gets a clear, actionable
+          // notify-and-skip rather than a generic "sync failed". The daemon
+          // never mutates the device — it only reports.
+          const readiness = classifyReadiness({
+            exitCode: syncResult.exitCode,
+            code: syncResult.json?.code,
           });
-          await this.notify.notify('Sync Error', formatErrorNotification(device, reason, error));
-          syncFailed = true;
+
+          if (readiness !== 'ready' && readiness !== 'error') {
+            // Expected, non-failure outcome: the CLI refused a device that
+            // needs setup/init or is unsupported. Notify-and-skip — NOT marked
+            // as a sync failure, so the cycle log doesn't read "completed with
+            // errors" for a clean skip.
+            const guidance = formatReadinessNotification(device, readiness) ?? '';
+            log('warn', `Device ${device.name} not ready (${readiness}); skipping`, {
+              code: syncResult.json?.code,
+            });
+            await this.notify.notify(READINESS_TITLE[readiness], guidance);
+          } else {
+            const reason = this._deviceDisconnected ? 'device disconnected' : 'sync';
+            const error =
+              syncResult.json?.error ?? syncResult.stderr.trim() ?? 'Unknown sync error';
+            log('error', `Sync failed for ${device.name}: ${error}`, {
+              deviceDisconnected: this._deviceDisconnected,
+            });
+            await this.notify.notify('Sync Error', formatErrorNotification(device, reason, error));
+            syncFailed = true;
+          }
         }
       } catch (err) {
         const reason = this._deviceDisconnected ? 'device disconnected' : 'sync';
