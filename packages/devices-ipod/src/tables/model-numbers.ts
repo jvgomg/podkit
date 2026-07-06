@@ -243,11 +243,33 @@ export const MODEL_NUMBERS: Record<string, ModelEntry> = {
   C331: { generation: 'shuffle_3g', capacityGb: 4, color: 'Pink' },
 
   // ── iPod shuffle (4th Generation) ───────────────────────────────────────
+  // Initial (2010) — order numbers MC584–MC751.
   C584: { generation: 'shuffle_4g', capacityGb: 2, color: 'Silver' },
   C585: { generation: 'shuffle_4g', capacityGb: 2, color: 'Pink' },
   C749: { generation: 'shuffle_4g', capacityGb: 2, color: 'Orange' },
   C750: { generation: 'shuffle_4g', capacityGb: 2, color: 'Green' },
   C751: { generation: 'shuffle_4g', capacityGb: 2, color: 'Blue' },
+  // Late 2012 (Rev A) refresh — order numbers MD773–MD780, ME949.
+  // Source: The Apple Wiki, Models/iPod (per-colour order numbers + serial
+  // suffixes). Confirmed against real hardware: serial CC4LXAVUF4T0 → MD777
+  // (suffix F4T0), device is Purple. Note MD779 is Slate, not Purple — the
+  // order number a plain serial lookup returns is the family representative.
+  D773: { generation: 'shuffle_4g', capacityGb: 2, color: 'Pink' },
+  D774: { generation: 'shuffle_4g', capacityGb: 2, color: 'Yellow' },
+  D775: { generation: 'shuffle_4g', capacityGb: 2, color: 'Blue' },
+  D776: { generation: 'shuffle_4g', capacityGb: 2, color: 'Green' },
+  D777: { generation: 'shuffle_4g', capacityGb: 2, color: 'Purple' },
+  D778: { generation: 'shuffle_4g', capacityGb: 2, color: 'Silver' },
+  D779: { generation: 'shuffle_4g', capacityGb: 2, color: 'Slate' },
+  D780: { generation: 'shuffle_4g', capacityGb: 2, color: 'Red' },
+  E949: { generation: 'shuffle_4g', capacityGb: 2, color: 'Space Gray' },
+  // Mid 2015 (Rev B) — order numbers MKM72–MKML2.
+  KM72: { generation: 'shuffle_4g', capacityGb: 2, color: 'Pink' },
+  KM92: { generation: 'shuffle_4g', capacityGb: 2, color: 'Gold' },
+  KME2: { generation: 'shuffle_4g', capacityGb: 2, color: 'Blue' },
+  KMG2: { generation: 'shuffle_4g', capacityGb: 2, color: 'Silver' },
+  KMJ2: { generation: 'shuffle_4g', capacityGb: 2, color: 'Space Gray' },
+  KML2: { generation: 'shuffle_4g', capacityGb: 2, color: 'Red' },
 
   // ── iPod touch (1st Generation) ─────────────────────────────────────────
   A623: { generation: 'touch_1g', capacityGb: 8 },

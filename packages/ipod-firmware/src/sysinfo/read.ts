@@ -197,21 +197,41 @@ export function readSysInfoExtended(mountPoint: string): SysInfoExtendedResult |
     return null;
   }
 
+  // Parse whatever identity the plist yields, then always check the classic
+  // SysInfo neighbour for a ModelNumStr — the variant identifier (capacity,
+  // colour) for devices whose SysInfoExtended carries identity but no model.
+  const parsed = parseSysInfoExtendedXml(content);
+  const identity: SysInfoIdentity = parsed ? { ...parsed.identity } : {};
+  if (!identity.modelNumStr) {
+    const sysInfoModel = readSysInfoModelNumber(mountPoint);
+    if (sysInfoModel) identity.modelNumStr = sysInfoModel;
+  }
+
+  return buildResult(true, 'existing', identity);
+}
+
+/**
+ * Parse a SysInfoExtended plist XML string into an identity result — the
+ * XML-only counterpart of {@link readSysInfoExtended} (which reads from disk and
+ * additionally consults the classic SysInfo neighbour). Used to read a captured
+ * SysInfoExtended that lives outside the standard on-device path — e.g. an iPod
+ * archive's sidecar. Returns null only when `xml` is empty; a present-but-
+ * unparseable plist yields a result with an empty identity bag.
+ */
+export function parseSysInfoExtendedXml(xml: string): SysInfoExtendedResult | null {
+  if (!xml.trim()) return null;
+
   const identity: SysInfoIdentity = {};
 
   let plist;
   try {
-    plist = parsePlist(content);
+    plist = parsePlist(xml);
   } catch {
-    // Malformed XML — file is present but unparseable. We may still have a
-    // SysInfo neighbour that gives us a model number.
-    const sysInfoModel = readSysInfoModelNumber(mountPoint);
-    if (sysInfoModel) identity.modelNumStr = sysInfoModel;
+    // Present but unparseable — no identity from the XML alone.
     return buildResult(true, 'existing', identity);
   }
 
-  const parsed = extractFromPlist(plist, content);
-
+  const parsed = extractFromPlist(plist, xml);
   if (parsed) {
     identity.firewireGuid = parsed.firewireGuid;
     identity.serialNumber = parsed.serialNumber;
@@ -222,18 +242,11 @@ export function readSysInfoExtended(mountPoint: string): SysInfoExtendedResult |
   } else {
     // Full extraction failed (e.g. FamilyID missing on older/minimal plists).
     // Fall back to identity-only extraction which only needs GUID + SerialNumber.
-    const minimal = extractIdentityFromPlistValue(content);
+    const minimal = extractIdentityFromPlistValue(xml);
     if (minimal) {
       identity.firewireGuid = minimal.firewireGuid;
       identity.serialNumber = minimal.serialNumber;
     }
-  }
-
-  // Always check classic SysInfo for ModelNumStr — variant identifier (capacity,
-  // colour) for older devices whose SysInfoExtended carries identity but no model.
-  if (!identity.modelNumStr) {
-    const sysInfoModel = readSysInfoModelNumber(mountPoint);
-    if (sysInfoModel) identity.modelNumStr = sysInfoModel;
   }
 
   return buildResult(true, 'existing', identity);

@@ -187,7 +187,7 @@ describe('runDeviceArchive', () => {
       seenDump = dumpDir;
       return {
         archiveDir: path.join(dumpDir, 'archive'),
-        ipodRoot: path.join(dumpDir, 'raw dump'),
+        ipodRoot: path.join(dumpDir, 'raw'),
         written: 3,
         fallbackTagged: 0,
         noAudio: [{ dbid: 1n, title: 'No File' }],
@@ -356,8 +356,8 @@ describe('runDeviceArchive', () => {
       seenVolume = volumeRoot;
       return {
         outputDir: path.join(destDir, 'TERAPOD-x'),
-        rawDumpDir: path.join(destDir, 'TERAPOD-x', 'raw dump'),
-        manifestPath: path.join(destDir, 'TERAPOD-x', 'raw dump', 'manifest.sha256'),
+        rawDumpDir: path.join(destDir, 'TERAPOD-x', 'raw'),
+        manifestPath: path.join(destDir, 'TERAPOD-x', 'raw', 'manifest.sha256'),
         identity: {},
         classification: { copy: ['iPod_Control'], junk: [], foreign: [] },
         manifest: [{ sha256: 'a'.repeat(64), relativePath: 'iPod_Control/x' }],
@@ -387,17 +387,17 @@ describe('runDeviceArchive', () => {
     expect(result.stage).toBe('dump');
   });
 
-  it('captures live device identity and passes it to runDump for persistence', async () => {
+  it('captures firmware SysInfoExtended and passes its XML to runDump', async () => {
     const ctx = makeContext();
     const { out, exitCode } = makeOut();
 
-    let seenCaptured: unknown;
+    let seenXml: unknown;
     const fakeRunDump: DeviceArchiveDeps['runDump'] = async (_volumeRoot, destDir, opts) => {
-      seenCaptured = opts?.capturedIdentity;
+      seenXml = opts?.capturedSysInfoXml;
       return {
         outputDir: path.join(destDir, 'TERAPOD-x'),
-        rawDumpDir: path.join(destDir, 'TERAPOD-x', 'raw dump'),
-        manifestPath: path.join(destDir, 'TERAPOD-x', 'raw dump', 'manifest.sha256'),
+        rawDumpDir: path.join(destDir, 'TERAPOD-x', 'raw'),
+        manifestPath: path.join(destDir, 'TERAPOD-x', 'raw', 'manifest.sha256'),
         identity: {},
         classification: { copy: ['iPod_Control'], junk: [], foreign: [] },
         manifest: [{ sha256: 'a'.repeat(64), relativePath: 'iPod_Control/x' }],
@@ -408,21 +408,12 @@ describe('runDeviceArchive', () => {
       };
     };
 
-    // A core stub whose assessIpodIdentity resolves a USB-only shuffle — the case
-    // that only a live capture can identify (no on-disk SysInfo).
+    // A core stub: the device has no on-disk SysInfoExtended but a USB
+    // fingerprint, so a read-only firmware inquiry captures the SIE XML.
+    const sieXml = '<?xml version="1.0"?><plist><dict/></plist>';
     const fakeCore = {
-      assessIpodIdentity: async () => ({
-        model: {
-          displayName: 'iPod shuffle (4th Generation)',
-          generationId: 'shuffle_4g',
-          family: 'iPod shuffle',
-          ordinal: 4,
-          checksumType: 'none',
-          source: 'usb',
-        },
-        existing: null,
-        usbFingerprint: { serialNumber: 'SHUF999' },
-      }),
+      assessIpodIdentity: async () => ({ existing: null, usbFingerprint: { productId: '1303' } }),
+      captureSysInfoExtendedXml: async () => sieXml,
     } as unknown as typeof import('@podkit/core');
 
     const deps: DeviceArchiveDeps = {
@@ -437,14 +428,53 @@ describe('runDeviceArchive', () => {
     );
 
     expect(exitCode.get()).not.toBe(1);
-    expect(seenCaptured).toEqual({
-      schemaVersion: 1,
-      displayName: 'iPod shuffle (4th Generation)',
-      generationId: 'shuffle_4g',
-      family: 'iPod shuffle',
-      ordinal: 4,
-      serialNumber: 'SHUF999',
-    });
+    expect(seenXml).toBe(sieXml);
+  });
+
+  it('skips firmware capture when the device already has SysInfoExtended on disk', async () => {
+    const ctx = makeContext();
+    const { out, exitCode } = makeOut();
+
+    let seenXml: unknown = 'unset';
+    const fakeRunDump: DeviceArchiveDeps['runDump'] = async (_volumeRoot, destDir, opts) => {
+      seenXml = opts?.capturedSysInfoXml;
+      return {
+        outputDir: path.join(destDir, 'TERAPOD-x'),
+        rawDumpDir: path.join(destDir, 'TERAPOD-x', 'raw'),
+        manifestPath: path.join(destDir, 'TERAPOD-x', 'raw', 'manifest.sha256'),
+        identity: {},
+        classification: { copy: ['iPod_Control'], junk: [], foreign: [] },
+        manifest: [{ sha256: 'a'.repeat(64), relativePath: 'iPod_Control/x' }],
+        failures: [],
+        report: { foreignSkipped: [], dumpFailures: [] },
+        reportMarkdownPath: path.join(destDir, 'TERAPOD-x', 'report.md'),
+        reportJsonPath: path.join(destDir, 'TERAPOD-x', 'report.json'),
+      };
+    };
+
+    let inquiryCalled = false;
+    const fakeCore = {
+      assessIpodIdentity: async () => ({ existing: { present: true }, usbFingerprint: null }),
+      captureSysInfoExtendedXml: async () => {
+        inquiryCalled = true;
+        return null;
+      },
+    } as unknown as typeof import('@podkit/core');
+
+    const deps: DeviceArchiveDeps = {
+      loadCore: async () => fakeCore,
+      getDeviceManager: () => fakeManager(),
+      discoverConnectedDevices: fakeDiscover([mountedIpod('TERAPOD', volume)]),
+      runDump: fakeRunDump,
+    };
+
+    await runWithContext(ctx, () =>
+      runAction(out, () => runDeviceArchive(dest, { dumpOnly: true }, out, deps))
+    );
+
+    expect(exitCode.get()).not.toBe(1);
+    expect(inquiryCalled).toBe(false);
+    expect(seenXml).toBeUndefined();
   });
 
   it('auto-detect: multiple mounted iPods → MULTIPLE_IPODS', async () => {
@@ -506,8 +536,8 @@ describe('runDeviceArchive', () => {
 
     const fakeRunDump: DeviceArchiveDeps['runDump'] = async (volumeRoot, destDir) => ({
       outputDir: path.join(destDir, 'IPOD-20260622-090703'),
-      rawDumpDir: path.join(destDir, 'IPOD-20260622-090703', 'raw dump'),
-      manifestPath: path.join(destDir, 'IPOD-20260622-090703', 'raw dump', 'manifest.sha256'),
+      rawDumpDir: path.join(destDir, 'IPOD-20260622-090703', 'raw'),
+      manifestPath: path.join(destDir, 'IPOD-20260622-090703', 'raw', 'manifest.sha256'),
       identity: {},
       classification: { copy: ['iPod_Control'], junk: ['.DS_Store'], foreign: ['mixtape.flac'] },
       manifest: [{ sha256: 'a'.repeat(64), relativePath: 'iPod_Control/x' }],
@@ -557,8 +587,8 @@ describe('runDeviceArchive', () => {
         outputDir,
         dump: {
           outputDir,
-          rawDumpDir: path.join(outputDir, 'raw dump'),
-          manifestPath: path.join(outputDir, 'raw dump', 'manifest.sha256'),
+          rawDumpDir: path.join(outputDir, 'raw'),
+          manifestPath: path.join(outputDir, 'raw', 'manifest.sha256'),
           identity: {},
           classification: {
             copy: ['iPod_Control'],
@@ -573,7 +603,7 @@ describe('runDeviceArchive', () => {
         },
         transform: {
           archiveDir: path.join(outputDir, 'archive'),
-          ipodRoot: path.join(outputDir, 'raw dump'),
+          ipodRoot: path.join(outputDir, 'raw'),
           written: 1,
           noAudio: [],
           noArtwork: [{ dbid: 2n, title: 'No Art' }],
@@ -622,7 +652,7 @@ describe('runDeviceArchive', () => {
     expect(result.success).toBe(true);
     expect(result.stage).toBe('both');
     expect(result.outputDir).toBe(outputDir);
-    expect(result.rawDumpDir).toBe(path.join(outputDir, 'raw dump'));
+    expect(result.rawDumpDir).toBe(path.join(outputDir, 'raw'));
     expect(result.archiveDir).toBe(path.join(outputDir, 'archive'));
     expect(result.fileCount).toBe(1);
     expect(result).not.toHaveProperty('junkCount');
@@ -721,8 +751,8 @@ describe('runDeviceArchive — human output + progress', () => {
         outputDir,
         dump: {
           outputDir,
-          rawDumpDir: path.join(outputDir, 'raw dump'),
-          manifestPath: path.join(outputDir, 'raw dump', 'manifest.sha256'),
+          rawDumpDir: path.join(outputDir, 'raw'),
+          manifestPath: path.join(outputDir, 'raw', 'manifest.sha256'),
           identity: {},
           classification: { copy: ['iPod_Control'], junk: [], foreign: [] },
           manifest: [{ sha256: 'a'.repeat(64), relativePath: 'iPod_Control/x' }],
@@ -733,7 +763,7 @@ describe('runDeviceArchive — human output + progress', () => {
         },
         transform: {
           archiveDir: path.join(outputDir, 'archive'),
-          ipodRoot: path.join(outputDir, 'raw dump'),
+          ipodRoot: path.join(outputDir, 'raw'),
           written: 3,
           noAudio: [],
           noArtwork: [],
@@ -790,8 +820,8 @@ describe('runDeviceArchive — human output + progress', () => {
       opts?.onProgress?.({ kind: 'dump:done', fileCount: 1 });
       return {
         outputDir,
-        rawDumpDir: path.join(outputDir, 'raw dump'),
-        manifestPath: path.join(outputDir, 'raw dump', 'manifest.sha256'),
+        rawDumpDir: path.join(outputDir, 'raw'),
+        manifestPath: path.join(outputDir, 'raw', 'manifest.sha256'),
         identity: {},
         classification: { copy: ['iPod_Control'], junk: [], foreign: [] },
         manifest: [{ sha256: 'a'.repeat(64), relativePath: 'iPod_Control/x' }],
@@ -851,12 +881,12 @@ describe('runDeviceArchive — human output + progress', () => {
     expect(result.stage).toBe('both');
     // All path fields the JSON envelope carried before are still present.
     expect(result.outputDir).toBe(outputDir);
-    expect(result.rawDumpDir).toBe(path.join(outputDir, 'raw dump'));
+    expect(result.rawDumpDir).toBe(path.join(outputDir, 'raw'));
     expect(result.archiveDir).toBe(path.join(outputDir, 'archive'));
     expect(result.readmePath).toBe(path.join(outputDir, 'archive', 'README.md'));
     expect(result.reportMarkdownPath).toBe(path.join(outputDir, 'archive', 'report.md'));
     expect(result.reportJsonPath).toBe(path.join(outputDir, 'archive', 'report.json'));
-    expect(result.manifestPath).toBe(path.join(outputDir, 'raw dump', 'manifest.sha256'));
+    expect(result.manifestPath).toBe(path.join(outputDir, 'raw', 'manifest.sha256'));
     // No header text leaked to either stream.
     expect(stdout.text()).not.toContain('Archiving iPod');
     expect(stdout.text()).not.toContain('✓ archive');
@@ -892,8 +922,8 @@ describe('runDeviceArchive — human output + progress', () => {
         outputDir,
         dump: {
           outputDir,
-          rawDumpDir: path.join(outputDir, 'raw dump'),
-          manifestPath: path.join(outputDir, 'raw dump', 'manifest.sha256'),
+          rawDumpDir: path.join(outputDir, 'raw'),
+          manifestPath: path.join(outputDir, 'raw', 'manifest.sha256'),
           identity: {},
           classification: { copy: [], junk: [], foreign: [] },
           manifest: [],
@@ -904,7 +934,7 @@ describe('runDeviceArchive — human output + progress', () => {
         },
         transform: {
           archiveDir: path.join(outputDir, 'archive'),
-          ipodRoot: path.join(outputDir, 'raw dump'),
+          ipodRoot: path.join(outputDir, 'raw'),
           written: 0,
           noAudio: [],
           noArtwork: [],

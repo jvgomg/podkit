@@ -33,6 +33,7 @@ import {
   readSysInfoExtended,
   readSysInfoModelNumber,
   ensureSysInfoExtended,
+  inquireFirmware,
   type SysInfoExtendedResult,
 } from '@podkit/ipod-firmware';
 import type { DeviceCapabilities } from '@podkit/device-types';
@@ -257,6 +258,26 @@ export interface EnsureSysInfoExtendedAndReassessOptions {
   assessIdentity?: (mountPoint: string) => Promise<IpodIdentityAssessment>;
   /** Override for `ensureSysInfoExtended` (tests). */
   ensureSysInfoExtended?: typeof ensureSysInfoExtended;
+}
+
+/**
+ * Read the device's SysInfoExtended XML directly from firmware over USB,
+ * **without writing anything to the device** — the read-only counterpart of
+ * {@link ensureSysInfoExtendedAndReassess}. For callers that must capture full
+ * identity from a device podkit will not write to (an iPod archive of a
+ * read-only device, e.g. an iPod shuffle with no on-disk SysInfo). Returns the
+ * raw SysInfoExtended XML, or null when the firmware inquiry yields nothing.
+ * Best-effort: any transport failure surfaces as `null`, never a throw.
+ */
+export async function captureSysInfoExtendedXml(
+  usbFingerprint: CompleteUsbDevice
+): Promise<string | null> {
+  try {
+    const firmware = await inquireFirmware(usbFingerprint);
+    return firmware?.rawXml ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /**

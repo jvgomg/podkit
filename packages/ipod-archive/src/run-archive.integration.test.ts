@@ -9,7 +9,7 @@
  * asserted end to end:
  *
  *   <dest>/<name>-<id>-<timestamp>/
- *     raw dump/iPod_Control/...  + raw dump/manifest.sha256
+ *     raw/iPod_Control/...  + raw/manifest.sha256
  *     archive/Music/.../NN Title.ext   (real, byte-lossless copies)
  *     archive/library.sqlite           (openable; device row + tracks)
  *     archive/Playlists/<name>.m3u8

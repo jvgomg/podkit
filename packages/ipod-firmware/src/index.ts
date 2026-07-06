@@ -101,6 +101,7 @@ export {
 export {
   readSysInfoExtended,
   readSysInfoModelNumber,
+  parseSysInfoExtendedXml,
   writeSysInfoExtended,
   ensureSysInfoExtended,
   SYSINFO_EXTENDED_PATH,

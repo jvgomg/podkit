@@ -8,7 +8,7 @@
  * the resulting directory is fully self-contained:
  *
  *   <destDir>/<deviceName>-<identity>-<timestamp>/
- *     raw dump/                         (stage 1 — lossless copy + manifest)
+ *     raw/                         (stage 1 — lossless copy + manifest)
  *       iPod_Control/...
  *       manifest.sha256
  *     archive/                          (stage 2 — browsable archive)
@@ -27,7 +27,7 @@
  * Output location: the archive is written *inside* the same named output dir the
  * dump created, so one directory holds both artifacts. This is achieved by
  * handing the dump's `outputDir` to {@link runTransform} (whose default places
- * `archive/` beside `raw dump/` for a named stage-1 dir).
+ * `archive/` beside `raw/` for a named stage-1 dir).
  *
  * @module
  */
@@ -52,7 +52,7 @@ export interface RunArchiveOptions extends RunDumpOptions {
 export interface ArchiveResult {
   /**
    * Absolute path of the named, self-contained output directory holding both
-   * `raw dump/` and `archive/`. Same as {@link DumpResult.outputDir}.
+   * `raw/` and `archive/`. Same as {@link DumpResult.outputDir}.
    */
   outputDir: string;
   /** The complete stage-1 dump result. */
@@ -87,7 +87,7 @@ export async function runArchive(
   });
 
   // Transform the dump in place. Passing the dump's named output dir lands
-  // `archive/` beside `raw dump/`; threading the stage-1 buckets through
+  // `archive/` beside `raw/`; threading the stage-1 buckets through
   // `dumpReport` makes the unified report cover both stages. The same
   // `onProgress` channel carries both stages' events in order.
   const transform = await runTransform(dump.outputDir, {

@@ -1,144 +1,74 @@
 /**
- * Unit tests for device-identity — the pure mappers and the persistence
- * round-trip. The full precedence (captured → offline → libgpod) is exercised
- * end-to-end in run-transform.integration.test.ts against real seeded dumps.
+ * Unit tests for device-identity — the captured-SysInfoExtended sidecar
+ * round-trip. The full precedence (on-disk SIE → captured sidecar → libgpod)
+ * and the master-playlist name are exercised end-to-end in
+ * run-transform.integration.test.ts against real seeded dumps.
  */
 import { describe, expect, test } from 'bun:test';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { IpodModel } from '@podkit/devices-ipod';
 import {
-  DEVICE_IDENTITY_FILENAME,
-  captureIdentity,
-  identityFromCaptured,
-  readCapturedIdentity,
-  writeCapturedIdentity,
+  CAPTURED_SYSINFO_FILENAME,
+  readCapturedSysInfo,
+  writeCapturedSysInfo,
 } from './device-identity.js';
 
-/** A fully-populated variant-level model (as `identify({from:'sysinfo'})` yields). */
-const NANO_2G: IpodModel = {
-  displayName: 'iPod nano 4GB Silver (2nd Generation)',
-  generationId: 'nano_2g',
-  family: 'iPod nano',
-  ordinal: 2,
-  checksumType: 'none',
-  modelNumber: 'A477',
-  capacityGb: 4,
-  color: 'Silver',
-  source: 'sysinfo',
-};
+/** A minimal-but-valid SysInfoExtended plist (GUID + serial + FamilyID + model). */
+const SIE_XML = `<?xml version="1.0"?>
+<plist version="1.0">
+<dict>
+<key>FireWireGUID</key><string>000A27001A0647CB</string>
+<key>SerialNumber</key><string>YM7275YSVQH</string>
+<key>FamilyID</key><integer>9</integer>
+<key>ModelNumStr</key><string>MA477</string>
+</dict>
+</plist>`;
 
-/** A generation-only model (as a USB-only shuffle resolves — no variant data). */
-const SHUFFLE_4G: IpodModel = {
-  displayName: 'iPod shuffle (4th Generation)',
-  generationId: 'shuffle_4g',
-  family: 'iPod shuffle',
-  ordinal: 4,
-  checksumType: 'none',
-  source: 'usb',
-};
-
-describe('captureIdentity', () => {
-  test('projects a full variant model plus serial/guid into the persisted shape', () => {
-    const captured = captureIdentity(NANO_2G, {
-      serialNumber: '5U828GFNYXX',
-      firewireGuid: '000A2700ABCDEF12',
-    });
-    expect(captured).toEqual({
-      schemaVersion: 1,
-      displayName: 'iPod nano 4GB Silver (2nd Generation)',
-      generationId: 'nano_2g',
-      family: 'iPod nano',
-      ordinal: 2,
-      modelNumber: 'A477',
-      capacityGb: 4,
-      color: 'Silver',
-      serialNumber: '5U828GFNYXX',
-      firewireGuid: '000A2700ABCDEF12',
-    });
-  });
-
-  test('generation-only model omits absent variant fields', () => {
-    const captured = captureIdentity(SHUFFLE_4G, { serialNumber: 'ABC123SHUF' });
-    expect(captured).toEqual({
-      schemaVersion: 1,
-      displayName: 'iPod shuffle (4th Generation)',
-      generationId: 'shuffle_4g',
-      family: 'iPod shuffle',
-      ordinal: 4,
-      serialNumber: 'ABC123SHUF',
-    });
-  });
-
-  test('a null model still persists whatever serial/guid was captured', () => {
-    const captured = captureIdentity(null, { serialNumber: 'ONLYSERIAL' });
-    expect(captured).toEqual({ schemaVersion: 1, serialNumber: 'ONLYSERIAL' });
-  });
-});
-
-describe('identityFromCaptured', () => {
-  test('maps the persisted shape onto the render contract', () => {
-    const captured = captureIdentity(NANO_2G, { serialNumber: '5U828GFNYXX' });
-    expect(identityFromCaptured(captured)).toEqual({
-      modelName: 'iPod nano 4GB Silver (2nd Generation)',
-      generation: 'nano_2g',
-      modelNumber: 'A477',
-      capacityGb: 4,
-      color: 'Silver',
-      serialNumber: '5U828GFNYXX',
-    });
-  });
-
-  test('a serial-only capture yields a serial-only identity', () => {
-    expect(identityFromCaptured({ schemaVersion: 1, serialNumber: 'ONLYSERIAL' })).toEqual({
-      serialNumber: 'ONLYSERIAL',
-    });
-  });
-});
-
-describe('writeCapturedIdentity / readCapturedIdentity', () => {
-  test('round-trips through podkit-device.json at the dump root', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'ipod-archive-devid-'));
+describe('writeCapturedSysInfo / readCapturedSysInfo', () => {
+  test('round-trips the SysInfoExtended sidecar into a parsed identity bag', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ipod-archive-sie-'));
     try {
-      const captured = captureIdentity(SHUFFLE_4G, { serialNumber: 'ABC123SHUF' });
-      await writeCapturedIdentity(dir, captured);
-      expect(await readCapturedIdentity(dir)).toEqual(captured);
+      await writeCapturedSysInfo(dir, SIE_XML);
+      const result = await readCapturedSysInfo(dir);
+      expect(result?.identity.serialNumber).toBe('YM7275YSVQH');
+      expect(result?.identity.firewireGuid).toBe('000A27001A0647CB');
+      expect(result?.identity.modelNumStr).toBe('MA477');
+      expect(result?.identity.familyId).toBe(9);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
   });
 
-  test('returns null when the artifact is absent', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'ipod-archive-devid-'));
+  test('writes to the podkit-namespaced sidecar filename', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ipod-archive-sie-'));
     try {
-      expect(await readCapturedIdentity(dir)).toBeNull();
+      await writeCapturedSysInfo(dir, SIE_XML);
+      // Reading the same file directly confirms the location contract.
+      const raw = await Bun.file(join(dir, CAPTURED_SYSINFO_FILENAME)).text();
+      expect(raw).toContain('YM7275YSVQH');
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
   });
 
-  test('returns null (not a throw) on a corrupt artifact', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'ipod-archive-devid-'));
+  test('returns null when the sidecar is absent', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ipod-archive-sie-'));
     try {
-      await writeFile(join(dir, DEVICE_IDENTITY_FILENAME), '{ not json', 'utf8');
-      expect(await readCapturedIdentity(dir)).toBeNull();
+      expect(await readCapturedSysInfo(dir)).toBeNull();
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
   });
 
-  test('returns null for a future/unknown schema version', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'ipod-archive-devid-'));
+  test('a malformed sidecar yields an empty identity bag, not a throw', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ipod-archive-sie-'));
     try {
-      await writeFile(
-        join(dir, DEVICE_IDENTITY_FILENAME),
-        JSON.stringify({ schemaVersion: 2, displayName: 'iPod of the future' }),
-        'utf8'
-      );
-      // Unknown schema is treated as absent so the caller falls back to offline
-      // resolution rather than mis-reading a differently-shaped record.
-      expect(await readCapturedIdentity(dir)).toBeNull();
+      await writeFile(join(dir, CAPTURED_SYSINFO_FILENAME), '<not a plist', 'utf8');
+      const result = await readCapturedSysInfo(dir);
+      // parseSysInfoExtendedXml returns a present result with an empty bag.
+      expect(result?.identity.serialNumber).toBeUndefined();
+      expect(result?.identity.modelNumStr).toBeUndefined();
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

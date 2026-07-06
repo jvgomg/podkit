@@ -542,6 +542,7 @@ describe('renderReadme', () => {
       podkitVersion: 'unknown',
       stats: computeLibraryStats([]),
     });
+    expect(md).toContain('| Name | — |');
     expect(md).toContain('| Model | — |');
     expect(md).toContain('| Serial | — |');
     expect(md).toContain('| Capacity | — |');
@@ -550,5 +551,16 @@ describe('renderReadme', () => {
     expect(md).toContain('| Tracks | 0 |');
     expect(md).toContain('— – —');
     expect(md).not.toContain('### Top artists');
+  });
+
+  test('renders the iPod name when captured', () => {
+    const md = renderReadme({
+      identity: { name: "NIKKI'S IPO", modelName: 'iPod shuffle (4th Generation)' },
+      dumpDate: 0,
+      podkitVersion: 'unknown',
+      stats: computeLibraryStats([]),
+    });
+    expect(md).toContain("| Name | NIKKI'S IPO |");
+    expect(md).toContain('| Model | iPod shuffle (4th Generation) |');
   });
 });

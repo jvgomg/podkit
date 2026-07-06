@@ -9,6 +9,7 @@ export { SYSINFO_EXTENDED_PATH, SYSINFO_PATH, SYSINFO_DEVICE_DIR } from './paths
 export {
   readSysInfoExtended,
   readSysInfoModelNumber,
+  parseSysInfoExtendedXml,
   type SysInfoExtendedResult,
   type SysInfoIdentity,
 } from './read.js';

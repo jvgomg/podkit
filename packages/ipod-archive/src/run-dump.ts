@@ -2,19 +2,19 @@
  * `runDump` — stage-1 orchestrator.
  *
  * classify the volume → create the named output directory containing a
- * `raw dump/` tree → copy the whitelist (hashing through SHA-256) → write the
+ * `raw/` tree → copy the whitelist (hashing through SHA-256) → write the
  * manifest → return a result the (later) report stage can consume.
  *
  * On-disk layout produced:
  *
  *   <destDir>/<deviceName>-<identity>-<timestamp>/
- *     raw dump/
+ *     raw/
  *       iPod_Control/...        (mirrored whitelist trees)
  *       Calendars/ Contacts/ Notes/
  *       manifest.sha256         (shasum -c compatible)
  *
  * The named directory is the self-contained archive root; later slices add an
- * `archive/` sibling to `raw dump/` inside it.
+ * `archive/` sibling to `raw/` inside it.
  */
 
 import { mkdir, opendir, stat, writeFile } from 'node:fs/promises';
@@ -31,10 +31,13 @@ import {
 import { buildOutputDirName, type OutputNameIdentity } from './output-naming.js';
 import { ArchiveReport, type ReportStage1 } from './archive-report.js';
 import type { ArchiveProgressCallback } from './progress-events.js';
-import { writeCapturedIdentity, type CapturedDeviceIdentity } from './device-identity.js';
+import { writeCapturedSysInfo } from './device-identity.js';
 
 /** Subdirectory under the named output dir that holds the lossless copy. */
-export const RAW_DUMP_SUBDIR = 'raw dump';
+export const RAW_DUMP_SUBDIR = 'raw';
+
+/** Legacy name of {@link RAW_DUMP_SUBDIR}, still accepted when loading old dumps. */
+export const LEGACY_RAW_DUMP_SUBDIR = 'raw dump';
 
 /** Filename of the human-readable skip/failure report at the dump output root. */
 export const REPORT_MD_FILENAME = 'report.md';
@@ -72,14 +75,15 @@ export interface RunDumpOptions {
    */
   onProgress?: ArchiveProgressCallback;
   /**
-   * Device identity resolved live at dump time (the device is connected during
-   * stage 1). When provided, it is persisted as `podkit-device.json` at the
-   * output-dir root so the transform can render full identity even for devices
-   * whose model exists only over USB (every iPod shuffle carries no on-disk
-   * `SysInfo`). The leaf package does not resolve this itself — the CLI, which
-   * has `@podkit/core`, hands it in as plain data.
+   * SysInfoExtended XML read read-only from the device's firmware at dump time
+   * (the device is connected during stage 1). Provided by the CLI only when the
+   * device carried no on-disk SysInfo — persisted as the
+   * `podkit-sysinfo-extended.xml` sidecar so the transform can resolve full
+   * identity (serial, model number, capacity, colour) for a device podkit will
+   * not write to (every iPod shuffle). The leaf package does not perform the
+   * inquiry itself — the CLI, which has `@podkit/core`, hands the XML in.
    */
-  capturedIdentity?: CapturedDeviceIdentity;
+  capturedSysInfoXml?: string;
 }
 
 /** Device identity surfaced for naming (and, later, the README). */
@@ -92,7 +96,7 @@ export interface DumpIdentity {
 export interface DumpResult {
   /** Absolute path of the named archive root directory. */
   outputDir: string;
-  /** Absolute path of the `raw dump/` tree inside {@link outputDir}. */
+  /** Absolute path of the `raw/` tree inside {@link outputDir}. */
   rawDumpDir: string;
   /** Absolute path of the written `manifest.sha256`. */
   manifestPath: string;
@@ -208,11 +212,11 @@ export async function runDump(
 
   opts.onProgress?.({ kind: 'dump:done', fileCount: manifest.length });
 
-  // Persist the live-resolved identity beside `raw dump/` so the transform (and
-  // any later `--from-dump`) can render full device identity. Written even for
-  // `--dump-only` so the artifact always travels with the dump.
-  if (opts.capturedIdentity) {
-    await writeCapturedIdentity(outputDir, opts.capturedIdentity);
+  // Persist the firmware-captured SysInfoExtended beside `raw/` so the transform
+  // (and any later `--from-dump`) can resolve full device identity. Written even
+  // for `--dump-only` so the artifact always travels with the dump.
+  if (opts.capturedSysInfoXml) {
+    await writeCapturedSysInfo(outputDir, opts.capturedSysInfoXml);
   }
 
   // The stage-1 buckets, surfaced both for the report files written here (so a
@@ -225,7 +229,7 @@ export async function runDump(
     dumpFailures: failures.map((f) => ({ path: f.path, error: f.error })),
   };
 
-  // Emit `report.{md,json}` at the named archive root (beside `raw dump/`). The
+  // Emit `report.{md,json}` at the named archive root (beside `raw/`). The
   // same `ArchiveReport` renderer used by the transform keeps the format DRY; a
   // dump-only run has no stage-2 section.
   const dumpReport = ArchiveReport.forDumpOnly(report);

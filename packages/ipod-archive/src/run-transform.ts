@@ -6,17 +6,17 @@
  * + restamped tags) into a browsable `Music/` tree. It never opens a live
  * device.
  *
- * On-disk layout produced (sibling of the dump's `raw dump/`):
+ * On-disk layout produced (sibling of the dump's `raw/`):
  *
  *   <named dump dir>/
- *     raw dump/                      (stage 1, untouched)
+ *     raw/                      (stage 1, untouched)
  *     archive/
  *       Music/<AlbumArtist>/<Album>/<NN> <Title>.<ext>
  *
  * Output-location resolution: the archive root is `archive/` inside the dump
  * dir the loader resolved the iPod root from. When `dumpDir` is a named
- * stage-1 archive dir (containing `raw dump/`), `archive/` lands beside
- * `raw dump/`. When `dumpDir` is a bare iPod root (containing `iPod_Control`),
+ * stage-1 archive dir (containing `raw/`), `archive/` lands beside
+ * `raw/`. When `dumpDir` is a bare iPod root (containing `iPod_Control`),
  * `archive/` lands inside it. `opts.outputDir` overrides this entirely.
  *
  * @module
@@ -267,11 +267,11 @@ function computeTransformStats(tracks: readonly Track[], playlistCount: number):
 
 /**
  * Resolve the archive root directory for a dump. Defaults to `archive/` beside
- * the dump's `raw dump/` (i.e. inside the named archive dir). `opts.outputDir`
+ * the dump's `raw/` (i.e. inside the named archive dir). `opts.outputDir`
  * overrides this entirely.
  *
- * `dumpDir` is always the anchor — it is never the `raw dump/` subdirectory
- * itself, so `archive/` lands beside `raw dump/` for a named stage-1 archive
+ * `dumpDir` is always the anchor — it is never the `raw/` subdirectory
+ * itself, so `archive/` lands beside `raw/` for a named stage-1 archive
  * dir, or inside a bare iPod root when no named dir wraps it.
  */
 function resolveArchiveDir(dumpDir: string, opts: RunTransformOptions): string {
@@ -304,10 +304,10 @@ async function assertArchiveDirAbsent(archiveDir: string): Promise<void> {
 /**
  * Run the transform stage against an existing dump.
  *
- * @param dumpDir - the named archive dir (containing `raw dump/`) or a directory
+ * @param dumpDir - the named archive dir (containing `raw/`) or a directory
  *   that itself contains `iPod_Control`. Pass the named dir, not its
- *   `raw dump/` subdirectory: the archive is anchored at `<dumpDir>/archive`,
- *   so pointing at `raw dump/` itself would nest the archive under it. Use
+ *   `raw/` subdirectory: the archive is anchored at `<dumpDir>/archive`,
+ *   so pointing at `raw/` itself would nest the archive under it. Use
  *   `opts.outputDir` to place the archive anywhere else.
  * @param opts - optional output-directory override.
  */

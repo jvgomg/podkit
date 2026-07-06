@@ -114,6 +114,10 @@ export const FAMILY_ID_TO_GENERATION: Readonly<Record<number, IpodGenerationId>>
   25: 'touch_6g',
   26: 'touch_7g',
   27: 'touch_2g',
+  // Source: real hardware — iPod shuffle 4G (Late 2012). FamilyID 133 confirmed
+  // by both SysInfoExtended and the macOS iPod cache for serial CC4LXAVUF4T0.
+  // (The inferred `22` above is a separate, un-verified shuffle_4g FamilyID.)
+  133: 'shuffle_4g',
 } as const;
 
 // ── Build lookup indexes (once at module load) ───────────────────────────────

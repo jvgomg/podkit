@@ -5,7 +5,7 @@
  *
  *  1. **Bare both-stages** — `podkit -d <fixture iPod> device archive <dest>`
  *     runs dump → transform in one invocation, producing a single
- *     self-contained `<name>-<id>-<timestamp>/` directory holding `raw dump/`
+ *     self-contained `<name>-<id>-<timestamp>/` directory holding `raw/`
  *     (+ manifest) and `archive/` (+ library.sqlite, README, unified report).
  *  2. **`--from-dump`** — re-running just the transform against the dump the
  *     first run produced, with no device, lands a fresh `archive/` beside it.
@@ -100,12 +100,10 @@ describe('podkit device archive (e2e smoke)', () => {
     expect(outputDir.startsWith(dest)).toBe(true);
 
     // ── Stage 1: raw dump tree + manifest ────────────────────────────────────
-    expect(json!.rawDumpDir).toBe(join(outputDir, 'raw dump'));
-    expect(json!.manifestPath).toBe(join(outputDir, 'raw dump', 'manifest.sha256'));
+    expect(json!.rawDumpDir).toBe(join(outputDir, 'raw'));
+    expect(json!.manifestPath).toBe(join(outputDir, 'raw', 'manifest.sha256'));
     expect(await isFile(json!.manifestPath)).toBe(true);
-    expect(await isFile(join(outputDir, 'raw dump', 'iPod_Control', 'iTunes', 'iTunesDB'))).toBe(
-      true
-    );
+    expect(await isFile(join(outputDir, 'raw', 'iPod_Control', 'iTunes', 'iTunesDB'))).toBe(true);
     expect(json!.fileCount).toBeGreaterThan(0);
 
     // ── Stage 2: archive root with README + report + catalogue ────────────────
@@ -161,7 +159,7 @@ describe('podkit device archive (e2e smoke)', () => {
     expect(json!.success).toBe(true);
     expect(json!.stage).toBe('transform');
 
-    // archive/ landed inside the named dump dir, beside raw dump/.
+    // archive/ landed inside the named dump dir, beside raw/.
     expect(json!.archiveDir).toBe(join(dumpDir, 'archive'));
     expect(await isFile(json!.readmePath)).toBe(true);
     expect(await isFile(json!.reportMarkdownPath)).toBe(true);

@@ -176,6 +176,7 @@ export type {
 export {
   assessIpodIdentity,
   ensureSysInfoExtendedAndReassess,
+  captureSysInfoExtendedXml,
   isIdentityFullyEmpty,
   summariseIdentitySignals,
 } from './ipod-identity.js';

@@ -18,10 +18,8 @@ import {
   runArchive,
   runDump,
   runTransform,
-  captureIdentity,
   type ArchiveProgressEvent,
   type ArchiveProgressCallback,
-  type CapturedDeviceIdentity,
   type DumpDeviceIdentity,
   type TransformStats,
 } from '@podkit/ipod-archive';
@@ -51,9 +49,20 @@ import type { DeviceArchiveOutput } from './output-types.js';
  */
 declare const PODKIT_VERSION: string | undefined;
 
-/** The podkit version string recorded in the archive catalogue, or `'unknown'`. */
-function resolvePodkitVersion(): string {
-  return typeof PODKIT_VERSION !== 'undefined' ? PODKIT_VERSION : 'unknown';
+/**
+ * The podkit version recorded in the archive. The standalone binary injects
+ * `PODKIT_VERSION` at build time; under `bun run` / tests that define is absent,
+ * so fall back to the CLI package's own version (mirrors how `main.ts` resolves
+ * `--version`) rather than surfacing `'unknown'`.
+ */
+async function resolvePodkitVersion(): Promise<string> {
+  if (typeof PODKIT_VERSION !== 'undefined') return PODKIT_VERSION;
+  try {
+    const pkg = await import('../../../package.json', { with: { type: 'json' } });
+    return pkg.default.version ?? 'unknown';
+  } catch {
+    return 'unknown';
+  }
 }
 
 interface ArchiveOptions {
@@ -135,16 +144,17 @@ export async function runDeviceArchive(
 
   const volumeLabel = basename(volumeRoot);
 
-  // Resolve the device's identity now, while it is connected — the transform
-  // runs device-free and cannot reach USB. Persisted into the dump by stage 1.
-  const capturedIdentity = await captureDeviceIdentity(volumeRoot, out, deps);
+  // Capture the device's firmware identity now, while it is connected — the
+  // transform runs device-free and cannot reach USB. Read-only; persisted into
+  // the dump by stage 1 (only when the device has no on-disk SysInfoExtended).
+  const capturedSysInfoXml = await captureSysInfoXml(volumeRoot, out, deps);
 
   // `--dump-only` stops after stage 1; the bare invocation runs both stages.
   if (options.dumpOnly) {
     await runDumpStage(
       volumeRoot,
       destDir,
-      { deviceName, volumeLabel, capturedIdentity },
+      { deviceName, volumeLabel, capturedSysInfoXml },
       out,
       deps
     );
@@ -153,7 +163,7 @@ export async function runDeviceArchive(
   await runBothStages(
     volumeRoot,
     destDir,
-    { deviceName, volumeLabel, capturedIdentity, podkitVersion: resolvePodkitVersion() },
+    { deviceName, volumeLabel, capturedSysInfoXml, podkitVersion: await resolvePodkitVersion() },
     out,
     deps
   );
@@ -333,40 +343,37 @@ async function selectAutoDetectedIpod(
 }
 
 /**
- * Resolve the connected iPod's full identity while it is still live, so it can
- * be persisted into the dump. This is the only moment USB is available — the
- * transform runs device-free, and devices with no on-disk `SysInfo` (every iPod
- * shuffle) are identifiable *only* over USB. Delegates to core's
- * `assessIpodIdentity` (disk + USB cascade), the same path `device info` uses.
+ * Read the connected iPod's SysInfoExtended from firmware while it is still
+ * live, so full identity (serial, model number, capacity, colour) survives into
+ * the device-free transform. This is the only moment USB is reachable, and it is
+ * the only way to identify a device with no on-disk SysInfo (every iPod shuffle).
  *
- * Best-effort: any failure (unsupported platform, USB correlation miss) returns
- * `undefined`, and the transform falls back to offline resolution. Returns
- * `undefined` rather than an empty capture when nothing identifying was found,
- * so an empty artifact never shadows offline resolution.
+ * The inquiry is **read-only** — nothing is written to the device (unlike
+ * `device add`, which persists SysInfoExtended). Only performed when the device
+ * carries no on-disk SysInfoExtended; when it already has one, the raw dump
+ * copies it and no capture is needed.
+ *
+ * Best-effort: any failure (unsupported platform, USB correlation miss, firmware
+ * that doesn't answer) returns `undefined`, and the transform falls back to
+ * offline resolution. Surfaces the reason under `--verbose`.
  */
-async function captureDeviceIdentity(
+async function captureSysInfoXml(
   volumeRoot: string,
   out: OutputContext,
   deps: DeviceArchiveDeps
-): Promise<CapturedDeviceIdentity | undefined> {
+): Promise<string | undefined> {
   try {
     const core = await loadCoreOrFail(deps, DeviceErrorCodes.CORE_LOAD_FAILED);
     const assessment = await core.assessIpodIdentity(volumeRoot);
-    const serialNumber =
-      assessment.existing?.serialNumber ?? assessment.usbFingerprint?.serialNumber;
-    const firewireGuid = assessment.existing?.firewireGuid;
-    if (!assessment.model && !serialNumber && !firewireGuid) return undefined;
-    return captureIdentity(assessment.model, {
-      ...(serialNumber ? { serialNumber } : {}),
-      ...(firewireGuid ? { firewireGuid } : {}),
-    });
+    // Already has SysInfoExtended on disk → it's in the raw dump; nothing to do.
+    // No USB fingerprint → no inquiry possible.
+    if (assessment.existing?.present || !assessment.usbFingerprint) return undefined;
+    const xml = await core.captureSysInfoExtendedXml(assessment.usbFingerprint);
+    return xml ?? undefined;
   } catch (err) {
-    // Best-effort: capture never blocks the archive (the transform still resolves
-    // identity offline). Surface the reason under --verbose so a genuine failure
-    // isn't wholly silent.
     if (out.isVerbose) {
       out.print(
-        `Note: could not capture live device identity (${err instanceof Error ? err.message : String(err)}). ` +
+        `Note: could not capture device firmware identity (${err instanceof Error ? err.message : String(err)}). ` +
           `Identity will be resolved from the dump instead.`
       );
     }
@@ -491,7 +498,7 @@ function printLibraryBreakdown(out: OutputContext, stats: TransformStats): void 
 async function runDumpStage(
   volumeRoot: string,
   destDir: string,
-  opts: { deviceName: string; volumeLabel: string; capturedIdentity?: CapturedDeviceIdentity },
+  opts: { deviceName: string; volumeLabel: string; capturedSysInfoXml?: string },
   out: OutputContext,
   deps: DeviceArchiveDeps
 ): Promise<void> {
@@ -549,7 +556,7 @@ async function runBothStages(
     deviceName: string;
     volumeLabel: string;
     podkitVersion: string;
-    capturedIdentity?: CapturedDeviceIdentity;
+    capturedSysInfoXml?: string;
   },
   out: OutputContext,
   deps: DeviceArchiveDeps
@@ -711,7 +718,7 @@ async function runTransformStage(
   let result;
   try {
     result = await transformFn(dumpDir, {
-      podkitVersion: resolvePodkitVersion(),
+      podkitVersion: await resolvePodkitVersion(),
       ...(onProgress ? { onProgress } : {}),
     });
   } catch (err) {

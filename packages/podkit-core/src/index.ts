@@ -736,6 +736,7 @@ export type {
 export {
   assessIpodIdentity,
   ensureSysInfoExtendedAndReassess,
+  captureSysInfoExtendedXml,
   isIdentityFullyEmpty,
   summariseIdentitySignals,
 } from './device/index.js';

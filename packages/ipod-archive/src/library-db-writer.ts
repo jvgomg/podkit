@@ -8,7 +8,7 @@
  * `schema_version` constant.
  *
  * It is *not* a backup. No raw `iTunesDB`/`ArtworkDB` bytes are stored here; the
- * raw dump in `raw dump/` remains the lossless source of truth. The catalogue is
+ * raw dump in `raw/` remains the lossless source of truth. The catalogue is
  * the convenient, queryable projection of it.
  *
  * Fidelity contract: play counts, ratings, last-played / skip counts and

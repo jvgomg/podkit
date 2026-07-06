@@ -34,7 +34,7 @@ describe('runDump', () => {
     await writeFile(join(volume, 'home-movie.mov'), 'foreign');
   }
 
-  test('produces <name>/raw dump/ layout with manifest and classified buckets', async () => {
+  test('produces <name>/raw/ layout with manifest and classified buckets', async () => {
     await seedStockIpod();
 
     const result = await runDump(volume, dest, {

@@ -1,27 +1,27 @@
 /**
- * Device identity for an iPod archive — resolution, persistence, and the
- * render contract.
+ * Device identity for an iPod archive — resolution, capture, and the render
+ * contract.
  *
- * An iPod's identity can come from three places, in decreasing fidelity:
+ * Identity is derived entirely from artifacts in the dump, using the same
+ * readers the rest of podkit uses — no bespoke identity format:
  *
- * 1. **Captured at dump time** (`podkit-device.json`). The dump stage runs while
- *    the device is live, so the CLI can resolve the full model — including over
- *    USB, the only source for devices that carry no on-disk `SysInfo` (every
- *    iPod shuffle). That result is persisted beside `raw dump/` and is
- *    authoritative for the transform.
- * 2. **Resolved offline from the dump** via `@podkit/devices-ipod`'s
- *    `resolveIpodModel`, cascading the on-disk `SysInfo`/SysInfoExtended
- *    identity bag (ModelNumStr, serial, FamilyID) plus libgpod's generation
- *    string. Richer than libgpod alone — it identifies models libgpod's older
- *    table returns `Invalid` for.
- * 3. **libgpod device capabilities** — the last resort, used only when the two
- *    above yield nothing.
+ * - **Name** comes from the iTunesDB master-playlist title (the iPod's own
+ *   name, which the firmware reads from there), via the already-open database.
+ * - **Model / generation / serial / capacity / colour** come from a
+ *   SysInfoExtended plist run through `resolveIpodModel`: the on-disk file when
+ *   the device carried one (copied faithfully into `raw/`), else a
+ *   **captured sidecar** (`podkit-sysinfo-extended.xml`) that the dump stage
+ *   reads read-only from firmware for devices with no on-disk SysInfo (every
+ *   iPod shuffle). Writing that sidecar into the dump — never to the device —
+ *   is how a read-only device's full identity survives into the offline
+ *   transform.
+ * - **libgpod capabilities** are the last resort, used only when no
+ *   SysInfoExtended is available at all.
  *
- * This module owns the {@link DumpDeviceIdentity} render contract, the persisted
- * {@link CapturedDeviceIdentity} shape, and {@link resolveDumpIdentity} which
- * applies the precedence. It never opens a device — the live USB resolution
- * happens in the CLI (which has `@podkit/core`) and is handed in as plain data,
- * keeping this a leaf module.
+ * This module owns the {@link DumpDeviceIdentity} render contract and
+ * {@link resolveDumpIdentity}. It never opens a device — the read-only firmware
+ * inquiry happens in the CLI (which has `@podkit/core`) and its XML is handed in
+ * as plain data, keeping this a leaf module.
  *
  * @module
  */
@@ -29,20 +29,28 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Database } from '@podkit/libgpod-node';
-import { readSysInfoExtended, readSysInfoModelNumber } from '@podkit/ipod-firmware';
+import {
+  readSysInfoExtended,
+  readSysInfoModelNumber,
+  parseSysInfoExtendedXml,
+  type SysInfoExtendedResult,
+} from '@podkit/ipod-firmware';
 import { resolveIpodModel, type IpodModel } from '@podkit/devices-ipod';
 
-/** Filename of the captured device-identity artifact, at the dump root. */
-export const DEVICE_IDENTITY_FILENAME = 'podkit-device.json';
-
-/** Current schema version of {@link CapturedDeviceIdentity}. */
-const SCHEMA_VERSION = 1;
+/**
+ * Filename of the captured SysInfoExtended sidecar, at the dump root. Written
+ * (read-only to the device) only when the device carried no on-disk SysInfo, so
+ * the raw dump stays a byte-faithful copy of the device.
+ */
+export const CAPTURED_SYSINFO_FILENAME = 'podkit-sysinfo-extended.xml';
 
 /**
  * Device identity surfaced from a dump for rendering. Every field is best-effort
  * and may be absent when the device could not be fully identified.
  */
 export interface DumpDeviceIdentity {
+  /** The iPod's own name, from the iTunesDB master playlist. */
+  name?: string;
   /** Apple serial number. */
   serialNumber?: string;
   /** FireWire GUID. */
@@ -51,7 +59,7 @@ export interface DumpDeviceIdentity {
   familyId?: number;
   /** libgpod model identifier (e.g. `video_white`) — libgpod fallback only. */
   model?: string;
-  /** Generation identifier (e.g. `video_1` / `shuffle_4`). */
+  /** Generation identifier (e.g. `video_5g` / `shuffle_4g`). */
   generation?: string;
   /** Human-readable model name (e.g. `iPod shuffle (4th Generation)`). */
   modelName?: string;
@@ -63,75 +71,6 @@ export interface DumpDeviceIdentity {
   color?: string;
   /** Variant tag (e.g. `U2`, `2015`), when the model carries one. */
   variant?: string;
-}
-
-/**
- * The persisted `podkit-device.json` shape — a serializable projection of the
- * live-resolved {@link IpodModel} plus the serial/GUID read at dump time. Every
- * model field is optional so a generation-only (USB) resolution still persists.
- */
-export interface CapturedDeviceIdentity {
-  /** Schema version, for forward compatibility. */
-  schemaVersion: number;
-  /** Human-readable model name (`IpodModel.displayName`). */
-  displayName?: string;
-  /** Generation identifier (`IpodModel.generationId`). */
-  generationId?: string;
-  /** Marketing family (`IpodModel.family`). */
-  family?: string;
-  /** Generation ordinal (`IpodModel.ordinal`). */
-  ordinal?: number | null;
-  /** Model number without prefix (`IpodModel.modelNumber`). */
-  modelNumber?: string;
-  /** Capacity in GB (`IpodModel.capacityGb`). */
-  capacityGb?: number;
-  /** Device colour (`IpodModel.color`). */
-  color?: string;
-  /** Variant tag (`IpodModel.variant`). */
-  variant?: string;
-  /** Apple serial number, when known at capture. */
-  serialNumber?: string;
-  /** FireWire GUID, when known at capture. */
-  firewireGuid?: string;
-}
-
-/**
- * Build the persisted identity from a live-resolved model plus the serial/GUID
- * read at dump time. A `null` model (unidentifiable device) still persists
- * whatever serial/GUID was captured, so the record is never wholly empty.
- */
-export function captureIdentity(
-  model: IpodModel | null,
-  extra: { serialNumber?: string; firewireGuid?: string }
-): CapturedDeviceIdentity {
-  const captured: CapturedDeviceIdentity = { schemaVersion: SCHEMA_VERSION };
-  if (model) {
-    captured.displayName = model.displayName;
-    captured.generationId = model.generationId;
-    captured.family = model.family;
-    captured.ordinal = model.ordinal;
-    if (model.modelNumber !== undefined) captured.modelNumber = model.modelNumber;
-    if (model.capacityGb !== undefined) captured.capacityGb = model.capacityGb;
-    if (model.color !== undefined) captured.color = model.color;
-    if (model.variant !== undefined) captured.variant = model.variant;
-  }
-  if (extra.serialNumber) captured.serialNumber = extra.serialNumber;
-  if (extra.firewireGuid) captured.firewireGuid = extra.firewireGuid;
-  return captured;
-}
-
-/** Map a persisted capture onto the render contract. */
-export function identityFromCaptured(captured: CapturedDeviceIdentity): DumpDeviceIdentity {
-  const identity: DumpDeviceIdentity = {};
-  if (captured.displayName) identity.modelName = captured.displayName;
-  if (captured.generationId) identity.generation = captured.generationId;
-  if (captured.modelNumber) identity.modelNumber = captured.modelNumber;
-  if (captured.capacityGb !== undefined) identity.capacityGb = captured.capacityGb;
-  if (captured.color) identity.color = captured.color;
-  if (captured.variant) identity.variant = captured.variant;
-  if (captured.serialNumber) identity.serialNumber = captured.serialNumber;
-  if (captured.firewireGuid) identity.firewireGuid = captured.firewireGuid;
-  return identity;
 }
 
 /** Map a resolved {@link IpodModel} onto the render contract's model fields. */
@@ -147,39 +86,23 @@ function identityFromModel(model: IpodModel): DumpDeviceIdentity {
   return identity;
 }
 
-/** Persist the captured identity as `podkit-device.json` at the dump root. */
-export async function writeCapturedIdentity(
-  dumpDir: string,
-  captured: CapturedDeviceIdentity
-): Promise<void> {
-  const path = join(dumpDir, DEVICE_IDENTITY_FILENAME);
-  await writeFile(path, `${JSON.stringify(captured, null, 2)}\n`, 'utf8');
+/** Persist a captured SysInfoExtended XML as the dump's sidecar. */
+export async function writeCapturedSysInfo(dumpDir: string, xml: string): Promise<void> {
+  await writeFile(join(dumpDir, CAPTURED_SYSINFO_FILENAME), xml, 'utf8');
 }
 
 /**
- * Read `podkit-device.json` from the dump root. Returns null when the artifact
- * is absent, unreadable, or not a valid current-schema record — the caller then
- * falls back to offline resolution. Never throws.
+ * Read + parse the captured SysInfoExtended sidecar from the dump root. Returns
+ * null when the sidecar is absent or unreadable. Never throws.
  */
-export async function readCapturedIdentity(
-  dumpDir: string
-): Promise<CapturedDeviceIdentity | null> {
-  let raw: string;
+export async function readCapturedSysInfo(dumpDir: string): Promise<SysInfoExtendedResult | null> {
+  let xml: string;
   try {
-    raw = await readFile(join(dumpDir, DEVICE_IDENTITY_FILENAME), 'utf8');
+    xml = await readFile(join(dumpDir, CAPTURED_SYSINFO_FILENAME), 'utf8');
   } catch {
     return null;
   }
-  try {
-    const parsed = JSON.parse(raw) as CapturedDeviceIdentity;
-    // Only the current schema is understood. A future version is treated as
-    // absent so the caller falls back to offline resolution rather than
-    // mis-reading a differently-shaped record as v1.
-    if (parsed?.schemaVersion !== SCHEMA_VERSION) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
+  return parseSysInfoExtendedXml(xml);
 }
 
 /** Whether a libgpod capability string is a real value, not a sentinel. */
@@ -220,11 +143,23 @@ function libgpodGeneration(db: Database): string | undefined {
   }
 }
 
+/** The iPod's own name, from the iTunesDB master playlist, or undefined. */
+function ipodNameFromDb(db: Database): string | undefined {
+  try {
+    return db.getMasterPlaylist()?.name?.trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
- * Resolve a dump's device identity by precedence: captured live at dump time
- * (`podkit-device.json`), else offline via `resolveIpodModel` over the on-disk
- * identity bag, else libgpod's capabilities. Serial/GUID/FamilyID from the
- * on-disk SysInfoExtended are folded into the offline/libgpod paths.
+ * Resolve a dump's device identity from its artifacts:
+ *
+ * - name from the iTunesDB master playlist;
+ * - serial / GUID / FamilyID + model from a SysInfoExtended — the on-disk file
+ *   (faithfully copied into `raw/`) if present, else the captured sidecar —
+ *   run through `resolveIpodModel`;
+ * - libgpod capabilities as the last resort.
  */
 export async function resolveDumpIdentity(args: {
   db: Database;
@@ -233,39 +168,31 @@ export async function resolveDumpIdentity(args: {
 }): Promise<DumpDeviceIdentity> {
   const { db, ipodRoot, dumpDir } = args;
 
-  // 1. A captured file that actually carries a model is authoritative — it was
-  // resolved live (including over USB, the only source for shuffles). A capture
-  // with *no* model (serial/GUID only — USB classification missed) must NOT
-  // short-circuit: the on-disk SysInfo may still identify the model offline. Its
-  // serial/GUID are folded into the base facts below instead.
-  const captured = await readCapturedIdentity(dumpDir);
-  if (captured && (captured.displayName || captured.generationId)) {
-    return identityFromCaptured(captured);
-  }
-
-  // Base facts: a model-less capture's serial/GUID (read live) take precedence
-  // over the on-disk SysInfoExtended, then fall back to it.
   const base: DumpDeviceIdentity = {};
-  const sysInfo = readSysInfoExtended(ipodRoot);
-  const serialNumber = captured?.serialNumber ?? sysInfo?.serialNumber;
-  const firewireGuid = captured?.firewireGuid ?? sysInfo?.firewireGuid;
-  if (serialNumber) base.serialNumber = serialNumber;
-  if (firewireGuid) base.firewireGuid = firewireGuid;
+
+  // Name — the iPod's own name lives in the iTunesDB, not the disk volume label.
+  const name = ipodNameFromDb(db);
+  if (name) base.name = name;
+
+  // SysInfoExtended: the on-disk file (byte-faithful copy) first, else the
+  // sidecar captured read-only from firmware for a SysInfo-less device.
+  const sysInfo = readSysInfoExtended(ipodRoot) ?? (await readCapturedSysInfo(dumpDir));
+  if (sysInfo?.serialNumber) base.serialNumber = sysInfo.serialNumber;
+  if (sysInfo?.firewireGuid) base.firewireGuid = sysInfo.firewireGuid;
   if (sysInfo?.identity.familyId !== undefined) base.familyId = sysInfo.identity.familyId;
 
-  // 2. Offline model resolution over the full on-disk identity bag. The classic
-  // SysInfo `ModelNumStr` is read directly — `readSysInfoExtended` returns null
-  // when the *extended* plist is absent (common on second-hand iPods), so its
-  // identity bag can't be relied on for the model number on its own. A captured
-  // serial can also drive the serial-suffix lookup here.
+  // Model — offline resolution over the full identity bag. The classic SysInfo
+  // `ModelNumStr` is read directly as a fallback because `readSysInfoExtended`
+  // returns null when the *extended* plist is absent (some older iPods carry
+  // only the classic SysInfo).
   const model = resolveIpodModel({
     modelNumStr: sysInfo?.identity.modelNumStr ?? readSysInfoModelNumber(ipodRoot),
-    serialNumber,
+    serialNumber: sysInfo?.serialNumber,
     familyId: sysInfo?.identity.familyId ?? null,
     libgpodGeneration: libgpodGeneration(db),
   });
   if (model) return { ...base, ...identityFromModel(model) };
 
-  // 3. libgpod capabilities — last resort.
+  // Last resort: libgpod capabilities.
   return { ...base, ...identityFromLibgpod(db) };
 }

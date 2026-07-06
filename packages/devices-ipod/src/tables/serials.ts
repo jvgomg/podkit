@@ -332,6 +332,26 @@ export const SERIAL_TO_MODEL: Record<string, string> = {
   JQ1: 'E971',
   // Source: real hardware — serial DCYL44J8F0GP, device is Blue.
   '0GP': 'D477',
+
+  // iPod shuffle (4th Generation) — Late 2012 (Rev A) + Mid 2015 (Rev B), 2GB.
+  // Source: The Apple Wiki, Models/iPod. Suffixes are the last 3 of the wiki's
+  // 4-char suffix (e.g. F4T0 → 4T0), matching this table's last-3 convention.
+  // Anchored on real hardware: serial CC4LXAVUF4T0 → MD777 (F4T0), Purple.
+  '4RT': 'D773', // Pink (Late 2012)
+  '4RV': 'D774', // Yellow
+  '4RW': 'D775', // Blue
+  '4RY': 'D776', // Green
+  '4T0': 'D777', // Purple — Nikki's shuffle (real hardware)
+  '4T1': 'D778', // Silver
+  '4VF': 'D779', // Slate
+  '4VG': 'D780', // (PRODUCT) Red
+  JDH: 'E949', // Space Gray
+  K67: 'KM72', // Pink (Mid 2015)
+  K68: 'KM92', // Gold
+  K69: 'KME2', // Blue
+  K6C: 'KMG2', // Silver
+  K6D: 'KMJ2', // Space Gray
+  K6F: 'KML2', // (PRODUCT) Red
 };
 
 // Duplicate-suffix handling: libgpod's C array has duplicate keys where "last wins".

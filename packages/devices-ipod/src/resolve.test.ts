@@ -68,6 +68,22 @@ describe('resolveIpodModel — serialNumber axis', () => {
     expect(model!.source).toBe('serial');
   });
 
+  it('resolves a 12-char iPod shuffle 4G serial to the full purple variant', () => {
+    // Real hardware — Late 2012 shuffle 4G, serial CC4LXAVUF4T0 (suffix 4T0 → MD777).
+    const model = resolveIpodModel({ serialNumber: 'CC4LXAVUF4T0' });
+    expect(model).not.toBeNull();
+    expect(model!.generationId).toBe('shuffle_4g');
+    expect(model!.modelNumber).toBe('D777');
+    expect(model!.capacityGb).toBe(2);
+    expect(model!.color).toBe('Purple');
+    expect(model!.source).toBe('serial');
+  });
+
+  it('resolves iPod shuffle 4G generation from FamilyID 133 (hardware-verified)', () => {
+    const model = resolveIpodModel({ familyId: 133 });
+    expect(model?.generationId).toBe('shuffle_4g');
+  });
+
   it('returns null when serial suffix is not in table', () => {
     expect(resolveIpodModel({ serialNumber: 'XXXXXXXXX' })).toBeNull();
   });
