@@ -763,6 +763,9 @@ export type {
   IpodModelInput,
 } from './device/index.js';
 
+// Unknown-iPod-model sync guard — refuses to sync an unidentified iPod
+export { assertKnownIpodModel, UnknownIpodModelError } from './device/index.js';
+
 // Unified capability resolver
 export {
   resolveCapabilities,

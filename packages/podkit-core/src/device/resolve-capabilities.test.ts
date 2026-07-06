@@ -7,6 +7,7 @@
 import { describe, expect, it } from 'bun:test';
 
 import { resolveCapabilities, identifyCapabilities } from './resolve-capabilities.js';
+import { UnknownIpodModelError } from './unknown-ipod-model.js';
 import type { IpodIdentity, MassStorageIdentity, DeviceIdentity } from '@podkit/device-types';
 import type { FirmwareCapabilities } from '@podkit/device-types';
 
@@ -78,24 +79,20 @@ describe('resolveCapabilities — iPod identity', () => {
     expect(caps.artworkMaxResolution).toBe(176);
   });
 
-  it('throws when familyId is unknown and serial is not in table', () => {
+  it('throws the typed unknown-model guard when familyId is unknown and serial is not in table', () => {
     const identity = makeIpodIdentity({
       serialNumber: 'XXXXXXX', // suffix not in table
       familyId: 9999, // unknown familyId
     });
-    expect(() => resolveCapabilities(identity)).toThrow(
-      /Could not resolve iPod model from identity/
-    );
+    expect(() => resolveCapabilities(identity)).toThrow(UnknownIpodModelError);
   });
 
-  it('throws when familyId is null (not detected) and serial is not in table', () => {
+  it('throws the typed unknown-model guard when familyId is null (not detected) and serial is not in table', () => {
     const identity = makeIpodIdentity({
       serialNumber: 'XXXXXXX',
       familyId: null,
     });
-    expect(() => resolveCapabilities(identity)).toThrow(
-      /Could not resolve iPod model from identity/
-    );
+    expect(() => resolveCapabilities(identity)).toThrow(UnknownIpodModelError);
   });
 
   it('merges firmware overlay when provided', () => {

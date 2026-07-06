@@ -148,8 +148,8 @@ function buildUnknownModelIssue(_mountPoint?: string): DeviceIssue {
   return {
     type: 'unknown_model',
     message:
-      'Could not identify iPod model from the on-disk identity files. The device will be treated as a generic iPod, which may affect artwork format or database compatibility.',
-    suggestion: `Run \`podkit doctor --repair sysinfo-extended\` to read the device identity from firmware. See: ${DOCS_URL}`,
+      'Could not identify this iPod model from the on-disk identity files. podkit cannot sync this device until its identity is written to disk, because it cannot choose the correct artwork format or database layout.',
+    suggestion: `Set the iPod up once over USB with \`podkit device add\`, or run \`podkit doctor --repair sysinfo-extended\` to write the identity from firmware. See: ${DOCS_URL}`,
   };
 }
 

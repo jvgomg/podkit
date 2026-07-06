@@ -35,6 +35,8 @@ import {
 } from '@podkit/devices-ipod';
 import type { IpodModel } from '@podkit/devices-ipod';
 
+import { assertKnownIpodModel } from './unknown-ipod-model.js';
+
 import {
   getCapabilities as getMassStorageCapabilities,
   getCapabilitiesResolved as getMassStorageCapabilitiesResolved,
@@ -125,15 +127,11 @@ export function resolveCapabilities(
 ): DeviceCapabilities {
   switch (identity.kind) {
     case 'ipod': {
-      const model = resolveIpodModel({
+      const resolveInput = {
         serialNumber: identity.serialNumber,
         familyId: identity.familyId,
-      });
-      if (!model) {
-        throw new Error(
-          `Could not resolve iPod model from identity: serialNumber=${identity.serialNumber ?? 'none'}, familyId=${identity.familyId}`
-        );
-      }
+      };
+      const model = assertKnownIpodModel(resolveIpodModel(resolveInput), resolveInput);
       return getIpodCapabilities(model, { firmware: opts?.firmware });
     }
 
@@ -216,15 +214,11 @@ export function resolveCapabilitiesResolved(
 ): ResolvedDeviceCapabilities {
   switch (identity.kind) {
     case 'ipod': {
-      const model = resolveIpodModel({
+      const resolveInput = {
         serialNumber: identity.serialNumber,
         familyId: identity.familyId,
-      });
-      if (!model) {
-        throw new Error(
-          `Could not resolve iPod model from identity: serialNumber=${identity.serialNumber ?? 'none'}, familyId=${identity.familyId}`
-        );
-      }
+      };
+      const model = assertKnownIpodModel(resolveIpodModel(resolveInput), resolveInput);
       // Delegate to the iPod synthesiser's resolved variant — it knows
       // which fields the firmware overlay can touch (codecs) and which
       // are purely table-derived, so per-field provenance is attributed

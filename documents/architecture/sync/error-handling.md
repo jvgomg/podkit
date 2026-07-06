@@ -454,6 +454,18 @@ does not cover:
 - **CLI-level errors** (invalid arguments, device-not-found). These use
   `CliError` in `packages/podkit-cli/`. The CLI layer translates
   sync-engine errors into exit codes + user-friendly messages.
+- **Pre-flight precondition guards** that refuse *before* the engine runs.
+  These are not `CategorizedSyncError`s — they have no category and no
+  retry policy because no per-op work has started. The canonical example
+  is `UnknownIpodModelError` (`packages/podkit-core/src/device/unknown-ipod-model.ts`):
+  a pure guard (`assertKnownIpodModel`) that refuses to sync an iPod whose
+  model the identity cascade could not resolve, rather than silently
+  degrading to a "generic iPod" and risking the wrong artwork format or an
+  incompatible database. The sync runner gates on it before FFmpeg detect /
+  DB open (surfacing it as a `UNKNOWN_IPOD_MODEL` `CliError` with one-time
+  USB-setup remediation); `resolveCapabilities` and `openDevice` also call
+  the guard so any other caller gets the typed refusal. Because the daemon
+  shells out to `sync`, it inherits the refusal with no extra code.
 - **Library-binding errors** (libgpod's `LibgpodError`, taglib's raw
   errors). These are wrapped at the adapter boundary into the
   CategorizedSyncError hierarchy.

@@ -286,12 +286,10 @@ export async function openDevice(
 
     const model = resolveIpodModel(identityBag);
     if (!model) {
-      // Neutral wording — no `libgpod` leakage in user-facing copy.
-      throw new Error(
-        'Could not identify iPod model from device data. ' +
-          'Try reconnecting the device, or run `podkit doctor --repair sysinfo-extended` ' +
-          'to refresh the on-disk identity files from USB firmware.'
-      );
+      // Defense in depth: the sync runner gates on `assessIpodIdentity` before
+      // reaching here, but any other caller of `openDevice` still gets the typed
+      // refusal (with remediation) rather than a silent generic-iPod fallback.
+      throw new core.UnknownIpodModelError(identityBag);
     }
     const capabilities = core.identifyCapabilities(model);
 

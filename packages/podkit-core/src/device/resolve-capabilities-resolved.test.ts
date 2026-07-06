@@ -9,6 +9,7 @@
 import { describe, it, expect } from 'bun:test';
 import type { IpodIdentity } from '@podkit/device-types';
 import { resolveCapabilitiesResolved } from './resolve-capabilities.js';
+import { UnknownIpodModelError } from './unknown-ipod-model.js';
 
 describe('resolveCapabilitiesResolved — mass-storage dispatch', () => {
   it('reports source=preset on every field when no overrides are passed', () => {
@@ -77,7 +78,7 @@ describe('resolveCapabilitiesResolved — iPod dispatch', () => {
     expect(r.supportedAudioCodecs.source).toBe('generation');
   });
 
-  it('throws on an iPod identity that resolves to no model', () => {
+  it('throws the typed unknown-model guard on an iPod identity that resolves to no model', () => {
     expect(() =>
       resolveCapabilitiesResolved({
         kind: 'ipod',
@@ -85,6 +86,6 @@ describe('resolveCapabilitiesResolved — iPod dispatch', () => {
         serialNumber: '',
         familyId: null,
       })
-    ).toThrow(/Could not resolve iPod model/);
+    ).toThrow(UnknownIpodModelError);
   });
 });

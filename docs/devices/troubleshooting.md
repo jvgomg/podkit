@@ -40,6 +40,35 @@ This means podkit recognised the device over USB (Apple vendor ID + iPod product
 
 After restoring, plug the iPod back in and run `podkit device scan` again — it should now show the device as ready. If you intend to use the device as a podkit target, run `podkit device add` to register it, then `podkit device init` if needed to write the empty database.
 
+## podkit won't sync — "Could not identify this iPod model"
+
+`podkit sync` may stop before transferring anything with:
+
+```
+Could not identify this iPod model from its on-disk identity.
+```
+
+podkit needs to know exactly which iPod it's writing to — the model determines
+the artwork format and database layout. When it can't resolve the model from the
+files on the device, it **refuses to sync** rather than guessing and risking the
+wrong artwork format or a corrupt database. (Earlier versions silently treated
+an unidentified iPod as a "generic" one and synced anyway; that footgun is gone.)
+
+This happens when the iPod's authoritative identity file (SysInfoExtended) is
+missing — typically an iPod that was wiped, restored, or never set up with
+podkit. The fix is a **one-time setup** that writes the identity; afterwards
+every sync works from the mounted volume alone, with no USB needed:
+
+- **Set the iPod up over USB once:** connect the iPod and run `podkit device add`.
+  In Docker, pass the USB device through for this one command — later syncs need
+  only the volume mount.
+- **Or repair the identity in place:** run `podkit doctor --repair sysinfo-extended`,
+  which reads the model from the device firmware and writes the identity file.
+
+After either step, `podkit sync` resolves the model and proceeds normally. The
+same refusal applies to the background daemon — it skips an unidentified device
+and tells you to set it up rather than mangling it.
+
 ## See also
 
 - [Common Issues](/troubleshooting/common-issues/) — broader sync, mounting, and detection issues

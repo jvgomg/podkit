@@ -79,6 +79,7 @@ export const SyncErrorCodes = {
   IPOD_OPEN_FAILED: 'IPOD_OPEN_FAILED',
   DEVICE_OPEN_FAILED: 'DEVICE_OPEN_FAILED',
   DEVICE_UNSUPPORTED: 'DEVICE_UNSUPPORTED',
+  UNKNOWN_IPOD_MODEL: 'UNKNOWN_IPOD_MODEL',
   NO_COMPATIBLE_CODEC: 'NO_COMPATIBLE_CODEC',
   LOCK_HELD: 'LOCK_HELD',
   LOCK_UNAVAILABLE: 'LOCK_UNAVAILABLE',
@@ -705,6 +706,26 @@ export async function runSync(
     });
   }
 
+  // Refusal for an iPod whose model could not be resolved. The remediation
+  // text is owned by the typed `UnknownIpodModelError` guard so the headline
+  // (rendered as an error) and the setup steps (rendered as plain advisory
+  // lines) stay in one place across the pre-open gate and the open-device
+  // fallback below.
+  const unknownIpodModelError = (message: string): CliError =>
+    new CliError({
+      message,
+      code: SyncErrorCodes.UNKNOWN_IPOD_MODEL,
+      details: { dryRun, device: devicePath },
+      printText: (o) => {
+        o.newline();
+        const [headline, ...rest] = message.split('\n');
+        o.error(headline ?? message);
+        for (const line of rest) {
+          o.print(line);
+        }
+      },
+    });
+
   // ----- Unsupported-device gate (TASK-317.03) -----
   // Refuse cleanly before any heavy work (FFmpeg detect, DB open, planning)
   // when the cascade resolves to an unsupported generation. No track plan,
@@ -760,6 +781,20 @@ export async function runSync(
         },
       });
     }
+
+    // ----- Unknown-model gate -----
+    // When assessment SUCCEEDED but the cascade resolved no model, refuse
+    // rather than silently degrading to a generic iPod (wrong artwork format
+    // / incompatible database). A *failed* assessment leaves `syncAssessment`
+    // null and falls through to the normal open path, which surfaces its own
+    // error. The remediation text is owned by the typed guard so the host CLI
+    // and the daemon (which shells `sync`) stay in lockstep.
+    if (syncAssessment && !syncAssessment.model) {
+      const guard = new core.UnknownIpodModelError({
+        modelNumStr: syncAssessment.sysInfoModelNumber,
+      });
+      throw unknownIpodModelError(guard.message);
+    }
   }
 
   // ----- Check FFmpeg availability -----
@@ -802,6 +837,15 @@ export async function runSync(
     );
   } catch (err) {
     dbSpinner.stop();
+
+    // When `assessIpodIdentity` above threw (best-effort, swallowed), the
+    // unknown-model gate is skipped and the refusal surfaces here instead.
+    // Map it to the same typed code + remediation rather than burying it in
+    // a generic IPOD_OPEN_FAILED.
+    if (err instanceof core.UnknownIpodModelError) {
+      throw unknownIpodModelError(err.message);
+    }
+
     const isIpodError = err instanceof core.IpodError;
     const message = err instanceof Error ? err.message : 'Failed to open device';
 
@@ -978,12 +1022,11 @@ export async function runSync(
           });
         }
 
-        for (const issue of deviceValidation.issues) {
-          out.warn(issue.message);
-          if (issue.suggestion) {
-            out.print(`  ${issue.suggestion}`);
-          }
-        }
+        // Note: unknown-model degradation is no longer surfaced as a warning
+        // here. An unresolved model is refused at the unknown-model gate above
+        // (UNKNOWN_IPOD_MODEL); a model resolved via the identity cascade is a
+        // real model, so the old "treated as a generic iPod" warning would be
+        // both unreachable and factually wrong.
       }
     }
 

@@ -139,6 +139,9 @@ export type {
   ResolveCapabilitiesResolvedOptions,
 } from './resolve-capabilities.js';
 
+// Unknown-iPod-model sync guard
+export { assertKnownIpodModel, UnknownIpodModelError } from './unknown-ipod-model.js';
+
 // Readiness pipeline
 export type {
   ReadinessStage,

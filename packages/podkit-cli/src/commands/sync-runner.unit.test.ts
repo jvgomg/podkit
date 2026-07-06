@@ -250,4 +250,49 @@ describe('runSync: validation + deps seam', () => {
     // No track plan generated.
     expect(openedDevice).toBe(false);
   });
+
+  it('refuses cleanly with UNKNOWN_IPOD_MODEL when the cascade resolves no model', async () => {
+    const ctx = makeContext(sharedSourceDir);
+    const { out, stdout, exitCode } = makeOut();
+
+    // Assessment succeeds but the cascade yields no model (no SIE, no serial,
+    // no USB fingerprint). Sync must refuse BEFORE FFmpeg detect / DB open
+    // rather than silently degrading to a generic iPod.
+    let openedDevice = false;
+    const deps: SyncDeps = {
+      getDeviceManager: () => fakeManager(),
+      loadCore: async () => {
+        const real = await import('@podkit/core');
+        return {
+          ...real,
+          assessIpodIdentity: async () => ({
+            model: null,
+            capabilities: null,
+            needsChecksum: false,
+            checksumType: undefined,
+            firmwareInquiry: 'missing',
+            existing: null,
+            usbFingerprint: null,
+            sysInfoModelNumber: undefined,
+          }),
+          createFFmpegTranscoder: () => {
+            openedDevice = true;
+            return real.createFFmpegTranscoder();
+          },
+        } as typeof real;
+      },
+    };
+
+    await runWithContext(ctx, () => runAction(out, () => runSync({ dryRun: true }, out, deps)));
+    expect(exitCode.get()).toBe(1);
+    const err = stdout.json<ErrJson>();
+    expect(err.code).toBe(SyncErrorCodes.UNKNOWN_IPOD_MODEL);
+    // Actionable remediation: one-time USB setup + in-place repair.
+    expect(err.error).toContain('device add');
+    expect(err.error).toContain('doctor --repair sysinfo-extended');
+    // Neutral wording — no implementation leakage.
+    expect(err.error.toLowerCase()).not.toContain('libgpod');
+    // Refused before any heavy work.
+    expect(openedDevice).toBe(false);
+  });
 });
