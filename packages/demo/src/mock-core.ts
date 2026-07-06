@@ -2637,6 +2637,10 @@ export async function ensureSysInfoExtended(
   return { present: false, source: 'unavailable', error: 'Not available in demo mode' };
 }
 
+export async function captureSysInfoExtendedXml(_fp: any): Promise<string | null> {
+  return null;
+}
+
 export async function assessIpodIdentity(_mountPoint: string, _opts?: any): Promise<any> {
   return {
     model: null,
