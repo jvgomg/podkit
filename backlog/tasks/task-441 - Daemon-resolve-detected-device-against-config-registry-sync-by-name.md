@@ -1,10 +1,10 @@
 ---
 id: TASK-441
 title: 'Daemon: resolve detected device against config registry, sync by name'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-06-27 19:04'
-updated_date: '2026-07-07 21:24'
+updated_date: '2026-07-07 21:29'
 labels:
   - daemon
   - docker

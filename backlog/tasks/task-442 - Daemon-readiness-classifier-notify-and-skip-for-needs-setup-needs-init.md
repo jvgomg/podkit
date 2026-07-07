@@ -4,7 +4,7 @@ title: 'Daemon: readiness classifier + notify-and-skip for needs-setup/needs-ini
 status: Done
 assignee: []
 created_date: '2026-06-27 19:04'
-updated_date: '2026-07-06 22:58'
+updated_date: '2026-07-07 21:47'
 labels:
   - daemon
   - docker
@@ -36,7 +36,7 @@ Hard rule from doc-052: the daemon NEVER auto-mutates a detected device — neve
 <!-- AC:BEGIN -->
 - [x] #1 Pure readiness classifier: (detectedDevice) -> ready | needs-setup | needs-init | unsupported, unit-tested in isolation
 - [x] #2 needs-setup -> notification tells the user to run `device add` once (with USB passthrough); device is skipped, not retry-spammed
-- [ ] #3 needs-init -> notification tells the user to run `device init`; device is skipped
+- [x] #3 needs-init -> notification tells the user to run `device init`; device is skipped
 - [x] #4 Daemon never writes SysInfoExtended and never auto-inits a database
 - [x] #5 Notifications are device-specific and actionable (not generic 'sync failed')
 <!-- AC:END -->
@@ -51,4 +51,6 @@ Pure classifier `classifyReadiness` in packages/podkit-daemon/src/readiness-clas
 Design deviation from AC#1 wording: the classifier's input is the *sync outcome* (exitCode + typed code), not a raw `detectedDevice`. This is the decoupled shape — the daemon stays a thin subprocess wrapper and inherits the CLI's refusal (TASK-440) for free, rather than re-deriving readiness in-process. Serves the same goal; noted for the record.
 
 AC#3 (needs-init) NOT checked: the `needs-init` classification branch and its "Device Needs Init" notification title are wired, but dormant — no CLI path emits the `IPOD_NEEDS_INIT` code yet (see the "Reserved" comment in readiness-classifier.ts). It will fire once `podkit sync` detects a blank device before the db-open gate and surfaces a distinct code instead of the overloaded IPOD_OPEN_FAILED. Tracked as follow-up.
+
+AC#3 now satisfied via TASK-459: `podkit sync` emits the distinct IPOD_NEEDS_INIT code for a blank device, activating the classifier's needs-init branch end-to-end (notification copy corrected to `podkit device init`; Reserved comment removed).
 <!-- SECTION:NOTES:END -->
