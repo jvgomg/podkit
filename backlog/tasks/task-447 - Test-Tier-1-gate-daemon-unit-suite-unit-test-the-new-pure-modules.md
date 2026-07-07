@@ -4,7 +4,7 @@ title: 'Test Tier 1: gate daemon unit suite + unit-test the new pure modules'
 status: In Progress
 assignee: []
 created_date: '2026-06-27 19:05'
-updated_date: '2026-07-07 21:24'
+updated_date: '2026-07-07 22:27'
 labels:
   - docker
   - daemon
@@ -54,4 +54,6 @@ Also fixed a lint violation that TASK-439 had left (my per-package lint filter m
 Changeset added (@podkit/daemon patch) for the user-facing notification/skip behavior change. Verification: 84 daemon tests pass, daemon typecheck clean, root `//#lint` 0/0, completions tests 53 green.
 
 Update: TASK-452 was a duplicate of TASK-441 and has been archived; the device-registry resolver + its Tier-1 unit tests landed via TASK-441 (device-registry-resolver.test.ts, 14 table tests, external-behavior style). AC#2 now waits only on TASK-444 (ENV mapper) and TASK-445 (device-access probe).
+
+Update: mass-storage ENV mapper + its Tier-1 unit tests landed via TASK-444 (CLI env-device.test.ts, 7 table tests; daemon env-device.test.ts, 5 tests; external-behavior style). AC#2 now waits only on TASK-445 (container device-access probe).
 <!-- SECTION:NOTES:END -->
