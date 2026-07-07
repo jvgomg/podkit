@@ -4,7 +4,7 @@ title: 'Test Tier 1: gate daemon unit suite + unit-test the new pure modules'
 status: In Progress
 assignee: []
 created_date: '2026-06-27 19:05'
-updated_date: '2026-06-28 08:42'
+updated_date: '2026-07-07 21:24'
 labels:
   - docker
   - daemon
@@ -13,7 +13,7 @@ milestone: m-22
 dependencies:
   - TASK-444
   - TASK-445
-  - TASK-452
+  - TASK-441
 references:
   - backlog/docs/doc-053 - podkit-docker-testing-strategy.md
 priority: high
@@ -52,4 +52,6 @@ Sonnet review applied: moved `syncFailed = true` into the generic-error sub-bran
 Also fixed a lint violation that TASK-439 had left (my per-package lint filter missed the root `//#lint`): the `__complete commands` null-parent guard used `process.stderr.write` (breaks the CLI-writes-through-OutputContext convention) — now `throw`s so Commander surfaces it.
 
 Changeset added (@podkit/daemon patch) for the user-facing notification/skip behavior change. Verification: 84 daemon tests pass, daemon typecheck clean, root `//#lint` 0/0, completions tests 53 green.
+
+Update: TASK-452 was a duplicate of TASK-441 and has been archived; the device-registry resolver + its Tier-1 unit tests landed via TASK-441 (device-registry-resolver.test.ts, 14 table tests, external-behavior style). AC#2 now waits only on TASK-444 (ENV mapper) and TASK-445 (device-access probe).
 <!-- SECTION:NOTES:END -->
