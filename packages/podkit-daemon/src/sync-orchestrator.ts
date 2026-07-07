@@ -65,6 +65,15 @@ export interface SyncOrchestratorOptions {
    * Falls back to `runSync` if not provided.
    */
   spawnSync?: (device: string, options?: { dryRun?: boolean }) => AbortableCliResult<SyncOutput>;
+  /**
+   * Resolve a detected device to its registered config name. When it
+   * resolves to a name, the sync is invoked by name so the CLI applies
+   * per-device settings; when it resolves to `null` (unregistered) or
+   * throws, the sync falls back to the mount path with global/ENV
+   * settings. When omitted (e.g. the mass-storage lane, which has no
+   * identity to resolve), sync is always path-based.
+   */
+  resolveDeviceName?: (device: DetectedDevice) => Promise<string | null>;
   /** Base path for per-device mount points (default: "/tmp/podkit") */
   mountBase?: string;
   /** Optional notification client. When omitted, no notifications are sent. */
@@ -89,10 +98,12 @@ export class SyncOrchestrator {
     runEject: SyncOrchestratorOptions['runEject'];
     spawnSync?: SyncOrchestratorOptions['spawnSync'];
   };
+  private readonly resolveDeviceName?: SyncOrchestratorOptions['resolveDeviceName'];
 
   constructor(options: SyncOrchestratorOptions) {
     this.mountBase = options.mountBase ?? '/tmp/podkit';
     this.notify = options.notify ?? { notify: async () => {} };
+    this.resolveDeviceName = options.resolveDeviceName;
     this.cli = {
       runMount: options.runMount,
       runSync: options.runSync,
@@ -211,9 +222,36 @@ export class SyncOrchestrator {
       const mountPoint = mountResult.json.mountPoint ?? targetMount;
       log('info', `Mounted ${device.name} at ${mountPoint}`);
 
+      // Resolve the detected device against the config registry. A match
+      // means the CLI is invoked by name so per-device settings apply;
+      // otherwise (unregistered, no resolver, or resolution failed) sync
+      // stays path-based with global/ENV settings.
+      let syncTarget = mountPoint;
+      if (this.resolveDeviceName) {
+        try {
+          const registeredName = await this.resolveDeviceName(device);
+          if (registeredName) {
+            syncTarget = registeredName;
+            log('info', `Device ${device.name} is registered as "${registeredName}"`, {
+              uuid: device.uuid,
+            });
+          } else {
+            // Null covers both "genuinely unregistered" and "registry lookup
+            // failed" (the resolver warn-logs the latter itself) — so this
+            // message stays neutral about which one happened.
+            log('info', `No registered device name resolved for ${device.name}, syncing by path`, {
+              uuid: device.uuid,
+            });
+          }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          log('warn', `Device registry resolution threw, syncing by path: ${message}`);
+        }
+      }
+
       // Step 2: Dry-run preview (for logging + notification)
       try {
-        const dryRunResult = await this.cli.runSync(mountPoint, { dryRun: true });
+        const dryRunResult = await this.cli.runSync(syncTarget, { dryRun: true });
         if (dryRunResult.json?.plan) {
           const plan = dryRunResult.json.plan;
           log('info', 'Sync plan', {
@@ -240,7 +278,7 @@ export class SyncOrchestrator {
         // Use spawnSync when available so abort() can forward SIGINT
         let syncResult: CliResult<SyncOutput>;
         if (this.cli.spawnSync) {
-          const handle = this.cli.spawnSync(mountPoint);
+          const handle = this.cli.spawnSync(syncTarget);
           this._activeSyncChild = handle.child;
           try {
             syncResult = await handle.result;
@@ -248,7 +286,7 @@ export class SyncOrchestrator {
             this._activeSyncChild = null;
           }
         } else {
-          syncResult = await this.cli.runSync(mountPoint);
+          syncResult = await this.cli.runSync(syncTarget);
         }
         if (syncResult.exitCode === 130) {
           log('info', 'Sync aborted gracefully', { device: device.name });

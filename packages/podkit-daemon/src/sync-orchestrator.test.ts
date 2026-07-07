@@ -774,4 +774,158 @@ describe('SyncOrchestrator with mass-storage no-op runners', () => {
       expect(notifications.some((n) => n.title === 'Sync Error')).toBe(true);
     });
   });
+
+  describe('device-registry resolution (sync by name)', () => {
+    /** Mock CLI that records the device argument each sync was invoked with. */
+    function createArgCapturingCli() {
+      const syncTargets: { device: string; dryRun: boolean }[] = [];
+      const ejectTargets: string[] = [];
+      return {
+        syncTargets,
+        ejectTargets,
+        runMount: async (): Promise<CliResult<MountOutput>> =>
+          okResult<MountOutput>({ success: true, mountPoint: '/tmp/podkit-sdb1' }),
+        runSync: async (
+          device: string,
+          options?: { dryRun?: boolean }
+        ): Promise<CliResult<SyncOutput>> => {
+          syncTargets.push({ device, dryRun: options?.dryRun ?? false });
+          return options?.dryRun
+            ? okResult<SyncOutput>({ success: true, dryRun: true })
+            : okResult<SyncOutput>({
+                success: true,
+                dryRun: false,
+                result: { completed: 1, failed: 0, duration: 1 },
+              });
+        },
+        runEject: async (device: string): Promise<CliResult<EjectOutput>> => {
+          ejectTargets.push(device);
+          return okResult<EjectOutput>({ success: true });
+        },
+      };
+    }
+
+    it('syncs by registered device name so per-device settings apply', async () => {
+      const cli = createArgCapturingCli();
+      const orchestrator = new SyncOrchestrator({
+        ...cli,
+        resolveDeviceName: async () => 'terapod',
+      });
+
+      await orchestrator.handleDeviceAppeared(makeDevice());
+
+      expect(cli.syncTargets).toEqual([
+        { device: 'terapod', dryRun: true },
+        { device: 'terapod', dryRun: false },
+      ]);
+      // Eject still targets the mount point — the daemon mounted it there.
+      expect(cli.ejectTargets).toEqual(['/tmp/podkit-sdb1']);
+    });
+
+    it('falls back to path-based sync when the device is unregistered', async () => {
+      const cli = createArgCapturingCli();
+      const orchestrator = new SyncOrchestrator({
+        ...cli,
+        resolveDeviceName: async () => null,
+      });
+
+      await orchestrator.handleDeviceAppeared(makeDevice());
+
+      expect(cli.syncTargets).toEqual([
+        { device: '/tmp/podkit-sdb1', dryRun: true },
+        { device: '/tmp/podkit-sdb1', dryRun: false },
+      ]);
+    });
+
+    it('falls back to path-based sync when resolution throws', async () => {
+      const cli = createArgCapturingCli();
+      const orchestrator = new SyncOrchestrator({
+        ...cli,
+        resolveDeviceName: async () => {
+          throw new Error('registry lookup exploded');
+        },
+      });
+
+      await orchestrator.handleDeviceAppeared(makeDevice());
+
+      expect(cli.syncTargets).toEqual([
+        { device: '/tmp/podkit-sdb1', dryRun: true },
+        { device: '/tmp/podkit-sdb1', dryRun: false },
+      ]);
+    });
+
+    it('syncs by path when no resolver is configured (ENV-only lane unchanged)', async () => {
+      const cli = createArgCapturingCli();
+      const orchestrator = new SyncOrchestrator({ ...cli });
+
+      await orchestrator.handleDeviceAppeared(makeDevice());
+
+      expect(cli.syncTargets).toEqual([
+        { device: '/tmp/podkit-sdb1', dryRun: true },
+        { device: '/tmp/podkit-sdb1', dryRun: false },
+      ]);
+    });
+
+    it('classifies a refusal and notifies identically when syncing by name', async () => {
+      const notifications: { title: string; body: string }[] = [];
+      const syncTargets: string[] = [];
+      const orchestrator = new SyncOrchestrator({
+        runMount: async () =>
+          okResult<MountOutput>({ success: true, mountPoint: '/tmp/podkit-sdb1' }),
+        runSync: async (device: string, options?: { dryRun?: boolean }) => {
+          syncTargets.push(device);
+          if (options?.dryRun) return okResult<SyncOutput>({ success: true, dryRun: true });
+          return failResult<SyncOutput>({
+            success: false,
+            dryRun: false,
+            error: 'Could not identify this iPod model from its on-disk identity.',
+            code: 'UNKNOWN_IPOD_MODEL',
+          });
+        },
+        runEject: async () => okResult<EjectOutput>({ success: true }),
+        resolveDeviceName: async () => 'terapod',
+        notify: {
+          notify: async (title: string, body: string) => {
+            notifications.push({ title, body });
+          },
+        },
+      });
+
+      await orchestrator.handleDeviceAppeared(makeDevice());
+
+      // The refusal ran against the registered name, and the readiness
+      // notify-and-skip behaves exactly as it does for path-based sync.
+      expect(syncTargets).toEqual(['terapod', 'terapod']);
+      expect(notifications.some((n) => n.title === 'Sync Error')).toBe(false);
+      expect(notifications.some((n) => n.title === 'Device Needs Setup')).toBe(true);
+    });
+
+    it('passes the registered name to the abortable spawnSync path too', async () => {
+      const cli = createArgCapturingCli();
+      const spawnTargets: string[] = [];
+      const orchestrator = new SyncOrchestrator({
+        ...cli,
+        spawnSync: (device: string): AbortableCliResult<SyncOutput> => {
+          spawnTargets.push(device);
+          return {
+            child: { kill: () => true } as unknown as ChildProcess,
+            result: Promise.resolve(
+              okResult<SyncOutput>({
+                success: true,
+                dryRun: false,
+                result: { completed: 1, failed: 0, duration: 1 },
+              })
+            ),
+          };
+        },
+        resolveDeviceName: async () => 'terapod',
+      });
+
+      await orchestrator.handleDeviceAppeared(makeDevice());
+
+      expect(spawnTargets).toEqual(['terapod']);
+      // Dry-run still goes through runSync with the same resolved target.
+      expect(cli.syncTargets).toEqual([{ device: 'terapod', dryRun: true }]);
+    });
+  });
 });

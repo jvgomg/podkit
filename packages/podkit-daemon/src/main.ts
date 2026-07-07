@@ -12,7 +12,16 @@
 
 import { DevicePoller, scanMassStoragePaths } from './device-poller.js';
 import { SyncOrchestrator } from './sync-orchestrator.js';
-import { runMount, runSync, spawnSync, runEject, noopMount, noopEject } from './cli-runner.js';
+import {
+  runMount,
+  runSync,
+  spawnSync,
+  runEject,
+  runDeviceList,
+  noopMount,
+  noopEject,
+} from './cli-runner.js';
+import { createDeviceNameResolver } from './device-registry-resolver.js';
 import { createAppriseClient } from './apprise-client.js';
 import { log } from './logger.js';
 
@@ -38,7 +47,11 @@ function main(): void {
 
   const notify = createAppriseClient(appriseUrl);
 
-  // iPod poller + orchestrator (always active)
+  // iPod poller + orchestrator (always active).
+  // The registry resolver matches detected UUIDs against config devices
+  // (via `podkit --json device list`) so registered iPods sync by name
+  // with their per-device settings; unregistered ones (the ENV-only lane)
+  // fall back to path-based sync with global/ENV settings.
   const poller = new DevicePoller({ interval: pollInterval });
   const orchestrator = new SyncOrchestrator({
     runMount,
@@ -46,6 +59,7 @@ function main(): void {
     spawnSync,
     runEject,
     notify,
+    resolveDeviceName: createDeviceNameResolver(runDeviceList),
   });
 
   poller.on('device-appeared', (device) => {

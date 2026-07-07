@@ -76,6 +76,15 @@ export interface EjectOutput {
   error?: string;
 }
 
+/** Subset of DeviceListOutput the daemon cares about (the config device registry) */
+export interface DeviceListOutput {
+  success: boolean;
+  devices?: Array<{
+    name: string;
+    volumeUuid?: string;
+  }>;
+}
+
 // ---------------------------------------------------------------------------
 // Default config
 // ---------------------------------------------------------------------------
@@ -222,6 +231,18 @@ export function spawnSync(
   }
   log('info', `Running sync`, { device, dryRun: options?.dryRun ?? false });
   return spawnCli<SyncOutput>(args);
+}
+
+/**
+ * List configured devices (the config device registry).
+ *
+ * `podkit --json device list`
+ *
+ * This is how the daemon consults config without parsing config files
+ * itself: the CLI owns config loading and the daemon reads its JSON view.
+ */
+export async function runDeviceList(): Promise<CliResult<DeviceListOutput>> {
+  return runCli<DeviceListOutput>(['--json', 'device', 'list']);
 }
 
 /**

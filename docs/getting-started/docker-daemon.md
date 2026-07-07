@@ -49,10 +49,11 @@ docker compose logs -f
 1. The daemon polls for iPod devices every 5 seconds (configurable).
 2. A new iPod is detected and confirmed after 2 consecutive polls (debounced to avoid false positives from brief USB connections).
 3. The iPod is mounted at a unique path inside the container (e.g., `/tmp/podkit-sdb1`).
-4. A dry-run sync runs first to preview changes.
-5. The actual sync executes.
-6. The iPod is ejected — safe to unplug.
-7. If configured, notifications are sent at each step via Apprise.
+4. The iPod's volume UUID is matched against the devices in your config file. A registered iPod is synced by its device name, so its per-device settings apply; an unregistered iPod is synced by path with global/environment settings.
+5. A dry-run sync runs first to preview changes.
+6. The actual sync executes.
+7. The iPod is ejected — safe to unplug.
+8. If configured, notifications are sent at each step via Apprise.
 
 The daemon handles graceful shutdown on `SIGTERM` — if a sync is in progress when the container stops, it signals the sync to drain and save, then exits cleanly within Docker's 10-second timeout. Completed tracks are always preserved in the iPod database.
 
@@ -64,6 +65,7 @@ The daemon handles graceful shutdown on `SIGTERM` — if a sync is in progress w
 |----------|---------|-------------|
 | `PODKIT_POLL_INTERVAL` | `5` | How often to check for new iPod devices (seconds) |
 | `PODKIT_APPRISE_URL` | (unset) | Apprise notification endpoint URL |
+| `PODKIT_MASS_STORAGE_PATHS` | (unset) | Colon- or comma-separated mount paths of mass-storage players to auto-sync (see [Mass-Storage Devices](#mass-storage-devices)) |
 
 ### Standard podkit Settings
 
@@ -126,7 +128,7 @@ docker run --rm --privileged ghcr.io/jvgomg/podkit device scan --format json
 
 ## Multiple iPods
 
-If you have multiple iPods, configure named devices in your config file with their volume UUIDs. When an iPod is plugged in, podkit automatically matches it by UUID and applies the correct settings.
+If you have multiple iPods, configure named devices in your config file with their volume UUIDs. When an iPod is plugged in, the daemon matches it by UUID against your configured devices and syncs it by name, so the correct per-device settings apply. An iPod that isn't in your config still syncs — by path, with your global/environment settings.
 
 ```toml
 [music.main]
@@ -149,6 +151,31 @@ Each device can have its own quality preset, collection, artwork setting, and mo
 :::tip
 You can plug in multiple iPods at the same time. The daemon syncs one iPod at a time — if a second iPod is plugged in while a sync is in progress, it is automatically queued and synced after the first completes. Each device gets its own mount point, so there are no conflicts.
 :::
+
+## Mass-Storage Devices
+
+The daemon can also auto-sync mass-storage players (Echo Mini, Rockbox, and other folder-based devices). Point `PODKIT_MASS_STORAGE_PATHS` at their mount paths inside the container:
+
+```yaml
+    environment:
+      - PODKIT_MASS_STORAGE_PATHS=/devices/echo,/devices/walkman
+    volumes:
+      - /mnt/echo-mini:/devices/echo
+      - /mnt/walkman:/devices/walkman
+```
+
+Mass-storage auto-sync requires a declared preset. Unlike iPods, mass-storage devices carry no on-device identity podkit can read, so each path must correspond to a device declared in your config file with its `type` (the preset that describes its folder layout and capabilities):
+
+```toml
+[devices.echo]
+type = "echo-mini"
+path = "/devices/echo"
+# Filesystem UUID of the volume mounted at `path` — how the sync matches
+# the path it was given to this entry and applies the preset.
+volumeUuid = "1234-ABCD"
+```
+
+A mass-storage path with no matching config declaration is never silently synced with guessed settings — the sync fails instead. See [Config File Reference](/reference/config-file/) for presets and device-level options.
 
 ## Notifications with Apprise
 
