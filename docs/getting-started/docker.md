@@ -51,6 +51,78 @@ For more advanced setups (multiple collections, per-device settings, Subsonic so
      ghcr.io/jvgomg/podkit:latest sync
    ```
 
+## Device Setup vs Steady-State
+
+Everything podkit does in Docker splits into two phases, and knowing which one
+you're in makes the rest of this page simple:
+
+- **Steady-state (every sync):** the iPod is mounted on the host and bound into
+  the container at `/ipod`. No USB passthrough, no privileges beyond the volume
+  mount. This is the path every recipe on this page uses.
+- **Setup (once per device, sometimes never):** podkit must know exactly which
+  iPod model it's writing to — the model determines the artwork format and
+  database layout. That identity normally lives on the iPod itself, so **most
+  iPods need no setup at all**: any iPod that has ever been managed by iTunes
+  (or set up with podkit before) already carries its identity file, and syncs
+  straight from the volume mount.
+
+A freshly wiped or restored iPod may be missing its identity file. Sync then
+stops with `Could not identify this iPod model` rather than guessing — and you
+run the one-time setup:
+
+```bash
+# One-time setup: pass USB through for this single command.
+docker run --rm -it \
+  --device /dev/bus/usb \
+  -v ./podkit/config:/config \
+  -v /media/ipod:/ipod \
+  ghcr.io/jvgomg/podkit device add -d myipod --path /ipod
+```
+
+`device add` reads the model from the device firmware over USB, writes the
+identity file to the iPod, and registers the device in your config. After
+that, every future sync — one-shot or daemon — needs only the `/ipod` volume
+mount again.
+
+:::note[Some older iPods need a host for setup]
+USB identity readout works on the iPod nano 3G and later and the iPod classic.
+Earlier generations (iPod video 5G/5.5G, 4G/Photo, mini, nano 1G/2G,
+shuffle 1G/2G) only answer over SCSI, which podkit does not support inside a
+container yet.
+Set those up once with podkit on a macOS/Linux host — or not at all, if
+iTunes ever touched them (it wrote the identity file) — and the container
+handles every sync afterwards. See
+[Supported Devices](/devices/supported-devices/) for the full picture.
+:::
+
+:::note[Host udev rules don't apply in the container]
+If you've set up udev rules on the host (for auto-mounting or USB
+permissions), they are irrelevant inside the container — it only sees what
+you bind: the `/ipod` volume for syncing, `/dev/bus/usb` for the one-time
+setup. Keep mounting on the host however you prefer; no udev configuration
+is needed in the container.
+:::
+
+## Checking a Device with doctor
+
+`podkit doctor` runs the full diagnostic suite — device identity, database
+health, codec support — and works in the container like any other command:
+
+```bash
+# Diagnose the mounted iPod
+docker compose run --rm podkit doctor -d /ipod
+
+# Repair a missing identity file in place (needs USB, like device add)
+docker run --rm -it \
+  --device /dev/bus/usb \
+  -v /media/ipod:/ipod \
+  ghcr.io/jvgomg/podkit doctor -d /ipod --repair sysinfo-extended
+```
+
+The container also prints a `Device access:` report at every startup showing
+whether `/ipod` is mounted and whether USB passthrough is available, with
+guidance for anything missing.
+
 ## Docker Compose
 
 Create a `docker-compose.yml`:

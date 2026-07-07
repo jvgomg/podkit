@@ -62,8 +62,10 @@ every sync works from the mounted volume alone, with no USB needed:
 - **Set the iPod up over USB once:** connect the iPod and run `podkit device add`.
   In Docker, pass the USB device through for this one command — later syncs need
   only the volume mount.
-- **Or repair the identity in place:** run `podkit doctor --repair sysinfo-extended`,
-  which reads the model from the device firmware and writes the identity file.
+- **Or repair the identity in place:** run
+  `podkit doctor -d <name|path> --repair sysinfo-extended`, which reads the
+  model from the device firmware and writes the identity file (repair always
+  requires an explicit `-d`).
 
 After either step, `podkit sync` resolves the model and proceeds normally. The
 same refusal applies to the background daemon — it skips an unidentified device

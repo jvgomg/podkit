@@ -51,6 +51,12 @@ an architecture doc to match a change you're shipping, ask whether the
   `DeviceCapabilities` are resolved from the merged (built-in ∪
   user-defined) preset registry plus per-device overrides, and the
   threading convention CLI consumers follow.
+- **[device/identity-support-matrix](./device/identity-support-matrix.md)** —
+  Which iPod generations identify from the mounted volume alone (path
+  baseline), which need the one-time USB setup, which are SCSI-only (not
+  settable-up in-container today), and how mass-storage presets sit outside
+  inquiry entirely. The support boundary the Docker onboarding docs are
+  written against.
 - **[ipod-archive](./ipod-archive.md)** — How `podkit device archive`
   extracts a self-contained archive off an iPod: the two-stage
   raw-dump → transform design, the leaf `@podkit/ipod-archive` package,

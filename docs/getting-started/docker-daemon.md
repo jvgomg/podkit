@@ -59,6 +59,20 @@ The daemon handles graceful shutdown on `SIGTERM` — if a sync is in progress w
 
 ## Configuration
 
+### Which mode do I need?
+
+| Your setup | Configure via | How devices resolve |
+|------------|---------------|---------------------|
+| One iPod | ENV only (`PODKIT_MUSIC_PATH` + globals) | Auto-detected; synced by path with global settings — zero config |
+| One mass-storage player | ENV only (`PODKIT_DEVICE_PATH` + `PODKIT_DEVICE_TYPE`) | Declared preset applies; path auto-polled |
+| Multiple iPods, or per-device settings | Config file (`[devices.<name>]` with `volumeUuid`) | Matched by volume UUID, synced by name — per-device settings apply |
+| Multiple mass-storage players | Config file (`[devices.<name>]` with `type` + `path`) + `PODKIT_MASS_STORAGE_PATHS` | Matched by path; each declared preset applies |
+
+ENV declares at most one device and one default collection per type — anything
+multiple or differentiated needs the config file. Mass-storage auto-sync always
+requires a declared preset (via ENV or config); there is no on-device identity
+to read, and podkit never guesses.
+
 ### Daemon-Specific Variables
 
 | Variable | Default | Description |

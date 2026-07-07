@@ -30,7 +30,7 @@ export type SelectionPlan = 'usb-only' | 'scsi-only' | 'usb-then-scsi' | 'none';
  * Pick a {@link SelectionPlan} given the result of {@link probeInquiryMethods}.
  *
  * USB is preferred when both transports are available because USB inquiry
- * returns richer data on iPod 5G+ devices (full video codec list,
+ * returns richer data on nano 5G and later devices (full video codec list,
  * `ImageSpecifications2`, etc.) than the SCSI VPD path returns for the same
  * hardware. SCSI remains a valid fallback for older devices and for systems
  * where the libusb binding cannot be loaded.

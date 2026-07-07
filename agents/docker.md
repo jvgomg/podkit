@@ -53,6 +53,16 @@ uses a glibc base with `gosu` symlinked as `su-exec`, not the shipped Alpine/mus
 image. It is a representative image for catching CLI/entrypoint drift; full
 Alpine/musl fidelity against a synthesized USB device is Tier 5 (Lima VM, CI).
 
+## Device Support Boundary
+
+Which iPods can be identified from the mounted volume alone (path baseline),
+which need the one-time USB setup, and which are SCSI-only (not settable-up
+in-container today) is documented in
+[documents/architecture/device/identity-support-matrix.md](../documents/architecture/device/identity-support-matrix.md).
+Read it before changing onboarding behavior, the firmware-inquiry transports,
+or the Docker docs' setup guidance — and update it in the same PR if a device
+moves between lanes.
+
 ## Architecture
 
 - Base image: Alpine 3.21 (musl libc — CI produces musl-specific binaries for Docker)
@@ -80,7 +90,7 @@ Collections can be configured via environment variables (e.g., `PODKIT_MUSIC_PAT
 
 - Opt-in via `command: daemon` in Docker Compose (CLI remains the default)
 - Separate binary `podkit-daemon` polls for iPod devices and auto-syncs
-- Requires USB passthrough (`--device /dev/bus/usb` or `--privileged`)
+- Requires `privileged: true` (block-device visibility for detection + mounting; plain `--device /dev/bus/usb` is not sufficient for the daemon — see the passthrough table in docs/getting-started/docker-daemon.md)
 - Supports Apprise notifications via `PODKIT_APPRISE_URL`
 - File-based health check at `/tmp/podkit-daemon-health`
 - See [docs/getting-started/docker-daemon.md](../docs/getting-started/docker-daemon.md) for user docs
