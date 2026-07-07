@@ -1,10 +1,10 @@
 ---
 id: TASK-447
 title: 'Test Tier 1: gate daemon unit suite + unit-test the new pure modules'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-06-27 19:05'
-updated_date: '2026-07-07 22:27'
+updated_date: '2026-07-07 22:56'
 labels:
   - docker
   - daemon
@@ -29,8 +29,8 @@ Tier 1 of the docker testing strategy. The ~69 existing daemon unit tests run bu
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 Existing daemon unit suite runs and gates in `bun run quality`
-- [ ] #2 Unit tests added for: unknown-model guard, device-registry resolver, readiness classifier, mass-storage ENV mapper, device-access probe
-- [ ] #3 All five modules tested via external behavior (inputs -> outputs/typed errors), no implementation coupling
+- [x] #2 Unit tests added for: unknown-model guard, device-registry resolver, readiness classifier, mass-storage ENV mapper, device-access probe
+- [x] #3 All five modules tested via external behavior (inputs -> outputs/typed errors), no implementation coupling
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -56,4 +56,6 @@ Changeset added (@podkit/daemon patch) for the user-facing notification/skip beh
 Update: TASK-452 was a duplicate of TASK-441 and has been archived; the device-registry resolver + its Tier-1 unit tests landed via TASK-441 (device-registry-resolver.test.ts, 14 table tests, external-behavior style). AC#2 now waits only on TASK-444 (ENV mapper) and TASK-445 (device-access probe).
 
 Update: mass-storage ENV mapper + its Tier-1 unit tests landed via TASK-444 (CLI env-device.test.ts, 7 table tests; daemon env-device.test.ts, 5 tests; external-behavior style). AC#2 now waits only on TASK-445 (container device-access probe).
+
+Complete: with TASK-445 landed (container device-access probe, 11 table tests in packages/podkit-cli/src/commands/container-probe.test.ts), all five doc-052 pure modules now have isolation tests — unknown-model guard (TASK-440, @podkit/core), readiness classifier (here, 13 cases), device-registry resolver (TASK-441, 14 cases), mass-storage ENV mapper (TASK-444, 7 CLI + 5 daemon cases), device-access probe (TASK-445). All tested via external behavior (inputs → outputs/typed errors); modules live where their consumers are (core/CLI/daemon), not all in the daemon package as originally sketched. Tier-1 aggregation done.
 <!-- SECTION:NOTES:END -->
