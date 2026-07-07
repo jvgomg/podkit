@@ -16,8 +16,9 @@ setup() {
   mkdir -p "$STUBS"
   : > "$CALL_LOG"
 
-  # podkit: answers --version and the entrypoint's command-list probe; echoes
-  # anything else (so a stray direct invocation is visible).
+  # podkit: answers --version, the entrypoint's command-list probe and the
+  # device-access probe; echoes anything else (so a stray direct invocation is
+  # visible).
   cat > "$STUBS/podkit" <<'EOF'
 #!/usr/bin/env bash
 if [ "$1" = "--version" ]; then echo "podkit 0.0.0-test"; exit 0; fi
@@ -25,6 +26,7 @@ if [ "$1" = "__complete" ] && [ "$2" = "commands" ]; then
   printf '%s\n' init migrate sync device collection eject unmount mount doctor completions
   exit 0
 fi
+if [ "$1" = "__container-probe" ]; then echo "Device access:"; exit 0; fi
 echo "PODKIT $*"
 EOF
 
@@ -64,12 +66,39 @@ run_entrypoint() {
   run bash "$ENTRYPOINT" "$@"
 }
 
+# Substring assertions as functions, NOT inline `[[ ]]`: on bash 3.2 (macOS)
+# a failing `[[ ]]` compound command does not trigger bats' errexit unless it
+# is the test's last command, silently turning every earlier assertion into a
+# no-op. A failing function call always triggers it, and these also print the
+# haystack on failure.
+assert_contains() {
+  case "$1" in
+    *"$2"*) return 0 ;;
+  esac
+  echo "expected output to contain: $2" >&2
+  echo "actual output:" >&2
+  echo "$1" >&2
+  return 1
+}
+
+assert_not_contains() {
+  case "$1" in
+    *"$2"*)
+      echo "expected output NOT to contain: $2" >&2
+      echo "actual output:" >&2
+      echo "$1" >&2
+      return 1
+      ;;
+  esac
+  return 0
+}
+
 # ── AC#1: command routing ───────────────────────────────────────────────────
 
 @test "routes a known subcommand to the podkit binary under su-exec" {
   run_entrypoint doctor
   [ "$status" -eq 0 ]
-  [[ "$output" == *"EXEC su-exec podkit podkit doctor"* ]]
+  assert_contains "$output" "EXEC su-exec podkit podkit doctor"
 }
 
 @test "passes a bare 'podkit' invocation through under su-exec" {
@@ -77,14 +106,14 @@ run_entrypoint() {
   [ "$status" -eq 0 ]
   # `exec su-exec podkit "$@"` with "$@" == "podkit device scan" → su-exec runs
   # the podkit user, then the podkit binary with `device scan`.
-  [[ "$output" == *"EXEC su-exec podkit podkit device scan"* ]]
+  assert_contains "$output" "EXEC su-exec podkit podkit device scan"
 }
 
 @test "treats an unknown first argument as a raw command" {
   run_entrypoint rawtool --flag
   [ "$status" -eq 0 ]
-  [[ "$output" == *"RAW rawtool --flag"* ]]
-  [[ "$output" != *"su-exec"* ]]
+  assert_contains "$output" "RAW rawtool --flag"
+  assert_not_contains "$output" "su-exec"
 }
 
 # ── AC#2: command-parity (would have caught the `doctor` blocker) ────────────
@@ -102,7 +131,7 @@ run_entrypoint() {
     # Recognised commands route through su-exec (init/sync/other) — none should
     # fall through to the raw-exec branch, which would try to exec the command
     # name directly and emit no EXEC marker.
-    [[ "$output" == *"EXEC su-exec"* ]] || {
+    assert_contains "$output" "EXEC su-exec" || {
       echo "command '$cmd' was not recognised by the entrypoint" >&2
       false
     }
@@ -112,7 +141,7 @@ run_entrypoint() {
 @test "doctor specifically is recognised (regression for the original blocker)" {
   run_entrypoint doctor
   [ "$status" -eq 0 ]
-  [[ "$output" == *"EXEC su-exec podkit podkit doctor"* ]]
+  assert_contains "$output" "EXEC su-exec podkit podkit doctor"
 }
 
 @test "falls back to the built-in command list when the CLI probe fails" {
@@ -129,8 +158,8 @@ EOF
 
   run_entrypoint doctor
   [ "$status" -eq 0 ]
-  [[ "$output" == *"EXEC su-exec podkit podkit doctor"* ]]
-  [[ "$output" == *"WARNING"* ]]
+  assert_contains "$output" "EXEC su-exec podkit podkit doctor"
+  assert_contains "$output" "WARNING"
 }
 
 # ── AC#3: PUID/PGID user/group creation + ownership ─────────────────────────
@@ -139,9 +168,9 @@ EOF
   PUID=1234 PGID=5678 run_entrypoint doctor
   [ "$status" -eq 0 ]
   run cat "$CALL_LOG"
-  [[ "$output" == *"groupadd -o -g 5678 podkit"* ]]
-  [[ "$output" == *"useradd -o -u 1234 -g podkit"* ]]
-  [[ "$output" == *"chown podkit:podkit /config"* ]]
+  assert_contains "$output" "groupadd -o -g 5678 podkit"
+  assert_contains "$output" "useradd -o -u 1234 -g podkit"
+  assert_contains "$output" "chown podkit:podkit /config"
 }
 
 @test "defaults PUID/PGID to 1000 when unset" {
@@ -149,8 +178,8 @@ EOF
   run_entrypoint doctor
   [ "$status" -eq 0 ]
   run cat "$CALL_LOG"
-  [[ "$output" == *"groupadd -o -g 1000 podkit"* ]]
-  [[ "$output" == *"useradd -o -u 1000 -g podkit"* ]]
+  assert_contains "$output" "groupadd -o -g 1000 podkit"
+  assert_contains "$output" "useradd -o -u 1000 -g podkit"
 }
 
 # ── AC#4: argument injection ────────────────────────────────────────────────
@@ -158,51 +187,51 @@ EOF
 @test "sync injects --device /ipod when none is given" {
   run_entrypoint sync
   [ "$status" -eq 0 ]
-  [[ "$output" == *"EXEC su-exec podkit podkit sync --device /ipod"* ]]
+  assert_contains "$output" "EXEC su-exec podkit podkit sync --device /ipod"
 }
 
 @test "sync does not override an explicit --device" {
   run_entrypoint sync --device /dev/sdb
   [ "$status" -eq 0 ]
-  [[ "$output" == *"EXEC su-exec"* ]]
-  [[ "$output" == *"--device /dev/sdb"* ]]
-  [[ "$output" != *"/ipod"* ]]
+  assert_contains "$output" "EXEC su-exec"
+  assert_contains "$output" "--device /dev/sdb"
+  assert_not_contains "$output" "/ipod"
 }
 
 @test "sync recognises the -d shorthand and does not inject /ipod" {
   run_entrypoint sync -d /dev/sdb
   [ "$status" -eq 0 ]
-  [[ "$output" == *"EXEC su-exec"* ]]
-  [[ "$output" == *"-d /dev/sdb"* ]]
-  [[ "$output" != *"/ipod"* ]]
+  assert_contains "$output" "EXEC su-exec"
+  assert_contains "$output" "-d /dev/sdb"
+  assert_not_contains "$output" "/ipod"
 }
 
 @test "sync recognises the --device=VALUE combined form and does not inject /ipod" {
   run_entrypoint sync --device=/dev/sdb
   [ "$status" -eq 0 ]
-  [[ "$output" == *"--device=/dev/sdb"* ]]
-  [[ "$output" != *"/ipod"* ]]
+  assert_contains "$output" "--device=/dev/sdb"
+  assert_not_contains "$output" "/ipod"
 }
 
 @test "init injects --path /config/config.toml when none is given" {
   run_entrypoint init
   [ "$status" -eq 0 ]
-  [[ "$output" == *"EXEC su-exec podkit podkit init --path /config/config.toml"* ]]
+  assert_contains "$output" "EXEC su-exec podkit podkit init --path /config/config.toml"
 }
 
 @test "init does not override an explicit --path" {
   run_entrypoint init --path /tmp/custom.toml
   [ "$status" -eq 0 ]
-  [[ "$output" == *"EXEC su-exec"* ]]
-  [[ "$output" == *"--path /tmp/custom.toml"* ]]
-  [[ "$output" != *"/config/config.toml"* ]]
+  assert_contains "$output" "EXEC su-exec"
+  assert_contains "$output" "--path /tmp/custom.toml"
+  assert_not_contains "$output" "/config/config.toml"
 }
 
 @test "init recognises the --path=VALUE combined form and does not inject the default" {
   run_entrypoint init --path=/tmp/custom.toml
   [ "$status" -eq 0 ]
-  [[ "$output" == *"--path=/tmp/custom.toml"* ]]
-  [[ "$output" != *"/config/config.toml"* ]]
+  assert_contains "$output" "--path=/tmp/custom.toml"
+  assert_not_contains "$output" "/config/config.toml"
 }
 
 # ── AC#5: privilege — su-exec for one-shot, root for daemon ──────────────────
@@ -210,12 +239,46 @@ EOF
 @test "daemon runs as root (no su-exec wrapper)" {
   run_entrypoint daemon
   [ "$status" -eq 0 ]
-  [[ "$output" == *"EXEC podkit-daemon"* ]]
-  [[ "$output" != *"su-exec"* ]]
+  assert_contains "$output" "EXEC podkit-daemon"
+  assert_not_contains "$output" "su-exec"
 }
 
 @test "one-shot commands drop privileges via su-exec" {
   run_entrypoint sync
   [ "$status" -eq 0 ]
-  [[ "$output" == *"EXEC su-exec"* ]]
+  assert_contains "$output" "EXEC su-exec"
+}
+
+# ── device-access probe at startup ───────────────────────────────────────────
+
+@test "startup surfaces the device-access report before routing" {
+  run_entrypoint doctor
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "Device access:"
+  assert_contains "$output" "EXEC su-exec podkit podkit doctor"
+}
+
+@test "device-access probe runs for daemon startups too" {
+  run_entrypoint daemon
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "Device access:"
+  assert_contains "$output" "EXEC podkit-daemon"
+}
+
+@test "a failing probe never blocks startup" {
+  # Replace the podkit stub with one whose probe explodes; routing must survive.
+  cat > "$STUBS/podkit" <<'EOF'
+#!/usr/bin/env bash
+if [ "$1" = "--version" ]; then echo "podkit 0.0.0-test"; exit 0; fi
+if [ "$1" = "__complete" ] && [ "$2" = "commands" ]; then
+  printf '%s\n' init migrate sync device collection eject unmount mount doctor completions
+  exit 0
+fi
+if [ "$1" = "__container-probe" ]; then echo "probe exploded" >&2; exit 1; fi
+echo "PODKIT $*"
+EOF
+  chmod +x "$STUBS/podkit"
+  run_entrypoint doctor
+  [ "$status" -eq 0 ]
+  assert_contains "$output" "EXEC su-exec podkit podkit doctor"
 }

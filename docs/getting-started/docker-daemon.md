@@ -390,6 +390,8 @@ For Proxmox users who want to run the daemon:
 
 ## Troubleshooting
 
+**Check the startup device-access report first.** Every container start prints a `Device access:` report showing whether an iPod volume is mounted at `/ipod`, whether USB passthrough (`/dev/bus/usb`) is available for the one-time `device add` setup, and whether generic-SCSI nodes are present — each line with guidance for fixing what's missing. `docker compose logs podkit | head` shows it.
+
 **iPod not detected:**
 - Ensure the container is running with `privileged: true` — this is required, not optional
 - Check that block devices are visible: `docker compose exec podkit lsblk`

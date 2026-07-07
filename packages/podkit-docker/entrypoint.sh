@@ -27,6 +27,14 @@ echo "
 ───────────────────────────────────────
 "
 
+# Device-access report: what the container can reach (/ipod mount, USB
+# passthrough, SCSI nodes) and what to do about anything missing, so the user
+# sees actionable guidance at startup instead of a confusing failure later.
+# Informational only — `|| true` guarantees it can never block startup. The
+# logic lives in the CLI (`__container-probe`) where it is unit-tested; the
+# entrypoint stays a thin caller.
+podkit __container-probe 2>/dev/null && echo "" || true
+
 # Create group and user with specified PUID/PGID
 # Uses shadow's groupadd/useradd for -o (non-unique) support
 groupadd -o -g "$PGID" podkit 2>/dev/null || true

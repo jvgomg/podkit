@@ -390,7 +390,7 @@ function extractCommandTree(cmd: Command): CommandInfo {
   const subcommands: CommandInfo[] = cmd.commands
     .filter(
       (sub: Command) =>
-        sub.name() !== 'completions' && sub.name() !== '__complete' && sub.name() !== 'help'
+        sub.name() !== 'completions' && !sub.name().startsWith('__') && sub.name() !== 'help'
     )
     .map((sub: Command) => extractCommandTree(sub));
 
@@ -715,14 +715,15 @@ export function loadCompletionConfig(): Record<string, any> | undefined {
  * rather than maintaining a hand-written list that silently goes stale when a
  * new command is added (the bug that made `docker run podkit doctor` fail).
  *
- * Excludes the internal `__complete` helper and Commander's auto-generated
- * `help` command — neither is a routable user command in the container.
+ * Excludes internal `__`-prefixed helpers (`__complete`, `__container-probe`)
+ * and Commander's auto-generated `help` command — none is a routable user
+ * command in the container.
  */
 export function listTopLevelCommandNames(program: Command): string[] {
   const names: string[] = [];
   for (const cmd of program.commands) {
     const name = cmd.name();
-    if (name === '__complete' || name === 'help') continue;
+    if (name.startsWith('__') || name === 'help') continue;
     names.push(name, ...cmd.aliases());
   }
   return names;

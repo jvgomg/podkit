@@ -39,7 +39,8 @@
       "files": [
         "**/podkit-cli/src/config/**/*.ts",
         "**/podkit-cli/src/output/**/*.ts",
-        "**/podkit-cli/src/commands/completions.ts"
+        "**/podkit-cli/src/commands/completions.ts",
+        "**/podkit-cli/src/commands/container-probe.ts"
       ],
       "rules": {
         "no-console": "off"

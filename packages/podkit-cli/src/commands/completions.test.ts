@@ -280,15 +280,17 @@ describe('completions', () => {
       expect(names).toContain('unmount'); // alias must route too
     });
 
-    it('excludes the internal __complete helper and the auto-generated help command', () => {
+    it('excludes internal __-prefixed helpers and the auto-generated help command', () => {
       const program = new Command();
       program.command('sync').description('sync');
       program.command('__complete').description('internal');
+      program.command('__container-probe').description('internal');
 
       const names = listTopLevelCommandNames(program);
 
       expect(names).toContain('sync');
       expect(names).not.toContain('__complete');
+      expect(names).not.toContain('__container-probe');
       expect(names).not.toContain('help');
     });
 
@@ -305,6 +307,7 @@ describe('completions', () => {
       expect(names).toContain('sync');
       expect(names).toContain('device');
       expect(names).not.toContain('__complete');
+      expect(names).not.toContain('__container-probe');
       expect(names).not.toContain('help');
     });
   });

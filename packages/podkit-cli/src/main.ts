@@ -16,6 +16,7 @@ import { mountCommand } from './commands/mount.js';
 import { migrateCommand } from './commands/migrate.js';
 import { doctorCommand } from './commands/doctor.js';
 import { completionsCommand, completeCommand } from './commands/completions.js';
+import { containerProbeCommand } from './commands/container-probe.js';
 import { setLogger as setFirmwareLogger } from '@podkit/ipod-firmware';
 import { loadConfig, DEFAULT_CONFIG_PATH } from './config/index.js';
 import type { GlobalOptions } from './config/index.js';
@@ -63,7 +64,7 @@ program.hook('preAction', (thisCommand, actionCommand) => {
   for (let cmd: Command | null = actionCommand; cmd && cmd !== thisCommand; cmd = cmd.parent) {
     cmdChain.unshift(cmd.name());
   }
-  if (cmdChain[0] === '__complete' || cmdChain[0] === 'migrate' || cmdChain[0] === 'init') return;
+  if (cmdChain[0]?.startsWith('__') || cmdChain[0] === 'migrate' || cmdChain[0] === 'init') return;
 
   const globalOpts = thisCommand.opts() as GlobalOptions;
 
@@ -134,5 +135,6 @@ program.addCommand(doctorCommand);
 // Utility commands
 program.addCommand(completionsCommand);
 program.addCommand(completeCommand, { hidden: true });
+program.addCommand(containerProbeCommand, { hidden: true });
 
 program.parse();
