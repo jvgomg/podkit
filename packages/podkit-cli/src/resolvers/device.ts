@@ -414,16 +414,36 @@ async function matchPathToConfigDevice(
   // but has no UUID — treat that the same as null (no config match possible).
   const deviceInfo = await manager.locate({ path: mountPath });
   const uuid = deviceInfo?.volumeUuid || null;
-  if (!uuid) return null;
+  if (uuid) {
+    const uuidMap = buildUuidMap(config.devices);
+    const match = uuidMap.get(uuid.toUpperCase());
+    if (match) {
+      return {
+        matchedDevice: { name: match.name, config: match.config },
+        deviceInfo: deviceInfo ?? undefined,
+      };
+    }
+  }
 
-  const uuidMap = buildUuidMap(config.devices);
-  const match = uuidMap.get(uuid.toUpperCase());
-  if (!match) return null;
+  // Fallback: match mass-storage entries by their declared `path`. A
+  // bind-mounted folder-based player exposes no volume UUID, so the path IS
+  // its identity. iPod entries are excluded — their identity is the volume
+  // UUID, and a stale `path` must not hijack a bare-path sync.
+  for (const [name, deviceConfig] of Object.entries(config.devices)) {
+    if (
+      deviceConfig.type !== undefined &&
+      deviceConfig.type !== 'ipod' &&
+      deviceConfig.path &&
+      normalizePath(deviceConfig.path) === normalizePath(mountPath)
+    ) {
+      return {
+        matchedDevice: { name, config: deviceConfig },
+        deviceInfo: deviceInfo ?? undefined,
+      };
+    }
+  }
 
-  return {
-    matchedDevice: { name: match.name, config: match.config },
-    deviceInfo: deviceInfo ?? undefined,
-  };
+  return null;
 }
 
 /**

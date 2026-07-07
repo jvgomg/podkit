@@ -444,6 +444,79 @@ describe('resolveDevicePath', () => {
     expect(result.matchedDevice).toBeUndefined();
   });
 
+  it('auto-matches CLI path to a mass-storage device by configured path (Scenario B)', async () => {
+    // A bind-mounted folder-based player exposes no volume UUID, so the UUID
+    // route can never match. The declared `path` on a mass-storage entry is
+    // its identity — match on it so the preset + per-device settings apply.
+    const configWithDevices = makeConfig({
+      devices: {
+        echo: { type: 'echo-mini', path: '/devices/echo', quality: 'low' },
+      },
+    });
+    const result = await resolveDevicePath({
+      cliPath: '/devices/echo',
+      manager: mockManager([]),
+      config: configWithDevices,
+    });
+    expect(result.path).toBe('/devices/echo');
+    expect(result.source).toBe('path-matched');
+    expect(result.matchedDevice?.name).toBe('echo');
+    expect(result.matchedDevice?.config.type).toBe('echo-mini');
+  });
+
+  it('normalizes trailing slashes when path-matching a mass-storage device', async () => {
+    const configWithDevices = makeConfig({
+      devices: {
+        echo: { type: 'echo-mini', path: '/devices/echo/' },
+      },
+    });
+    const result = await resolveDevicePath({
+      cliPath: '/devices/echo',
+      manager: mockManager([]),
+      config: configWithDevices,
+    });
+    expect(result.source).toBe('path-matched');
+    expect(result.matchedDevice?.name).toBe('echo');
+  });
+
+  it('does not path-match an iPod-typed config entry', async () => {
+    // iPod identity is the volume UUID; a stale `path` on an iPod entry must
+    // not hijack a bare-path sync.
+    const configWithDevices = makeConfig({
+      devices: {
+        terapod: { volumeUuid: 'ABC-123', path: '/Volumes/IPOD' },
+      },
+    });
+    const result = await resolveDevicePath({
+      cliPath: '/Volumes/IPOD',
+      manager: mockManager([]),
+      config: configWithDevices,
+    });
+    expect(result.source).toBe('cli');
+    expect(result.matchedDevice).toBeUndefined();
+  });
+
+  it('matches by UUID (not path) when both would hit — both routes report source path-matched', async () => {
+    const device = mockDevice({
+      volumeUuid: 'ABC-123',
+      mountPoint: '/Volumes/SHARED',
+      isMounted: true,
+    });
+    const configWithDevices = makeConfig({
+      devices: {
+        terapod: { volumeUuid: 'ABC-123', volumeName: 'TERAPOD' },
+        walkman: { type: 'generic', path: '/Volumes/SHARED' },
+      },
+    });
+    const result = await resolveDevicePath({
+      cliPath: '/Volumes/SHARED',
+      manager: mockManager([device]),
+      config: configWithDevices,
+    });
+    expect(result.source).toBe('path-matched');
+    expect(result.matchedDevice?.name).toBe('terapod');
+  });
+
   it('skips auto-match when deviceIdentity is already provided', async () => {
     const device = mockDevice({
       volumeUuid: 'ABC-123',

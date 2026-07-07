@@ -42,6 +42,18 @@ podkit settings can be overridden via environment variables. These take preceden
 | `PODKIT_SHOW_LANGUAGE_EXPAND` | Expand language abbreviations to full names (`true`/`false`) |
 | `SUBSONIC_PASSWORD` | Fallback password for any Subsonic collection |
 
+## Device Variables
+
+A single mass-storage device (Echo Mini, Rockbox, or any folder-based player) can be declared entirely via environment variables — no config file needed. The declared device becomes the default device, so `podkit sync` (and daemon mode) target it automatically.
+
+| Variable | Description |
+|----------|-------------|
+| `PODKIT_DEVICE_PATH` | Mount path of the device. Setting this is what declares the device. |
+| `PODKIT_DEVICE_TYPE` | Device preset: `echo-mini`, `rockbox`, or `generic` (default: `generic`). `ipod` is rejected — iPods are auto-detected from the mounted volume and need no declaration. |
+| `PODKIT_DEVICE_NAME` | Device name; underscores become hyphens, any case accepted (default: `default`, i.e. `PODKIT_DEVICE_NAME=MY_ECHO` names it `my-echo`) |
+
+The ENV-declared device overrides any `defaults.device` set in a config file (environment beats file, like every other setting). Multiple or differentiated devices still require a config file — ENV declares at most one device.
+
 ## Collection Variables
 
 Collections can be defined entirely via environment variables, eliminating the need for a config file. This is useful for Docker deployments and CI environments.

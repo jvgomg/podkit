@@ -8,6 +8,9 @@
  *   PODKIT_POLL_INTERVAL        - Poll interval in seconds (default: 5)
  *   PODKIT_APPRISE_URL          - Apprise notification URL (reserved for future use)
  *   PODKIT_MASS_STORAGE_PATHS   - Colon or comma separated paths to mass-storage device mount points
+ *   PODKIT_DEVICE_PATH          - ENV-declared single mass-storage device (with
+ *                                 PODKIT_DEVICE_TYPE / PODKIT_DEVICE_NAME, read by the
+ *                                 CLI); its path is auto-polled like a mass-storage path
  */
 
 import { DevicePoller, scanMassStoragePaths } from './device-poller.js';
@@ -22,6 +25,7 @@ import {
   noopEject,
 } from './cli-runner.js';
 import { createDeviceNameResolver } from './device-registry-resolver.js';
+import { massStorageEnvDevice } from './env-device.js';
 import { createAppriseClient } from './apprise-client.js';
 import { log } from './logger.js';
 
@@ -29,11 +33,25 @@ function main(): void {
   const pollInterval = Math.max(1, parseInt(process.env['PODKIT_POLL_INTERVAL'] ?? '5', 10) || 5);
   const appriseUrl = process.env['PODKIT_APPRISE_URL'];
 
-  // Parse mass-storage paths from environment (colon or comma separated)
+  // Parse mass-storage paths from environment (colon or comma separated),
+  // plus the ENV-declared single device's path — declaring a device via
+  // PODKIT_DEVICE_* is enough for the daemon to auto-sync it, no separate
+  // PODKIT_MASS_STORAGE_PATHS entry needed. The CLI child inherits the same
+  // environment and matches the path back to the declared preset.
+  const envDevice = massStorageEnvDevice(process.env);
+  if (envDevice.kind === 'invalid-ipod-type') {
+    log(
+      'warn',
+      'PODKIT_DEVICE_TYPE=ipod is not a valid declaration — iPods are auto-detected and need ' +
+        'no ENV declaration. Ignoring PODKIT_DEVICE_PATH for mass-storage polling.'
+    );
+  }
   const massStoragePaths = [
     ...new Set(
-      (process.env['PODKIT_MASS_STORAGE_PATHS'] ?? '')
-        .split(/[:,]/)
+      [
+        ...(process.env['PODKIT_MASS_STORAGE_PATHS'] ?? '').split(/[:,]/),
+        ...(envDevice.kind === 'declared' ? [envDevice.path] : []),
+      ]
         .map((p) => p.trim())
         .filter(Boolean)
     ),

@@ -46,9 +46,13 @@ describe('config loader', () => {
     delete process.env[ENV_KEYS.cleanArtistsFormat];
     delete process.env[ENV_KEYS.cleanArtistsIgnore];
 
-    // Clear collection env vars (dynamic names)
+    // Clear collection + device env vars (dynamic names)
     for (const key of Object.keys(process.env)) {
-      if (key.startsWith('PODKIT_MUSIC_') || key.startsWith('PODKIT_VIDEO_')) {
+      if (
+        key.startsWith('PODKIT_MUSIC_') ||
+        key.startsWith('PODKIT_VIDEO_') ||
+        key.startsWith('PODKIT_DEVICE_')
+      ) {
         delete process.env[key];
       }
     }
@@ -2538,6 +2542,39 @@ device = "terapod"
     });
 
     // =========================================================================
+    // Device env vars
+    // =========================================================================
+
+    describe('mass-storage device env vars', () => {
+      it('declares a device from PODKIT_DEVICE_PATH with generic preset and sets it default', () => {
+        process.env.PODKIT_DEVICE_PATH = '/devices/player';
+        const result = loadEnvConfig();
+        expect(result.devices).toEqual({
+          default: { type: 'generic', path: '/devices/player' },
+        });
+        expect(result.defaults?.device).toBe('default');
+      });
+
+      it('honours PODKIT_DEVICE_TYPE and PODKIT_DEVICE_NAME', () => {
+        process.env.PODKIT_DEVICE_PATH = '/devices/echo';
+        process.env.PODKIT_DEVICE_TYPE = 'echo-mini';
+        process.env.PODKIT_DEVICE_NAME = 'MY_ECHO';
+        const result = loadEnvConfig();
+        expect(result.devices).toEqual({
+          'my-echo': { type: 'echo-mini', path: '/devices/echo' },
+        });
+        expect(result.defaults?.device).toBe('my-echo');
+      });
+
+      it('declares nothing without PODKIT_DEVICE_PATH', () => {
+        process.env.PODKIT_DEVICE_TYPE = 'echo-mini';
+        const result = loadEnvConfig();
+        expect(result.devices).toBeUndefined();
+        expect(result.defaults?.device).toBeUndefined();
+      });
+    });
+
+    // =========================================================================
     // Collection env vars
     // =========================================================================
 
@@ -3218,6 +3255,70 @@ device = "terapod"
   });
 
   describe('loadConfig', () => {
+    it('ENV device declaration overrides a config-file default device', () => {
+      const configPath = path.join(tempDir, 'config.toml');
+      fs.writeFileSync(
+        configPath,
+        v(`
+[devices.terapod]
+volumeUuid = "ABC-123"
+
+[defaults]
+device = "terapod"
+`)
+      );
+      process.env.PODKIT_DEVICE_PATH = '/devices/echo';
+      process.env.PODKIT_DEVICE_TYPE = 'echo-mini';
+
+      const globalOpts: GlobalOptions = {
+        verbose: 0,
+        quiet: false,
+        json: false,
+        color: true,
+        tips: true,
+        tty: false,
+        config: configPath,
+      };
+
+      const result = loadConfig(globalOpts);
+      // env > file, same as every other env override. The file device stays
+      // registered; only the default moves.
+      expect(result.config.defaults?.device).toBe('default');
+      expect(result.config.devices?.terapod).toBeDefined();
+      expect(result.config.devices?.default).toEqual({ type: 'echo-mini', path: '/devices/echo' });
+    });
+
+    it('deep-merges an ENV device into a same-named config-file device', () => {
+      const configPath = path.join(tempDir, 'config.toml');
+      fs.writeFileSync(
+        configPath,
+        v(`
+[devices.default]
+type = "rockbox"
+path = "/old/path"
+quality = "low"
+`)
+      );
+      process.env.PODKIT_DEVICE_PATH = '/devices/echo';
+      process.env.PODKIT_DEVICE_TYPE = 'echo-mini';
+
+      const globalOpts: GlobalOptions = {
+        verbose: 0,
+        quiet: false,
+        json: false,
+        color: true,
+        tips: true,
+        tty: false,
+        config: configPath,
+      };
+
+      const result = loadConfig(globalOpts);
+      // ENV wins on the fields it declares; the file's other settings survive.
+      expect(result.config.devices?.default?.type).toBe('echo-mini');
+      expect(result.config.devices?.default?.path).toBe('/devices/echo');
+      expect(result.config.devices?.default?.quality).toBe('low');
+    });
+
     it('returns defaults when no config exists', () => {
       const globalOpts: GlobalOptions = {
         verbose: 0,

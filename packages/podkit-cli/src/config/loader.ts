@@ -64,6 +64,7 @@ const READINESS_UNSUPPORTED_KINDS: ReadinessUnsupportedReason['kind'][] = [
   'ios-device',
 ];
 import { DEFAULT_CONFIG, DEFAULT_CONFIG_PATH, ENV_KEYS } from './defaults.js';
+import { massStorageDeviceFromEnv } from './env-device.js';
 import { readConfigVersion, checkConfigVersion } from './version.js';
 import { normalizeContentPaths, validateContentPaths } from '@podkit/core';
 import {
@@ -2059,6 +2060,15 @@ export function loadEnvConfig(): PartialConfig {
   }
   if (envCollections.defaults) {
     config.defaults = envCollections.defaults;
+  }
+
+  // Single mass-storage device declaration (type + path + preset). Mirrors
+  // the collection auto-default: the one ENV-declared device becomes the
+  // default device so an ENV-only setup syncs without naming it.
+  const envDevice = massStorageDeviceFromEnv(process.env);
+  if (envDevice) {
+    config.devices = { [envDevice.name]: envDevice.device };
+    config.defaults = { ...config.defaults, device: envDevice.name };
   }
 
   return config;

@@ -66,6 +66,7 @@ The daemon handles graceful shutdown on `SIGTERM` — if a sync is in progress w
 | `PODKIT_POLL_INTERVAL` | `5` | How often to check for new iPod devices (seconds) |
 | `PODKIT_APPRISE_URL` | (unset) | Apprise notification endpoint URL |
 | `PODKIT_MASS_STORAGE_PATHS` | (unset) | Colon- or comma-separated mount paths of mass-storage players to auto-sync (see [Mass-Storage Devices](#mass-storage-devices)) |
+| `PODKIT_DEVICE_PATH` | (unset) | Declare a single mass-storage device via ENV (with `PODKIT_DEVICE_TYPE`/`PODKIT_DEVICE_NAME`); its path is auto-polled (see [Mass-Storage Devices](#mass-storage-devices)) |
 
 ### Standard podkit Settings
 
@@ -154,28 +155,42 @@ You can plug in multiple iPods at the same time. The daemon syncs one iPod at a 
 
 ## Mass-Storage Devices
 
-The daemon can also auto-sync mass-storage players (Echo Mini, Rockbox, and other folder-based devices). Point `PODKIT_MASS_STORAGE_PATHS` at their mount paths inside the container:
+The daemon can also auto-sync mass-storage players (Echo Mini, Rockbox, and other folder-based devices). Mass-storage auto-sync requires a declared preset — unlike iPods, these devices carry no on-device identity podkit can read, so the preset (folder layout + capabilities) must come from a declaration.
+
+**Single device, no config file** — declare it entirely via ENV:
 
 ```yaml
     environment:
-      - PODKIT_MASS_STORAGE_PATHS=/devices/echo,/devices/walkman
+      - PODKIT_DEVICE_PATH=/devices/echo
+      - PODKIT_DEVICE_TYPE=echo-mini   # preset; defaults to "generic"
     volumes:
       - /mnt/echo-mini:/devices/echo
-      - /mnt/walkman:/devices/walkman
 ```
 
-Mass-storage auto-sync requires a declared preset. Unlike iPods, mass-storage devices carry no on-device identity podkit can read, so each path must correspond to a device declared in your config file with its `type` (the preset that describes its folder layout and capabilities):
+The declared path is polled automatically (no `PODKIT_MASS_STORAGE_PATHS` entry needed) and the device becomes the default, so one-shot `docker run … sync` works too.
+
+**Multiple devices** — declare each in your config file and list the paths to poll:
 
 ```toml
 [devices.echo]
 type = "echo-mini"
 path = "/devices/echo"
-# Filesystem UUID of the volume mounted at `path` — how the sync matches
-# the path it was given to this entry and applies the preset.
-volumeUuid = "1234-ABCD"
+
+[devices.walkman]
+type = "generic"
+path = "/devices/walkman"
 ```
 
-A mass-storage path with no matching config declaration is never silently synced with guessed settings — the sync fails instead. See [Config File Reference](/reference/config-file/) for presets and device-level options.
+```yaml
+    environment:
+      - PODKIT_MASS_STORAGE_PATHS=/devices/echo,/devices/walkman
+    volumes:
+      - ./config:/config
+      - /mnt/echo-mini:/devices/echo
+      - /mnt/walkman:/devices/walkman
+```
+
+Each synced path is matched to its declared device by `path` — the entry must set an explicit `type` (path-matching is how mass-storage devices are identified; entries without a `type` are treated as iPods and matched by volume UUID instead). The right preset and per-device settings then apply. A mass-storage path with no matching declaration is never silently synced with guessed settings — the sync fails instead. See [Config File Reference](/reference/config-file/) for presets and device-level options, and [Environment Variables](/reference/environment-variables/) for the `PODKIT_DEVICE_*` reference.
 
 ## Notifications with Apprise
 
