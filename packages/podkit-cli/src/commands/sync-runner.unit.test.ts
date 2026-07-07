@@ -295,4 +295,87 @@ describe('runSync: validation + deps seam', () => {
     // Refused before any heavy work.
     expect(openedDevice).toBe(false);
   });
+
+  it('refuses cleanly with IPOD_NEEDS_INIT when the device has no database', async () => {
+    const ctx = makeContext(sharedSourceDir);
+    const { out, stdout, exitCode } = makeOut();
+
+    // The device path is a plain directory with no iPod_Control/iTunes/iTunesDB
+    // (sharedSourceDir doubles as the blank "device"). Identity resolves fine —
+    // the device is set up, just never initialised — so the refusal must be the
+    // distinct needs-init code, not UNKNOWN_IPOD_MODEL and not the overloaded
+    // IPOD_OPEN_FAILED from the open path.
+    let heavyWork = false;
+    const deps: SyncDeps = {
+      getDeviceManager: () => fakeManager(),
+      loadCore: async () => {
+        const real = await import('@podkit/core');
+        return {
+          ...real,
+          assessIpodIdentity: async () => ({
+            model: {
+              displayName: 'iPod Video (5th Generation)',
+              generationId: 'video_5g',
+              family: 'iPod Video',
+              ordinal: 5,
+              checksumType: 'none',
+              source: 'sysinfo',
+            },
+            capabilities: null,
+            needsChecksum: false,
+            checksumType: undefined,
+            firmwareInquiry: 'present',
+            existing: null,
+            usbFingerprint: null,
+            sysInfoModelNumber: 'MA446',
+          }),
+          // Detect heavy work (FFmpeg detect runs just before the DB open).
+          createFFmpegTranscoder: () => {
+            heavyWork = true;
+            return real.createFFmpegTranscoder();
+          },
+        } as typeof real;
+      },
+    };
+
+    await runWithContext(ctx, () => runAction(out, () => runSync({ dryRun: true }, out, deps)));
+    expect(exitCode.get()).toBe(1);
+    const err = stdout.json<ErrJson>();
+    expect(err.code).toBe(SyncErrorCodes.IPOD_NEEDS_INIT);
+    // Actionable remediation: point at the init command, not at open-failure
+    // debugging.
+    expect(err.error).toContain('podkit device init');
+    expect(err.error.toLowerCase()).not.toContain('libgpod');
+    // Refused before FFmpeg detect / DB open.
+    expect(heavyWork).toBe(false);
+  });
+
+  it('does not claim needs-init when identity assessment failed on a databaseless path', async () => {
+    const ctx = makeContext(sharedSourceDir);
+    const { out, stdout, exitCode } = makeOut();
+
+    // Assessment throwing means "this may not be an iPod at all" — e.g. an
+    // unregistered `-d /path` pointing at a mass-storage player. Claiming
+    // IPOD_NEEDS_INIT there would misdirect the user to `device init` on a
+    // non-iPod, so the blank-device gate must stand down and let the open
+    // path surface its own failure.
+    const deps: SyncDeps = {
+      getDeviceManager: () => fakeManager(),
+      loadCore: async () => {
+        const real = await import('@podkit/core');
+        return {
+          ...real,
+          assessIpodIdentity: async () => {
+            throw new Error('not an iPod');
+          },
+        } as typeof real;
+      },
+    };
+
+    await runWithContext(ctx, () => runAction(out, () => runSync({ dryRun: true }, out, deps)));
+    expect(exitCode.get()).toBe(1);
+    const err = stdout.json<ErrJson>();
+    expect(err.code).toBe(SyncErrorCodes.IPOD_OPEN_FAILED);
+    expect(err.code).not.toBe(SyncErrorCodes.IPOD_NEEDS_INIT);
+  });
 });

@@ -44,9 +44,6 @@ export function classifyReadiness(outcome: DaemonSyncOutcome): DaemonReadiness {
       return 'needs-setup';
     case 'DEVICE_UNSUPPORTED':
       return 'unsupported';
-    // Reserved: no CLI path emits IPOD_NEEDS_INIT yet. Will fire once `podkit
-    // sync` detects a blank device (no database) before the db-open gate and
-    // surfaces a distinct code instead of the overloaded IPOD_OPEN_FAILED.
     case 'IPOD_NEEDS_INIT':
       return 'needs-init';
     default:
@@ -82,8 +79,8 @@ export function formatReadinessNotification(
       return `${label} is not supported by podkit and was skipped. See the supported-devices documentation.`;
     case 'needs-init':
       return (
-        `${label} has no music database yet. Run \`podkit init\` to set it up before syncing. ` +
-        `The daemon will not initialise a device automatically.`
+        `${label} has no music database yet. Run \`podkit device init\` to set it up before ` +
+        `syncing. The daemon will not initialise a device automatically.`
       );
     case 'ready':
     case 'error':

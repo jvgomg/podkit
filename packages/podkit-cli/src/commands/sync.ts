@@ -77,6 +77,7 @@ export const SyncErrorCodes = {
   DEVICE_PATH_NOT_FOUND: 'DEVICE_PATH_NOT_FOUND',
   FFMPEG_UNAVAILABLE: 'FFMPEG_UNAVAILABLE',
   IPOD_OPEN_FAILED: 'IPOD_OPEN_FAILED',
+  IPOD_NEEDS_INIT: 'IPOD_NEEDS_INIT',
   DEVICE_OPEN_FAILED: 'DEVICE_OPEN_FAILED',
   DEVICE_UNSUPPORTED: 'DEVICE_UNSUPPORTED',
   UNKNOWN_IPOD_MODEL: 'UNKNOWN_IPOD_MODEL',
@@ -794,6 +795,36 @@ export async function runSync(
         modelNumStr: syncAssessment.sysInfoModelNumber,
       });
       throw unknownIpodModelError(guard.message);
+    }
+
+    // ----- Blank-device gate -----
+    // A mounted iPod with no database is a needs-init state, not an open
+    // failure. Refuse with a distinct code before FFmpeg detect / DB open so
+    // callers (including the daemon, which notifies and skips) can route
+    // "run `podkit device init`" guidance instead of the overloaded
+    // IPOD_OPEN_FAILED. Ordered after the identity gates: a device that
+    // needs setup gets that guidance first — init requires identity anyway.
+    //
+    // Requires a successful assessment: when `assessIpodIdentity` threw, the
+    // path may not be an iPod at all (e.g. an unregistered `-d /path` at a
+    // mass-storage player), and init guidance would misdirect — fall through
+    // to the open path and let it surface its own failure.
+    if (syncAssessment !== null && !(await core.IpodDatabase.hasDatabase(devicePath))) {
+      throw new CliError({
+        message:
+          `No iPod database found at ${devicePath}. ` +
+          `Run \`podkit device init -d ${devicePath}\` to create one before syncing.`,
+        code: SyncErrorCodes.IPOD_NEEDS_INIT,
+        details: { dryRun, device: devicePath },
+        printText: (o) => {
+          o.error(`No iPod database found at: ${devicePath}`);
+          o.error('');
+          o.print('This iPod has not been initialised yet.');
+          o.print(
+            `Run \`podkit device init -d ${devicePath}\` to create its database, then sync again.`
+          );
+        },
+      });
     }
   }
 

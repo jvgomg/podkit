@@ -751,6 +751,38 @@ describe('SyncOrchestrator with mass-storage no-op runners', () => {
       expect(guidance!.body).toContain('doctor --repair sysinfo-extended');
     });
 
+    it('sends Device Needs Init guidance and skips when sync refuses a blank device', async () => {
+      const notifications: { title: string; body: string }[] = [];
+      const cli = createMockCli({
+        sync: failResult<SyncOutput>({
+          success: false,
+          dryRun: false,
+          error: 'No iPod database found at /tmp/podkit-sdb1.',
+          code: 'IPOD_NEEDS_INIT',
+        }),
+      });
+      const orchestrator = new SyncOrchestrator({
+        ...cli,
+        notify: {
+          notify: async (title: string, body: string) => {
+            notifications.push({ title, body });
+          },
+        },
+      });
+
+      await orchestrator.handleDeviceAppeared(makeDevice());
+
+      // Notify-and-skip: actionable init guidance, never a generic failure,
+      // and the daemon does not touch the device.
+      expect(notifications.some((n) => n.title === 'Sync Error')).toBe(false);
+      const guidance = notifications.find((n) => n.title === 'Device Needs Init');
+      expect(guidance).toBeDefined();
+      expect(guidance!.body).toContain('podkit device init');
+      expect(guidance!.body.toLowerCase()).toContain('not initialise');
+      // The cycle still ejects the device it mounted.
+      expect(cli.calls).toContain('eject');
+    });
+
     it('keeps the generic Sync Error path for an unclassified failure', async () => {
       const notifications: { title: string; body: string }[] = [];
       const cli = createMockCli({

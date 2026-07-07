@@ -66,7 +66,9 @@ describe('formatReadinessNotification', () => {
   it('tells the user to initialise a blank device for needs-init', () => {
     const msg = formatReadinessNotification(device, 'needs-init');
     expect(msg).not.toBeNull();
-    expect(msg!.toLowerCase()).toContain('init');
+    // The real command — `podkit init` does not exist.
+    expect(msg!).toContain('podkit device init');
+    expect(msg!.toLowerCase()).toContain('not initialise');
   });
 
   it('returns null for ready and error (handled by other notification paths)', () => {
