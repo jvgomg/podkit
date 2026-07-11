@@ -165,10 +165,14 @@ describe('inquiry-methods — host environment matrix (TASK-301)', () => {
     const result = await checkInquiryMethods(probe, 'linux');
 
     expect(result.status).toBe('pass');
-    expect(result.summary).toBe('/dev/sg* present');
+    // USB is the preferred transport; summary leads with USB, notes SCSI too.
+    expect(result.summary).toContain('USB inquiry available');
+    expect(result.summary).toContain('/dev/sg* present');
     expect(result.repairable).toBe(false);
     const d = result.details as Record<string, unknown>;
     expect(d['scsi']).toMatchObject({ available: true });
+    expect(d['usb']).toMatchObject({ available: true });
+    expect(d['plan']).toBe('usb-then-scsi');
     expect(d['platform']).toBe('linux');
   });
 
@@ -177,18 +181,14 @@ describe('inquiry-methods — host environment matrix (TASK-301)', () => {
     const result = await checkInquiryMethods(probe, 'darwin');
 
     expect(result.status).toBe('pass');
-    expect(result.summary).toBe('iPodDriver.kext present');
+    expect(result.summary).toContain('USB inquiry available');
+    expect(result.summary).toContain('iPodDriver.kext present');
     expect(result.repairable).toBe(false);
   });
 
-  // AC #2: only one transport available → warn (currently: warn whenever SCSI is missing)
-  //
-  // Implementation note: the check derives status from SCSI alone (USB is
-  // bundled in shipped binaries, so it's never user-actionable). When SCSI is
-  // missing but USB is present we get a warn whose summary names the SCSI
-  // reason. The "USB missing" branch isn't surfaced through this check today —
-  // see findings in the implementation notes on the backlog task.
-  it('AC#2 warn when SCSI unavailable but USB available — summary names SCSI reason', async () => {
+  // AC #2: USB available, SCSI missing → pass (USB is preferred; SCSI is optional fallback).
+  // A Linux host without /dev/sg* but with working USB must not show warn.
+  it('AC#2 pass when USB available but SCSI unavailable — SCSI absence noted in summary', async () => {
     const probe = makeProbe(
       makeAvailability({
         scsi: false,
@@ -198,15 +198,16 @@ describe('inquiry-methods — host environment matrix (TASK-301)', () => {
     );
     const result = await checkInquiryMethods(probe, 'darwin');
 
-    expect(result.status).toBe('warn');
-    expect(result.summary).toBe('iPodDriver.kext not present');
+    expect(result.status).toBe('pass');
+    expect(result.summary).toContain('USB inquiry available');
+    expect(result.summary).toContain('iPodDriver.kext not present');
     expect(result.repairable).toBe(false);
+    const d = result.details as Record<string, unknown>;
+    expect(d['plan']).toBe('usb-only');
   });
 
-  // AC #3: neither transport available → check still warns (SCSI-driven), and
-  // the SCSI reason is surfaced. The USB-missing-as-fail axis is not reflected
-  // in the current check — flagged as a finding in the task notes.
-  it('AC#3 SCSI absent + USB absent: check is still warn (USB axis not surfaced)', async () => {
+  // AC #3: neither transport available → warn, both surfaced in summary.
+  it('AC#3 SCSI absent + USB absent: warn with USB failure reason surfaced', async () => {
     const probe = makeProbe(
       makeAvailability({
         scsi: false,
@@ -217,58 +218,67 @@ describe('inquiry-methods — host environment matrix (TASK-301)', () => {
     );
     const result = await checkInquiryMethods(probe, 'linux');
 
-    // Documents current behaviour. If the check is later extended to fail when
-    // both transports are gone, update this assertion.
     expect(result.status).toBe('warn');
-    expect(result.summary).toBe('no /dev/sg* nodes');
+    expect(result.summary).toContain('USB and SCSI inquiry both unavailable');
+    expect(result.summary).toContain('libusb not loadable');
     expect(result.repairable).toBe(false);
+    const d = result.details as Record<string, unknown>;
+    expect(d['plan']).toBe('none');
   });
 
-  // AC #4a: Linux /dev/sg* present-but-unreadable → warn, gid hint
-  it('AC#4a Linux /dev/sg* present-but-unreadable warns with gid/sudo hint', async () => {
+  // AC #4a: Linux /dev/sg* present-but-unreadable, USB available → pass, SCSI note in summary.
+  it('AC#4a Linux /dev/sg* present-but-unreadable — pass (USB up), SCSI hint in summary', async () => {
     const probe = makeProbe(
       makeAvailability({
         scsi: false,
         scsiReason:
           '/dev/sg* present but not readable by current uid (gid plugdev or sudo required)',
+        usb: true,
       })
     );
     const result = await checkInquiryMethods(probe, 'linux');
 
-    expect(result.status).toBe('warn');
-    expect(result.summary).toContain('/dev/sg* present but not readable');
+    expect(result.status).toBe('pass');
+    expect(result.summary).toContain('USB inquiry available');
+    expect(result.summary).toContain('not readable');
     expect(result.summary).toContain('plugdev');
     expect(result.repairable).toBe(false);
   });
 
-  // AC #4b: Linux /dev/sg* absent → warn, "no nodes" message
-  it('AC#4b Linux /dev/sg* absent warns with "no nodes" summary', async () => {
+  // AC #4b: Linux /dev/sg* absent, USB available → pass, note sg* absent.
+  it('AC#4b Linux /dev/sg* absent — pass (USB up), sg* absence noted', async () => {
     const probe = makeProbe(
       makeAvailability({
         scsi: false,
         scsiReason:
           'no /dev/sg* nodes present — SCSI inquiry unavailable (no SCSI generic devices on this system)',
+        usb: true,
       })
     );
     const result = await checkInquiryMethods(probe, 'linux');
 
-    expect(result.status).toBe('warn');
-    expect(result.summary).toBe('no /dev/sg* nodes');
+    expect(result.status).toBe('pass');
+    expect(result.summary).toContain('USB inquiry available');
+    expect(result.summary).toContain('no /dev/sg*');
     expect(result.repairable).toBe(false);
   });
 
   // SystemState fixture cross-reference: no-sg-perms maps to AC#4a; healthy maps to AC#1.
-  it('SystemState `no-sg-perms` produces the AC#4a summary', async () => {
+  it('SystemState `no-sg-perms` + USB available: pass, summary surfaces sg* permission hint', async () => {
     const probe = makeProbe(
       makeAvailability({
         scsi: false,
         scsiReason:
           '/dev/sg* present but not readable by current uid (gid plugdev or sudo required)',
+        usb: true,
       })
     );
     const result = await checkInquiryMethods(probe, 'linux');
 
-    expect(result.summary).toBe('/dev/sg* present but not readable (gid plugdev or sudo required)');
+    expect(result.status).toBe('pass');
+    expect(result.summary).toContain('USB inquiry available');
+    expect(result.summary).toContain('/dev/sg* not readable');
+    expect(result.summary).toContain('plugdev');
   });
 });
 

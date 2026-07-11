@@ -1,19 +1,23 @@
 /**
  * iPod Firmware Inquiry Methods diagnostic check
  *
- * System-scope check that reports whether the SCSI inquiry transport
- * is available on the current host. The USB transport is always
- * available in shipped binaries (the `usb` npm package's prebuild is
- * embedded), so it is not user-actionable — checking it would just be
- * noise.
+ * System-scope check that reports which firmware inquiry transports are
+ * available on the current host. Both USB and SCSI are surfaced because
+ * either can fail independently:
  *
- * SCSI variance is real and user-actionable:
- *   - macOS: requires `iPodDriver.kext` to be installed
- *   - Linux: requires `/dev/sg*` nodes to exist and be readable
+ *   - USB (preferred): the `usb` npm package's prebuild is embedded in
+ *     shipped binaries but can fail to dlopen if libudev.so.1 is absent on
+ *     the host Linux system, or if the prebuild was silently omitted at
+ *     build time. When USB is down, firmware inquiry degrades silently.
+ *
+ *   - SCSI (fallback): requires iPodDriver.kext on macOS or readable
+ *     `/dev/sg*` nodes on Linux. Absence is user-actionable on Linux
+ *     (add to plugdev group).
  */
 
 import {
   probeInquiryMethods,
+  chooseTransports,
   type InquiryMethodsAvailability,
   type ProbeOptions,
 } from '@podkit/ipod-firmware';
@@ -25,45 +29,77 @@ import type { DiagnosticCheck, CheckResult, DiagnosticContext } from '../types.j
 export type ProbeFn = (opts?: ProbeOptions) => Promise<InquiryMethodsAvailability>;
 
 /**
- * Build a human-readable summary line for the current platform.
+ * Build a human-readable summary line.
  *
- * macOS pass:  "iPodDriver.kext present"
- * Linux pass:  "/dev/sg* present"
- * Linux warn:  "/dev/sg* present but not readable (gid plugdev or sudo required)"
+ * Priority order:
+ * 1. USB down (preferred transport) — surface USB failure first, since that
+ *    is the more impactful loss for modern iPods.
+ * 2. SCSI-only cases — mirror the previous macOS/Linux platform messages.
+ * 3. Both transports available — brief confirmation.
  */
 function buildSummary(
   a: InquiryMethodsAvailability,
   platform: NodeJS.Platform = process.platform
 ): string {
-  if (a.scsi.available) {
-    return platform === 'darwin' ? 'iPodDriver.kext present' : '/dev/sg* present';
+  // Both down
+  if (!a.usb.available && !a.scsi.available) {
+    const usbReason = a.usb.reason ?? 'USB inquiry unavailable';
+    return `USB and SCSI inquiry both unavailable — ${usbReason}`;
   }
 
-  const reason = a.scsi.reason ?? '';
-  if (reason.includes('not readable')) {
-    return '/dev/sg* present but not readable (gid plugdev or sudo required)';
+  // USB down, SCSI up — USB is the preferred transport, so surface it
+  if (!a.usb.available) {
+    const usbReason = a.usb.reason ?? 'USB inquiry unavailable';
+    return `USB transport unavailable (SCSI fallback active): ${usbReason}`;
   }
-  if (reason.includes('no /dev/sg*')) {
-    return 'no /dev/sg* nodes';
+
+  // USB up — describe SCSI availability as secondary context
+  if (a.scsi.available) {
+    return platform === 'darwin'
+      ? 'USB inquiry available; iPodDriver.kext present'
+      : 'USB inquiry available; /dev/sg* present';
   }
-  if (reason.includes('iPodDriver.kext not present')) {
-    return 'iPodDriver.kext not present';
+
+  // USB up, SCSI down — pass, but note SCSI status for completeness
+  const scsiReason = a.scsi.reason ?? '';
+  if (scsiReason.includes('not readable')) {
+    return 'USB inquiry available; /dev/sg* not readable (gid plugdev or sudo required)';
   }
-  if (reason.includes('not implemented')) {
-    return 'SCSI not supported on this platform';
+  if (scsiReason.includes('no /dev/sg*')) {
+    return 'USB inquiry available; no /dev/sg* nodes (SCSI fallback inactive)';
   }
-  return reason ? `SCSI unavailable: ${reason}` : 'SCSI unavailable';
+  if (scsiReason.includes('iPodDriver.kext not present')) {
+    return 'USB inquiry available; iPodDriver.kext not present (SCSI fallback inactive)';
+  }
+  if (scsiReason.includes('not implemented')) {
+    return 'USB inquiry available; SCSI not supported on this platform';
+  }
+  return scsiReason
+    ? `USB inquiry available; SCSI unavailable: ${scsiReason}`
+    : 'USB inquiry available; SCSI unavailable';
 }
 
 /**
  * Derive check status from availability results.
  *
- * SCSI is the fallback path when USB inquiry stalls (older iPod
- * generations). When SCSI is available we pass; when it's not, we warn —
- * USB still works for most devices, so this is degraded, not broken.
+ * USB is the *preferred* transport (it yields richer data on nano 5G and
+ * later). The status logic reflects that preference:
+ *
+ *   - `pass`  — USB is available. SCSI may or may not be present; its absence
+ *               is not alarming when USB works. A host without `/dev/sg*` but
+ *               with a working USB stack (common on Linux) must not show `warn`.
+ *   - `warn`  — USB is unavailable but SCSI is available. Firmware inquiry
+ *               still works via the SCSI fallback, but the preferred path is
+ *               degraded — e.g. libudev.so.1 absent, prebuild not embedded.
+ *   - `warn`  — Both transports are unavailable. No firmware inquiry is
+ *               possible; this is still `warn` rather than `fail` because the
+ *               core sync path does not hard-depend on firmware inquiry (it
+ *               falls back to filesystem-only identity). Using `fail` would
+ *               incorrectly block non-inquiry operations in the doctor summary.
  */
 function deriveStatus(a: InquiryMethodsAvailability): 'pass' | 'warn' {
-  return a.scsi.available ? 'pass' : 'warn';
+  if (a.usb.available) return 'pass';
+  return 'warn';
 }
 
 /**
@@ -75,13 +111,22 @@ export async function checkInquiryMethods(
 ): Promise<CheckResult> {
   const a = await probe();
   const status = deriveStatus(a);
+  const plan = chooseTransports(a);
 
   return {
     status,
     summary: buildSummary(a, platform),
     repairable: false,
     details: {
-      scsi: { available: a.scsi.available, reason: a.scsi.reason },
+      scsi: {
+        available: a.scsi.available,
+        ...(a.scsi.reason !== undefined ? { reason: a.scsi.reason } : {}),
+      },
+      usb: {
+        available: a.usb.available,
+        ...(a.usb.reason !== undefined ? { reason: a.usb.reason } : {}),
+      },
+      plan,
       platform,
     },
   };

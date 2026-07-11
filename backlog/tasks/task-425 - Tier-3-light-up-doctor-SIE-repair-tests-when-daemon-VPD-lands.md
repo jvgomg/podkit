@@ -4,7 +4,7 @@ title: 'Tier-3: light up doctor SIE repair tests when daemon VPD lands'
 status: To Do
 assignee: []
 created_date: '2026-06-14 07:38'
-updated_date: '2026-06-15 10:26'
+updated_date: '2026-07-11 11:23'
 labels:
   - testing
   - vm-coverage
@@ -80,3 +80,9 @@ This task closes the `it.skip` block accumulation in `doctor-sysinfo-repair.e2e.
 - [ ] #5 `documents/architecture/testing/vm-testing.md` §7 'Daemon SCSI VPD page 0xC0' bullet is closed (or rewritten to capture residual gaps)
 - [ ] #6 Tier-3 baseline remains GREEN
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+UPDATE (2026-07-11, TASK-462): the hard dependency on TASK-424 has softened. The two skipped doctor-repair tests use a SCSI-fallback persona (ipod-5g-stale-guid / ipod-video-5g) because SCSI VPD was thought to be the only in-harness inquiry route. Now that USB DEVICE-level inquiry works (TASK-462), these doctor SIE-repair behaviours could alternatively be lit up over REAL USB inquiry against a USB-mode persona (e.g. ipod-nano-4g-black) — decoupling from TASK-424. Design choice for the implementer: keep the SCSI-path variant (needs 424, tests SCSI-fallback realism) and/or add a USB-path variant now (needs only 462). The USB-path variant is the faster unblock.
+<!-- SECTION:NOTES:END -->

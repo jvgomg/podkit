@@ -34,6 +34,21 @@ export const FUNCTIONFS_STRINGS_MAGIC = 0x00000002;
 /** `enum functionfs_flags`. We declare FS + HS speed tables. */
 export const FUNCTIONFS_HAS_FS_DESC = 1 << 0;
 export const FUNCTIONFS_HAS_HS_DESC = 1 << 1;
+/**
+ * `FUNCTIONFS_ALL_CTRL_RECIP` (`enum functionfs_flags`, bit 6).
+ *
+ * Without this flag the kernel's `ffs_func_req_match()` only forwards
+ * control requests whose recipient is this function's INTERFACE (or one of
+ * its endpoints) to ep0 — DEVICE-recipient vendor requests are STALLed by
+ * the composite core before userspace ever sees a SETUP event.
+ *
+ * The real iPod SysInfoExtended vendor read uses `bmRequestType=0xC0`
+ * (direction IN, type VENDOR, recipient **DEVICE**). To route that to ep0 so
+ * `protocol.ts` can answer it, the function must set this flag; then
+ * `ffs_func_req_match()`'s recipient=DEVICE path returns
+ * `user_flags & FUNCTIONFS_ALL_CTRL_RECIP`, claiming the request.
+ */
+export const FUNCTIONFS_ALL_CTRL_RECIP = 1 << 6;
 
 // ---------------------------------------------------------------------------
 // USB descriptor types (`<linux/usb/ch9.h>` — USB_DT_*)
@@ -73,7 +88,7 @@ const ENDPOINT_BULK = 0x02;
  *   offset  size  field
  *   0       4     magic                                = MAGIC_V2 (0x3)
  *   4       4     length                               = total bytes
- *   8       4     flags                                = HAS_FS | HAS_HS (0x3)
+ *   8       4     flags                                = HAS_FS | HAS_HS | ALL_CTRL_RECIP (0x43)
  *   12      4     fs_count                             = 2 (interface + ep)
  *   16      4     hs_count                             = 2 (interface + ep)
  *   20      9     FS interface descriptor              (bLength=9, USB_DT_INTERFACE)
@@ -96,7 +111,11 @@ export function buildDescriptorsBuffer(): Uint8Array {
   // Head
   view.setUint32(0, FUNCTIONFS_DESCRIPTORS_MAGIC_V2, true);
   view.setUint32(4, totalLength, true);
-  view.setUint32(8, FUNCTIONFS_HAS_FS_DESC | FUNCTIONFS_HAS_HS_DESC, true);
+  view.setUint32(
+    8,
+    FUNCTIONFS_HAS_FS_DESC | FUNCTIONFS_HAS_HS_DESC | FUNCTIONFS_ALL_CTRL_RECIP,
+    true
+  );
   // fs_count + hs_count = number of descriptors per speed, NOT byte counts
   view.setUint32(12, 2, true);
   view.setUint32(16, 2, true);

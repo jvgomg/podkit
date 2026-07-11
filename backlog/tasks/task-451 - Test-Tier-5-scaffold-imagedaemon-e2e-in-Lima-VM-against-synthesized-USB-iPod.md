@@ -4,7 +4,7 @@ title: 'Test Tier 5: scaffold image+daemon e2e in Lima VM against synthesized US
 status: To Do
 assignee: []
 created_date: '2026-06-27 19:05'
-updated_date: '2026-07-11 09:26'
+updated_date: '2026-07-11 11:22'
 labels:
   - docker
   - daemon
@@ -56,4 +56,10 @@ AC#2 ('firmware inquiry → SIE write through the image') cannot be proven via U
 findmnt resolves UUID via libblkid which reads the block device directly. Block device is `brw-rw---- root disk`; uid=1000 returns empty UUID. One-time `device add` needs PUID=0 or disk group + `--device /dev/sdX`. Tests must account for this.
 
 **Disk headroom:** harness VM was at 86% (785M free) during TASK-443. Image + test workload may require pruning. Monitor with `sudo nerdctl system prune -af` before test runs.
+
+UPDATE (2026-07-11, TASK-462): the FunctionFS DEVICE-level blocker recorded in the TASK-443 notes above is RESOLVED. The dummy-hcd-daemon now serves the real iPod USB SIE vendor read (bmRequestType=0xC0) via the FUNCTIONFS_ALL_CTRL_RECIP descriptor flag, proven in-harness (A/B: 0x03 STALLs, 0x43 serves SIE XML). Consequences for this task:
+- AC#2 ('device add -> SIE write through the image') is achievable over REAL USB inquiry, no disk-SIE workaround. The three options in the TASK-443 note (pre-populate SIE / raw-gadget rewrite / reframe AC) are moot.
+- Target a USB-mode persona (ipod-nano-4g-black, USB PID 0x1263 — 'USB inquiry: yes' generation), NOT the SCSI-only ipod-video-5g persona (serving 5G over 0xC0 would be a fiction; Docker supports USB inquiry only per identity-support-matrix.md §5).
+- PREREQ: bump the harness VM disk. It is 6 GiB (Lima 'disk:') and baking a Docker image inside the VM needs headroom; an unclean stop near-full wedged the boot this session (required destroy+harness:setup to recover).
+- Image source (per plan Q7): Stage 1 = local in-VM build from the Dockerfile; Stage 2 (separate follow-up task) = pull a pre-release GHA-built image. A GHA pre-release/RC image seam does NOT exist yet (docker.yml is release-only) and must be built for Stage 2.
 <!-- SECTION:NOTES:END -->

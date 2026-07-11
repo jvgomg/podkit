@@ -11,6 +11,7 @@ import { describe, it, expect } from 'bun:test';
 
 import {
   DESCRIPTOR_LAYOUT,
+  FUNCTIONFS_ALL_CTRL_RECIP,
   FUNCTIONFS_DESCRIPTORS_MAGIC_V2,
   FUNCTIONFS_HAS_FS_DESC,
   FUNCTIONFS_HAS_HS_DESC,
@@ -44,9 +45,14 @@ describe('buildDescriptorsBuffer()', () => {
     expect(readU32(buf, 4)).toBe(buf.byteLength);
   });
 
-  it('encodes flags = HAS_FS_DESC | HAS_HS_DESC', () => {
-    expect(readU32(buf, 8)).toBe(FUNCTIONFS_HAS_FS_DESC | FUNCTIONFS_HAS_HS_DESC);
-    expect(readU32(buf, 8)).toBe(0x3);
+  it('encodes flags = HAS_FS_DESC | HAS_HS_DESC | ALL_CTRL_RECIP', () => {
+    expect(readU32(buf, 8)).toBe(
+      FUNCTIONFS_HAS_FS_DESC | FUNCTIONFS_HAS_HS_DESC | FUNCTIONFS_ALL_CTRL_RECIP
+    );
+    // ALL_CTRL_RECIP (bit 6) is what routes the iPod's DEVICE-recipient
+    // (bmRequestType=0xC0) SysInfoExtended vendor read to ep0 — without it
+    // the kernel STALLs the transfer before the daemon sees a SETUP event.
+    expect(readU32(buf, 8)).toBe(0x43);
   });
 
   it('declares fs_count=2 and hs_count=2 (interface + endpoint per speed)', () => {

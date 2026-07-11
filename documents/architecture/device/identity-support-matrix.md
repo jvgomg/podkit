@@ -97,12 +97,16 @@ Transport runtime requirements:
   the `/dev/sg*` + cgroup-rule + security story is backlog (TASK-296).
 
 - **Test harness note**: the device-testing-daemon (dummy-hcd FunctionFS gadget)
-  cannot simulate the real iPod USB SIE vendor read. The real iPod protocol uses
-  `bmRequestType=0xC0` (recipient=DEVICE); Linux FunctionFS only routes
-  INTERFACE-level (0xC1) control transfers to userspace. SCSI VPD 0xC0 and the
-  disk-based SIE path both work in the test harness. This is a test infrastructure
-  gap, not a production limitation — real Apple hardware responds to DEVICE-level
-  vendor reads normally.
+  serves the real iPod USB SIE vendor read — `bmRequestType=0xC0`
+  (recipient=DEVICE), `bRequest=0x40`, `wValue=0x02`. This requires the
+  FunctionFS descriptor flag `FUNCTIONFS_ALL_CTRL_RECIP` (bit 6): without it the
+  kernel's `ffs_func_req_match()` only routes INTERFACE/ENDPOINT-recipient
+  control transfers to ep0 and STALLs DEVICE-recipient vendor reads before the
+  daemon sees a SETUP; with it, DEVICE-recipient vendor requests reach ep0 and
+  the daemon answers them. Verified in the harness VM (A/B: flags `0x03` → STALL
+  `EPIPE`; flags `0x43` → serves the SysInfoExtended XML over `0xC0`). The
+  SCSI VPD 0xC0 path and the disk-based SIE path also work in the harness; SCSI
+  VPD is an independent transport, not the only route to inquiry coverage.
 
 ## 5. What this means per environment
 

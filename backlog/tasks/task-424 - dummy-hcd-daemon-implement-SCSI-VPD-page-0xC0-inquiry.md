@@ -4,7 +4,7 @@ title: 'dummy-hcd-daemon: implement SCSI VPD page 0xC0 inquiry'
 status: To Do
 assignee: []
 created_date: '2026-06-14 07:37'
-updated_date: '2026-06-15 10:26'
+updated_date: '2026-07-11 11:23'
 labels:
   - testing
   - vm-coverage
@@ -75,3 +75,9 @@ A more ambitious path would be teaching the daemon to be a full SCSI target. Out
 - [ ] #4 Tests `Bug 1 (--repair sysinfo-consistency)` and `Bug 2 (--repair sysinfo-extended)` skipped blocks in `test-packages/e2e-vm-tests/src/doctor-sysinfo-repair.e2e.test.ts` are un-skipped and pass against the new daemon
 - [ ] #5 Existing Tier-3 baseline remains GREEN (no regression on the USB vendor control transfer path)
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+UPDATE (2026-07-11, TASK-462): no longer on the critical path for harness inquiry coverage. The USB DEVICE-level vendor read (bmRequestType=0xC0) now works in the dummy-hcd-daemon via FUNCTIONFS_ALL_CTRL_RECIP, so Tier-3/Tier-5 inquiry coverage is NOT blocked on this SCSI VPD work. This task remains the way to exercise the SCSI-fallback transport specifically (5G video / nano 1-2G / mini / shuffle 1-2G — devices that in reality do NOT answer USB vendor reads). Docker is USB-inquiry-only (identity-support-matrix.md §5), so SCSI VPD is out of scope for the Docker tiers. Keep as independent SCSI-path coverage; priority can stay Low.
+<!-- SECTION:NOTES:END -->
