@@ -49,7 +49,11 @@ ENV PUID=1000 \
 RUN echo "**** install runtime dependencies ****" && \
     apk add --no-cache \
       bash \
+      # provides libudev.so.1, dynamic-linked by the bundled `usb` prebuild (USB firmware inquiry / one-time device setup)
+      eudev-libs \
       ffmpeg \
+      # `device add --path` resolves the mount via findmnt; Alpine splits util-linux, the lsblk package alone doesn't ship it
+      findmnt \
       lsblk \
       su-exec \
       shadow \

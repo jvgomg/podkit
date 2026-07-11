@@ -4,6 +4,7 @@ title: 'Test Tier 5: scaffold image+daemon e2e in Lima VM against synthesized US
 status: To Do
 assignee: []
 created_date: '2026-06-27 19:05'
+updated_date: '2026-07-11 09:26'
 labels:
   - docker
   - daemon
@@ -35,3 +36,24 @@ Reuse: the VM harness already synthesizes USB iPods, serves SysInfoExtended over
 - [ ] #4 Documented local command to run the tier
 - [ ] #5 Full persona matrix explicitly deferred to a Draft task
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+## Notes from TASK-443 verification (2026-07-11)
+
+**nerdctl/containerd already installed:** The podkit-device-harness VM has containerd + nerdctl from the Lima bundle — no docker install needed. The WIP image was loaded and run via `sudo nerdctl` throughout TASK-443 verification.
+
+**FunctionFS cannot serve DEVICE-level USB vendor reads (critical blocker for AC#2):**
+Linux FunctionFS only routes INTERFACE-level (0xC1) control transfers to userspace ep0. The real iPod SIE protocol uses DEVICE-level (0xC0). This means `device-testing-daemon` (FunctionFS gadget) cannot serve the real USB SIE vendor read — the kernel STALLs it before the daemon sees a SETUP event. Confirmed empirically: 0xC1 → daemon received it; 0xC0 → STALL, no daemon log.
+
+AC#2 ('firmware inquiry → SIE write through the image') cannot be proven via USB with the current FunctionFS approach. Options:
+1. Pre-populate SysInfoExtended on disk before `device add` (exercises the disk-SIE path, not USB inquiry)
+2. Fix device-testing-daemon to use raw gadget API or another mechanism that can serve DEVICE-level vendor requests
+3. Adjust AC#2 scope: 'device add reads disk SIE' (proven in TASK-443) vs 'device add writes SIE from USB inquiry' (blocked by FunctionFS)
+
+**PUID=0 + --device <blockdev> required for device add:**
+findmnt resolves UUID via libblkid which reads the block device directly. Block device is `brw-rw---- root disk`; uid=1000 returns empty UUID. One-time `device add` needs PUID=0 or disk group + `--device /dev/sdX`. Tests must account for this.
+
+**Disk headroom:** harness VM was at 86% (785M free) during TASK-443. Image + test workload may require pruning. Monitor with `sudo nerdctl system prune -af` before test runs.
+<!-- SECTION:NOTES:END -->

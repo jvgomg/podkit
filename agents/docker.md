@@ -68,7 +68,7 @@ moves between lanes.
 - Base image: Alpine 3.21 (musl libc — CI produces musl-specific binaries for Docker)
 - Multi-arch: linux/amd64 and linux/arm64 via `docker buildx`
 - Pre-built musl binaries are copied from CI artifacts per `TARGETARCH`
-- Runtime deps: FFmpeg + su-exec + shadow (for PUID/PGID)
+- Runtime deps: FFmpeg + su-exec + shadow (for PUID/PGID) + eudev-libs (libudev.so.1 for the bundled `usb` prebuild — required for USB firmware inquiry during one-time `device add` setup) + findmnt (mount→device resolution for `device add --path`; Alpine's lsblk package does not include it)
 - Follows LinuxServer.io conventions: PUID/PGID env vars, /config volume, branded startup banner
 
 ## Entrypoint Behavior

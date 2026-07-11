@@ -10,13 +10,16 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
-    "./bundle": {
-      "require": "./bundle.cjs"
+    "./bundler-plugin": {
+      "types": "./bundler-plugin.d.ts",
+      "import": "./bundler-plugin.cjs",
+      "require": "./bundler-plugin.cjs"
     }
   },
   "files": [
     "dist",
-    "bundle.cjs"
+    "bundler-plugin.cjs",
+    "bundler-plugin.d.ts"
   ],
   "scripts": {
     "build": "bun build src/index.ts --outdir dist --target node --external koffi --external usb && bun run build:types",

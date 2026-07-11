@@ -1,6 +1,6 @@
 # Device identity: USB/SCSI support matrix
 
-Status: settled (m-18 research + m-22 Docker alignment). Last reviewed: 2026-07-08.
+Status: settled (m-18 research + m-22 Docker alignment). Last reviewed: 2026-07-11.
 
 ## 1. Map
 
@@ -79,17 +79,37 @@ is the fallback on USB *transport* error
 Transport runtime requirements:
 
 - **USB**: libusb (the `usb` npm package) + the device's bus/devnum. In Docker:
-  `--device /dev/bus/usb` (or `--privileged`).
+  `--device /dev/bus/usb` (or `--privileged`). Required Alpine image packages:
+  `eudev-libs` (libudev.so.1, needed by the bundled `usb` native prebuild) and
+  `findmnt` (util-linux-misc, for UUID resolution from a block device path).
+
+- **UUID resolution in-container** (`device add --path`): `findmnt` resolves the
+  mount path to a UUID via libblkid, which reads the block device directly. The
+  block device (`/dev/sdX`) must be passed into the container via `--device
+  /dev/sdX` AND the process must run as root (PUID=0) or belong to the `disk`
+  group — the block device node is `brw-rw---- root disk` so uid=1000 returns an
+  empty UUID, causing `refuse-no-uuid`. For the one-time `device add`, run with
+  PUID=0; subsequent sync-only containers can use PUID=1000 (no block-device
+  access needed after setup).
+
 - **SCSI**: macOS — IOKit SCSITaskUserClient via koffi; Linux — `SG_IO` ioctl on
   the matching `/dev/sg*` node via koffi. In Docker: **not supported today** —
   the `/dev/sg*` + cgroup-rule + security story is backlog (TASK-296).
+
+- **Test harness note**: the device-testing-daemon (dummy-hcd FunctionFS gadget)
+  cannot simulate the real iPod USB SIE vendor read. The real iPod protocol uses
+  `bmRequestType=0xC0` (recipient=DEVICE); Linux FunctionFS only routes
+  INTERFACE-level (0xC1) control transfers to userspace. SCSI VPD 0xC0 and the
+  disk-based SIE path both work in the test harness. This is a test infrastructure
+  gap, not a production limitation — real Apple hardware responds to DEVICE-level
+  vendor reads normally.
 
 ## 5. What this means per environment
 
 | Device state | Host (macOS/Linux) | Docker container |
 |--------------|--------------------|------------------|
-| Identity on disk (SysInfoExtended or populated SysInfo) | syncs — path only | syncs — bind the volume at `/ipod`, nothing else |
-| Blank post-2006 device, USB-capable generation (nano 3G+, classic 6G/7G) | one-time `device add` over USB | one-time `device add` with `--device /dev/bus/usb`, then path-only forever |
+| Identity on disk (SysInfoExtended or populated SysInfo) | syncs — path only | syncs — bind the volume at `/ipod`, nothing else; uid=1000 sufficient |
+| Blank post-2006 device, USB-capable generation (nano 3G+, classic 6G/7G) | one-time `device add` over USB | one-time `device add` with `--device /dev/bus/usb --device /dev/sdX -e PUID=0`; sync-only containers can revert to PUID=1000 after setup |
 | Blank post-2006 device, SCSI-only generation (video 5G/5.5G, nano 1G–2G, mini, 4G/Photo, shuffle 1G–2G) | one-time `device add` over SCSI | **cannot be set up in-container** — set it up once on a host (or let iTunes have touched it once, ever), then the container path lane works |
 | Mass-storage player (Echo Mini, Rockbox, generic) | declared preset — no inquiry, no identity files | same: `[devices.<name>]` with `type` + `path`, or the ENV declaration (`PODKIT_DEVICE_*`) |
 

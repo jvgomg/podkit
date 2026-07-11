@@ -57,6 +57,16 @@ describe('CLI bundle (dist/main.js)', () => {
     expect(readBundle()).toContain('import("usb")');
   });
 
+  it('does not contain the raw `node-gyp-build` specifier (bundler plugin must intercept it)', () => {
+    // If the usbNativeBundlerPlugin fails to intercept usb’s internal
+    // require('node-gyp-build') call at build time, the specifier surfaces
+    // as a bare string in the bundle and the compiled binary cannot load its
+    // .node prebuild at runtime. usb being external also implies its internals
+    // stay out of the bundle, so this is a belt-and-suspenders check for
+    // both the plugin and the externality.
+    expect(readBundle()).not.toContain('node-gyp-build');
+  });
+
   it('does not inline koffi’s native loader (no `eval("require")` survives)', () => {
     // koffi's index.js loads its native .node binding via
     // `eval("require")(filename)` when the build-time static require

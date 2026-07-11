@@ -1,15 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Compile the CLI into a standalone binary with the native .node addon embedded.
+# Compile the CLI into a standalone binary with the native .node addons embedded.
 #
 # Bun's --compile detects static require() calls to .node files and embeds
 # them in the compiled binary. At runtime, Bun extracts the .node to a temp
 # file, dlopen's it, then deletes it — producing a true single-file binary.
 #
-# This script stages the correct platform's .node file to a known path
-# (packages/libgpod-node/gpod_binding.node) that binding.ts statically
-# requires, then compiles the CLI.
+# The gpod_binding.node addon is embedded via the static require in
+# src/compile-entry.js. The `usb` prebuild cannot be reached the same way
+# (the package requires it through node-gyp-build, which Bun links
+# statically), so it is embedded by a build plugin — hence the final build
+# runs through scripts/compile-build.ts (the `bun build` CLI cannot take
+# plugins) rather than a plain `bun build --compile` here.
+#
+# This script stages the correct platform's .node files to known paths
+# ($CLI_DIR/gpod_binding.node and $CLI_DIR/usb_native.node), then compiles.
 
 CLI_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 LIBGPOD_DIR="$CLI_DIR/../libgpod-node"
@@ -51,9 +57,9 @@ fi
 
 # Stage the matching `usb` npm prebuild. The package ships per-platform .node
 # files under node_modules/usb/prebuilds/; node-gyp-build picks the right one
-# at runtime, but Bun --compile only embeds .node files reached via static
-# require() — so we copy the resolved file to a fixed path that compile-entry
-# can require statically.
+# at runtime, but that lookup fails inside a compiled binary — so we copy the
+# resolved file to a fixed path that the bundler plugin (compile-build.ts)
+# embeds via a static require during the build.
 USB_PKG_DIR=$(cd "$CLI_DIR/../ipod-firmware" && bun -e "console.log(require('path').dirname(require.resolve('usb/package.json')))")
 USB_PREBUILD=""
 case "$PLATFORM" in
@@ -105,8 +111,9 @@ else
   BUILD_LABEL="production"
 fi
 
-bun build --compile src/compile-entry.js --outfile "$OUTFILE" \
-  --define "PODKIT_VERSION='$VERSION'" \
-  --define "__PODKIT_DEV_HOOKS__=$DEV_HOOKS_DEFINE"
+PODKIT_COMPILE_OUTFILE="$OUTFILE" \
+PODKIT_COMPILE_VERSION="$VERSION" \
+PODKIT_COMPILE_DEV_HOOKS="$DEV_HOOKS_DEFINE" \
+bun scripts/compile-build.ts
 
 echo "Compiled: $OUTFILE (v$VERSION, $BUILD_LABEL)"
