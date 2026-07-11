@@ -41,6 +41,7 @@ import { ipodVideo5gCorruptDb } from './ipod-video-5g-corrupt-db/persona.js';
 import { echoMiniPopulated } from './echo-mini-populated/persona.js';
 import { ipod5gModelnumMismatch } from './ipod-5g-modelnum-mismatch/persona.js';
 import { ipod5gStaleGuid } from './ipod-5g-stale-guid/persona.js';
+import { ipod5gVideoMbrPart } from './ipod-5g-video-mbr-part/persona.js';
 
 export type { DevicePersona } from './types.js';
 
@@ -66,6 +67,7 @@ export { ipodVideo5gCorruptDb, corruptItunesDb } from './ipod-video-5g-corrupt-d
 export { echoMiniPopulated } from './echo-mini-populated/persona.js';
 export { ipod5gModelnumMismatch } from './ipod-5g-modelnum-mismatch/persona.js';
 export { ipod5gStaleGuid } from './ipod-5g-stale-guid/persona.js';
+export { ipod5gVideoMbrPart } from './ipod-5g-video-mbr-part/persona.js';
 
 const ALL_PERSONAS: readonly DevicePersona[] = [
   ipodMini2gPink,
@@ -92,6 +94,9 @@ const ALL_PERSONAS: readonly DevicePersona[] = [
   echoMiniPopulated,
   ipod5gModelnumMismatch,
   ipod5gStaleGuid,
+  // Device-shape variant: MBR-partitioned FAT32 backing (whole-disk sibling is
+  // ipodVideo5gIflash1tb). Exercises the daemon poller's partition branch.
+  ipod5gVideoMbrPart,
 ];
 
 /**

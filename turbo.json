@@ -294,6 +294,27 @@
       ],
       "outputs": []
     },
+    "@podkit/e2e-vm-tests#test:e2e:docker-dist": {
+      "dependsOn": [
+        "@podkit/device-testing-daemon#build",
+        "^build",
+        "podkit#compile",
+        "podkit#compile:debug",
+        "@podkit/device-testing#build:musl-binary",
+        "@podkit/device-testing#vm:install",
+        "@podkit/device-testing#vm:doctor"
+      ],
+      "cache": false,
+      "inputs": [
+        "src/**",
+        "$TURBO_ROOT$/test-packages/device-testing/src/**",
+        "$TURBO_ROOT$/test-packages/device-testing/lima/**",
+        "$TURBO_ROOT$/test-packages/device-testing/scripts/apply-state.sh",
+        "package.json",
+        "bunfig.toml"
+      ],
+      "outputs": []
+    },
     "@podkit/device-testing#build:linux-prebuild": {
       "dependsOn": [],
       "env": ["PODKIT_HOST_ARCH"],

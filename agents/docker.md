@@ -53,6 +53,46 @@ uses a glibc base with `gosu` symlinked as `su-exec`, not the shipped Alpine/mus
 image. It is a representative image for catching CLI/entrypoint drift; full
 Alpine/musl fidelity against a synthesized USB device is Tier 5 (Lima VM, CI).
 
+### Running Tier 5 locally
+
+Tier 5 builds the real Alpine/musl image inside the `podkit-device-harness`
+Lima VM and drives it against a synthesized USB iPod (5G Video persona) with
+`nerdctl run --device` passthrough: `device add` (live USB firmware inquiry →
+SysInfoExtended write), a real FLAC→AAC sync, then a read-back — all through the
+shipped image.
+
+```bash
+bun run test:e2e:docker-dist
+```
+
+Prerequisites:
+
+- The harness VM must be up: `bun run harness:status` (bring it up with
+  `bun run harness:start` / `bun run harness:setup`).
+- The musl binaries must exist. `test:e2e:docker-dist` depends on
+  `@podkit/device-testing#build:musl-binary`; if they are absent, build them
+  first with `bunx turbo run build:musl-binary --filter @podkit/device-testing`.
+
+It is expensive (multi-minute image build) and fragile (live synthesized
+device), so it is **local-only** — excluded from `test:vm` and the `quality`
+DAG. Four gotchas the test encodes (all container constraints):
+
+- **Path-based addressing** — volumeUuid resolution fails in-container; address
+  the device by `path=/ipod` + `-d tier5ipod`, never by UUID.
+- **PUID=0 + `--device <blockDevice>`** — reading the block-device UUID
+  (libblkid) fails as uid=1000, so `device add` runs with `-e PUID=0 -e PGID=0`
+  and the block node passed via `--device`.
+- **Wipe the stale on-disk SIE** before `device add` so the live USB inquiry
+  writes a fresh identity (the 5G Video backing ships a stale SysInfoExtended
+  that would otherwise trip IDENTITY_MISMATCH).
+- **VZ-HID trap** — resolve device nodes by the persona's PID, never "first
+  Apple device" (the VZ guest exposes Apple-vendor HID nodes sharing VID 05ac).
+
+Persona caveat: the 5G Video proves the USB-inquiry code path + sync pipeline,
+not 5G-over-USB realism (a real 5G Video uses SCSI inquiry). A USB-native
+syncable persona is the realism refinement, deferred to the fuller persona
+matrix (DRAFT-021).
+
 ## Device Support Boundary
 
 Which iPods can be identified from the mounted volume alone (path baseline),

@@ -193,6 +193,48 @@ export async function resolvePersonaDeviceNodes(
 // mountPersona / unmountAndStop
 // ---------------------------------------------------------------------------
 
+/**
+ * Best-effort unmount of `mountPoint`. Uses lazy unmount (`umount -l`) as a
+ * fallback so a mount pinned by a lingering reference (e.g. a container that
+ * raced teardown) still detaches. Never throws — a failure here must not mask
+ * the caller's own error path.
+ */
+async function unmountBestEffort(mountPoint: string): Promise<void> {
+  await limaTestVmRunner
+    .run(
+      `sudo umount ${mountPoint} 2>/dev/null || sudo umount -l ${mountPoint} 2>/dev/null || true`,
+      { timeoutMs: VM_WARM_TIMEOUT_MS }
+    )
+    .catch(() => {});
+}
+
+/**
+ * Reset any stale per-persona state left behind by a prior run so a fresh
+ * `mountPersona` starts from a known-clean slate:
+ *
+ *   1. Unmount `mountPoint` if it is currently mounted (best-effort, lazy
+ *      fallback) — otherwise the follow-up `mount` fails "already mounted".
+ *   2. Stop the persona daemon if it is running — otherwise `systemctl start`
+ *      is a no-op on the already-active unit and the OLD gadget (bound to a
+ *      stale backing view) survives, so `gpod-tool init` and the container end
+ *      up looking at different filesystem views.
+ *
+ * Every step swallows its own failure; the whole helper is a safe no-op when
+ * nothing is bound. Not exported: it is an internal precondition of
+ * {@link mountPersona}, not a standalone lifecycle step.
+ */
+async function preflightReset(opts: {
+  vmName: string;
+  personaId: string;
+  mountPoint: string;
+}): Promise<void> {
+  await unmountBestEffort(opts.mountPoint);
+  // Stop the daemon so the subsequent `systemctl start` re-binds a fresh
+  // gadget. `stopDaemon` treats systemd's "no such unit / not running" exit 5
+  // as success, so this is a clean no-op on a clean VM.
+  await stopDaemon({ vmName: opts.vmName, personaId: opts.personaId }).catch(() => {});
+}
+
 /** Options for {@link mountPersona}. */
 export interface MountPersonaOpts {
   /** Persona id — used as the systemd instance specifier. */
@@ -213,6 +255,16 @@ export interface MountPersonaOpts {
  * current Lima user. After this returns, podkit invocations targeting
  * `-d <opts.mountPoint>` see a `ready`-readiness iPod backing file.
  *
+ * Idempotent from any prior state. Before staging, it defensively tears
+ * down anything a crashed / killed prior run may have left bound: a stale
+ * mount at `opts.mountPoint` and a still-running (or half-bound) persona
+ * daemon. This matters because `systemctl start` is a no-op on an already-
+ * active unit — so without the pre-flight stop, a rerun would reuse the OLD
+ * gadget (bound to a stale backing view) and then fail to mount over the
+ * old mount. Reraising from a clean, freshly-bound gadget is what keeps
+ * repeat runs and dirty-start reruns green. The pre-flight is a safe no-op
+ * when there is nothing to clean.
+ *
  * Throws if the daemon can't find a matching `/dev/sd<x>` within the
  * polling window, or if both the bare-device and `sdN1` mount attempts
  * fail. On any throw, the caller is responsible for `unmountAndStop` —
@@ -221,6 +273,12 @@ export interface MountPersonaOpts {
  */
 export async function mountPersona(opts: MountPersonaOpts): Promise<void> {
   const vmName = opts.vmName ?? LIMA_DEVICE_HARNESS_VM_NAME;
+
+  // Pre-flight: reset any stale state from a prior (possibly crashed) run so
+  // the daemon start below re-binds a fresh gadget rather than reusing a stale
+  // one. Best-effort — every step is a no-op when nothing is bound.
+  await preflightReset({ vmName, personaId: opts.personaId, mountPoint: opts.mountPoint });
+
   await startDaemonForPersona({ vmName, personaId: opts.personaId });
   await waitForScsiGenericEnumeration({
     vmName,
@@ -270,17 +328,15 @@ export interface UnmountAndStopOpts {
 
 /**
  * Unmount `mountPoint`, remove the mount dir, and stop the persona
- * daemon. Best-effort: every step swallows its own failure so partial
- * teardown still completes (e.g. stop the daemon even if the umount
- * raced a kernel reference). Intended for `afterAll`.
+ * daemon. Best-effort and idempotent: every step swallows its own failure
+ * so partial teardown still completes (e.g. stop the daemon even if the
+ * umount raced a kernel reference), and calling it when already unmounted /
+ * stopped is a clean no-op. Safe to call from both a failed `beforeAll`
+ * catch and `afterAll`.
  */
 export async function unmountAndStop(opts: UnmountAndStopOpts): Promise<void> {
   const vmName = opts.vmName ?? LIMA_DEVICE_HARNESS_VM_NAME;
-  await limaTestVmRunner
-    .run(`sudo umount ${opts.mountPoint} 2>/dev/null || true`, {
-      timeoutMs: VM_WARM_TIMEOUT_MS,
-    })
-    .catch(() => {});
+  await unmountBestEffort(opts.mountPoint);
   await limaTestVmRunner
     .run(`sudo rmdir ${opts.mountPoint} 2>/dev/null || true`, {
       timeoutMs: VM_WARM_TIMEOUT_MS,

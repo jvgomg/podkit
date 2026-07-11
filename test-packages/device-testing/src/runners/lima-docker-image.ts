@@ -41,11 +41,11 @@ import {
 // ---------------------------------------------------------------------------
 
 /** Default image tag produced by {@link buildPodkitImageInVm}. */
-export const DEFAULT_PODKIT_IMAGE_TAG = 'podkit:tier5';
+export const DEFAULT_PODKIT_IMAGE_TAG = 'podkit:docker-dist';
 /** In-VM directory that holds the staged build context. */
 export const BUILD_CONTEXT_VM_DIR = '/tmp/podkit-image-ctx';
 /** Fixed VERSION build-arg for the local Tier-5 build (CI supplies the real one). */
-const TIER5_VERSION = '0.0.0-tier5';
+const DOCKER_DIST_VERSION = '0.0.0-docker-dist';
 /** Relative path (inside the context) of the Dockerfile, matching CI. */
 const DOCKERFILE_REL = 'packages/podkit-docker/Dockerfile';
 /** Relative path (inside the context) of the entrypoint, matching the Dockerfile COPY. */
@@ -300,7 +300,7 @@ export async function buildPodkitImageInVm(
     'nerdctl',
     'build',
     '--build-arg',
-    `VERSION=${TIER5_VERSION}`,
+    `VERSION=${DOCKER_DIST_VERSION}`,
     '--build-arg',
     `CLI_VERSION=${cliVersion}`,
     '--build-arg',

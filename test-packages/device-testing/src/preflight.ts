@@ -34,13 +34,23 @@ import { runLimactl } from './runners/lima-limactl.js';
 import { defaultSubprocessRunner } from './subprocess.js';
 
 function vmTestsTargeted(): boolean {
+  // `test:e2e:docker-dist` is the local-only Docker Tier-5 run (the shipped
+  // Docker distribution image, in `src/docker-dist/`); it drives the VM just like
+  // `test:vm`, so it must gate the same way (its files live in the `docker-dist`
+  // directory, not `vm/`, and would otherwise slip past the argv sniff). The
+  // `docker-dist` tag is distinct from `@podkit/e2e-tests`'s `.docker.` files,
+  // which use a separate preflight.
   if (process.env.npm_lifecycle_event === 'test:vm') return true;
-  // Match `vm/`, a trailing `/vm` (or bare `vm`) path segment, and any
-  // `.e2e.` filename. The trailing-segment variant catches `bun test src/vm`
-  // invoked directly without npm — `argv` then contains `src/vm` with no
-  // trailing slash, which a naive `includes('vm/')` would miss.
+  if (process.env.npm_lifecycle_event === 'test:e2e:docker-dist') return true;
+  // Match `vm/`, a trailing `/vm` (or bare `vm`) path segment, any `.e2e.`
+  // filename, and a `docker-dist` path segment (`bun test src/docker-dist`
+  // invoked directly without npm). The trailing-segment variant catches
+  // `bun test src/vm` — `argv` then contains `src/vm` with no trailing slash,
+  // which a naive `includes('vm/')` would miss.
   const VM_PATH_RE = /(^|\/)vm(\/|$)/;
-  return process.argv.some((arg) => VM_PATH_RE.test(arg) || arg.includes('.e2e.'));
+  return process.argv.some(
+    (arg) => VM_PATH_RE.test(arg) || arg.includes('.e2e.') || arg.includes('docker-dist')
+  );
 }
 
 if (!vmTestsTargeted()) {

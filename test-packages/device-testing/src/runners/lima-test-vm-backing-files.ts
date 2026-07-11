@@ -183,6 +183,29 @@ export async function ensureBackingFile(
   // surfaces before we touch the VM. Returns empty when no seeding is needed.
   const seedEntries = resolveSeedEntries(opts.persona);
 
+  // Partitioned FAT32: an MBR-wrapped single FAT32 partition (not whole-disk).
+  // This takes a dedicated in-VM build path (loop device + sfdisk + mkfs on the
+  // partition node) and does not support `initialContent` seeding — the mtools
+  // path targets a bare FAT image, not a partition offset. The only consumer
+  // (the daemon lsblk-lane test) seeds via gpod-tool after mounting, so this
+  // restriction costs nothing today.
+  if (backing.synthesis.partitioned) {
+    if (seedEntries.length > 0) {
+      throw new Error(
+        `ensureBackingFile: persona '${opts.persona.id}' sets synthesis.partitioned with ` +
+          `initialContent — seeding a partitioned image is not implemented (seed post-mount instead).`
+      );
+    }
+    return synthesisePartitionedFat32BackingFile({
+      vmName: opts.vmName,
+      personaId: opts.persona.id,
+      vmPath,
+      sizeMiB,
+      label,
+      subprocess,
+    });
+  }
+
   // Stage host fixtures into the VM under a per-persona scratch dir before
   // `mkfs.vfat` so the seeding step can `mcopy` from local VM paths (no
   // host roundtrip per file inside the build script). The build script's
@@ -428,6 +451,116 @@ async function synthesiseHfsplusBackingFile(
       // Best-effort: a stuck file in os.tmpdir() does no harm.
     }
   }
+}
+
+/**
+ * Fixed MBR disk signature burned into every partitioned image via
+ * `sfdisk label-id`. `sfdisk` otherwise writes a RANDOM 4-byte disk id, which
+ * would break byte-determinism (and the idempotency sha probe). The value is
+ * arbitrary but stable; it never surfaces to a user (blkid derives PARTUUID
+ * `<diskid>-01` from it, which tests do not assert on).
+ */
+const PARTITIONED_MBR_DISK_ID = '0x1204d15c';
+
+/** Options for {@link synthesisePartitionedFat32BackingFile}. */
+interface SynthesisePartitionedFat32Opts {
+  vmName: string;
+  personaId: string;
+  vmPath: string;
+  sizeMiB: number;
+  label: string;
+  subprocess: SubprocessRunner;
+}
+
+/**
+ * Partitioned-FAT32 branch of {@link ensureBackingFile}. Builds an MBR-wrapped
+ * single FAT32 partition image entirely in-VM and installs it at
+ * {@link vmPathForPersona}.
+ *
+ * On-disk shape: a `dos` MBR with a fixed disk signature and one partition of
+ * type `0x0C` (W95 FAT32 LBA) starting at LBA 2048 (1 MiB alignment). The
+ * partition is formatted with `mkfs.vfat --invariant` (deterministic) via a
+ * `losetup --partscan` loop device so the mkfs targets the partition node, not
+ * the whole disk. When the mass-storage gadget serves this image, the guest
+ * kernel presents `/dev/sd<x>` (disk) + `/dev/sd<x>1` (`type: "part"`, vfat) —
+ * the real MBR/FAT32 iPod shape.
+ *
+ * Determinism: `truncate` (fixed size) + `sfdisk label-id` (fixed disk id) +
+ * `mkfs.vfat --invariant -n <label>` (fixed volume id + timestamps) give a
+ * byte-identical image across runs, so the always-rebuild + sha probe stay
+ * valid (verified: two builds hash identically).
+ *
+ * The whole build runs under one `sudo sh -c` with `set -e`, and the loop
+ * device is detached on every path via a `trap` so a mid-build failure never
+ * leaks a `/dev/loop*` attachment.
+ */
+async function synthesisePartitionedFat32BackingFile(
+  opts: SynthesisePartitionedFat32Opts
+): Promise<EnsureBackingFileResult> {
+  // Idempotency probe (mirrors the whole-disk path): read any existing image's
+  // sha so `wasAlreadyIdentical` reflects byte-stability.
+  const probe = await runLimactl(opts.subprocess, [
+    'shell',
+    opts.vmName,
+    '--',
+    'sh',
+    '-c',
+    `if [ -f ${shellQuote(opts.vmPath)} ]; then sha256sum ${shellQuote(opts.vmPath)} | awk '{print $1}'; else echo absent; fi`,
+  ]);
+  if (probe.exitCode !== 0) {
+    throw limactlError(`failed to probe backing file at ${opts.vmName}:${opts.vmPath}`, probe);
+  }
+  const existingSha = probe.stdout.trim();
+
+  // Build script. `$$`-suffixed scratch path avoids the concurrent-prepare
+  // race documented on the whole-disk path. The `trap` detaches the loop on
+  // any exit so a failed mkfs cannot leak an attachment.
+  const buildScript = [
+    'set -e',
+    `sudo mkdir -p ${shellQuote(BACKING_FILES_VM_DIR)}`,
+    `TMP=${shellQuote(`${opts.vmPath}.tmp.`)}$$`,
+    'sudo rm -f "$TMP"',
+    `sudo truncate -s ${opts.sizeMiB}M "$TMP"`,
+    // Deterministic MBR: fixed disk id + one FAT32-LBA partition at LBA 2048.
+    `printf 'label: dos\\nlabel-id: ${PARTITIONED_MBR_DISK_ID}\\n\\n2048,,c\\n' | sudo sfdisk "$TMP" >/dev/null 2>&1`,
+    // Attach a partscan loop so ${LOOP}p1 exists; detach on any exit.
+    'LOOP=$(sudo losetup --find --show --partscan "$TMP")',
+    'trap \'sudo losetup -d "$LOOP" 2>/dev/null || true\' EXIT',
+    `sudo mkfs.vfat --invariant -F 32 -n ${shellQuote(opts.label)} -I "${'$'}{LOOP}p1" >/dev/null 2>&1`,
+    'sudo losetup -d "$LOOP"',
+    'trap - EXIT',
+    `sudo mv "$TMP" ${shellQuote(opts.vmPath)}`,
+    `sha256sum ${shellQuote(opts.vmPath)} | awk '{print $1}'`,
+  ].join('; ');
+
+  const build = await runLimactl(opts.subprocess, [
+    'shell',
+    opts.vmName,
+    '--',
+    'sh',
+    '-c',
+    buildScript,
+  ]);
+  if (build.exitCode !== 0) {
+    throw limactlError(
+      `failed to synthesise partitioned FAT32 backing file for persona '${opts.personaId}' in ${opts.vmName}`,
+      build
+    );
+  }
+  const sha256 = build.stdout.trim();
+  if (!/^[0-9a-f]{64}$/.test(sha256)) {
+    throw new Error(
+      `ensureBackingFile: persona '${opts.personaId}' partitioned synthesis returned ` +
+        `non-sha256 stdout '${sha256.slice(0, 80)}' — VM output unexpected.`
+    );
+  }
+
+  return {
+    personaId: opts.personaId,
+    vmPath: opts.vmPath,
+    sha256,
+    wasAlreadyIdentical: existingSha === sha256,
+  };
 }
 
 /**

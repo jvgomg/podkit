@@ -282,6 +282,24 @@ export interface MassStorageBackingFileRecipe {
    */
   label: string;
   initialContent?: Array<{ path: string; sourceFixture: string }>;
+  /**
+   * Wrap the FAT32 filesystem in an MBR partition table (single FAT32-LBA
+   * partition starting at LBA 2048) instead of formatting the whole disk.
+   * FAT32-only.
+   *
+   * Default (omitted / `false`): whole-disk FAT32 — the backing image IS the
+   * filesystem, so the kernel presents the gadget as `/dev/sd<x>` with
+   * `type: "disk"`. This is what iFlash-style whole-disk formats produce.
+   *
+   * `true`: an MBR-partitioned disk — the kernel presents `/dev/sd<x>` (the
+   * disk) with a child `/dev/sd<x>1` (`type: "part"`, vfat). This matches how a
+   * real MBR/FAT32 iPod (e.g. the captured 5G Video) presents on a host, and is
+   * what exercises the daemon poller's partition branch (and the CLI's
+   * partition-suffix stripping). Synthesised deterministically in-VM via a
+   * fixed-signature MBR (`sfdisk label-id`) + a loop device + `mkfs.vfat
+   * --invariant` on the partition node.
+   */
+  partitioned?: boolean;
 }
 
 /**

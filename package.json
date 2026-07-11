@@ -21,6 +21,7 @@
     "test:e2e": "turbo run test:e2e",
     "test:e2e:docker": "turbo run test:e2e:docker",
     "test:vm": "turbo run test:vm",
+    "test:e2e:docker-dist": "turbo run test:e2e:docker-dist --filter @podkit/e2e-vm-tests",
     "quality": "turbo run qa",
     "harness:create": "bun run --cwd test-packages/device-testing harness:create",
     "harness:start": "bun run --cwd test-packages/device-testing harness:start",

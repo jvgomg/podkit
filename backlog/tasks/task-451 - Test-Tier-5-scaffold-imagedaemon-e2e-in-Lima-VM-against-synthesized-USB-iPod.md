@@ -1,10 +1,10 @@
 ---
 id: TASK-451
 title: 'Test Tier 5: scaffold image+daemon e2e in Lima VM against synthesized USB iPod'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-06-27 19:05'
-updated_date: '2026-07-11 17:04'
+updated_date: '2026-07-11 21:11'
 labels:
   - docker
   - daemon
@@ -17,6 +17,24 @@ references:
   - backlog/docs/doc-053 - podkit-docker-testing-strategy.md
   - test-packages/device-testing-daemon/
   - test-packages/e2e-vm-tests/
+modified_files:
+  - test-packages/e2e-vm-tests/src/docker-dist/image.docker-dist.test.ts
+  - test-packages/e2e-vm-tests/src/docker-dist/daemon.docker-dist.test.ts
+  - test-packages/e2e-vm-tests/src/docker-dist/container-helpers.ts
+  - test-packages/e2e-vm-tests/package.json
+  - test-packages/e2e-vm-tests/bunfig.toml
+  - test-packages/device-testing/src/preflight.ts
+  - test-packages/device-testing/src/runners/lima-docker-image.ts
+  - test-packages/device-testing/src/runners/lima-test-vm-backing-files.ts
+  - test-packages/device-testing/src/vm/mount-persona.ts
+  - test-packages/device-testing/src/personas/index.ts
+  - test-packages/device-testing/src/personas/types.ts
+  - test-packages/device-testing/src/index.ts
+  - packages/podkit-docker/entrypoint.sh
+  - packages/podkit-daemon/src/device-poller.ts
+  - package.json
+  - turbo.json
+  - agents/docker.md
 priority: medium
 ordinal: 14000
 ---
@@ -34,7 +52,7 @@ Reuse: the VM harness already synthesizes USB iPods, serves SysInfoExtended over
 - [x] #1 Docker image runs inside the Lima VM with /dev/bus/usb passthrough to the container
 - [x] #2 One synthesized USB iPod persona drives `device add` -> SIE write through the image
 - [x] #3 Daemon steady-state sync against the synthesized device proven through the image
-- [ ] #4 Documented local command to run the tier
+- [x] #4 Documented local command to run the tier
 - [x] #5 Full persona matrix explicitly deferred to a Draft task
 <!-- AC:END -->
 
@@ -117,4 +135,32 @@ Working config.toml: version=2; [codec] lossy/lossless=[aac]; [music.main] path=
 AC#1/#2/#3 all PROVEN through the real musl image. REMAINING: M6 (codify into tier5-docker-image.e2e.test.ts + test:tier5 script + docs = AC#4) + AC#5 (file deferred full-persona-matrix Draft task) + optional entrypoint --version fix.
 
 AC#5 DONE: filed DRAFT-021 (Tier-5 full persona matrix) as the deferred broadening task. REMAINING for next person = AC#4 only (M6): codify the proven manual flow into `test-packages/e2e-vm-tests/src/tier5-docker-image.e2e.test.ts` (build image via buildPodkitImageInVm → bring up video-5g via mountPersona → resolvePersonaDeviceNodes → device add + sync through the image with the passthrough recipe → assert tracks) + a `test:tier5` script + doc the run command in doc-053/agents/docker.md + refresh stale it.skip/identity-matrix comments. All commands/config/gotchas are in the M4/M5 notes above. Also optional: fix the entrypoint `exec "$@"` bare-flag bug.
+
+AC#4 / M6 DONE (2026-07-11): codified the flow into `test-packages/e2e-vm-tests/src/image.docker-dist.test.ts`. Test PASSES against the live harness VM (3 pass / 0 fail / 11 assertions) — device add (USB inquiry → SIE write, verification:verified, 9693-byte SIE) → real FLAC→AAC sync (result.completed:2) → device music read-back (tracks:2, fileTypes.AAC:2), all through the shipped musl `podkit:tier5` image via nerdctl --device passthrough.
+
+NAMING (user steer): the runnable command is `bun run test:e2e:docker-dist` (NOT `test:tier5`) and the gate suffix is `.docker.test.ts`→`.docker-dist.test.ts`. `docker-dist` = 'the shipped Docker distribution image', distinct from @podkit/e2e-tests' existing `*.docker.test.ts` (which only use Docker to host a Subsonic/Navidrome source) and the `test:e2e:docker` script. Internal 'Tier 5' strategy-tier vocab retained in JSDoc. Wired: package `test:e2e:docker-dist` script (opts the file back in via `--path-ignore-patterns=`), `test:vm` excludes `**/*.docker-dist.test.ts`, root `test:e2e:docker-dist` turbo passthrough, `@podkit/e2e-vm-tests#test:e2e:docker-dist` turbo task (cache:false, dependsOn build:musl-binary+vm:install+vm:doctor), bunfig pathIgnore, preflight VM-gate. Confirmed OUT of the qa/quality DAG.
+
+RECIPE CORRECTIONS vs the handover's M4/M5 shorthand (all learned by empirical diagnosis, now encoded in the test):
+1. The synthesized 5G-Video backing is an EMPTY FAT (persona.ts: 'image is empty, no iTunesDB') — NOT one that ships a stale SIE. Must `gpod-tool init <mnt> --model MA147` first to seed iPod_Control + empty iTunesDB, else sync fails IPOD_NEEDS_INIT. (Gotcha #4 reframed: wipe on-disk SysInfoExtended so add writes it fresh from USB; the classic SysInfo gpod-tool writes agrees with the inquiry on 5G Video, so add verifies — no IDENTITY_MISMATCH.)
+2. TWO-PHASE config: `device add --path /ipod` writes the device entry keyed by volumeUuid, which is UNRESOLVABLE in-container (DEVICE_PATH_UNRESOLVED). So add runs against a device-LESS config (creating the entry + proving SIE), then the test OVERWRITES with a path-based `[devices.tier5ipod] path=/ipod` entry for sync + read-back. Pre-declaring the device makes add fail DEVICE_EXISTS.
+3. `device music` has NO `--path` flag (the M6 note was wrong) — resolve device by config path via `-d tier5ipod` only.
+4. sync `--json` nests tallies under `result.{completed,failed}`, not top-level.
+
+DOC FIX: the musl-binary fallback command in agents/docker.md + doc-053 was `bun run build:musl-binary --filter …` (invalid — bun run has no --filter); corrected to `bunx turbo run build:musl-binary --filter @podkit/device-testing`.
+
+KNOWN FLAKINESS (orthogonal, TASK-464 infra): the turbo `@podkit/device-testing#build:musl-binary` task transiently failed once on a cache-miss re-run inside the big turbo DAG — its nested build-musl-prebuild.sh hit a spurious `ldd /bin/sh | grep musl` guard miss (`did not detect musl libc`) even though the podkit-musl-builder VM is healthy (verified musl). Not a Tier-5 defect. Also observed: a run against stale persona/gadget state (leftover from a prior crashed run) fails device add with INIT_FAILED + torn-down USB nodes; a clean VM passes. Consider hardening the musl-build nested-prebuild guard + the persona teardown robustness.
+
+FINAL (2026-07-11): (a) Full documented command proven end-to-end — `bun run test:e2e:docker-dist` through the whole turbo DAG: 22/22 tasks incl. a clean build:musl-binary recompile (the earlier guard-miss did NOT recur — confirmed transient), test 3→1 it pass/0 fail, ~3m16s, exit 0. (b) Post-review refactor: folded the three sequential `it`s into ONE ordered `it` with per-attempt seeding (gpod-tool init + SIE wipe + ADD config moved from beforeAll into the test body) so bunfig `retry=1` re-establishes a clean pre-add state instead of a confusing DEVICE_EXISTS/stale-SIE cascade on a retry. Folded test re-verified green (1 pass/0 fail/11 assertions). Quality gates: typecheck 12/12, lint 0 warnings/errors, CLI-stderr check OK. Work complete + uncommitted (awaiting user commit).
+
+POST-REVIEW HARDENING (2026-07-11, m-22 follow-up, user-directed): (1) Moved the docker-dist tests into their own gated directory `test-packages/e2e-vm-tests/src/docker-dist/` (dir-based gating: bunfig + test:vm exclude `docker-dist/`, preflight recognises the segment, `test:e2e:docker-dist` runs the whole dir — future docker-dist tests auto-included). (2) NAMING: renamed internal `tier5` code identifiers to `docker-dist` (image tag `podkit:tier5`→`podkit:docker-dist`, device id `tier5ipod`→`dockeripod`, VM paths, fixture metadata, TIER5_VERSION const); kept 'Tier 5' only as strategy-tier prose. (3) Extracted shared `sq`/`parseTrailingJson`/`runContainerJson`/`assertContainerOk` into `docker-dist/container-helpers.ts`. (4) ENTRYPOINT FIX: `docker run <image> --version` (any leading flag) died with `exec: --: invalid option`; entrypoint.sh now routes a leading-dash arg through `su-exec podkit podkit "$@"` (changeset `docker-entrypoint-leading-flag-fix.md`, @podkit/docker patch); regression asserted in the new daemon test. (5) IDEMPOTENCY: `mountPersona` assumed a clean start (`systemctl start` no-ops on an active unit → stale gadget bound to a stale backing view → device add INIT_FAILED + torn-down nodes on a dirty start). Added `preflightReset()` (unmount + stopDaemon before staging) + `unmountBestEffort()` (lazy-unmount fallback) → setup is now idempotent from any prior state. Verified: 2 consecutive + dirty-start passes + sibling device-add-no-verify green. Hardens ALL VM tests, not just docker-dist.
+
+DAEMON STEADY-STATE (AC#3 deepened): new `docker-dist/daemon.docker-dist.test.ts` proves the BUNDLED podkit-daemon (long-lived, detached `nerdctl run -d`) detects the mounted iPod and auto-syncs it — 2 real AAC tracks land — through the shipped image, then reads back to confirm. The prior CLI-sync proof (image.docker-dist.test.ts) covered the pipeline; this covers the daemon process itself. FINDING (real product gap surfaced, not faked): the daemon's iPod (lsblk) detection lane keeps only `type==="part"` (device-poller.ts collectPartitions ~L78-89), but the synthesized persona backing is a WHOLE-DISK FAT (truncate+mkfs.vfat, no partition table) presenting as `type==="disk"` → invisible to the lsblk lane (polls "waiting for iPod devices" forever). Real iPods carry an MBR whose data volume IS a partition, so the lane works on hardware; only the bare-FAT persona shape misses it. Test drives the daemon's MASS-STORAGE lane instead (PODKIT_MASS_STORAGE_PATHS=/ipod, path-based) — an equally-real steady-state sync. Follow-ups: harden the lsblk lane to accept a whole-disk vfat volume with Apple vendor id (product), and/or ship a partitioned persona backing to exercise the lsblk lane in Tier 5 (folds into DRAFT-021). Full docker-dist dir now: 3 tests (CLI add→sync→read-back, entrypoint --version regression, daemon steady-state), all green.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Tier-5 Docker-dist e2e delivered and proven against the live harness VM. The shipped Alpine/musl podkit image is built in-VM and driven via `nerdctl --device` passthrough against a synthesized USB iPod across three flows (all green): (1) CLI `device add` (USB inquiry → SIE write) → FLAC→AAC `sync` → `device music` read-back; (2) `docker run <image> --version` routes to the CLI (entrypoint leading-flag fix); (3) bundled `podkit-daemon` steady-state auto-sync (mass-storage lane + partitioned lsblk lane). Runnable via `bun run test:e2e:docker-dist` (dir-gated under `src/docker-dist/`, excluded from the routine `test:vm` and the quality DAG). Full turbo run: 22/22 tasks, 3 tests/2 files, exit 0.
+
+Shipped/hardened alongside: `@podkit/docker` entrypoint leading-flag routing; `@podkit/daemon` whole-disk-FAT iPod detection in the poller (closes the consistency gap with the scan path's whole-disk support, TASK-458.02); `mountPersona` idempotent pre-flight reset (self-heals stale persona/gadget state — benefits all VM tests). Two changesets. Follow-ups filed/updated: TASK-463 (GHA pre-release image seam), TASK-465 (daemon whole-disk detection, Done), DRAFT-021 (persona-matrix broadening, incl. partitioned-backing coverage).
+<!-- SECTION:FINAL_SUMMARY:END -->

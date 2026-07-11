@@ -48,6 +48,7 @@ export {
   echoMiniPopulated,
   ipod5gModelnumMismatch,
   ipod5gStaleGuid,
+  ipod5gVideoMbrPart,
 } from './personas/index.js';
 export { buildEnumeratedUsbDevice } from './personas/builders.js';
 

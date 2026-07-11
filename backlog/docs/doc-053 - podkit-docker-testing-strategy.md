@@ -44,6 +44,16 @@ Key reuse: the VM harness **already** synthesizes USB iPods with vendor/product 
 
 Constraint: **macOS Docker Desktop cannot pass USB to containers**, so Tier 5 must run the container inside the Linux VM (which has `dummy_hcd` and can pass `/dev/bus/usb` through), not on the dev host's Docker Desktop.
 
+**Local run:**
+
+```bash
+bun run test:e2e:docker-dist
+```
+
+Prerequisites: the `podkit-device-harness` VM must be up (`bun run harness:status`; bring it up with `bun run harness:start` / `bun run harness:setup`) and the musl binaries must exist (built via `@podkit/device-testing#build:musl-binary`; if absent, `bunx turbo run build:musl-binary --filter @podkit/device-testing`). The tier builds the real Alpine/musl image in the VM (multi-minute) and drives it against a synthesized USB iPod, so it is **local-only** — excluded from `test:vm` and the `quality` DAG. It codifies four container gotchas: path-based addressing (not UUID), `PUID=0` + `--device <blockDevice>`, wiping the stale on-disk SIE before `device add`, and PID-filtered node resolution to dodge the VZ-HID trap. See `agents/docker.md` → "Running Tier 5 locally".
+
+Persona caveat: the scaffold uses the 5G Video persona (`ipod-video-5g-iflash-1tb`), which binds both FunctionFS (live USB SIE inquiry) and mass-storage. It proves the **USB-inquiry code path + sync pipeline**, not 5G-over-USB realism (a real 5G Video uses SCSI inquiry). A USB-native syncable persona is the realism refinement, deferred to the full persona matrix (**DRAFT-021**).
+
 ## Coverage map
 
 | Concern | Owning tier |
