@@ -73,12 +73,36 @@ export interface DevicePollerEvents {
 // ---------------------------------------------------------------------------
 
 /**
- * Recursively collect partitions from lsblk output.
+ * Recursively collect the block volumes an iPod's data filesystem can live on.
+ *
+ * Two shapes qualify:
+ *
+ *   1. `part` — a partition, e.g. a real iPod's FAT32 data volume inside its MBR
+ *      (`sda1`). This is the common case for physical hardware.
+ *
+ *   2. `disk` with a filesystem and NO partition children — a WHOLE-DISK volume
+ *      formatted directly (no partition table), e.g. `sda` carrying vfat. Some
+ *      iFlash-modded iPods and synthesised test gadgets present this shape.
+ *      Without this branch such a device is invisible to the poller: it is never
+ *      a `part`, so the daemon would poll forever and never sync it.
+ *
+ * A `disk` that DOES have children is skipped in favour of its partitions (we
+ * never want to collect both the whole disk and its `sdaN` volume). `loop`
+ * devices and their children are excluded entirely — a loop mount is a
+ * loop-mounted image (e.g. the virtual-iPod server's private mounts), not real
+ * hardware. The final iPod check (`isIpodDevice`) still gates on vfat + Apple
+ * vendor id, so a non-iPod whole-disk vfat stick is collected here but rejected
+ * there.
  */
 export function collectPartitions(devices: LsblkDevice[]): LsblkDevice[] {
   const partitions: LsblkDevice[] = [];
   for (const device of devices) {
+    if (device.type === 'loop') continue;
+    const hasPartitionChildren = (device.children ?? []).some((c) => c.type === 'part');
     if (device.type === 'part') {
+      partitions.push(device);
+    } else if (device.type === 'disk' && device.fstype !== null && !hasPartitionChildren) {
+      // Whole-disk filesystem (no partition table): the disk node IS the volume.
       partitions.push(device);
     }
     if (device.children) {

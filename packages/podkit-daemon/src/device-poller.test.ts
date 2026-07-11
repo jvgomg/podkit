@@ -84,7 +84,7 @@ describe('parseLsblkJson', () => {
     expect(partitions).toHaveLength(2);
   });
 
-  it('ignores non-partition devices', () => {
+  it('ignores a bare disk with no filesystem and no partitions', () => {
     const json = JSON.stringify({
       blockdevices: [
         {
@@ -100,6 +100,63 @@ describe('parseLsblkJson', () => {
     });
     const partitions = parseLsblkJson(json);
     expect(partitions).toHaveLength(0);
+  });
+
+  it('collects a whole-disk filesystem (no partition table)', () => {
+    // A whole-disk FAT32 volume: the disk node itself carries vfat and has no
+    // partition children. Some iFlash iPods + synthesised test gadgets present
+    // this shape, so the poller must surface `sda` (not just `sdaN`).
+    const json = JSON.stringify({
+      blockdevices: [
+        {
+          name: 'sda',
+          uuid: '1234-ABCD',
+          label: 'IPOD_VIDEO',
+          mountpoint: null,
+          fstype: 'vfat',
+          size: 268435456,
+          type: 'disk',
+        },
+      ],
+    });
+    const partitions = parseLsblkJson(json);
+    expect(partitions).toHaveLength(1);
+    expect(partitions[0]!.name).toBe('sda');
+    expect(partitions[0]!.fstype).toBe('vfat');
+    expect(partitions[0]!.uuid).toBe('1234-ABCD');
+  });
+
+  it('prefers partitions over the parent disk when both could match', () => {
+    // A disk that has partition children must NOT be collected itself, even if
+    // it reports an fstype — only its partitions are volumes. Prevents
+    // double-counting the same physical device.
+    const json = JSON.stringify({
+      blockdevices: [
+        {
+          name: 'sda',
+          uuid: null,
+          label: null,
+          mountpoint: null,
+          fstype: 'vfat',
+          size: 268435456,
+          type: 'disk',
+          children: [
+            {
+              name: 'sda1',
+              uuid: 'ABCD-1234',
+              label: 'IPOD',
+              mountpoint: null,
+              fstype: 'vfat',
+              size: 268000000,
+              type: 'part',
+            },
+          ],
+        },
+      ],
+    });
+    const partitions = parseLsblkJson(json);
+    expect(partitions).toHaveLength(1);
+    expect(partitions[0]!.name).toBe('sda1');
   });
 });
 
@@ -128,19 +185,47 @@ describe('collectPartitions', () => {
     expect(collectPartitions(devices)).toHaveLength(2);
   });
 
-  it('ignores non-partition types', () => {
+  it('ignores loop devices even when they carry a filesystem', () => {
+    // A loop-mounted image (e.g. the virtual-iPod server's private mounts) must
+    // never be auto-synced, so loop nodes are excluded regardless of fstype.
     const devices = [
       {
         name: 'loop0',
         type: 'loop',
-        uuid: null,
-        label: null,
+        uuid: 'X',
+        label: 'IPOD',
         mountpoint: null,
-        fstype: null,
+        fstype: 'vfat',
         size: 0,
       },
     ];
     expect(collectPartitions(devices)).toHaveLength(0);
+  });
+
+  it('collects a whole-disk filesystem but not a bare unformatted disk', () => {
+    const devices = [
+      {
+        name: 'sda',
+        type: 'disk',
+        uuid: '1234-ABCD',
+        label: 'IPOD_VIDEO',
+        mountpoint: null,
+        fstype: 'vfat',
+        size: 268435456,
+      },
+      {
+        name: 'sdb',
+        type: 'disk',
+        uuid: null,
+        label: null,
+        mountpoint: null,
+        fstype: null,
+        size: 500,
+      },
+    ];
+    const collected = collectPartitions(devices);
+    expect(collected).toHaveLength(1);
+    expect(collected[0]!.name).toBe('sda');
   });
 });
 
