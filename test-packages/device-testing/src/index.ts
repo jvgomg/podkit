@@ -138,12 +138,26 @@ export {
   instanceStatus,
   resolveDefaultPodkitBinary,
   resolveDefaultPodkitDebugBinary,
+  resolveDefaultDaemonLinuxBinary,
+  resolveDefaultPodkitMuslBinary,
+  resolveDefaultDaemonLinuxMuslBinary,
   resolveDefaultDummyHcdDaemonBinary,
   resolveDefaultGpodToolBinary,
   LIMA_DEVICE_HARNESS_VM_NAME,
   SIDECAR_VM_PATH,
   DEFAULT_DUMMY_HCD_DAEMON_VM_PATH,
 } from './runners/lima-test-vm.js';
+
+// Lima docker-image build (Tier-5 Docker scaffold)
+export type {
+  BuildPodkitImageInVmOpts,
+  BuildPodkitImageInVmResult,
+} from './runners/lima-docker-image.js';
+export {
+  buildPodkitImageInVm,
+  DEFAULT_PODKIT_IMAGE_TAG,
+  BUILD_CONTEXT_VM_DIR,
+} from './runners/lima-docker-image.js';
 
 // Mass-storage backing-file synthesis (TASK-348)
 export type {
@@ -196,8 +210,19 @@ export {
   runJsonCommand,
 } from './vm/persona-fixture.js';
 
-export type { MountPersonaOpts, UnmountAndStopOpts } from './vm/mount-persona.js';
-export { buildScsiSdDiscoveryScript, mountPersona, unmountAndStop } from './vm/mount-persona.js';
+export type {
+  MountPersonaOpts,
+  UnmountAndStopOpts,
+  PersonaDeviceNodes,
+  ResolvePersonaDeviceNodesOpts,
+} from './vm/mount-persona.js';
+export {
+  buildScsiSdDiscoveryScript,
+  buildDeviceNodeDiscoveryScript,
+  resolvePersonaDeviceNodes,
+  mountPersona,
+  unmountAndStop,
+} from './vm/mount-persona.js';
 
 // Auto-register built-in runners on first import.
 registerRunner(localLinuxRunner);

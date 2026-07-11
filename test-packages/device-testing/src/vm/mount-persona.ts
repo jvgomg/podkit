@@ -85,6 +85,110 @@ export function buildScsiSdDiscoveryScript(vendorId: number, productId: number):
   ].join(' ');
 }
 
+/**
+ * Build a shell script that walks `/sys/class/scsi_generic/sg*` to the USB
+ * device whose descriptor matches `vendorId`/`productId`, then prints BOTH
+ * device nodes on two lines:
+ *
+ *   line 1: the block device, e.g. `/dev/sdb`
+ *   line 2: the USB node,      e.g. `/dev/bus/usb/003/007`
+ *
+ * The USB node is derived from the matched USB parent dir's `busnum`/`devnum`
+ * sysfs files, zero-padded to the 3-digit `/dev/bus/usb/BBB/DDD` layout the
+ * kernel's usbfs uses — the exact path a container needs to be granted via
+ * `--device` for USB passthrough.
+ *
+ * Pure — returns a script string. Caller runs it via `limactl shell`. Reuses
+ * the same `sg*` → USB-parent walk as {@link buildScsiSdDiscoveryScript}; the
+ * only addition is reading busnum/devnum off the already-matched USB parent.
+ *
+ * @internal exported for tests + advanced callers; most tests should use
+ * {@link resolvePersonaDeviceNodes} which parses this script's output.
+ */
+export function buildDeviceNodeDiscoveryScript(vendorId: number, productId: number): string {
+  const vidHex = vendorId.toString(16).padStart(4, '0');
+  const pidHex = productId.toString(16).padStart(4, '0');
+  return [
+    'for sg in /sys/class/scsi_generic/sg*; do',
+    '  [ -e "$sg" ] || continue;',
+    '  usb=$(readlink -f "$sg/device/../../../..");',
+    '  [ -f "$usb/idVendor" ] || continue;',
+    '  vid=$(cat "$usb/idVendor");',
+    '  pid=$(cat "$usb/idProduct");',
+    `  if [ "$vid" = "${vidHex}" ] && [ "$pid" = "${pidHex}" ]; then`,
+    '    blk=$(ls "$sg/device/block" 2>/dev/null | head -n1);',
+    '    [ -n "$blk" ] || continue;',
+    '    [ -f "$usb/busnum" ] && [ -f "$usb/devnum" ] || continue;',
+    '    bus=$(printf "%03d" "$(cat "$usb/busnum")");',
+    '    dev=$(printf "%03d" "$(cat "$usb/devnum")");',
+    '    echo "/dev/$blk";',
+    '    echo "/dev/bus/usb/$bus/$dev";',
+    '    exit 0;',
+    '  fi;',
+    'done;',
+    'exit 1',
+  ].join(' ');
+}
+
+// ---------------------------------------------------------------------------
+// resolvePersonaDeviceNodes
+// ---------------------------------------------------------------------------
+
+/** The two host device nodes a persona's USB gadget exposes inside the VM. */
+export interface PersonaDeviceNodes {
+  /** Absolute path to the mass-storage block device, e.g. `/dev/sdb`. */
+  blockDevice: string;
+  /** Absolute path to the USB device node, e.g. `/dev/bus/usb/003/007`. */
+  usbNode: string;
+}
+
+/** Options for {@link resolvePersonaDeviceNodes}. */
+export interface ResolvePersonaDeviceNodesOpts {
+  /** Persona's USB vendor ID (e.g. `0x05ac`). */
+  vendorId: number;
+  /** Persona's USB product ID (e.g. `0x1209`). Disambiguates the node — NEVER "first Apple device". */
+  productId: number;
+}
+
+/**
+ * Resolve BOTH device nodes a mass-storage persona's USB gadget exposes inside
+ * the VM: the `/dev/sd<x>` block device and the `/dev/bus/usb/BBB/DDD` USB
+ * node. The caller passes both to a container via `--device` — the block node
+ * for volume-UUID resolution, the USB node for the firmware inquiry (SIE read).
+ *
+ * Filters on `vendorId`+`productId` so it targets the persona's gadget and not
+ * the VZ guest's Apple-vendor HID devices (VID 05ac PID 8105/8106), which share
+ * the vendor ID. Callers MUST pass the persona's PID.
+ *
+ * The daemon for the persona must already be started and `/dev/sg*` enumerated
+ * (i.e. call after {@link mountPersona} or `startDaemonForPersona` +
+ * `waitForScsiGenericEnumeration`).
+ *
+ * Throws if no matching device is found or the script cannot read busnum/devnum.
+ */
+export async function resolvePersonaDeviceNodes(
+  opts: ResolvePersonaDeviceNodesOpts
+): Promise<PersonaDeviceNodes> {
+  const script = buildDeviceNodeDiscoveryScript(opts.vendorId, opts.productId);
+  const result = await limaTestVmRunner.run(`sh -c '${script.replace(/'/g, `'\\''`)}'`, {
+    timeoutMs: VM_WARM_TIMEOUT_MS,
+  });
+  const lines = result.stdout
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+  if (result.exitCode !== 0 || lines.length < 2) {
+    const vidHex = opts.vendorId.toString(16).padStart(4, '0');
+    const pidHex = opts.productId.toString(16).padStart(4, '0');
+    throw new Error(
+      `resolvePersonaDeviceNodes: failed to resolve nodes for USB ${vidHex}:${pidHex} ` +
+        `(exit=${result.exitCode}, stdout="${result.stdout}", stderr="${result.stderr}")`
+    );
+  }
+  const [blockDevice, usbNode] = lines;
+  return { blockDevice: blockDevice!, usbNode: usbNode! };
+}
+
 // ---------------------------------------------------------------------------
 // mountPersona / unmountAndStop
 // ---------------------------------------------------------------------------

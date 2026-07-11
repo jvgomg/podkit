@@ -101,6 +101,63 @@ export function resolveDefaultPodkitDebugBinary(env: NodeJS.ProcessEnv = process
   return path.resolve(repoRoot(), 'packages', 'podkit-cli', 'bin', `podkit-debug-linux-${arch}`);
 }
 
+/**
+ * Resolve the default host path to the compiled podkit-daemon linux binary.
+ *
+ * Mirrors {@link resolveDefaultPodkitBinary} for the background sync daemon.
+ * Reads `PODKIT_DAEMON_LINUX_BINARY` if set; otherwise falls back to the
+ * per-arch default at `packages/podkit-daemon/bin/podkit-daemon-linux-<arch>`
+ * (matching the Turbo build output). Used when staging the Docker build
+ * context inside the VM.
+ */
+export function resolveDefaultDaemonLinuxBinary(env: NodeJS.ProcessEnv = process.env): string {
+  const override = env['PODKIT_DAEMON_LINUX_BINARY'];
+  if (override && override.length > 0) return override;
+  const arch = vmArch();
+  return path.resolve(
+    repoRoot(),
+    'packages',
+    'podkit-daemon',
+    'bin',
+    `podkit-daemon-linux-${arch}`
+  );
+}
+
+/**
+ * Resolve the default host path to the compiled **musl** podkit linux binary.
+ *
+ * The podkit Docker image is `FROM alpine:3.21` (musl), so anything COPYed into
+ * it must be musl-linked — the glibc binaries above cannot start there. Reads
+ * `PODKIT_LINUX_MUSL_BINARY` if set; otherwise falls back to the per-arch
+ * default at `packages/podkit-cli/bin/podkit-linux-<arch>-musl` (the
+ * `build:musl-binary` output). See [[project_local_build_parity.md]].
+ */
+export function resolveDefaultPodkitMuslBinary(env: NodeJS.ProcessEnv = process.env): string {
+  const override = env['PODKIT_LINUX_MUSL_BINARY'];
+  if (override && override.length > 0) return override;
+  const arch = vmArch();
+  return path.resolve(repoRoot(), 'packages', 'podkit-cli', 'bin', `podkit-linux-${arch}-musl`);
+}
+
+/**
+ * Resolve the default host path to the compiled **musl** podkit-daemon linux
+ * binary. Mirrors {@link resolveDefaultPodkitMuslBinary} for the daemon. Reads
+ * `PODKIT_DAEMON_LINUX_MUSL_BINARY` if set; otherwise the per-arch default at
+ * `packages/podkit-daemon/bin/podkit-daemon-linux-<arch>-musl`.
+ */
+export function resolveDefaultDaemonLinuxMuslBinary(env: NodeJS.ProcessEnv = process.env): string {
+  const override = env['PODKIT_DAEMON_LINUX_MUSL_BINARY'];
+  if (override && override.length > 0) return override;
+  const arch = vmArch();
+  return path.resolve(
+    repoRoot(),
+    'packages',
+    'podkit-daemon',
+    'bin',
+    `podkit-daemon-linux-${arch}-musl`
+  );
+}
+
 /** Resolve the host path of the dummy-hcd-daemon binary (per arch). */
 export function resolveDefaultDummyHcdDaemonBinary(env: NodeJS.ProcessEnv = process.env): string {
   const override = env['PODKIT_DUMMY_HCD_DAEMON_BINARY'];

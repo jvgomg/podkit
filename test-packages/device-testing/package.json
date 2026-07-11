@@ -25,6 +25,8 @@
     "clean": "rm -rf dist",
     "build:linux-prebuild": "bash scripts/build-linux-prebuild.sh",
     "build:linux-binary": "bash scripts/build-linux-binary.sh",
+    "build:musl-prebuild": "bash scripts/build-musl-prebuild.sh",
+    "build:musl-binary": "bash scripts/build-musl-binary.sh",
     "build:backing-file": "bun run scripts/build-backing-file.ts",
     "transfer-binary": "bun run scripts/transfer-binary.ts",
     "vm:install": "bun run scripts/vm-install.ts",

@@ -84,10 +84,13 @@ images:
 # visible). ADR-016 §"Builder/test VM split" forbids it.
 mounts: []
 
-# Modest sizing — this VM only runs the compiled binary, not a build.
+# Sizing — runs the compiled binaries plus, for the Tier-5 Docker tier,
+# builds and runs the podkit image in-VM (nerdctl/containerd). The disk needs
+# headroom for image layers + base-image pulls + build cache; a near-full 6GiB
+# root wedged an unclean-stop boot, so it is sized up here.
 cpus: 2
 memory: '2GiB'
-disk: '6GiB'
+disk: '20GiB'
 
 provision:
   - mode: system

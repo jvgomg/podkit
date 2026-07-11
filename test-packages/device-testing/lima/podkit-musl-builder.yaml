@@ -1,0 +1,154 @@
+# Lima VM: Builder (Alpine 3.21 — musl)
+#
+# Role: compile native prebuilds (@podkit/libgpod-node) and the standalone
+# podkit binary for Linux **musl** (Alpine). This is the musl sibling of
+# podkit-linux-builder.yaml (Debian/glibc). Invoked from macOS via the turbo
+# tasks `build:musl-prebuild` and `build:musl-binary`.
+#
+# Why a separate musl builder:
+#   The published Docker image is FROM alpine:3.21 (musl). The Debian builder
+#   produces glibc-linked binaries whose ELF interpreter is
+#   /lib/ld-linux-aarch64.so.1 — that loader does not exist in Alpine, so
+#   those binaries cannot start there. A musl builder produces binaries linked
+#   against /lib/ld-musl-aarch64.so.1 that run natively inside the image.
+#
+# Cornerstone of ADR-016 (Linux VM Test Harness):
+#   - This is a BUILDER VM. It contains the dev toolchain (Bun, Node,
+#     build-base, glib-dev/glib-static, libplist-dev, cmake, meson, ninja,
+#     etc.).
+#   - The TEST VM (podkit-tests-alpine-musl.yaml) is deliberately separate.
+#   - DO NOT add test execution to this yaml. Builders must NOT run tests and
+#     must FAIL LOUDLY on provisioning errors (no `|| echo WARN` masks).
+#
+# Native-build implementation:
+#   This VM and .github/workflows/{prebuild,build-platform}.yml's musl jobs
+#   invoke the SAME scripts: tools/prebuild/build-linux-musl.sh (the musl
+#   sibling of build-linux-glibc.sh) which calls the shared, musl-aware
+#   tools/prebuild/build-static-deps.sh. No duplicate build logic between
+#   local and CI paths.
+#
+# Image pinning: Alpine 3.21.7 aarch64/x86_64 cloud images give EXACT parity
+# with the Docker base (alpine:3.21). Bumping the point release is an
+# intentional act (update both URLs). Note this differs from the *test* VM at
+# tools/lima/podkit-tests-alpine-musl.yaml, which pins Alpine 3.23 (the test
+# suite tolerates the minor drift); the *builder* here matches the Docker
+# runtime exactly because the produced binaries ship in that image.
+#
+# Usage (manual):
+#   limactl start test-packages/device-testing/lima/podkit-musl-builder.yaml --name podkit-musl-builder
+#   limactl shell podkit-musl-builder --workdir "$(pwd)" -- bash tools/prebuild/build-linux-musl.sh
+#   limactl stop podkit-musl-builder
+#
+# Usage (via the host driver scripts on macOS):
+#   bash test-packages/device-testing/scripts/build-musl-prebuild.sh  # → .node addon
+#   bash test-packages/device-testing/scripts/build-musl-binary.sh    # → bin/podkit-linux-arm64-musl (+ debug + daemon)
+
+images:
+  # Alpine 3.21.7 — exact minor-version parity with the Docker base image
+  # (packages/podkit-docker/Dockerfile is FROM alpine:3.21). Bump deliberately.
+  - location: 'https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/cloud/nocloud_alpine-3.21.7-aarch64-uefi-cloudinit-r0.qcow2'
+    arch: 'aarch64'
+  - location: 'https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/cloud/nocloud_alpine-3.21.7-x86_64-uefi-cloudinit-r0.qcow2'
+    arch: 'x86_64'
+
+# Alpine uses OpenRC, not systemd — disable containerd (we don't need it).
+containerd:
+  system: false
+  user: false
+
+# Mount the host home (writable) — Lima exposes $HOME inside the VM at the
+# same path. The repo is therefore reachable inside the VM at its macOS path.
+# The host driver scripts still rsync into a VM-local /tmp tree before building
+# (node-gyp bakes absolute paths); the mount is only used to copy the final
+# artifacts back across the realm boundary.
+mounts:
+  - location: '~'
+    writable: true
+
+# Builds are CPU-bound (gcc, meson, ninja, cmake for koffi + libusb from
+# source); give the VM what it needs. Alpine's static-deps + prebuild + two
+# bun --compile passes want the headroom, so match the glibc builder's disk.
+cpus: 4
+memory: '4GiB'
+disk: '12GiB'
+
+provision:
+  - mode: system
+    script: |
+      #!/usr/bin/env bash
+      set -eux
+
+      echo "=== Enabling community repository ==="
+      # glib-static, sqlite-static, gtk-doc, perl-xml-parser etc. live in the
+      # community repo. The nocloud image ships it commented out.
+      sed -i 's/^#\(.*\/community\)/\1/' /etc/apk/repositories
+
+      echo "=== Installing build toolchain ==="
+      apk update
+      # apk list = union of the CI musl jobs (prebuild.yml prebuild-musl-arm64 +
+      # build-platform.yml build-musl-arm64), plus the koffi/usb source-build
+      # deps proven necessary by the Alpine *test* VM (cmake, linux-headers,
+      # eudev-dev, build-base).
+      #   - build-base / cmake / linux-headers : koffi compiles from source via
+      #     cmake; the `usb` package builds libusb from source on aarch64 musl.
+      #   - eudev-dev                          : libudev.h for the `usb` package.
+      #   - glib-static + the *-static siblings: static C-dep closure so the
+      #     libgpod-node addon links libgpod/glib/... statically (no runtime deps).
+      #   - rsync                              : host driver rsyncs source in.
+      apk add \
+        bash \
+        build-base \
+        pkgconf \
+        python3 \
+        curl \
+        git \
+        rsync \
+        cmake \
+        meson \
+        ninja \
+        glib-dev \
+        glib-static \
+        gdk-pixbuf-dev \
+        libffi-dev \
+        pcre2-dev \
+        sqlite-dev \
+        sqlite-static \
+        libplist-dev \
+        libplist-static \
+        libxml2-dev \
+        libxml2-static \
+        libpng-dev \
+        libpng-static \
+        libjpeg-turbo-dev \
+        libjpeg-turbo-static \
+        tiff-dev \
+        zlib-dev \
+        zlib-static \
+        gettext-dev \
+        gettext-static \
+        intltool \
+        autoconf \
+        automake \
+        libtool \
+        gtk-doc \
+        perl-xml-parser \
+        linux-headers \
+        eudev-dev \
+        libstdc++ \
+        ffmpeg \
+        flac \
+        nodejs \
+        npm
+
+      echo "=== Installing Bun (system-wide so root + lima user share it) ==="
+      if ! command -v bun &> /dev/null; then
+        curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash
+      fi
+
+      echo "=== Verifying versions ==="
+      node --version
+      /usr/local/bin/bun --version
+      gcc --version | head -1
+      cmake --version | head -1
+      meson --version
+      ninja --version

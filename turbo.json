@@ -341,7 +341,57 @@
       ],
       "outputs": [
         "$TURBO_ROOT$/packages/podkit-cli/bin/podkit-linux-*",
-        "$TURBO_ROOT$/packages/podkit-cli/bin/podkit-debug-linux-*"
+        "$TURBO_ROOT$/packages/podkit-cli/bin/podkit-debug-linux-*",
+        "$TURBO_ROOT$/packages/podkit-daemon/bin/podkit-daemon-linux-*",
+        "!$TURBO_ROOT$/packages/podkit-cli/bin/podkit-linux-*-musl",
+        "!$TURBO_ROOT$/packages/podkit-cli/bin/podkit-debug-linux-*-musl",
+        "!$TURBO_ROOT$/packages/podkit-daemon/bin/podkit-daemon-linux-*-musl"
+      ]
+    },
+    "@podkit/device-testing#build:musl-prebuild": {
+      "dependsOn": [],
+      "env": ["PODKIT_HOST_ARCH"],
+      "inputs": [
+        "$TURBO_ROOT$/packages/libgpod-node/native/**",
+        "$TURBO_ROOT$/packages/libgpod-node/binding.gyp",
+        "$TURBO_ROOT$/packages/libgpod-node/scripts/has-prebuild.cjs",
+        "$TURBO_ROOT$/packages/libgpod-node/package.json",
+        "$TURBO_ROOT$/tools/prebuild/build-static-deps.sh",
+        "$TURBO_ROOT$/tools/prebuild/build-linux-musl.sh",
+        "$TURBO_ROOT$/tools/prebuild/get-cflags.sh",
+        "$TURBO_ROOT$/tools/prebuild/get-ldflags.sh",
+        "$TURBO_ROOT$/test-packages/device-testing/lima/podkit-musl-builder.yaml",
+        "$TURBO_ROOT$/bun.lock",
+        "scripts/build-musl-prebuild.sh"
+      ],
+      "outputs": [
+        "$TURBO_ROOT$/packages/libgpod-node/prebuilds/linux-x64-musl/**",
+        "$TURBO_ROOT$/packages/libgpod-node/prebuilds/linux-arm64-musl/**"
+      ]
+    },
+    "@podkit/device-testing#build:musl-binary": {
+      "dependsOn": ["@podkit/device-testing#build:musl-prebuild", "^build"],
+      "env": ["PODKIT_HOST_ARCH"],
+      "inputs": [
+        "$TURBO_ROOT$/packages/*/src/**",
+        "!$TURBO_ROOT$/packages/*/src/**/*.test.ts",
+        "!$TURBO_ROOT$/packages/*/__tests__/**",
+        "$TURBO_ROOT$/packages/*/package.json",
+        "$TURBO_ROOT$/packages/*/tsconfig.json",
+        "$TURBO_ROOT$/packages/*/tsconfig.build.json",
+        "$TURBO_ROOT$/packages/podkit-cli/scripts/compile.sh",
+        "$TURBO_ROOT$/packages/libgpod-node/prebuilds/linux-x64-musl/**",
+        "$TURBO_ROOT$/packages/libgpod-node/prebuilds/linux-arm64-musl/**",
+        "$TURBO_ROOT$/test-packages/device-testing/lima/podkit-musl-builder.yaml",
+        "$TURBO_ROOT$/turbo.json",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/bun.lock",
+        "scripts/build-musl-binary.sh"
+      ],
+      "outputs": [
+        "$TURBO_ROOT$/packages/podkit-cli/bin/podkit-linux-*-musl",
+        "$TURBO_ROOT$/packages/podkit-cli/bin/podkit-debug-linux-*-musl",
+        "$TURBO_ROOT$/packages/podkit-daemon/bin/podkit-daemon-linux-*-musl"
       ]
     },
     "@podkit/gpod-testing#build:linux-binary": {
