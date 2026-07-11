@@ -133,5 +133,14 @@ if [ "${1:-}" = "podkit" ]; then
   exec su-exec podkit "$@"
 fi
 
+# A leading flag (e.g. `--version`, `--help`) is a podkit CLI arg, not a raw
+# command to exec. Route it through podkit rather than exec'ing it directly
+# (which would make `exec` parse it as its own option and fail).
+case "${1:-}" in
+  -*)
+    exec su-exec podkit podkit "$@"
+    ;;
+esac
+
 # Otherwise, treat as a raw command (e.g., /bin/bash for debugging)
 exec "$@"
