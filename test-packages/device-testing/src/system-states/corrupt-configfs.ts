@@ -30,7 +30,7 @@ export const corruptConfigfs: SystemState = {
 
   // Same as `healthy`: no doctor system-scope check observes configfs.
   expectedDoctorSystemOutput: {
-    overallStatus: 'warn',
+    overallStatus: 'healthy',
     checks: [
       {
         id: 'codec-encoders',
@@ -39,8 +39,8 @@ export const corruptConfigfs: SystemState = {
       },
       {
         id: 'inquiry-methods',
-        status: 'warn',
-        summary: 'no /dev/sg* nodes',
+        status: 'pass',
+        summary: 'USB inquiry available; no /dev/sg* nodes (SCSI fallback inactive)',
       },
       {
         id: 'video-encoder',
@@ -60,5 +60,5 @@ export const corruptConfigfs: SystemState = {
     ],
   },
 
-  expectedExitCode: 2,
+  expectedExitCode: 0,
 };

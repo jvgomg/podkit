@@ -41,7 +41,7 @@ export const deviceMountNearFull: SystemState = {
   // per-test artefact, not a host-environment property. Mirrors `healthy`
   // exactly so the smoke tests + golden snapshot continue to hold.
   expectedDoctorSystemOutput: {
-    overallStatus: 'warn',
+    overallStatus: 'healthy',
     checks: [
       {
         id: 'codec-encoders',
@@ -50,8 +50,8 @@ export const deviceMountNearFull: SystemState = {
       },
       {
         id: 'inquiry-methods',
-        status: 'warn',
-        summary: 'no /dev/sg* nodes',
+        status: 'pass',
+        summary: 'USB inquiry available; no /dev/sg* nodes (SCSI fallback inactive)',
       },
       {
         id: 'video-encoder',
@@ -71,7 +71,7 @@ export const deviceMountNearFull: SystemState = {
     ],
   },
 
-  expectedExitCode: 2,
+  expectedExitCode: 0,
 };
 
 /**

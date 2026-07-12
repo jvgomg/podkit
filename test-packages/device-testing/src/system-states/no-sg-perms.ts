@@ -5,10 +5,12 @@
  * marker that grants world-readable mode on `/dev/sg*` nodes, then
  * chmods 0600 any existing nodes. On the device-harness VM there are
  * no `/dev/sg*` nodes to perms-test (no real SCSI device is attached),
- * so the doctor `inquiry-methods` check reports the same "no /dev/sg*
- * nodes" warn it does under `healthy`. The state's intent — surfacing
- * a sg-perms-denial path — would need a synthetic /dev/sg* node (or a
- * real iPod) to actually exercise the doctor path.
+ * and the doctor `inquiry-methods` check derives its status USB-first,
+ * so it reports `pass` (the VM's USB stack is up) exactly as under
+ * `healthy`. The state's intent — surfacing a sg-perms-denial path —
+ * would need a synthetic /dev/sg* node (or a real iPod) AND the USB
+ * transport down, since sg-perms only gates the SCSI fallback, which
+ * inquiry-methods ignores while USB is available.
  *
  * @see adr/adr-017-device-persona-fixtures.md §"SystemState schema"
  * @see test-packages/e2e-vm-tests/src/system-state-cross-check.e2e.test.ts
@@ -29,12 +31,12 @@ export const noSgPerms: SystemState = {
   sgPermissions: 'denied',
   configfs: 'mounted',
 
-  // Doctor output is identical to `healthy` on the harness VM because
-  // there are no physical /dev/sg* nodes for the perms change to bite.
-  // The inquiry-methods check warns with "no /dev/sg* nodes" regardless
-  // of whether the perms rule is installed.
+  // Doctor output is identical to `healthy` on the harness VM: there are
+  // no physical /dev/sg* nodes for the perms change to bite, and the
+  // inquiry-methods check reports `pass` USB-first (the VM's USB stack is
+  // up) regardless of whether the sg-perms rule is installed.
   expectedDoctorSystemOutput: {
-    overallStatus: 'warn',
+    overallStatus: 'healthy',
     checks: [
       {
         id: 'codec-encoders',
@@ -43,8 +45,8 @@ export const noSgPerms: SystemState = {
       },
       {
         id: 'inquiry-methods',
-        status: 'warn',
-        summary: 'no /dev/sg* nodes',
+        status: 'pass',
+        summary: 'USB inquiry available; no /dev/sg* nodes (SCSI fallback inactive)',
       },
       {
         id: 'video-encoder',
@@ -64,5 +66,5 @@ export const noSgPerms: SystemState = {
     ],
   },
 
-  expectedExitCode: 2,
+  expectedExitCode: 0,
 };

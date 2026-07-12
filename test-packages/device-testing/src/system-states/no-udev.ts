@@ -36,7 +36,7 @@ export const noUdev: SystemState = {
   // leaves in place; only the libgpod-shipped rules get stashed, and
   // doctor has no check for those.
   expectedDoctorSystemOutput: {
-    overallStatus: 'warn',
+    overallStatus: 'healthy',
     checks: [
       {
         id: 'codec-encoders',
@@ -45,8 +45,8 @@ export const noUdev: SystemState = {
       },
       {
         id: 'inquiry-methods',
-        status: 'warn',
-        summary: 'no /dev/sg* nodes',
+        status: 'pass',
+        summary: 'USB inquiry available; no /dev/sg* nodes (SCSI fallback inactive)',
       },
       {
         id: 'video-encoder',
@@ -66,5 +66,5 @@ export const noUdev: SystemState = {
     ],
   },
 
-  expectedExitCode: 2,
+  expectedExitCode: 0,
 };

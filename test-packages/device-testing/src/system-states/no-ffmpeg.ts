@@ -5,10 +5,14 @@
  * presence check in the doctor registry: the `codec-encoders` and
  * `video-encoder` checks both detect FFmpeg via internal probes and
  * return `status: 'skip'` (with a "FFmpeg not available" summary) when
- * the binary isn't usable. Doctor exits 2 because the overall report
- * carries skips alongside other passes (no fail-status checks, so the
- * overall is `warn` rather than `fail` — but the run is still
- * non-healthy because of the harness VM's inquiry-methods warn).
+ * the binary isn't usable. Doctor's `healthy` bit counts `skip` as
+ * healthy (a skipped check is not an issue), so with no warn/fail check
+ * present the system-scope report is healthy and exits 0 — output
+ * identical to `healthy`. The missing-ffmpeg condition is therefore NOT
+ * visible at the system-scope doctor exit code today; it surfaces only in
+ * the codec/video check summaries. (Whether ffmpeg-absent should warn
+ * rather than skip is a separate doctor-semantics question, tracked in the
+ * backlog.)
  *
  * @see adr/adr-017-device-persona-fixtures.md §"SystemState schema"
  * @see test-packages/e2e-vm-tests/src/system-state-cross-check.e2e.test.ts
@@ -29,7 +33,10 @@ export const noFfmpeg: SystemState = {
   configfs: 'mounted',
 
   expectedDoctorSystemOutput: {
-    overallStatus: 'warn',
+    // `healthy`: `skip` counts as healthy and inquiry-methods passes
+    // USB-first, so no check is warn/fail. Missing ffmpeg is not visible
+    // at the system-scope exit code today (see module comment).
+    overallStatus: 'healthy',
     checks: [
       {
         id: 'codec-encoders',
@@ -41,8 +48,8 @@ export const noFfmpeg: SystemState = {
       },
       {
         id: 'inquiry-methods',
-        status: 'warn',
-        summary: 'no /dev/sg* nodes',
+        status: 'pass',
+        summary: 'USB inquiry available; no /dev/sg* nodes (SCSI fallback inactive)',
       },
       {
         id: 'video-encoder',
@@ -62,5 +69,5 @@ export const noFfmpeg: SystemState = {
     ],
   },
 
-  expectedExitCode: 2,
+  expectedExitCode: 0,
 };

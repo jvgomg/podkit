@@ -1,5 +1,5 @@
 {
-  "overallStatus": "warn",
+  "overallStatus": "healthy",
   "checks": [
     {
       "id": "codec-encoders",
@@ -8,8 +8,8 @@
     },
     {
       "id": "inquiry-methods",
-      "status": "warn",
-      "summary": "no /dev/sg* nodes"
+      "status": "pass",
+      "summary": "USB inquiry available; no /dev/sg* nodes (SCSI fallback inactive)"
     },
     {
       "id": "video-encoder",

@@ -138,12 +138,12 @@ describe('VM: udev rule USB scope', () => {
         // `UDEV_RULE_CONTENT` matches what's installed — the byte-for-
         // byte share/source equality pinned in the unit suite.
         //
-        // Doctor exits with code 2 when ANY system check warns
-        // (`inquiry-methods` warns on this VM because no Apple-vendor
-        // gadget is bound during this test). `runJsonCommand` parses
-        // the envelope regardless of exit code; we accept exit 0 (all-
-        // pass) or 2 (issues-found) since we only care about the
-        // udev-rule check's status, not the overall verdict.
+        // This test only cares about the udev-rule check's status, not the
+        // overall verdict. `runJsonCommand` parses the envelope regardless
+        // of exit code; we accept exit 0 (all checks pass — the case on
+        // this VM, where inquiry-methods now reports `pass` USB-first) or
+        // exit 2 (some check warns/fails), so the assertion stays robust if
+        // the environment later gains a warning check.
         const invocation = await runJsonCommand(
           limaTestVmRunner,
           '/usr/local/bin/podkit doctor --scope system --json',

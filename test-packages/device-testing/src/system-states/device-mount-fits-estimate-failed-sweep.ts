@@ -47,7 +47,7 @@ export const deviceMountFitsEstimateFailedSweep: SystemState = {
   // a per-test artefact. Mirrors `healthy` exactly so the smoke tests +
   // golden snapshot continue to hold.
   expectedDoctorSystemOutput: {
-    overallStatus: 'warn',
+    overallStatus: 'healthy',
     checks: [
       {
         id: 'codec-encoders',
@@ -56,8 +56,8 @@ export const deviceMountFitsEstimateFailedSweep: SystemState = {
       },
       {
         id: 'inquiry-methods',
-        status: 'warn',
-        summary: 'no /dev/sg* nodes',
+        status: 'pass',
+        summary: 'USB inquiry available; no /dev/sg* nodes (SCSI fallback inactive)',
       },
       {
         id: 'video-encoder',
@@ -77,7 +77,7 @@ export const deviceMountFitsEstimateFailedSweep: SystemState = {
     ],
   },
 
-  expectedExitCode: 2,
+  expectedExitCode: 0,
 };
 
 /**

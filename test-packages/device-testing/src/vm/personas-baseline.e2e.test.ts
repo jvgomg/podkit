@@ -164,13 +164,14 @@ describe('VM: starter personas', () => {
               // in beforeAll, so the doctor output should match the
               // fixture's `expectedExitCode` and overall-health bit.
               //
-              // Deliberately NOT wrapped in `withPersona` — attaching a
-              // persona loads a USB mass-storage gadget on the synthesized
-              // host controller, which causes the host's usb_storage +
-              // scsi_generic kernel chain to spawn `/dev/sg*` nodes. The
-              // inquiry-methods diagnostic then flips warn→pass because
-              // SCSI generic devices ARE present, masking the harness's
-              // baseline "no real SCSI hardware" state the fixture pins.
+              // Deliberately NOT wrapped in `withPersona`: system-scope
+              // doctor reads the host environment only and needs no device.
+              // (Historically the wrap also mattered because attaching a
+              // persona spawned `/dev/sg*` nodes on the synthesized host
+              // controller, which flipped the old SCSI-only inquiry-methods
+              // check from its baseline warn to pass. That check is now
+              // USB-first and reports `pass` at baseline regardless, but
+              // keeping the call device-free preserves the intent.)
               const invocation = await runJsonCommand(
                 limaTestVmRunner,
                 '/usr/local/bin/podkit doctor --scope system --json',
