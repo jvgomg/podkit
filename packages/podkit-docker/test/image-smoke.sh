@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
-# Tier-3 Docker image smoke test (doc-053).
+# Docker image smoke test — E2E · host-docker-image · none.
+# (doc-053 rollout stage 3; canonical taxonomy: documents/architecture/testing/taxonomy.md)
 #
 # Builds a representative podkit image for the native arch and asserts it boots
 # and is internally consistent: --version + doctor run through the image,

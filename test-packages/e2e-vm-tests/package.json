@@ -5,8 +5,8 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "test:vm": "bun test src/ --path-ignore-patterns='**/docker-dist/**' --pass-with-no-tests",
-    "test:e2e:docker-dist": "bun test src/docker-dist/ --path-ignore-patterns= --pass-with-no-tests",
+    "test:vm": "bun test src/ --path-ignore-patterns='**/vm-docker/**' --pass-with-no-tests",
+    "test:e2e:docker-dist": "bun test src/vm-docker/ --path-ignore-patterns= --pass-with-no-tests",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

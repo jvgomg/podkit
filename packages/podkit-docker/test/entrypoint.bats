@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
 #
-# Tier-2 shell-level tests for the podkit Docker entrypoint (doc-053).
+# Integration-depth shell-level tests for the podkit Docker entrypoint.
+# (doc-053 rollout stage 2; canonical taxonomy: documents/architecture/testing/taxonomy.md)
 #
 # The real entrypoint shells out to external binaries (`podkit`, `su-exec`,
 # `podkit-daemon`, `groupadd`, `useradd`, `chown`). We never run a real

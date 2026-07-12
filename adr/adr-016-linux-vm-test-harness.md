@@ -11,6 +11,14 @@ sidebar:
 
 **Accepted**
 
+> **Naming note (2026-07-12):** This ADR's "three-tier" language and the
+> "Tier-3" label for the VM layer predate the canonical
+> [test taxonomy](/developers/architecture/testing/taxonomy) established
+> by [ADR-025](/developers/adr/adr-025-canonical-test-taxonomy). The VM
+> layer is now classified as **E2E** on the `vm-binary` · `local-dir` ·
+> `usb-synth` surface. The architecture below is unchanged; only its
+> vocabulary was superseded.
+
 ## Context
 
 The m-18 device-capability architecture introduced a layered inquiry pipeline spanning USB control transfers, SCSI `INQUIRY`/`IDENTIFY` commands, `lsblk`/`system_profiler`/`diskutil` parsing, device classification, and capability resolution. The CLI doctor surface adds its own layer of checks on top of this pipeline.

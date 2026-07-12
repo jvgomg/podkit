@@ -9,7 +9,7 @@
  * To run:
  *   bun run test:e2e:docker
  *   # or targeted:
- *   bun test test-packages/e2e-tests/src/workflows/navidrome-playlist-seeding.docker.test.ts
+ *   bun test test-packages/e2e-tests/src/docker-source/navidrome-playlist-seeding.test.ts
  *
  * @tags docker
  */

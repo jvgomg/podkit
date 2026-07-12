@@ -6,14 +6,14 @@ Also see [docs/developers/testing.md](../docs/developers/testing.md) for full te
 
 ## Quick Reference
 
-Tests are tiered by filename suffix. Each tier has a turbo task, a `bunfig.toml` `pathIgnorePatterns` gate, and a default position in the dev loop. See [Test tiers and pathIgnorePatterns](#test-tiers-and-pathignorepatterns) below for the wiring.
+Tests are classified by **Depth** (encoded in the filename suffix); E2E tests are additionally classified by **Surface** (encoded in the directory). Each Depth has a turbo task, a `bunfig.toml` `pathIgnorePatterns` gate, and a default position in the dev loop. See the canonical [test taxonomy](../documents/architecture/testing/taxonomy.md) for the full Depth × Surface model and [Test depths and pathIgnorePatterns](#test-depths-and-pathignorepatterns) below for the wiring.
 
-| Suffix | Tier | Runs by default? | Requirements |
+| Suffix | Depth | Runs by default? | Requirements |
 | --- | --- | --- | --- |
 | `*.test.ts` | **Unit** — fast, in-process, no external deps. | Yes, in `bun test` / `test:unit`. | None. |
 | `*.integration.test.ts` | **Integration** — real system deps (ffmpeg, gpod-tool, libgpod-node native bindings, fixtures). | No — gated. Run via `test:integration`. | Whatever the test declares at module load via `requireFFmpeg()` &c. |
-| `*.perf.test.ts` | **Performance benchmark** — timing-sensitive, generates synthetic load. | No — gated. Run via `test:perf`. | Same as integration. |
-| `*.e2e.test.ts` (in `e2e-*` packages) | **End-to-end** — spawns the built CLI as a subprocess. | No — separate task. Run via `test:e2e` / `test:e2e:docker` / `test:vm`. | Built CLI + harness-specific deps. |
+| `*.perf.test.ts` | **Performance benchmark** — timing-sensitive, generates synthetic load. (A modifier on Unit/Integration, not a depth of its own.) | No — gated. Run via `test:perf`. | Same as integration. |
+| `*.e2e.test.ts` (in `e2e-*` packages) | **End-to-end** — spawns the built CLI/image as a black box. Surface is the directory (default surface at package root; non-default surfaces in subdirs). | No — separate task. Run via `test:e2e` / `test:e2e:docker` / `test:vm`. | Built CLI/image + surface-specific deps. |
 
 **Hard rule:** integration / perf / e2e tests that depend on a tool or fixture call `requireX()` / `ensureFixturesExist()` at module load. Missing deps fail the suite loudly, not silently. See [Module-load preflight](#module-load-preflight) and [Test skip anti-patterns](#test-skip-anti-patterns).
 
@@ -170,7 +170,7 @@ deferred to the next VM-test sweep and noted in the task's AC list.
 
 ### Cross-references
 
-- [ADR-016](../adr/adr-016-linux-vm-test-harness.md) — architecture decision and tier definitions
+- [ADR-016](../adr/adr-016-linux-vm-test-harness.md) — the VM harness architecture decision (its "tier" naming is superseded by the [test taxonomy](../documents/architecture/testing/taxonomy.md); see [ADR-025](../adr/adr-025-canonical-test-taxonomy.md))
 - [ADR-017](../adr/adr-017-device-persona-fixtures.md) — `DevicePersona` + `SystemState` fixture registry design
 - [agents/device-testing.md](device-testing.md) — canonical reference for writing device tests
 - [test-packages/device-testing/README.md](../test-packages/device-testing/README.md) — package-level API reference
@@ -192,8 +192,8 @@ E2E packages are kept out of the global compose by using non-`test` task names �
 
 | Command | Runs what | Where |
 |---|---|---|
-| `bun run test:e2e` | `*.test.ts` (excluding `*.docker.test.ts`) — host CLI subprocess against dummy iPod. | `test-packages/e2e-tests/` only. |
-| `bun run test:e2e:docker` | `*.docker.test.ts` — host CLI subprocess against containerised back-ends. | `test-packages/e2e-tests/` only. |
+| `bun run test:e2e` | `*.test.ts` outside the surface subdirs (`docker-source/`, `docker-loopback/`) — host CLI subprocess against dummy iPod. | `test-packages/e2e-tests/` only. |
+| `bun run test:e2e:docker` | `src/docker-source/**/*.test.ts` — host CLI subprocess against containerised back-ends. | `test-packages/e2e-tests/` only. |
 | `bun run test:vm` | `*.e2e.test.ts` + harness self-tests — Lima VM with `dummy_hcd` + FunctionFS. | `test-packages/e2e-vm-tests/` and `test-packages/device-testing/src/vm/`. |
 
 Note the naming gotcha: `*.e2e.test.ts` files are **not** picked up by `test:e2e`. They run via `test:vm` because they need the VM harness. Only files in `@podkit/e2e-tests` count toward `test:e2e` / `test:e2e:docker`.
@@ -312,22 +312,22 @@ mise run tools:brew-test   # Homebrew install smoke test (after releases)
 bun run --filter @podkit/e2e-tests cleanup
 ```
 
-## Test tiers and pathIgnorePatterns
+## Test depths and pathIgnorePatterns
 
-The tiers in the [Quick Reference](#quick-reference) are enforced by **bunfig.toml `pathIgnorePatterns`** plus **turbo task wiring**. Together they decide what `bun test` actually runs in each scenario.
+The depths in the [Quick Reference](#quick-reference) are enforced by **bunfig.toml `pathIgnorePatterns`** plus **turbo task wiring**. Together they decide what `bun test` actually runs in each scenario.
 
 ### How the gates compose
 
-- A package's `bunfig.toml` lists `pathIgnorePatterns` only for tiers it owns:
-  - `packages/podkit-core/bunfig.toml` ignores `**/*.integration.test.ts` **and** `**/*.perf.test.ts` — so bare `bun test` runs only the fast unit tier.
+- A package's `bunfig.toml` lists `pathIgnorePatterns` only for depths it owns:
+  - `packages/podkit-core/bunfig.toml` ignores `**/*.integration.test.ts` **and** `**/*.perf.test.ts` — so bare `bun test` runs only the fast unit depth.
   - `packages/podkit-cli`, `libgpod-node`, `gpod-testing` ignore `**/*.integration.test.ts`.
   - `test-packages/device-testing/bunfig.toml` ignores `**/*.e2e.test.ts` so stray runs don't try to spin up VM personas.
   - Packages with no integration / perf / e2e files keep their bunfig minimal (just `retry = 2`) — nothing to gate.
-- Each task script clears the ignore for the tier it wants and filters in:
+- Each task script clears the ignore for the depth it wants and filters in:
   - `test:integration` → `gpod-tests-parallel` (default pattern `*.integration.test.ts`).
   - `test:perf` → `gpod-tests-parallel --pattern '*.perf.test.ts'`.
   - `test:e2e` / `test:e2e:docker` / `test:vm` → their package's own runner script.
-- Turbo wires `^build` + the appropriate fixture/template generator tasks before each tier, so `test:integration` and `test:perf` see freshly-built workspaces and ready-to-use fixtures.
+- Turbo wires `^build` + the appropriate fixture/template generator tasks before each depth, so `test:integration` and `test:perf` see freshly-built workspaces and ready-to-use fixtures.
 
 ### Why `bun test` skips integration + perf
 
@@ -395,7 +395,7 @@ import {
 } from '@podkit/test-fixtures';
 import { requireLibgpodNode } from '@podkit/libgpod-node';
 
-// Tier-1 system deps. Each call throws with a focused install hint if missing.
+// System deps. Each call throws with a focused install hint if missing.
 requireFFmpeg();
 requireMetaflac();
 requireGpodTool();
@@ -451,7 +451,7 @@ const subsonicE2eEnabled = process.env.SUBSONIC_E2E === '1';
 it.skipIf(!subsonicE2eEnabled)('syncs from Subsonic', async () => { /* … */ });
 ```
 
-If a whole suite needs Docker, the suite belongs in `@podkit/e2e-tests` under a `*.docker.test.ts` filename, and its `beforeAll` should throw when Docker is unavailable. See [Test package layout](#test-package-layout).
+If a whole suite needs Docker, the suite belongs in `@podkit/e2e-tests` under the `src/docker-source/` directory, and its `beforeAll` should throw when Docker is unavailable. See [Test package layout](#test-package-layout).
 
 ### Don't: try/catch swallowing a fixture load
 
@@ -503,9 +503,9 @@ and doc-039 §"Mass-storage sync gaps".
 
 ### Adding a new integration test
 
-1. Pick the right tier — see [Test package layout](#test-package-layout).
+1. Pick the right depth — see [Test package layout](#test-package-layout).
 2. Top of the file: call the `requireX()` and `ensureFixturesExist(...)` helpers for everything your test touches.
-3. No `bunfig.toml preload` to add; the tier gate is just the filename suffix (`*.integration.test.ts`).
+3. No `bunfig.toml preload` to add; the depth gate is just the filename suffix (`*.integration.test.ts`).
 4. Pure unit tests don't need any preflight calls.
 
 ## Test package layout
@@ -516,12 +516,12 @@ and doc-039 §"Mass-storage sync gaps".
 | `<workspace>/src/**/*.integration.test.ts` | Tests library code with real system deps (ffmpeg / gpod-tool / libgpod-node) but no CLI subprocess. | Same package. |
 | `<workspace>/src/**/*.perf.test.ts` | Performance benchmark. Generates synthetic load; assertion is a wall-clock or count threshold. | Same package. |
 | `@podkit/e2e-tests` (`*.test.ts`) | Spawns the built CLI subprocess. Dummy or real iPod target. No Docker, no Lima VM. | `test-packages/e2e-tests/` |
-| `@podkit/e2e-tests` (`*.docker.test.ts`) | Same package; files needing a Docker container (Subsonic / Navidrome / future) use the `*.docker.test.ts` suffix so the `test:e2e` task can exclude them. | `test-packages/e2e-tests/` |
+| `@podkit/e2e-tests` (`src/docker-source/`) | Same package; files needing a Docker container (Subsonic / Navidrome / future) live in the `src/docker-source/` surface directory so the `test:e2e` task can exclude the whole directory. | `test-packages/e2e-tests/` |
 | `@podkit/e2e-vm-tests` | Anything needing a Lima VM (`dummy_hcd` USB gadget, Linux kernel modules). | `test-packages/e2e-vm-tests/` |
 | `@podkit/e2e-shared` | Helpers shared across the e2e packages: CLI runner, error-assertion, composable preflight checks. | Already exists; you import from it. |
 | `@podkit/test-fixtures` | Anything that mints or describes a fixture (static set or dynamic mini-track). | Already exists; you import from it. |
 
-The e2e packages all consume `@podkit/e2e-shared` (CLI runner + composable preflight) and `@podkit/test-fixtures` (path helpers + module-load preflight wrappers). The Docker-gated tests in `@podkit/e2e-tests/src/**/*.docker.test.ts` co-locate with the host-only tests so a single mixed feature matrix (cells on directory adapters and Subsonic adapters) can live in one file; the filename suffix is the only thing distinguishing them.
+The e2e packages all consume `@podkit/e2e-shared` (CLI runner + composable preflight) and `@podkit/test-fixtures` (path helpers + module-load preflight wrappers). The Docker-gated tests live in `@podkit/e2e-tests/src/docker-source/` (the `docker-sidecar` Surface directory — see [the test taxonomy](../documents/architecture/testing/taxonomy.md)); the containing directory is the only thing distinguishing them from the default host-binary surface.
 
 ## Diagnosing environment issues
 
@@ -1070,7 +1070,7 @@ await writeFile(configPath, 'version = 1\n');
 
 ## Docker-Based E2E Tests
 
-E2E tests that need Docker (Navidrome for Subsonic, future containerised back-ends) live alongside the host-only tests in `@podkit/e2e-tests` but use the `*.docker.test.ts` filename suffix. The `test:e2e` task excludes that suffix so contributors who don't need Docker aren't paying the container-pull cost on every `bun run test:e2e`; the `test:e2e:docker` task runs only those files. See also [agents/docker.md](docker.md) for the Docker image architecture.
+E2E tests that need Docker (Navidrome for Subsonic, future containerised back-ends) live in the `src/docker-source/` surface directory of `@podkit/e2e-tests`. The `test:e2e` task excludes that directory so contributors who don't need Docker aren't paying the container-pull cost on every `bun run test:e2e`; the `test:e2e:docker` task runs only that directory. See also [agents/docker.md](docker.md) for the Docker image architecture.
 
 **Running Docker tests:**
 
@@ -1079,7 +1079,7 @@ bun run test:e2e:docker                              # From the repo root, runs 
 bun run --filter @podkit/e2e-tests test:e2e:docker   # Same thing, scoped explicitly.
 ```
 
-Docker availability is checked in each test file's `beforeAll`; missing Docker throws with a focused error instead of silently skipping the suite. There is no `SUBSONIC_E2E=1` flag — the filename suffix is the gate.
+Docker availability is checked in each test file's `beforeAll`; missing Docker throws with a focused error instead of silently skipping the suite. There is no `SUBSONIC_E2E=1` flag — the `src/docker-source/` directory is the gate.
 
 **Container cleanup:**
 
@@ -1093,8 +1093,8 @@ bun run --filter @podkit/e2e-tests cleanup:force # Force remove all
 
 **Adding a new Docker test:**
 
-1. Add the test file under `test-packages/e2e-tests/src/features/` or `workflows/` with a `*.docker.test.ts` suffix.
-2. At the top: `requireBinary`/`requireFFmpeg`/`requireMetaflac` for tools your test execs, `ensureFixturesExist(...)` for fixture sets, and a `beforeAll` that calls `isDockerAvailable()` and throws if `false`. See `test-packages/e2e-tests/src/features/compilation-subsonic.docker.test.ts` for the template.
+1. Add the test file under `test-packages/e2e-tests/src/docker-source/` as a bare `*.test.ts` (the directory is the Surface gate — no filename suffix needed).
+2. At the top: `requireBinary`/`requireFFmpeg`/`requireMetaflac` for tools your test execs, `ensureFixturesExist(...)` for fixture sets, and a `beforeAll` that calls `isDockerAvailable()` and throws if `false`. See `test-packages/e2e-tests/src/docker-source/compilation-subsonic.test.ts` for the template.
 3. Spawn containers via `startContainer({...})` from `../docker/index.js` — they're auto-registered for cleanup:
 
    ```ts

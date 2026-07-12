@@ -15,7 +15,7 @@
  * To run:
  *   bun run test:e2e:docker
  *   # or targeted:
- *   bun test test-packages/e2e-tests/src/workflows/playlist-scoped-sync.docker.test.ts
+ *   bun test test-packages/e2e-tests/src/docker-source/playlist-scoped-sync.test.ts
  *
  * @tags docker
  */

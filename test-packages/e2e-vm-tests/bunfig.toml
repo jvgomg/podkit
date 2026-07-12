@@ -3,12 +3,12 @@
 # passes `src/` explicitly to opt them back in. Mirrors the gate in
 # @podkit/device-testing's bunfig.toml so a stray `bun test` from anywhere in
 # the repo doesn't try to spin up VM personas.
-# The `src/docker-dist/` directory is also excluded so a stray `bun test` never
+# The `src/vm-docker/` directory is also excluded so a stray `bun test` never
 # kicks off a multi-minute Docker image build; the explicit `test:e2e:docker-dist`
-# script re-includes it via `--path-ignore-patterns=`. (`docker-dist` = the
-# shipped Docker distribution image — distinct from `@podkit/e2e-tests`'s
-# `*.docker.test.ts`, which only use Docker to host a source.)
-pathIgnorePatterns = ["**/*.integration.test.ts", "**/*.e2e.test.ts", "**/docker-dist/**"]
+# script re-includes it via `--path-ignore-patterns=`. (`vm-docker` = the shipped
+# Docker distribution image run inside the VM — distinct from `@podkit/e2e-tests`'s
+# `docker-source/`, which only uses Docker to host a source.)
+pathIgnorePatterns = ["**/*.integration.test.ts", "**/*.e2e.test.ts", "**/vm-docker/**"]
 retry = 1
 # Shared with @podkit/device-testing — self-gates on argv / npm_lifecycle_event
 # so non-VM runs do not require the Lima VM to be online. Resolved through

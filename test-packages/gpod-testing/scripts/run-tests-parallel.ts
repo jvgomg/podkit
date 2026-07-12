@@ -14,6 +14,13 @@
  *       --pattern '*.integration.test.ts' \
  *       --concurrency 4
  *
+ * Filtering flags:
+ *   --pattern  <glob>   basename suffix to include (leading `*` → endsWith)
+ *   --exclude  <glob>   basename suffix to drop (leading `*` → endsWith)
+ *   --exclude-path <s>  drop any file whose FULL PATH contains <s>
+ *                       (directory-based gating, e.g. 'docker-source/')
+ *   <positional>        include only files whose full path contains it
+ *
  * Defaults: pattern = '*.integration.test.ts' under src/, concurrency = 4.
  *
  * Exit code: 0 if every file passed, 1 if any failed.
@@ -26,11 +33,13 @@ import { join, relative } from 'node:path';
 type Args = {
   pattern: string;
   exclude: string[];
+  excludePaths: string[];
   concurrency: number;
   timeout: number;
   bail: boolean;
   root: string;
   pathFilters: string[];
+  list: boolean;
 };
 
 function parseArgs(): Args {
@@ -38,20 +47,24 @@ function parseArgs(): Args {
   const out: Args = {
     pattern: '*.integration.test.ts',
     exclude: [],
+    excludePaths: [],
     concurrency: parseInt(process.env.TEST_CONCURRENCY ?? '4', 10),
     timeout: parseInt(process.env.TEST_TIMEOUT ?? '30000', 10),
     bail: false,
     root: 'src',
     pathFilters: [],
+    list: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === '--pattern' && argv[i + 1]) out.pattern = argv[++i]!;
     else if (a === '--exclude' && argv[i + 1]) out.exclude.push(argv[++i]!);
+    else if (a === '--exclude-path' && argv[i + 1]) out.excludePaths.push(argv[++i]!);
     else if (a === '--concurrency' && argv[i + 1]) out.concurrency = parseInt(argv[++i]!, 10);
     else if (a === '--timeout' && argv[i + 1]) out.timeout = parseInt(argv[++i]!, 10);
     else if (a === '--root' && argv[i + 1]) out.root = argv[++i]!;
     else if (a === '--bail') out.bail = true;
+    else if (a === '--list') out.list = true;
     else if (!a.startsWith('--')) out.pathFilters.push(a);
   }
   return out;
@@ -165,8 +178,21 @@ async function main() {
       return !excludeSuffixes.some((ex) => base.endsWith(ex));
     });
   }
+  // `--exclude-path` drops any file whose full path contains the given
+  // substring — the path-based mirror of the positional include filters
+  // below. Used to gate Surface subdirectories (e.g. `docker-source/`,
+  // `docker-loopback/`) out of the default run without touching filenames.
+  if (args.excludePaths.length > 0) {
+    files = files.filter((f) => !args.excludePaths.some((p) => f.includes(p)));
+  }
   if (args.pathFilters.length > 0) {
     files = files.filter((f) => args.pathFilters.some((p) => f.includes(p)));
+  }
+  if (args.list) {
+    // Dry-run: print the selected files (one per line) and exit without
+    // running anything. Used to verify gating globs select the intended set.
+    for (const f of files) console.log(f);
+    process.exit(0);
   }
   if (files.length === 0) {
     console.log(`No test files matching '${args.pattern}' under ${args.root}/.`);

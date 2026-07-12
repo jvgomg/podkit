@@ -1,5 +1,5 @@
 /**
- * Tier-5 Docker image e2e — the BUNDLED daemon driving a steady-state sync of a
+ * E2E · vm-docker-image · usb-synth — the BUNDLED daemon driving a steady-state sync of a
  * synthesized USB iPod inside the device-harness Lima VM, through the shipped
  * musl image.
  *
@@ -64,9 +64,9 @@
  * (bind-mount path vs. auto-mounted node), and privilege — abstracting across
  * them would obscure more than it saves.
  *
- * @see test-packages/e2e-vm-tests/src/docker-dist/image.docker-dist.test.ts (the one-shot CLI sibling)
+ * @see test-packages/e2e-vm-tests/src/vm-docker/image.docker-dist.test.ts (the one-shot CLI sibling)
  * @see packages/podkit-daemon/src/device-poller.ts (the two detection lanes)
- * @see agents/docker.md ("Running Tier 5 locally")
+ * @see agents/docker.md ("Running the vm-docker-image e2e locally")
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';

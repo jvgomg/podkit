@@ -1,6 +1,6 @@
 # @podkit/e2e-tests
 
-End-to-end tests for the podkit CLI. Tests invoke the built CLI artifact (`dist/main.js`) as a real user would, against both dummy iPods (CI) and real iPods (manual validation). Tests that require a Docker harness (Subsonic / Navidrome today; other containerised back-ends in future) live in this same package under a `*.docker.test.ts` filename suffix — the `test:e2e` task excludes that suffix, the `test:e2e:docker` task runs only those files.
+End-to-end tests for the podkit CLI. Tests invoke the built CLI artifact (`dist/main.js`) as a real user would, against both dummy iPods (CI) and real iPods (manual validation). Tests that require a Docker harness (Subsonic / Navidrome today; other containerised back-ends in future) live in this same package under the `src/docker-source/` surface directory — the `test:e2e` task excludes that directory, the `test:e2e:docker` task runs only it.
 
 ## Running Tests
 
@@ -52,7 +52,7 @@ bun run --filter @podkit/e2e-tests test:e2e
 ### Run Docker-gated tests
 
 ```bash
-# From the repo root — runs only *.docker.test.ts files.
+# From the repo root — runs only src/docker-source/ files.
 bun run test:e2e:docker
 
 # Same thing from this directory
@@ -98,24 +98,26 @@ src/
 │   ├── subsonic-config.ts # createSubsonicConfig (Docker tests only)
 │   └── preflight.ts       # Pre-flight checks for real iPod
 │
-├── commands/          # Per-command tests (host-only)
+├── docker-source/     # Docker-gated tests (the `docker-sidecar` Surface — Subsonic / Navidrome source)
+│   ├── artwork-change.test.ts
+│   ├── compilation-subsonic.test.ts
+│   ├── subsonic-sync.test.ts
+│   └── ... (all 8 docker-source tests)
+│
+├── commands/          # Per-command tests (host-only, default surface)
 │   ├── init.test.ts
 │   ├── status.test.ts
 │   ├── list.test.ts
 │   ├── sync.test.ts
 │   └── video-sync.test.ts
 │
-├── features/          # Feature-level tests (mix of host-only and docker-gated)
-│   ├── artwork-change.docker.test.ts        # Docker — Subsonic
-│   ├── compilation-subsonic.docker.test.ts  # Docker — Subsonic
-│   ├── ...
-│   └── (other host-only feature tests)
+├── features/          # Feature-level tests (host-only, default surface)
+│   └── (host-only feature tests)
 │
-└── workflows/         # Multi-step workflow tests
+└── workflows/         # Multi-step workflow tests (host-only, default surface)
     ├── fresh-sync.test.ts
     ├── incremental.test.ts
-    ├── mixed-formats.test.ts
-    └── subsonic-sync.docker.test.ts          # Docker — Subsonic
+    └── mixed-formats.test.ts
 ```
 
 ## Environment Variables
@@ -268,7 +270,7 @@ await withVideoSourceDir(async (sourceDir) => {
 
 ## Docker-Based Tests
 
-Tests that require Docker (Navidrome / Subsonic today; other containerised back-ends in future) use the `*.docker.test.ts` filename suffix. They co-locate with the host-only tests under `src/features/` and `src/workflows/`, which keeps mixed-adapter feature matrices (cells on directory and Subsonic adapters) in a single file when that's natural.
+Tests that require Docker (Navidrome / Subsonic today; other containerised back-ends in future) live in the `src/docker-source/` surface directory — the `docker-sidecar` Surface in [the test taxonomy](../../documents/architecture/testing/taxonomy.md). The directory (not a filename suffix) is what gates them: `test:e2e` excludes it, `test:e2e:docker` selects it.
 
 ### Running Docker Tests
 
@@ -340,7 +342,7 @@ To add a new Docker-based test source (e.g., Plex, Jellyfin):
    }
    ```
 3. Export from `src/sources/index.ts`.
-4. Create tests in `src/workflows/yourservice-sync.docker.test.ts` (note the `.docker.` suffix so the runner only picks them up under `test:e2e:docker`).
+4. Create tests in `src/docker-source/yourservice-sync.test.ts` (the `docker-source/` directory is what makes the runner pick them up only under `test:e2e:docker`).
 
 ### Docker Infrastructure
 

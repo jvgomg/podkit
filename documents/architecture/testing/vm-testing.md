@@ -1,18 +1,23 @@
 ---
-title: VM Testing (Tier-3)
+title: VM Testing (E2E · vm-binary)
 description: How podkit exercises the production CLI against a synthesised iPod USB device inside the device-harness Lima VM — personas, system states, FunctionFS daemon, mount lifecycle, and the mechanical constraints a test author must respect.
 sidebar:
   order: 2
 ---
 
-Describes how Tier-3 end-to-end tests run podkit against a real-looking
-iPod inside the `podkit-device-harness` Lima VM. The VM is the only
-place podkit's USB/SCSI/filesystem code paths get exercised against a
-device-shaped target without real hardware; this doc captures the
-contract the tests, the harness, and the synthetic-device daemon share.
+Describes how end-to-end tests run podkit against a real-looking iPod
+inside the `podkit-device-harness` Lima VM — the **E2E** depth on the
+`vm-binary` · `local-dir` · `usb-synth` surface of the
+[test taxonomy](./taxonomy.md). The VM is the only place podkit's
+USB/SCSI/filesystem code paths get exercised against a device-shaped
+target without real hardware; this doc captures the contract the tests,
+the harness, and the synthetic-device daemon share.
 
 Companion reading:
 
+- [test taxonomy](./taxonomy.md) — the canonical Depth × Surface
+  vocabulary these tests are classified under (replaces the old
+  "Tier-3" label).
 - [vm-build-orchestration](./vm-build-orchestration.md) — how
   `bun run test:vm` keeps the in-VM binary fresh and detects drift.
 - [adr/adr-016 — Linux VM test harness](../../../adr/adr-016-linux-vm-test-harness.md) — overall split.
@@ -22,16 +27,17 @@ Companion reading:
 
 ## 1. Map
 
-Tier-3 tests sit at the top of podkit's testing pyramid:
+These are the deepest tests in podkit's [depth taxonomy](./taxonomy.md#2-depth):
 
 1. **Unit** — pure-function tests in each package. Run on macOS dev
    machines, never touch a VM.
 2. **Integration** — multi-module tests inside one process. Run on
    macOS, no VM.
 3. **End-to-end (VM)** — full `podkit` binary running inside
-   `podkit-device-harness` against a synthesised USB device. This doc.
+   `podkit-device-harness` against a synthesised USB device. This doc is
+   the `vm-binary` · `usb-synth` surface.
 
-A Tier-3 test exercises the binary end-to-end: USB inquiry, SCSI passthrough,
+An E2E test on this surface exercises the binary end-to-end: USB inquiry, SCSI passthrough,
 device classification, readiness, doctor, sync, repair. None of those
 paths can be exercised on macOS without hardware; equally, no piece of
 this can be replaced by a unit fake without sacrificing the very
@@ -277,9 +283,9 @@ paths (the "independent readers" pattern from
    Inside the skipped body, leave a comment sketch of the test that
    would land — the next person picking up the work then knows what
    to assert.
-7. Don't write `skipBug(...)` in Tier-3 tests — that helper belongs to
+7. Don't write `skipBug(...)` in VM E2E tests — that helper belongs to
    the matrix harness (`test-packages/e2e-tests/src/matrix/`). The
-   matrix and the VM tier have different visibility conventions.
+   matrix and the VM surface have different visibility conventions.
 
 ### Test name conventions
 
@@ -446,7 +452,7 @@ Properties this approach gives us:
   `hfsplus.ko` still hit the same refusal. The unit suite at
   `packages/podkit-core/src/device/filesystem-policy.test.ts` mocks
   `process.platform` and exercises the policy without any fs touch;
-  the Tier-3 scenario exercises the full lsblk → blkid → walk() →
+  the VM E2E scenario exercises the full lsblk → blkid → walk() →
   readiness → CLI wiring.
 - **production-shaped** — unlike the previous whole-disk-fstype
   approach (where `walk()` would have dropped the device for lack of
@@ -496,7 +502,7 @@ This document does **not** cover:
   serving, FunctionFS descriptor handshake are documented in
   `tools/device-testing/dummy-hcd/README.md` and the daemon's
   per-file JSDoc.
-- **CI vs local execution.** Today every Tier-3 test runs against the
+- **CI vs local execution.** Today every VM E2E test runs against the
   developer's local `podkit-device-harness` instance. CI runs the
   same suite against an identically-named VM provisioned per job.
   The provisioning script is the canonical source of both.
@@ -522,7 +528,7 @@ The largest known gap. Closing it unblocks:
 - `doctor --repair sysinfo-extended` against a DB-less iPod (write
   fresh SIE from USB onto a clean FAT).
 
-Both have skipped Tier-3 placeholders at
+Both have skipped VM E2E placeholders at
 `test-packages/e2e-vm-tests/src/doctor-sysinfo-repair.e2e.test.ts`
 with sketched assertions. Authoritative unit coverage in
 `packages/podkit-core/src/diagnostics/checks/sysinfo-consistency-repair.test.ts`

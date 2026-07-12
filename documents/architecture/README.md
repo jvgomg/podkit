@@ -35,11 +35,16 @@ an architecture doc to match a change you're shipping, ask whether the
   format-upgrade vs quality-upgrade gates, why format-upgrade is
   suppressed under transcoding, and how the bitrate baseline is written
   on copy + backfilled via `--force-sync-tags`.
+- **[testing/taxonomy](./testing/taxonomy.md)** — The canonical test
+  vocabulary: **Depth** (Unit/Integration/E2E) crossed with E2E
+  **Surface** (Runtime × Source × Device). The coverage grid that makes
+  gaps visible, and the map from the retired "Tier N" labels. Start here
+  before classifying or looking for a testing gap.
 - **[testing/vm-build-orchestration](./testing/vm-build-orchestration.md)** —
   How `bun run test:vm` guarantees a fresh podkit binary lands in the
   device-harness VM and detects baseline drift.
-- **[testing/vm-testing](./testing/vm-testing.md)** — How to author a
-  Tier-3 end-to-end test against a synthesised iPod inside the VM:
+- **[testing/vm-testing](./testing/vm-testing.md)** — How to author an
+  E2E test (the `vm-binary` surface) against a synthesised iPod inside the VM:
   personas, system states, FunctionFS daemon, mount lifecycle, and the
   mechanical constraints (USB descriptor cap, configfs path cap, mount
   uid/gid, SCSI VPD gap) that bite test authors.

@@ -19,9 +19,10 @@ podkit is distributed as a Docker image at `ghcr.io/jvgomg/podkit`. See [docs/ge
 ## Testing the entrypoint
 
 Shell-level tests of `entrypoint.sh` (command routing, command-parity, PUID/PGID,
-`--device`/`--path` injection, su-exec privilege drop) run via `bats` (Tier 2 of
-[doc-053](../backlog/docs/doc-053%20-%20podkit-docker-testing-strategy.md)). They
-stub the external binaries on `PATH`, so they need no container and no real sync.
+`--device`/`--path` injection, su-exec privilege drop) run via `bats`. These are
+the **Integration** depth in the [test taxonomy](../documents/architecture/testing/taxonomy.md)
+(doc-053's rollout stage 2). They stub the external binaries on `PATH`, so they
+need no container and no real sync.
 
 ```bash
 bun run test --filter @podkit/docker          # via turbo (also runs in `bun run quality`)
@@ -30,7 +31,7 @@ cd packages/podkit-docker && bun run test      # directly
 
 `bats` is a devDependency of `@podkit/docker`; `bun install` provides it.
 
-## Image smoke test (Tier 3)
+## Image smoke test (E2E · host-docker-image · none)
 
 Builds a podkit image for the native arch and asserts it boots and is internally
 consistent: `--version` + `doctor` run through the image, command-parity holds
@@ -51,11 +52,12 @@ host-specific.
 Caveat: those Lima binaries are **glibc**, so the smoke image (`Dockerfile.smoke`)
 uses a glibc base with `gosu` symlinked as `su-exec`, not the shipped Alpine/musl
 image. It is a representative image for catching CLI/entrypoint drift; full
-Alpine/musl fidelity against a synthesized USB device is Tier 5 (Lima VM, CI).
+Alpine/musl fidelity against a synthesized USB device is the `vm-docker-image`
+surface (Lima VM) — see the [test taxonomy](../documents/architecture/testing/taxonomy.md).
 
-### Running Tier 5 locally
+### Running the vm-docker-image e2e locally
 
-Tier 5 builds the real Alpine/musl image inside the `podkit-device-harness`
+This stage builds the real Alpine/musl image inside the `podkit-device-harness`
 Lima VM and drives it against a synthesized USB iPod (5G Video persona) with
 `nerdctl run --device` passthrough: `device add` (live USB firmware inquiry →
 SysInfoExtended write), a real FLAC→AAC sync, then a read-back — all through the
@@ -78,7 +80,7 @@ device), so it is **local-only** — excluded from `test:vm` and the `quality`
 DAG. Four gotchas the test encodes (all container constraints):
 
 - **Path-based addressing** — volumeUuid resolution fails in-container; address
-  the device by `path=/ipod` + `-d tier5ipod`, never by UUID.
+  the device by `path=/ipod` + `-d dockeripod`, never by UUID.
 - **PUID=0 + `--device <blockDevice>`** — reading the block-device UUID
   (libblkid) fails as uid=1000, so `device add` runs with `-e PUID=0 -e PGID=0`
   and the block node passed via `--device`.

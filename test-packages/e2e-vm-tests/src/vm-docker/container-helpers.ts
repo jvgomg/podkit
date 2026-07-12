@@ -1,6 +1,6 @@
 /**
- * Shared shell-escaping + container-JSON helpers for the Tier-5 `docker-dist`
- * suite.
+ * Shared shell-escaping + container-JSON helpers for the vm-docker-image
+ * suite (the `src/vm-docker/` Surface directory).
  *
  * Both the one-shot CLI flow (`image.docker-dist.test.ts`) and the daemon
  * steady-state flow (`daemon.docker-dist.test.ts`) drive the shipped musl image

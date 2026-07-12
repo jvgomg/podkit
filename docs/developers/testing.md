@@ -302,7 +302,7 @@ ffmpeg -version
 
 ## Docker-Based E2E Tests
 
-E2E tests that need Docker (Navidrome for Subsonic, future containerised back-ends) live in `@podkit/e2e-tests` under the `*.docker.test.ts` filename suffix — the regular `test:e2e` task excludes that suffix, and `test:e2e:docker` runs only those files. Docker availability is enforced in `beforeAll`; missing Docker throws a focused error.
+E2E tests that need Docker (Navidrome for Subsonic, future containerised back-ends) live in `@podkit/e2e-tests` under the `src/docker-source/` surface directory — the regular `test:e2e` task excludes that directory, and `test:e2e:docker` runs only it. Docker availability is enforced in `beforeAll`; missing Docker throws a focused error.
 
 ```bash
 # Run Docker-based tests

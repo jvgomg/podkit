@@ -8,7 +8,7 @@ Consumers today:
 
 | Package | Uses |
 | --- | --- |
-| `@podkit/e2e-tests` | full set (runner + error + host preflight); the docker-gated `*.docker.test.ts` files import the runner + `TestSource` interface from here too |
+| `@podkit/e2e-tests` | full set (runner + error + host preflight); the docker-gated `src/docker-source/` files import the runner + `TestSource` interface from here too |
 | `@podkit/e2e-vm-tests` | not yet — its harness predates this package |
 
 ## CLI runner

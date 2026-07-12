@@ -1,2 +1,2 @@
-# Staging dir for the Tier-3 smoke image build context (binaries + entrypoint).
+# Staging dir for the image-smoke build context (binaries + entrypoint).
 smoke-context/

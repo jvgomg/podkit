@@ -167,7 +167,7 @@ describe('Subsonic sync workflow', () => {
     }, 120000);
   });
 
-  // Incremental-sync regression coverage moved to art-matrix.docker.test.ts (scenario A).
+  // Incremental-sync regression coverage moved to art-matrix.test.ts (scenario A).
 
   describe('transcoding', () => {
     it('transcodes FLAC files from Subsonic to iPod-compatible format', async () => {
@@ -212,8 +212,8 @@ describe('Subsonic sync workflow', () => {
 
 describe('Subsonic test infrastructure', () => {
   it('can check Docker availability', async () => {
-    // This test file is .docker.test.ts: it only runs when the docker e2e
-    // suite is selected, and the test:e2e:docker harness gates the entire
+    // This test file lives in docker-source/: it only runs when the docker
+    // e2e suite is selected, and the test:e2e:docker harness gates the entire
     // run on Docker actually being available. So the check must return true
     // — a false would mean the harness ran us with no Docker, which is the
     // exact regression this assertion protects against.

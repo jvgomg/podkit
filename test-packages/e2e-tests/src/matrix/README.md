@@ -40,7 +40,7 @@ pass-runner into `defineMatrix`:
 | File | Concern |
 |------|---------|
 | `art-matrix.test.ts` | directory artwork, device × scenario × format × pipeline |
-| `art-matrix.docker.test.ts` | Subsonic artwork (Navidrome) |
+| `docker-source/art-matrix.test.ts` | Subsonic artwork (Navidrome) |
 | `art-matrix-change.test.ts` | artwork change detection, transition (updated/removed) × format; asserts the applied change converges (no churn loop) |
 | `art-matrix-compilation.test.ts` | various-artist album → album-cache `(artist,album)` split, iPod; proves no collision by matching each anchor's DB-thumbnail colour to its own cover |
 | `art-matrix-transfer.test.ts` | transfer-mode × artwork file strip/preserve (DB vs file), iPod |
@@ -66,12 +66,14 @@ for each value and passing it to the predictor. Artwork matrices set
 the artwork-change-detection flag. Decision-matrix concerns (codec, config)
 typically use `passes: [false]` with a static label.
 
-## Host vs docker (filename gate)
+## Host vs docker (directory gate)
 
-The test runner gates on the `*.docker.test.ts` suffix (`--exclude` for host,
-`--pattern` for docker), so Subsonic cells **cannot** share a file with host
-cells. The directory and Subsonic matrices are therefore separate test files
-that import the **same** `artwork-rules.ts` — duplication lives in neither.
+The test runner gates on the `docker-source/` Surface directory
+(`--exclude-path docker-source/` for host, positional `docker-source/` for
+docker), so Subsonic cells **cannot** share a file with host cells — the
+Subsonic matrix files live under `src/docker-source/`, the directory ones stay
+here in `src/matrix/`. Both import the **same** `artwork-rules.ts` —
+duplication lives in neither.
 
 ## Pruning with `skip()` — and the structural-vs-bug distinction
 

@@ -1,4 +1,4 @@
-# Tier-3 smoke image (doc-053).
+# Image smoke test image — E2E · host-docker-image (doc-053 rollout stage 3).
 #
 # NOT the shipped image. The production image (../Dockerfile) is Alpine/musl and
 # copies prebuilt musl binaries from the CI static-deps pipeline. That pipeline
@@ -6,7 +6,7 @@
 # locally-produced *glibc* Lima-builder binaries on a glibc base. It is a
 # representative image whose job is to catch the "image drifted from the CLI"
 # class — entrypoint/command-parity, ffmpeg presence, the binaries actually
-# running. Byte-fidelity to the shipped Alpine image is Tier-5 / CI territory.
+# running. Byte-fidelity to the shipped Alpine image is the vm-docker-image surface / CI territory.
 #
 # The build context is a tiny staging dir assembled by image-smoke.sh
 # (entrypoint.sh + the two binaries) — deliberately NOT the repo root, so the

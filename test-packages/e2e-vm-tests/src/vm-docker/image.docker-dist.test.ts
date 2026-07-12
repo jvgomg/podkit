@@ -1,27 +1,28 @@
 /**
- * Tier-5 Docker image e2e — the shipped musl image driving a synthesized USB
- * iPod inside the device-harness Lima VM, with real device passthrough.
+ * E2E · vm-docker-image · usb-synth — the shipped musl image driving a
+ * synthesized USB iPod inside the device-harness Lima VM, with real device
+ * passthrough. (doc-053 rollout stage 5; taxonomy: documents/architecture/testing/taxonomy.md)
  *
- * This is the ONLY tier that exercises the container's real device-access path
+ * This is the ONLY surface that exercises the container's real device-access path
  * end to end: the production `alpine:3.21` (musl) image, built from the same
  * binaries CI ships, runs `device add` → live USB firmware inquiry → SIE write,
  * then a real FLAC→AAC sync, then reads the tracks back — all through
  * `nerdctl run --device …` passthrough of a gadget the harness synthesizes.
  *
- * # Why this lives in `src/docker-dist/` (gated out of the routine VM run)
+ * # Why this lives in `src/vm-docker/` (gated out of the routine VM run)
  *
- * The `docker-dist` tag marks these as exercising the shipped Docker
- * *distribution* image — distinct from the `*.docker.test.ts` files in
- * `@podkit/e2e-tests`, which merely use Docker as infra to host a
- * Subsonic/Navidrome source. Everything under `src/docker-dist/` is deliberately
- * excluded from the routine `test:vm` run and from the `quality` DAG: it builds
- * a full Docker image in the VM (minutes) and drives a live synthesized USB
- * device, so it is expensive and fragile. It runs locally-only via `bun run
- * test:e2e:docker-dist` (see this package's `package.json` and
- * `agents/docker.md`). The dedicated directory also means a stray `bun test`
- * elsewhere in the repo will not accidentally kick off an image build —
- * bunfig.toml's `pathIgnorePatterns` excludes the `docker-dist/` directory; only
- * the explicit `test:e2e:docker-dist` script re-includes it.
+ * The `vm-docker` Surface directory marks these as exercising the shipped
+ * Docker *distribution* image inside the VM — distinct from the
+ * `src/docker-source/` files in `@podkit/e2e-tests`, which merely use Docker as
+ * infra to host a Subsonic/Navidrome source. Everything under `src/vm-docker/`
+ * is deliberately excluded from the routine `test:vm` run and from the
+ * `quality` DAG: it builds a full Docker image in the VM (minutes) and drives a
+ * live synthesized USB device, so it is expensive and fragile. It runs
+ * locally-only via `bun run test:e2e:docker-dist` (see this package's
+ * `package.json` and `agents/docker.md`). The dedicated directory also means a
+ * stray `bun test` elsewhere in the repo will not accidentally kick off an
+ * image build — bunfig.toml's `pathIgnorePatterns` excludes the `vm-docker/`
+ * directory; only the explicit `test:e2e:docker-dist` script re-includes it.
  *
  * # Persona choice + its documented caveat
  *
@@ -35,7 +36,7 @@
  * CAVEAT: a real 5G Video uses SCSI inquiry, not USB — so this persona proves
  * the USB-inquiry code path + sync pipeline, NOT 5G-over-USB realism. A
  * USB-native syncable FAT persona is the realism refinement, deferred to the
- * fuller Tier-5 persona-matrix work (DRAFT-021).
+ * fuller vm-docker-image persona-matrix work (DRAFT-021).
  *
  * # Setup + the gotchas this test must handle (each learned the hard way)
  *
@@ -68,7 +69,7 @@
  *
  * @see test-packages/device-testing/src/runners/lima-docker-image.ts (buildPodkitImageInVm)
  * @see test-packages/device-testing/src/vm/mount-persona.ts (resolvePersonaDeviceNodes)
- * @see agents/docker.md ("Running Tier 5 locally")
+ * @see agents/docker.md ("Running the vm-docker-image e2e locally")
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';

@@ -32,7 +32,7 @@ packages/            # Published / published-adjacent packages
 test-packages/             # Testing infrastructure (private, not published)
 ├── device-testing/        # VM test harness — DevicePersona + SystemState registries, TestRuntime, Lima yamls, apply-state.sh
 ├── device-testing-daemon/ # Userspace daemon — synthesises iPod USB gadgets (FunctionFS + mass-storage) on dummy_hcd
-├── e2e-tests/             # End-to-end CLI tests on the host (dummy + real iPod). Docker-gated files use the `*.docker.test.ts` suffix
+├── e2e-tests/             # End-to-end CLI tests on the host (dummy + real iPod). Docker-gated files live in the `src/docker-source/` surface dir
 ├── e2e-shared/            # Cross-cutting helpers shared by every e2e package (CLI runner, preflight, error assertions)
 ├── e2e-vm-tests/          # End-to-end podkit feature tests inside the Lima VM
 ├── gpod-testing/          # Test utilities for iPod environments (no hardware needed)
