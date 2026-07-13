@@ -1,9 +1,10 @@
 ---
 id: TASK-466
 title: Migrate e2e test files to the Depth × Surface directory convention
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-07-12 12:53'
+updated_date: '2026-07-12 15:59'
 labels:
   - docker
   - testing
@@ -43,9 +44,25 @@ The `test-packages/e2e-tests/src/docker/` **helpers** dir (container lifecycle) 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 8 host *.docker.test.ts files moved to test-packages/e2e-tests/src/docker-source/ with git history preserved
-- [ ] #2 test-packages/e2e-vm-tests/src/docker-dist/ renamed to vm-docker/
-- [ ] #3 test:e2e / test:e2e:docker / test:vm / test:e2e:docker-dist globs re-keyed to directories; each verified to select exactly the intended files with none dropped from gating
-- [ ] #4 taxonomy.md §4/§5/§6 planned/renamed/today markers removed and enumerate commands switched to path-based forms
+- [x] #1 8 host *.docker.test.ts files moved to test-packages/e2e-tests/src/docker-source/ with git history preserved
+- [x] #2 test-packages/e2e-vm-tests/src/docker-dist/ renamed to vm-docker/
+- [x] #3 test:e2e / test:e2e:docker / test:vm / test:e2e:docker-dist globs re-keyed to directories; each verified to select exactly the intended files with none dropped from gating
+- [x] #4 taxonomy.md §4/§5/§6 planned/renamed/today markers removed and enumerate commands switched to path-based forms
 - [ ] #5 quality gate (lint+typecheck+build+test) green after the move
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Migrated e2e tests to the Depth × Surface directory convention (ADR-025). Committed as 2efe3e25.
+
+- 8 host `*.docker.test.ts` → `test-packages/e2e-tests/src/docker-source/` (git mv, history preserved, `.docker` token dropped — now directory-gated).
+- `test-packages/e2e-vm-tests/src/docker-dist/` → `vm-docker/` (3 files; basenames kept per scope).
+- Re-keyed gating: `e2e-tests/package.json` (test:e2e / :serial / :dummy / :real / :docker / :docker:serial), `e2e-vm-tests` package.json + bunfig, and `device-testing/src/preflight.ts` argv self-gate. Extended `gpod-tests-parallel` with `--exclude-path` + `--list` (the runner previously matched basename only, so it could not gate by directory).
+- Gate integrity independently verified by an Opus review: host default 37, host docker 8, vm default, vm docker-dist 2 — identical selection before/after, nothing dropped or double-counted. Typechecks green in gpod-testing, e2e-tests, e2e-vm-tests.
+- Cleaned taxonomy.md §4/§5/§6 (removed planned/renamed markers for the now-existing dirs; documented the runner limitation + new flags). `docker-loopback/` left planned (TASK-450).
+
+AC5 (full `bun run quality` green) not checked: the quality DAG reaches and passes the migration-relevant stages (test:e2e / test:e2e:docker), but its final `@podkit/device-testing:test:vm` stage has a PRE-EXISTING, unrelated failure (3 personas' `doctor --scope system --json` disagree with the healthy SystemState fixture — untouched by this migration; likely fixture drift from d68fccdc). Owner is handling that separately.
+
+Latent-bug fix rode along: `test:e2e:docker:serial` was bare `bun test` (silently ran all 45 host files); now scoped to the 8 docker-source files.
+<!-- SECTION:FINAL_SUMMARY:END -->
