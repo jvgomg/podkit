@@ -72,6 +72,7 @@ import {
   ipodNano3gBlack,
   startDaemonForPersona,
   stopDaemon,
+  waitForUsbEnumeration,
   LIMA_DEVICE_HARNESS_VM_NAME,
 } from '@podkit/device-testing';
 
@@ -156,6 +157,15 @@ describe('VM: discovery reconciliation', () => {
           await startDaemonForPersona({
             vmName: LIMA_DEVICE_HARNESS_VM_NAME,
             personaId: ipodNano3gBlack.id,
+          });
+          // `systemctl start` returns before the kernel enumerates the
+          // gadget; wait for it on the bus so the scan below doesn't race an
+          // empty USB tree each cycle. (withPersona does this internally; the
+          // replug loop drives the daemon lifecycle manually, so it waits
+          // explicitly.)
+          await waitForUsbEnumeration({
+            vmName: LIMA_DEVICE_HARNESS_VM_NAME,
+            persona: ipodNano3gBlack,
           });
           try {
             const invocation = await runJsonCommand(

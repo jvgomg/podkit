@@ -208,6 +208,7 @@ export type { WithPersonaOpts, CliInvocation } from './vm/persona-fixture.js';
 export {
   withPersona,
   waitForScsiGenericEnumeration,
+  waitForUsbEnumeration,
   runJsonCommand,
 } from './vm/persona-fixture.js';
 
