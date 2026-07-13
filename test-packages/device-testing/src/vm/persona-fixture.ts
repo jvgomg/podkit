@@ -13,14 +13,22 @@
  * filtered at grouping time inside `groupPersonasByState()`. See
  * `vm-runtime-setup.ts#hasDaemonPayload`.
  *
- * # Known scaffold gap (descriptor handshake)
+ * # USB + SCSI enumeration waits
  *
- * The FunctionFS daemon's descriptor handshake is deferred (the production
- * systemd unit and binary serve VPD page 0xC0 over the gadget's control
- * endpoint, but the *USB host enumeration path* requires descriptors to be
- * published). The VM tests use this fixture to wrap each `it()` body in
- * a daemon lifecycle and assert what works today (well-formed JSON shape,
- * daemon start/stop).
+ * `systemctl start` returns as soon as the daemon `exec()`s (Type=simple),
+ * BEFORE the kernel has enumerated the synthesized gadget. `withPersona`
+ * therefore polls the VM after start:
+ *
+ *   - Every daemon-backed persona publishes a USB descriptor gadget, so we
+ *     wait for the persona's `vid:pid` to appear in sysfs (the same source
+ *     podkit's Linux USB walk reads; `lsusb` is not installed on the VM).
+ *     Without this the body races the ~2-3s kernel enumeration lag and sees
+ *     an empty `device scan` — a silent, confusing failure with no daemon log.
+ *   - Mass-storage personas additionally wait for `/dev/sg*` (the kernel's
+ *     SCSI enumeration lags the USB bind).
+ *
+ * Both waits dump the daemon journal on timeout so a synthesis failure is
+ * self-diagnosing.
  *
  * @module
  */
@@ -73,6 +81,17 @@ export async function withPersona<T>(opts: WithPersonaOpts, body: () => Promise<
   await startDaemonForPersona({
     vmName,
     personaId: opts.persona.id,
+    subprocess,
+  });
+
+  // Every daemon-backed persona synthesizes a USB descriptor gadget; wait
+  // for it to enumerate on the bus before running the body. `systemctl
+  // start` returns at daemon exec() — before the gadget binds — so skipping
+  // this races the kernel, and if the gadget never enumerates the body sees
+  // a silent empty `device scan` instead of a loud, log-bearing timeout.
+  await waitForUsbEnumeration({
+    vmName,
+    persona: opts.persona,
     subprocess,
   });
 
@@ -141,30 +160,7 @@ export async function waitForScsiGenericEnumeration(opts: {
     ]);
     if (probe.exitCode === 0 && probe.stdout.trim().length > 0) return;
     if (Date.now() >= deadline) {
-      // Best-effort daemon log dump so the timeout is self-diagnosing.
-      // The journalctl call is already at the deadline — paying one more
-      // round-trip is cheap compared to making the developer SSH in.
-      let daemonLog = '';
-      try {
-        const log = await runLimactl(subprocess, [
-          'shell',
-          opts.vmName,
-          '--',
-          'sudo',
-          'journalctl',
-          '-u',
-          `dummy-hcd-daemon@${opts.personaId}.service`,
-          '-n',
-          '20',
-          '--no-pager',
-        ]);
-        daemonLog = log.stdout.trim() || log.stderr.trim();
-      } catch {
-        // Swallow — the timeout message stands on its own.
-      }
-      const logSuffix = daemonLog
-        ? `\n--- dummy-hcd-daemon@${opts.personaId} log (last 20 lines) ---\n${daemonLog}`
-        : '';
+      const logSuffix = await daemonLogSuffix(subprocess, opts.vmName, opts.personaId);
       throw new Error(
         `withPersona: timed out after ${timeoutMs}ms waiting for /dev/sg* to ` +
           `appear in ${opts.vmName} for persona '${opts.personaId}'. ` +
@@ -173,6 +169,97 @@ export async function waitForScsiGenericEnumeration(opts: {
     }
     await new Promise((resolve) => setTimeout(resolve, 150));
   }
+}
+
+/**
+ * Poll for the persona's USB descriptor gadget to enumerate — its
+ * `vid:pid` appearing in sysfs (`/sys/bus/usb/devices/`), the source
+ * podkit's Linux USB walk reads. Called by {@link withPersona} for every
+ * persona, since the daemon publishes a USB descriptor gadget regardless
+ * of whether the persona also carries a mass-storage backing file.
+ *
+ * Throws on timeout with the daemon journal appended, so a gadget that
+ * binds a UDC but never enumerates is a loud, self-diagnosing failure
+ * rather than a silent empty `device scan`.
+ *
+ * @internal exported for tests
+ */
+export async function waitForUsbEnumeration(opts: {
+  vmName: string;
+  persona: DevicePersona;
+  subprocess?: SubprocessRunner;
+  timeoutMs?: number;
+}): Promise<void> {
+  const subprocess = opts.subprocess ?? defaultSubprocessRunner;
+  const timeoutMs = opts.timeoutMs ?? 5_000;
+  const vid = opts.persona.usbDescriptor.vendorId.toString(16).padStart(4, '0');
+  const pid = opts.persona.usbDescriptor.productId.toString(16).padStart(4, '0');
+  const idPair = `${vid}:${pid}`;
+  const deadline = Date.now() + timeoutMs;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const probe = await runLimactl(subprocess, [
+      'shell',
+      opts.vmName,
+      '--',
+      'sh',
+      '-c',
+      // Match on sysfs — the same source podkit's Linux USB walk reads — not
+      // `lsusb`, which is NOT installed on the harness VM. sysfs
+      // idVendor/idProduct are lower-case 4-hex with no `0x` prefix, exactly
+      // our `vid`/`pid`. Prints `MATCH` when the enumerated device appears.
+      `for dir in /sys/bus/usb/devices/*; do ` +
+        `[ "$(cat "$dir/idVendor" 2>/dev/null)" = '${vid}' ] || continue; ` +
+        `[ "$(cat "$dir/idProduct" 2>/dev/null)" = '${pid}' ] || continue; ` +
+        `echo MATCH; break; ` +
+        `done`,
+    ]);
+    if (probe.exitCode === 0 && probe.stdout.includes('MATCH')) return;
+    if (Date.now() >= deadline) {
+      const logSuffix = await daemonLogSuffix(subprocess, opts.vmName, opts.persona.id);
+      throw new Error(
+        `withPersona: timed out after ${timeoutMs}ms waiting for USB device ` +
+          `${idPair} to enumerate in ${opts.vmName} for persona ` +
+          `'${opts.persona.id}'. The daemon may bind a UDC but never publish ` +
+          `FunctionFS descriptors — is the gadget enumerating?${logSuffix}`
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+}
+
+/**
+ * Best-effort dump of a persona's dummy-hcd-daemon journal (last 20 lines),
+ * formatted as a suffix for an enumeration-timeout error so the failure is
+ * self-diagnosing. Returns '' on any error — the timeout message stands on
+ * its own.
+ */
+async function daemonLogSuffix(
+  subprocess: SubprocessRunner,
+  vmName: string,
+  personaId: string
+): Promise<string> {
+  let daemonLog = '';
+  try {
+    const log = await runLimactl(subprocess, [
+      'shell',
+      vmName,
+      '--',
+      'sudo',
+      'journalctl',
+      '-u',
+      `dummy-hcd-daemon@${personaId}.service`,
+      '-n',
+      '20',
+      '--no-pager',
+    ]);
+    daemonLog = log.stdout.trim() || log.stderr.trim();
+  } catch {
+    // Swallow — the timeout message stands on its own.
+  }
+  return daemonLog
+    ? `\n--- dummy-hcd-daemon@${personaId} log (last 20 lines) ---\n${daemonLog}`
+    : '';
 }
 
 // ---------------------------------------------------------------------------
