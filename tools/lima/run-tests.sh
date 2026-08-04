@@ -127,6 +127,13 @@ run_tests() {
     # Turbo's content-hashed cache (at \$TURBO_CACHE_DIR) means unchanged
     # packages are skipped on re-runs.
     bun run test
+
+    # Runtime smoke (TASK-472): compile the single-file binary and drive it
+    # through the native libgpod path + the libudev-less firmware-inquiry
+    # degrade — the same shared script CI runs, now on this VM's real libc.
+    command -v jq >/dev/null 2>&1 || (apk add --no-cache jq 2>/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq jq) 2>/dev/null || true)
+    bun run compile
+    bash test-packages/e2e-shared/scripts/runtime-smoke.sh packages/podkit-cli/bin/podkit
   "
 
   echo "=== $name: PASSED ==="

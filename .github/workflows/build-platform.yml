@@ -362,24 +362,12 @@ jobs:
             esac
           done
 
-      - name: Smoke test - native binding loads (isolated)
-        run: |
-          ISOLATED_DIR=$(mktemp -d)
-          cp packages/podkit-cli/bin/podkit "$ISOLATED_DIR/"
-          mkdir -p /tmp/test-ipod/iPod_Control/iTunes
-
-          OUTPUT=$("$ISOLATED_DIR/podkit" device info --device /tmp/test-ipod 2>&1) || true
-          echo "$OUTPUT"
-          rm -rf "$ISOLATED_DIR"
-
-          if echo "$OUTPUT" | grep -qi "Failed to load native\|Native binding not found\|binding not found"; then
-            echo "ERROR: Native addon failed to load — .node file is not embedded in the binary."
-            exit 1
-          fi
-          if ! echo "$OUTPUT" | grep -q "Could not read"; then
-            echo "ERROR: Expected database error from libgpod (proves native binding loaded)."
-            exit 1
-          fi
+      # Runtime smoke: drive the real binary through the native libgpod path
+      # (reads a committed gpod-tool iTunesDB, asserts success + track count)
+      # and the libudev-less firmware-inquiry degrade. Replaces the old
+      # weak "it errored" isolated check. (TASK-472)
+      - name: Runtime smoke (real binary + native libgpod read)
+        run: bash test-packages/e2e-shared/scripts/runtime-smoke.sh packages/podkit-cli/bin/podkit
 
       - name: Create tarball
         if: inputs.upload-artifacts
@@ -559,22 +547,9 @@ jobs:
                 esac
               done
 
-              ISOLATED_DIR=$(mktemp -d)
-              cp packages/podkit-cli/bin/podkit "$ISOLATED_DIR/"
-              mkdir -p /tmp/test-ipod/iPod_Control/iTunes
-
-              OUTPUT=$("$ISOLATED_DIR/podkit" device info --device /tmp/test-ipod 2>&1) || true
-              echo "$OUTPUT"
-              rm -rf "$ISOLATED_DIR"
-
-              if echo "$OUTPUT" | grep -qi "Failed to load native\|Native binding not found\|binding not found"; then
-                echo "ERROR: Native addon failed to load — .node file is not embedded in the binary."
-                exit 1
-              fi
-              if ! echo "$OUTPUT" | grep -q "Could not read"; then
-                echo "ERROR: Expected database error from libgpod (proves native binding loaded)."
-                exit 1
-              fi
+              # Runtime smoke through the native libgpod path + libudev-less
+              # firmware-inquiry degrade, against the real binary. (TASK-472)
+              bash test-packages/e2e-shared/scripts/runtime-smoke.sh packages/podkit-cli/bin/podkit
             '
 
       - name: Create tarball
@@ -652,7 +627,7 @@ jobs:
           # below. Installed here (always-run) so the gates work on prebuild
           # cache hits too, where the build-essential toolchain is skipped.
           apt_retry install -y --no-install-recommends \
-            git curl ca-certificates xz-utils zstd unzip binutils
+            git curl ca-certificates xz-utils zstd unzip binutils jq
 
       - uses: actions/checkout@v4
 
@@ -789,24 +764,12 @@ jobs:
             *ld-musl*) echo "ERROR: musl (ld-musl) interpreter found in glibc binary"; exit 1;;
           esac
 
-      - name: Smoke test - native binding loads (isolated)
-        run: |
-          ISOLATED_DIR=$(mktemp -d)
-          cp packages/podkit-cli/bin/podkit "$ISOLATED_DIR/"
-          mkdir -p /tmp/test-ipod/iPod_Control/iTunes
-
-          OUTPUT=$("$ISOLATED_DIR/podkit" device info --device /tmp/test-ipod 2>&1) || true
-          echo "$OUTPUT"
-          rm -rf "$ISOLATED_DIR"
-
-          if echo "$OUTPUT" | grep -qi "Failed to load native\|Native binding not found\|binding not found"; then
-            echo "ERROR: Native addon failed to load — .node file is not embedded in the binary."
-            exit 1
-          fi
-          if ! echo "$OUTPUT" | grep -q "Could not read"; then
-            echo "ERROR: Expected database error from libgpod (proves native binding loaded)."
-            exit 1
-          fi
+      # Runtime smoke: drive the real binary through the native libgpod path
+      # (reads a committed gpod-tool iTunesDB, asserts success + track count)
+      # and the libudev-less firmware-inquiry degrade. Replaces the old
+      # weak "it errored" isolated check. (TASK-472)
+      - name: Runtime smoke (real binary + native libgpod read)
+        run: bash test-packages/e2e-shared/scripts/runtime-smoke.sh packages/podkit-cli/bin/podkit
 
       # ---- Upload (release only) ----
 
