@@ -12,9 +12,9 @@
     }
   },
   "scripts": {
-    "generate-fixtures": "bun run scripts/generate-fixtures.ts",
-    "generate-static-fixtures": "bun run scripts/generate-static-fixtures.ts",
-    "build": "bun run build:types && bun run check-ffmpeg && bun run build:bundle",
+    "generate-fixtures": "bun run check-ffmpeg && bun run scripts/generate-fixtures.ts",
+    "generate-static-fixtures": "bun run check-ffmpeg && bun run scripts/generate-static-fixtures.ts",
+    "build": "bun run build:types && bun run build:bundle",
     "build:types": "tsc -p tsconfig.build.json",
     "build:bundle": "bun build src/lib.ts --outdir dist --target node",
     "check-ffmpeg": "bun run scripts/check-ffmpeg.ts",

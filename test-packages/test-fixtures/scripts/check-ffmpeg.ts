@@ -1,15 +1,24 @@
 #!/usr/bin/env bun
 /**
- * Build-time check: verify the host ffmpeg has every encoder this package
- * uses to synthesise audio fixtures. Run before `bun build` (see
- * `package.json`'s `build` script) so test-fixtures fails to build with a
- * clear message rather than letting downstream tests silently skip or
- * fail on missing encoders at runtime.
+ * Fixture-generation check: verify the host ffmpeg has every encoder this
+ * package uses to synthesise audio fixtures. Run before the
+ * `generate-fixtures` / `generate-static-fixtures` scripts (see
+ * `package.json`) — i.e. at the point ffmpeg is actually invoked — so
+ * generation fails with a clear message rather than letting downstream
+ * tests silently skip or fail on missing encoders at runtime.
+ *
+ * It is deliberately NOT part of `build`: the library bundle
+ * (`dist/lib.js`) that dependents import is pure TypeScript and needs no
+ * ffmpeg to compile, so requiring it there would break ffmpeg-less builds
+ * (e.g. the release binary jobs, which build this package as a transitive
+ * dev-dependency of the CLI). The test tasks that consume fixtures
+ * (`test:integration`, `test:perf`, e2e, `ipod-db#test:*`) depend on the
+ * generate tasks in turbo, so they still fail fast with this message.
  *
  * Dependents (`@podkit/core` tests etc.) import this package's library
  * functions; if a developer's ffmpeg is missing libvorbis (the macOS
- * Homebrew default), the test-fixtures build refuses to proceed and
- * tells them the exact install command.
+ * Homebrew default), generation refuses to proceed and tells them the
+ * exact install command.
  */
 import { execFileSync } from 'node:child_process';
 
@@ -105,7 +114,9 @@ function installHint(missing: EncoderRequirement[]): string {
   }
 
   lines.push('');
-  lines.push('After installing, re-run the build (turbo: `bun run build --force`).');
+  lines.push(
+    'After installing, re-run fixture generation (e.g. `bun run generate-static-fixtures`).'
+  );
   return lines.join('\n');
 }
 
