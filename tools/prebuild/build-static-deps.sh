@@ -135,14 +135,35 @@ if [ "$OS" = "Darwin" ]; then
     cd "$WORK_DIR"
 
     LIBGPOD_VERSION="0.8.3"
-    if [ ! -f "libgpod-${LIBGPOD_VERSION}.tar.bz2" ]; then
+    LIBGPOD_TARBALL="libgpod-${LIBGPOD_VERSION}.tar.bz2"
+    # Fetch libgpod from the reliable Debian source mirror (a CDN) first,
+    # falling back to SourceForge. SourceForge's mirror redirects
+    # intermittently serve HTML error pages; `-L` without `-f` would save
+    # one as the tarball and then die deep in tar with a confusing
+    # "not a bzip2 file". `-f` rejects HTTP errors, `--retry` rides out
+    # transient blips, and we validate the archive before accepting it —
+    # only then do we stop trying mirrors. (Debian's orig tarball and the
+    # SourceForge tarball are the same upstream 0.8.3 source and both
+    # extract to libgpod-0.8.3/.)
+    if [ ! -f "$LIBGPOD_TARBALL" ]; then
       log "Downloading libgpod source..."
-      curl -L -o "libgpod-${LIBGPOD_VERSION}.tar.bz2" \
-        "https://downloads.sourceforge.net/project/gtkpod/libgpod/libgpod-0.8/libgpod-${LIBGPOD_VERSION}.tar.bz2"
+      libgpod_ok=""
+      for url in \
+        "https://deb.debian.org/debian/pool/main/libg/libgpod/libgpod_${LIBGPOD_VERSION}.orig.tar.bz2" \
+        "https://downloads.sourceforge.net/project/gtkpod/libgpod/libgpod-0.8/${LIBGPOD_TARBALL}"; do
+        if curl -fL --retry 3 --retry-delay 5 --retry-connrefused -o "$LIBGPOD_TARBALL" "$url" \
+          && tar -tjf "$LIBGPOD_TARBALL" >/dev/null 2>&1; then
+          libgpod_ok=1
+          break
+        fi
+        log "libgpod download failed or archive invalid from ${url}; trying next mirror"
+        rm -f "$LIBGPOD_TARBALL"
+      done
+      [ -n "$libgpod_ok" ] || { log "ERROR: could not obtain a valid libgpod source tarball"; exit 1; }
     fi
 
     rm -rf "libgpod-${LIBGPOD_VERSION}"
-    tar -xjf "libgpod-${LIBGPOD_VERSION}.tar.bz2"
+    tar -xjf "$LIBGPOD_TARBALL"
     cd "libgpod-${LIBGPOD_VERSION}"
 
     curl -sL -o callout.patch "https://raw.githubusercontent.com/macports/macports-ports/master/multimedia/libgpod/files/patch-tools-generic-callout.c.diff"
@@ -481,14 +502,35 @@ elif [ "$OS" = "Linux" ]; then
     cd "$WORK_DIR"
 
     LIBGPOD_VERSION="0.8.3"
-    if [ ! -f "libgpod-${LIBGPOD_VERSION}.tar.bz2" ]; then
+    LIBGPOD_TARBALL="libgpod-${LIBGPOD_VERSION}.tar.bz2"
+    # Fetch libgpod from the reliable Debian source mirror (a CDN) first,
+    # falling back to SourceForge. SourceForge's mirror redirects
+    # intermittently serve HTML error pages; `-L` without `-f` would save
+    # one as the tarball and then die deep in tar with a confusing
+    # "not a bzip2 file". `-f` rejects HTTP errors, `--retry` rides out
+    # transient blips, and we validate the archive before accepting it —
+    # only then do we stop trying mirrors. (Debian's orig tarball and the
+    # SourceForge tarball are the same upstream 0.8.3 source and both
+    # extract to libgpod-0.8.3/.)
+    if [ ! -f "$LIBGPOD_TARBALL" ]; then
       log "Downloading libgpod source..."
-      curl -L -o "libgpod-${LIBGPOD_VERSION}.tar.bz2" \
-        "https://downloads.sourceforge.net/project/gtkpod/libgpod/libgpod-0.8/libgpod-${LIBGPOD_VERSION}.tar.bz2"
+      libgpod_ok=""
+      for url in \
+        "https://deb.debian.org/debian/pool/main/libg/libgpod/libgpod_${LIBGPOD_VERSION}.orig.tar.bz2" \
+        "https://downloads.sourceforge.net/project/gtkpod/libgpod/libgpod-0.8/${LIBGPOD_TARBALL}"; do
+        if curl -fL --retry 3 --retry-delay 5 --retry-connrefused -o "$LIBGPOD_TARBALL" "$url" \
+          && tar -tjf "$LIBGPOD_TARBALL" >/dev/null 2>&1; then
+          libgpod_ok=1
+          break
+        fi
+        log "libgpod download failed or archive invalid from ${url}; trying next mirror"
+        rm -f "$LIBGPOD_TARBALL"
+      done
+      [ -n "$libgpod_ok" ] || { log "ERROR: could not obtain a valid libgpod source tarball"; exit 1; }
     fi
 
     rm -rf "libgpod-${LIBGPOD_VERSION}"
-    tar -xjf "libgpod-${LIBGPOD_VERSION}.tar.bz2"
+    tar -xjf "$LIBGPOD_TARBALL"
     cd "libgpod-${LIBGPOD_VERSION}"
 
     curl -sL -o callout.patch "https://raw.githubusercontent.com/macports/macports-ports/master/multimedia/libgpod/files/patch-tools-generic-callout.c.diff"
