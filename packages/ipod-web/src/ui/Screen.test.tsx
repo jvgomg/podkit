@@ -1,7 +1,8 @@
-import { describe, test, expect } from 'bun:test';
-import React from 'react';
-import { render } from '@testing-library/react';
+import { afterEach, describe, test, expect } from 'bun:test';
+import { cleanup, render } from '@testing-library/react';
 import { Screen } from './Screen.js';
+
+afterEach(cleanup);
 
 describe('Screen', () => {
   test('renders children', () => {

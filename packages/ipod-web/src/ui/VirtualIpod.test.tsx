@@ -1,7 +1,8 @@
-import { describe, test, expect } from 'bun:test';
-import React from 'react';
-import { render } from '@testing-library/react';
+import { afterEach, describe, test, expect } from 'bun:test';
+import { cleanup, render } from '@testing-library/react';
 import { VirtualIpod } from './VirtualIpod.js';
+
+afterEach(cleanup);
 
 describe('VirtualIpod', () => {
   test('renders without crashing', () => {

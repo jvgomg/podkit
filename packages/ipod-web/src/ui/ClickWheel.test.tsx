@@ -1,7 +1,9 @@
-import { describe, test, expect, mock } from 'bun:test';
+import { afterEach, describe, test, expect, mock } from 'bun:test';
 import React from 'react';
-import { render, fireEvent } from '@testing-library/react';
+import { cleanup, render, fireEvent } from '@testing-library/react';
 import { ClickWheel } from './ClickWheel.js';
+
+afterEach(cleanup);
 
 function renderWheel(overrides: Partial<React.ComponentProps<typeof ClickWheel>> = {}) {
   const props = {

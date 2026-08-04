@@ -1,7 +1,7 @@
-import { describe, test, expect } from 'bun:test';
+import { afterEach, describe, test, expect } from 'bun:test';
 import React from 'react';
 import { Provider, createStore } from 'jotai';
-import { render } from '@testing-library/react';
+import { cleanup, render } from '@testing-library/react';
 import { ListView } from './ListView.js';
 import { scrollDirectionAtom } from '../../store/navigation.js';
 
@@ -12,6 +12,8 @@ function renderWithStore(ui: React.ReactElement, opts?: { scrollDirection?: 1 | 
   }
   return render(<Provider store={store}>{ui}</Provider>);
 }
+
+afterEach(cleanup);
 
 describe('ListView', () => {
   test('renders items', () => {

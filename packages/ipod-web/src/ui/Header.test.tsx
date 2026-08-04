@@ -1,7 +1,8 @@
-import { describe, test, expect } from 'bun:test';
-import React from 'react';
-import { render } from '@testing-library/react';
+import { afterEach, describe, test, expect } from 'bun:test';
+import { cleanup, render } from '@testing-library/react';
 import { Header } from './shared/Header.js';
+
+afterEach(cleanup);
 
 describe('Header', () => {
   test('shows title', () => {
