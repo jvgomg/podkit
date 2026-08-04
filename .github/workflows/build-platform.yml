@@ -272,7 +272,7 @@ jobs:
           # binutils provides readelf for the interpreter / NEEDED-libc gates
           # below. It must be present on every path (including full prebuild
           # cache hits, where build-base is not installed).
-          apk add --no-cache bash curl unzip jq binutils
+          apk add --no-cache bash curl unzip jq binutils lsblk findmnt
           export BUN_INSTALL=/usr/local
           curl -fsSL https://bun.sh/install | bash
 
@@ -501,7 +501,7 @@ jobs:
             alpine:3.21 sh -c '
               set -e
               # binutils provides readelf for the interpreter gate below.
-              apk add --no-cache bash curl unzip jq libstdc++ binutils
+              apk add --no-cache bash curl unzip jq libstdc++ binutils lsblk findmnt
 
               echo "==> Installing Bun..."
               export BUN_INSTALL=/usr/local
