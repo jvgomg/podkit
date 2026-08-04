@@ -529,3 +529,175 @@ jobs:
           name: podkit-daemon-linux-arm64
           path: podkit-daemon-linux-arm64.tar.gz
           retention-days: 30
+
+  # ===================================================================
+  # Linux builds (glibc — baseline glibc 2.31 via ubuntu:20.04)
+  #
+  # These produce the *-gnu CLI tarballs that Homebrew and the Debian
+  # tarball route to. The musl tarballs above stay bare-named because
+  # Docker depends on them — glibc is purely additive here.
+  #
+  # Both arches build inside a `container: ubuntu:20.04` (glibc 2.31)
+  # so the resulting binary runs on any glibc >= 2.31 host. Unlike the
+  # musl/Alpine jobs, JS actions (checkout/cache/setup-*) work fine in a
+  # glibc container, so both arches use it (arm64 on ubuntu-24.04-arm).
+  #
+  # The native .node is built inline via tools/prebuild/build-linux-glibc.sh
+  # (the same shared script the Lima builder VM + prebuild.yml use). It
+  # emits the BARE prebuilds/linux-${arch} dir — which compile.sh's
+  # host-libc probe selects on a glibc host. No -musl rename here.
+  # ===================================================================
+  build-glibc:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+
+    runs-on: ${{ matrix.runner }}
+    container: ubuntu:20.04
+    name: Build linux-${{ matrix.arch }}-gnu
+
+    env:
+      DEBIAN_FRONTEND: noninteractive
+
+    steps:
+      # ubuntu:20.04 is a bare image — install git (+ cache/tar helpers)
+      # before actions/checkout can run.
+      - name: Install base tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            git curl ca-certificates xz-utils zstd
+
+      - uses: actions/checkout@v4
+
+      # ---- Prebuild: native .node binary (bare linux-${arch}) ----
+
+      - name: Cache prebuild
+        id: prebuild-cache
+        uses: actions/cache@v4
+        with:
+          path: packages/libgpod-node/prebuilds/
+          key: prebuild-linux-${{ matrix.arch }}-gnu-${{ hashFiles('packages/libgpod-node/native/**', 'packages/libgpod-node/binding.gyp', 'tools/prebuild/**') }}
+
+      - name: Set environment
+        if: steps.prebuild-cache.outputs.cache-hit != 'true'
+        run: |
+          echo "STATIC_DEPS_DIR=${GITHUB_WORKSPACE}/static-deps" >> "$GITHUB_ENV"
+          echo "WORK_DIR=/tmp/prebuild-work" >> "$GITHUB_ENV"
+
+      # Distinct `-gnu` cache key: prebuild.yml's glibc .a files are built on
+      # ubuntu-24.04 (glibc 2.39) and must NOT be reused for this 2.31 baseline.
+      - name: Cache static dependencies
+        if: steps.prebuild-cache.outputs.cache-hit != 'true'
+        id: static-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STATIC_DEPS_DIR }}
+          key: static-deps-linux-${{ matrix.arch }}-gnu-${{ hashFiles('tools/prebuild/build-static-deps.sh', 'tools/prebuild/build-linux-glibc.sh') }}
+
+      # Full build toolchain. ubuntu:20.04 ships meson/ninja/cmake too old for
+      # recent glib/gdk-pixbuf/libxml2, so those come from pip, not apt.
+      - name: Install glibc build toolchain
+        if: steps.prebuild-cache.outputs.cache-hit != 'true'
+        run: |
+          apt-get install -y --no-install-recommends \
+            build-essential pkg-config python3 python3-pip \
+            libglib2.0-dev libgdk-pixbuf-2.0-dev \
+            libplist-dev libffi-dev libsqlite3-dev \
+            libpng-dev libjpeg-dev libtiff-dev libxml2-dev \
+            intltool autoconf automake libtool gtk-doc-tools \
+            libxml-parser-perl gettext autopoint bzip2 patch file
+          python3 -m pip install --upgrade pip
+          pip3 install --upgrade meson ninja cmake
+
+      - uses: actions/setup-node@v4
+        if: steps.prebuild-cache.outputs.cache-hit != 'true'
+        with:
+          node-version: 20
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies (for prebuild)
+        if: steps.prebuild-cache.outputs.cache-hit != 'true'
+        run: bun install --ignore-scripts
+
+      # build-linux-glibc.sh builds the static deps (unless SKIP_STATIC_DEPS=1),
+      # runs prebuildify (bare linux-${arch}), and ldd-verifies the .node.
+      - name: Build prebuild (Linux glibc, shared script)
+        if: steps.prebuild-cache.outputs.cache-hit != 'true'
+        env:
+          SKIP_STATIC_DEPS: ${{ steps.static-cache.outputs.cache-hit == 'true' && '1' || '0' }}
+        run: bash tools/prebuild/build-linux-glibc.sh
+
+      - name: List prebuilds
+        run: find packages/libgpod-node/prebuilds -type f -name "*.node" | sort
+
+      - name: Install dependencies (cached prebuild)
+        if: steps.prebuild-cache.outputs.cache-hit == 'true'
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Build packages
+        run: bunx turbo run build --filter=!@podkit/docs-site
+
+      - name: Compile CLI binary
+        run: bun run compile
+
+      # ---- Smoke tests ----
+
+      - name: Smoke test - version
+        run: |
+          VERSION=$(packages/podkit-cli/bin/podkit --version)
+          echo "Version: $VERSION"
+          [ -n "$VERSION" ] || { echo "ERROR: --version produced no output"; exit 1; }
+
+      - name: Smoke test - help
+        run: packages/podkit-cli/bin/podkit --help
+
+      - name: Smoke test - dynamic deps
+        run: |
+          ldd packages/podkit-cli/bin/podkit || true
+          if ldd packages/podkit-cli/bin/podkit 2>/dev/null | grep -E 'libgpod|libglib|libgobject|libgio|libgmodule|libgdk_pixbuf|libffi|libplist|libxml2|libsqlite|libpcre2|libpng|libjpeg|libtiff'; then
+            echo "ERROR: Found unexpected dynamic dependencies"; exit 1
+          fi
+
+      - name: Smoke test - native binding loads (isolated)
+        run: |
+          ISOLATED_DIR=$(mktemp -d)
+          cp packages/podkit-cli/bin/podkit "$ISOLATED_DIR/"
+          mkdir -p /tmp/test-ipod/iPod_Control/iTunes
+
+          OUTPUT=$("$ISOLATED_DIR/podkit" device info --device /tmp/test-ipod 2>&1) || true
+          echo "$OUTPUT"
+          rm -rf "$ISOLATED_DIR"
+
+          if echo "$OUTPUT" | grep -qi "Failed to load native\|Native binding not found\|binding not found"; then
+            echo "ERROR: Native addon failed to load — .node file is not embedded in the binary."
+            exit 1
+          fi
+          if ! echo "$OUTPUT" | grep -q "Could not read"; then
+            echo "ERROR: Expected database error from libgpod (proves native binding loaded)."
+            exit 1
+          fi
+
+      # ---- Upload (release only) ----
+
+      - name: Create tarball
+        if: inputs.upload-artifacts
+        run: |
+          cd packages/podkit-cli/bin
+          tar czf "${GITHUB_WORKSPACE}/podkit-linux-${{ matrix.arch }}-gnu.tar.gz" podkit
+
+      - name: Upload tarball
+        if: inputs.upload-artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: podkit-linux-${{ matrix.arch }}-gnu
+          path: podkit-linux-${{ matrix.arch }}-gnu.tar.gz
+          retention-days: 30

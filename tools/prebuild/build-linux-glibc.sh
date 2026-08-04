@@ -5,7 +5,7 @@
 # Single source of truth invoked by:
 #   - test-packages/device-testing/lima/podkit-linux-builder.yaml (local builds on macOS via Lima)
 #   - .github/workflows/prebuild.yml         (CI prebuilds for linux-x64/arm64 glibc)
-# (build-platform.yml only handles musl/Alpine + darwin and does not call this script.)
+#   - .github/workflows/build-platform.yml   (glibc release CLI binary for Homebrew/Debian, in ubuntu:20.04)
 #
 # Responsibilities:
 #   1. Build all static C dependencies (libgpod, gdk-pixbuf, glib, libplist, ...)

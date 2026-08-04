@@ -47,15 +47,17 @@ get_sha256() {
 
 SHA_DARWIN_ARM64=$(get_sha256 "podkit-darwin-arm64.tar.gz")
 SHA_DARWIN_X64=$(get_sha256 "podkit-darwin-x64.tar.gz")
-SHA_LINUX_ARM64=$(get_sha256 "podkit-linux-arm64.tar.gz")
-SHA_LINUX_X64=$(get_sha256 "podkit-linux-x64.tar.gz")
+# Homebrew routes Linux to the glibc (-gnu) tarballs — the musl tarballs are
+# Docker-only. See build-platform.yml's build-glibc job.
+SHA_LINUX_ARM64_GNU=$(get_sha256 "podkit-linux-arm64-gnu.tar.gz")
+SHA_LINUX_X64_GNU=$(get_sha256 "podkit-linux-x64-gnu.tar.gz")
 
 echo "Updating formula: $FORMULA"
 echo "  Version: $VERSION"
-echo "  darwin-arm64: $SHA_DARWIN_ARM64"
-echo "  darwin-x64:   $SHA_DARWIN_X64"
-echo "  linux-arm64:  $SHA_LINUX_ARM64"
-echo "  linux-x64:    $SHA_LINUX_X64"
+echo "  darwin-arm64:   $SHA_DARWIN_ARM64"
+echo "  darwin-x64:     $SHA_DARWIN_X64"
+echo "  linux-arm64-gnu: $SHA_LINUX_ARM64_GNU"
+echo "  linux-x64-gnu:   $SHA_LINUX_X64_GNU"
 
 # Update version
 sed -i.bak "s/^  version \".*\"/  version \"$VERSION\"/" "$FORMULA"
@@ -64,12 +66,12 @@ sed -i.bak "s/^  version \".*\"/  version \"$VERSION\"/" "$FORMULA"
 # Strategy: use awk to track which url we last saw and replace the next sha256 accordingly.
 awk -v sha_da="$SHA_DARWIN_ARM64" \
     -v sha_dx="$SHA_DARWIN_X64" \
-    -v sha_la="$SHA_LINUX_ARM64" \
-    -v sha_lx="$SHA_LINUX_X64" '
-  /url.*podkit-darwin-arm64/ { last_url = "darwin-arm64" }
-  /url.*podkit-darwin-x64/   { last_url = "darwin-x64" }
-  /url.*podkit-linux-arm64/  { last_url = "linux-arm64" }
-  /url.*podkit-linux-x64/    { last_url = "linux-x64" }
+    -v sha_la="$SHA_LINUX_ARM64_GNU" \
+    -v sha_lx="$SHA_LINUX_X64_GNU" '
+  /url.*podkit-darwin-arm64/    { last_url = "darwin-arm64" }
+  /url.*podkit-darwin-x64/      { last_url = "darwin-x64" }
+  /url.*podkit-linux-arm64-gnu/ { last_url = "linux-arm64" }
+  /url.*podkit-linux-x64-gnu/   { last_url = "linux-x64" }
   /sha256/ && last_url != "" {
     if (last_url == "darwin-arm64") sha = sha_da
     else if (last_url == "darwin-x64") sha = sha_dx
