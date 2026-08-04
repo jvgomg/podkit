@@ -581,7 +581,7 @@ jobs:
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
-            git curl ca-certificates xz-utils zstd
+            git curl ca-certificates xz-utils zstd unzip
 
       - uses: actions/checkout@v4
 
