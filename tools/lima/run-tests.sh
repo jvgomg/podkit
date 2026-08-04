@@ -123,17 +123,20 @@ run_tests() {
     # through to the test run.
     bun run --cwd packages/libgpod-node build:native
 
+    # Runtime smoke (TASK-472): compile the single-file binary and drive it
+    # through the native libgpod path + the libudev-less firmware-inquiry
+    # degrade — the same shared script CI runs, now on this VM's real libc.
+    # Run it BEFORE the full suite so an unrelated flaky package test can't
+    # mask the distribution smoke (it only needs the native binding, already
+    # built above).
+    command -v jq >/dev/null 2>&1 || (apk add --no-cache jq 2>/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq jq) 2>/dev/null || true)
+    bun run compile
+    bash test-packages/e2e-shared/scripts/runtime-smoke.sh packages/podkit-cli/bin/podkit
+
     # Run the full suite (unit + integration across every workspace package).
     # Turbo's content-hashed cache (at \$TURBO_CACHE_DIR) means unchanged
     # packages are skipped on re-runs.
     bun run test
-
-    # Runtime smoke (TASK-472): compile the single-file binary and drive it
-    # through the native libgpod path + the libudev-less firmware-inquiry
-    # degrade — the same shared script CI runs, now on this VM's real libc.
-    command -v jq >/dev/null 2>&1 || (apk add --no-cache jq 2>/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq jq) 2>/dev/null || true)
-    bun run compile
-    bash test-packages/e2e-shared/scripts/runtime-smoke.sh packages/podkit-cli/bin/podkit
   "
 
   echo "=== $name: PASSED ==="
