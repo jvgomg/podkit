@@ -3,9 +3,10 @@ id: TASK-472
 title: >-
   Debian + Alpine runtime smoke tests: execute the real binary through the
   native libgpod path
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-08-04 15:16'
+updated_date: '2026-08-04 18:13'
 labels:
   - ci
   - test
