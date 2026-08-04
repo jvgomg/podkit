@@ -32,7 +32,7 @@ mounts:
 # VM resources
 cpus: 4
 memory: '2GiB'
-disk: '4GiB'
+disk: '12GiB'
 
 provision:
   # System-level dependencies (run as root)

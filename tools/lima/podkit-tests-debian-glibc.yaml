@@ -22,7 +22,7 @@ mounts:
 # VM resources
 cpus: 4
 memory: '4GiB'
-disk: '6GiB'
+disk: '14GiB'
 
 provision:
   # System-level dependencies (run as root)
