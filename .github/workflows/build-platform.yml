@@ -8,6 +8,16 @@ on:
         required: false
         default: false
         type: boolean
+  # Manual trigger so maintainers can run the full platform build matrix
+  # on demand (e.g. to validate a build change before a release). The
+  # reusable workflow_call path above is unaffected.
+  workflow_dispatch:
+    inputs:
+      upload-artifacts:
+        description: 'Create tarballs and upload as artifacts'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   # ===================================================================
