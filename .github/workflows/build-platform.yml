@@ -269,7 +269,10 @@ jobs:
 
       - name: Install Bun
         run: |
-          apk add --no-cache bash curl unzip jq
+          # binutils provides readelf for the interpreter / NEEDED-libc gates
+          # below. It must be present on every path (including full prebuild
+          # cache hits, where build-base is not installed).
+          apk add --no-cache bash curl unzip jq binutils
           export BUN_INSTALL=/usr/local
           curl -fsSL https://bun.sh/install | bash
 
@@ -293,6 +296,20 @@ jobs:
           ldd "$PREBUILD" || true
           if ldd "$PREBUILD" 2>/dev/null | grep -E 'libgpod|libgdk_pixbuf|libglib|libgobject|libgio|libgmodule|libffi|libplist|libxml2|libsqlite|libpcre2|libpng|libjpeg|libtiff'; then
             echo "ERROR: Found unexpected dynamic dependencies"
+            exit 1
+          fi
+          # NEEDED-libc gate (TASK-468): a .node is an ET_DYN shared object with
+          # no PT_INTERP, so its libc flavour is proven by the DT_NEEDED entry.
+          # A musl prebuild MUST NEED libc.musl-* and MUST NOT NEED glibc's
+          # libc.so.6 — a glibc .node smuggled onto this musl builder fails here.
+          echo "NEEDED libraries:"
+          readelf -d "$PREBUILD" | grep NEEDED || true
+          if ! readelf -d "$PREBUILD" 2>/dev/null | grep -qE 'Shared library: \[libc\.musl'; then
+            echo "ERROR: musl .node must NEED musl libc (libc.musl-*)"
+            exit 1
+          fi
+          if readelf -d "$PREBUILD" 2>/dev/null | grep -qE 'Shared library: \[libc\.so\.6\]'; then
+            echo "ERROR: musl .node must NOT NEED glibc libc.so.6"
             exit 1
           fi
 
@@ -324,9 +341,26 @@ jobs:
       - name: Smoke test - dynamic deps
         run: |
           ldd packages/podkit-cli/bin/podkit || true
-          if ldd packages/podkit-cli/bin/podkit 2>/dev/null | grep -E 'libgpod|libgdk_pixbuf'; then
+          if ldd packages/podkit-cli/bin/podkit 2>/dev/null | grep -E 'libgpod|libgdk_pixbuf|libglib|libgobject|libgio|libgmodule|libffi|libplist|libxml2|libsqlite|libpcre2|libpng|libjpeg|libtiff'; then
             echo "ERROR: Found unexpected dynamic dependencies"; exit 1
           fi
+
+      - name: Smoke test - interpreter (musl)
+        run: |
+          # Fail-closed libc gate: every Linux binary this Alpine job produces
+          # must request the musl program interpreter (ld-musl-*), never glibc's
+          # ld-linux. Guards the "musl binary silently ships as glibc" slip.
+          for bin in packages/podkit-cli/bin/podkit packages/podkit-daemon/bin/podkit-daemon; do
+            interp=$(readelf -l "$bin" | grep -oE 'Requesting program interpreter: [^]]+' || true)
+            echo "$bin -> $interp"
+            case "$interp" in
+              *ld-musl*) ;;
+              *) echo "ERROR: expected musl (ld-musl) interpreter in $bin"; exit 1;;
+            esac
+            case "$interp" in
+              *ld-linux*) echo "ERROR: glibc (ld-linux) interpreter found in musl binary $bin"; exit 1;;
+            esac
+          done
 
       - name: Smoke test - native binding loads (isolated)
         run: |
@@ -452,6 +486,20 @@ jobs:
                 echo "ERROR: Found unexpected dynamic dependencies"
                 exit 1
               fi
+
+              echo "==> Verifying NEEDED libc of prebuild (TASK-468 guard)..."
+              # A .node is an ET_DYN with no PT_INTERP; its libc flavour is
+              # proven by DT_NEEDED. A musl prebuild MUST NEED libc.musl-* and
+              # MUST NOT NEED glibc libc.so.6 (readelf via build-base binutils).
+              readelf -d "$PREBUILD" | grep NEEDED || true
+              if ! readelf -d "$PREBUILD" 2>/dev/null | grep -qE "Shared library: \[libc\.musl"; then
+                echo "ERROR: musl .node must NEED musl libc (libc.musl-*)"
+                exit 1
+              fi
+              if readelf -d "$PREBUILD" 2>/dev/null | grep -qE "Shared library: \[libc\.so\.6\]"; then
+                echo "ERROR: musl .node must NOT NEED glibc libc.so.6"
+                exit 1
+              fi
             '
 
       - name: List prebuilds
@@ -464,7 +512,8 @@ jobs:
             -w /workspace \
             alpine:3.21 sh -c '
               set -e
-              apk add --no-cache bash curl unzip jq libstdc++
+              # binutils provides readelf for the interpreter gate below.
+              apk add --no-cache bash curl unzip jq libstdc++ binutils
 
               echo "==> Installing Bun..."
               export BUN_INSTALL=/usr/local
@@ -493,6 +542,22 @@ jobs:
               if ldd packages/podkit-cli/bin/podkit 2>/dev/null | grep -E "libgpod|libgdk_pixbuf|libglib|libgobject|libgio|libgmodule|libffi|libplist|libxml2|libsqlite|libpcre2|libpng|libjpeg|libtiff"; then
                 echo "ERROR: Found unexpected dynamic dependencies"; exit 1
               fi
+
+              echo "==> Verifying musl interpreter of produced binaries..."
+              # Fail-closed libc gate: every Linux binary this Alpine job produces
+              # must request the musl program interpreter (ld-musl-*), never
+              # glibc ld-linux.
+              for bin in packages/podkit-cli/bin/podkit packages/podkit-daemon/bin/podkit-daemon; do
+                interp=$(readelf -l "$bin" | grep -oE "Requesting program interpreter: [^]]+" || true)
+                echo "$bin -> $interp"
+                case "$interp" in
+                  *ld-musl*) ;;
+                  *) echo "ERROR: expected musl (ld-musl) interpreter in $bin"; exit 1;;
+                esac
+                case "$interp" in
+                  *ld-linux*) echo "ERROR: glibc (ld-linux) interpreter found in musl binary $bin"; exit 1;;
+                esac
+              done
 
               ISOLATED_DIR=$(mktemp -d)
               cp packages/podkit-cli/bin/podkit "$ISOLATED_DIR/"
@@ -583,8 +648,11 @@ jobs:
           # so retry the whole apt operation, not just individual fetches.
           apt_retry() { for i in 1 2 3 4 5; do apt-get -o Acquire::Retries=3 "$@" && return 0; echo "apt-get $* failed (attempt $i/5); retrying in 10s..."; sleep 10; done; return 1; }
           apt_retry update
+          # binutils provides readelf for the interpreter / NEEDED-libc gates
+          # below. Installed here (always-run) so the gates work on prebuild
+          # cache hits too, where the build-essential toolchain is skipped.
           apt_retry install -y --no-install-recommends \
-            git curl ca-certificates xz-utils zstd unzip
+            git curl ca-certificates xz-utils zstd unzip binutils
 
       - uses: actions/checkout@v4
 
@@ -653,6 +721,31 @@ jobs:
       - name: List prebuilds
         run: find packages/libgpod-node/prebuilds -type f -name "*.node" | sort
 
+      # build-linux-glibc.sh ldd-verifies the full static-linkage set on the
+      # .node, but only on the build path (cache miss). This NEEDED-libc gate
+      # runs unconditionally — it guards TASK-468 (a musl .node smuggled onto
+      # this glibc builder, whether freshly built or restored from cache). A
+      # .node is an ET_DYN with no PT_INTERP, so its libc flavour is proven by
+      # DT_NEEDED: a glibc prebuild MUST NEED libc.so.6 and MUST NOT NEED
+      # musl's libc.musl-*.
+      - name: Verify prebuild NEEDED libc (glibc)
+        run: |
+          NODE_FILE=$(find packages/libgpod-node/prebuilds/linux-${{ matrix.arch }} -name '*.node' | head -1)
+          if [ -z "$NODE_FILE" ]; then
+            echo "ERROR: no .node found under prebuilds/linux-${{ matrix.arch }}"
+            exit 1
+          fi
+          echo "Checking NEEDED libc of $NODE_FILE"
+          readelf -d "$NODE_FILE" | grep NEEDED || true
+          if ! readelf -d "$NODE_FILE" 2>/dev/null | grep -qE 'Shared library: \[libc\.so\.6\]'; then
+            echo "ERROR: glibc .node must NEED libc.so.6"
+            exit 1
+          fi
+          if readelf -d "$NODE_FILE" 2>/dev/null | grep -qE 'Shared library: \[libc\.musl'; then
+            echo "ERROR: glibc .node must NOT NEED musl libc (libc.musl-*)"
+            exit 1
+          fi
+
       - name: Install dependencies (cached prebuild)
         if: steps.prebuild-cache.outputs.cache-hit == 'true'
         run: bun install --frozen-lockfile --ignore-scripts
@@ -680,6 +773,21 @@ jobs:
           if ldd packages/podkit-cli/bin/podkit 2>/dev/null | grep -E 'libgpod|libglib|libgobject|libgio|libgmodule|libgdk_pixbuf|libffi|libplist|libxml2|libsqlite|libpcre2|libpng|libjpeg|libtiff'; then
             echo "ERROR: Found unexpected dynamic dependencies"; exit 1
           fi
+
+      - name: Smoke test - interpreter (glibc)
+        run: |
+          # Fail-closed libc gate: the binary this ubuntu:20.04 job produces must
+          # request the glibc program interpreter (ld-linux-*), never musl's
+          # ld-musl. Guards the "glibc binary silently ships as musl" slip.
+          interp=$(readelf -l packages/podkit-cli/bin/podkit | grep -oE 'Requesting program interpreter: [^]]+' || true)
+          echo "$interp"
+          case "$interp" in
+            *ld-linux*) ;;
+            *) echo "ERROR: expected glibc (ld-linux) interpreter"; exit 1;;
+          esac
+          case "$interp" in
+            *ld-musl*) echo "ERROR: musl (ld-musl) interpreter found in glibc binary"; exit 1;;
+          esac
 
       - name: Smoke test - native binding loads (isolated)
         run: |

@@ -67,6 +67,21 @@ jobs:
           file bin/amd64/podkit bin/amd64/podkit-daemon
           echo "--- arm64 binaries ---"
           file bin/arm64/podkit bin/arm64/podkit-daemon
+          # Fail-closed libc gate: the Alpine image can only run musl binaries.
+          # Assert every binary baked in requests the musl program interpreter
+          # (ld-musl-*), never glibc's ld-linux. A glibc/-gnu naming slip
+          # feeding the wrong artifact here must fail the build, not ship.
+          for bin in bin/amd64/podkit bin/amd64/podkit-daemon bin/arm64/podkit bin/arm64/podkit-daemon; do
+            interp=$(readelf -l "$bin" | grep -oE 'Requesting program interpreter: [^]]+' || true)
+            echo "$bin -> $interp"
+            case "$interp" in
+              *ld-musl*) ;;
+              *) echo "ERROR: $bin is not a musl binary (expected ld-musl interpreter); refusing to bake into the Alpine image"; exit 1;;
+            esac
+            case "$interp" in
+              *ld-linux*) echo "ERROR: $bin has a glibc (ld-linux) interpreter; wrong artifact for the Alpine image"; exit 1;;
+            esac
+          done
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
