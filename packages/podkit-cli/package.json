@@ -18,7 +18,7 @@
     "build": "bun build src/main.ts --outdir dist --target bun --external koffi --external usb --define PODKIT_VERSION=\"'$(node -p \"require('./package.json').version\")'\" --define __PODKIT_DEV_HOOKS__=false && bun run build:types",
     "build:types": "tsc -p tsconfig.build.json --emitDeclarationOnly --outDir dist",
     "dev": "bun run src/main.ts",
-    "test": "true",
+    "test": "bats test/",
     "test:unit": "bun test --pass-with-no-tests",
     "test:integration": "bun test --pass-with-no-tests --path-ignore-patterns= .integration.",
     "compile": "bash scripts/compile.sh",
@@ -45,6 +45,7 @@
     "@podkit/gpod-testing": "workspace:*",
     "@podkit/test-fixtures": "workspace:*",
     "@types/bun": "latest",
+    "bats": "^1.11.1",
     "bun-types": "latest"
   }
 }

@@ -188,6 +188,7 @@
         "@podkit/gpod-testing": "workspace:*",
         "@podkit/test-fixtures": "workspace:*",
         "@types/bun": "latest",
+        "bats": "^1.11.1",
         "bun-types": "latest",
       },
     },

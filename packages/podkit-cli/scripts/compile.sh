@@ -30,14 +30,18 @@ ARCH=$(bun -e 'console.log(process.arch)')
 # Try prebuild first (CI creates these via prebuildify), then local node-gyp build.
 # Prebuildify names the file after the package (e.g., @podkit+libgpod-node.node),
 # so we find any .node file in the platform directory rather than hardcoding.
-# On musl Linux (Alpine), prebuildify creates a linux-{arch}-musl directory.
-PREBUILD=""
-for DIR in "$LIBGPOD_DIR/prebuilds/${PLATFORM}-${ARCH}-musl" "$LIBGPOD_DIR/prebuilds/${PLATFORM}-${ARCH}"; do
-  if [ -d "$DIR" ]; then
-    PREBUILD=$(find "$DIR" -name "*.node" -type f | head -1)
-    [ -n "$PREBUILD" ] && break
-  fi
-done
+#
+# The prebuild directory is chosen by the HOST's libc (musl vs glibc), never
+# "first directory that exists wins" — a glibc builder can carry a stray
+# linux-{arch}-musl dir, and embedding that musl .node yields a binary that
+# fails at dlopen with `libc.musl-{arch}.so.1: cannot open shared object file`.
+# See select-gpod-prebuild.sh for the full rationale; the `usb` prebuild below
+# is selected by the same host-libc probe.
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=select-gpod-prebuild.sh
+source "$CLI_DIR/scripts/select-gpod-prebuild.sh"
+PREBUILD_DIR=$(gpod_prebuild_dir "$PLATFORM" "$ARCH" "$LIBGPOD_DIR")
+PREBUILD=$(find_gpod_prebuild "$PREBUILD_DIR")
 LOCAL_BUILD="$LIBGPOD_DIR/build/Release/gpod_binding.node"
 
 if [ -n "$PREBUILD" ]; then
@@ -49,7 +53,7 @@ elif [ -f "$LOCAL_BUILD" ]; then
 else
   echo "ERROR: No native binding found."
   echo "  Searched: $PREBUILD_DIR/*.node"
-  echo "       and: $LOCAL_BUILD"
+  echo "       and: $LOCAL_BUILD (local node-gyp build)"
   echo "  Run 'bun run build:native' in packages/libgpod-node to build from source,"
   echo "  or run 'bunx prebuildify --napi --strip' to create a prebuild."
   exit 1
@@ -72,7 +76,7 @@ case "$PLATFORM" in
     if [ "$ARCH" = "arm64" ]; then
       USB_PREBUILD="$USB_PKG_DIR/prebuilds/linux-arm64/node.napi.armv8.node"
     else
-      if ldd /bin/sh 2>/dev/null | grep -q musl; then USB_VARIANT=musl; else USB_VARIANT=glibc; fi
+      if host_is_musl; then USB_VARIANT=musl; else USB_VARIANT=glibc; fi
       USB_PREBUILD="$USB_PKG_DIR/prebuilds/linux-${ARCH}/node.napi.${USB_VARIANT}.node"
     fi
     ;;

@@ -135,6 +135,7 @@
         "!src/**/*.test.ts",
         "!src/__tests__/**",
         "scripts/compile.sh",
+        "scripts/select-gpod-prebuild.sh",
         "package.json"
       ],
       "outputs": ["bin/podkit"]
@@ -147,6 +148,7 @@
         "!src/**/*.test.ts",
         "!src/__tests__/**",
         "scripts/compile.sh",
+        "scripts/select-gpod-prebuild.sh",
         "package.json"
       ],
       "outputs": ["bin/podkit-debug"]
@@ -352,6 +354,7 @@
         "$TURBO_ROOT$/packages/*/tsconfig.json",
         "$TURBO_ROOT$/packages/*/tsconfig.build.json",
         "$TURBO_ROOT$/packages/podkit-cli/scripts/compile.sh",
+        "$TURBO_ROOT$/packages/podkit-cli/scripts/select-gpod-prebuild.sh",
         "$TURBO_ROOT$/packages/libgpod-node/prebuilds/linux-x64/**",
         "$TURBO_ROOT$/packages/libgpod-node/prebuilds/linux-arm64/**",
         "$TURBO_ROOT$/test-packages/device-testing/lima/podkit-linux-builder.yaml",
@@ -401,6 +404,7 @@
         "$TURBO_ROOT$/packages/*/tsconfig.json",
         "$TURBO_ROOT$/packages/*/tsconfig.build.json",
         "$TURBO_ROOT$/packages/podkit-cli/scripts/compile.sh",
+        "$TURBO_ROOT$/packages/podkit-cli/scripts/select-gpod-prebuild.sh",
         "$TURBO_ROOT$/packages/libgpod-node/prebuilds/linux-x64-musl/**",
         "$TURBO_ROOT$/packages/libgpod-node/prebuilds/linux-arm64-musl/**",
         "$TURBO_ROOT$/test-packages/device-testing/lima/podkit-musl-builder.yaml",
