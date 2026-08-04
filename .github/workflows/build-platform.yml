@@ -579,8 +579,11 @@ jobs:
       # before actions/checkout can run.
       - name: Install base tools
         run: |
-          apt-get update
-          apt-get install -y --no-install-recommends \
+          # focal's archive.ubuntu.com is EOL and intermittently unreachable,
+          # so retry the whole apt operation, not just individual fetches.
+          apt_retry() { for i in 1 2 3 4 5; do apt-get -o Acquire::Retries=3 "$@" && return 0; echo "apt-get $* failed (attempt $i/5); retrying in 10s..."; sleep 10; done; return 1; }
+          apt_retry update
+          apt_retry install -y --no-install-recommends \
             git curl ca-certificates xz-utils zstd unzip
 
       - uses: actions/checkout@v4
@@ -615,7 +618,8 @@ jobs:
       - name: Install glibc build toolchain
         if: steps.prebuild-cache.outputs.cache-hit != 'true'
         run: |
-          apt-get install -y --no-install-recommends \
+          apt_retry() { for i in 1 2 3 4 5; do apt-get -o Acquire::Retries=3 "$@" && return 0; echo "apt-get $* failed (attempt $i/5); retrying in 10s..."; sleep 10; done; return 1; }
+          apt_retry install -y --no-install-recommends \
             build-essential pkg-config python3 python3-pip \
             libglib2.0-dev libgdk-pixbuf2.0-dev \
             libplist-dev libffi-dev libsqlite3-dev \
