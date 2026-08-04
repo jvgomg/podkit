@@ -1,10 +1,10 @@
 ---
 id: TASK-469
 title: 'compile.sh: select libgpod prebuild explicitly by host libc (fixes TASK-468)'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-04 15:16'
-updated_date: '2026-08-04 15:35'
+updated_date: '2026-08-04 16:33'
 labels:
   - build
   - libgpod-node
@@ -35,7 +35,7 @@ Do NOT "exclude `prebuilds/` from the rsync" — the glibc `.node` is *delivered
 - [x] #1 compile.sh selects the libgpod prebuild by detected host libc (musl vs glibc), not first-dir-wins
 - [x] #2 A glibc build with a stray musl prebuild present embeds the glibc .node (regression test for TASK-468)
 - [x] #3 The rsync in build-linux-binary.sh still delivers the correct .node (build does not regress)
-- [ ] #4 Verified on the Debian harness VM: the installed binary loads the libgpod binding (no libc.musl error)
+- [x] #4 Verified on the Debian harness VM: the installed binary loads the libgpod binding (no libc.musl error)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -55,3 +55,9 @@ Quality gates (all pass): shellcheck -x compile.sh (exit 0), shellcheck select-g
 
 AC#4 left unchecked — VM runtime verification (harness:setup + test:vm on the Debian glibc VM) is the team lead's step.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+VM-verified on a fresh Debian glibc harness (destroy+recreate, then harness:setup): the builder logged `Staged prebuild: prebuilds/linux-arm64/@podkit+libgpod-node.node` (bare glibc dir, not -musl) and the installed binary's ldd shows `libc.so.6` (glibc). All three previously-failing DB-touching VM suites now pass — save-failure-matrix (6 cells), pre-sync-sweep, doctor-sysinfo-modelnum-mismatch. Committed as fix(cli) 5e5f55ec on branch m-23-dual-libc-linux: compile.sh delegates to a new select-gpod-prebuild.sh helper with a shared host_is_musl() probe (reused by the usb-prebuild block too), a bats regression suite proven to fail on the old first-dir-wins logic, and select-gpod-prebuild.sh added to the turbo cache inputs. All ACs satisfied.
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -3,10 +3,10 @@ id: TASK-468
 title: >-
   Harness podkit binary embeds a musl libgpod-node prebuild on the glibc VM →
   all iPod-DB VM tests fail
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-07-13 22:59'
-updated_date: '2026-08-04 15:17'
+updated_date: '2026-08-04 16:33'
 labels:
   - bug
   - vm
@@ -48,9 +48,9 @@ Repro: `bun run harness:setup`, then run any DB-touching command against a mount
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Root-cause which build/bundle step embeds the musl libgpod-node prebuild into the glibc harness binary (bun --compile prebuild selection / bundler plugin)
-- [ ] #2 The harness podkit binary loads a glibc libgpod-node binding on the Debian VM (verify at runtime + via the embedded prebuild's libc)
-- [ ] #3 test:vm's DB-dependent tests pass: save-failure-matrix (6 cells), pre-sync-sweep, doctor-sysinfo-modelnum-mismatch
+- [x] #1 Root-cause which build/bundle step embeds the musl libgpod-node prebuild into the glibc harness binary (bun --compile prebuild selection / bundler plugin)
+- [x] #2 The harness podkit binary loads a glibc libgpod-node binding on the Debian VM (verify at runtime + via the embedded prebuild's libc)
+- [x] #3 test:vm's DB-dependent tests pass: save-failure-matrix (6 cells), pre-sync-sweep, doctor-sysinfo-modelnum-mismatch
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -58,3 +58,9 @@ Repro: `bun run harness:setup`, then run any DB-touching command against a mount
 <!-- SECTION:NOTES:BEGIN -->
 Superseded by the m-23 decomposition: the fix is TASK-469 (libc-explicit prebuild selection in compile.sh) + TASK-473 (harness installs the glibc binary). The root cause here (glibc-runtime binary embedding a musl .node) is the harness manifestation of the broader dual-libc distribution gap captured in ADR-026 / doc-057. Close this when TASK-469 + TASK-473 land; the interpreter assertion in TASK-471 is its CI regression guard.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Closed by TASK-469 + TASK-473. Root cause (AC#1): compile.sh selected the libgpod prebuild musl-first via first-dir-wins, so a stray host musl prebuild shadowed the glibc dir and a musl .node got embedded in the glibc harness binary; select-gpod-prebuild.sh now picks by host libc. AC#2: a fresh harness binary loads the glibc libgpod binding (ldd libc.so.6; no libc.musl-*.so.1 error). AC#3: the 8 DB-dependent VM tests pass (save-failure-matrix 6 cells, pre-sync-sweep, doctor-sysinfo-modelnum-mismatch). The CI interpreter assertion in TASK-471 is the regression guard.
+<!-- SECTION:FINAL_SUMMARY:END -->

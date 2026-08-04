@@ -1,10 +1,10 @@
 ---
 id: TASK-473
 title: Align the device-testing harness to install the glibc binary (closes TASK-468)
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-04 15:17'
-updated_date: '2026-08-04 15:40'
+updated_date: '2026-08-04 16:33'
 labels:
   - vm
   - build
@@ -35,7 +35,13 @@ Depends on TASK-469 + TASK-470.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 harness:setup installs a glibc binary that loads the libgpod binding on the Debian harness VM (no libc.musl error)
-- [ ] #2 The DB-dependent VM tests pass: save-failure-matrix, pre-sync-sweep, doctor-sysinfo-modelnum-mismatch
-- [ ] #3 TASK-468 is closed (its ACs satisfied by this + TASK-469)
+- [x] #1 harness:setup installs a glibc binary that loads the libgpod binding on the Debian harness VM (no libc.musl error)
+- [x] #2 The DB-dependent VM tests pass: save-failure-matrix, pre-sync-sweep, doctor-sysinfo-modelnum-mismatch
+- [x] #3 TASK-468 is closed (its ACs satisfied by this + TASK-469)
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Verify-only — no harness code change needed. harness.ts / build-linux-binary.sh / lima-test-vm.ts already build in the pinned glibc podkit-linux-builder VM and install the bare-name (glibc) artifact; the musl artifact path is Docker-only. With TASK-469 landed, compile.sh selects the glibc .node on the builder, so the harness binary embeds glibc. Confirmed on a from-scratch harness:setup + full test:vm: no libc.musl-*.so.1 binding-load error; the DB-dependent suites (save-failure-matrix, pre-sync-sweep, doctor-sysinfo-modelnum-mismatch) all pass. TASK-468 closed by TASK-469 + this. Full test:vm = 274/275 pass; the single failure was an unrelated USB-enumeration hook-timeout flake in discovery-reconciliation (no libgpod path, same domain as recent de-flaking commits cd851a53/5556e966).
+<!-- SECTION:FINAL_SUMMARY:END -->
