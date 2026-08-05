@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-08-05 17:25'
-updated_date: '2026-08-05 18:05'
+updated_date: '2026-08-05 19:11'
 labels:
   - docker
   - daemon
@@ -20,6 +20,8 @@ references:
   - documents/architecture/testing/taxonomy.md
   - test-packages/e2e-vm-tests/src/vm-docker/image.docker-dist.test.ts
   - packages/podkit-daemon/src/main.ts
+modified_files:
+  - test-packages/e2e-vm-tests/src/vm-docker/daemon.docker-dist.test.ts
 ordinal: 234000
 ---
 
@@ -44,10 +46,10 @@ The **shipped image's `podkit-daemon`** running in the VM against a synthesized 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Daemon-in-image (VM) detects the synthesized USB iPod → mount → real `podkit` sync of a local-dir source → eject, asserted end to end
-- [ ] #2 SIGTERM during an in-progress sync → daemon drains, iTunesDB saved consistently, container exits 0, no corruption (completed tracks preserved)
-- [ ] #3 Sync-complete notification delivered to a mock Apprise endpoint reachable from the VM container
-- [ ] #4 Runnable locally via a documented command; excluded from the routine quality/test:vm DAG
+- [x] #1 Daemon-in-image (VM) detects the synthesized USB iPod → mount → real `podkit` sync of a local-dir source → eject, asserted end to end
+- [x] #2 SIGTERM during an in-progress sync → daemon drains, iTunesDB saved consistently, container exits 0, no corruption (completed tracks preserved)
+- [x] #3 Sync-complete notification delivered to a mock Apprise endpoint reachable from the VM container
+- [x] #4 Runnable locally via a documented command; excluded from the routine quality/test:vm DAG
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -74,4 +76,27 @@ Remaining to build the actual test (test-packages/e2e-vm-tests/src/vm-docker/):
 - Structure as a *.docker-dist.test.ts sibling reusing container-helpers + limaTestVmRunner; gate under test:e2e:docker-dist (local-only).
 
 Probe scripts were scratch (removed); recipe captured here.
+
+SCOPE CORRECTION (2026-08-05): AC1 (detect → mount → sync → eject) is ALREADY COVERED. `test-packages/e2e-vm-tests/src/vm-docker/daemon.docker-dist.test.ts` already exists (July 12) and proves the daemon steady-state sync end-to-end in BOTH detection lanes: mass-storage (bind-mounted /ipod) AND the primary lsblk lane (--privileged + MBR-partitioned persona ipod5gVideoMbrPart), asserting 2 AAC tracks land via read-back. My earlier 'no e2e anywhere' note was wrong — I grepped only for SIGTERM/apprise terms, which that file doesn't contain.
+
+So ONLY AC2 (SIGTERM graceful-drain) + AC3 (Apprise notify) are missing, and they belong IN the existing file, not a new one. Adding a new describe there (mass-storage lane, simplest vehicle — drain + notify are orchestrator behaviors independent of detection lane), reusing the proven recipe: 60-FLAC seed for the drain, per-it `gpod-tool init` reset for retry-safety, mock Apprise (python3 http.server on the VM host) reached via --network host + PODKIT_APPRISE_URL.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+AC1 (detect→mount→sync→eject) was already covered by the pre-existing daemon.docker-dist.test.ts (both the mass-storage and lsblk detection lanes). This task added the two missing behaviors to that file as a new describe (`SystemState: healthy (SIGTERM drain + Apprise)`), on the iPod lsblk lane:
+
+- **AC2 — SIGTERM graceful-drain:** 60-FLAC seed → daemon detects/mounts/starts sync → `nerdctl stop` (SIGTERM) mid-sync → daemon forwards SIGINT to the CLI child → "Sync aborted gracefully" → container exits 0. Asserts exit 0 (not SIGKILL 137), the abort/drain/shutdown log sequence, and that completed tracks are preserved (10 ≤ count < 60 — the engine checkpoints the iTunesDB every 10 tracks).
+- **AC3 — Apprise notify:** a python3 http.server mock on the VM host (reached via `--network host` + `PODKIT_APPRISE_URL=127.0.0.1`) captures the POST bodies; asserts a "sync complete: 60 tracks added" notification is delivered.
+
+Design notes / gotchas resolved live:
+- iPod lane (not mass-storage) so the daemon owns the mount and a SIGTERM exercises the real mount→sync→drain→eject unwind. `--privileged` + `--device` block+USB + device-less config. Passing `--device` to a non-privileged mass-storage container spuriously woke the iPod lane (mount permission error) — avoided by committing to one lane.
+- Per-`it` `reinitDevice` (mount uid/gid → wipe iPod_Control → gpod-tool init → unmount) makes each attempt face a fresh empty DB — retry-safe and order-independent.
+- Backing must be mounted with `uid=$(id -u),gid=$(id -g)` so non-root gpod-tool can create the fs; the daemon runs with the backing UNMOUNTED so the container owns the mount.
+- Mock server must be `setsid`-detached (a plain backgrounded job dies with the limactl SSH session, leaving nothing listening).
+
+AC4: lives under src/vm-docker/, run via `test:e2e:docker-dist`, excluded from the routine test:vm/quality DAG (local-only) — already true.
+
+Verified: both new tests pass together (2/2, ~53s) and individually; tsc 0 errors; oxlint 0/0. Pre-existing AC1 describes unchanged (only appended). Full suite runnable via `bun run test:e2e:docker-dist`.
+<!-- SECTION:FINAL_SUMMARY:END -->

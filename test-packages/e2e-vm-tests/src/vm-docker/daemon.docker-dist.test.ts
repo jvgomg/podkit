@@ -43,6 +43,15 @@
  *       gets exercised, rather than the whole-disk shortcut the mass-storage
  *       persona uses.
  *
+ * # SIGTERM graceful-drain + Apprise (orchestrator behaviors)
+ *
+ * A third `describe` proves the daemon's shutdown + notification paths on the
+ * iPod lsblk lane: a 60-track sync interrupted mid-flight by SIGTERM drains
+ * gracefully (SIGINT forwarded to the CLI child, container exits 0, the
+ * checkpointed completed tracks survive), and a completed sync delivers a
+ * "sync complete" Apprise notification to a mock endpoint on the VM host
+ * (reached via `--network host`).
+ *
  * # Detached-container lifecycle (the new part vs. the one-shot sibling)
  *
  * The daemon is long-lived, so it runs DETACHED (`nerdctl run -d`) and its
@@ -124,6 +133,84 @@ const SYNC_WAIT_POLL_MS = 2_000;
 const MASS_STORAGE_DAEMON_CONTAINER = 'podkit-daemon-dockerdist';
 /** iPod lsblk lane (raw block passthrough, MBR-partitioned persona). */
 const LSBLK_DAEMON_CONTAINER = 'podkit-daemon-dockerdist-lsblk';
+/** SIGTERM-drain + Apprise lane (mass-storage vehicle, own container name). */
+const DRAIN_DAEMON_CONTAINER = 'podkit-daemon-dockerdist-drain';
+
+// ---------------------------------------------------------------------------
+// Mock Apprise endpoint (AC3). A tiny python3 HTTP server on the VM HOST that
+// appends every POST body to a capture file and replies 200. The daemon
+// container reaches it via `--network host` + PODKIT_APPRISE_URL=127.0.0.1.
+// ---------------------------------------------------------------------------
+const APPRISE_PORT = 8477;
+const APPRISE_CAPTURE = '/tmp/podkit-daemon-apprise.log';
+const APPRISE_MOCK = '/tmp/podkit-daemon-apprise-mock.py';
+const APPRISE_MOCK_PY = [
+  'from http.server import BaseHTTPRequestHandler, HTTPServer',
+  'class H(BaseHTTPRequestHandler):',
+  '    def do_POST(self):',
+  '        n=int(self.headers.get("Content-Length",0)); b=self.rfile.read(n)',
+  `        open(${JSON.stringify(APPRISE_CAPTURE)},"ab").write(b+b"\\n")`,
+  '        self.send_response(200); self.end_headers()',
+  '    def log_message(self,*a): pass',
+  `HTTPServer(("127.0.0.1", ${APPRISE_PORT}), H).serve_forever()`,
+  '',
+].join('\n');
+
+async function startMockApprise(): Promise<void> {
+  await limaTestVmRunner.run(`printf '%s' ${sq(APPRISE_MOCK_PY)} > ${APPRISE_MOCK}`, {
+    timeoutMs: VM_WARM_TIMEOUT_MS,
+  });
+  await limaTestVmRunner.run(`pkill -f ${APPRISE_MOCK} 2>/dev/null || true`, {
+    timeoutMs: VM_WARM_TIMEOUT_MS,
+  });
+  // `setsid` detaches the server into its OWN session so it survives after this
+  // run()'s SSH session closes — a plain backgrounded job is torn down with the
+  // session (which is why a combined one-liner left nothing listening).
+  await limaTestVmRunner.run(`setsid python3 ${APPRISE_MOCK} >/dev/null 2>&1 < /dev/null &`, {
+    timeoutMs: VM_WARM_TIMEOUT_MS,
+  });
+  await limaTestVmRunner.run('sleep 1', { timeoutMs: VM_WARM_TIMEOUT_MS });
+}
+
+async function stopMockApprise(): Promise<void> {
+  await limaTestVmRunner
+    .run(`pkill -f ${APPRISE_MOCK} 2>/dev/null || true`, { timeoutMs: VM_WARM_TIMEOUT_MS })
+    .catch(() => {});
+}
+
+async function readAppriseCapture(): Promise<string> {
+  const r = await limaTestVmRunner.run(`cat ${APPRISE_CAPTURE} 2>/dev/null || echo __NONE__`, {
+    timeoutMs: VM_WARM_TIMEOUT_MS,
+  });
+  return r.stdout;
+}
+
+/** Poll a detached container's logs until `pattern` appears or the budget runs out. */
+async function waitForDaemonLog(
+  containerName: string,
+  pattern: RegExp
+): Promise<{ matched: boolean; logs: string }> {
+  const deadline = Date.now() + SYNC_WAIT_TIMEOUT_MS;
+  let logs = '';
+  while (Date.now() < deadline) {
+    logs = (
+      await limaTestVmRunner.run(`sudo nerdctl logs ${containerName} 2>&1`, {
+        timeoutMs: VM_WARM_TIMEOUT_MS,
+      })
+    ).stdout;
+    if (pattern.test(logs)) return { matched: true, logs };
+    await new Promise((r) => setTimeout(r, SYNC_WAIT_POLL_MS));
+  }
+  return { matched: false, logs };
+}
+
+async function daemonContainerExitCode(containerName: string): Promise<number> {
+  const r = await limaTestVmRunner.run(
+    `sudo nerdctl inspect -f '{{.State.ExitCode}}' ${containerName} 2>/dev/null || echo -1`,
+    { timeoutMs: VM_WARM_TIMEOUT_MS }
+  );
+  return Number.parseInt(r.stdout.trim(), 10);
+}
 
 // ---------------------------------------------------------------------------
 // The path-based device config the daemon's CLI child reads from /config. The
@@ -612,6 +699,261 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
             )
             .catch(() => {});
         }
+      },
+      DAEMON_FLOW_TIMEOUT_MS
+    );
+  });
+
+  // --------------------------------------------------------------------------
+  // SIGTERM graceful-drain + Apprise notification.
+  //
+  // Both are ORCHESTRATOR behaviors, but they run on the iPod lsblk lane (the
+  // same one AC1 uses) so the daemon owns the mount — a SIGTERM then exercises
+  // the real mount → sync → SIGINT-drain → eject unwind. `--privileged` +
+  // `--device` (block + USB) + a device-LESS config (path-based fallback) match
+  // the lane. A 60-track FLAC set makes the sync run several seconds so a SIGTERM
+  // lands MID-sync; the engine checkpoints the iTunesDB every 10 completed
+  // tracks, so a drained interrupt preserves the completed subset.
+  //
+  // `--network host` lets the daemon reach the mock Apprise endpoint on the VM
+  // host (127.0.0.1). Each `it` re-inits the device DB first, so it is
+  // retry-safe and order-independent — a re-run always faces a fresh empty DB.
+  // --------------------------------------------------------------------------
+  describe(`SystemState: ${healthy.id} (SIGTERM drain + Apprise)`, () => {
+    const PERSONA = ipodVideo5gIflash1tb;
+    const VID = PERSONA.usbDescriptor.vendorId;
+    const PID = PERSONA.usbDescriptor.productId;
+
+    const VM_MOUNT_POINT = '/mnt/podkit-daemon-dockerdist-drain';
+    const VM_CONFIG_DIR = '/tmp/podkit-daemon-dockerdist-drain-config';
+    const VM_MUSIC_DIR = '/tmp/podkit-daemon-dockerdist-drain-music';
+    // 120 tracks (not the minimum needed) so the sync stays in-flight across a
+    // wide range of machine speeds: the interrupt below must land AFTER ≥1
+    // checkpoint (10 tracks) but BEFORE the sync finishes. A larger set widens
+    // the upper-margin (a fast host can't finish 120 in the dwell window); the
+    // dwell widens the lower-margin (a slow host still completes ≥10).
+    const TRACK_COUNT = 120;
+
+    // Device-less config: the iPod lane auto-mounts the detected device and syncs
+    // it by mount path (unregistered → path-based fallback, global settings).
+    const DRAIN_MUSIC_CONFIG = [
+      'version = 2',
+      '[codec]',
+      'lossy = ["aac"]',
+      'lossless = ["aac"]',
+      '[music.main]',
+      'path = "/music"',
+      '[defaults]',
+      'music = "main"',
+      '',
+    ].join('\n');
+
+    let blockDevice = '';
+    let usbNode = '';
+
+    /**
+     * Mount the persona backing at VM_MOUNT_POINT (whole-disk, `sd?1` fallback).
+     * A writable mount uses `uid/gid` so the non-root `gpod-tool` can create the
+     * iPod filesystem (matches how `mountPersona` and the read-back mount do it);
+     * a read-only mount is enough for counting.
+     */
+    const mountBacking = async (readOnly = false): Promise<void> => {
+      const opt = readOnly ? '-o ro' : '-o uid=$(id -u),gid=$(id -g)';
+      await limaTestVmRunner.run(
+        `sudo mkdir -p ${VM_MOUNT_POINT}; ` +
+          `sudo mount ${opt} ${sq(blockDevice)} ${VM_MOUNT_POINT} 2>/dev/null || ` +
+          `sudo mount ${opt} ${sq(blockDevice)}1 ${VM_MOUNT_POINT} 2>/dev/null || true`,
+        { timeoutMs: VM_WARM_TIMEOUT_MS }
+      );
+    };
+    const umountBacking = async (): Promise<void> => {
+      await limaTestVmRunner
+        .run(
+          `sudo umount ${VM_MOUNT_POINT} 2>/dev/null || sudo umount -l ${VM_MOUNT_POINT} 2>/dev/null || true`,
+          { timeoutMs: VM_WARM_TIMEOUT_MS }
+        )
+        .catch(() => {});
+    };
+
+    /**
+     * Reset the device to a clean, empty iPod filesystem so each attempt starts
+     * fresh. Mounts the backing (the daemon runs with it UNMOUNTED), wipes any
+     * prior iPod_Control, re-inits, then unmounts so the container owns the mount.
+     */
+    const reinitDevice = async (): Promise<void> => {
+      await mountBacking(false);
+      const init = await limaTestVmRunner.run(
+        `sudo rm -rf ${VM_MOUNT_POINT}/iPod_Control && gpod-tool init ${VM_MOUNT_POINT} --model MA147`,
+        { timeoutMs: VM_WARM_TIMEOUT_MS }
+      );
+      await umountBacking();
+      if (init.exitCode !== 0) {
+        throw new Error(
+          `gpod-tool init failed (exit=${init.exitCode}): ${init.stderr || init.stdout}`
+        );
+      }
+    };
+
+    /**
+     * Start the daemon detached on the iPod lsblk lane. `--privileged` is
+     * required (the daemon mounts the block node in-container); `--device`
+     * block + USB nodes make lsblk enumerate the device and `/sys` carry the
+     * Apple vendor id; `--network host` lets it reach the mock Apprise endpoint.
+     */
+    const startDrainDaemon = async (): Promise<void> => {
+      await removeDaemonContainer(DRAIN_DAEMON_CONTAINER);
+      const startCmd =
+        `sudo nerdctl run -d --name ${DRAIN_DAEMON_CONTAINER} --privileged --network host ` +
+        `--device ${sq(blockDevice)} --device ${sq(usbNode)} ` +
+        `-e PUID=0 -e PGID=0 -e PODKIT_POLL_INTERVAL=2 ` +
+        `-e PODKIT_APPRISE_URL=http://127.0.0.1:${APPRISE_PORT}/notify ` +
+        `-v ${sq(`${VM_CONFIG_DIR}:/config`)} -v ${sq(`${VM_MUSIC_DIR}:/music:ro`)} ` +
+        `${sq(IMAGE)} daemon`;
+      const start = await limaTestVmRunner.run(startCmd, { timeoutMs: CONTAINER_STEP_TIMEOUT_MS });
+      if (start.exitCode !== 0) {
+        throw new Error(
+          `daemon start failed (exit=${start.exitCode}): ${start.stderr || start.stdout}`
+        );
+      }
+    };
+
+    /** Mount the backing read-only and count files under iPod_Control/Music. */
+    const countMusicFiles = async (): Promise<number> => {
+      await mountBacking(true);
+      const r = await limaTestVmRunner.run(
+        `find ${VM_MOUNT_POINT}/iPod_Control/Music -type f 2>/dev/null | wc -l`,
+        { timeoutMs: VM_WARM_TIMEOUT_MS }
+      );
+      await umountBacking();
+      return Number.parseInt(r.stdout.trim(), 10) || 0;
+    };
+
+    beforeAll(async () => {
+      try {
+        await mountPersona({
+          personaId: PERSONA.id,
+          vendorId: VID,
+          productId: PID,
+          mountPoint: VM_MOUNT_POINT,
+        });
+        ({ blockDevice, usbNode } = await resolvePersonaDeviceNodes({
+          vendorId: VID,
+          productId: PID,
+        }));
+        await limaTestVmRunner.run(
+          `mkdir -p ${VM_CONFIG_DIR} && printf '%s' ${sq(DRAIN_MUSIC_CONFIG)} > ${VM_CONFIG_DIR}/config.toml`,
+          { timeoutMs: VM_WARM_TIMEOUT_MS }
+        );
+        // 60 short FLACs so the sync runs long enough to interrupt mid-flight.
+        const genScript = [
+          'set -eu',
+          `mkdir -p ${sq(VM_MUSIC_DIR)}`,
+          `for i in $(seq 1 ${TRACK_COUNT}); do`,
+          '  f=$((300 + i * 20));',
+          `  ffmpeg -y -f lavfi -i "sine=frequency=$f:sample_rate=44100:duration=4" ` +
+            `-metadata artist=DaemonDrain -metadata album=DaemonDrain -metadata title="Track $i" -metadata track=$i ` +
+            `-c:a flac ${sq(VM_MUSIC_DIR)}/track-$i.flac >/dev/null 2>&1;`,
+          'done',
+        ].join('\n');
+        const gen = await limaTestVmRunner.run(`bash -c ${sq(genScript)}`, { timeoutMs: 180_000 });
+        if (gen.exitCode !== 0) {
+          throw new Error(`FLAC gen failed (exit=${gen.exitCode}): ${gen.stderr || gen.stdout}`);
+        }
+        // mountPersona left the backing mounted; the iPod lane needs it UNMOUNTED
+        // so the daemon container owns the mount. Each `it` re-inits it fresh.
+        await umountBacking();
+        await startMockApprise();
+      } catch (err) {
+        await removeDaemonContainer(DRAIN_DAEMON_CONTAINER);
+        await stopMockApprise();
+        await limaTestVmRunner
+          .run(`rm -rf ${VM_CONFIG_DIR} ${VM_MUSIC_DIR} 2>/dev/null || true`, {
+            timeoutMs: VM_WARM_TIMEOUT_MS,
+          })
+          .catch(() => {});
+        await unmountAndStop({ personaId: PERSONA.id, mountPoint: VM_MOUNT_POINT });
+        throw err;
+      }
+    }, VM_COLD_TIMEOUT_MS);
+
+    afterAll(async () => {
+      await removeDaemonContainer(DRAIN_DAEMON_CONTAINER);
+      await stopMockApprise();
+      await limaTestVmRunner
+        .run(`rm -rf ${VM_CONFIG_DIR} ${VM_MUSIC_DIR} 2>/dev/null || true`, {
+          timeoutMs: VM_WARM_TIMEOUT_MS,
+        })
+        .catch(() => {});
+      await unmountAndStop({ personaId: PERSONA.id, mountPoint: VM_MOUNT_POINT });
+    }, VM_COLD_TIMEOUT_MS);
+
+    it(
+      'delivers a sync-complete Apprise notification after a full sync',
+      async () => {
+        await removeDaemonContainer(DRAIN_DAEMON_CONTAINER);
+        await reinitDevice();
+        await limaTestVmRunner.run(`rm -f ${APPRISE_CAPTURE}`, { timeoutMs: VM_WARM_TIMEOUT_MS });
+        await startDrainDaemon();
+
+        const { matched, logs } = await waitForDaemonLog(
+          DRAIN_DAEMON_CONTAINER,
+          /Sync cycle completed successfully for sda/
+        );
+        expect(matched, `daemon never completed a sync. Logs:\n${logs}`).toBe(true);
+
+        const capture = await readAppriseCapture();
+        expect(capture, `no Apprise notification captured. Logs:\n${logs}`).toMatch(
+          /sync complete/i
+        );
+        expect(capture).toContain(`${TRACK_COUNT} tracks added`);
+
+        await removeDaemonContainer(DRAIN_DAEMON_CONTAINER);
+      },
+      DAEMON_FLOW_TIMEOUT_MS
+    );
+
+    it(
+      'SIGTERM mid-sync → graceful drain: container exits 0 and completed tracks are preserved',
+      async () => {
+        await removeDaemonContainer(DRAIN_DAEMON_CONTAINER);
+        await reinitDevice();
+        await startDrainDaemon();
+
+        // Wait for the REAL sync to start, then dwell so a couple of checkpoint
+        // saves land (engine checkpoints every 10 completed tracks), then SIGTERM.
+        const { matched, logs: planLogs } = await waitForDaemonLog(
+          DRAIN_DAEMON_CONTAINER,
+          /Sync plan/
+        );
+        expect(matched, `daemon never reached the sync plan. Logs:\n${planLogs}`).toBe(true);
+        await limaTestVmRunner.run('sleep 4', { timeoutMs: VM_WARM_TIMEOUT_MS });
+
+        // `nerdctl stop` → SIGTERM (15s grace before SIGKILL). PID 1 is the
+        // daemon (entrypoint `exec podkit-daemon`), so it receives the signal.
+        await limaTestVmRunner.run(`sudo nerdctl stop --time 15 ${DRAIN_DAEMON_CONTAINER}`, {
+          timeoutMs: 30_000,
+        });
+
+        const exit = await daemonContainerExitCode(DRAIN_DAEMON_CONTAINER);
+        const logs = (
+          await limaTestVmRunner.run(`sudo nerdctl logs ${DRAIN_DAEMON_CONTAINER} 2>&1 || true`, {
+            timeoutMs: VM_WARM_TIMEOUT_MS,
+          })
+        ).stdout;
+        // Graceful shutdown → exit 0, not a SIGKILL (137).
+        expect(exit, `expected graceful exit 0, got ${exit}. Logs:\n${logs}`).toBe(0);
+        expect(logs).toContain('Aborting in-progress iPod sync');
+        expect(logs).toContain('Sync aborted gracefully');
+        expect(logs).toContain('Shutdown complete');
+
+        // Completed tracks preserved: the drained iTunesDB carries the
+        // checkpointed subset — a non-empty partial (the device is bind-mounted,
+        // so the host mount reflects the container's writes directly).
+        const tracks = await countMusicFiles();
+        expect(tracks).toBeGreaterThanOrEqual(10);
+        expect(tracks).toBeLessThan(TRACK_COUNT);
+
+        await removeDaemonContainer(DRAIN_DAEMON_CONTAINER);
       },
       DAEMON_FLOW_TIMEOUT_MS
     );

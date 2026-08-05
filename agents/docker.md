@@ -95,6 +95,13 @@ not 5G-over-USB realism (a real 5G Video uses SCSI inquiry). A USB-native
 syncable persona is the realism refinement, deferred to the fuller persona
 matrix (DRAFT-021).
 
+`test:e2e:docker-dist` also runs `daemon.docker-dist.test.ts` — the bundled
+`podkit-daemon` (not the one-shot CLI) driving the steady-state loop: it detects
+the synthesized iPod, mounts, auto-syncs, and ejects on both detection lanes
+(mass-storage bind-mount + lsblk raw-block), plus **SIGTERM graceful-drain**
+(interrupt mid-sync → drain, exit 0, completed tracks preserved) and **Apprise
+notification** delivery to a mock endpoint on the VM host (`--network host`).
+
 ### Running the loopback-fat CLI e2e locally (VM-free)
 
 The shipped image, run as a `--privileged` container on the **host** Docker
