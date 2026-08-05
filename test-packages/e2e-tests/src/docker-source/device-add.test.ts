@@ -29,8 +29,10 @@
  *
  * A meaningful `--no-verify` assertion (confirming trust-disk proceeds when
  * SysInfo is present) requires a synthetic iPod volume mounted in the
- * container. That is not currently wired into the Docker harness. When it is,
- * add a case here asserting:
+ * container. That is not wired into THIS (docker-sidecar) harness — it lands
+ * in the sibling `loopback-fat` CLI surface (`src/docker-loopback/`), which
+ * mounts a loopback FAT iPod volume in the container. Tracked by TASK-450,
+ * which asserts:
  *   - `--no-verify` + SysInfo present → exit 0, verification = 'trusted-disk'
  *   - `--no-verify` + SysInfo absent  → exit 1, doctor hint in stderr
  *

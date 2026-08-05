@@ -89,15 +89,15 @@ call the interesting ones out.
 
 > **The `Where` column reflects the surface-by-directory layout**
 > ([ADR-025](../../../adr/adr-025-canonical-test-taxonomy.md)). The
-> `docker-source/` and `vm-docker/` directories now exist; only
-> `docker-loopback/` is still *(planned)* — see task-450.
+> the `docker-source/`, `vm-docker/`, and `docker-loopback/` directories all
+> now exist.
 
 | Runtime | Source | Device | Where | Depth |
 |---|---|---|---|---|
 | `host-binary` | `local-dir` | `dir` | `e2e-tests/` feature dirs (`commands/`, `features/`, `workflows/`, …) | E2E |
 | `host-binary` | `docker-sidecar` | `dir` | `e2e-tests/src/docker-source/` | E2E |
 | `host-docker-image` | `local-dir` | `none` | `packages/podkit-docker/test/image-smoke.sh` | E2E |
-| `host-docker-image` | `local-dir` | `loopback-fat` | `e2e-tests/docker-loopback/` *(planned — see task-450; does not exist yet)* | E2E |
+| `host-docker-image` | `local-dir` | `loopback-fat` | `e2e-tests/src/docker-loopback/` — **CLI** device ops (trust-disk verification, hard-error-on-generic — task-450) | E2E |
 | `vm-binary` | `local-dir` | `usb-synth` | `e2e-vm-tests/` (root) + `device-testing/src/vm/` (harness self-tests) | E2E |
 | `vm-docker-image` | `local-dir` | `usb-synth` | `e2e-vm-tests/src/vm-docker/` | E2E |
 
@@ -114,9 +114,16 @@ Also classified here (not device E2E surfaces):
   dockerized Navidrome into a VM device. The full
   source-server-to-real-device path is only ever proven with a
   `local-dir` source.
-- `host-docker-image` × `docker-sidecar` × `loopback-fat` — the daemon
-  in a container, syncing from a dockerized source to a loopback device,
-  is untested (the planned `docker-loopback` cell uses `local-dir`).
+- **Daemon _device_ e2e is USB-gated → `usb-synth` (VM) only.** The daemon's
+  poller excludes `loop`-type devices and requires an Apple USB vendor id
+  read from `/sys` (`packages/podkit-daemon/src/device-poller.ts`), by design —
+  it must only ever sync provably-real iPods, never a stray FAT device. So a
+  `loopback-fat` device **cannot** drive daemon detect→mount→sync→eject; that
+  path (plus SIGTERM drain + Apprise notify) lives only in the
+  `vm-docker-image` · `usb-synth` cell (see task-474). The `loopback-fat` cell
+  is a **CLI** device surface (task-450), not a daemon one — the CLI is
+  transport-agnostic and operates on a mounted iPod filesystem via on-disk
+  identity, so it needs no USB.
 
 Record a new gap here whenever you notice one; delete the note when a
 cell fills.

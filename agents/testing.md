@@ -194,6 +194,7 @@ E2E packages are kept out of the global compose by using non-`test` task names �
 |---|---|---|
 | `bun run test:e2e` | `*.test.ts` outside the surface subdirs (`docker-source/`, `docker-loopback/`) — host CLI subprocess against dummy iPod. | `test-packages/e2e-tests/` only. |
 | `bun run test:e2e:docker` | `src/docker-source/**/*.test.ts` — host CLI subprocess against containerised back-ends. | `test-packages/e2e-tests/` only. |
+| `bun run test:e2e:docker-loopback` | `src/docker-loopback/**/*.test.ts` — shipped image (`--privileged`) driving the CLI against a loopback FAT block device, VM-free. Trust-disk verification + hard-error-on-generic. | `test-packages/e2e-tests/` only. |
 | `bun run test:vm` | `*.e2e.test.ts` + harness self-tests — Lima VM with `dummy_hcd` + FunctionFS. | `test-packages/e2e-vm-tests/` and `test-packages/device-testing/src/vm/`. |
 
 Note the naming gotcha: `*.e2e.test.ts` files are **not** picked up by `test:e2e`. They run via `test:vm` because they need the VM harness. Only files in `@podkit/e2e-tests` count toward `test:e2e` / `test:e2e:docker`.

@@ -95,6 +95,32 @@ not 5G-over-USB realism (a real 5G Video uses SCSI inquiry). A USB-native
 syncable persona is the realism refinement, deferred to the fuller persona
 matrix (DRAFT-021).
 
+### Running the loopback-fat CLI e2e locally (VM-free)
+
+The shipped image, run as a `--privileged` container on the **host** Docker
+daemon, driving the **podkit CLI** against a real loopback FAT block device
+(`losetup` + `mkfs.vfat` inside the container — no VM). It owns the `device add`
+`--no-verify` (trust-disk) verification tier and hard-error-on-generic:
+
+```bash
+bun run test:e2e:docker-loopback --filter @podkit/e2e-tests
+```
+
+- **CLI surface, not the daemon.** The daemon poller is USB-gated (excludes
+  `loop` devices, requires an Apple USB vendor id — `device-poller.ts`), so a
+  loopback can never drive daemon detection. Daemon steady-state e2e lives in
+  the `vm-docker-image` · `usb-synth` stage above (task-474). The CLI, being
+  transport-agnostic, works off a mounted iPod filesystem via on-disk identity.
+- Requires **docker** (a privileged container for `losetup`/`mkfs.vfat`) and the
+  musl binaries (turbo dep `@podkit/device-testing#build:musl-binary`; if run
+  ad-hoc and missing, build with
+  `bunx turbo run build:musl-binary --filter @podkit/device-testing`).
+- The shipped alpine image lacks `mkfs.vfat`; the harness `apk add`s
+  `dosfstools`/`util-linux` in the ephemeral container (fixture scaffolding, does
+  not touch the binary under test).
+- Cheap and VM-free (~12s), but still excluded from the default e2e run via the
+  `docker-loopback/` surface-dir exclusion — it needs Docker.
+
 ## Device Support Boundary
 
 Which iPods can be identified from the mounted volume alone (path baseline),

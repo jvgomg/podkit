@@ -3,7 +3,7 @@ id: doc-053
 title: podkit-docker testing strategy
 type: guide
 created_date: '2026-06-27 19:02'
-updated_date: '2026-07-12 12:50'
+updated_date: '2026-08-05 17:26'
 tags:
   - docker
   - daemon
@@ -39,15 +39,19 @@ Shell-level tests of `entrypoint.sh`: command routing (sync vs daemon vs raw vs 
 ### Tier 3 — Image smoke → canonical **E2E** · `host-docker-image` · `local-dir` · `none`
 Build the image for the **native arch** and assert it boots and is internally consistent: `--version` works, `doctor` works (not just "exists"), command-parity holds against the running binary, ffmpeg is present and runnable, both `podkit` and `podkit-daemon` binaries are present and executable, the entrypoint is executable. Cheap, and it catches the entire "image drifted from the CLI" class.
 
-### Tier 4 — Daemon integration (loopback device, no USB) → canonical **E2E** · `host-docker-image` · `local-dir` · `loopback-fat`
-The `podkit-daemon` running **inside the shipped image container** (it spawns a real `podkit` CLI subprocess for the sync) against a **loopback FAT block device mounted inside that container**, carrying a fixture iPod tree (existing on-disk identity). The container is how the daemon reaches a Linux block device without the VM: `losetup` needs a Linux kernel, and a privileged container provides one (proven on Docker Desktop) — so this stage is `host-docker-image`, not a bare host binary. Exercises the steady-state path end to end: detect via `lsblk` → mount → sync → eject, plus SIGTERM graceful-drain and notification delivery to a mock Apprise endpoint. This is the fast local proxy for "the daemon really syncs a real-ish device" without needing the VM. Also the natural home for asserting the **hard-error-on-generic** behavior end-to-end (point it at a fixture lacking authoritative identity and assert it refuses + notifies, never mutates).
+### Tier 4 — CLI device ops on a loopback FAT (no USB) → canonical **E2E** · `host-docker-image` · `local-dir` · `loopback-fat`
+A real `podkit` **CLI** run **inside the shipped image container** against a **loopback FAT block device mounted in that container**, carrying a fixture iPod tree (existing on-disk identity). The container is how we reach a Linux block device without the VM: `losetup`/`mkfs.vfat` need a Linux kernel, and a privileged container provides one (proven on Docker Desktop) — so this stage is `host-docker-image`, not a bare host binary (a host binary + loopback would only run on native-Linux CI, not a macOS dev host).
+
+**This is a CLI stage, not the daemon.** It was originally scoped as *daemon* integration (detect → mount → sync → eject + SIGTERM + notify). That is **not achievable VM-free**: the daemon's poller deliberately excludes `loop`-type devices and requires an Apple USB vendor id read from `/sys` (`packages/podkit-daemon/src/device-poller.ts`) — by design, so it only ever syncs provably-real iPods. A loopback can never trigger daemon detection, so daemon steady-state e2e moves to Tier 5 (`usb-synth`, see task-474). What a loopback *can* honestly prove is the **transport-agnostic CLI**: it operates on a mounted iPod filesystem via on-disk identity, no USB needed.
+
+Owns: the `device add` **`--no-verify` (trust-disk)** verification tier against a mounted iPod volume (on-disk SysInfo present → `trusted-disk`, exit 0; absent → exit 1 + doctor hint) — the case `test-packages/e2e-tests/src/docker-source/device-add.test.ts` documents as blocked "until the harness can mount a synthetic iPod volume" — plus **hard-error-on-generic** (`device add`/`sync` against a generic FAT lacking authoritative identity → refuse, never mutate). The default `verified` tier needs USB/SCSI firmware inquiry → stays Tier 5 (see doc-046). Tracked by **task-450**.
 
 ### Tier 5 — Image + daemon e2e (Lima VM, synthesized USB iPod) → canonical **E2E** · `vm-docker-image` · `local-dir` · `usb-synth`
-The **shipped Docker image** run **inside the Linux Lima VM**, against a **synthesized USB iPod** from `device-testing-daemon`, with real device passthrough to the container. This is the only stage that exercises the USB *setup* path (`device add` → firmware inquiry → SIE write) and validates the daemon's path-based steady-state behavior against a device the harness fully controls.
+The **shipped Docker image** run **inside the Linux Lima VM**, against a **synthesized USB iPod** from `device-testing-daemon`, with real device passthrough to the container. This is the only stage that exercises the USB *setup* path (`device add` → firmware inquiry → SIE write) **and** the daemon's USB-gated *steady-state* path — detect → mount → sync → eject, SIGTERM graceful-drain, and Apprise notification — against a device the harness fully controls (daemon steady-state e2e is tracked by **task-474**, re-homed here from the loopback stage).
 
 Key reuse: the VM harness **already** synthesizes USB iPods with vendor/product descriptors, serves SysInfoExtended over the vendor read, and has e2e scenarios for `device add`, discovery, and `doctor --repair sysinfo-extended` (`e2e-vm-tests` + `device-testing-daemon`). Tier 5 re-points those existing personas at the Docker image rather than the host binary — it is adaptation, not new device infrastructure.
 
-Constraint: **macOS Docker Desktop cannot pass USB to containers**, so Tier 5 must run the container inside the Linux VM (which has `dummy_hcd` and can pass `/dev/bus/usb` through), not on the dev host's Docker Desktop. (This is the USB *setup* path specifically — the Tier-4 `loopback-fat` steady-state path needs only a block device, which a host container provides.)
+Constraint: **macOS Docker Desktop cannot pass USB to containers**, so Tier 5 must run the container inside the Linux VM (which has `dummy_hcd` and can pass `/dev/bus/usb` through), not on the dev host's Docker Desktop. (This is the USB path — both the *setup* path and the daemon's USB-gated *detection*. The Tier-4 `loopback-fat` cell needs only a block device, which a host container provides, but it exercises the CLI, not the daemon.)
 
 **Local run:**
 
@@ -66,13 +70,14 @@ Persona caveat: the scaffold uses the 5G Video persona (`ipod-video-5g-iflash-1t
 | Onboarding decision logic (registry, readiness, generic-guard, ENV map, access probe) | 1 | Unit |
 | Entrypoint command routing / parity / PUID-PGID / injection / privilege | 2 | Integration |
 | Image boots, binaries + ffmpeg present, command-parity vs running binary | 3 | E2E · `host-docker-image` · `none` |
-| Daemon steady-state sync (mount→sync→eject), SIGTERM, notifications, hard-error-on-generic | 4 | E2E · `host-docker-image` · `loopback-fat` |
-| USB setup path (`device add` → SIE write) + daemon against a controlled USB device | 5 | E2E · `vm-docker-image` · `usb-synth` |
+| CLI `device add` trust-disk verification (`--no-verify`) + hard-error-on-generic, against a mounted loopback iPod volume | 4 | E2E · `host-docker-image` · `loopback-fat` |
+| USB setup path (`device add` → SIE write) | 5 | E2E · `vm-docker-image` · `usb-synth` |
+| Daemon steady-state (detect→mount→sync→eject), SIGTERM drain, Apprise notify, against a controlled USB device | 5 | E2E · `vm-docker-image` · `usb-synth` |
 
 ## Build-now vs later
 
-- **Now (m-22, this release):** stage-1 gating, stage 2, stage 3, stage 4. Stage 5 **scaffolded** (image runnable in the VM against one synthesized persona) — enough to prove the wiring; broaden personas later.
-- **Later (Draft / m-21):** full stage-5 persona matrix; multi-arch image execution validation; SCSI-passthrough device scenarios (blocked on TASK-296).
+- **Now (m-22, this release):** stage-1 gating, stage 2, stage 3, and stage 4 (CLI loopback — task-450). Stage 5 **scaffolded** (image runnable in the VM against one synthesized persona) — enough to prove the wiring; broaden personas later.
+- **Later (Draft / m-21):** daemon steady-state e2e in stage 5 (task-474); full stage-5 persona matrix; multi-arch image execution validation; SCSI-passthrough device scenarios (blocked on TASK-296).
 
 ## Prior art to follow
 

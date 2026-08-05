@@ -123,6 +123,12 @@
       "inputs": ["src/**"],
       "outputs": []
     },
+    "@podkit/e2e-tests#test:e2e:docker-loopback": {
+      "dependsOn": ["^build", "@podkit/device-testing#build:musl-binary"],
+      "cache": false,
+      "inputs": ["src/**", "package.json"],
+      "outputs": []
+    },
     "typecheck": {
       "dependsOn": ["^build"],
       "inputs": ["src/**", "tsconfig.json"],

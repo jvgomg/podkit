@@ -16,6 +16,7 @@
     "test:e2e:real": "IPOD_TARGET=real bun test --path-ignore-patterns='**/docker-source/**' --path-ignore-patterns='**/docker-loopback/**'",
     "test:e2e:docker": "gpod-tests-parallel --pattern '*.test.ts' docker-source/ --concurrency 3",
     "test:e2e:docker:serial": "bun test src/docker-source/ --path-ignore-patterns=",
+    "test:e2e:docker-loopback": "bun test src/docker-loopback/ --path-ignore-patterns=",
     "cleanup": "bun run src/scripts/cleanup-containers.ts",
     "cleanup:force": "bun run src/scripts/cleanup-containers.ts --force",
     "cleanup:list": "bun run src/scripts/cleanup-containers.ts --list",
