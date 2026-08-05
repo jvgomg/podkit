@@ -3,9 +3,10 @@ id: TASK-474
 title: >-
   E2E daemon steady-state in the VM: SIGTERM drain + Apprise notify +
   detect→mount→sync→eject (usb-synth)
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-08-05 17:25'
+updated_date: '2026-08-05 18:05'
 labels:
   - docker
   - daemon
@@ -48,3 +49,29 @@ The **shipped image's `podkit-daemon`** running in the VM against a synthesized 
 - [ ] #3 Sync-complete notification delivered to a mock Apprise endpoint reachable from the VM container
 - [ ] #4 Runnable locally via a documented command; excluded from the routine quality/test:vm DAG
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+FEASIBILITY PROVEN (2026-08-05, live probe in podkit-device-harness VM). The core unknown — can the daemon DETECT a synthesized USB iPod from inside a container — is YES.
+
+Proven recipe (AC1 end-to-end, ~1s cycle):
+1. buildPodkitImageInVm({force}) -> tag `podkit:docker-dist` (already exists; ~15s cached).
+2. mountPersona({personaId, vendorId, productId, mountPoint}) for ipodVideo5gIflash1tb -> synthesizes the USB gadget + mounts backing.
+3. Seed: `gpod-tool init <mp> --model MA147` (classic SysInfo + empty iTunesDB; 5G Video is non-checksum so no SIE needed to sync). Seed /music with FLAC(s) + /config/config.toml ([music.main] path=/music, [defaults] music=main, [codec] lossy/lossless=aac; NO [devices] block — daemon syncs the detected device by its mount path).
+4. Unmount the backing on the VM host (`umount -l`) but LEAVE the gadget bound, so the daemon mounts it itself.
+5. resolvePersonaDeviceNodes -> blockDevice=/dev/sda, usbNode=/dev/bus/usb/NNN/MMM.
+6. Run daemon: `sudo nerdctl run -d --privileged --network host -e PUID=0 -e PGID=0 -e PODKIT_POLL_INTERVAL=2 -v <cfg>:/config -v <music>:/music:ro <IMAGE> daemon`.
+   - `--privileged` is REQUIRED: exposes host /dev (incl. partition nodes /dev/sdaN the daemon mounts), /sys (idVendor=05ac read for detection), and CAP_SYS_ADMIN (mount). Not just --device.
+   - `--network host` so PODKIT_APPRISE_URL can reach a mock on the VM host (127.0.0.1:<port>).
+   - nerdctl rejects `-d --rm` together -> use `-d`, clean up with `rm -f`.
+
+Observed daemon log: 'iPod candidate detected -> iPod detected: sda {label:IPOD_VIDEO, uuid:1234-ABCD} -> Mounting /dev/sda -> Sync plan {add:1} -> Sync completed {completed:1,failed:0} -> Ejecting -> Ejected -> Sync cycle completed successfully'. 1 track file landed on the device.
+
+Remaining to build the actual test (test-packages/e2e-vm-tests/src/vm-docker/):
+- AC2 SIGTERM drain: generate enough tracks (e.g. ~15-20 FLACs, or slower transcode) that the sync runs a few seconds, then `nerdctl stop` (SIGTERM) mid-sync; assert container exits 0, iTunesDB parses/consistent, completed tracks preserved (per the chosen rigor: clean save + exit 0, not mid-track partial).
+- AC3 Apprise: run a tiny mock HTTP server on the VM host (python3 likely available; capture POST JSON {title, body} to a file), set PODKIT_APPRISE_URL=http://127.0.0.1:<port>/notify, assert a sync-complete notification is delivered.
+- Structure as a *.docker-dist.test.ts sibling reusing container-helpers + limaTestVmRunner; gate under test:e2e:docker-dist (local-only).
+
+Probe scripts were scratch (removed); recipe captured here.
+<!-- SECTION:NOTES:END -->

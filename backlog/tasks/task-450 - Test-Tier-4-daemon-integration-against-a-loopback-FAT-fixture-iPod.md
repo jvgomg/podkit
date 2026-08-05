@@ -1,10 +1,10 @@
 ---
 id: TASK-450
 title: E2E loopback-fat CLI harness + device-add trust-disk verification (VM-free)
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-06-27 19:05'
-updated_date: '2026-08-05 17:54'
+updated_date: '2026-08-05 17:59'
 labels:
   - docker
   - testing
