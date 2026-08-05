@@ -3,7 +3,7 @@ id: doc-053
 title: podkit-docker testing strategy
 type: guide
 created_date: '2026-06-27 19:02'
-updated_date: '2026-08-05 17:26'
+updated_date: '2026-08-05 19:19'
 tags:
   - docker
   - daemon
@@ -44,10 +44,10 @@ A real `podkit` **CLI** run **inside the shipped image container** against a **l
 
 **This is a CLI stage, not the daemon.** It was originally scoped as *daemon* integration (detect → mount → sync → eject + SIGTERM + notify). That is **not achievable VM-free**: the daemon's poller deliberately excludes `loop`-type devices and requires an Apple USB vendor id read from `/sys` (`packages/podkit-daemon/src/device-poller.ts`) — by design, so it only ever syncs provably-real iPods. A loopback can never trigger daemon detection, so daemon steady-state e2e moves to Tier 5 (`usb-synth`, see task-474). What a loopback *can* honestly prove is the **transport-agnostic CLI**: it operates on a mounted iPod filesystem via on-disk identity, no USB needed.
 
-Owns: the `device add` **`--no-verify` (trust-disk)** verification tier against a mounted iPod volume (on-disk SysInfo present → `trusted-disk`, exit 0; absent → exit 1 + doctor hint) — the case `test-packages/e2e-tests/src/docker-source/device-add.test.ts` documents as blocked "until the harness can mount a synthetic iPod volume" — plus **hard-error-on-generic** (`device add`/`sync` against a generic FAT lacking authoritative identity → refuse, never mutate). The default `verified` tier needs USB/SCSI firmware inquiry → stays Tier 5 (see doc-046). Tracked by **task-450**.
+Owns: the `device add` **`--no-verify` (trust-disk)** verification tier against a mounted iPod volume (on-disk SysInfo present → `trusted-disk`, exit 0; absent → exit 1 + doctor hint) — the case `test-packages/e2e-tests/src/docker-source/device-add.test.ts` documents as blocked "until the harness can mount a synthetic iPod volume" — plus **hard-error-on-generic** (`device add`/`sync` against a generic FAT lacking authoritative identity → refuse, never mutate). The default `verified` tier needs USB/SCSI firmware inquiry → stays Tier 5 (see doc-046). Tracked by **task-450** (landed).
 
 ### Tier 5 — Image + daemon e2e (Lima VM, synthesized USB iPod) → canonical **E2E** · `vm-docker-image` · `local-dir` · `usb-synth`
-The **shipped Docker image** run **inside the Linux Lima VM**, against a **synthesized USB iPod** from `device-testing-daemon`, with real device passthrough to the container. This is the only stage that exercises the USB *setup* path (`device add` → firmware inquiry → SIE write) **and** the daemon's USB-gated *steady-state* path — detect → mount → sync → eject, SIGTERM graceful-drain, and Apprise notification — against a device the harness fully controls (daemon steady-state e2e is tracked by **task-474**, re-homed here from the loopback stage).
+The **shipped Docker image** run **inside the Linux Lima VM**, against a **synthesized USB iPod** from `device-testing-daemon`, with real device passthrough to the container. This is the only stage that exercises the USB *setup* path (`device add` → firmware inquiry → SIE write) **and** the daemon's USB-gated *steady-state* path — detect → mount → sync → eject, SIGTERM graceful-drain, and Apprise notification — against a device the harness fully controls (daemon steady-state e2e is tracked by **task-474**, re-homed here from the loopback stage; landed in `daemon.docker-dist.test.ts`).
 
 Key reuse: the VM harness **already** synthesizes USB iPods with vendor/product descriptors, serves SysInfoExtended over the vendor read, and has e2e scenarios for `device add`, discovery, and `doctor --repair sysinfo-extended` (`e2e-vm-tests` + `device-testing-daemon`). Tier 5 re-points those existing personas at the Docker image rather than the host binary — it is adaptation, not new device infrastructure.
 
@@ -76,8 +76,8 @@ Persona caveat: the scaffold uses the 5G Video persona (`ipod-video-5g-iflash-1t
 
 ## Build-now vs later
 
-- **Now (m-22, this release):** stage-1 gating, stage 2, stage 3, and stage 4 (CLI loopback — task-450). Stage 5 **scaffolded** (image runnable in the VM against one synthesized persona) — enough to prove the wiring; broaden personas later.
-- **Later (Draft / m-21):** daemon steady-state e2e in stage 5 (task-474); full stage-5 persona matrix; multi-arch image execution validation; SCSI-passthrough device scenarios (blocked on TASK-296).
+- **Now (m-22, this release):** stage-1 gating, stage 2, stage 3, stage 4 (CLI loopback — task-450, landed), and the **daemon steady-state e2e in stage 5** (detect→mount→sync→eject on both detection lanes, SIGTERM graceful-drain, Apprise notify — task-474, landed in `daemon.docker-dist.test.ts`). The stage-5 image build + one-shot CLI path is landed too; broadening the persona matrix is the remaining scaffold.
+- **Later (Draft / m-21):** full stage-5 persona matrix; multi-arch image execution validation; SCSI-passthrough device scenarios (blocked on TASK-296).
 
 ## Prior art to follow
 

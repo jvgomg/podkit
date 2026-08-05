@@ -3,10 +3,10 @@ id: TASK-474
 title: >-
   E2E daemon steady-state in the VM: SIGTERM drain + Apprise notify +
   detect→mount→sync→eject (usb-synth)
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-05 17:25'
-updated_date: '2026-08-05 19:11'
+updated_date: '2026-08-05 19:12'
 labels:
   - docker
   - daemon
