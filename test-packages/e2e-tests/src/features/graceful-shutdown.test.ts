@@ -27,7 +27,7 @@ import { join } from 'node:path';
 import { createTestIpod } from '@podkit/gpod-testing';
 import { ensureFixturesExist } from '@podkit/e2e-shared';
 import { getFixturesDir } from '../helpers/fixtures';
-import { getCliPath } from '../helpers/cli-runner';
+import { cliSpawnArgv } from '../helpers/cli-runner';
 
 ensureFixturesExist('multi-format');
 ensureFixturesExist('goldberg-selections');
@@ -94,7 +94,6 @@ function spawnCli(
   result: Promise<{ exitCode: number; stdout: string; stderr: string }>;
   onStdoutLine: (callback: (line: string) => void) => void;
 } {
-  const cliPath = getCliPath();
   const timeout = options.timeout ?? 60000;
 
   const env = {
@@ -104,10 +103,12 @@ function spawnCli(
     FORCE_COLOR: '0',
   };
 
-  // Run the bundle under `bun` — it is built `bun build --target bun` and the
-  // CLI is a Bun-only artefact (ADR-021). This mirrors the shared runCli
-  // runner; the local copy exists only to expose the ChildProcess for signals.
-  const child = spawn('bun', [cliPath, ...args], {
+  // Resolve command via the shared decision (bundle under `bun`, or a compiled
+  // binary directly when PODKIT_CLI_BINARY / debug is in play). This local
+  // spawner exists only to expose the ChildProcess for signal delivery; the
+  // invocation itself must stay identical to the shared runCli.
+  const [command, commandArgs] = cliSpawnArgv('production', args);
+  const child = spawn(command, commandArgs, {
     env,
     stdio: ['pipe', 'pipe', 'pipe'],
   });

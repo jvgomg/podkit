@@ -12,6 +12,7 @@ export {
   cleanupTempConfig,
   createTempConfig,
   getCliPath,
+  cliSpawnArgv,
   isCliAvailable,
   runCli,
   runCliJson,

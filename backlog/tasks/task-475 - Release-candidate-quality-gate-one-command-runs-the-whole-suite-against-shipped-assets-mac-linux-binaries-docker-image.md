@@ -3,10 +3,10 @@ id: TASK-475
 title: >-
   Release-candidate quality gate: one command runs the whole suite against
   shipped assets (mac + linux binaries + docker image)
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-06 09:51'
-updated_date: '2026-08-06 09:52'
+updated_date: '2026-08-06 16:24'
 labels:
   - testing
   - ci
@@ -63,7 +63,7 @@ Before shipping, we want ONE command that runs the whole quality suite against t
 - [x] #2 quality:rc runs qa + docker-dist + docker-loopback in one command, covering mac binary (host e2e) + linux musl (VM) + docker image
 - [x] #3 turbo globalPassThroughEnv forwards the docker-image + binary override envs so the switches actually reach the test processes (was silently filtered)
 - [x] #4 Documented: quality:rc + the PODKIT_CLI_BINARY / PODKIT_DOCKER_DIST_IMAGE knobs (agents/testing.md or docker.md)
-- [ ] #5 Full quality:rc run validated green end-to-end (deferred to a real long run — currently statically validated + per-surface proven)
+- [x] #5 Full quality:rc run validated green end-to-end (deferred to a real long run — currently statically validated + per-surface proven)
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -75,4 +75,20 @@ Landed + verified (2026-08-06):
 - turbo.json globalPassThroughEnv extended (the passthrough BUG fix): without it, `PODKIT_DOCKER_DIST_IMAGE` was silently filtered and TASK-463's docker pull path was a no-op through the turbo script — caught by inspecting `nerdctl images` (VM had the stale local `podkit:docker-dist`, not `:edge`). After the fix, re-ran and `ghcr.io/jvgomg/podkit:edge` was pulled + all 6 docker-dist tests passed against it.
 - typecheck 15/15; oxlint 0/0 on all changed files; docs in agents/testing.md.
 AC#5 (full quality:rc green end-to-end) deferred — it's a ~15min VM+docker run; validated statically + per-surface.
+
+First full `quality:rc` runs (2026-08-06) — the gate did its job, catching TWO issues it alone could surface (both fixed):
+1. **Harness bug (my own incomplete change).** `graceful-shutdown.test.ts` has a bespoke `spawnCli` (needs the raw ChildProcess for signal delivery) that hardcoded `spawn('bun', [cliPath, ...])`. With `PODKIT_CLI_BINARY` pointing at the compiled `bin/podkit`, it ran `bun bin/podkit …` → a compiled binary mis-run as a bun script → exit 1 (expected 130). Fix: extracted the direct-vs-`bun` decision into an exported `cliSpawnArgv(binary, args)`; both `runCli` and the bespoke spawner use it now. Re-verified green against BOTH the compiled binary and the default bundle.
+2. **RC-gate composition bug.** `quality:rc` listed `test:vm` (inside `qa`) and `test:e2e:docker-dist` as unordered top-level tasks → turbo ran them CONCURRENTLY against the single shared `podkit-device-harness` VM → gadget/mount state collision (`gpod-tool init` fails creating `iPod_Control` on the drain mount; GLib domain!=0). docker-dist passes 6/6 standalone but 4/6 when contended. Fix: `quality:rc` now runs two turbo phases — `turbo run qa && turbo run test:e2e:docker-dist test:e2e:docker-loopback` — so the docker phase waits for `qa` to release the VM. Documented the serialization rationale in agents/testing.md. (Latent hazard noted: test:vm + docker-dist must never run concurrently against the one VM.)
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+RC quality gate delivered + proven. `bun run quality:rc` runs the whole suite against the actual shipped assets in one command — mac `--compile` binary (host e2e, via the new `PODKIT_CLI_BINARY` direct-invocation override), linux musl binary (test:vm), and the docker image (docker-dist + docker-loopback), plus unit/integration. Prefix `PODKIT_DOCKER_DIST_IMAGE=ghcr.io/jvgomg/podkit:edge` to gate docker against the real GHA-built image (TASK-463).
+
+Enablers: `PODKIT_CLI_BINARY` + shared `cliSpawnArgv` invocation helper (cli-runner), turbo `globalPassThroughEnv` for the image/binary override envs, and a two-phase `quality:rc` (`qa` → docker surfaces) that serializes the VM-bound suites.
+
+The gate immediately earned its keep, catching two false-green classes on its first runs (both fixed): (1) a bespoke signal-test spawner that mis-ran the compiled binary as a bun script; (2) `test:vm` + `docker-dist` colliding on the shared harness VM when run concurrently. Final full run against `:edge`: phase-1 qa 94/94, phase-2 docker 25/25; host e2e 37/0, test:vm 38/0, docker-dist 6/0, docker-loopback 3/0.
+
+Deferred (future task): true CI-byte fidelity (fetch the exact release/edge artifacts rather than local-recipe builds) and amd64/cross-arch coverage.
+<!-- SECTION:FINAL_SUMMARY:END -->

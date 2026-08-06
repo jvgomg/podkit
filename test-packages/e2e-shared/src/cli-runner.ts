@@ -118,6 +118,22 @@ function cliRunsDirectly(binary: CliBinary): boolean {
 }
 
 /**
+ * Build the `[command, commandArgs]` to spawn for a CLI invocation, applying the
+ * direct-vs-`bun` decision once: the `'production'` bundle runs under `bun`,
+ * while `'debug'` and a {@link CLI_BINARY_ENV} override run the standalone
+ * compiled binary directly.
+ *
+ * Bespoke spawners that need the raw `ChildProcess` (e.g. signal-delivery
+ * tests) MUST use this rather than hardcoding `spawn('bun', …)`, otherwise a
+ * `PODKIT_CLI_BINARY` override pointing at a compiled binary would be mis-run
+ * as a bun script (and exit non-zero).
+ */
+export function cliSpawnArgv(binary: CliBinary, args: string[]): [string, string[]] {
+  const cliPath = getCliPath(binary);
+  return cliRunsDirectly(binary) ? [cliPath, args] : ['bun', [cliPath, ...args]];
+}
+
+/**
  * Run the podkit CLI with given arguments.
  *
  * @example
@@ -129,7 +145,6 @@ function cliRunsDirectly(binary: CliBinary): boolean {
  */
 export async function runCli(args: string[], options: CliOptions = {}): Promise<CliResult> {
   const binary: CliBinary = options.binary ?? 'production';
-  const cliPath = getCliPath(binary);
   const timeout = options.timeout ?? 90000;
   const startTime = performance.now();
 
@@ -145,9 +160,7 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
     // 'production' runs the bundle under bun; 'debug' (and a PODKIT_CLI_BINARY
     // override) invoke a standalone compiled binary directly. See
     // documents/architecture/dev-builds.md.
-    const [command, commandArgs] = cliRunsDirectly(binary)
-      ? [cliPath, args]
-      : ['bun', [cliPath, ...args]];
+    const [command, commandArgs] = cliSpawnArgv(binary, args);
 
     const child = spawn(command, commandArgs, {
       cwd: options.cwd,

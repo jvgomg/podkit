@@ -301,9 +301,13 @@ absent. To verify the exact assets about to ship in one command:
 bun run quality:rc
 ```
 
-This runs `qa` **plus** `test:e2e:docker-dist` + `test:e2e:docker-loopback`, and
-points the host e2e at the real compiled binary, so all shipped surfaces are
-covered at once:
+It runs in two turbo phases — `qa` first, **then** `test:e2e:docker-dist` +
+`test:e2e:docker-loopback`. The split is deliberate: `qa` already contains
+`test:vm`, and both `test:vm` and `test:e2e:docker-dist` drive the single shared
+`podkit-device-harness` VM. Running them concurrently collides on the
+gadget/mount state (a bare-FAT `gpod-tool init` fails), so the docker phase must
+wait for `qa` to release the VM. It points the host e2e at the real compiled
+binary, so all shipped surfaces are covered:
 
 | Shipped asset | Surface driven by `quality:rc` |
 |---|---|

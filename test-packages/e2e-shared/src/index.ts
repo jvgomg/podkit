@@ -14,6 +14,7 @@ export {
   cleanupTempConfig,
   createTempConfig,
   getCliPath,
+  cliSpawnArgv,
   CLI_BINARY_ENV,
   isCliAvailable,
   runCli,
