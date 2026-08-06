@@ -1,10 +1,10 @@
 ---
 id: TASK-476.01
 title: quality becomes the full local mirror (prefactor)
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-06 18:21'
-updated_date: '2026-08-06 19:19'
+updated_date: '2026-08-06 22:21'
 labels:
   - testing
   - ci
@@ -43,7 +43,7 @@ Establishes the single two-phase "mirror body" both commands will share, paramet
 - [x] #1 `bun run quality` runs the standard DAG PLUS docker-dist + docker-loopback, in two phases (standard DAG first, then the shipped-image surfaces), so the shared harness VM is never driven by test:vm and docker-dist concurrently
 - [x] #2 quality's host e2e runs the locally compiled binary (via the existing PODKIT_CLI_BINARY seam), not the dist bundle proxy
 - [x] #3 The former standalone local-rebuild quality:rc command is removed/absorbed (no third quality command remains)
-- [ ] #4 A full `bun run quality` is green locally against local builds
+- [x] #4 A full `bun run quality` is green locally against local builds
 - [x] #5 The GitHub release path and CI (test:unit, verify-release) are unaffected; quality remains local-only
 <!-- AC:END -->
 
@@ -80,4 +80,6 @@ Verified (AC#1,#2,#3,#5 checked): dry-run shows phase 1 = qa DAG incl. the real 
 AC#4 (full `bun run quality` green) NOT met — BLOCKED by a pre-existing/environmental VM-test wedge, not by this change: `save-failure-matrix.e2e.test.ts` beforeAll hits its 60s VM_COLD_TIMEOUT_MS in phase-1 test:vm (reproduces isolated on a clean harness; file unmodified; our change only reorders identical turbo calls). Filed as **TASK-477** (high, m-22). AC#4 will close once 477 is fixed and a full `bun run quality` runs green. Two full runs observed: 13m15s (2 fail) and 7m57s warm (save-failure-matrix still fails; doctor-scope-refactor passed on rerun — harness running slow).
 
 Note: TASK-476.04 refactors this same `quality` line to delegate to a shared two-phase 'mirror body' runner (doc-058's single-shared-body goal) that quality:rc also calls — so the final package.json `quality` string may change to invoke that shared runner; passthrough contract preserved + re-validated there.
+
+AC#4 CLOSED: full `bun run quality` verified GREEN end-to-end after the TASK-477 fixes (save-failure-matrix observe budget + runDoctor resilience). QUALITY_EXIT=0; phase 1 (qa incl. test:vm) 94/94 tasks, e2e-vm-tests test:vm 194 pass/0 fail; phase 2 (docker-dist + docker-loopback) 25/25 tasks, 6/0 + 3/0. All five ACs met and committed. Done.
 <!-- SECTION:NOTES:END -->

@@ -1,10 +1,10 @@
 ---
 id: TASK-476.02
 title: RC-build discovery + preflight decision (seam + unit tests)
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-06 18:22'
-updated_date: '2026-08-06 18:43'
+updated_date: '2026-08-06 22:21'
 labels:
   - testing
   - ci
