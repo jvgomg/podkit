@@ -4,7 +4,7 @@ title: 'quality:rc — fetch CI assets + run the mirror (integration)'
 status: In Progress
 assignee: []
 created_date: '2026-08-06 18:22'
-updated_date: '2026-08-06 20:28'
+updated_date: '2026-08-06 22:22'
 labels:
   - testing
   - ci
@@ -94,4 +94,6 @@ Artifact names independently verified by team lead against build-platform.yml: m
 Nit fixed by team lead: added a line to agents/testing.md documenting turbo's `--` semantics (args after `--` are forwarded to the task command, not turbo flags — so `--force -- --dry=text` runs a real build, not a dry-run). prettier clean.
 
 AC#6 (end-to-end green) remains DEFERRED: needs (a) TASK-476.03 merged to main + a re-triggered verify-release run so `ghcr.io/jvgomg/podkit:rc` exists in GHCR, and (b) the TASK-477 save-failure-matrix VM wedge fixed so a full test:vm phase can go green. Design note (per doc-058 Testing Decisions): run-mirror-body's spawn/short-circuit glue is intentionally thin and left to e2e validation, not unit-tested — the unit-tested seam is 476.02's decision fn.
+
+Local blocker cleared: TASK-477 fixed, so a full `bun run quality` (the LOCAL mirror, identical body) is now green end-to-end. The `quality:rc` code path (discovery/preflight/fetch/shared-body) is complete + committed. AC#6 (CI-asset end-to-end) is the ONLY remaining item and needs a live `:rc` in GHCR — i.e. these commits pushed + the open 'Version Packages' PR's verify-release re-run producing `ghcr.io/jvgomg/podkit:rc`. That's a maintainer push/CI step (no local substitute).
 <!-- SECTION:NOTES:END -->

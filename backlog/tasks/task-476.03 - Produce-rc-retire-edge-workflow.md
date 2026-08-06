@@ -4,7 +4,7 @@ title: 'Produce :rc, retire :edge (workflow)'
 status: In Progress
 assignee: []
 created_date: '2026-08-06 18:22'
-updated_date: '2026-08-06 18:40'
+updated_date: '2026-08-06 22:22'
 labels:
   - docker
   - ci
@@ -82,4 +82,6 @@ Team-lead review (Sonnet) verdict: SHIP-WITH-NITS. Core properties all PASS: rel
 Fix applied by team lead: added a workflow-level `concurrency` guard (group: verify-release-<pr#>, cancel-in-progress: true) to verify-release.yml — now that the docker job PUSHES the moving :rc tag, concurrent synchronize events would race the tag last-writer-wins and hand rc-discovery a nondeterministic image (the deleted docker-edge.yml had the equivalent guard). actionlint re-run: only the pre-existing untrusted-title warning remains; prettier clean.
 
 Deferred to TASK-476.04 (its AC#5 doc scope): agents/docker.md still documents the retired :edge mechanism (PODKIT_DOCKER_DIST_IMAGE=...:edge, references to docker-edge.yml / gh run watch --workflow=docker-edge.yml) — must be repointed to :rc when 04 updates docs.
+
+Code complete + committed (commit 584617e7). Remaining: AC#1/#5's live-run portion — verify a real 'Version Packages' PR run pushes multi-arch `ghcr.io/jvgomg/podkit:rc` and never a release tag. Requires these commits pushed to the remote so the Version PR's next verify-release run uses the updated workflow. Maintainer push/CI step.
 <!-- SECTION:NOTES:END -->
