@@ -23,6 +23,7 @@
     "test:vm": "turbo run test:vm",
     "test:e2e:docker-dist": "turbo run test:e2e:docker-dist --filter @podkit/e2e-vm-tests",
     "quality": "turbo run qa",
+    "quality:rc": "PODKIT_CLI_BINARY=\"$PWD/packages/podkit-cli/bin/podkit\" turbo run qa test:e2e:docker-dist test:e2e:docker-loopback",
     "harness:create": "bun run --cwd test-packages/device-testing harness:create",
     "harness:start": "bun run --cwd test-packages/device-testing harness:start",
     "harness:stop": "bun run --cwd test-packages/device-testing harness:stop",

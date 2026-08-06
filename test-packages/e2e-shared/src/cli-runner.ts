@@ -68,6 +68,21 @@ export interface CliOptions {
 }
 
 /**
+ * Env override: a path to a **standalone (Bun `--compile`) CLI binary** to
+ * exercise instead of the bundled `dist/main.js` production proxy. When set, the
+ * `'production'` build resolves to this path and is invoked **directly** (a
+ * compiled binary is self-contained), exactly like the debug binary.
+ *
+ * This is what lets the host e2e run against the real shipped artefact — the
+ * `--compile` mac binary (`packages/podkit-cli/bin/podkit`) or a fetched
+ * pre-release tarball — rather than the fast bundle proxy. It mirrors the VM
+ * harness's `PODKIT_LINUX_*_BINARY` overrides so a release-candidate gate can
+ * drive every surface off the exact bytes about to ship. Ignored for the
+ * explicit `'debug'` build.
+ */
+export const CLI_BINARY_ENV = 'PODKIT_CLI_BINARY';
+
+/**
  * Path to the built CLI artifact for the given build.
  *
  * E2E tests run against the compiled CLI, not TypeScript source. The path is
@@ -76,7 +91,8 @@ export interface CliOptions {
  * (`test-packages/e2e-shared/dist/`) are exactly three levels below the repo
  * root, so the same relative walk works in either mode.
  *
- * - `'production'` → `packages/podkit-cli/dist/main.js` (invoke under `bun`)
+ * - `'production'` → `packages/podkit-cli/dist/main.js` (invoke under `bun`),
+ *   OR the {@link CLI_BINARY_ENV} override path when set (invoke directly).
  * - `'debug'` → `packages/podkit-cli/bin/podkit-debug` (invoke directly)
  */
 export function getCliPath(binary: CliBinary = 'production'): string {
@@ -84,7 +100,21 @@ export function getCliPath(binary: CliBinary = 'production'): string {
   if (binary === 'debug') {
     return resolve(here, '../../../packages/podkit-cli/bin/podkit-debug');
   }
+  const override = process.env[CLI_BINARY_ENV]?.trim();
+  if (override) {
+    return resolve(override);
+  }
   return resolve(here, '../../../packages/podkit-cli/dist/main.js');
+}
+
+/**
+ * Whether the resolved CLI for `binary` is a standalone binary invoked directly
+ * (vs the bundle run under `bun`). True for `'debug'` and for `'production'`
+ * when {@link CLI_BINARY_ENV} points at a compiled binary.
+ */
+function cliRunsDirectly(binary: CliBinary): boolean {
+  if (binary === 'debug') return true;
+  return Boolean(process.env[CLI_BINARY_ENV]?.trim());
 }
 
 /**
@@ -112,10 +142,12 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
       FORCE_COLOR: '0',
     };
 
-    // 'production' runs the bundle under bun; 'debug' invokes the compiled
-    // binary directly. See documents/architecture/dev-builds.md.
-    const [command, commandArgs] =
-      binary === 'debug' ? [cliPath, args] : ['bun', [cliPath, ...args]];
+    // 'production' runs the bundle under bun; 'debug' (and a PODKIT_CLI_BINARY
+    // override) invoke a standalone compiled binary directly. See
+    // documents/architecture/dev-builds.md.
+    const [command, commandArgs] = cliRunsDirectly(binary)
+      ? [cliPath, args]
+      : ['bun', [cliPath, ...args]];
 
     const child = spawn(command, commandArgs, {
       cwd: options.cwd,

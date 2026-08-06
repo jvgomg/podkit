@@ -1,6 +1,14 @@
 {
   "$schema": "https://v2-9-18.turborepo.dev/schema.json",
-  "globalPassThroughEnv": ["PODKIT_DISABLE_TEMPLATE_CACHE"],
+  "globalPassThroughEnv": [
+    "PODKIT_DISABLE_TEMPLATE_CACHE",
+    "PODKIT_DOCKER_DIST_IMAGE",
+    "PODKIT_LINUX_BINARY",
+    "PODKIT_LINUX_MUSL_BINARY",
+    "PODKIT_DAEMON_LINUX_BINARY",
+    "PODKIT_DAEMON_LINUX_MUSL_BINARY",
+    "PODKIT_CLI_BINARY"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

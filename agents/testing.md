@@ -290,6 +290,44 @@ mise run test:linux        # Runs on Debian + Alpine VMs (requires: brew install
 bun run test:e2e:docker
 ```
 
+## Release-candidate quality gate (`quality:rc`)
+
+`bun run quality` (`turbo run qa`) verifies source + a fast **bundle proxy** of
+the CLI (`dist/main.js` under bun) — it does NOT drive every *shipped* artefact:
+the mac `--compile` binary, and the docker-dist / loopback image surfaces are
+absent. To verify the exact assets about to ship in one command:
+
+```bash
+bun run quality:rc
+```
+
+This runs `qa` **plus** `test:e2e:docker-dist` + `test:e2e:docker-loopback`, and
+points the host e2e at the real compiled binary, so all shipped surfaces are
+covered at once:
+
+| Shipped asset | Surface driven by `quality:rc` |
+|---|---|
+| mac `--compile` binary (`bin/podkit`) | host `test:e2e`, via `PODKIT_CLI_BINARY` (invoked directly) |
+| linux musl `--compile` binary | `test:vm` (installed into the Lima VM) |
+| docker image | `test:e2e:docker-dist` + `test:e2e:docker-loopback` |
+
+Knobs (all forwarded through turbo via `globalPassThroughEnv`):
+
+- `PODKIT_CLI_BINARY=<path>` — run the host e2e against a standalone compiled
+  binary (a `--compile` artefact / fetched pre-release tarball) instead of the
+  bundle proxy. `quality:rc` sets it to `bin/podkit`.
+- `PODKIT_DOCKER_DIST_IMAGE=ghcr.io/jvgomg/podkit:edge` — gate the docker
+  surfaces against the **real GHA-built image** instead of a local build (see
+  agents/docker.md → "Gating against the real GHA-built image"). Prefix it:
+  `PODKIT_DOCKER_DIST_IMAGE=ghcr.io/jvgomg/podkit:edge bun run quality:rc`.
+- `PODKIT_LINUX_MUSL_BINARY` / `PODKIT_DAEMON_LINUX_MUSL_BINARY` — point the VM
+  surface at specific pre-built linux binaries.
+
+`quality:rc` uses locally-built assets by default (same release recipe:
+`compile` for mac, the musl-builder VM for linux). It is expensive (VM + docker
+builds, multi-minute) and local-only. Fetching the exact CI artifacts for
+byte-fidelity is future work (TASK-475).
+
 ## All Test Commands
 
 ```bash

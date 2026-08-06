@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-07-11 15:27'
-updated_date: '2026-08-05 20:46'
+updated_date: '2026-08-06 09:52'
 labels:
   - docker
   - testing
@@ -60,11 +60,11 @@ TASK-451 (the `vm-docker-image` scaffold) Stage 1 builds the podkit image *local
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A GHA workflow builds + pushes a moving pre-release image tag `ghcr.io/jvgomg/podkit:edge` on push to main (path-gated to podkit binary/Docker sources), reusing docker.yml's build; never touches :latest/:version/:minor
+- [x] #1 A GHA workflow builds + pushes a moving pre-release image tag `ghcr.io/jvgomg/podkit:edge` on push to main (path-gated to podkit binary/Docker sources), reusing docker.yml's build; never touches :latest/:version/:minor
 - [x] #2 docker.yml accepts a pre-release tag mode: when set it pushes ONLY the edge tag and skips the release tags; the existing release-invoked path is unchanged
 - [x] #3 A scheduled workflow prunes untagged GHCR manifests weekly (delete-only-untagged) to bound bloat from :edge overwrites
 - [x] #4 A shared image-source switch (env `PODKIT_DOCKER_DIST_IMAGE`) selects local-build vs pull:<tag> for BOTH the host loopback-fat (tier 4) and the VM usb-synth (tier 5) surfaces
-- [ ] #5 Tier-5 pull path: `sudo nerdctl pull` the edge tag into the harness VM (anonymous — image is public, no auth) and run the existing persona flow against it
+- [x] #5 Tier-5 pull path: `sudo nerdctl pull` the edge tag into the harness VM (anonymous — image is public, no auth) and run the existing persona flow against it
 - [x] #6 Tier-4 pull path: `docker pull` the edge tag onto host Docker and run the loopback-fat CLI flow against it
 - [x] #7 Documented dev command: push branch -> wait for the edge image -> run the docker-dist (and loopback) e2e against the pulled image; recorded in agents/docker.md + doc-053
 - [x] #8 Edge image is arm64-only (matches both local consumers); amd64 explicitly deferred unless an amd64 gate lands
@@ -130,4 +130,6 @@ Review confirmed: release/verify-release paths byte-for-byte unchanged via defau
 ## Remaining (cannot run headless — needs a push + the harness VM)
 - **AC#1 / AC#5 live proof.** The real `:edge` e2e loop: push branch to main → docker-edge.yml builds `:edge` → `PODKIT_DOCKER_DIST_IMAGE=ghcr.io/jvgomg/podkit:edge bun run test:e2e:docker-dist` (and docker-loopback). The `:edge` tag doesn't exist until the workflow first runs; the pull-path CODE + host pull mechanic are proven, but the full VM persona run against a real `:edge` is the post-merge manual gate (AC#1/#5 left unchecked until then).
 - `docker-prune.yml` / `docker-edge.yml` triggers can only be confirmed to fire once on `main` (GITHUB_TOKEN package-delete permission on the user-owned `podkit` package validated on first scheduled/dispatch run).
+
+LIVE PROOF LANDED (2026-08-06): pushed to origin/main → docker-edge.yml run 31089105372 succeeded (only Build linux-arm64 ran; x64-musl/glibc/macOS jobs skipped via the musl-only+arches gates; amd64 downloads skipped in docker.yml). Verified `ghcr.io/jvgomg/podkit:edge` is a linux/arm64-only index and `:latest`+0.2.x release tags are untouched. Then ran the tier-5 e2e against the PULLED image: `ghcr.io/jvgomg/podkit:edge` present in the VM (freshly pulled) + all 6 docker-dist tests green (device add→sync→read-back, --version routing, both daemon lanes, SIGTERM drain, Apprise). AC#1 + AC#5 now proven live; all 8 ACs checked. CAVEAT: the turbo env-passthrough for PODKIT_DOCKER_DIST_IMAGE was MISSING (strict-mode filter) — the first turbo run silently used the stale local `podkit:docker-dist` build, not `:edge`. Fixed in turbo.json globalPassThroughEnv (tracked under TASK-475) and re-verified. docker-prune.yml + the first scheduled prune still only observable once it fires.
 <!-- SECTION:NOTES:END -->

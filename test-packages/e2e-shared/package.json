@@ -17,6 +17,7 @@
     "build:types": "tsc -p tsconfig.build.json",
     "build:bundle": "bun build src/index.ts --outdir dist --target node --external @podkit/gpod-testing --external @podkit/test-fixtures",
     "typecheck": "tsc --noEmit",
+    "test:unit": "bun test src/",
     "clean": "rm -rf dist"
   },
   "dependencies": {
