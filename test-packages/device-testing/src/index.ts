@@ -185,6 +185,15 @@ export { LOCAL_MUTATE_ENV } from './runners/local-linux.js';
 export type { SubprocessRunner, SubprocessRunOpts, SubprocessRunResult } from './subprocess.js';
 export { defaultSubprocessRunner } from './subprocess.js';
 
+// Release-candidate build discovery + classification
+export type { RcBuildState, ResolveRcBuildOptions } from './rc-build/resolve-rc-build.js';
+export {
+  resolveRcBuildState,
+  RcBuildDiscoveryError,
+  VERSION_PR_TITLE,
+  WORKFLOW_FILE,
+} from './rc-build/resolve-rc-build.js';
+
 // ---------------------------------------------------------------------------
 // VM test helpers (used by @podkit/e2e-vm-tests)
 //
