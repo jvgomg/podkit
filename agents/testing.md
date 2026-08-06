@@ -290,47 +290,82 @@ mise run test:linux        # Runs on Debian + Alpine VMs (requires: brew install
 bun run test:e2e:docker
 ```
 
-## Release-candidate quality gate (`quality:rc`)
+## The two quality mirrors (`quality` / `quality:rc`)
 
-`bun run quality` (`turbo run qa`) verifies source + a fast **bundle proxy** of
-the CLI (`dist/main.js` under bun) — it does NOT drive every *shipped* artefact:
-the mac `--compile` binary, and the docker-dist / loopback image surfaces are
-absent. To verify the exact assets about to ship in one command:
+There are two "quality" commands. They run the **identical set of surfaces** —
+lint, typecheck, build, unit, integration, host e2e, host-docker source e2e, the
+VM suite (`test:vm`), and the two shipped-image surfaces (`test:e2e:docker-dist`
++ `test:e2e:docker-loopback`). The only difference is *which assets the surfaces
+run against*:
 
-```bash
-bun run quality:rc
-```
-
-It runs in two turbo phases — `qa` first, **then** `test:e2e:docker-dist` +
-`test:e2e:docker-loopback`. The split is deliberate: `qa` already contains
-`test:vm`, and both `test:vm` and `test:e2e:docker-dist` drive the single shared
-`podkit-device-harness` VM. Running them concurrently collides on the
-gadget/mount state (a bare-FAT `gpod-tool init` fails), so the docker phase must
-wait for `qa` to release the VM. It points the host e2e at the real compiled
-binary, so all shipped surfaces are covered:
-
-| Shipped asset | Surface driven by `quality:rc` |
+| | Assets |
 |---|---|
-| mac `--compile` binary (`bin/podkit`) | host `test:e2e`, via `PODKIT_CLI_BINARY` (invoked directly) |
-| linux musl `--compile` binary | `test:vm` (installed into the Lima VM) |
-| docker image | `test:e2e:docker-dist` + `test:e2e:docker-loopback` |
+| `bun run quality` | **Locally built**: the locally compiled mac binary, the local glibc/musl builds, and a locally built docker image. |
+| `bun run quality:rc` | **CI-built release candidate**: the compiled mac binary and the glibc linux binary fetched from the release-candidate build, and the docker image pulled as the moving `:rc` tag. |
 
-Knobs (all forwarded through turbo via `globalPassThroughEnv`):
+So a green `quality` locally means the same checks will pass against the real
+assets — only the asset source changes.
 
-- `PODKIT_CLI_BINARY=<path>` — run the host e2e against a standalone compiled
-  binary (a `--compile` artefact / fetched pre-release tarball) instead of the
-  bundle proxy. `quality:rc` sets it to `bin/podkit`.
-- `PODKIT_DOCKER_DIST_IMAGE=ghcr.io/jvgomg/podkit:edge` — gate the docker
-  surfaces against the **real GHA-built image** instead of a local build (see
-  agents/docker.md → "Gating against the real GHA-built image"). Prefix it:
-  `PODKIT_DOCKER_DIST_IMAGE=ghcr.io/jvgomg/podkit:edge bun run quality:rc`.
-- `PODKIT_LINUX_MUSL_BINARY` / `PODKIT_DAEMON_LINUX_MUSL_BINARY` — point the VM
-  surface at specific pre-built linux binaries.
+Both commands funnel through **one shared two-phase body**
+(`test-packages/device-testing/scripts/run-mirror-body.ts`) so they can never
+drift in which surfaces run:
 
-`quality:rc` uses locally-built assets by default (same release recipe:
-`compile` for mac, the musl-builder VM for linux). It is expensive (VM + docker
-builds, multi-minute) and local-only. Fetching the exact CI artifacts for
-byte-fidelity is future work (TASK-475).
+- **Phase 1** — `turbo run qa` (includes `test:vm`).
+- **Phase 2** — `turbo run test:e2e:docker-dist test:e2e:docker-loopback`.
+
+The split is deliberate: `qa` already contains `test:vm`, and both `test:vm` and
+`test:e2e:docker-dist` drive the single shared `podkit-device-harness` VM.
+Running them concurrently collides on the gadget/mount state (a bare-FAT
+`gpod-tool init` fails), so the docker phase must wait for `qa` to release the
+VM. Extra flags pass through to both phases: `bun run quality --force`, or
+`bun run quality -- --concurrency=4`. Note turbo's `--` semantics: args
+_before_ `--` are turbo flags, args _after_ `--` are forwarded to each task's
+own command — so don't combine them expecting both to be turbo flags (e.g.
+`--force -- --dry=text` runs a real build, since `--dry=text` is no longer
+turbo's dry-run flag).
+
+Both are **local-only** (never run in GitHub CI) and require **Docker Desktop**
+plus the **Lima harness VM** (`bun run harness:status`). `quality:rc`
+additionally requires an authenticated **`gh`** (it discovers the
+release-candidate build and downloads its artefacts).
+
+The commands differ only in the values of a few override env vars (all forwarded
+through turbo via `globalPassThroughEnv`):
+
+| Env var | `quality` | `quality:rc` |
+|---|---|---|
+| `PODKIT_CLI_BINARY` | local `bin/podkit` (host e2e runs the real compiled binary) | fetched mac arm64 binary |
+| `PODKIT_LINUX_BINARY` | unset (VM builds from local musl-builder) | fetched glibc arm64 binary |
+| `PODKIT_DOCKER_DIST_IMAGE` | unset (both docker surfaces build locally) | `ghcr.io/jvgomg/podkit:rc` (both surfaces pull it) |
+
+### `quality:rc` specifics
+
+The release candidate is the verification build the open "Version Packages" PR
+triggers (`.github/workflows/verify-release.yml`), which builds the binary
+matrix + docker image and pushes the moving `:rc` tag. `quality:rc`:
+
+1. discovers and classifies that build's state; on any non-ready state it prints
+   an actionable message and **exits non-zero** (fail fast):
+   - **no open "Version Packages" PR** — there is no release candidate; use
+     `bun run quality` for a local check, or open one (changeset → version PR);
+   - **build in progress** — prints the run url; re-run with `--wait` to block
+     until it is green, or come back later;
+   - **build failed** — prints the run url; fix the build first.
+2. on a **ready** build, fetches exactly **two** arm64 artefacts into a
+   git-ignored scratch dir (`test-packages/device-testing/.rc-assets/`) — the
+   compiled mac binary (host e2e) and the glibc linux binary (harness VM) — then
+   pulls `:rc` and runs the shared body. The musl binaries and the daemon are
+   **not** fetched standalone: they live inside the `:rc` image the docker
+   surfaces pull.
+
+Flags: `--wait` (block on an in-progress build), `--run-id <id>` (classify an
+explicit run, bypassing PR discovery). Scope: **arm64 only** (Apple-Silicon host
++ arm64 harness VM).
+
+**Fidelity caveat.** `:rc` artefacts are the same build recipe and shared cache
+as release — functionally the release bytes, but **not bit-identical** (e.g. the
+image build-date label differs). CI-fidelity gating exists only during the
+release-candidate window; feature-branch iteration uses `quality` (local).
 
 ## All Test Commands
 

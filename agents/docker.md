@@ -128,36 +128,49 @@ bun run test:e2e:docker-loopback --filter @podkit/e2e-tests
 - Cheap and VM-free (~12s), but still excluded from the default e2e run via the
   `docker-loopback/` surface-dir exclusion — it needs Docker.
 
-### Gating against the real GHA-built image (`:edge`)
+### Gating against the real GHA-built image (`:rc`)
 
 Both e2e stages above default to building the image **locally** (in-VM for
 `docker-dist`, on the host daemon for `docker-loopback`) — fast, but not the
 literal artifact CI ships. To gate against the real image instead, set
 `PODKIT_DOCKER_DIST_IMAGE` to a registry tag and both stages **pull** it rather
-than building:
+than building. The one-command way to do this across every surface is
+`bun run quality:rc`, which discovers the release-candidate build and pulls
+`:rc` for you (see agents/testing.md → "The two quality mirrors"). To drive just
+the docker surfaces manually:
 
 ```bash
 # Verify the next release's real image end-to-end before cutting it.
-export PODKIT_DOCKER_DIST_IMAGE=ghcr.io/jvgomg/podkit:edge
-bun run test:e2e:docker-dist                          # tier 5 (VM, usb-synth)
-bun run test:e2e:docker-loopback --filter @podkit/e2e-tests  # tier 4 (host)
+export PODKIT_DOCKER_DIST_IMAGE=ghcr.io/jvgomg/podkit:rc
+bun run test:e2e:docker-dist                          # E2E · vm-docker-image · usb-synth
+bun run test:e2e:docker-loopback --filter @podkit/e2e-tests  # E2E · host-docker-image · loopback-fat
 ```
 
 - One env var drives both surfaces (`ensurePodkitImageInVm` /
   `ensurePodkitImageOnHost`): unset → local build; set → `nerdctl pull` (VM) /
   `docker pull` (host) that tag. `ghcr.io/jvgomg/podkit` is a **public**
   package, so the pull is anonymous — no `docker login` / token needed.
-- The `:edge` tag is produced by `.github/workflows/docker-edge.yml` on every
-  push to `main` (path-gated to the binary/Docker sources): it builds the
-  arm64 musl binaries and reuses `docker.yml` to push a single **moving** tag,
-  never the `:latest`/`:<version>`/`:<minor>` release tags. arm64-only, because
-  both local consumers are arm64 (host Docker Desktop on Apple Silicon, the
-  arm64 Lima VM).
-- Refresh the loop by pushing your branch to `main`, then
-  `gh run watch $(gh run list --workflow=docker-edge.yml -L1 --json databaseId --jq '.[0].databaseId')`,
+- The `:rc` tag is produced by `.github/workflows/verify-release.yml` when the
+  open "Version Packages" PR (the changesets version bump) runs its verification
+  build: it builds the full binary matrix + docker image and reuses `docker.yml`
+  to push a single **moving** pre-release tag `:rc`, never the
+  `:latest`/`:<version>`/`:<minor>` release tags. It stays **multi-arch**
+  (preserving amd64 build verification + cache warming); the push is gated to
+  same-repo (non-fork) PRs. The former per-push `:edge` image and its
+  `docker-edge` workflow are **retired** — `quality` builds the image locally
+  and `quality:rc` pulls `:rc`, so `:edge` no longer had a consumer.
+- Refresh the loop by discovering the latest verification run for the version
+  PR — or just run `bun run quality:rc`, which does this automatically (with
+  `--wait` to block on an in-progress build). To watch it by hand:
+  `gh run watch $(gh run list --workflow=verify-release.yml -L1 --json databaseId --jq '.[0].databaseId')`,
   then run the commands above.
-- GHCR bloat from the overwritten `:edge` manifests is swept weekly by
+- GHCR bloat from the overwritten `:rc` manifests is swept weekly by
   `.github/workflows/docker-prune.yml` (`delete-only-untagged-versions`).
+
+**Fidelity caveat.** `:rc` is the same build recipe and shared cache as release
+— functionally the release bytes, but not bit-identical (e.g. the image
+build-date label differs). CI-fidelity gating exists only during the
+release-candidate window; feature-branch iteration builds the image locally.
 
 ## Device Support Boundary
 

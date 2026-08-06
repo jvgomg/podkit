@@ -58,6 +58,9 @@ branding/
 
 # Locally-built native bindings (published via prebuild.yml CI, never committed)
 packages/libgpod-node/prebuilds/
+
+# quality:rc fetched release-candidate artefacts (mac + glibc linux binaries)
+test-packages/device-testing/.rc-assets/
 # Python tooling
 .venv/
 __pycache__/
