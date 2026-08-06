@@ -1091,6 +1091,17 @@ function isCanonicalCell(cell: SaveFailCell): boolean {
 // Suite
 // ---------------------------------------------------------------------------
 
+// The observation `beforeAll` runs every non-skipped cell sequentially against
+// the one shared VM mount (cells mutate that mount, so they can't parallelise).
+// Its budget must cover VM setup plus N sequential cell observations, so it is
+// derived from the matrix size — one warm-op budget per cell on top of the cold
+// baseline — rather than a fixed cold timeout that silently wedges as cells are
+// added. Per-cell VM ops are individually bounded by VM_WARM_TIMEOUT_MS and
+// caught per cell, so a genuine single-cell hang still surfaces as an error,
+// never as this aggregate hook timeout.
+const OBSERVE_ALL_CELLS_TIMEOUT_MS =
+  VM_COLD_TIMEOUT_MS + SAVE_FAIL_CELLS.length * VM_WARM_TIMEOUT_MS;
+
 describe('VM: save-failure matrix', () => {
   const resultsByCell = new Map<string, SaveFailObserved>();
 
@@ -1118,7 +1129,7 @@ describe('VM: save-failure matrix', () => {
         });
       }
     }
-  }, VM_COLD_TIMEOUT_MS);
+  }, OBSERVE_ALL_CELLS_TIMEOUT_MS);
 
   afterAll(async () => {
     await limaTestVmRunner.applyState(healthy).catch(() => {});
