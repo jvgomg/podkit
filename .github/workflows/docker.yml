@@ -12,6 +12,19 @@ on:
         required: false
         default: false
         type: boolean
+      platforms:
+        description: 'Comma-separated build platforms'
+        required: false
+        default: 'linux/amd64,linux/arm64'
+        type: string
+      prerelease-tag:
+        description: >-
+          When set, push ONLY this single tag (e.g. `edge`) and SKIP the
+          :latest / :<version> / :<minor> release tags. Leave empty for a
+          normal release build.
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -31,47 +44,60 @@ jobs:
           echo "cli=$(jq -r '.version' packages/podkit-cli/package.json)" >> "$GITHUB_OUTPUT"
           echo "daemon=$(jq -r '.version' packages/podkit-daemon/package.json)" >> "$GITHUB_OUTPUT"
 
+      # amd64 artifacts are only produced/needed when linux/amd64 is a target
+      # platform. An arm64-only build (e.g. the edge image) skips these.
       - name: Download Linux amd64 binary
+        if: contains(inputs.platforms, 'amd64')
         uses: actions/download-artifact@v4
         with:
           name: podkit-linux-x64
           path: docker-artifacts/
 
       - name: Download Linux arm64 binary
+        if: contains(inputs.platforms, 'arm64')
         uses: actions/download-artifact@v4
         with:
           name: podkit-linux-arm64
           path: docker-artifacts/
 
       - name: Download Linux amd64 daemon binary
+        if: contains(inputs.platforms, 'amd64')
         uses: actions/download-artifact@v4
         with:
           name: podkit-daemon-linux-x64
           path: docker-daemon-artifacts/
 
       - name: Download Linux arm64 daemon binary
+        if: contains(inputs.platforms, 'arm64')
         uses: actions/download-artifact@v4
         with:
           name: podkit-daemon-linux-arm64
           path: docker-daemon-artifacts/
 
       - name: Prepare binaries for multi-arch build
+        env:
+          PLATFORMS: ${{ inputs.platforms }}
         run: |
-          mkdir -p bin/amd64 bin/arm64
-          tar xzf docker-artifacts/podkit-linux-x64.tar.gz -C bin/amd64/
-          tar xzf docker-artifacts/podkit-linux-arm64.tar.gz -C bin/arm64/
-          tar xzf docker-daemon-artifacts/podkit-daemon-linux-x64.tar.gz -C bin/amd64/
-          tar xzf docker-daemon-artifacts/podkit-daemon-linux-arm64.tar.gz -C bin/arm64/
-          chmod +x bin/amd64/podkit bin/arm64/podkit bin/amd64/podkit-daemon bin/arm64/podkit-daemon
-          echo "--- amd64 binaries ---"
-          file bin/amd64/podkit bin/amd64/podkit-daemon
-          echo "--- arm64 binaries ---"
-          file bin/arm64/podkit bin/arm64/podkit-daemon
+          set -e
+          # Stage bin/<docker-arch>/{podkit,podkit-daemon} for each target
+          # platform. $1 = docker arch (amd64|arm64); $2 = artifact suffix
+          # (x64|arm64) — the tarballs are named by the latter.
+          prep() {
+            mkdir -p "bin/$1"
+            tar xzf "docker-artifacts/podkit-linux-$2.tar.gz" -C "bin/$1/"
+            tar xzf "docker-daemon-artifacts/podkit-daemon-linux-$2.tar.gz" -C "bin/$1/"
+            chmod +x "bin/$1/podkit" "bin/$1/podkit-daemon"
+            echo "--- $1 binaries ---"
+            file "bin/$1/podkit" "bin/$1/podkit-daemon"
+          }
+          case "$PLATFORMS" in *amd64*) prep amd64 x64 ;; esac
+          case "$PLATFORMS" in *arm64*) prep arm64 arm64 ;; esac
           # Fail-closed libc gate: the Alpine image can only run musl binaries.
-          # Assert every binary baked in requests the musl program interpreter
+          # Assert every staged binary requests the musl program interpreter
           # (ld-musl-*), never glibc's ld-linux. A glibc/-gnu naming slip
           # feeding the wrong artifact here must fail the build, not ship.
-          for bin in bin/amd64/podkit bin/amd64/podkit-daemon bin/arm64/podkit bin/arm64/podkit-daemon; do
+          for bin in bin/*/podkit bin/*/podkit-daemon; do
+            [ -f "$bin" ] || continue
             interp=$(readelf -l "$bin" | grep -oE 'Requesting program interpreter: [^]]+' || true)
             echo "$bin -> $interp"
             case "$interp" in
@@ -99,17 +125,25 @@ jobs:
 
       - name: Generate Docker tags
         id: tags
+        env:
+          PRERELEASE_TAG: ${{ inputs.prerelease-tag }}
         run: |
-          VERSION="${{ inputs.version }}"
           REPO="ghcr.io/jvgomg/podkit"
 
-          TAGS="${REPO}:${VERSION}"
-          TAGS="${TAGS},${REPO}:latest"
+          if [ -n "$PRERELEASE_TAG" ]; then
+            # Pre-release (e.g. edge): a single moving tag, never the release
+            # tags. Overwriting one tag keeps GHCR bloat bounded.
+            TAGS="${REPO}:${PRERELEASE_TAG}"
+          else
+            VERSION="${{ inputs.version }}"
+            TAGS="${REPO}:${VERSION}"
+            TAGS="${TAGS},${REPO}:latest"
 
-          # Add major.minor tag (e.g., 0.5)
-          MINOR=$(echo "$VERSION" | sed -n 's/^\([0-9]*\.[0-9]*\).*/\1/p')
-          if [ -n "$MINOR" ]; then
-            TAGS="${TAGS},${REPO}:${MINOR}"
+            # Add major.minor tag (e.g., 0.5)
+            MINOR=$(echo "$VERSION" | sed -n 's/^\([0-9]*\.[0-9]*\).*/\1/p')
+            if [ -n "$MINOR" ]; then
+              TAGS="${TAGS},${REPO}:${MINOR}"
+            fi
           fi
 
           echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
@@ -120,7 +154,7 @@ jobs:
         with:
           context: .
           file: packages/podkit-docker/Dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ inputs.platforms }}
           push: ${{ inputs.push }}
           tags: ${{ steps.tags.outputs.tags }}
           build-args: |
@@ -128,5 +162,11 @@ jobs:
             CLI_VERSION=${{ steps.versions.outputs.cli }}
             DAEMON_VERSION=${{ steps.versions.outputs.daemon }}
             BUILD_DATE=${{ github.event.head_commit.timestamp }}
+          # Intentionally one shared cache scope for release and edge builds:
+          # both build the same Dockerfile from musl binaries, so an edge push
+          # keeps the release cache warm (and vice versa). buildx layers are
+          # content-addressed, so this is a cache-hit optimisation, never a
+          # correctness coupling. Split the scope only if edge builds ever need
+          # to be isolated from the release cache.
           cache-from: type=gha,scope=docker-main
           cache-to: type=gha,mode=max,scope=docker-main

@@ -85,7 +85,7 @@ import {
   VM_COLD_TIMEOUT_MS,
   VM_WARM_TIMEOUT_MS,
   DEFAULT_PODKIT_IMAGE_TAG,
-  buildPodkitImageInVm,
+  ensurePodkitImageInVm,
   mountPersona,
   unmountAndStop,
   resolvePersonaDeviceNodes,
@@ -291,13 +291,16 @@ async function waitForDaemonSync(
 }
 
 describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
-  const IMAGE = DEFAULT_PODKIT_IMAGE_TAG;
+  // Default = the local in-VM build tag; reassigned in beforeAll to the pulled
+  // registry tag when PODKIT_DOCKER_DIST_IMAGE is set.
+  let IMAGE = DEFAULT_PODKIT_IMAGE_TAG;
 
   beforeAll(async () => {
     await limaTestVmRunner.prepare();
-    // Build the production-shaped musl image once for the whole suite. `force`
-    // guarantees a fresh image from the current binaries, not a stale cached tag.
-    await buildPodkitImageInVm({ force: true });
+    // Resolve the docker-dist image once for the whole suite: build in-VM from
+    // the current musl binaries (`force` guarantees a fresh image, not a stale
+    // cached tag), or pull the pre-built artifact when the env switch is set.
+    IMAGE = await ensurePodkitImageInVm({ force: true });
     await limaTestVmRunner.applyState(healthy);
   }, IMAGE_BUILD_TIMEOUT_MS);
 

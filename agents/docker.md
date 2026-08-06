@@ -128,6 +128,37 @@ bun run test:e2e:docker-loopback --filter @podkit/e2e-tests
 - Cheap and VM-free (~12s), but still excluded from the default e2e run via the
   `docker-loopback/` surface-dir exclusion — it needs Docker.
 
+### Gating against the real GHA-built image (`:edge`)
+
+Both e2e stages above default to building the image **locally** (in-VM for
+`docker-dist`, on the host daemon for `docker-loopback`) — fast, but not the
+literal artifact CI ships. To gate against the real image instead, set
+`PODKIT_DOCKER_DIST_IMAGE` to a registry tag and both stages **pull** it rather
+than building:
+
+```bash
+# Verify the next release's real image end-to-end before cutting it.
+export PODKIT_DOCKER_DIST_IMAGE=ghcr.io/jvgomg/podkit:edge
+bun run test:e2e:docker-dist                          # tier 5 (VM, usb-synth)
+bun run test:e2e:docker-loopback --filter @podkit/e2e-tests  # tier 4 (host)
+```
+
+- One env var drives both surfaces (`ensurePodkitImageInVm` /
+  `ensurePodkitImageOnHost`): unset → local build; set → `nerdctl pull` (VM) /
+  `docker pull` (host) that tag. `ghcr.io/jvgomg/podkit` is a **public**
+  package, so the pull is anonymous — no `docker login` / token needed.
+- The `:edge` tag is produced by `.github/workflows/docker-edge.yml` on every
+  push to `main` (path-gated to the binary/Docker sources): it builds the
+  arm64 musl binaries and reuses `docker.yml` to push a single **moving** tag,
+  never the `:latest`/`:<version>`/`:<minor>` release tags. arm64-only, because
+  both local consumers are arm64 (host Docker Desktop on Apple Silicon, the
+  arm64 Lima VM).
+- Refresh the loop by pushing your branch to `main`, then
+  `gh run watch $(gh run list --workflow=docker-edge.yml -L1 --json databaseId --jq '.[0].databaseId')`,
+  then run the commands above.
+- GHCR bloat from the overwritten `:edge` manifests is swept weekly by
+  `.github/workflows/docker-prune.yml` (`delete-only-untagged-versions`).
+
 ## Device Support Boundary
 
 Which iPods can be identified from the mounted volume alone (path baseline),

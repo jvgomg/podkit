@@ -8,6 +8,21 @@ on:
         required: false
         default: false
         type: boolean
+      musl-only:
+        description: >-
+          Build only the Linux musl (Alpine) binaries — skip the macOS and
+          glibc jobs. Used by the Docker edge build, which only needs the
+          binaries the Alpine image bakes in.
+        required: false
+        default: false
+        type: boolean
+      arches:
+        description: >-
+          Comma-separated Linux musl arches to build (`x64`, `arm64`, or both).
+          Gates the two musl jobs; the macOS/glibc jobs are unaffected.
+        required: false
+        default: 'x64,arm64'
+        type: string
   # Manual trigger so maintainers can run the full platform build matrix
   # on demand (e.g. to validate a build change before a release). The
   # reusable workflow_call path above is unaffected.
@@ -18,12 +33,24 @@ on:
         required: false
         default: false
         type: boolean
+      musl-only:
+        description: 'Build only the Linux musl binaries (skip macOS + glibc)'
+        required: false
+        default: false
+        type: boolean
+      arches:
+        description: 'Comma-separated Linux musl arches (x64, arm64, or both)'
+        required: false
+        default: 'x64,arm64'
+        type: string
 
 jobs:
   # ===================================================================
   # macOS builds
   # ===================================================================
   build:
+    # Skipped for musl-only (Docker edge) builds.
+    if: ${{ !inputs.musl-only }}
     strategy:
       fail-fast: false
       matrix:
@@ -193,6 +220,7 @@ jobs:
   #        in Alpine containers on ARM64 runners)
   # ===================================================================
   build-musl-x64:
+    if: ${{ contains(inputs.arches, 'x64') }}
     runs-on: ubuntu-24.04
     container: alpine:3.21
     name: Build linux-x64
@@ -400,6 +428,7 @@ jobs:
   # arm64 musl: can't use container: alpine on ARM runners (GH Actions limitation)
   # Instead, run checkout/cache on host, build steps via docker run.
   build-musl-arm64:
+    if: ${{ contains(inputs.arches, 'arm64') }}
     runs-on: ubuntu-24.04-arm
     name: Build linux-arm64
 
@@ -598,6 +627,8 @@ jobs:
   # host-libc probe selects on a glibc host. No -musl rename here.
   # ===================================================================
   build-glibc:
+    # Skipped for musl-only (Docker edge) builds.
+    if: ${{ !inputs.musl-only }}
     strategy:
       fail-fast: false
       matrix:

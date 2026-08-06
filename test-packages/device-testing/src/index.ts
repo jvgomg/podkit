@@ -149,14 +149,19 @@ export {
   DEFAULT_DUMMY_HCD_DAEMON_VM_PATH,
 } from './runners/lima-test-vm.js';
 
-// Lima docker-image build (Tier-5 Docker scaffold)
+// Lima docker-image build + pull (vm-docker-image surface; doc-053 stages 1 & 2)
 export type {
   BuildPodkitImageInVmOpts,
   BuildPodkitImageInVmResult,
+  PullPodkitImageInVmOpts,
+  EnsurePodkitImageInVmOpts,
 } from './runners/lima-docker-image.js';
 export {
   buildPodkitImageInVm,
+  pullPodkitImageInVm,
+  ensurePodkitImageInVm,
   DEFAULT_PODKIT_IMAGE_TAG,
+  DOCKER_DIST_IMAGE_ENV,
   BUILD_CONTEXT_VM_DIR,
 } from './runners/lima-docker-image.js';
 

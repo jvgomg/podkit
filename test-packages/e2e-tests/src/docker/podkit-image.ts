@@ -78,6 +78,17 @@ function hostDaemonMuslBinary(arch: ImageArch): string {
   );
 }
 
+/**
+ * Env var that switches the docker-dist image source from `local-build` (build
+ * on the host Docker daemon from the current musl binaries) to `pull:<tag>`
+ * (pull a pre-built image from a registry). Set it to a fully-qualified tag —
+ * e.g. `ghcr.io/jvgomg/podkit:edge` — to run the loopback-fat CLI surface
+ * against the actual GHA-built artifact. The same env name + semantics are
+ * honoured by the in-VM (tier-5 usb-synth) runner's `ensurePodkitImageInVm`, so
+ * one variable drives both surfaces. Unset → local build.
+ */
+export const DOCKER_DIST_IMAGE_ENV = 'PODKIT_DOCKER_DIST_IMAGE';
+
 export interface BuildPodkitImageOptions {
   /** Image tag to produce. Default `podkit:loopback-test`. */
   tag?: string;
@@ -150,4 +161,58 @@ export async function buildPodkitImageOnHost(
   }
 
   return tag;
+}
+
+/** Runs a `docker <args>` invocation and resolves stdout. DI seam for tests. */
+export type HostDockerRunner = (args: string[]) => Promise<string>;
+
+/**
+ * Pull a pre-built podkit image onto the host Docker daemon.
+ *
+ * `ghcr.io/jvgomg/podkit` is a **public** package, so anonymous pull works —
+ * there is no `docker login` / read-token step.
+ *
+ * @param run - DI seam for the `docker` invocation; production callers leave it
+ *   unset (defaults to the real `runDockerCommand`).
+ * @returns the tag now present on the host daemon.
+ */
+export async function pullPodkitImageOnHost(
+  tag: string,
+  run: HostDockerRunner = runDockerCommand
+): Promise<string> {
+  if (!tag.trim()) {
+    throw new Error('pullPodkitImageOnHost: a non-empty image tag is required');
+  }
+  await run(['pull', tag]);
+  return tag;
+}
+
+/** Options for {@link ensurePodkitImageOnHost}. */
+export interface EnsurePodkitImageOnHostOptions extends BuildPodkitImageOptions {
+  /** DI seam for the `docker` invocation on the pull path; production leaves unset. */
+  dockerRunner?: HostDockerRunner;
+}
+
+/**
+ * Resolve the docker-dist image the loopback suite should run against,
+ * honouring the {@link DOCKER_DIST_IMAGE_ENV} switch:
+ *
+ *   - env set   → pull that tag ({@link pullPodkitImageOnHost}) — the real
+ *     GHA-built artifact. On this path `options.tag` and `options.arch` are
+ *     **ignored**: the tag comes from the env var (the image is pre-built), and
+ *     the arch is whatever the registry manifest resolves to.
+ *   - env unset → build on the host daemon from the current musl binaries
+ *     ({@link buildPodkitImageOnHost}) — the fast local loop; `options.tag` /
+ *     `options.arch` apply here.
+ *
+ * @returns the resolved image tag the container steps must reference.
+ */
+export async function ensurePodkitImageOnHost(
+  options: EnsurePodkitImageOnHostOptions = {}
+): Promise<string> {
+  const override = process.env[DOCKER_DIST_IMAGE_ENV]?.trim();
+  if (override) {
+    return pullPodkitImageOnHost(override, options.dockerRunner);
+  }
+  return buildPodkitImageOnHost(options);
 }

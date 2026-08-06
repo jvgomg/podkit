@@ -79,7 +79,7 @@ import {
   VM_COLD_TIMEOUT_MS,
   VM_WARM_TIMEOUT_MS,
   DEFAULT_PODKIT_IMAGE_TAG,
-  buildPodkitImageInVm,
+  ensurePodkitImageInVm,
   mountPersona,
   unmountAndStop,
   resolvePersonaDeviceNodes,
@@ -182,13 +182,18 @@ const PATH_CONFIG_TOML = [
   '',
 ].join('\n');
 
+// The image the container steps run against. Default = the local in-VM build
+// tag; when PODKIT_DOCKER_DIST_IMAGE is set, `ensurePodkitImageInVm` pulls that
+// registry tag instead and this is reassigned to it in beforeAll.
+let IMAGE = DEFAULT_PODKIT_IMAGE_TAG;
+
 describe('VM: Docker dist image e2e (musl image + synthesized USB iPod)', () => {
   beforeAll(async () => {
     await limaTestVmRunner.prepare();
-    // Build the production-shaped musl image once for the whole suite. `force`
-    // guarantees a fresh image from the current binaries rather than a stale
-    // cached tag from a prior run.
-    await buildPodkitImageInVm({ force: true });
+    // Resolve the docker-dist image once for the whole suite: build in-VM from
+    // the current musl binaries (`force` guarantees a fresh image, not a stale
+    // cached tag), or pull the pre-built artifact when the env switch is set.
+    IMAGE = await ensurePodkitImageInVm({ force: true });
     await limaTestVmRunner.applyState(healthy);
   }, IMAGE_BUILD_TIMEOUT_MS);
 
@@ -204,7 +209,6 @@ describe('VM: Docker dist image e2e (musl image + synthesized USB iPod)', () => 
     const VM_MOUNT_POINT = '/mnt/podkit-docker-dist';
     const VM_CONFIG_DIR = '/tmp/podkit-docker-dist-config';
     const VM_MUSIC_DIR = '/tmp/podkit-docker-dist-music';
-    const IMAGE = DEFAULT_PODKIT_IMAGE_TAG;
 
     // Resolved in beforeAll AFTER the daemon is up (VZ-HID trap, gotcha #1).
     let blockDevice = '';

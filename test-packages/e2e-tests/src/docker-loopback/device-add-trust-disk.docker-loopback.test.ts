@@ -38,7 +38,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 
-import { buildPodkitImageOnHost } from '../docker/podkit-image.js';
+import { ensurePodkitImageOnHost } from '../docker/podkit-image.js';
 import { isDockerAvailable } from '../sources/subsonic.js';
 import {
   startLoopbackContainer,
@@ -58,7 +58,9 @@ interface DeviceAddJson {
   verification?: 'verified' | 'trusted-disk' | 'config-only';
 }
 
-const IMAGE_TAG = 'podkit:loopback-test';
+// Reassigned in beforeAll: the local build keeps this tag; a pull (when
+// PODKIT_DOCKER_DIST_IMAGE is set) resolves to the pulled registry tag.
+let IMAGE_TAG = 'podkit:loopback-test';
 const BUILD_TIMEOUT_MS = 300_000;
 const CASE_TIMEOUT_MS = 60_000;
 
@@ -70,7 +72,7 @@ beforeAll(async () => {
       'Docker is not available — required for the docker-loopback suite. Start Docker and run `bun run test:e2e:docker-loopback`.'
     );
   }
-  await buildPodkitImageOnHost({ tag: IMAGE_TAG });
+  IMAGE_TAG = await ensurePodkitImageOnHost({ tag: IMAGE_TAG });
   container = await startLoopbackContainer(IMAGE_TAG);
 }, BUILD_TIMEOUT_MS);
 

@@ -1,0 +1,31 @@
+name: Prune GHCR untagged images
+
+# The Docker edge build (docker-edge.yml) overwrites a single moving
+# `:edge` tag on every push to main. Each overwrite leaves the previous
+# manifest untagged. This job sweeps those untagged manifests weekly so the
+# `ghcr.io/jvgomg/podkit` package doesn't accumulate orphaned layers.
+#
+# `delete-only-untagged-versions: true` guarantees no tagged image — no
+# release (:latest / :<version> / :<minor>) and not the live :edge — is ever
+# removed.
+
+on:
+  schedule:
+    # Mondays 04:00 UTC.
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  packages: write
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    name: Delete untagged GHCR versions
+    steps:
+      - name: Prune untagged podkit image versions
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: podkit
+          package-type: container
+          delete-only-untagged-versions: true

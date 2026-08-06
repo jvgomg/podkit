@@ -1,0 +1,66 @@
+name: Docker Edge Image
+
+# Builds + pushes a single MOVING pre-release image tag on every push to main:
+#
+#     ghcr.io/jvgomg/podkit:edge
+#
+# This is the artifact the local vm-docker-image / loopback harness gates
+# against (doc-053 stage 5 Stage-2 pull path) — "the next release's real
+# image", verified before you cut a release. It NEVER touches the
+# :latest / :<version> / :<minor> release tags (those come from release.yml).
+#
+# Overwriting one tag keeps GHCR bloat bounded; the leftover untagged manifests
+# are swept weekly by docker-prune.yml.
+#
+# arm64-only: both local consumers are arm64 (host Docker Desktop on Apple
+# Silicon = tier 4 loopback; the arm64 Lima VM = tier 5 usb-synth). amd64 is
+# deferred until an amd64 gate exists.
+
+on:
+  push:
+    branches:
+      - main
+    # Only rebuild when something that lands in the image could have changed.
+    paths:
+      - 'packages/podkit-cli/**'
+      - 'packages/podkit-core/**'
+      - 'packages/podkit-daemon/**'
+      - 'packages/podkit-docker/**'
+      - 'packages/libgpod-node/**'
+      - '.github/workflows/docker-edge.yml'
+      - '.github/workflows/docker.yml'
+      - '.github/workflows/build-platform.yml'
+  workflow_dispatch:
+
+# Superseded edge builds are pointless — only the newest main matters.
+concurrency:
+  group: docker-edge
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  # Build only the arm64 musl binaries the Alpine image bakes in — skip the
+  # macOS + glibc jobs and the amd64 musl job.
+  build:
+    uses: ./.github/workflows/build-platform.yml
+    with:
+      upload-artifacts: true
+      musl-only: true
+      arches: arm64
+
+  # Reuse the release build path, but push only the moving :edge tag, arm64-only.
+  docker:
+    needs: build
+    if: needs.build.result == 'success'
+    uses: ./.github/workflows/docker.yml
+    with:
+      version: 0.0.0-edge
+      push: true
+      platforms: linux/arm64
+      prerelease-tag: edge
+    permissions:
+      contents: read
+      packages: write

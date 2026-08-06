@@ -42,6 +42,16 @@ import {
 
 /** Default image tag produced by {@link buildPodkitImageInVm}. */
 export const DEFAULT_PODKIT_IMAGE_TAG = 'podkit:docker-dist';
+/**
+ * Env var that switches the docker-dist image source from `local-build` (build
+ * in-VM from the current musl binaries) to `pull:<tag>` (pull a pre-built image
+ * from a registry). Set it to a fully-qualified tag — e.g.
+ * `ghcr.io/jvgomg/podkit:edge` — to run the harness against the actual
+ * GHA-built artifact instead of a local build. The same env name + semantics
+ * are honoured by the host (tier-4 loopback) runner's `ensurePodkitImageOnHost`
+ * so one variable drives both surfaces. Unset → local build.
+ */
+export const DOCKER_DIST_IMAGE_ENV = 'PODKIT_DOCKER_DIST_IMAGE';
 /** In-VM directory that holds the staged build context. */
 export const BUILD_CONTEXT_VM_DIR = '/tmp/podkit-image-ctx';
 /** Fixed VERSION build-arg for the local Tier-5 build (CI supplies the real one). */
@@ -122,32 +132,40 @@ function hostDaemonBinaryPath(arch: 'arm64' | 'amd64'): string {
   );
 }
 
+/** `systemctl start <unit>` in the VM (idempotent — no-op if already active). */
+async function startUnit(
+  subprocess: SubprocessRunner,
+  vmName: string,
+  unit: string
+): Promise<void> {
+  const start = await runLimactl(subprocess, [
+    'shell',
+    vmName,
+    '--',
+    'sudo',
+    'systemctl',
+    'start',
+    unit,
+  ]);
+  if (start.exitCode !== 0) {
+    throw limactlError(`failed to start ${unit}.service in ${vmName}`, start);
+  }
+}
+
 /**
  * Ensure the container runtime services `nerdctl build` depends on are up.
  *
  * The device-harness VM ships containerd + buildkit as systemd units, but
  * they're `disabled` by default (the harness's primary job is USB-gadget
  * testing, not containers). `nerdctl build` needs both: containerd for the
- * image store and buildkitd for the build backend. `systemctl start` is
- * idempotent — a no-op when the unit is already active.
+ * image store and buildkitd for the build backend.
  */
 async function ensureContainerServices(
   subprocess: SubprocessRunner,
   vmName: string
 ): Promise<void> {
   for (const unit of ['containerd', 'buildkit']) {
-    const start = await runLimactl(subprocess, [
-      'shell',
-      vmName,
-      '--',
-      'sudo',
-      'systemctl',
-      'start',
-      unit,
-    ]);
-    if (start.exitCode !== 0) {
-      throw limactlError(`failed to start ${unit}.service in ${vmName}`, start);
-    }
+    await startUnit(subprocess, vmName, unit);
   }
 }
 
@@ -334,4 +352,95 @@ export async function buildPodkitImageInVm(
   }
 
   return { tag };
+}
+
+// ---------------------------------------------------------------------------
+// Pull path (Stage 2 — run the harness against the real GHA-built artifact)
+// ---------------------------------------------------------------------------
+
+/** Options for {@link pullPodkitImageInVm}. */
+export interface PullPodkitImageInVmOpts {
+  /** Fully-qualified image tag to pull, e.g. `ghcr.io/jvgomg/podkit:edge`. */
+  tag: string;
+  /** Lima instance name. Defaults to {@link LIMA_DEVICE_HARNESS_VM_NAME}. */
+  vmName?: string;
+  /** DI seam for `limactl`; production callers leave unset. */
+  subprocess?: SubprocessRunner;
+}
+
+/**
+ * Pull a pre-built podkit image into the device-harness Lima VM.
+ *
+ * The image lives at `ghcr.io/jvgomg/podkit`, which is a **public** package —
+ * anonymous pull works, so there is no `nerdctl login` / read-token step. Only
+ * `containerd` is needed (the image store); `buildkit` is a build-time
+ * dependency and is deliberately not started here.
+ *
+ * @returns the tag now present in the VM.
+ */
+export async function pullPodkitImageInVm(
+  opts: PullPodkitImageInVmOpts
+): Promise<BuildPodkitImageInVmResult> {
+  const subprocess = opts.subprocess ?? defaultSubprocessRunner;
+  const vmName = opts.vmName ?? LIMA_DEVICE_HARNESS_VM_NAME;
+  const tag = opts.tag?.trim();
+  if (!tag) {
+    throw new Error('pullPodkitImageInVm: a non-empty image tag is required');
+  }
+
+  await startUnit(subprocess, vmName, 'containerd');
+
+  const pull = await runLimactl(subprocess, [
+    'shell',
+    vmName,
+    '--',
+    'sudo',
+    'nerdctl',
+    'pull',
+    tag,
+  ]);
+  if (pull.exitCode !== 0) {
+    throw limactlError(`failed to pull image ${tag} in ${vmName}`, pull);
+  }
+
+  return { tag };
+}
+
+/** Options for {@link ensurePodkitImageInVm}. */
+export interface EnsurePodkitImageInVmOpts {
+  /** Force a fresh local build (ignored on the pull path). */
+  force?: boolean;
+  /** Lima instance name. Defaults to {@link LIMA_DEVICE_HARNESS_VM_NAME}. */
+  vmName?: string;
+  /** DI seam for `limactl`; production callers leave unset. */
+  subprocess?: SubprocessRunner;
+}
+
+/**
+ * Resolve the docker-dist image the VM suite should run against, honouring the
+ * {@link DOCKER_DIST_IMAGE_ENV} switch:
+ *
+ *   - env set   → pull that tag ({@link pullPodkitImageInVm}) — Stage 2, the
+ *     real GHA-built artifact.
+ *   - env unset → build in-VM from the current musl binaries
+ *     ({@link buildPodkitImageInVm}) — Stage 1, the fast dev loop.
+ *
+ * @returns the resolved image tag the container steps must reference.
+ */
+export async function ensurePodkitImageInVm(opts: EnsurePodkitImageInVmOpts = {}): Promise<string> {
+  const override = process.env[DOCKER_DIST_IMAGE_ENV]?.trim();
+  if (override) {
+    const { tag } = await pullPodkitImageInVm({
+      tag: override,
+      vmName: opts.vmName,
+      subprocess: opts.subprocess,
+    });
+    return tag;
+  }
+  const { tag } = await buildPodkitImageInVm({
+    force: opts.force,
+    vmName: opts.vmName,
+    subprocess: opts.subprocess,
+  });
+  return tag;
 }

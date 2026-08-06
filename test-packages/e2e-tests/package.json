@@ -10,10 +10,11 @@
     "./targets": "./src/targets/index.ts"
   },
   "scripts": {
-    "test:e2e": "gpod-tests-parallel --pattern '*.test.ts' --exclude-path 'docker-source/' --exclude-path 'docker-loopback/'",
-    "test:e2e:serial": "bun test --path-ignore-patterns='**/docker-source/**' --path-ignore-patterns='**/docker-loopback/**'",
-    "test:e2e:dummy": "IPOD_TARGET=dummy gpod-tests-parallel --pattern '*.test.ts' --exclude-path 'docker-source/' --exclude-path 'docker-loopback/'",
-    "test:e2e:real": "IPOD_TARGET=real bun test --path-ignore-patterns='**/docker-source/**' --path-ignore-patterns='**/docker-loopback/**'",
+    "test:unit": "bun test src/docker/",
+    "test:e2e": "gpod-tests-parallel --pattern '*.test.ts' --exclude-path 'docker-source/' --exclude-path 'docker-loopback/' --exclude-path 'docker/'",
+    "test:e2e:serial": "bun test --path-ignore-patterns='**/docker-source/**' --path-ignore-patterns='**/docker-loopback/**' --path-ignore-patterns='**/docker/**'",
+    "test:e2e:dummy": "IPOD_TARGET=dummy gpod-tests-parallel --pattern '*.test.ts' --exclude-path 'docker-source/' --exclude-path 'docker-loopback/' --exclude-path 'docker/'",
+    "test:e2e:real": "IPOD_TARGET=real bun test --path-ignore-patterns='**/docker-source/**' --path-ignore-patterns='**/docker-loopback/**' --path-ignore-patterns='**/docker/**'",
     "test:e2e:docker": "gpod-tests-parallel --pattern '*.test.ts' docker-source/ --concurrency 3",
     "test:e2e:docker:serial": "bun test src/docker-source/ --path-ignore-patterns=",
     "test:e2e:docker-loopback": "bun test src/docker-loopback/ --path-ignore-patterns=",
