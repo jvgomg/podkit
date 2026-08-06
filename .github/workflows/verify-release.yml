@@ -4,6 +4,13 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
+# The docker job pushes a single MOVING :rc tag. Two rapid pushes to the same
+# Version PR would otherwise race that tag (last-writer-wins) and hand rc
+# discovery a nondeterministic image — so supersede in-flight runs per PR.
+concurrency:
+  group: verify-release-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   # Only run when this is a "Version Packages" PR from changesets
   check-pr:
@@ -30,14 +37,43 @@ jobs:
     with:
       upload-artifacts: true
 
-  # Build Docker image (no push) to warm the layer cache for release
+  # Read the release-candidate version from the PR branch so the :rc image is
+  # stamped with the real version (VERSION build-arg / image label). Because the
+  # docker build runs in pre-release-tag mode, this version is never turned into
+  # a pushed tag — only the moving :rc tag is pushed.
+  rc-version:
+    needs: check-pr
+    if: needs.check-pr.outputs.is_version_pr == 'true'
+    runs-on: ubuntu-latest
+    name: Read RC version
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read release-candidate version
+        id: read
+        run: echo "version=$(jq -r .version packages/podkit-cli/package.json)" >> "$GITHUB_OUTPUT"
+
+  # Build the release-candidate image and push it as the single moving :rc
+  # pre-release tag — never the :latest / :<version> / :<minor> release tags.
+  # Stays multi-arch so amd64 build verification + release cache warming are
+  # preserved and :rc mirrors the release manifest. The push is gated to
+  # same-repo (non-fork) PRs so a fork PR titled "Version Packages" cannot push
+  # an image built from untrusted code.
   docker:
-    needs: [check-pr, build]
-    if: needs.check-pr.outputs.is_version_pr == 'true' && needs.build.result == 'success'
+    needs: [check-pr, build, rc-version]
+    if: >-
+      needs.check-pr.outputs.is_version_pr == 'true' &&
+      needs.build.result == 'success' &&
+      github.event.pull_request.head.repo.full_name == github.repository
     uses: ./.github/workflows/docker.yml
     with:
-      version: 0.0.0-verify
-      push: false
+      version: ${{ needs.rc-version.outputs.version }}
+      push: true
+      prerelease-tag: rc
+    permissions:
+      contents: read
+      packages: write
 
   # Verify the docs site builds — we don't want to merge a Version Packages PR
   # if the post-release docs deploy would fail.

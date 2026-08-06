@@ -19,7 +19,7 @@ on:
         type: string
       prerelease-tag:
         description: >-
-          When set, push ONLY this single tag (e.g. `edge`) and SKIP the
+          When set, push ONLY this single tag (e.g. `rc`) and SKIP the
           :latest / :<version> / :<minor> release tags. Leave empty for a
           normal release build.
         required: false
@@ -45,7 +45,7 @@ jobs:
           echo "daemon=$(jq -r '.version' packages/podkit-daemon/package.json)" >> "$GITHUB_OUTPUT"
 
       # amd64 artifacts are only produced/needed when linux/amd64 is a target
-      # platform. An arm64-only build (e.g. the edge image) skips these.
+      # platform. A single-arch build skips the download for the other arch.
       - name: Download Linux amd64 binary
         if: contains(inputs.platforms, 'amd64')
         uses: actions/download-artifact@v4
@@ -131,7 +131,7 @@ jobs:
           REPO="ghcr.io/jvgomg/podkit"
 
           if [ -n "$PRERELEASE_TAG" ]; then
-            # Pre-release (e.g. edge): a single moving tag, never the release
+            # Pre-release (e.g. rc): a single moving tag, never the release
             # tags. Overwriting one tag keeps GHCR bloat bounded.
             TAGS="${REPO}:${PRERELEASE_TAG}"
           else
@@ -162,11 +162,11 @@ jobs:
             CLI_VERSION=${{ steps.versions.outputs.cli }}
             DAEMON_VERSION=${{ steps.versions.outputs.daemon }}
             BUILD_DATE=${{ github.event.head_commit.timestamp }}
-          # Intentionally one shared cache scope for release and edge builds:
-          # both build the same Dockerfile from musl binaries, so an edge push
-          # keeps the release cache warm (and vice versa). buildx layers are
-          # content-addressed, so this is a cache-hit optimisation, never a
-          # correctness coupling. Split the scope only if edge builds ever need
-          # to be isolated from the release cache.
+          # Intentionally one shared cache scope for release and release-
+          # candidate (:rc) builds: both build the same Dockerfile from musl
+          # binaries, so an :rc push keeps the release cache warm (and vice
+          # versa). buildx layers are content-addressed, so this is a cache-hit
+          # optimisation, never a correctness coupling. Split the scope only if
+          # :rc builds ever need to be isolated from the release cache.
           cache-from: type=gha,scope=docker-main
           cache-to: type=gha,mode=max,scope=docker-main

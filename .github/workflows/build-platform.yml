@@ -11,8 +11,8 @@ on:
       musl-only:
         description: >-
           Build only the Linux musl (Alpine) binaries — skip the macOS and
-          glibc jobs. Used by the Docker edge build, which only needs the
-          binaries the Alpine image bakes in.
+          glibc jobs. Retained as a reusable seam for a musl-only image build
+          that needs just the binaries the Alpine image bakes in.
         required: false
         default: false
         type: boolean
@@ -49,7 +49,7 @@ jobs:
   # macOS builds
   # ===================================================================
   build:
-    # Skipped for musl-only (Docker edge) builds.
+    # Skipped for musl-only builds.
     if: ${{ !inputs.musl-only }}
     strategy:
       fail-fast: false
@@ -627,7 +627,7 @@ jobs:
   # host-libc probe selects on a glibc host. No -musl rename here.
   # ===================================================================
   build-glibc:
-    # Skipped for musl-only (Docker edge) builds.
+    # Skipped for musl-only builds.
     if: ${{ !inputs.musl-only }}
     strategy:
       fail-fast: false
