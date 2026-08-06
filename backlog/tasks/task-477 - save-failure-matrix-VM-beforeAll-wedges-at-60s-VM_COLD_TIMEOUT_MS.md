@@ -1,10 +1,10 @@
 ---
 id: TASK-477
 title: save-failure-matrix VM beforeAll wedges at 60s VM_COLD_TIMEOUT_MS
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-06 19:18'
-updated_date: '2026-08-06 20:41'
+updated_date: '2026-08-06 22:21'
 labels:
   - testing
   - vm
@@ -55,4 +55,12 @@ Regression guard: no clean unit seam exists for a VM hook-timeout budget (the "n
 Observation (out of scope, flag): prepare() takes ~20s — worth a look as a separate VM-harness perf item if setup time matters. Also: TASK-476.01's Run 1 saw doctor-scope-refactor.e2e.test.ts time out at 88s once (passed on rerun) — likely the same fixed-budget-too-tight class; a full `bun run quality` will confirm whether it needs the same treatment.
 
 Unblocks the full-green acceptances of TASK-476.01 (AC#4) and TASK-476.04 (AC#6, together with a live :rc).
+
+Second failure mode found + fixed while verifying the full-gate green (same root-cause family: VM-op timeout too tight under full-suite load).
+
+A full `bun run quality` still failed once — NOT the beforeAll budget (that fix held; save-failure-matrix ran fine) but a single cell (sidecar-mixed/flac/prefer-copy/fast/cover-collision) nulled by an observeError: `runDoctor`'s `limactl shell ... podkit doctor --no-system --json` REJECTED. Traced through the runner: podkit-core/src/subprocess-runner.ts resolves non-zero exits but REJECTS transport-level failures (timeout/spawn). runDoctor ran with timeoutMs=VM_WARM_TIMEOUT_MS (10s) and its try/catch only guarded JSON.parse, not the .run() — so under `turbo run qa` concurrency (test:vm competing with host-e2e/unit/docker tasks for the shared VM host) the doctor probe stalled past 10s → execFile timeout → reject → the whole cell nulled. Passed 2/2 in isolation (no contention) precisely because doctor finished <10s there.
+
+Fix (runDoctor): give the observational doctor probe cold-op headroom (VM_COLD_TIMEOUT_MS) and retry a transient transport failure up to 3 attempts; a genuine persistent failure still throws after the retries (not masked); a non-zero doctor exit still resolves and is parsed. Same family as the beforeAll-budget fix: a VM-op timeout that was too tight under concurrent load.
+
+Verified: full `bun run quality` GREEN end-to-end (QUALITY_EXIT=0). Phase 1: @podkit/core 3411/0, podkit 1964/0, device-testing test:vm 38/0, e2e-vm-tests test:vm 194/0 (cover-collision now passes), 94/94 tasks. Phase 2: docker-loopback 3/0, docker-dist 6/0, 25/25 tasks. This closes TASK-476.01 AC#4 and unblocks TASK-476.04 AC#6 (still needs a live :rc for the CI-asset variant).
 <!-- SECTION:NOTES:END -->

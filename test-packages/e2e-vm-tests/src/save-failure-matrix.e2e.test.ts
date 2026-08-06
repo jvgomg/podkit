@@ -779,12 +779,30 @@ async function runDoctor(cell: SaveFailCell): Promise<DoctorJsonShape> {
   const cfg = configPathFor(cell);
   const name = deviceNameFor(cell);
   const cmd = `/usr/local/bin/podkit --config ${sq(cfg)} doctor -d ${sq(name)} --no-system --json`;
-  const result = await limaTestVmRunner.run(cmd, { timeoutMs: VM_WARM_TIMEOUT_MS });
-  try {
-    return JSON.parse(result.stdout) as DoctorJsonShape;
-  } catch {
-    return {};
+  // Doctor is an observational probe whose JSON drives one observed field.
+  // Under full-suite turbo concurrency the shared VM can stall past the warm
+  // timeout; the runner then rejects (a transport-level timeout — non-zero
+  // exits resolve). A single such stall would otherwise null every field for
+  // the cell. Give it cold-op headroom and retry a transient stall; a genuine
+  // persistent failure still surfaces after the retries (not masked). A
+  // non-zero exit (doctor found issues) resolves normally and is parsed here.
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const result = await limaTestVmRunner.run(cmd, { timeoutMs: VM_COLD_TIMEOUT_MS });
+      try {
+        return JSON.parse(result.stdout) as DoctorJsonShape;
+      } catch {
+        return {};
+      }
+    } catch (err) {
+      lastErr = err;
+    }
   }
+  throw new Error(
+    `runDoctor for ${saveFailCellKey(cell)} failed after 3 attempts: ` +
+      `${lastErr instanceof Error ? lastErr.message : String(lastErr)}`
+  );
 }
 
 function doctorSeesPodkitTmp(doctor: DoctorJsonShape): boolean | null {
