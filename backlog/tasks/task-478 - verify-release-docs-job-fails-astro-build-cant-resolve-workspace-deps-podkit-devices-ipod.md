@@ -3,9 +3,10 @@ id: TASK-478
 title: >-
   verify-release docs job fails: astro build can't resolve workspace deps
   (@podkit/devices-ipod)
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-08-13 20:16'
+updated_date: '2026-08-13 20:33'
 labels:
   - ci
   - docs
@@ -47,3 +48,27 @@ Investigate what docs-site actually imports at build time from each workspace de
 
 **Related design question (note, decide separately):** should RC-readiness (resolve-rc-build) key on the whole verify-release conclusion, or only the asset-producing jobs (build + docker)? doc-058 says "the run succeeded". The docs job produces no RC asset, yet its failure currently blocks quality:rc. Out of scope for this bug; capture as a possible refinement to TASK-476.02's classifier if docs-Co-failure recurs.
 <!-- SECTION:DESCRIPTION:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Diagnosed + fixed (systematic-debugging).
+
+Repro (tight, deterministic, ~2s): `rm -rf packages/{devices-ipod,device-types,ipod-firmware}/dist` then `cd packages/docs-site && bun run build` → reproduces the exact CI error `[commonjs--resolver] Failed to resolve entry for package "@podkit/devices-ipod"`.
+
+Findings:
+- Package entries: @podkit/devices-ipod, device-types, ipod-firmware, libgpod-node are dist-based (exports ./dist/index.js). @podkit/compatibility is SOURCE-based (exports ./src/index.ts).
+- docs-site imports runtime values: getSupportMatrix from @podkit/devices-ipod; GENERATION_INFO/REAL_DEVICE_REPORTS from @podkit/compatibility.
+- @podkit/devices-ipod's dependency closure = device-types + ipod-firmware, and ipod-firmware → only device-types. ALL pure TypeScript — NO native @podkit/libgpod-node in the chain.
+- @podkit/compatibility resolves from source and imports libgpod-node TYPE-ONLY (`import type { IpodGeneration }` in src/helpers.ts + src/types.ts) — erased at build, so it never drags the native addon. No build needed for compatibility.
+
+So the native-libgpod complication flagged when filing this task does NOT apply to the docs build: docs-site only needs @podkit/devices-ipod's dist (pure-TS chain) built; compatibility is consumed from source.
+
+Fix: add a `Build docs workspace deps` step before the astro build in BOTH `verify-release.yml` (Verify Docs Build job) and `deploy-docs.yml` (same latent bug): `bunx turbo run build --filter=@podkit/devices-ipod`. Builds device-types + ipod-firmware + devices-ipod (3 pure-TS tasks, no libgpod in scope) so a bare setup-bun runner can build it.
+
+Verified locally against the repro: after `bunx turbo run build --filter=@podkit/devices-ipod`, `bun run build` in docs-site → "[build] Complete!" + "✓ All internal links are valid." actionlint + prettier clean on both workflows.
+
+Not a general `--filter=@podkit/docs-site^...` because that WOULD pull the native @podkit/libgpod-node (via compatibility's dep edge) and fail in the bare runner; the targeted filter lists exactly the dist-based dep docs-site needs. If docs-site later imports another dist-based (non-native) workspace package, extend the filter.
+
+Remaining: confirm green on the live verify-release re-run, then Done.
+<!-- SECTION:NOTES:END -->

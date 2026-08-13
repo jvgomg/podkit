@@ -87,6 +87,13 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - name: Install dependencies
         run: bun install --frozen-lockfile --ignore-scripts
+      # docs-site imports runtime values from @podkit/devices-ipod (dist-based),
+      # so its dist must exist before astro build. Build only that pure-TS chain
+      # (device-types + ipod-firmware + devices-ipod) — it pulls no native
+      # libgpod, so a bare runner can build it. @podkit/compatibility resolves
+      # from source and imports libgpod-node type-only, so it needs no build.
+      - name: Build docs workspace deps
+        run: bunx turbo run build --filter=@podkit/devices-ipod
       - name: Build docs site
         run: cd packages/docs-site && bun run build
 
