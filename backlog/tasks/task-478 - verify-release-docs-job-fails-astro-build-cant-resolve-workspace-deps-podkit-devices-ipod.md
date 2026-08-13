@@ -3,10 +3,10 @@ id: TASK-478
 title: >-
   verify-release docs job fails: astro build can't resolve workspace deps
   (@podkit/devices-ipod)
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-13 20:16'
-updated_date: '2026-08-13 20:33'
+updated_date: '2026-08-13 20:47'
 labels:
   - ci
   - docs
@@ -71,4 +71,6 @@ Verified locally against the repro: after `bunx turbo run build --filter=@podkit
 Not a general `--filter=@podkit/docs-site^...` because that WOULD pull the native @podkit/libgpod-node (via compatibility's dep edge) and fail in the bare runner; the targeted filter lists exactly the dist-based dep docs-site needs. If docs-site later imports another dist-based (non-native) workspace package, extend the filter.
 
 Remaining: confirm green on the live verify-release re-run, then Done.
+
+VERIFIED GREEN IN CI + Done. Committed (40998e29), pushed, re-triggered PR #48 verify-release. The fully-green run 31741549870: ALL jobs success — check-pr, Read RC version, Verify Docs Build (the fix works in a bare CI runner), the full 6-job binary matrix, docker / Build & Push Docker Image (fresh :rc), and Release CI Status. The 'Version Packages' PR now goes green; releases unblocked. `bun run quality:rc` now discovers this ready run and proceeds to fetch + mirror (closing TASK-476.04 AC#6).
 <!-- SECTION:NOTES:END -->
