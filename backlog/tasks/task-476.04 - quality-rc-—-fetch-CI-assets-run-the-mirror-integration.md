@@ -1,10 +1,10 @@
 ---
 id: TASK-476.04
 title: 'quality:rc — fetch CI assets + run the mirror (integration)'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-06 18:22'
-updated_date: '2026-08-06 22:22'
+updated_date: '2026-08-13 21:20'
 labels:
   - testing
   - ci
@@ -48,7 +48,7 @@ On the ready path it fetches exactly two artefacts for arm64 — the compiled **
 - [x] #3 It then runs the identical two-phase mirror body from ticket 1 — only the asset source differs from `bun run quality`
 - [x] #4 No standalone daemon artefact is fetched (the daemon is exercised inside the `:rc` image); an explicit run-id override is supported
 - [x] #5 Docs updated: agents/testing.md (quality vs quality:rc), agents/docker.md, doc-053 — including the honest fidelity caveat and the release-candidate-window scoping
-- [ ] #6 End-to-end green against a live "Version Packages" PR (fetched Mach-O arm64 host binary, glibc arm64 in the VM, `:rc` pulled for the docker surfaces); TASK-475's deferred CI-fidelity AC is closed
+- [x] #6 End-to-end green against a live "Version Packages" PR (fetched Mach-O arm64 host binary, glibc arm64 in the VM, `:rc` pulled for the docker surfaces); TASK-475's deferred CI-fidelity AC is closed
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -96,4 +96,8 @@ Nit fixed by team lead: added a line to agents/testing.md documenting turbo's `-
 AC#6 (end-to-end green) remains DEFERRED: needs (a) TASK-476.03 merged to main + a re-triggered verify-release run so `ghcr.io/jvgomg/podkit:rc` exists in GHCR, and (b) the TASK-477 save-failure-matrix VM wedge fixed so a full test:vm phase can go green. Design note (per doc-058 Testing Decisions): run-mirror-body's spawn/short-circuit glue is intentionally thin and left to e2e validation, not unit-tested — the unit-tested seam is 476.02's decision fn.
 
 Local blocker cleared: TASK-477 fixed, so a full `bun run quality` (the LOCAL mirror, identical body) is now green end-to-end. The `quality:rc` code path (discovery/preflight/fetch/shared-body) is complete + committed. AC#6 (CI-asset end-to-end) is the ONLY remaining item and needs a live `:rc` in GHCR — i.e. these commits pushed + the open 'Version Packages' PR's verify-release re-run producing `ghcr.io/jvgomg/podkit:rc`. That's a maintainer push/CI step (no local substitute).
+
+AC#6 CLOSED — `bun run quality:rc` GREEN END-TO-END against a live 'Version Packages' PR. Discovered the ready verify-release run, fetched the arm64 Mach-O host binary (podkit-darwin-arm64) + glibc arm64 VM binary (podkit-linux-arm64-gnu) into the git-ignored scratch dir, pointed PODKIT_CLI_BINARY + PODKIT_LINUX_BINARY at them, pulled ghcr.io/jvgomg/podkit:rc for both docker surfaces, and ran the identical two-phase mirror body: phase 1 (qa incl. test:vm) 94/94 tasks — e2e-vm-tests test:vm 194 pass/0 fail + device-testing 38/0 on the FETCHED binary; phase 2 (docker-dist + docker-loopback pulling :rc) 25/25 tasks — docker-dist 6/0, docker-loopback 3/0. QUALITYRC_EXIT=0. This also completes TASK-475's deferred CI-byte-fidelity AC (the gate now drives the exact CI-built assets). All six ACs met. Done.
+
+(Getting here also required recovering sleep-corrupted local infra: destroy+setup the harness VM to re-seal its baseline hash, and restart Docker Desktop — both environment issues, not code. vm:doctor hashes the VM config, not the binary, so the fetched binary flows through vm:install cleanly.)
 <!-- SECTION:NOTES:END -->
