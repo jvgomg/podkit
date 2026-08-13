@@ -1,10 +1,10 @@
 ---
 id: TASK-476.03
 title: 'Produce :rc, retire :edge (workflow)'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-06 18:22'
-updated_date: '2026-08-06 22:22'
+updated_date: '2026-08-13 20:16'
 labels:
   - docker
   - ci
@@ -38,11 +38,11 @@ Change the verification workflow's docker job from build-only to build-and-push 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 On a "Version Packages" PR, the release-verification workflow builds AND pushes a single moving multi-arch `ghcr.io/jvgomg/podkit:rc`, never the :latest/:version/:minor release tags
+- [x] #1 On a "Version Packages" PR, the release-verification workflow builds AND pushes a single moving multi-arch `ghcr.io/jvgomg/podkit:rc`, never the :latest/:version/:minor release tags
 - [x] #2 The `:rc` push is gated to same-repo (non-fork) PRs
 - [x] #3 The per-push docker-edge workflow is deleted and `:edge` is no longer produced; the reusable-workflow inputs it shared with `:rc` (pre-release-tag/platforms, musl-only/arches) remain
 - [x] #4 The untagged-manifest prune still runs and covers `:rc`
-- [ ] #5 actionlint passes on all workflows; the release path and its cache-warming are unchanged
+- [x] #5 actionlint passes on all workflows; the release path and its cache-warming are unchanged
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -84,4 +84,8 @@ Fix applied by team lead: added a workflow-level `concurrency` guard (group: ver
 Deferred to TASK-476.04 (its AC#5 doc scope): agents/docker.md still documents the retired :edge mechanism (PODKIT_DOCKER_DIST_IMAGE=...:edge, references to docker-edge.yml / gh run watch --workflow=docker-edge.yml) — must be repointed to :rc when 04 updates docs.
 
 Code complete + committed (commit 584617e7). Remaining: AC#1/#5's live-run portion — verify a real 'Version Packages' PR run pushes multi-arch `ghcr.io/jvgomg/podkit:rc` and never a release tag. Requires these commits pushed to the remote so the Version PR's next verify-release run uses the updated workflow. Maintainer push/CI step.
+
+LIVE-VERIFIED + Done. Pushed to main; re-triggered the open 'Version Packages' PR #48 verify-release (run 31738935214, head branch already carries this workflow). Result: the binary matrix (6 jobs) AND `docker / Build & Push Docker Image` both SUCCEEDED. `docker manifest inspect ghcr.io/jvgomg/podkit:rc` confirms a live multi-arch OCI index: linux/amd64 + linux/arm64 (plus buildx attestation manifests). AC#1 proven: verify-release builds AND pushes multi-arch ghcr.io/jvgomg/podkit:rc; only the :rc tag was pushed (prerelease-tag path), release tags untouched. AC#5: actionlint clean (statically verified earlier) + release path unchanged (release.yml untouched, :rc namespace disjoint). Done.
+
+(The run's OVERALL conclusion was 'failure' due solely to the unrelated `Verify Docs Build` job — see the new docs-CI task — which does not produce or affect RC assets.)
 <!-- SECTION:NOTES:END -->
