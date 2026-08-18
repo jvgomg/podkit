@@ -11,13 +11,28 @@ for its 4-byte magic) — a newer, richer format than the flat fixed-record
 iTunes and by VoiceOver), while **`iTunesSD` is what the hardware actually plays
 from.** The two are kept consistent by iTunes.
 
-podkit **does not parse or write `iTunesSD`.** It reads a shuffle's library from
+podkit **does not parse `iTunesSD` itself.** It reads a shuffle's library from
 the `iTunesDB` (the only artifact with usable metadata), which is why the shuffle
 3g/4g are classified **`read-only`** rather than `unsupported` — see
-[ADR-024](../../adr/adr-024-device-access-tiers.md). Writing a valid `iTunesSD`
-requires an authentication hash iTunes generates and libgpod cannot, so podkit
-can read/archive these devices but cannot sync to them. This document exists so
-that knowledge is captured, not because podkit acts on it.
+[ADR-024](../../adr/adr-024-device-access-tiers.md). Nor does podkit ask libgpod
+to write one: `bdhs` is the branch libgpod takes for everything that is *not* a
+shuffle 1g/2g, an unidentified device included, so emitting it is no evidence
+that the device in front of you reads it. podkit deletes the `bdhs` an
+initialisation writes for a device it could not identify, and refuses to
+initialise an iPod shuffle whose model number is unknown.
+
+> **Correction.** Earlier revisions of this document claimed writing a valid
+> `iTunesSD` "requires an authentication hash iTunes generates and libgpod
+> cannot". That is not grounded in the source. `itdb_shuffle_write_file`
+> (`itdb_itunesdb.c`) assembles the `bdhs` regions into a plain buffer and
+> commits it with `g_file_set_contents` — there is no signing, hashing or
+> checksum step anywhere in the shuffle write path, and
+> `itdb_device_get_checksum_type` returns `ITDB_CHECKSUM_NONE` for every
+> shuffle generation. The 3g/4g `read-only` tier reflects what has been
+> **verified on hardware**, not a cryptographic barrier.
+
+This document exists so that knowledge is captured, not because podkit acts
+on it.
 
 ## Provenance & fixtures
 
@@ -131,8 +146,10 @@ currently perform this cross-check at runtime (deliberately out of scope, ADR-02
 - 🔶 `0x10` and `0x28` header fields (secondary-list count; trailing-section offset).
 - 🔶 Internal byte layout of the 372-byte `rths` record beyond the path.
 - 🔶 The trailing index arrays: how many, which is play order vs VoiceOver order.
-- 🔶 The authentication/signature that makes iTunes-written `iTunesSD` play but
-  libgpod-written ones not — the crux of why the shuffle is `read-only`.
+- 🔶 Whether a libgpod-written `bdhs` plays at all on a 3g/4g. No signature or
+  checksum stands in the way (see the correction above); the write has simply
+  never been tried on hardware — the crux of why the shuffle 3g/4g is
+  `read-only`.
 
 Confirming any of these means dumping a **synthetic** shuffle library with known
 contents and diffing.

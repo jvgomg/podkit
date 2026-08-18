@@ -30,16 +30,12 @@ import { DeviceErrorCodes } from './error-codes.js';
 export type CapabilityRenderContext =
   | {
       kind: 'ipod';
-      modelDisplay: string;
       /**
-       * When set, append a `Podcasts` bullet after `Video`. The canonical
-       * `DeviceCapabilities` does not model podcast support separately
-       * (it derives from artwork support per generation table), so
-       * `add.ts` leaves it unset. The `device info` flow has access to
-       * the libgpod-side `supportsPodcast` flag and passes it through to
-       * preserve its existing UX.
+       * Generation label used in the `not supported on <model>` tail of
+       * negative bullets. Callers compose it from the identity-cascade
+       * model so it can never disagree with the model shown above it.
        */
-      supportsPodcast?: boolean;
+      modelDisplay: string;
     }
   | { kind: 'mass-storage' };
 
@@ -94,7 +90,8 @@ export function getTranscodedCodecs(
  *
  * iPod variant: bullet list with `+`/`-` markers and "not supported on <gen>"
  * tail for negative bullets. Artwork bullet includes the max resolution when
- * known.
+ * known. Bullets cover only what `DeviceCapabilities` models — podcast
+ * support is not among them.
  *
  * Mass-storage variant: tabular `Key: value` layout listing codecs, artwork
  * sources/resolution, video support, normalization mode, and album-artist
@@ -123,16 +120,6 @@ export function printCapabilitySummary(
       out.print(`${inner}+ Video`);
     } else {
       out.print(`${inner}- Video (not supported on ${ctx.modelDisplay})`);
-    }
-    // Podcast support is not modelled in DeviceCapabilities (derives from
-    // artwork support per the generation table) — render only when the
-    // caller passes the legacy libgpod flag through `ctx.supportsPodcast`.
-    if (ctx.supportsPodcast !== undefined) {
-      if (ctx.supportsPodcast) {
-        out.print(`${inner}+ Podcasts`);
-      } else {
-        out.print(`${inner}- Podcasts (not supported on ${ctx.modelDisplay})`);
-      }
     }
     return;
   }

@@ -64,6 +64,7 @@ export const PUBLIC_REPAIR_IDS: readonly string[] = [
   'sysinfo-consistency',
   'sysinfo-extended',
   'sysinfo-modelnum-mismatch',
+  'sysinfo-modelnum-missing',
   'udev-rule',
 ];
 

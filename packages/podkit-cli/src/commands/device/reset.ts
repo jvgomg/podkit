@@ -34,7 +34,12 @@ import {
 } from '../../device-resolver.js';
 import { OutputContext, formatNumber, formatBytes } from '../../output/index.js';
 import { DeviceErrorCodes } from './error-codes.js';
-import { resolveDeviceArg, assertIpodDevice, type DeviceOpDeps } from './shared.js';
+import {
+  resolveDeviceArg,
+  assertIpodDevice,
+  resolveInitModelNumStr,
+  type DeviceOpDeps,
+} from './shared.js';
 import type { DeviceResetOutput } from './output-types.js';
 import { makeDeviceConfigRefresh } from '../../config/device-config-refresh.js';
 import type { RefreshConfig } from '@podkit/core';
@@ -183,6 +188,14 @@ export async function runDeviceReset(
     return;
   }
 
+  // Resolve the device's own model number before anything is deleted, so the
+  // recreated database can be stamped with it. `undefined` when the cascade
+  // reads nothing from the hardware — the recreated SysInfo then claims no
+  // model at all, rather than a fabricated one podkit would later read back as
+  // evidence of what this device is. Resolved before the confirmation prompt,
+  // so a device this command must refuse is never offered a wipe first.
+  const model = await resolveInitModelNumStr(core, deps, devicePath);
+
   // ── Confirmation (defaults to No) ───────────────────────────────────────────
   if (!autoConfirm && out.isText) {
     out.newline();
@@ -228,7 +241,10 @@ export async function runDeviceReset(
   // an existing DB it would instead parse + preserve it — see step 2).
   let initIpod: Awaited<ReturnType<typeof IpodDatabase.initializeIpod>> | undefined;
   try {
-    initIpod = await IpodDatabase.initializeIpod(devicePath, { name: effectiveName });
+    initIpod = await IpodDatabase.initializeIpod(devicePath, {
+      name: effectiveName,
+      ...(model ? { model } : {}),
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     throw new CliError({

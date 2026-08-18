@@ -810,6 +810,8 @@ System-scope checks (host environment) and database-health checks (per-device st
 | SysInfoExtended | Reads device identity from iPod firmware via USB; required for database checksums on newer iPods | `--repair sysinfo-extended` |
 | SysInfoExtended consistency with device | Detects on-disk `SysInfoExtended` that doesn't match firmware-derived identity (stale after device swap) | `--repair sysinfo-consistency` |
 | SysInfo ModelNumStr vs firmware identity | Detects classic `SysInfo` with wrong `ModelNumStr` | `--repair sysinfo-modelnum-mismatch` |
+| Database-layer device identity | Detects an iPod the database layer cannot identify (so shuffle playback databases, music directory layout and artwork formats fall back to generic defaults) while podkit's own cascade can | `--repair sysinfo-modelnum-missing` |
+| Shuffle playback database | Detects a shuffle whose `iTunesSD` — the file the firmware actually plays from — is absent, empty, or in the wrong format for that shuffle | _(informational)_ |
 
 #### Mass-Storage Checks
 

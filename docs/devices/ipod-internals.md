@@ -304,7 +304,7 @@ For the complete device compatibility list, see [Supported Devices](/devices/sup
 | iPhone (all) | Uses iOS protocols |
 | iPad (all) | Uses iOS protocols |
 | iPod Nano 6th/7th | Different database format (not iTunesDB) |
-| iPod Shuffle 3rd/4th | Buttonless design; requires iTunes authentication hash |
+| iPod Shuffle 3rd/4th | Buttonless design; writing their iTunesSD playback database is unverified on hardware |
 
 ## Troubleshooting
 

@@ -11,27 +11,38 @@ import { resolveIpodModel } from '@podkit/devices-ipod';
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 
-/** Realistic SysInfoExtended XML based on iPod Nano 3G data */
+/**
+ * Cut-down SysInfoExtended for an iPod nano 3G (8GB Black).
+ *
+ * Every identifier is taken from the real capture at
+ * `documents/sysinfo-captures/nano-3g-8gb-black.xml` — FireWireGUID,
+ * SerialNumber, FamilyID 12, UpdaterFamilyID 26, VisibleBuildID, DBVersion.
+ *
+ * `ModelNumber` is the one key that device's SysInfoExtended does not carry
+ * (no in-repo capture does — it is the classic-SysInfo `ModelNumStr` key that
+ * the parser also accepts here). It is included so the ModelNumStr axis stays
+ * exercised, with the value that device's serial suffix (`YXX`) resolves to.
+ */
 const FIXTURE_XML = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
 	<key>FireWireGUID</key>
-	<string>000A27001DCECFB5</string>
+	<string>000A27001BC8EED6</string>
 	<key>SerialNumber</key>
-	<string>5U828GFNYXX</string>
+	<string>5U8280FNYXX</string>
 	<key>FamilyID</key>
-	<integer>13</integer>
+	<integer>12</integer>
 	<key>DBVersion</key>
 	<integer>3</integer>
 	<key>ModelNumber</key>
 	<string>B261</string>
 	<key>UpdaterFamilyID</key>
-	<integer>13</integer>
+	<integer>26</integer>
 	<key>BoardHwSwInterfaceRev</key>
 	<integer>65536</integer>
 	<key>VisibleBuildID</key>
-	<string>1.1.3 (3.1.1)</string>
+	<string>1.1.3</string>
 </dict>
 </plist>`;
 
@@ -40,7 +51,7 @@ const FIXTURE_XML_NO_GUID = `<?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0">
 <dict>
 	<key>SerialNumber</key>
-	<string>5U828GFNYXX</string>
+	<string>5U8280FNYXX</string>
 </dict>
 </plist>`;
 
@@ -49,7 +60,7 @@ const FIXTURE_XML_NO_SERIAL = `<?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0">
 <dict>
 	<key>FireWireGUID</key>
-	<string>000A27001DCECFB5</string>
+	<string>000A27001BC8EED6</string>
 </dict>
 </plist>`;
 
@@ -58,9 +69,9 @@ const FIXTURE_XML_ALT_CASING = `<?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0">
 <dict>
 	<key>FirewireGuid</key>
-	<string>000A27001DCECFB5</string>
+	<string>000A27001BC8EED6</string>
 	<key>SerialNumber</key>
-	<string>5U828GFNYXX</string>
+	<string>5U8280FNYXX</string>
 </dict>
 </plist>`;
 
@@ -82,10 +93,11 @@ function writeSysInfoExtended(mountPoint: string, content: string): void {
   fs.writeFileSync(path.join(deviceDir, 'SysInfoExtended'), content, 'utf-8');
 }
 
+// USB address of the same nano 3G: PID 0x1262 (`IPOD_USB_IDS` → nano_3g).
 const USB_ADDRESS = {
   vendorId: '05ac',
-  productId: '1261',
-  serialNumber: '000A27001DCECFB5',
+  productId: '1262',
+  serialNumber: '000A27001BC8EED6',
   bus: 1,
   devnum: 4,
 };
@@ -110,13 +122,13 @@ describe('readSysInfoExtended', () => {
     expect(result).not.toBeNull();
     expect(result!.present).toBe(true);
     expect(result!.source).toBe('existing');
-    expect(result!.firewireGuid).toBe('000A27001DCECFB5');
-    expect(result!.serialNumber).toBe('5U828GFNYXX');
-    expect(result!.identity.firewireGuid).toBe('000A27001DCECFB5');
-    expect(result!.identity.serialNumber).toBe('5U828GFNYXX');
+    expect(result!.firewireGuid).toBe('000A27001BC8EED6');
+    expect(result!.serialNumber).toBe('5U8280FNYXX');
+    expect(result!.identity.firewireGuid).toBe('000A27001BC8EED6');
+    expect(result!.identity.serialNumber).toBe('5U8280FNYXX');
     // ModelNumber from XML lands on identity.modelNumStr
     expect(result!.identity.modelNumStr).toBe('B261');
-    expect(result!.identity.familyId).toBe(13);
+    expect(result!.identity.familyId).toBe(12);
   });
 
   it('returns null when file does not exist', () => {
@@ -154,8 +166,8 @@ describe('readSysInfoExtended', () => {
     const result = readSysInfoExtended(tmpDir);
 
     expect(result).not.toBeNull();
-    expect(result!.firewireGuid).toBe('000A27001DCECFB5');
-    expect(result!.identity.firewireGuid).toBe('000A27001DCECFB5');
+    expect(result!.firewireGuid).toBe('000A27001BC8EED6');
+    expect(result!.identity.firewireGuid).toBe('000A27001BC8EED6');
   });
 
   it('caller can resolve model from identity bag (serial suffix)', () => {
@@ -179,7 +191,7 @@ describe('readSysInfoExtended', () => {
     // Strip ModelNumber and use a bogus serial so the cascade has to fall
     // through to FamilyID — this is the deepest cascade branch and the only
     // way to verify FamilyID is consulted at all.
-    const xml = FIXTURE_XML.replace('5U828GFNYXX', 'UNKNOWNZZZ').replace(
+    const xml = FIXTURE_XML.replace('5U8280FNYXX', 'UNKNOWNZZZ').replace(
       /<key>ModelNumber<\/key>\s*<string>[^<]*<\/string>/,
       ''
     );
@@ -188,7 +200,7 @@ describe('readSysInfoExtended', () => {
     const result = readSysInfoExtended(tmpDir);
 
     expect(result).not.toBeNull();
-    expect(result!.firewireGuid).toBe('000A27001DCECFB5');
+    expect(result!.firewireGuid).toBe('000A27001BC8EED6');
     expect(result!.serialNumber).toBe('UNKNOWNZZZ');
     expect(result!.identity.modelNumStr).toBeUndefined();
 
@@ -198,7 +210,7 @@ describe('readSysInfoExtended', () => {
       familyId: result!.identity.familyId ?? null,
     });
     // ModelNumStr absent + serial UNKNOWNZZZ has no suffix match → cascade
-    // resolves via FamilyID 13 → nano_3g (matching the rest of the fixture).
+    // resolves via FamilyID 12 → nano_3g (matching the rest of the fixture).
     expect(model).not.toBeNull();
     expect(model!.generationId).toBe('nano_3g');
   });
@@ -230,7 +242,7 @@ describe('ensureSysInfoExtended', () => {
 
     expect(result.present).toBe(true);
     expect(result.source).toBe('existing');
-    expect(result.firewireGuid).toBe('000A27001DCECFB5');
+    expect(result.firewireGuid).toBe('000A27001BC8EED6');
     expect(usbReadCalled).toBe(false);
   });
 
@@ -242,8 +254,8 @@ describe('ensureSysInfoExtended', () => {
 
     expect(result.present).toBe(true);
     expect(result.source).toBe('usb-read');
-    expect(result.firewireGuid).toBe('000A27001DCECFB5');
-    expect(result.serialNumber).toBe('5U828GFNYXX');
+    expect(result.firewireGuid).toBe('000A27001BC8EED6');
+    expect(result.serialNumber).toBe('5U8280FNYXX');
 
     // Verify file was written
     const filePath = path.join(tmpDir, 'iPod_Control', 'Device', 'SysInfoExtended');
@@ -351,10 +363,10 @@ describe('ensureSysInfoExtended', () => {
     });
 
     // Identity bag exposes every identifier extracted from the XML.
-    expect(result.identity.firewireGuid).toBe('000A27001DCECFB5');
-    expect(result.identity.serialNumber).toBe('5U828GFNYXX');
+    expect(result.identity.firewireGuid).toBe('000A27001BC8EED6');
+    expect(result.identity.serialNumber).toBe('5U8280FNYXX');
     expect(result.identity.modelNumStr).toBe('B261');
-    expect(result.identity.familyId).toBe(13);
+    expect(result.identity.familyId).toBe(12);
 
     const model = resolveIpodModel({
       modelNumStr: result.identity.modelNumStr,
@@ -374,6 +386,6 @@ describe('ensureSysInfoExtended', () => {
 
     expect(result.present).toBe(true);
     expect(result.source).toBe('usb-read');
-    expect(result.firewireGuid).toBe('000A27001DCECFB5');
+    expect(result.firewireGuid).toBe('000A27001BC8EED6');
   });
 });

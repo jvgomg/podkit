@@ -113,6 +113,19 @@ function fakeManager(overrides: Partial<DeviceManager> = {}): DeviceManager {
   } as DeviceManager;
 }
 
+/**
+ * A core stub whose firmware-identity capture path reports "not needed" (the
+ * device already carries on-disk SysInfoExtended). Used by every test in this
+ * file that isn't specifically exercising firmware capture, so they don't
+ * accidentally trip the archive's identity-capture-failure gate.
+ */
+function coreWithIdentityAlreadyPresent(): typeof import('@podkit/core') {
+  return {
+    assessIpodIdentity: async () => ({ existing: { present: true }, usbFingerprint: null }),
+    captureSysInfoExtendedXml: async () => null,
+  } as unknown as typeof import('@podkit/core');
+}
+
 interface ErrJson {
   success: false;
   error: string;
@@ -157,10 +170,11 @@ describe('device archive: command surface', () => {
     expect(cmd?.registeredArguments[0]?.required).toBe(false);
   });
 
-  it('has --dump-only and --from-dump options', () => {
+  it('has --dump-only, --from-dump, and --force options', () => {
     const cmd = archiveCmd();
     expect(cmd?.options.find((o) => o.long === '--dump-only')).toBeDefined();
     expect(cmd?.options.find((o) => o.long === '--from-dump')).toBeDefined();
+    expect(cmd?.options.find((o) => o.long === '--force')).toBeDefined();
   });
 });
 
@@ -253,7 +267,7 @@ describe('runDeviceArchive', () => {
     const ctx = makeContext(); // no --device → auto-detect
     const { out, stdout, exitCode } = makeOut();
     const deps: DeviceArchiveDeps = {
-      loadCore: async () => ({}) as typeof import('@podkit/core'),
+      loadCore: async () => coreWithIdentityAlreadyPresent(),
       getDeviceManager: () => fakeManager(),
       discoverConnectedDevices: fakeDiscover([]),
     };
@@ -273,7 +287,7 @@ describe('runDeviceArchive', () => {
     const ctx = makeContext();
     const { out, stdout, exitCode } = makeOut();
     const deps: DeviceArchiveDeps = {
-      loadCore: async () => ({}) as typeof import('@podkit/core'),
+      loadCore: async () => coreWithIdentityAlreadyPresent(),
       getDeviceManager: () => fakeManager({ isSupported: false }),
       // discovery must not even be consulted on an unsupported platform.
       discoverConnectedDevices: (async () => {
@@ -303,7 +317,7 @@ describe('runDeviceArchive', () => {
       } as Extract<DiscoveredDevice, { kind: 'unsupported' }>['usb'],
     };
     const deps: DeviceArchiveDeps = {
-      loadCore: async () => ({}) as typeof import('@podkit/core'),
+      loadCore: async () => coreWithIdentityAlreadyPresent(),
       getDeviceManager: () => fakeManager(),
       discoverConnectedDevices: fakeDiscover([unsupported]),
     };
@@ -332,7 +346,7 @@ describe('runDeviceArchive', () => {
       },
     };
     const deps: DeviceArchiveDeps = {
-      loadCore: async () => ({}) as typeof import('@podkit/core'),
+      loadCore: async () => coreWithIdentityAlreadyPresent(),
       getDeviceManager: () => fakeManager(),
       discoverConnectedDevices: fakeDiscover([massStorage]),
     };
@@ -369,7 +383,7 @@ describe('runDeviceArchive', () => {
     };
 
     const deps: DeviceArchiveDeps = {
-      loadCore: async () => ({}) as typeof import('@podkit/core'),
+      loadCore: async () => coreWithIdentityAlreadyPresent(),
       getDeviceManager: () => fakeManager(),
       discoverConnectedDevices: fakeDiscover([mountedIpod('TERAPOD', volume)]),
       runDump: fakeRunDump,
@@ -477,13 +491,157 @@ describe('runDeviceArchive', () => {
     expect(seenXml).toBeUndefined();
   });
 
+  it('proceeds quietly when no USB fingerprint correlates to the volume (no --force needed)', async () => {
+    const ctx = makeContext();
+    const { out, exitCode } = makeOut();
+
+    let seenXml: unknown = 'unset';
+    const fakeRunDump: DeviceArchiveDeps['runDump'] = async (_volumeRoot, destDir, opts) => {
+      seenXml = opts?.capturedSysInfoXml;
+      return {
+        outputDir: path.join(destDir, 'TERAPOD-x'),
+        rawDumpDir: path.join(destDir, 'TERAPOD-x', 'raw'),
+        manifestPath: path.join(destDir, 'TERAPOD-x', 'raw', 'manifest.sha256'),
+        identity: {},
+        classification: { copy: ['iPod_Control'], junk: [], foreign: [] },
+        manifest: [{ sha256: 'a'.repeat(64), relativePath: 'iPod_Control/x' }],
+        failures: [],
+        report: { foreignSkipped: [], dumpFailures: [] },
+        reportMarkdownPath: path.join(destDir, 'TERAPOD-x', 'report.md'),
+        reportJsonPath: path.join(destDir, 'TERAPOD-x', 'report.json'),
+      };
+    };
+
+    // No on-disk SysInfoExtended AND no USB fingerprint (e.g. a path handed to
+    // `--device` that isn't a currently-attached iPod) — a legitimate skip, not
+    // a failure. Must not require --force.
+    let inquiryCalled = false;
+    const fakeCore = {
+      assessIpodIdentity: async () => ({ existing: null, usbFingerprint: null }),
+      captureSysInfoExtendedXml: async () => {
+        inquiryCalled = true;
+        return null;
+      },
+    } as unknown as typeof import('@podkit/core');
+
+    const deps: DeviceArchiveDeps = {
+      loadCore: async () => fakeCore,
+      getDeviceManager: () => fakeManager(),
+      discoverConnectedDevices: fakeDiscover([mountedIpod('TERAPOD', volume)]),
+      runDump: fakeRunDump,
+    };
+
+    await runWithContext(ctx, () =>
+      runAction(out, () => runDeviceArchive(dest, { dumpOnly: true }, out, deps))
+    );
+
+    expect(exitCode.get()).not.toBe(1);
+    expect(inquiryCalled).toBe(false);
+    expect(seenXml).toBeUndefined();
+  });
+
+  it('fails loudly with IDENTITY_CAPTURE_FAILED when a needed capture does not succeed', async () => {
+    const ctx = makeContext();
+    const { out, stdout, exitCode } = makeOut();
+
+    const fakeCore = {
+      assessIpodIdentity: async () => ({ existing: null, usbFingerprint: { productId: '1303' } }),
+      // A live USB endpoint was found, but the inquiry produced nothing.
+      captureSysInfoExtendedXml: async () => null,
+    } as unknown as typeof import('@podkit/core');
+
+    const deps: DeviceArchiveDeps = {
+      loadCore: async () => fakeCore,
+      getDeviceManager: () => fakeManager(),
+      discoverConnectedDevices: fakeDiscover([mountedIpod('TERAPOD', volume)]),
+      runDump: async () => {
+        throw new Error('runDump must not be called when identity capture fails without --force');
+      },
+    };
+
+    await runWithContext(ctx, () =>
+      runAction(out, () => runDeviceArchive(dest, { dumpOnly: true }, out, deps))
+    );
+
+    expect(exitCode.get()).toBe(1);
+    const err = stdout.json<ErrJson>();
+    expect(err.code).toBe(DeviceErrorCodes.IDENTITY_CAPTURE_FAILED);
+    expect(err.error).toContain('Pass --force');
+  });
+
+  it('--force: proceeds past a failed capture and threads the failure reason into runDump', async () => {
+    const ctx = makeContext();
+    const { out, exitCode } = makeOut();
+
+    let seenReason: unknown;
+    const fakeRunDump: DeviceArchiveDeps['runDump'] = async (_volumeRoot, destDir, opts) => {
+      seenReason = opts?.identityCaptureFailureReason;
+      return {
+        outputDir: path.join(destDir, 'TERAPOD-x'),
+        rawDumpDir: path.join(destDir, 'TERAPOD-x', 'raw'),
+        manifestPath: path.join(destDir, 'TERAPOD-x', 'raw', 'manifest.sha256'),
+        identity: {},
+        classification: { copy: ['iPod_Control'], junk: [], foreign: [] },
+        manifest: [{ sha256: 'a'.repeat(64), relativePath: 'iPod_Control/x' }],
+        failures: [],
+        report: { foreignSkipped: [], dumpFailures: [] },
+        reportMarkdownPath: path.join(destDir, 'TERAPOD-x', 'report.md'),
+        reportJsonPath: path.join(destDir, 'TERAPOD-x', 'report.json'),
+      };
+    };
+
+    const fakeCore = {
+      assessIpodIdentity: async () => ({ existing: null, usbFingerprint: { productId: '1303' } }),
+      captureSysInfoExtendedXml: async () => null,
+    } as unknown as typeof import('@podkit/core');
+
+    const deps: DeviceArchiveDeps = {
+      loadCore: async () => fakeCore,
+      getDeviceManager: () => fakeManager(),
+      discoverConnectedDevices: fakeDiscover([mountedIpod('TERAPOD', volume)]),
+      runDump: fakeRunDump,
+    };
+
+    await runWithContext(ctx, () =>
+      runAction(out, () => runDeviceArchive(dest, { dumpOnly: true, force: true }, out, deps))
+    );
+
+    expect(exitCode.get()).not.toBe(1);
+    expect(typeof seenReason).toBe('string');
+    expect(seenReason).toContain('did not respond');
+  });
+
+  it('propagates CORE_LOAD_FAILED from identity capture rather than swallowing it', async () => {
+    const ctx = makeContext();
+    const { out, stdout, exitCode } = makeOut();
+
+    const deps: DeviceArchiveDeps = {
+      loadCore: async () => {
+        throw new Error('module load boom');
+      },
+      getDeviceManager: () => fakeManager(),
+      discoverConnectedDevices: fakeDiscover([mountedIpod('TERAPOD', volume)]),
+      runDump: async () => {
+        throw new Error('runDump must not be called when core fails to load');
+      },
+    };
+
+    await runWithContext(ctx, () =>
+      runAction(out, () => runDeviceArchive(dest, { dumpOnly: true }, out, deps))
+    );
+
+    expect(exitCode.get()).toBe(1);
+    const err = stdout.json<ErrJson>();
+    expect(err.code).toBe(DeviceErrorCodes.CORE_LOAD_FAILED);
+  });
+
   it('auto-detect: multiple mounted iPods → MULTIPLE_IPODS', async () => {
     const ctx = makeContext();
     const { out, stdout, exitCode } = makeOut();
     const other = fs.mkdtempSync(path.join(os.tmpdir(), 'archive-cli-vol2-'));
     try {
       const deps: DeviceArchiveDeps = {
-        loadCore: async () => ({}) as typeof import('@podkit/core'),
+        loadCore: async () => coreWithIdentityAlreadyPresent(),
         getDeviceManager: () => fakeManager(),
         discoverConnectedDevices: fakeDiscover([
           mountedIpod('TERAPOD', volume),
@@ -517,7 +675,7 @@ describe('runDeviceArchive', () => {
       } as Extract<DiscoveredDevice, { kind: 'ipod' }>['usb'],
     };
     const deps: DeviceArchiveDeps = {
-      loadCore: async () => ({}) as typeof import('@podkit/core'),
+      loadCore: async () => coreWithIdentityAlreadyPresent(),
       getDeviceManager: () => fakeManager(),
       discoverConnectedDevices: fakeDiscover([usbOnlyIpod]),
     };
@@ -548,7 +706,7 @@ describe('runDeviceArchive', () => {
     });
 
     const deps: DeviceArchiveDeps = {
-      loadCore: async () => ({}) as typeof import('@podkit/core'),
+      loadCore: async () => coreWithIdentityAlreadyPresent(),
       getDeviceManager: () => fakeManager(),
       runDump: fakeRunDump,
     };
@@ -622,7 +780,7 @@ describe('runDeviceArchive', () => {
     };
 
     const deps: DeviceArchiveDeps = {
-      loadCore: async () => ({}) as typeof import('@podkit/core'),
+      loadCore: async () => coreWithIdentityAlreadyPresent(),
       getDeviceManager: () => fakeManager(),
       // runDump must NOT be called on the bare path — it now runs both stages.
       runDump: async () => {
@@ -690,7 +848,7 @@ describe('runDeviceArchive', () => {
     };
     const { out, stdout, exitCode } = makeOut();
     const deps: DeviceArchiveDeps = {
-      loadCore: async () => ({}) as typeof import('@podkit/core'),
+      loadCore: async () => coreWithIdentityAlreadyPresent(),
       getDeviceManager: () => fakeManager(),
       runDump: async () => {
         throw new Error('runDump should not be called for a mass-storage device');
@@ -787,7 +945,7 @@ describe('runDeviceArchive — human output + progress', () => {
     const { out, stdout, stderr } = makeTextOut();
     const outputDir = path.join(dest, 'TERAPOD-x-20260622');
     const deps: DeviceArchiveDeps = {
-      loadCore: async () => ({}) as typeof import('@podkit/core'),
+      loadCore: async () => coreWithIdentityAlreadyPresent(),
       getDeviceManager: () => fakeManager(),
       runArchive: fakeRunArchiveWithProgress(outputDir),
     };
@@ -833,7 +991,7 @@ describe('runDeviceArchive — human output + progress', () => {
     }) as DeviceArchiveDeps['runDump'];
 
     const deps: DeviceArchiveDeps = {
-      loadCore: async () => ({}) as typeof import('@podkit/core'),
+      loadCore: async () => coreWithIdentityAlreadyPresent(),
       getDeviceManager: () => fakeManager(),
       runDump: fakeRunDump,
     };
@@ -858,7 +1016,7 @@ describe('runDeviceArchive — human output + progress', () => {
     const { out, stdout, stderr } = makeOut();
     const outputDir = path.join(dest, 'TERAPOD-json-20260622');
     const deps: DeviceArchiveDeps = {
-      loadCore: async () => ({}) as typeof import('@podkit/core'),
+      loadCore: async () => coreWithIdentityAlreadyPresent(),
       getDeviceManager: () => fakeManager(),
       runArchive: fakeRunArchiveWithProgress(outputDir),
     };
@@ -953,7 +1111,7 @@ describe('runDeviceArchive — human output + progress', () => {
     }) as DeviceArchiveDeps['runArchive'];
 
     const deps: DeviceArchiveDeps = {
-      loadCore: async () => ({}) as typeof import('@podkit/core'),
+      loadCore: async () => coreWithIdentityAlreadyPresent(),
       getDeviceManager: () => fakeManager(),
       runArchive: fakeRunArchive,
     };

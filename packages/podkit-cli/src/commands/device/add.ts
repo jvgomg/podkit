@@ -26,6 +26,7 @@ import { mergedPresets, knownDeviceTypeIds } from '../../config/preset-registry.
 import { CliError, runAction } from '../../errors.js';
 import { QUALITY_PRESETS, ENCODING_MODES } from '../../config/index.js';
 import { validateCapabilityOverrides } from '@podkit/devices-mass-storage';
+import { toModelNumStr } from '@podkit/devices-ipod';
 import { OutputContext, formatBytes, formatNumber, bold } from '../../output/index.js';
 import {
   assessIpodIdentity,
@@ -43,7 +44,12 @@ import type {
 import { isMassStorageDevice, getDeviceTypeDisplayName, displayForConfig } from '../open-device.js';
 import type { DeviceConfig } from '../../config/index.js';
 import { DeviceErrorCodes } from './error-codes.js';
-import { formatIFlashEvidence, formatIFlashMountExplanation, resolveDeviceName } from './shared.js';
+import {
+  assertInitIdentitySufficient,
+  formatIFlashEvidence,
+  formatIFlashMountExplanation,
+  resolveDeviceName,
+} from './shared.js';
 import type { DeviceAddSuccess } from './output-types.js';
 import { stripDefaultOptionValues } from '../../utils/option-source.js';
 import { confirmUnsupportedDeviceAdd } from './capability-summary.js';
@@ -204,8 +210,11 @@ export interface DeviceAddDeps {
   /** Override the iPod database adapter. */
   ipodDatabase?: {
     hasDatabase: (path: string) => Promise<boolean>;
-    open: (path: string) => Promise<{ trackCount: number; close: () => void }>;
-    initializeIpod: (path: string) => Promise<{ close: () => void }>;
+    open: (path: string) => Promise<IpodDatabaseHandleLike & { trackCount: number }>;
+    initializeIpod: (
+      path: string,
+      options?: { model?: string; name?: string }
+    ) => Promise<IpodDatabaseHandleLike>;
   };
 }
 
@@ -215,10 +224,27 @@ export interface DeviceAddDeps {
 
 type CoreModule = typeof import('@podkit/core');
 
+/**
+ * An open database handle, as far as `device add` is concerned.
+ *
+ * `device`, `setSysInfo` and `save` are optional: the add flow only reaches
+ * for them when correcting a device the database layer cannot identify, and
+ * test doubles that never exercise that path need not provide them.
+ */
+interface IpodDatabaseHandleLike {
+  device?: { generation: string; modelName: string };
+  setSysInfo?: (field: string, value: string | null) => void;
+  save?: () => Promise<void>;
+  close: () => void;
+}
+
 interface IpodDatabaseLike {
   hasDatabase: (path: string) => Promise<boolean>;
-  open: (path: string) => Promise<{ trackCount: number; close: () => void }>;
-  initializeIpod: (path: string) => Promise<{ close: () => void }>;
+  open: (path: string) => Promise<IpodDatabaseHandleLike & { trackCount: number }>;
+  initializeIpod: (
+    path: string,
+    options?: { model?: string; name?: string }
+  ) => Promise<IpodDatabaseHandleLike>;
 }
 
 /** The located, mounted device + a small bundle of resolution context. */
@@ -1038,6 +1064,13 @@ async function finishIpodAdd(args: {
     out.print(`  Device:      /dev/${ipod.identifier}`);
   }
 
+  // The `ModelNumStr` form of whatever the cascade resolved from the device
+  // itself. `undefined` when nothing hardware-attested is available — podkit
+  // never synthesises one.
+  const resolvedModelNumStr = assessment?.model?.modelNumber
+    ? toModelNumStr(assessment.model.modelNumber)
+    : undefined;
+
   let trackCount = 0;
   let initialized = false;
   if (ipod.isMounted) {
@@ -1052,9 +1085,19 @@ async function finishIpodAdd(args: {
         out.print('Cancelled. iPod not initialized.');
         return;
       }
+      // Outside the try below: this refusal is a precondition, not an
+      // initialisation failure, and must not be re-wrapped as INIT_FAILED.
+      assertInitIdentitySufficient(assessment);
       try {
         out.print('Initializing iPod database...');
-        const db = await IpodDatabase.initializeIpod(mountPoint);
+        // Hand the database layer the model number the cascade resolved from
+        // this device, so it starts life knowing what it is. Omitted when the
+        // cascade has none — an invented model number would be written to the
+        // device's SysInfo and read back later as evidence.
+        const db = await IpodDatabase.initializeIpod(
+          mountPoint,
+          resolvedModelNumStr ? { model: resolvedModelNumStr } : undefined
+        );
         db.close();
         initialized = true;
         out.print(`Initialized as ${identityDisplayName}.`);
@@ -1109,6 +1152,19 @@ async function finishIpodAdd(args: {
     }
   }
 
+  // Past the point of no return: the user has committed to adding this device.
+  // A freshly initialised database already received the model number above; an
+  // existing one may still be unidentifiable to the database layer.
+  if (ipod.isMounted && !initialized) {
+    await teachDatabaseItsIdentity({
+      out,
+      IpodDatabase,
+      mountPoint: ipod.mountPoint,
+      modelNumStr: resolvedModelNumStr,
+      displayName: identityDisplayName,
+    });
+  }
+
   const deviceInfo = {
     name,
     identifier: ipod.identifier,
@@ -1149,6 +1205,62 @@ async function finishIpodAdd(args: {
         initialized,
       })
   );
+}
+
+/**
+ * Give an already-initialised database the model number podkit resolved from
+ * the device, when the database layer could not work it out for itself.
+ *
+ * libgpod identifies an iPod from its own serial-suffix table and then from
+ * classic SysInfo `ModelNumStr`; it has no USB or FamilyID axis. A device it
+ * cannot place resolves to an unknown generation, and every generation-keyed
+ * write branch then takes a generic default — most damagingly, the shuffle
+ * playback database (`iTunesSD`) is not written at all, so a shuffle receives
+ * tracks it cannot play while the write reports success.
+ *
+ * Best-effort by design: this runs during onboarding, not repair. A failure
+ * here leaves the device exactly as it was and does not fail the add — but it
+ * says so, and points at the repair that owns the problem properly.
+ *
+ * This re-opens the database rather than reusing the handle the track count
+ * was read from. Deliberate: the final add confirmation sits between the two,
+ * and holding a write-capable handle open across a prompt the user may cancel
+ * is the worse trade.
+ */
+async function teachDatabaseItsIdentity(args: {
+  out: OutputContext;
+  IpodDatabase: IpodDatabaseLike;
+  mountPoint: string;
+  modelNumStr: string | undefined;
+  displayName: string;
+}): Promise<void> {
+  const { out, IpodDatabase, mountPoint, modelNumStr, displayName } = args;
+  if (!modelNumStr) return;
+
+  try {
+    const db = await IpodDatabase.open(mountPoint);
+    try {
+      if (db.device?.generation !== 'unknown') return;
+      if (!db.setSysInfo || !db.save) return;
+      db.setSysInfo('ModelNumStr', modelNumStr);
+      await db.save();
+      if (out.isText) {
+        out.print(`Recorded model ${modelNumStr} (${displayName}) in the iPod's SysInfo.`);
+      }
+    } finally {
+      db.close();
+    }
+  } catch (err) {
+    // Non-fatal: the add itself still stands. Say so rather than staying
+    // silent — the user should know a write was attempted and did not land.
+    if (out.isText) {
+      const message = err instanceof Error ? err.message : String(err);
+      out.warn(
+        `Could not record the device model in the iPod's SysInfo (${message}). ` +
+          'Run `podkit doctor --repair sysinfo-modelnum-missing` to retry.'
+      );
+    }
+  }
 }
 
 // =============================================================================

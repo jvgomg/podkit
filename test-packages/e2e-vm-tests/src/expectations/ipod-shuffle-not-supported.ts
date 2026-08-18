@@ -12,7 +12,7 @@ import type { DeviceCapabilities } from '@podkit/device-types';
 import type { ReadinessResult } from '@podkit/core';
 
 const unsupportedHeadline =
-  'iPod shuffle 3rd/4th gen requires iTunes authentication; not supported by libgpod.';
+  'iPod shuffle 3rd/4th gen can be read but not written: writing its iTunesSD playback database is unverified on hardware.';
 const unsupported = {
   kind: 'unsupported-device',
   headline: unsupportedHeadline,

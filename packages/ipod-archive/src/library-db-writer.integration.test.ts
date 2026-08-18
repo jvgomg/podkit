@@ -22,6 +22,7 @@ import { createTestIpod } from '@podkit/gpod-testing';
 import { Database, MediaType, SPLField, SPLAction, SPLMatch } from '@podkit/libgpod-node';
 import { runTransform } from './run-transform.js';
 import { LIBRARY_DB_FILENAME, LIBRARY_DB_SCHEMA_VERSION } from './library-db-writer.js';
+import { writeIdentityCaptureFailure } from './device-identity.js';
 
 const FIXTURE_DIR = join(
   import.meta.dir,
@@ -284,6 +285,9 @@ describe('writeLibraryDb — catalogue from a fixture dump', () => {
     expect(d.podkit_version).toBe('9.9.9-test');
     // libgpod classifies the test MA147 as an iPod Video.
     expect(typeof d.model_name).toBe('string');
+    // A normal run never hit the identity-capture-failure gate.
+    expect(d.identity_capture_failed).toBe(0);
+    expect(d.identity_capture_failure_reason).toBeNull();
   });
 
   test('preserves play counts / ratings / skip counts exactly as stored', () => {
@@ -414,6 +418,40 @@ describe('writeLibraryDb — catalogue from a fixture dump', () => {
     }>;
     for (const c of cols) {
       expect(c.type.toUpperCase()).not.toBe('BLOB');
+    }
+  });
+});
+
+describe('writeLibraryDb — forced identity-capture failure', () => {
+  test('records the failure reason in the device row, honestly rather than a silent blank', async () => {
+    const seeded = await seedDump();
+    const dump = seeded.root;
+    try {
+      // Simulate a forced dump-only run: the CLI's live capture was needed and
+      // did not succeed, and the user passed `--force` to proceed anyway.
+      await writeIdentityCaptureFailure(
+        dump,
+        'the device did not respond to the firmware identity inquiry'
+      );
+
+      const result = await runTransform(dump, {
+        podkitVersion: '9.9.9-test',
+        now: () => DUMP_DATE,
+      });
+      const sqlite = new SqliteDatabase(join(result.archiveDir, LIBRARY_DB_FILENAME), {
+        readonly: true,
+      });
+      try {
+        const d = sqlite.query('SELECT * FROM device').get() as Record<string, unknown>;
+        expect(d.identity_capture_failed).toBe(1);
+        expect(d.identity_capture_failure_reason).toBe(
+          'the device did not respond to the firmware identity inquiry'
+        );
+      } finally {
+        sqlite.close();
+      }
+    } finally {
+      await rm(dump, { recursive: true, force: true });
     }
   });
 });

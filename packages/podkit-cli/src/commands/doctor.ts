@@ -29,11 +29,7 @@ import {
   resolveEffectiveDevice,
 } from '../device-resolver.js';
 import type { DeviceConfig } from '../config/types.js';
-import {
-  resolveGenerationSupport,
-  IPOD_GENERATION_IDS,
-  type IpodGenerationId,
-} from '@podkit/devices-ipod';
+import type { DeviceAccess } from '@podkit/devices-ipod';
 import { OutputContext } from '../output/index.js';
 import { CliError, runAction, type CliErrorOutput } from '../errors.js';
 import { loadCoreOrFail, type CoreLoaderDeps } from '../handler-deps.js';
@@ -46,6 +42,7 @@ import {
   emitOrphanCsv,
   formatCheckRow,
   printSummaryLine,
+  printReadOnlyNotice,
 } from './doctor-render.js';
 import { preflightCascadeRefusal, runRepairPipeline } from './doctor-repair.js';
 
@@ -95,6 +92,9 @@ import {
   printReadinessSummary,
   collectReadinessIssues,
   printIssues,
+  readinessAccess,
+  suppressRepairSuggestions,
+  READ_ONLY_NO_REPAIR_NOTE,
   type ReadinessIssue,
 } from './readiness-display.js';
 
@@ -131,6 +131,16 @@ interface DoctorOutput {
   mountPoint: string;
   deviceModel: string;
   deviceType: 'ipod' | 'mass-storage';
+  /**
+   * Access tier resolved for this device, when its generation is known.
+   *
+   * `'read-only'` tells a consumer that every `repairable: true` check in
+   * `checks[]` describes a finding podkit will NOT offer to fix here — the
+   * repair path writes, and podkit does not write to a read-only device.
+   * Absent when no generation could be resolved (path mode with no USB
+   * inquiry, mass-storage devices).
+   */
+  access?: DeviceAccess;
   readiness?: {
     level: string;
     stages: Array<{
@@ -301,6 +311,7 @@ export const doctorCommand = new Command('doctor')
       'sysinfo-consistency',
       'sysinfo-extended',
       'sysinfo-modelnum-mismatch',
+      'sysinfo-modelnum-missing',
       'udev-rule',
     ])
   )
@@ -683,10 +694,30 @@ export async function runDoctorDiagnostics(
 
   let readinessResult: ReadinessResult | undefined;
   try {
-    readinessResult = await core.checkReadiness({ device: discoveredIpod });
+    // Diagnosing is a read. On a read-only generation (shuffle 3G/4G, nano
+    // 6G/7G) the cascade therefore runs to completion instead of refusing
+    // up-front: podkit can read that device, so it can report on its health.
+    // `--repair` never reaches this function — it returns from
+    // `runDoctorAction` — so a write intent can't leak through here.
+    readinessResult = await core.checkReadiness({
+      device: discoveredIpod,
+      requiredAccess: 'read',
+    });
   } catch {
     // Readiness check failed — proceed without it
   }
+
+  // Access tier of the connected device. Drives two things below: the
+  // read-only banner, and the suppression of every repair suggestion (each
+  // one writes).
+  const access: DeviceAccess | undefined = readinessResult
+    ? readinessAccess(readinessResult)
+    : undefined;
+  const isReadOnly = access === 'read-only';
+  const readOnlyReason =
+    readinessResult?.deviceModel?.unsupportedReason ??
+    readinessResult?.usbModel?.unsupportedReason ??
+    readinessResult?.unsupported;
 
   // Determine if the database is available from readiness results
   const dbStage = readinessResult?.stages.find((s) => s.stage === 'database');
@@ -782,31 +813,29 @@ export async function runDoctorDiagnostics(
     mountPoint: devicePath,
     deviceModel,
     deviceType: 'ipod',
+    ...(access ? { access } : {}),
     readiness: readinessOutput,
     checks: checksOutput,
   };
 
-  // Unsupported short-circuit: the device is recognised but podkit refuses
-  // to operate on it. Skip the rest of the rendering — there's no useful
-  // database section, no repair to suggest. Render a focused message and
-  // emit exit 1 (distinguished from exit 2 "issues found"; this is
-  // closer to a hard rejection than a fixable issue).
+  // Unsupported short-circuit: podkit cannot read this device's contents at
+  // all, so there is no database section to render and nothing to diagnose.
+  // Note the diagnostics above asked readiness for a READ, so a read-only
+  // generation does not land here on the strength of its tier — it lands
+  // here only when something else blocks the read (an HFS+ iPod on Linux, a
+  // device that never entered disk mode). Render a focused message and emit
+  // exit 1 (distinguished from exit 2 "issues found"; this is closer to a
+  // hard rejection than a fixable issue).
   if (readinessResult?.level === 'unsupported') {
     out.result<DoctorOutput>(output, () => {
       out.print(`podkit doctor — checking iPod at ${devicePath}`);
       out.newline();
-      const genId =
-        readinessResult.usbModel?.generationId ?? readinessResult.deviceModel?.generationId;
-      const readOnly =
-        !!genId &&
-        (IPOD_GENERATION_IDS as readonly string[]).includes(genId) &&
-        resolveGenerationSupport(genId as IpodGenerationId).access === 'read-only';
-      if (readOnly) {
-        // A read-only device (shuffle 3g/4g, nano 6g) can't be repaired or
-        // synced, but it is readable and archivable — frame it that way rather
-        // than as a flat "not supported" rejection.
+      if (isReadOnly) {
+        // Read-only AND unreachable here. Naming both keeps the message
+        // honest: the tier explains why syncing and repairing are out, the
+        // reason below explains why even reading failed this time.
         out.print(
-          'This device is read-only — podkit can read and back it up, but cannot repair or sync it.'
+          'This device is read-only, and podkit cannot reach its contents here — see the reason below.'
         );
       } else {
         out.error('Device is not supported by podkit.');
@@ -821,7 +850,7 @@ export async function runDoctorDiagnostics(
           }
         }
       }
-      if (readOnly) {
+      if (isReadOnly) {
         out.newline();
         out.print('Back it up with: podkit device archive');
       }
@@ -850,8 +879,12 @@ export async function runDoctorDiagnostics(
 
   // Collect actions across readiness + DB checks; rendered as a single
   // section after the issue summary.
+  //
+  // Every action here writes to the device (a repair, or `device init`), so
+  // a read-only device collects none: the findings are still reported, only
+  // the unrunnable commands are withheld. See `READ_ONLY_NO_REPAIR_NOTE`.
   const actions: SuggestedAction[] = [];
-  if (readinessResult) {
+  if (readinessResult && !isReadOnly) {
     for (const stage of readinessResult.stages) {
       if (stage.stage === 'sysinfo' && (stage.status === 'fail' || stage.status === 'warn')) {
         actions.push({
@@ -867,7 +900,7 @@ export async function runDoctorDiagnostics(
       }
     }
   }
-  if (report) {
+  if (report && !isReadOnly) {
     for (const check of report.checks) {
       if (!check.repairable || check.repairOnly || check.scope !== 'database-health') continue;
       if (check.status !== 'fail' && check.status !== 'warn') continue;
@@ -892,6 +925,12 @@ export async function runDoctorDiagnostics(
     out.print(`podkit doctor \u2014 checking iPod at ${devicePath}`);
 
     // ── System section ──
+    // Read-only banner, stated up-front so the absent `Fix:` lines further
+    // down read as deliberate policy rather than an omission.
+    if (isReadOnly) {
+      printReadOnlyNotice(out, readOnlyReason);
+    }
+
     if (report) {
       const systemChecks = report.checks.filter((c) => c.scope === 'system' && !c.repairOnly);
       if (systemChecks.length > 0) {
@@ -957,9 +996,14 @@ export async function runDoctorDiagnostics(
     // ── Issues section (detailed) ──
     const allIssues: ReadinessIssue[] = [];
 
-    // Readiness issues
+    // Readiness issues. On a read-only device the stage-level fixes
+    // (`device init`, `--repair sysinfo-extended`) all write, so they are
+    // replaced by the note explaining why nothing is offered.
     if (readinessResult) {
-      allIssues.push(...collectReadinessIssues(readinessResult.stages, deviceArg));
+      const readinessIssues = collectReadinessIssues(readinessResult.stages, deviceArg);
+      allIssues.push(
+        ...(isReadOnly ? suppressRepairSuggestions(readinessIssues) : readinessIssues)
+      );
     }
 
     // System check issues
@@ -989,7 +1033,9 @@ export async function runDoctorDiagnostics(
           check.status
         );
 
-        // Build fix command from actions
+        // Build fix command from actions. `actions` is empty on a read-only
+        // device — a repairable finding is still reported, with the note in
+        // place of the command podkit would refuse to run.
         const action = actions.find((a) => a.command.includes(check.id));
         const fixCommand = action?.command;
 
@@ -997,7 +1043,8 @@ export async function runDoctorDiagnostics(
           marker: stageMarker(check.status),
           label: check.name,
           summary: check.summary,
-          details,
+          details:
+            isReadOnly && check.repairable ? [...details, READ_ONLY_NO_REPAIR_NOTE] : details,
           docsUrl: check.docsUrl,
           fixCommand,
         });

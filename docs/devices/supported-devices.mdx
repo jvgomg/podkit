@@ -112,8 +112,8 @@ podkit uses [libgpod](https://github.com/fadingred/libgpod) for iPod database ma
 iPod support comes in three tiers, because reading a device and writing to it are different operations:
 
 - **Full** — podkit reads *and* syncs the device. This is every classic, mini, nano (1st–5th gen), photo, video, and shuffle (1st–2nd gen) iPod.
-- **Read-only** — podkit reads the library and can [archive](/user-guide/devices/archive) it, but **cannot sync**. The buttonless shuffles (3rd/4th gen) keep a libgpod-readable `iTunesDB`, but their `iTunesSD` playback database needs an iTunes authentication hash libgpod cannot produce. The nano 6th gen writes a database format libgpod cannot write. Reading and archiving these is entirely safe; only writes are refused.
-- **Unsupported** — podkit cannot use the device at all. iOS devices (iPod Touch, iPhone, iPad) don't mount as mass storage, and the nano 7th gen uses a database format libgpod neither reads nor writes.
+- **Read-only** — podkit reads the library and can [archive](/user-guide/devices/archive) it, but **cannot sync**. The buttonless shuffles (3rd/4th gen) keep a libgpod-readable `iTunesDB`, but writing the `iTunesSD` playback database their firmware plays from has never been shown to leave such a device playable. The nano 6th gen writes a database format libgpod cannot write. The nano 7th gen reads and archives cleanly, but writing needs a hashAB signature libgpod can only produce via an external blob podkit doesn't ship. Reading and archiving these is entirely safe; only writes are refused.
+- **Unsupported** — podkit cannot use the device at all. iOS devices (iPod Touch, iPhone, iPad) don't mount as mass storage.
 
 ### How We Test iPods
 
@@ -150,13 +150,15 @@ Some iPods can be **read and archived but not synced**. podkit discovers them, l
 
 <IpodAccessTable access="read-only" fallbackReason="Read-only: libgpod cannot write this device's playback database." />
 
+`podkit doctor` also runs on these devices — diagnosing is a read. You get the full report (host checks, readiness, database health); only `--repair`, which writes, is refused.
+
 Reach for `podkit device archive` to preserve one of these devices:
 
 ```bash
 podkit device archive -d "/Volumes/IPOD"
 ```
 
-Why read but not write? The buttonless shuffles (3rd/4th gen) keep a libgpod-readable `iTunesDB` alongside the `iTunesSD` playback database the firmware actually plays from. Reading the `iTunesDB` is fine, but writing a valid `iTunesSD` needs an iTunes authentication hash libgpod cannot produce. The nano 6th gen's write path is likewise unsupported by libgpod, while its read is merely untested — so podkit permits the safe read and refuses the write.
+Why read but not write? The buttonless shuffles (3rd/4th gen) keep a libgpod-readable `iTunesDB` alongside the `iTunesSD` playback database the firmware actually plays from. Reading the `iTunesDB` is fine; writing the `iTunesSD` is not blocked by anything cryptographic, but no such write has been confirmed to leave a playable device, so podkit does not attempt it. The nano 6th gen's write path is likewise unsupported by libgpod, while its read is merely untested — so podkit permits the safe read and refuses the write. The nano 7th gen reads its `iTunesDB` fine (confirmed on real hardware, 1,414 tracks), but writing requires a hashAB signature that libgpod can only compute via an external blob podkit doesn't ship — so, same as the shuffle and nano 6th gen, the read is permitted and the write is refused.
 
 ### Unsupported iPods
 
@@ -164,7 +166,7 @@ These devices **cannot be used by podkit at all** — they neither mount as USB 
 
 <IpodAccessTable access="none" fallbackReason="Not usable via libgpod — no readable iTunesDB over USB mass storage." />
 
-The nano 7th gen uses a database format libgpod neither reads nor writes. The iPod Touch — and, for the same reason, **all iPhones and iPads** — use Apple's iOS sync protocol instead of USB mass storage. (iPhones and iPads aren't iPods, so they don't appear in the generation matrix above.)
+The iPod Touch — and, for the same reason, **all iPhones and iPads** — use Apple's iOS sync protocol instead of USB mass storage. (iPhones and iPads aren't iPods, so they don't appear in the generation matrix above.)
 
 #### Why Can't iOS Devices Be Supported?
 

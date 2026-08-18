@@ -492,6 +492,15 @@ export function renderReadme(opts: RenderReadmeOptions): string {
 
   lines.push('## Device');
   lines.push('');
+  if (identity.identityCaptureFailureReason) {
+    lines.push(
+      `> **Identity could not be captured.** This device carried no on-disk SysInfoExtended, ` +
+        `the live firmware inquiry did not succeed (${identity.identityCaptureFailureReason}), ` +
+        `and the archive was forced to proceed (\`--force\`). Fields below are unknown, not ` +
+        `genuinely absent.`
+    );
+    lines.push('');
+  }
   lines.push('| Field | Value |');
   lines.push('| --- | --- |');
   lines.push(row('Name', orDash(identity.name)));

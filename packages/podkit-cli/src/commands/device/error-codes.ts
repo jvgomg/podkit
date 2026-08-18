@@ -38,6 +38,11 @@ export const DeviceErrorCodes = {
   /** Verify-tier cross-check: on-disk SysInfo disagrees with the live device. */
   IDENTITY_MISMATCH: 'IDENTITY_MISMATCH',
   EMPTY_IDENTITY: 'EMPTY_IDENTITY',
+  /**
+   * An iPod shuffle was identified but its model number was not, so the
+   * playback-database format cannot be chosen. Repair SysInfoExtended first.
+   */
+  MODEL_NUMBER_REQUIRED: 'MODEL_NUMBER_REQUIRED',
   INIT_FAILED: 'INIT_FAILED',
   NO_UPDATES: 'NO_UPDATES',
   // Scan
@@ -84,6 +89,14 @@ export const DeviceErrorCodes = {
   // Archive
   ARCHIVE_DUMP_FAILED: 'ARCHIVE_DUMP_FAILED',
   ARCHIVE_TRANSFORM_FAILED: 'ARCHIVE_TRANSFORM_FAILED',
+  /**
+   * The device's on-disk SysInfoExtended was absent, a live USB capture was
+   * attempted, and it did not succeed. The resulting archive would not record
+   * which device it came from. `--force` overrides and records the gap
+   * honestly (README note + `library.sqlite` `device` row) instead of leaving
+   * identity fields silently blank.
+   */
+  IDENTITY_CAPTURE_FAILED: 'IDENTITY_CAPTURE_FAILED',
   /** Auto-detect found no iPod and no other device on a supported platform. */
   NO_DEVICE_FOUND: 'NO_DEVICE_FOUND',
   /** Auto-detect found an iPod, but it has no mounted volume. */

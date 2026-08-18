@@ -8,6 +8,7 @@ import type {
   DiscoveredDeviceUnsupported,
 } from '../discovery.js';
 import type { PlatformDeviceInfo } from '../types.js';
+import { resolveGenerationSupport } from '@podkit/devices-ipod';
 import { checkIpodStructure } from './stages/mount.js';
 import { checkSysInfo } from './stages/sysinfo.js';
 import { checkDatabase } from './stages/database.js';
@@ -44,6 +45,21 @@ function ipodClassificationToUnsupportedReason(
   );
 }
 
+/**
+ * Whether a rejection carried by the cascade still applies once the caller's
+ * intent is known.
+ *
+ * A `read-only` generation is rejected for writes only — it reads its
+ * `iTunesDB` fine — so a read-intent caller (diagnostics, archive) must be
+ * allowed past the short-circuit and on through the stage probes, all of
+ * which are non-destructive. `none` (and any model the cascade could not
+ * identify at all) is refused for every intent.
+ */
+function refusesIntent(model: IpodModel | undefined, requiredAccess: 'read' | 'write'): boolean {
+  if (requiredAccess === 'write') return true;
+  return model === undefined || resolveGenerationSupport(model.generationId).access !== 'read-only';
+}
+
 export { checkIpodStructure } from './stages/mount.js';
 export { checkSysInfo } from './stages/sysinfo.js';
 export { checkDatabase } from './stages/database.js';
@@ -72,10 +88,12 @@ export { STAGE_DISPLAY_NAMES } from './types.js';
 export async function checkReadiness(input: ReadinessInput): Promise<ReadinessResult> {
   const { device } = input;
 
+  const requiredAccess = input.requiredAccess ?? 'write';
+
   switch (device.kind) {
     case 'ipod':
       return device.block
-        ? runIpodBlockPipeline(device, device.block, input.ipod, input.platform)
+        ? runIpodBlockPipeline(device, device.block, input.ipod, input.platform, requiredAccess)
         : runIpodUsbOnly(device);
     case 'mass-storage':
       return runMassStorage(device);
@@ -96,12 +114,17 @@ export async function checkReadiness(input: ReadinessInput): Promise<ReadinessRe
  * PID, iOS range fallback) the unsupported short-circuit fires up-front —
  * none of the disk-mode probes can run against a device that never enters
  * disk mode.
+ *
+ * `requiredAccess: 'read'` narrows both short-circuits to the generations a
+ * read genuinely cannot serve: a `read-only` generation runs the full cascade
+ * instead, since every stage probe only reads.
  */
 async function runIpodBlockPipeline(
   discovered: DiscoveredDeviceIpod,
   device: PlatformDeviceInfo,
   ipod: IpodDatabase | undefined,
-  platform: string | undefined
+  platform: string | undefined,
+  requiredAccess: 'read' | 'write'
 ): Promise<ReadinessResult> {
   const usbClassification = discovered.usb;
   const usbConnection = usbClassification?.device;
@@ -112,7 +135,11 @@ async function runIpodBlockPipeline(
   // Unsupported short-circuit. When the USB classifier already rejected the
   // device (Apple unsupported-PID table, iOS range fallback), don't run the
   // rest of the cascade — there's nothing for the stage probes to discover.
-  if (usbClassification && usbClassification.supported === false) {
+  if (
+    usbClassification &&
+    usbClassification.supported === false &&
+    refusesIntent(usbModel, requiredAccess)
+  ) {
     const unsupported = ipodClassificationToUnsupportedReason(usbClassification);
     stages.push({
       stage: 'usb',
@@ -275,7 +302,10 @@ async function runIpodBlockPipeline(
   // identification still populates `deviceModel.unsupportedReason` for
   // unsupported generations (nano 7G, touch 5G–7G, …). Refuse here instead of
   // proceeding to the database stage against a device podkit cannot sync.
-  if (deviceModel?.unsupportedReason) {
+  //
+  // A read-intent caller carries on: on a `read-only` generation the database
+  // stage is a libgpod parse, which is exactly the operation the tier permits.
+  if (deviceModel?.unsupportedReason && refusesIntent(deviceModel, requiredAccess)) {
     const unsupported = deviceModel.unsupportedReason;
     skipRemaining(stages, stages.length);
     return {
@@ -344,7 +374,9 @@ async function runIpodBlockPipeline(
  * When the USB classifier already rejected the device (Apple unsupported-PID
  * table, iOS range fallback), short-circuits with `level: 'unsupported'`
  * and the canonical reason instead of pretending the device only needs a
- * partition table.
+ * partition table. `requiredAccess` does not soften this arm: with no block
+ * device there is no filesystem, no SysInfo and no database to read, so a
+ * read-only generation is refused here for a read intent too.
  *
  * Pre-T5 this was a separate exported helper (`createUsbOnlyReadinessResult`).
  * It now lives behind the single {@link checkReadiness} entry point — the

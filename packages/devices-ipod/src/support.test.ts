@@ -21,16 +21,18 @@ describe('resolveGenerationSupport', () => {
     expect(support.note).toBeDefined();
   });
 
-  it('reports shuffle 3g as read-only, inferred', () => {
+  it('reports shuffle 3g as read-only, hardware-verified', () => {
+    // Promoted from `inferred` once a shuffle 3g was read on real hardware
+    // (serial 4H02918LALD, FamilyID 132).
     const support = resolveGenerationSupport('shuffle_3g');
     expect(support.access).toBe('read-only');
-    expect(support.verified).toBe('inferred');
+    expect(support.verified).toBe('hardware');
   });
 
-  it('reports nano 6g as read-only, inferred', () => {
+  it('reports nano 6g as read-only, hardware-verified', () => {
     const support = resolveGenerationSupport('nano_6g');
     expect(support.access).toBe('read-only');
-    expect(support.verified).toBe('inferred');
+    expect(support.verified).toBe('hardware');
   });
 
   it('reports an iPod touch as none, inferred', () => {
@@ -39,10 +41,14 @@ describe('resolveGenerationSupport', () => {
     expect(support.verified).toBe('inferred');
   });
 
-  it('reports nano 7g as none, inferred', () => {
+  it('reports nano 7g as read-only, hardware-verified', () => {
+    // Promoted from `none`/`inferred`: read on real hardware (1,414 tracks,
+    // `device archive` succeeded). The write refusal is hashAB signing, not
+    // an absent libgpod table entry as previously claimed.
     const support = resolveGenerationSupport('nano_7g');
-    expect(support.access).toBe('none');
-    expect(support.verified).toBe('inferred');
+    expect(support.access).toBe('read-only');
+    expect(support.verified).toBe('hardware');
+    expect(support.note).toBeDefined();
   });
 
   it('reports a syncable classic/nano generation as syncable, inferred', () => {

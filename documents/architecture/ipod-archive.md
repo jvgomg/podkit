@@ -128,6 +128,24 @@ second-hand or unconfigured iPod you just plugged in. Device-presence is the
 primary error; the iPod-only caveat appears only when a non-iPod is actually
 present.
 
+**Firmware identity capture fails loudly, not silently.** Before stage 1 runs,
+the CLI (which alone has `@podkit/core`, since the package stays a leaf) checks
+whether the device already carries on-disk `SysInfoExtended`. If not — every
+iPod shuffle, plus any device whose identity file is missing or corrupt — it
+attempts a **read-only** live firmware inquiry so the dump still captures full
+identity (serial, model number, capacity, colour). Three outcomes: *not
+needed* (on-disk SysInfoExtended already covers it) and *no USB correlation*
+(no live device maps to this volume — an unsupported platform, or a plain
+directory handed to `--device <path>`) both proceed quietly, since neither is
+something a retry or a flag could fix. A *capture that was attempted and
+produced nothing* is different: the command stops with a typed error rather
+than archiving with silently blank identity fields, unless the user passes
+`--force`. Forcing past the gate still records the gap honestly — a note in
+`README.md` and an `identity_capture_failed` / `identity_capture_failure_reason`
+pair in the `device` row of `library.sqlite` — via a
+`podkit-identity-unknown.txt` sidecar the dump stage writes alongside the
+captured-SysInfoExtended sidecar (`device-identity.ts`).
+
 **Read path is libgpod-node-only, with one carve-out.** All track / playlist /
 smart-playlist / identity reads go through `@podkit/libgpod-node`. The package
 does **not** depend on `@podkit/ipod-db` (the pure-TS parser) — the mature

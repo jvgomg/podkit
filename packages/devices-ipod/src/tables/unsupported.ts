@@ -13,9 +13,12 @@ import { SUPPORTED_DEVICES_DOCS_URL } from '../build-unsupported-reason.js';
  *      iPod-specific PIDs and checksum requirements.
  *
  * Unsupported categories:
- * - Shuffle 3G/4G: libgpod has table entries but requires iTunes authentication.
+ * - Shuffle 3G/4G: readable, but writing their `bdhs` playback database has
+ *   never been verified on hardware, so podkit does not attempt it.
  * - Nano 6G: libgpod has table entries but cannot write the iTunesDB format.
- * - Nano 7G: NOT in libgpod's ipod_info_table at all.
+ * - Nano 7G: readable — libgpod opens its iTunesCDB fine (hardware-confirmed,
+ *   1,414 tracks). Write is refused because libgpod's hashAB signing needs an
+ *   external blob (`LIBGPOD_BLOB_DIR`) podkit does not ship.
  * - iPod touch (all generations): Apple's proprietary sync protocol; no disk mode.
  * - iPhone / iPad: Apple's proprietary sync protocol; no disk mode.
  * - Apple TV, Apple Watch, HomePod: non-iPod Apple USB devices; out of scope.
@@ -35,13 +38,24 @@ import { SUPPORTED_DEVICES_DOCS_URL } from '../build-unsupported-reason.js';
 
 // ── Reason strings ────────────────────────────────────────────────────────────
 
+// The 3G/4G play from an `iTunesSD` in the `bdhs` format. Nothing in that
+// write path is cryptographically closed to podkit — it is simply unproven:
+// no such device has been written to and confirmed to still play. Until one
+// has been, podkit reads these devices and refuses to write them.
 const SHUFFLE_REASON =
-  'iPod shuffle 3rd/4th gen requires iTunes authentication, which podkit cannot perform.';
+  'iPod shuffle 3rd/4th gen can be read but not written: writing its iTunesSD playback database is unverified on hardware.';
 
 const NANO_6G_REASON =
   'iPod nano 6th gen uses an iTunesDB format podkit cannot write; read access is untested.';
 
-const NANO_7G_REASON = 'iPod nano 7th gen is not a podkit-supported device.';
+// nano_7g reads fine — libgpod opens its classic iTunesCDB database without
+// trouble (hardware-confirmed: 1,414 tracks, `device archive` succeeded).
+// Writing needs a hashAB signature; libgpod only computes hashAB via an
+// external `hashab` blob loaded through `LIBGPOD_BLOB_DIR`
+// (itdb_hashAB.c:43-68) and fails closed without it. podkit ships no such
+// blob, so the write path is refused while reads remain fine.
+const NANO_7G_REASON =
+  'iPod nano 7th gen can be read and archived, but not synced: writing needs the hashAB signature libgpod cannot produce without an external blob podkit does not ship.';
 
 const itouch = (gen: string) =>
   `iPod touch (${gen}) uses Apple's proprietary sync protocol; podkit only supports iPod disk mode.`;

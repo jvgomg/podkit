@@ -251,6 +251,102 @@ describe('runSync: validation + deps seam', () => {
     expect(openedDevice).toBe(false);
   });
 
+  it('no longer refuses a syncable shuffle at the sync gate', async () => {
+    const ctx = makeContext(sharedSourceDir);
+    const { out, stdout, exitCode } = makeOut();
+
+    // shuffle_1g/shuffle_2g are `syncable`, and podkit writes their playback
+    // database through libgpod once the device's identity is on disk. Sync
+    // must therefore treat them like any other syncable iPod and fall through
+    // to the next gate in the cascade (blank device / needs-init here) rather
+    // than refusing on capability grounds.
+    let openedDevice = false;
+    const deps: SyncDeps = {
+      getDeviceManager: () => fakeManager(),
+      loadCore: async () => {
+        const real = await import('@podkit/core');
+        return {
+          ...real,
+          assessIpodIdentity: async () => ({
+            model: {
+              displayName: 'iPod shuffle 1GB Pink (2nd Generation)',
+              generationId: 'shuffle_2g',
+              family: 'iPod shuffle',
+              ordinal: 2,
+              checksumType: 'none',
+              modelNumber: 'A947',
+              source: 'serial',
+            },
+            capabilities: null,
+            needsChecksum: false,
+            checksumType: 'none',
+            firmwareInquiry: 'present',
+            existing: null,
+            usbFingerprint: null,
+            sysInfoModelNumber: undefined,
+          }),
+          createFFmpegTranscoder: () => {
+            openedDevice = true;
+            return real.createFFmpegTranscoder();
+          },
+        } as typeof real;
+      },
+    };
+
+    await runWithContext(ctx, () => runAction(out, () => runSync({ dryRun: true }, out, deps)));
+    expect(exitCode.get()).toBe(1);
+    const err = stdout.json<ErrJson>();
+    expect(err.code).toBe(SyncErrorCodes.IPOD_NEEDS_INIT);
+    expect(openedDevice).toBe(false);
+  });
+
+  it('refuses a read-only shuffle on access grounds', async () => {
+    const ctx = makeContext(sharedSourceDir);
+    const { out, stdout, exitCode } = makeOut();
+
+    // shuffle_3g/shuffle_4g carry an `unsupportedReason` (read-only access),
+    // and the unsupported-device gate must keep catching them. The sibling
+    // test above proves a *syncable* shuffle sails through — these two pin the
+    // distinction: the refusal tracks the device's access tier, never the
+    // shuffle family as a whole.
+    const deps: SyncDeps = {
+      getDeviceManager: () => fakeManager(),
+      loadCore: async () => {
+        const real = await import('@podkit/core');
+        return {
+          ...real,
+          assessIpodIdentity: async () => ({
+            model: {
+              displayName: 'iPod shuffle (4th Generation)',
+              generationId: 'shuffle_4g',
+              family: 'iPod shuffle',
+              ordinal: 4,
+              checksumType: 'none',
+              source: 'usb',
+              unsupportedReason: {
+                kind: 'unsupported-device',
+                headline: 'iPod shuffle (4th Generation) is read-only in podkit.',
+                docsUrl: 'https://jvgomg.github.io/podkit/devices/supported-devices',
+              },
+            },
+            capabilities: null,
+            needsChecksum: false,
+            checksumType: 'none',
+            firmwareInquiry: 'present',
+            existing: null,
+            usbFingerprint: null,
+            sysInfoModelNumber: undefined,
+          }),
+        } as typeof real;
+      },
+    };
+
+    await runWithContext(ctx, () => runAction(out, () => runSync({ dryRun: true }, out, deps)));
+    expect(exitCode.get()).toBe(1);
+    const err = stdout.json<ErrJson>();
+    expect(err.code).toBe(SyncErrorCodes.DEVICE_UNSUPPORTED);
+  });
+
   it('refuses cleanly with UNKNOWN_IPOD_MODEL when the cascade resolves no model', async () => {
     const ctx = makeContext(sharedSourceDir);
     const { out, stdout, exitCode } = makeOut();

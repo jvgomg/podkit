@@ -25,6 +25,8 @@ import { debrisTranscodeTmpCheck } from './checks/debris-transcode-tmp.js';
 import { sysInfoExtendedCheck } from './checks/sysinfo-extended.js';
 import { sysinfoConsistencyCheck } from './checks/sysinfo-consistency.js';
 import { sysinfoModelnumMismatchCheck } from './checks/sysinfo-modelnum-mismatch.js';
+import { sysinfoModelnumMissingCheck } from './checks/sysinfo-modelnum-missing.js';
+import { shufflePlaybackDbCheck } from './checks/shuffle-playback-db.js';
 import { udevRuleCheck } from './checks/udev-rule.js';
 import { videoEncoderCheck } from './checks/video-encoder.js';
 import type {
@@ -78,6 +80,8 @@ const CHECKS: DiagnosticCheck[] = [
   sysInfoExtendedCheck,
   sysinfoConsistencyCheck,
   sysinfoModelnumMismatchCheck,
+  sysinfoModelnumMissingCheck,
+  shufflePlaybackDbCheck,
   udevRuleCheck,
 ];
 

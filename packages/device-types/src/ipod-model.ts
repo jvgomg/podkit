@@ -75,8 +75,8 @@ export type IpodModelSource = 'usb' | 'sysinfo' | 'serial';
  * color, capacity, and model number.
  *
  * When `unsupportedReason` is present, the device was identified but podkit
- * cannot sync to it (libgpod unsupported, iTunes authentication required, or
- * Apple proprietary sync protocol). Callers should surface this to the user
+ * cannot sync to it (libgpod unsupported, an unverified write path, or Apple's
+ * proprietary sync protocol). Callers should surface this to the user
  * rather than attempting a sync. The payload is the same shape the readiness
  * pipeline + CLI consume — no bridge function required.
  */

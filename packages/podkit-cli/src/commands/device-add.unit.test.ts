@@ -1827,3 +1827,177 @@ describe('runDeviceAdd: config-inject tier (--no-validate, doc-045)', () => {
     expect(result.verification).toBe('config-only');
   });
 });
+
+// =============================================================================
+// SysInfo model number written during add
+// =============================================================================
+//
+// `device add` is a write-intent path, and both of its branches can put a
+// model number on the user's hardware: a fresh database gets one baked in by
+// `initializeIpod`, and an existing one the database layer cannot identify
+// gets one written through `setSysInfo`. That value ends up in
+// `iPod_Control/Device/SysInfo`, which podkit later reads back as evidence of
+// what the device is — so it must always be one the cascade resolved from the
+// device itself, and never anything else.
+
+describe('runDeviceAdd: SysInfo model number', () => {
+  let tempDir: string;
+  let tempConfig: string;
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'device-add-model-'));
+    tempConfig = join(tempDir, 'config.toml');
+  });
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  /** A pink shuffle 2G — the cascade knows it, the database layer does not. */
+  const SHUFFLE_2G_MODEL: IpodModel = {
+    displayName: 'iPod shuffle 1GB Pink (2nd Generation)',
+    generationId: 'shuffle_2g',
+    family: 'iPod shuffle',
+    ordinal: 2,
+    checksumType: 'none',
+    modelNumber: 'A947',
+    capacityGb: 1,
+    color: 'Pink',
+    source: 'serial',
+  };
+
+  /** USB-derived: names the generation, carries no model number. */
+  const SHUFFLE_2G_USB_ONLY: IpodModel = {
+    displayName: 'iPod shuffle (2nd Generation)',
+    generationId: 'shuffle_2g',
+    family: 'iPod shuffle',
+    ordinal: 2,
+    checksumType: 'none',
+    source: 'usb',
+  };
+
+  function makeAssessment(model: IpodModel): IpodIdentityAssessment {
+    return {
+      model,
+      capabilities: null,
+      needsChecksum: false,
+      checksumType: 'none',
+      firmwareInquiry: 'present',
+      existing: null,
+      usbFingerprint: null,
+      sysInfoModelNumber: undefined,
+    };
+  }
+
+  function shuffleManager(): DeviceManager {
+    return fakeManager({
+      isSupported: true,
+      scan: async (opts) =>
+        opts?.kinds?.includes('ipod')
+          ? [
+              {
+                identifier: 'disk9s1',
+                volumeName: 'SHUFFLE',
+                volumeUuid: 'SHUF-2G-UUID',
+                storage: { sizeBytes: 1_000_000_000 },
+                isMounted: true,
+                mountPoint: tempDir,
+              } as Awaited<ReturnType<DeviceManager['scan']>>[number],
+            ]
+          : [],
+    });
+  }
+
+  /** Records what a fresh-database add hands to `initializeIpod`. */
+  async function addToBlankDevice(model: IpodModel): Promise<{ model?: string; name?: string }> {
+    const ctx = makeContext({ device: 'shuffle', json: true, configPath: tempConfig });
+    const { out } = makeOut(true);
+    let captured: { model?: string; name?: string } | undefined;
+
+    const deps: DeviceAddDeps = {
+      getDeviceManager: shuffleManager,
+      assessIdentity: async () => makeAssessment(model),
+      ipodDatabase: {
+        hasDatabase: async () => false,
+        open: async () => ({ trackCount: 0, close: () => {} }),
+        initializeIpod: async (_path, options) => {
+          captured = options ?? {};
+          return { close: () => {} };
+        },
+      },
+    };
+
+    await runAdd(ctx, { type: 'ipod', yes: true }, out, deps);
+    return captured ?? {};
+  }
+
+  /** Records what an existing-database add writes through `setSysInfo`. */
+  async function addToExistingDevice(
+    model: IpodModel,
+    databaseGeneration: string
+  ): Promise<{ written: Array<[string, string | null]>; saves: number; closes: number }> {
+    const ctx = makeContext({ device: 'shuffle', json: true, configPath: tempConfig });
+    const { out } = makeOut(true);
+    const written: Array<[string, string | null]> = [];
+    let saves = 0;
+    let closes = 0;
+
+    const deps: DeviceAddDeps = {
+      getDeviceManager: shuffleManager,
+      assessIdentity: async () => makeAssessment(model),
+      ipodDatabase: {
+        hasDatabase: async () => true,
+        open: async () => ({
+          trackCount: 198,
+          device: { generation: databaseGeneration, modelName: 'Unknown' },
+          setSysInfo: (field: string, value: string | null) => void written.push([field, value]),
+          save: async () => void (saves += 1),
+          close: () => void (closes += 1),
+        }),
+        initializeIpod: async () => ({ close: () => {} }),
+      },
+    };
+
+    await runAdd(ctx, { type: 'ipod', yes: true }, out, deps);
+    return { written, saves, closes };
+  }
+
+  describe('fresh database', () => {
+    it('bakes the cascade-resolved model number into the new database', async () => {
+      const options = await addToBlankDevice(SHUFFLE_2G_MODEL);
+      expect(options.model).toBe('MA947');
+    });
+
+    it('passes no model number when the cascade resolved only a generation', async () => {
+      const options = await addToBlankDevice(SHUFFLE_2G_USB_ONLY);
+      expect(options.model).toBeUndefined();
+    });
+  });
+
+  describe('existing database', () => {
+    it('records the model number when the database layer cannot identify the device', async () => {
+      const { written, saves } = await addToExistingDevice(SHUFFLE_2G_MODEL, 'unknown');
+      expect(written).toEqual([['ModelNumStr', 'MA947']]);
+      expect(saves).toBe(1);
+    });
+
+    it('writes nothing when the database layer already knows the device', async () => {
+      const { written, saves } = await addToExistingDevice(SHUFFLE_2G_MODEL, 'shuffle_2');
+      expect(written).toEqual([]);
+      expect(saves).toBe(0);
+    });
+
+    it('writes nothing when the cascade carries no model number', async () => {
+      const { written, saves } = await addToExistingDevice(SHUFFLE_2G_USB_ONLY, 'unknown');
+      expect(written).toEqual([]);
+      expect(saves).toBe(0);
+    });
+
+    it('closes every handle it opens', async () => {
+      // One open to read the track count for display, one to write the
+      // identity after the add is confirmed.
+      const { closes } = await addToExistingDevice(SHUFFLE_2G_MODEL, 'unknown');
+      expect(closes).toBe(2);
+    });
+  });
+});

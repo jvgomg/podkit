@@ -65,6 +65,8 @@ If problems are detected, doctor tells you what's wrong and how to fix it. Devic
 | **SysInfoExtended** | Missing device identity file required for database checksums on newer iPods | Failure (repair-only) |
 | **SysInfoExtended consistency with device** | On-disk `SysInfoExtended` doesn't match firmware-derived identity (stale after device swap or restore) | Warning |
 | **SysInfo ModelNumStr vs firmware identity** | Classic `SysInfo` lists wrong `ModelNumStr` — device misidentified by libgpod | Failure |
+| **Database-layer device identity** | The database layer cannot work out what this iPod is, so device-specific writes (the shuffle playback database, music directory layout, artwork formats) fall back to generic defaults | Warning |
+| **Shuffle playback database** | An iPod shuffle whose `iTunesSD` — the file the firmware actually plays from — is missing, empty, or in the wrong format for that shuffle | Warning |
 
 ### Mass-Storage Devices
 
@@ -221,12 +223,19 @@ podkit doctor --repair debris-transcode-tmp --dry-run
 # Identity / SysInfo
 podkit doctor --repair sysinfo-extended --dry-run
 podkit doctor --repair sysinfo-modelnum-mismatch --dry-run
+podkit doctor --repair sysinfo-modelnum-missing --dry-run
 
 # Linux host setup
 podkit doctor --repair udev-rule --dry-run
 ```
 
 Repairs without `--dry-run` apply changes directly; for repairs that delete files (orphan-files, artwork-reset), `--dry-run` is the safe way to see the list before committing.
+
+## Read-Only Devices
+
+Some iPods are [read-only](/devices/supported-devices#read-only-ipods) — podkit reads and archives them but never writes to them. `podkit doctor` still runs on those devices: every host check, the full readiness cascade, and every database health check are reads, so you get the same report as for any other iPod, and a healthy read-only device exits cleanly.
+
+What differs is the remedy. Repairing writes, so `podkit doctor --repair` is refused on a read-only device. A finding whose only fix is a repair is still reported in full — doctor just says no repair is available instead of printing a command it would refuse to run.
 
 ## Additional Options
 

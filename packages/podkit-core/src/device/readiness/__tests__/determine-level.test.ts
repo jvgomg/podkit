@@ -50,7 +50,7 @@ describe('determineLevel() — unsupported short-circuit', () => {
     expect(result4g.unsupported?.kind).toBe('unsupported-device');
   });
 
-  it('returns unsupported for nano 7G PIDs (not in libgpod table)', () => {
+  it('returns unsupported for nano 7G PIDs (read-only: hashAB signing unavailable)', () => {
     const result = determineLevel([], { vendorId: '05ac', productId: '120e' });
     expect(result.level).toBe('unsupported');
     expect(result.unsupported?.kind).toBe('unsupported-device');

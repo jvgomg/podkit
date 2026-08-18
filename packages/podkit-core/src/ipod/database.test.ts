@@ -10,7 +10,12 @@
  */
 
 import { describe, it, expect } from 'bun:test';
-import { IpodDatabase } from './database.js';
+import { join } from 'node:path';
+import {
+  IpodDatabase,
+  discardUnvouchedPlaybackDatabase,
+  type PlaybackDbFsOps,
+} from './database.js';
 import { IpodError } from './errors.js';
 
 /**
@@ -86,6 +91,47 @@ describe('IpodDatabase', () => {
         expect((err as IpodError).code).toBe('SAVE_FAILED');
         expect((err as IpodError).message).toContain('native write error');
       }
+    });
+  });
+
+  describe('discardUnvouchedPlaybackDatabase()', () => {
+    const MOUNT = '/Volumes/IPOD';
+    const ITUNESSD = join(MOUNT, 'iPod_Control', 'iTunes', 'iTunesSD');
+
+    /** Records what was removed so a no-op can be told from a deletion. */
+    function makeFs(present: string[]): PlaybackDbFsOps & { removed: string[] } {
+      const files = new Set(present);
+      const removed: string[] = [];
+      return {
+        removed,
+        existsSync: (p) => files.has(p),
+        rmSync: (p) => {
+          files.delete(p);
+          removed.push(p);
+        },
+      };
+    }
+
+    it('removes an iTunesSD the initialisation just created', () => {
+      // libgpod writes one whenever it is given no model number — in the bdhs
+      // format of a shuffle 3G/4G, for a device nothing has identified.
+      const fs = makeFs([ITUNESSD]);
+      expect(discardUnvouchedPlaybackDatabase(MOUNT, false, fs)).toBe(true);
+      expect(fs.removed).toEqual([ITUNESSD]);
+    });
+
+    it('keeps an iTunesSD the device already had', () => {
+      // libgpod skips the write when a file is present, so this one is the
+      // device's own — deleting it would destroy a working playback database.
+      const fs = makeFs([ITUNESSD]);
+      expect(discardUnvouchedPlaybackDatabase(MOUNT, true, fs)).toBe(false);
+      expect(fs.removed).toEqual([]);
+    });
+
+    it('does nothing when no iTunesSD was written', () => {
+      const fs = makeFs([]);
+      expect(discardUnvouchedPlaybackDatabase(MOUNT, false, fs)).toBe(false);
+      expect(fs.removed).toEqual([]);
     });
   });
 

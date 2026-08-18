@@ -10,8 +10,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   CAPTURED_SYSINFO_FILENAME,
+  IDENTITY_CAPTURE_FAILURE_FILENAME,
   readCapturedSysInfo,
   writeCapturedSysInfo,
+  readIdentityCaptureFailure,
+  writeIdentityCaptureFailure,
 } from './device-identity.js';
 
 /** A minimal-but-valid SysInfoExtended plist (GUID + serial + FamilyID + model). */
@@ -69,6 +72,53 @@ describe('writeCapturedSysInfo / readCapturedSysInfo', () => {
       // parseSysInfoExtendedXml returns a present result with an empty bag.
       expect(result?.identity.serialNumber).toBeUndefined();
       expect(result?.identity.modelNumStr).toBeUndefined();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('writeIdentityCaptureFailure / readIdentityCaptureFailure', () => {
+  test('round-trips the failure reason', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ipod-archive-idfail-'));
+    try {
+      await writeIdentityCaptureFailure(
+        dir,
+        'the device did not respond to the firmware identity inquiry'
+      );
+      expect(await readIdentityCaptureFailure(dir)).toBe(
+        'the device did not respond to the firmware identity inquiry'
+      );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('writes to the podkit-namespaced sidecar filename', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ipod-archive-idfail-'));
+    try {
+      await writeIdentityCaptureFailure(dir, 'timed out');
+      const raw = await Bun.file(join(dir, IDENTITY_CAPTURE_FAILURE_FILENAME)).text();
+      expect(raw).toContain('timed out');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('returns null when the sidecar is absent — the common, non-forced case', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ipod-archive-idfail-'));
+    try {
+      expect(await readIdentityCaptureFailure(dir)).toBeNull();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('a blank sidecar reads as null, not an empty string', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ipod-archive-idfail-'));
+    try {
+      await writeFile(join(dir, IDENTITY_CAPTURE_FAILURE_FILENAME), '   \n', 'utf8');
+      expect(await readIdentityCaptureFailure(dir)).toBeNull();
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

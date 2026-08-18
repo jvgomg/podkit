@@ -11,6 +11,9 @@ import {
   formatReadinessSummaryLines,
   readinessAccess,
   formatReadOnlyLines,
+  suppressRepairSuggestions,
+  READ_ONLY_NO_REPAIR_NOTE,
+  type ReadinessIssue,
 } from './readiness-display.js';
 
 describe('readinessAccess', () => {
@@ -34,6 +37,34 @@ describe('readinessAccess', () => {
     expect(
       readinessAccess({ level: 'unsupported', stages: [] } as unknown as ReadinessResult)
     ).toBeUndefined();
+  });
+});
+
+describe('suppressRepairSuggestions', () => {
+  const issue = (overrides: Partial<ReadinessIssue> = {}): ReadinessIssue => ({
+    marker: '!',
+    label: 'SysInfo',
+    summary: 'SysInfoExtended is missing',
+    details: ['Without device identity, podkit cannot determine artwork formats.'],
+    ...overrides,
+  });
+
+  it('replaces a fix command with the explanation of why none is offered', () => {
+    const [result] = suppressRepairSuggestions([
+      issue({ fixCommand: 'podkit doctor --repair sysinfo-extended -d ipod' }),
+    ]);
+    expect(result?.fixCommand).toBeUndefined();
+    expect(result?.details).toContain(READ_ONLY_NO_REPAIR_NOTE);
+    // The finding itself is untouched — only the remedy changes.
+    expect(result?.summary).toBe('SysInfoExtended is missing');
+    expect(result?.details[0]).toContain('Without device identity');
+  });
+
+  it('leaves an issue that carried no fix command alone', () => {
+    const input = issue();
+    const [result] = suppressRepairSuggestions([input]);
+    expect(result).toBe(input);
+    expect(result?.details).not.toContain(READ_ONLY_NO_REPAIR_NOTE);
   });
 });
 

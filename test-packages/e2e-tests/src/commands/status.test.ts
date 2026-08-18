@@ -26,7 +26,7 @@ interface DeviceInfoOutput {
     model?: {
       name: string;
       number: string | null;
-      generation: string;
+      generationId: string;
       capacity: number;
     };
     storage?: {

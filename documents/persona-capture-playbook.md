@@ -404,10 +404,11 @@ These three personas have no raw probe files — they exist to test the rejectio
 
 ### `ipod-shuffle-not-supported`
 
-User does not own an iPod shuffle. Synthesise:
+No shuffle was owned when this persona was written, so it is pure synthesis.
+Three shuffles (2G/3G/4G) have since been acquired — see `documents/test-devices.md` — so this persona can be re-captured from hardware when someone gets to it. Until then, synthesise:
 
-- `usbDescriptor`: pick a real shuffle 4G product ID from `packages/devices-ipod/src/identity.ts` or `unsupported.ts` (search for "shuffle"). Vendor `0x05ac`, product `0x1300` (shuffle 4G) is a reasonable choice; cross-check against the table.
-- `sysInfoExtendedXml: null` (shuffles don't expose SIE)
+- `usbDescriptor`: pick a real unsupported shuffle product ID from `packages/devices-ipod/src/tables/usb-ids.ts` or `unsupported.ts` (search for "shuffle"). Vendor `0x05ac`, product `0x1302` (shuffle 3G) matches the persona's name; `0x1300` is the shuffle **1G**, which is not an unsupported PID.
+- `sysInfoExtendedXml: null` (synthesis convenience only — a shuffle 2G does expose SIE; see `documents/sysinfo-captures/shuffle-2g-1gb-pink.xml`)
 - All Mac/Linux probe fields: `null`
 - `partitionLayout`: empty partitions array (shuffle's FAT16 layout isn't material for the rejection test).
 - `expectedCapabilities: null`

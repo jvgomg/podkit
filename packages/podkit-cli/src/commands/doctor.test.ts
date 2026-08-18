@@ -35,6 +35,7 @@ describe('doctor --repair .choices()', () => {
       'sysinfo-consistency',
       'sysinfo-extended',
       'sysinfo-modelnum-mismatch',
+      'sysinfo-modelnum-missing',
       'udev-rule',
     ]);
   });

@@ -292,8 +292,9 @@ iPod_Control/
 
 | Generation | Reason |
 |------------|--------|
-| Shuffle 3-4G | Buttonless; requires iTunes authentication hash |
-| Nano 6-7G | Different database format (touch screen models) |
+| Shuffle 3-4G | Buttonless; writing their iTunesSD playback database is unverified on hardware |
+| Nano 6G | Writes an iTunesDB format libgpod cannot produce; read is untested |
+| Nano 7G | Reads and archives cleanly (hardware-confirmed); writing needs the hashAB signature libgpod cannot produce without an external blob podkit doesn't ship |
 | Touch (all) | iOS protocol + cryptographic iTunesDB signing |
 | iPhone (all) | iOS protocol + cryptographic iTunesDB signing |
 | iPad | iOS protocol + cryptographic iTunesDB signing |

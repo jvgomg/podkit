@@ -39,7 +39,7 @@ import { compareStable } from './archive-report.js';
  * Schema version of `library.sqlite`. Stored in the `schema_version` table so a
  * future reader can branch on it. Bump on any breaking column change.
  */
-export const LIBRARY_DB_SCHEMA_VERSION = 1;
+export const LIBRARY_DB_SCHEMA_VERSION = 2;
 
 /** Filename of the catalogue written into the archive root. */
 export const LIBRARY_DB_FILENAME = 'library.sqlite';
@@ -111,6 +111,8 @@ CREATE TABLE device (
   serial         TEXT,
   capacity_gb    INTEGER,
   generation     TEXT,
+  identity_capture_failed        INTEGER NOT NULL DEFAULT 0,
+  identity_capture_failure_reason TEXT,
   dump_date      INTEGER NOT NULL,
   podkit_version TEXT NOT NULL
 );
@@ -304,8 +306,9 @@ function writeDevice(
   sqlite
     .prepare(
       `INSERT INTO device
-         (model, model_name, model_number, serial, capacity_gb, generation, dump_date, podkit_version)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+         (model, model_name, model_number, serial, capacity_gb, generation,
+          identity_capture_failed, identity_capture_failure_reason, dump_date, podkit_version)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       identity.model ?? null,
@@ -314,6 +317,8 @@ function writeDevice(
       identity.serialNumber ?? null,
       identity.capacityGb ?? null,
       identity.generation ?? null,
+      boolInt(identity.identityCaptureFailureReason !== undefined),
+      identity.identityCaptureFailureReason ?? null,
       dumpDate,
       podkitVersion
     );

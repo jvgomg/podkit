@@ -3,8 +3,8 @@
  *
  * **Source:** synthesised (no hardware). The user does not own an iPod
  * shuffle; this persona exists to pin coverage of the Apple unsupported-PID
- * rejection path for the shuffle 3G/4G family, which libgpod recognises but
- * cannot sync without iTunes authentication.
+ * rejection path for the shuffle 3G/4G family, which podkit reads but refuses
+ * to write while their iTunesSD write path is unverified on hardware.
  *
  * USB product ID `0x1302` (shuffle 3G) is the canonical pick — it is the
  * first entry in `packages/devices-ipod/src/tables/unsupported.ts` and the

@@ -13,7 +13,8 @@ import { describe, it, expect } from 'bun:test';
 import { withTestIpod } from '@podkit/gpod-testing';
 import { requireGpodTool } from '@podkit/test-fixtures';
 import { requireLibgpodNode } from '@podkit/libgpod-node';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, rm, readFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { IpodDatabase } from './database.js';
@@ -689,6 +690,51 @@ describe('IpodDatabase integration', () => {
         ipod.close();
         ipod.close();
         // Should not throw
+      });
+    });
+  });
+
+  describe('initializeIpod() playback database', () => {
+    /**
+     * A fresh empty directory to initialise into — deliberately not a
+     * `withTestIpod` environment, since the point is what an initialisation
+     * creates from nothing.
+     */
+    async function withEmptyMount(fn: (mount: string) => Promise<void>): Promise<void> {
+      const mount = await mkdtemp(join(tmpdir(), 'podkit-init-'));
+      try {
+        await fn(mount);
+      } finally {
+        await rm(mount, { recursive: true, force: true });
+      }
+    }
+
+    const itunesSd = (mount: string): string => join(mount, 'iPod_Control', 'iTunes', 'iTunesSD');
+
+    it('leaves no playback database behind when no model number is supplied', async () => {
+      // libgpod writes an iTunesSD for any device it is given no model number
+      // for, in the bdhs format of a shuffle 3G/4G — a playback database for a
+      // device nothing has identified, which no shuffle 1G/2G can read.
+      await withEmptyMount(async (mount) => {
+        const ipod = await IpodDatabase.initializeIpod(mount, { name: 'Unknown iPod' });
+        ipod.close();
+
+        expect(existsSync(itunesSd(mount))).toBe(false);
+      });
+    });
+
+    it('keeps the playback database written for an identified shuffle', async () => {
+      await withEmptyMount(async (mount) => {
+        const ipod = await IpodDatabase.initializeIpod(mount, {
+          model: 'MA947', // iPod shuffle 2G, 1GB Pink
+          name: 'Shuffle',
+        });
+        ipod.close();
+
+        const bytes = await readFile(itunesSd(mount));
+        // The flat 1G/2G layout: 18-byte header, no bdhs magic.
+        expect(bytes.length).toBe(18);
+        expect(bytes.subarray(0, 4).toString('latin1')).not.toBe('bdhs');
       });
     });
   });

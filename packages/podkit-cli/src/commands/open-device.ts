@@ -10,7 +10,12 @@
  * @module
  */
 
-import type { AudioCodec, AudioNormalizationMode, DeviceArtworkSource } from '@podkit/device-types';
+import type {
+  AudioCodec,
+  AudioNormalizationMode,
+  DeviceArtworkSource,
+  IpodModel,
+} from '@podkit/device-types';
 import type {
   DeviceAdapter,
   DeviceCapabilities,
@@ -56,6 +61,19 @@ export interface OpenDeviceResult {
    * Prefer DeviceAdapter methods for everything else.
    */
   ipod?: IpodDatabase;
+  /**
+   * The identity-cascade model resolved while opening an iPod — the same
+   * `IpodModel` the capabilities were derived from. `undefined` for
+   * mass-storage devices (and only for those: the iPod branch throws
+   * `UnknownIpodModelError` rather than returning an unresolved model).
+   *
+   * Callers that need generation, model number, capacity, or the
+   * "podkit cannot sync this" refusal payload must read them here.
+   * `ipod.getInfo().device` carries libgpod's own view, which is `unknown`
+   * for every device libgpod's tables miss (it has no USB axis at all) and
+   * is therefore an identity *input*, never identity truth.
+   */
+  ipodModel?: IpodModel;
   /**
    * Resolved content paths for mass-storage devices; `undefined` for iPods.
    * Consumed by the pre-sync sweep (TASK-398) so it can walk the right
@@ -306,6 +324,7 @@ export async function openDevice(
       deviceSupportsAlac: effectiveCaps.supportedAudioCodecs.includes('alac'),
       isIpodDevice: true,
       ipod,
+      ipodModel: model,
       contentPaths: undefined,
     };
   }

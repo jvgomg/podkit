@@ -7,6 +7,7 @@
 
 import { describe, expect, it } from 'bun:test';
 import { resolveIpodModel } from './resolve.js';
+import { resolveGenerationSupport } from './support.js';
 
 // =============================================================================
 // Empty / no-match
@@ -79,6 +80,19 @@ describe('resolveIpodModel — serialNumber axis', () => {
     expect(model!.source).toBe('serial');
   });
 
+  it('resolves the pink shuffle 2G serial libgpod cannot (6V925GZ9436 → A947)', () => {
+    // Real hardware — suffix 436 is absent from libgpod's own serial table, so
+    // libgpod resolves this device to GENERATION_UNKNOWN. podkit must not.
+    // FamilyID 130 + NumMBytes 1024 + a pink shell pins it to A947 exactly.
+    const model = resolveIpodModel({ serialNumber: '6V925GZ9436' });
+    expect(model).not.toBeNull();
+    expect(model!.generationId).toBe('shuffle_2g');
+    expect(model!.modelNumber).toBe('A947');
+    expect(model!.capacityGb).toBe(1);
+    expect(model!.color).toBe('Pink');
+    expect(model!.source).toBe('serial');
+  });
+
   it('resolves iPod shuffle 4G generation from FamilyID 133 (hardware-verified)', () => {
     const model = resolveIpodModel({ familyId: 133 });
     expect(model?.generationId).toBe('shuffle_4g');
@@ -134,6 +148,24 @@ describe('resolveIpodModel — familyId axis', () => {
     const model = resolveIpodModel({ familyId: 3 });
     expect(model).not.toBeNull();
     expect(model!.generationId).toBe('mini_2g');
+  });
+
+  it('resolves familyId 12 → nano_3g (hardware: serial 5U8280FNYXX capture)', () => {
+    const model = resolveIpodModel({ familyId: 12 });
+    expect(model).not.toBeNull();
+    expect(model!.generationId).toBe('nano_3g');
+  });
+
+  it('does not refuse a FamilyID-12 nano whose serial suffix is unmapped', () => {
+    // Real hardware: iPod nano 3G, serial YM803JBW13F, FamilyID 12. Suffix
+    // '13F' is absent from SERIAL_TO_MODEL, so the cascade falls through to
+    // the FamilyID axis — which must not land on an iOS generation and
+    // produce a sync refusal for a nano sitting in disk mode.
+    const model = resolveIpodModel({ serialNumber: 'YM803JBW13F', familyId: 12 });
+    expect(model).not.toBeNull();
+    expect(model!.generationId).toBe('nano_3g');
+    expect(model!.unsupportedReason).toBeUndefined();
+    expect(resolveGenerationSupport('nano_3g').access).toBe('syncable');
   });
 
   it('returns null for unknown familyId', () => {
@@ -331,9 +363,11 @@ describe('resolveIpodModel — unsupported generations', () => {
   // table-derived wording (`identify({from:'usb'})`) is exercised in
   // `identity.test.ts`. Here we pin the discriminator selection.
 
-  it('maps iPod touch generations to kind=ios-device (via familyId axis)', () => {
-    // touch_2g → familyId 27 (the firmware FamilyID for the touch 2G).
-    const model = resolveIpodModel({ familyId: 27 });
+  it('maps iPod touch generations to kind=ios-device (via libgpod generation axis)', () => {
+    // Exercised through the libgpod axis rather than a FamilyID: an iOS device
+    // has no disk mode and never emits a SysInfoExtended, so no touch FamilyID
+    // is obtainable and none is carried in the FamilyID table.
+    const model = resolveIpodModel({ libgpodGeneration: 'touch_2' });
     expect(model).not.toBeNull();
     expect(model!.generationId).toBe('touch_2g');
     expect(model!.unsupportedReason).toBeDefined();

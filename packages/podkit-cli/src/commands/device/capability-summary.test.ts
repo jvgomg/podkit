@@ -92,46 +92,13 @@ describe('printCapabilitySummary — iPod', () => {
     ]);
   });
 
-  it('renders + Podcasts when supportsPodcast=true is passed', () => {
-    const { out, stdout } = makeOut();
-    printCapabilitySummary(out, IPOD_CAPS_FULL, {
-      kind: 'ipod',
-      modelDisplay: 'iPod video',
-      supportsPodcast: true,
-    });
-    expect(stdout.lines()).toEqual([
-      'Capabilities:',
-      '  + Music',
-      '  + Artwork (max 240px)',
-      '  + Video',
-      '  + Podcasts',
-    ]);
-  });
-
-  it('renders - Podcasts (not supported) when supportsPodcast=false is passed', () => {
-    const { out, stdout } = makeOut();
-    printCapabilitySummary(out, IPOD_CAPS_NO_ARTWORK, {
-      kind: 'ipod',
-      modelDisplay: 'iPod shuffle (1st Generation)',
-      supportsPodcast: false,
-    });
-    expect(stdout.lines()).toEqual([
-      'Capabilities:',
-      '  + Music',
-      '  - Artwork (not supported on iPod shuffle (1st Generation))',
-      '  - Video (not supported on iPod shuffle (1st Generation))',
-      '  - Podcasts (not supported on iPod shuffle (1st Generation))',
-    ]);
-  });
-
-  it('does not render Podcasts when supportsPodcast is omitted (default — add.ts behavior)', () => {
+  it('renders no Podcasts bullet — podcast support is not a modelled capability', () => {
     const { out, stdout } = makeOut();
     printCapabilitySummary(out, IPOD_CAPS_FULL, {
       kind: 'ipod',
       modelDisplay: 'iPod video',
     });
-    expect(stdout.lines()).not.toContain('  + Podcasts');
-    expect(stdout.lines()).not.toContain('  - Podcasts');
+    expect(stdout.lines().some((l) => l.includes('Podcasts'))).toBe(false);
   });
 
   it('ignores firmwareCapabilities on the ipod branch (filter is mass-storage-only)', () => {

@@ -505,3 +505,112 @@ describe('runDeviceResetArtwork: behaviour past IpodDatabase.open', () => {
     expect(result.dryRun).toBe(false);
   });
 });
+
+// =============================================================================
+// runDeviceInit: model number written to the device's SysInfo
+// =============================================================================
+//
+// `initializeIpod` writes whatever model number it is handed to
+// `iPod_Control/Device/SysInfo`, and podkit reads that value back later as
+// evidence of what the device is. So the value must be one the cascade read
+// off this device — never a stand-in.
+
+describe('runDeviceInit: SysInfo model number provenance', () => {
+  let mount: string;
+  beforeEach(async () => {
+    mount = await mkdtemp(join(tmpdir(), 'init-model-'));
+  });
+  afterEach(async () => {
+    await rm(mount, { recursive: true, force: true });
+  });
+
+  async function initCapturingModel(assessIdentity: DeviceOpDeps['assessIdentity']): Promise<{
+    model: string | undefined;
+    called: boolean;
+    exitCode: number | undefined;
+    error: ErrJson | undefined;
+  }> {
+    const ctx = makeContext(mount);
+    const { out, stdout, exitCode } = makeOut();
+    const adapter = makeFakeIpodAdapter();
+    let captured: { model?: string } | undefined;
+    let called = false;
+    const deps: DeviceOpDeps = {
+      loadCore: async () => fakeCore(),
+      getDeviceManager: () => fakeManager(),
+      ...(assessIdentity ? { assessIdentity } : {}),
+      ipodDatabase: {
+        open: async () => adapter,
+        hasDatabase: async () => false,
+        initializeIpod: async (_path: string, opts?: { model?: string; name?: string }) => {
+          called = true;
+          captured = opts;
+          return adapter;
+        },
+      },
+    };
+    await runWithContext(ctx, () => runAction(out, () => runDeviceInit({}, out, deps)));
+    return {
+      model: captured?.model,
+      called,
+      exitCode: exitCode.get(),
+      error: exitCode.get() === undefined ? undefined : stdout.json<ErrJson>(),
+    };
+  }
+
+  const assessmentWith = (modelNumber: string | undefined) => async () =>
+    ({
+      model: modelNumber ? { displayName: 'iPod shuffle', modelNumber } : null,
+    }) as unknown as import('@podkit/core').IpodIdentityAssessment;
+
+  /** A cascade that placed the device's generation but not its variant. */
+  const generationOnlyAssessment = (family: string, generationId: string) => async () =>
+    ({
+      model: { displayName: `Some ${family}`, family, generationId },
+    }) as unknown as import('@podkit/core').IpodIdentityAssessment;
+
+  it('passes the cascade-resolved model number through', async () => {
+    const { model, called } = await initCapturingModel(assessmentWith('A947'));
+    expect(called).toBe(true);
+    expect(model).toBe('MA947');
+  });
+
+  it('passes no model number when the cascade resolved none', async () => {
+    const { model, called } = await initCapturingModel(assessmentWith(undefined));
+    expect(called).toBe(true);
+    expect(model).toBeUndefined();
+  });
+
+  it('passes no model number when the identity probe throws', async () => {
+    const { model, called } = await initCapturingModel(async () => {
+      throw new Error('device went away');
+    });
+    expect(called).toBe(true);
+    expect(model).toBeUndefined();
+  });
+
+  it('refuses a shuffle whose model number is unknown', async () => {
+    // Which playback-database format a shuffle reads follows from *which*
+    // shuffle it is. Initialising on a generation alone would write the 3G/4G
+    // format onto a device that may be a 1G/2G, which reads none of it — and
+    // podkit does not invent a model number to get past that.
+    const { called, exitCode, error } = await initCapturingModel(
+      generationOnlyAssessment('iPod shuffle', 'shuffle_2g')
+    );
+    expect(called).toBe(false);
+    expect(exitCode).toBe(1);
+    expect(error?.code).toBe(DeviceErrorCodes.MODEL_NUMBER_REQUIRED);
+    expect(error?.error).toContain('doctor --repair sysinfo-extended');
+  });
+
+  it('initialises a non-shuffle known only by generation', async () => {
+    // Every other iPod plays from the iTunesDB, so a missing model number
+    // costs it nothing at initialisation time.
+    const { model, called, exitCode } = await initCapturingModel(
+      generationOnlyAssessment('iPod nano', 'nano_3g')
+    );
+    expect(called).toBe(true);
+    expect(model).toBeUndefined();
+    expect(exitCode).toBeUndefined();
+  });
+});

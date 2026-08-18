@@ -104,6 +104,45 @@ export function printSummaryLine(out: OutputContext, healthy: boolean, issueCoun
   out.error(`${n} issue${n === 1 ? '' : 's'} found.`);
 }
 
+// ── Read-only devices ───────────────────────────────────────────────────────
+
+/**
+ * Lines announcing that the device podkit is diagnosing is read-only.
+ *
+ * Doctor runs its full read-only surface on such a device — every host
+ * check, the readiness cascade, and the database-health checks, all of
+ * which only read — so the banner must not read as a refusal. It states
+ * the tier, the reason podkit refuses writes, and the one thing that
+ * changes about the report: no repair commands are offered.
+ *
+ * Distinct from `formatReadOnlyLines` in `readiness-display`, which frames
+ * the same tier for `device scan` / `device info` (where the salient loss
+ * is syncing, not repairing).
+ */
+export function formatReadOnlyDoctorLines(
+  unsupported: { headline: string; docsUrl?: string } | undefined
+): string[] {
+  const lines = ['Read-only device — podkit can read and diagnose it, but will not write to it.'];
+  if (unsupported?.headline) lines.push(`Reason: ${unsupported.headline}`);
+  // Deliberately names no command: repairing writes, so every repair
+  // command podkit could print here is one it would refuse to run.
+  lines.push('No repairs are offered below: repairing writes to the device.');
+  lines.push('Back it up with: podkit device archive');
+  if (unsupported?.docsUrl) lines.push(`See: ${unsupported.docsUrl}`);
+  return lines;
+}
+
+/** Print {@link formatReadOnlyDoctorLines} after a blank line. */
+export function printReadOnlyNotice(
+  out: OutputContext,
+  unsupported: { headline: string; docsUrl?: string } | undefined
+): void {
+  out.newline();
+  for (const line of formatReadOnlyDoctorLines(unsupported)) {
+    out.print(line);
+  }
+}
+
 // ── Orphan file helpers ─────────────────────────────────────────────────────
 
 /**

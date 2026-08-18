@@ -423,22 +423,6 @@ export { isVideoMediaType } from './ipod/video.js';
 // formatGeneration lives in @podkit/devices-ipod; re-exported here for the CLI import surface.
 export { formatGeneration } from '@podkit/devices-ipod';
 
-// Device validation
-export {
-  validateDevice,
-  isUnsupportedGeneration,
-  formatValidationMessages,
-  formatCapabilities,
-  buildSyncWarnings,
-} from './ipod/device-validation.js';
-export type {
-  DeviceValidationResult,
-  DeviceIssue,
-  DeviceWarning,
-  DeviceCapabilitySummary,
-  UnsupportedReason,
-} from './ipod/device-validation.js';
-
 // Transforms
 export type {
   TransformableTrack,

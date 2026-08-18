@@ -33,8 +33,8 @@ import type { IpodGenerationId, IpodChecksumType } from '@podkit/device-types';
  *
  * - `syncable`  — podkit can read and write the device's database.
  * - `read-only` — podkit can read (metadata, artwork) but not write; the
- *   write path needs something libgpod cannot produce (e.g. an iTunes
- *   authentication hash) or is untested.
+ *   write path is a format libgpod cannot produce, or one no hardware has
+ *   confirmed.
  * - `none`      — nothing to touch: no mountable database, or the device
  *   uses a protocol podkit cannot speak (iOS, not-in-libgpod).
  */
@@ -102,12 +102,15 @@ export interface IpodGeneration {
    * feeds documentation and CLI display only.
    *
    * Notable non-`syncable` generations:
-   * - shuffle_3g/4g: `read-only` — readable iTunesDB, but writing a valid
-   *   iTunesSD needs an iTunes authentication hash libgpod cannot produce.
+   * - shuffle_3g/4g: `read-only` — readable iTunesDB, but writing their
+   *   `bdhs` iTunesSD has never been confirmed on hardware.
    * - nano_6g: `read-only` — write is a format libgpod cannot produce; read
    *   is untested (non-destructive, so permitted).
-   * - nano_7g, touch/iPhone/iPad, not-in-libgpod: `none` — no mountable
-   *   database or a protocol podkit cannot speak.
+   * - nano_7g: `read-only` — reads its iTunesDB fine (hardware-confirmed);
+   *   write is refused because libgpod's hashAB signing needs an external
+   *   blob podkit doesn't ship.
+   * - touch/iPhone/iPad, not-in-libgpod: `none` — no mountable database or a
+   *   protocol podkit cannot speak.
    */
   support: GenerationSupport;
   /**

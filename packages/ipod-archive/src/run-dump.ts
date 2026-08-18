@@ -31,7 +31,7 @@ import {
 import { buildOutputDirName, type OutputNameIdentity } from './output-naming.js';
 import { ArchiveReport, type ReportStage1 } from './archive-report.js';
 import type { ArchiveProgressCallback } from './progress-events.js';
-import { writeCapturedSysInfo } from './device-identity.js';
+import { writeCapturedSysInfo, writeIdentityCaptureFailure } from './device-identity.js';
 
 /** Subdirectory under the named output dir that holds the lossless copy. */
 export const RAW_DUMP_SUBDIR = 'raw';
@@ -84,6 +84,16 @@ export interface RunDumpOptions {
    * inquiry itself — the CLI, which has `@podkit/core`, hands the XML in.
    */
   capturedSysInfoXml?: string;
+  /**
+   * Reason the CLI's live SysInfoExtended capture was needed and did not
+   * succeed, provided only when the user forced the archive to proceed anyway
+   * (`podkit device archive --force`). Persisted as the
+   * `podkit-identity-unknown.txt` sidecar so identity resolution (and the
+   * README / `library.sqlite`) can record the gap honestly rather than leaving
+   * identity fields silently blank. Never set alongside `capturedSysInfoXml` —
+   * a capture either succeeded (that field) or failed (this one).
+   */
+  identityCaptureFailureReason?: string;
 }
 
 /** Device identity surfaced for naming (and, later, the README). */
@@ -217,6 +227,9 @@ export async function runDump(
   // for `--dump-only` so the artifact always travels with the dump.
   if (opts.capturedSysInfoXml) {
     await writeCapturedSysInfo(outputDir, opts.capturedSysInfoXml);
+  }
+  if (opts.identityCaptureFailureReason) {
+    await writeIdentityCaptureFailure(outputDir, opts.identityCaptureFailureReason);
   }
 
   // The stage-1 buckets, surfaced both for the report files written here (so a

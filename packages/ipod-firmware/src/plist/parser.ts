@@ -455,7 +455,7 @@ function parseArray(sc: Scanner): PlistArray {
  * if (plist.type === 'dict') {
  *   const familyId = plist.value['FamilyID'];
  *   if (familyId?.type === 'integer') {
- *     console.log(Number(familyId.value)); // e.g. 120
+ *     console.log(Number(familyId.value)); // e.g. 15 (nano 4G)
  *   }
  * }
  * ```

@@ -11,13 +11,7 @@ import * as fs from 'node:fs';
 import { withTestIpod, TestModels } from '@podkit/gpod-testing';
 import { requireGpodTool } from '@podkit/test-fixtures';
 import { requireLibgpodNode } from '@podkit/libgpod-node';
-import {
-  IpodDatabase,
-  MediaType,
-  isMusicMediaType,
-  isVideoMediaType,
-  validateDevice,
-} from '@podkit/core';
+import { IpodDatabase, MediaType, isMusicMediaType, isVideoMediaType } from '@podkit/core';
 import { setContext, clearContext } from '../context.js';
 import type { PodkitConfig, GlobalOptions, LoadConfigResult } from '../config/index.js';
 import { DEFAULT_TRANSFORMS_CONFIG, DEFAULT_VIDEO_TRANSFORMS_CONFIG } from '../config/index.js';
@@ -366,98 +360,6 @@ describe('device video integration', () => {
           const info = db.getInfo();
           // Video 60GB model should support video
           expect(info.device.supportsVideo).toBe(true);
-        } finally {
-          db.close();
-        }
-      },
-      { model: TestModels.VIDEO_60GB }
-    );
-  });
-});
-
-describe('device validation integration', () => {
-  afterEach(() => {
-    clearContext();
-  });
-
-  it('validates a supported device with full capabilities', async () => {
-    await withTestIpod(
-      async (ipod) => {
-        const db = await IpodDatabase.open(ipod.path);
-        try {
-          const result = validateDevice(db.device, ipod.path);
-
-          expect(result.supported).toBe(true);
-          expect(result.issues).toHaveLength(0);
-          expect(result.capabilities.music).toBe(true);
-          expect(result.capabilities.video).toBe(true);
-          expect(result.capabilities.artwork).toBe(true);
-        } finally {
-          db.close();
-        }
-      },
-      { model: TestModels.VIDEO_60GB }
-    );
-  });
-
-  it('reports limited capabilities for Nano model', async () => {
-    await withTestIpod(
-      async (ipod) => {
-        const db = await IpodDatabase.open(ipod.path);
-        try {
-          const result = validateDevice(db.device, ipod.path);
-
-          expect(result.supported).toBe(true);
-          expect(result.capabilities.music).toBe(true);
-          // Nano 2nd gen does not support video
-          expect(result.capabilities.video).toBe(false);
-          expect(result.warnings.some((w) => w.type === 'no_video')).toBe(true);
-        } finally {
-          db.close();
-        }
-      },
-      { model: TestModels.NANO_2GB }
-    );
-  });
-
-  it('includes capabilities in device info JSON output', async () => {
-    await withTestIpod(
-      async (ipod) => {
-        const db = await IpodDatabase.open(ipod.path);
-        try {
-          const result = validateDevice(db.device, ipod.path);
-
-          // Verify the shape matches what DeviceInfoOutput.status.capabilities expects
-          expect(result.capabilities).toEqual({
-            music: expect.any(Boolean),
-            artwork: expect.any(Boolean),
-            video: expect.any(Boolean),
-            podcast: expect.any(Boolean),
-          });
-
-          // Verify validation shape matches DeviceInfoOutput.status.validation
-          expect(result.supported).toEqual(expect.any(Boolean));
-          expect(result.issues).toEqual(expect.any(Array));
-          expect(result.warnings).toEqual(expect.any(Array));
-        } finally {
-          db.close();
-        }
-      },
-      { model: TestModels.VIDEO_60GB }
-    );
-  });
-
-  it('includes docs link in all issue suggestions', async () => {
-    await withTestIpod(
-      async (ipod) => {
-        // Force unknown generation by validating with overridden device info
-        const db = await IpodDatabase.open(ipod.path);
-        try {
-          const deviceInfo = { ...db.device, generation: 'unknown' };
-          const result = validateDevice(deviceInfo, ipod.path);
-
-          expect(result.issues).toHaveLength(1);
-          expect(result.issues[0]!.suggestion).toContain('jvgomg.github.io/podkit');
         } finally {
           db.close();
         }

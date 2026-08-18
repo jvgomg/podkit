@@ -33,6 +33,7 @@ describe('PUBLIC_REPAIR_IDS', () => {
       'sysinfo-consistency',
       'sysinfo-extended',
       'sysinfo-modelnum-mismatch',
+      'sysinfo-modelnum-missing',
       'udev-rule',
     ]);
   });
@@ -77,6 +78,7 @@ describe('resolvePublicRepairId', () => {
       'sysinfo-consistency',
       'sysinfo-extended',
       'sysinfo-modelnum-mismatch',
+      'sysinfo-modelnum-missing',
       'udev-rule',
     ])('passes %s through unchanged for both device types', (id) => {
       expect(resolvePublicRepairId(id, 'ipod')).toBe(id);

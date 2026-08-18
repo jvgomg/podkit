@@ -51,9 +51,10 @@ Keeping the two axes orthogonal is deliberate: the safety gate stays a clean tri
 |---|---|---|
 | Classic / nano (1g–5g) / mini / video — existing syncable | `syncable` | `hardware` where tested, else `inferred` |
 | **Shuffle 4g** | **`read-only`** | `hardware` |
-| **Shuffle 3g** | **`read-only`** | `inferred` — same family as the 4g, not itself hardware-probed |
+| **Shuffle 3g** | **`read-only`** | `hardware` — probed on a real device (serial `4H02918LALD`, FamilyID 132); previously `inferred` |
 | **nano 6g** | **`read-only`** | `inferred` — write known-unsupported; read never tested |
-| nano 7g, iPod touch / iPhone / iPad, not-in-libgpod-table | `none` | `inferred` (or `hardware` where confirmed) |
+| **nano 7g** | **`read-only`** | `hardware` — read on real hardware (1,414 tracks, `device archive` succeeded); write refused because libgpod's hashAB signing needs an external blob podkit doesn't ship. Corrected from `none`/`inferred` (2026-08-17), which wrongly assumed no libgpod table entry meant no readable database. |
+| iPod touch / iPhone / iPad, not-in-libgpod-table | `none` | `inferred` (or `hardware` where confirmed) |
 
 nano 6g is `read-only`, not `none`, on purpose: its write is confidently unsupported but its read is merely **untested**, and a read is non-destructive. Permitting the read attempt lets reality supply the missing evidence (success or a clean failure) rather than forbidding a safe operation on a guess.
 

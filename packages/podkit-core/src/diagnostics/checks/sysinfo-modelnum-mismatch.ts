@@ -38,12 +38,14 @@
 
 import { existsSync, readFileSync, writeFileSync, copyFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { SYSINFO_PATH } from '@podkit/ipod-firmware';
+import { identify, toModelNumStr } from '@podkit/devices-ipod';
 import {
-  SYSINFO_PATH,
-  readSysInfoExtended,
-  type SysInfoExtendedResult,
-} from '@podkit/ipod-firmware';
-import { identify, type IpodModel } from '@podkit/devices-ipod';
+  defaultSieReader,
+  resolveFirmwareTruth,
+  type FirmwareTruthSource,
+  type SieReader,
+} from './firmware-truth.js';
 import type {
   DiagnosticCheck,
   CheckResult,
@@ -65,74 +67,9 @@ const defaultFsReader: SysInfoFsReader = {
   readFileSync: (p, enc) => readFileSync(p, enc),
 };
 
-// ── Firmware-truth source ────────────────────────────────────────────────────
-
-/**
- * Where the firmware-derived model came from. Surfaced in `details` so JSON
- * consumers and downstream tooling know which axis fired.
- *
- * - `'sysinfo-extended'` — derived from `SysInfoExtended.SerialNumber` (richest
- *   source — gives variant info via serial-suffix lookup).
- * - `'live-usb'` — derived from the USB descriptor's product ID (generation-only).
- */
-export type FirmwareTruthSource = 'sysinfo-extended' | 'live-usb';
-
-interface FirmwareTruth {
-  model: IpodModel;
-  source: FirmwareTruthSource;
-  /** Serial used for resolution, when source === 'sysinfo-extended'. */
-  serialNumber?: string;
-  /** Serial-suffix used for the lookup (last 3 chars). */
-  serialSuffix?: string;
-}
-
-/**
- * Injection seam for the SysInfoExtended reader. Tests pass an in-memory
- * stub so they can drive the firmware-truth resolver without touching disk
- * or installing a module-level mock that leaks across test files.
- *
- * Production callers leave this unset and get the real
- * `readSysInfoExtended` from `@podkit/ipod-firmware`.
- */
-export type SieReader = (mountPoint: string) => SysInfoExtendedResult | null;
-
-/**
- * Resolve the firmware-truth model from the richest available source.
- *
- * Reads `SysInfoExtended` first (firmware-stamped serial — most authoritative
- * on-disk identifier); falls back to live USB-derived model when SIE is
- * missing or its serial doesn't resolve.
- *
- * Returns `undefined` when no firmware truth can be obtained — the check
- * then skips, because there's nothing to compare against.
- */
-function resolveFirmwareTruth(
-  mountPoint: string,
-  liveIdentity: { model?: IpodModel } | undefined,
-  sieReader: SieReader
-): FirmwareTruth | undefined {
-  // 1. SysInfoExtended.SerialNumber → suffix lookup
-  const sie = sieReader(mountPoint);
-  const serial = sie?.identity.serialNumber;
-  if (serial && serial.length >= 3) {
-    const model = identify({ from: 'serial', serialNumber: serial });
-    if (model) {
-      return {
-        model,
-        source: 'sysinfo-extended',
-        serialNumber: serial,
-        serialSuffix: serial.slice(-3),
-      };
-    }
-  }
-
-  // 2. Live USB-derived model (generation only)
-  if (liveIdentity?.model) {
-    return { model: liveIdentity.model, source: 'live-usb' };
-  }
-
-  return undefined;
-}
+// Firmware-truth sourcing lives in `./firmware-truth.js` — shared with the
+// sibling check that detects a *missing* (rather than wrong) model number.
+export type { FirmwareTruthSource, SieReader };
 
 // ── Classic SysInfo helpers ──────────────────────────────────────────────────
 
@@ -168,14 +105,13 @@ function readClassicSysInfo(
  * for unit tests so they can drive the comparator with synthetic FS reads +
  * synthetic live identity without touching the real filesystem.
  *
- * `sieReader` defaults to `readSysInfoExtended` from `@podkit/ipod-firmware`.
- * Tests pass an in-memory stub to avoid module-level mocks that leak across
- * test files.
+ * `sieReader` defaults to the real on-disk `SysInfoExtended` reader. Tests pass
+ * an in-memory stub to avoid module-level mocks that leak across test files.
  */
 export async function checkSysinfoModelnumMismatch(
   ctx: DiagnosticContext,
   fsReader: SysInfoFsReader = defaultFsReader,
-  sieReader: SieReader = readSysInfoExtended
+  sieReader: SieReader = defaultSieReader
 ): Promise<CheckResult> {
   // 1. Read classic SysInfo + extract ModelNumStr. Absent / no ModelNumStr →
   //    nothing to compare; skip silently. This is the common case for
@@ -283,7 +219,7 @@ export async function runSysinfoModelnumRepair(
     writeFileSync: (path: string, data: string, enc: 'utf-8') => void;
     copyFileSync: (src: string, dest: string) => void;
   } = { existsSync, readFileSync, writeFileSync, copyFileSync },
-  sieReader: SieReader = readSysInfoExtended
+  sieReader: SieReader = defaultSieReader
 ): Promise<RepairResult> {
   options?.onProgress?.({
     phase: 'reading',
@@ -346,7 +282,7 @@ export async function runSysinfoModelnumRepair(
       details: { filePath: sysInfoPath, oldValue, firmwareSource: truth.source },
     };
   }
-  const newValue = `M${truth.model.modelNumber}`;
+  const newValue = toModelNumStr(truth.model.modelNumber);
 
   if (oldValue === newValue) {
     return {

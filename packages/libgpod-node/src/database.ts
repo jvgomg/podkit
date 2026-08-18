@@ -193,12 +193,17 @@ export class Database {
    * @returns Database instance ready for use
    * @throws LibgpodError if initialization fails
    *
+   * `options.model` has no default. Whatever is passed is written to the
+   * device as its SysInfo `ModelNumStr` — durable identity on the user's
+   * hardware — so only pass a model number that was resolved from the device
+   * itself. Omit it and no SysInfo is written at all.
+   *
    * @example
    * ```typescript
-   * // Initialize a new iPod with default settings (iPod Video 60GB)
+   * // Initialize without claiming a model (no SysInfo written)
    * const db = await Database.initializeIpod('/Volumes/IPOD');
    *
-   * // Initialize with specific model
+   * // Initialize with a known model
    * const db = await Database.initializeIpod('/Volumes/IPOD', {
    *   model: Database.IpodModels.CLASSIC_120GB,
    *   name: 'My iPod Classic'
@@ -213,7 +218,11 @@ export class Database {
   static async initializeIpod(
     mountpoint: string,
     options?: {
-      /** iPod model number (e.g., "MA147"). See Database.IpodModels for common values. */
+      /**
+       * iPod model number (e.g., "MA147"), written to the device's SysInfo
+       * `ModelNumStr`. No default — omit unless it came from the device.
+       * See Database.IpodModels for common values.
+       */
       model?: string;
       /** Name for the iPod (default: "iPod") */
       name?: string;

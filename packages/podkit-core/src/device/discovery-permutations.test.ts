@@ -385,8 +385,8 @@ describe('shuffle 3G classified as kind=ipod, unsupported, kind=unsupported-devi
     if (first.kind !== 'ipod') return;
     expect(first.supported).toBe(false);
     expect(first.model?.generationId).toBe('shuffle_3g');
-    // NOT iOS — it's an iTunes-auth limitation, not a sync-protocol mismatch.
+    // NOT iOS — it's an unverified write path, not a sync-protocol mismatch.
     expect(first.unsupportedReason?.kind).toBe('unsupported-device');
-    expect(first.unsupportedReason?.headline).toMatch(/iTunes authentication/i);
+    expect(first.unsupportedReason?.headline).toMatch(/unverified on hardware/i);
   });
 });

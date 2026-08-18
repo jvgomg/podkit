@@ -32,7 +32,7 @@ rejection, so the corresponding probe fields (`lsblkJson`,
 | `usbDescriptor.productId` | `0x1302` | `packages/devices-ipod/src/tables/unsupported.ts` line 58 — first shuffle PID listed, paired with `SHUFFLE_REASON`. The shuffle 4G PID `0x1303` would be equally valid; 3G picked because the table lists it first. |
 | `usbDescriptor.deviceSerial` | `SHUFFLE-SYNTHESISED-001` | Synthesised — string deliberately marked as fixture data so anyone grep'ing a debug log for the serial lands on this directory rather than chasing a phantom hardware capture. |
 | `usbDescriptor.deviceClass / Subclass / Protocol` | `0 / 0 / 0` | Composite-device convention — mass-storage class lives on the interface descriptor for the shuffle's USB-DAC composite gadget. Matches the convention used on every other iPod persona where Linux sysfs has not been consulted. |
-| `expectedReadiness.unsupportedReason` | `'iPod shuffle 3rd/4th gen requires iTunes authentication; not supported by libgpod.'` | `SHUFFLE_REASON` constant in `tables/unsupported.ts:35`. |
+| `expectedReadiness.unsupportedReason` | `'iPod shuffle 3rd/4th gen can be read but not written: writing its iTunesSD playback database is unverified on hardware.'` | `SHUFFLE_REASON` constant in `tables/unsupported.ts:35`. |
 
 The unsupported-reason string is duplicated here (rather than imported)
 because the test must assert byte-for-byte equality and the fixture is

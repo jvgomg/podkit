@@ -37,7 +37,7 @@ export interface ResolveModelInput {
   modelNumStr?: string;
   /** Full iPod serial number; uses last-3 suffix lookup. */
   serialNumber?: string;
-  /** Firmware FamilyID integer (e.g. 27 for touch 2G). `null` when unknown. */
+  /** Firmware FamilyID integer (e.g. 15 for nano 4G). `null` when unknown. */
   familyId?: number | null;
   /** Raw libgpod generation string (e.g. 'classic_3'). */
   libgpodGeneration?: string;

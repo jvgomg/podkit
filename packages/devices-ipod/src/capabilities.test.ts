@@ -272,7 +272,7 @@ describe('getCapabilities — coverage', () => {
 describe('getCapabilities — firmware overlay merges with table defaults', () => {
   test('nano_4g: firmware-advertised AAC/MP3 leaves table-derived codecs unchanged', () => {
     const firmware: FirmwareCapabilities = {
-      familyId: 17,
+      familyId: 15,
       audioCodecs: [
         { codec: 'AAC' },
         { codec: 'MP3' },
@@ -295,7 +295,7 @@ describe('getCapabilities — firmware overlay merges with table defaults', () =
 
   test('classic_6g: unknown firmware codec strings are ignored, no duplicates emitted', () => {
     const firmware: FirmwareCapabilities = {
-      familyId: 19,
+      familyId: 14,
       audioCodecs: [
         { codec: 'AAC' }, // already present
         { codec: 'WeirdProprietary' }, // unrecognised → dropped
@@ -309,7 +309,7 @@ describe('getCapabilities — firmware overlay merges with table defaults', () =
   test('nano_2g (no ALAC class support) gains FLAC if firmware reports it (Rockbox-style)', () => {
     // Hypothetical Rockbox-flashed nano 2G advertising FLAC.
     const firmware: FirmwareCapabilities = {
-      familyId: 22,
+      familyId: 9,
       audioCodecs: [{ codec: 'AAC' }, { codec: 'MP3' }, { codec: 'FLAC' }],
     };
     const caps = getCapabilities(makeIdentity('nano_2g'), { firmware });

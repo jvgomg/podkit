@@ -55,13 +55,17 @@ export {
   lookupBySerial,
   lookupByModelNumber,
   lookupByFamilyId,
+  lookupFamilyIdEntry,
   lookupGenerationInfo,
-  FAMILY_ID_TO_GENERATION,
+  FAMILY_ID_TABLE,
+  type FamilyIdEntry,
+  type FamilyIdEvidence,
   getChecksumTypeByModelNumber,
   lookupGenerationByModelNumber,
   getChecksumType,
   lookupGenerationByProductId,
   toLibgpodGeneration,
+  toModelNumStr,
 } from './lookups.js';
 
 // ── Identity facade ───────────────────────────────────────────────────────────
@@ -91,13 +95,6 @@ export {
   type CapabilityOverrideValidationError,
   type CapabilityOverrideValidationResult,
 } from './validate-overrides.js';
-
-// ── libgpod-naming surface ────────────────────────────────────────────────────
-
-export {
-  getUnsupportedReasonByLibgpodName,
-  type UnsupportedGenerationKind,
-} from './tables/libgpod-mapping.js';
 
 // ── Model resolver ────────────────────────────────────────────────────────────
 

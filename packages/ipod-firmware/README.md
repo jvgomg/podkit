@@ -37,13 +37,14 @@ After installing the rule, unplug and replug the iPod. If you see a `ScsiError` 
 import { inquireFirmware } from '@podkit/ipod-firmware';
 import type { UsbFingerprint } from '@podkit/device-types';
 
-const fp: UsbFingerprint = { vendorId: '05ac', productId: '1261', bus: 3, devnum: 4 };
+// 0x1263 → iPod nano 4G. Values below are from a real nano 4G (8GB Black).
+const fp: UsbFingerprint = { vendorId: '05ac', productId: '1263', bus: 3, devnum: 4 };
 
 const firmware = await inquireFirmware(fp);
 if (firmware) {
-  console.log(firmware.serialNumber);          // e.g. "7K74HBYZRP2"
-  console.log(firmware.firewireGuid);          // e.g. "000A270024A23E9E"
-  console.log(firmware.capabilities?.familyId); // e.g. 120 (nano 4G)
+  console.log(firmware.serialNumber);          // e.g. "5U851AEH3R0"
+  console.log(firmware.firewireGuid);          // e.g. "000A27001DCECFB5"
+  console.log(firmware.capabilities?.familyId); // e.g. 15 (nano 4G)
 }
 ```
 
@@ -103,10 +104,12 @@ if (result) {
 }
 
 // Ensure SysInfoExtended is present (read from file or fetch via USB)
+// The USB serial descriptor on an iPod is its FireWire GUID, not the Apple
+// serial number printed on the case.
 const fp: UsbFingerprint = {
   vendorId: '05ac',
-  productId: '1261',
-  serialNumber: '7K74HBYZRP2',
+  productId: '1263',
+  serialNumber: '000A27001DCECFB5',
   bus: 3,
   devnum: 4,
 };

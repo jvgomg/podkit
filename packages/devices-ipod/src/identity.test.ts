@@ -213,19 +213,19 @@ describe('identify', () => {
       expect(model!.unsupportedReason!.kind).toBe('ios-device');
     });
 
-    test('iPod shuffle 3G returns unsupportedReason (iTunes auth)', () => {
+    test('iPod shuffle 3G returns unsupportedReason (unverified write)', () => {
       const model = identify({ from: 'usb', productId: '0x1302' });
       expect(model).toBeDefined();
       expect(model!.generationId).toBe('shuffle_3g');
-      expect(model!.unsupportedReason!.headline).toContain('iTunes authentication');
+      expect(model!.unsupportedReason!.headline).toContain('unverified on hardware');
       expect(model!.unsupportedReason!.kind).toBe('unsupported-device');
     });
 
-    test('iPod shuffle 4G returns unsupportedReason (iTunes auth)', () => {
+    test('iPod shuffle 4G returns unsupportedReason (unverified write)', () => {
       const model = identify({ from: 'usb', productId: '0x1303' });
       expect(model).toBeDefined();
       expect(model!.generationId).toBe('shuffle_4g');
-      expect(model!.unsupportedReason!.headline).toContain('iTunes authentication');
+      expect(model!.unsupportedReason!.headline).toContain('unverified on hardware');
     });
 
     test('nano 6G (0x120d) returns unsupportedReason (iTunesDB format)', () => {

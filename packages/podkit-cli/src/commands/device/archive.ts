@@ -48,6 +48,14 @@ interface ArchiveOptions {
   dumpOnly?: boolean;
   /** Run stage 2 (transform) only, against an existing dump. */
   fromDump?: string;
+  /**
+   * Proceed even when the device's firmware identity could not be captured.
+   * Only meaningful when a live capture was actually needed and attempted —
+   * see {@link captureSysInfoXml}. The archive still succeeds, but records the
+   * gap honestly (README note + `library.sqlite` row) instead of leaving
+   * identity fields silently blank.
+   */
+  force?: boolean;
 }
 
 /**
@@ -78,6 +86,11 @@ export const archiveSubcommand = new Command('archive')
   .option(
     '--from-dump <path>',
     'transform an existing raw dump into a browsable archive, without a device (stage 2)'
+  )
+  .option(
+    '-f, --force',
+    "archive even when the device's firmware identity could not be captured " +
+      '(records identity as unknown instead of failing)'
   )
   .action(async (path: string | undefined, options: ArchiveOptions) => {
     const { globalOpts } = getContext();
@@ -125,14 +138,19 @@ export async function runDeviceArchive(
   // Capture the device's firmware identity now, while it is connected — the
   // transform runs device-free and cannot reach USB. Read-only; persisted into
   // the dump by stage 1 (only when the device has no on-disk SysInfoExtended).
-  const capturedSysInfoXml = await captureSysInfoXml(volumeRoot, out, deps);
+  const { capturedSysInfoXml, identityCaptureFailureReason } = await resolveIdentityCapture(
+    volumeRoot,
+    options,
+    out,
+    deps
+  );
 
   // `--dump-only` stops after stage 1; the bare invocation runs both stages.
   if (options.dumpOnly) {
     await runDumpStage(
       volumeRoot,
       destDir,
-      { deviceName, volumeLabel, capturedSysInfoXml },
+      { deviceName, volumeLabel, capturedSysInfoXml, identityCaptureFailureReason },
       out,
       deps
     );
@@ -141,7 +159,13 @@ export async function runDeviceArchive(
   await runBothStages(
     volumeRoot,
     destDir,
-    { deviceName, volumeLabel, capturedSysInfoXml, podkitVersion: resolvePodkitVersion() },
+    {
+      deviceName,
+      volumeLabel,
+      capturedSysInfoXml,
+      identityCaptureFailureReason,
+      podkitVersion: resolvePodkitVersion(),
+    },
     out,
     deps
   );
@@ -321,41 +345,121 @@ async function selectAutoDetectedIpod(
 }
 
 /**
+ * Outcome of attempting to capture the connected iPod's SysInfoExtended from
+ * firmware. Distinguishes "nothing to do" from "we tried and it didn't work" —
+ * see {@link captureSysInfoXml}.
+ */
+type SysInfoCaptureOutcome =
+  | { kind: 'not-needed' }
+  | { kind: 'skipped-no-fingerprint' }
+  | { kind: 'captured'; xml: string }
+  | { kind: 'failed'; reason: string };
+
+/**
  * Read the connected iPod's SysInfoExtended from firmware while it is still
  * live, so full identity (serial, model number, capacity, colour) survives into
  * the device-free transform. This is the only moment USB is reachable, and it is
  * the only way to identify a device with no on-disk SysInfo (every iPod shuffle).
  *
  * The inquiry is **read-only** — nothing is written to the device (unlike
- * `device add`, which persists SysInfoExtended). Only performed when the device
- * carries no on-disk SysInfoExtended; when it already has one, the raw dump
- * copies it and no capture is needed.
+ * `device add`, which persists SysInfoExtended).
  *
- * Best-effort: any failure (unsupported platform, USB correlation miss, firmware
- * that doesn't answer) returns `undefined`, and the transform falls back to
- * offline resolution. Surfaces the reason under `--verbose`.
+ * Returns one of four outcomes:
+ * - `not-needed` — the device already carries on-disk SysInfoExtended (the raw
+ *   dump copies it faithfully), so no capture is attempted.
+ * - `skipped-no-fingerprint` — no live USB device correlates to this volume
+ *   (unsupported platform, or a plain directory handed to `--device <path>`
+ *   that isn't a currently-attached iPod). This is *not* a failure: nothing was
+ *   attempted, and no retry or `--force` would ever change the outcome, so the
+ *   caller does not gate on it — it degrades exactly as it always has.
+ * - `captured` — the inquiry succeeded; `xml` is the raw SysInfoExtended.
+ * - `failed` — a live USB endpoint was found and the inquiry was attempted, but
+ *   it did not produce a result (unresponsive firmware, transport error). This
+ *   IS a real failure the caller gates on (see {@link resolveIdentityCapture}).
  */
 async function captureSysInfoXml(
   volumeRoot: string,
+  deps: DeviceArchiveDeps
+): Promise<SysInfoCaptureOutcome> {
+  const core = await loadCoreOrFail(deps, DeviceErrorCodes.CORE_LOAD_FAILED);
+
+  try {
+    const assessment = await core.assessIpodIdentity(volumeRoot);
+
+    if (assessment.existing?.present) return { kind: 'not-needed' };
+    if (!assessment.usbFingerprint) return { kind: 'skipped-no-fingerprint' };
+
+    const xml = await core.captureSysInfoExtendedXml(assessment.usbFingerprint);
+    if (xml) return { kind: 'captured', xml };
+    return {
+      kind: 'failed',
+      reason: 'the device did not respond to the firmware identity inquiry',
+    };
+  } catch (err) {
+    // `assessIpodIdentity` / `captureSysInfoExtendedXml` are documented to
+    // never throw, but treat any surprise the same as "the inquiry did not
+    // succeed" rather than crashing the whole archive run over it.
+    return { kind: 'failed', reason: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** What {@link resolveIdentityCapture} threads into the dump/archive options. */
+interface IdentityCaptureResult {
+  capturedSysInfoXml?: string;
+  identityCaptureFailureReason?: string;
+}
+
+/**
+ * Run {@link captureSysInfoXml} and turn its outcome into what the rest of the
+ * command needs: the XML to persist on success, a quiet `--verbose` note for
+ * the benign no-fingerprint skip, and — for a real failure — either a typed
+ * error (the default) or, with `--force`, a visible warning plus the failure
+ * reason to persist so the archive records identity as unknown rather than
+ * silently blank.
+ */
+async function resolveIdentityCapture(
+  volumeRoot: string,
+  options: ArchiveOptions,
   out: OutputContext,
   deps: DeviceArchiveDeps
-): Promise<string | undefined> {
-  try {
-    const core = await loadCoreOrFail(deps, DeviceErrorCodes.CORE_LOAD_FAILED);
-    const assessment = await core.assessIpodIdentity(volumeRoot);
-    // Already has SysInfoExtended on disk → it's in the raw dump; nothing to do.
-    // No USB fingerprint → no inquiry possible.
-    if (assessment.existing?.present || !assessment.usbFingerprint) return undefined;
-    const xml = await core.captureSysInfoExtendedXml(assessment.usbFingerprint);
-    return xml ?? undefined;
-  } catch (err) {
-    if (out.isVerbose) {
-      out.print(
-        `Note: could not capture device firmware identity (${err instanceof Error ? err.message : String(err)}). ` +
-          `Identity will be resolved from the dump instead.`
-      );
-    }
-    return undefined;
+): Promise<IdentityCaptureResult> {
+  const capture = await captureSysInfoXml(volumeRoot, deps);
+
+  switch (capture.kind) {
+    case 'not-needed':
+      return {};
+
+    case 'captured':
+      return { capturedSysInfoXml: capture.xml };
+
+    case 'skipped-no-fingerprint':
+      if (out.isVerbose) {
+        out.print(
+          'Note: no USB connection to inquire the device firmware identity from ' +
+            '(unsupported platform, or a path not currently attached to a live iPod). ' +
+            'Identity will be resolved from the dump instead.'
+        );
+      }
+      return {};
+
+    case 'failed':
+      if (!options.force) {
+        throw new CliError({
+          message:
+            `Could not capture the device's firmware identity (${capture.reason}). ` +
+            'The resulting archive would not record which device it came from. ' +
+            'Pass --force to archive anyway — the archive will record identity as unknown.',
+          code: DeviceErrorCodes.IDENTITY_CAPTURE_FAILED,
+          details: { device: volumeRoot },
+        });
+      }
+      if (!out.isQuiet) {
+        out.warn(
+          `Proceeding without device firmware identity (${capture.reason}). ` +
+            'The archive records identity as unknown (--force).'
+        );
+      }
+      return { identityCaptureFailureReason: capture.reason };
   }
 }
 
@@ -476,7 +580,12 @@ function printLibraryBreakdown(out: OutputContext, stats: TransformStats): void 
 async function runDumpStage(
   volumeRoot: string,
   destDir: string,
-  opts: { deviceName: string; volumeLabel: string; capturedSysInfoXml?: string },
+  opts: {
+    deviceName: string;
+    volumeLabel: string;
+    capturedSysInfoXml?: string;
+    identityCaptureFailureReason?: string;
+  },
   out: OutputContext,
   deps: DeviceArchiveDeps
 ): Promise<void> {
@@ -535,6 +644,7 @@ async function runBothStages(
     volumeLabel: string;
     podkitVersion: string;
     capturedSysInfoXml?: string;
+    identityCaptureFailureReason?: string;
   },
   out: OutputContext,
   deps: DeviceArchiveDeps

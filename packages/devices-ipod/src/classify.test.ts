@@ -81,7 +81,7 @@ describe('classifyAsIpod — unsupported iPod-family devices', () => {
     expect(result).not.toBeNull();
     expect(result!.kind).toBe('ipod');
     expect(result!.supported).toBe(false);
-    expect(result!.unsupportedReason?.headline).toContain('iTunes authentication');
+    expect(result!.unsupportedReason?.headline).toContain('unverified on hardware');
   });
 
   it('classifies iPod nano 6G as unsupported (0x05ac:0x120d)', () => {

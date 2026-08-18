@@ -185,18 +185,31 @@ export interface DeviceInfoSuccess {
     mounted: boolean;
     mountPoint?: string;
     volumeUuid?: string;
+    /**
+     * Identity-cascade view of a mounted iPod — the same `IpodModel` the
+     * device's capabilities were derived from. Absent for mass-storage
+     * devices and for iPods whose database could not be opened.
+     *
+     * `generationId` is an `IpodGenerationId` (`nano_3g`, `shuffle_2g`); it
+     * replaced a libgpod generation name (`nano_3`), which read `unknown`
+     * for every device libgpod's tables miss.
+     *
+     * `number` / `capacity` are only populated when the cascade resolved the
+     * model from an identity source that carries them (SysInfo or serial) —
+     * a USB-only identification yields `null` / `0` rather than a guess.
+     */
     model?: {
       name: string;
       number: string | null;
-      generation: string;
+      generationId: string;
       capacity: number;
     };
-    capabilities?: {
-      music: boolean;
-      artwork: boolean;
-      video: boolean;
-      podcast: boolean;
-    };
+    /**
+     * Whether podkit can sync this device, plus the structured refusal when
+     * it cannot. Derived solely from the resolved model's
+     * `unsupportedReason`: a device podkit cannot identify at all fails the
+     * open with `UNKNOWN_IPOD_MODEL` and never reaches this payload.
+     */
     validation?: {
       supported: boolean;
       issues: Array<{
@@ -204,10 +217,6 @@ export interface DeviceInfoSuccess {
         message: string;
         suggestion?: string;
         reason?: string;
-      }>;
-      warnings: Array<{
-        type: string;
-        message: string;
       }>;
     };
     storage?: {

@@ -74,7 +74,7 @@ describe('rejection personas: unsupported readiness shape', () => {
     it('exposes the canonical shuffle 3G/4G rejection payload (matches tables/unsupported.ts)', () => {
       // SHUFFLE_REASON in `packages/devices-ipod/src/tables/unsupported.ts:35`.
       expect(ipodShuffleExpectations.expectedReadiness.unsupported?.headline).toBe(
-        'iPod shuffle 3rd/4th gen requires iTunes authentication; not supported by libgpod.'
+        'iPod shuffle 3rd/4th gen can be read but not written: writing its iTunesSD playback database is unverified on hardware.'
       );
       expect(ipodShuffleExpectations.expectedReadiness.unsupported?.kind).toBe(
         'unsupported-device'

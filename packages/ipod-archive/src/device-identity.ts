@@ -18,6 +18,15 @@
  * - **libgpod capabilities** are the last resort, used only when no
  *   SysInfoExtended is available at all.
  *
+ * When the CLI's live capture was *needed* (no on-disk SysInfoExtended) and did
+ * not succeed, the archive stops with a typed error unless the user passes
+ * `podkit device archive --force`. Forcing past that gate persists a second,
+ * much smaller sidecar (`podkit-identity-unknown.txt`, holding the failure
+ * reason) alongside the SysInfoExtended sidecar. `resolveDumpIdentity` surfaces
+ * it as {@link DumpDeviceIdentity.identityCaptureFailureReason} so the README
+ * and `library.sqlite` can record the gap honestly instead of leaving identity
+ * fields silently blank.
+ *
  * This module owns the {@link DumpDeviceIdentity} render contract and
  * {@link resolveDumpIdentity}. It never opens a device — the read-only firmware
  * inquiry happens in the CLI (which has `@podkit/core`) and its XML is handed in
@@ -43,6 +52,14 @@ import { resolveIpodModel, type IpodModel } from '@podkit/devices-ipod';
  * the raw dump stays a byte-faithful copy of the device.
  */
 export const CAPTURED_SYSINFO_FILENAME = 'podkit-sysinfo-extended.xml';
+
+/**
+ * Filename of the identity-capture-failure sidecar, at the dump root. Written
+ * only when the CLI's live capture was needed and did not succeed, and the user
+ * forced the archive to proceed anyway (`--force`) — never written on a normal
+ * successful run. Holds the plain-text failure reason.
+ */
+export const IDENTITY_CAPTURE_FAILURE_FILENAME = 'podkit-identity-unknown.txt';
 
 /**
  * Device identity surfaced from a dump for rendering. Every field is best-effort
@@ -71,6 +88,16 @@ export interface DumpDeviceIdentity {
   color?: string;
   /** Variant tag (e.g. `U2`, `2015`), when the model carries one. */
   variant?: string;
+  /**
+   * Set only when the CLI's live firmware capture was needed (no on-disk
+   * SysInfoExtended) and did not succeed, and the user forced the archive to
+   * proceed anyway (`podkit device archive --force`). Holds the reason the
+   * capture didn't succeed, so the README and `library.sqlite` can say so
+   * honestly instead of leaving the fields above silently blank. Undefined on
+   * every normal run — capture succeeded, wasn't needed, or wasn't attempted
+   * (no live USB correlation, which is a legitimate skip, not a failure).
+   */
+  identityCaptureFailureReason?: string;
 }
 
 /** Map a resolved {@link IpodModel} onto the render contract's model fields. */
@@ -103,6 +130,29 @@ export async function readCapturedSysInfo(dumpDir: string): Promise<SysInfoExten
     return null;
   }
   return parseSysInfoExtendedXml(xml);
+}
+
+/**
+ * Persist the reason a needed firmware-identity capture did not succeed, as the
+ * dump's identity-capture-failure sidecar. Only called when the CLI forced the
+ * archive to proceed past that gate (`--force`).
+ */
+export async function writeIdentityCaptureFailure(dumpDir: string, reason: string): Promise<void> {
+  await writeFile(join(dumpDir, IDENTITY_CAPTURE_FAILURE_FILENAME), reason, 'utf8');
+}
+
+/**
+ * Read the identity-capture-failure sidecar from the dump root. Returns null
+ * when the sidecar is absent, unreadable, or blank — the common case, since it
+ * is written only on a forced run. Never throws.
+ */
+export async function readIdentityCaptureFailure(dumpDir: string): Promise<string | null> {
+  try {
+    const reason = await readFile(join(dumpDir, IDENTITY_CAPTURE_FAILURE_FILENAME), 'utf8');
+    return reason.trim() || null;
+  } catch {
+    return null;
+  }
 }
 
 /** Whether a libgpod capability string is a real value, not a sentinel. */
@@ -173,6 +223,11 @@ export async function resolveDumpIdentity(args: {
   // Name — the iPod's own name lives in the iTunesDB, not the disk volume label.
   const name = ipodNameFromDb(db);
   if (name) base.name = name;
+
+  // Surface a forced-past capture failure (see the module doc) regardless of
+  // which branch below resolves the rest of the identity.
+  const captureFailureReason = await readIdentityCaptureFailure(dumpDir);
+  if (captureFailureReason) base.identityCaptureFailureReason = captureFailureReason;
 
   // SysInfoExtended: the on-disk file (byte-faithful copy) first, else the
   // sidecar captured read-only from firmware for a SysInfo-less device.

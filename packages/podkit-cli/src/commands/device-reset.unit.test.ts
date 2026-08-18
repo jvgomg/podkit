@@ -120,7 +120,7 @@ function fakeIpodDatabase(opts: { hasDb?: boolean; name?: string } = {}) {
   // Reset deletes the iTunesDB (via sweep) then recreates a fresh empty one with
   // initializeIpod — that is the only way to clear orphaned playlist members.
   const initializeIpod = mock(
-    async (_path: string, _opts?: { name?: string }) =>
+    async (_path: string, _opts?: { name?: string; model?: string }) =>
       ({
         device: { modelName: 'iPod nano (test)', modelNumber: 'X', generation: '5', capacity: 4 },
         close: initClose,
@@ -455,5 +455,56 @@ describe('runDeviceReset: dry run', () => {
 
     // Only the read-for-name handle was opened + closed; no mutate open.
     expect(openClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── Model number stamped on the recreated database ──────────────────────────
+//
+// Recreating the database writes a SysInfo `ModelNumStr` to the user's iPod,
+// and podkit later reads that value back as evidence of what the device is.
+// So it must be the model the cascade read off *this* device, or nothing.
+
+describe('runDeviceReset: recreated-database identity', () => {
+  function makeAssessment(modelNumber: string | undefined) {
+    return async () =>
+      ({
+        model: modelNumber
+          ? { displayName: 'iPod shuffle 1GB Pink (2nd Generation)', modelNumber }
+          : null,
+      }) as unknown as import('@podkit/core').IpodIdentityAssessment;
+  }
+
+  async function resetWithAssessment(assessIdentity: DeviceOpDeps['assessIdentity']) {
+    const dir = await tmpDir('podkit-reset-identity-');
+    const ctx = makeContext({ device: dir });
+    const { out } = makeOut();
+    const { stub, initializeIpod } = fakeIpodDatabase({ name: 'Party iPod' });
+    const deps: DeviceOpDeps & Record<string, unknown> = {
+      loadCore: fakeCore(),
+      ipodDatabase: stub,
+      getDeviceManager: () => fakeManager(),
+      confirm: async () => true,
+      refreshConfig: async () => {},
+      ...(assessIdentity ? { assessIdentity } : {}),
+    };
+    await runReset(ctx, { yes: true }, out, deps);
+    return initializeIpod;
+  }
+
+  it('passes the cascade-resolved model number through to the new database', async () => {
+    const initializeIpod = await resetWithAssessment(makeAssessment('A947'));
+    expect(initializeIpod.mock.calls[0]?.[1]).toEqual({ name: 'Party iPod', model: 'MA947' });
+  });
+
+  it('writes no model number when the cascade resolved none', async () => {
+    const initializeIpod = await resetWithAssessment(makeAssessment(undefined));
+    expect(initializeIpod.mock.calls[0]?.[1]).toEqual({ name: 'Party iPod' });
+  });
+
+  it('writes no model number when the identity probe throws', async () => {
+    const initializeIpod = await resetWithAssessment(async () => {
+      throw new Error('device went away');
+    });
+    expect(initializeIpod.mock.calls[0]?.[1]).toEqual({ name: 'Party iPod' });
   });
 });

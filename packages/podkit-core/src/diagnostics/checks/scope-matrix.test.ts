@@ -31,6 +31,8 @@ import { orphanFilesMassStorageCheck } from './orphans-mass-storage.js';
 import { sysInfoExtendedCheck } from './sysinfo-extended.js';
 import { sysinfoConsistencyCheck } from './sysinfo-consistency.js';
 import { sysinfoModelnumMismatchCheck } from './sysinfo-modelnum-mismatch.js';
+import { sysinfoModelnumMissingCheck } from './sysinfo-modelnum-missing.js';
+import { shufflePlaybackDbCheck } from './shuffle-playback-db.js';
 import { udevRuleCheck } from './udev-rule.js';
 import { videoEncoderCheck } from './video-encoder.js';
 import { getDiagnosticCheck, getDiagnosticCheckIds } from '../index.js';
@@ -94,6 +96,8 @@ const EXPECTATIONS: ReadonlyArray<Expectation> = [
   { check: sysInfoExtendedCheck, scope: 'database-health', applicableTo: ['ipod'] },
   { check: sysinfoConsistencyCheck, scope: 'database-health', applicableTo: ['ipod'] },
   { check: sysinfoModelnumMismatchCheck, scope: 'database-health', applicableTo: ['ipod'] },
+  { check: sysinfoModelnumMissingCheck, scope: 'database-health', applicableTo: ['ipod'] },
+  { check: shufflePlaybackDbCheck, scope: 'database-health', applicableTo: ['ipod'] },
   // Database-health (mass-storage)
   {
     check: orphanFilesMassStorageCheck,

@@ -39,8 +39,9 @@ import type { DeviceProvider } from '@podkit/device-types';
 const myProvider: DeviceProvider = {
   id: 'my-device',
   async detect(fp: UsbFingerprint): Promise<DeviceIdentity | null> {
-    if (fp.vendorId === '05ac' && fp.productId === '1261') {
-      return { kind: 'ipod', firewireGuid: '...', serialNumber: '...', familyId: 0x78 };
+    // 0x1263 → iPod nano 4G, which reports FamilyID 15.
+    if (fp.vendorId === '05ac' && fp.productId === '1263') {
+      return { kind: 'ipod', firewireGuid: '...', serialNumber: '...', familyId: 15 };
     }
     return null;
   },

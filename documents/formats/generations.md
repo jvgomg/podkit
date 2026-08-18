@@ -27,8 +27,8 @@ separate (ADR-024 §1):
   writable:true` state.
   - `syncable` — podkit reads and writes the device's `iTunesDB`.
   - `read-only` — podkit reads (metadata, artwork) but refuses to write; the
-    write path needs something libgpod cannot produce (e.g. the iTunes
-    authentication hash for a shuffle's `iTunesSD`) or is untested.
+    write path is a format libgpod cannot produce, or one no hardware has
+    confirmed (e.g. a shuffle 3g/4g's `iTunesSD`).
   - `none` — nothing to touch: no mountable database, or a protocol podkit
     cannot speak (iOS, not-in-libgpod).
 - **`verified`** gates **nothing**. It is provenance only:
@@ -50,6 +50,7 @@ after changing the table, then regenerate this block from
 `packages/devices-ipod/src/generations-doc.test.ts` fails if the two diverge.
 
 <!-- BEGIN GENERATED: support-matrix -->
+
 | Generation | ID | Access | Verified | Note |
 | --- | --- | --- | --- | --- |
 | iPod (1st Generation) | `classic_1g` | syncable | inferred | — |
@@ -68,12 +69,12 @@ after changing the table, then regenerate this block from
 | iPod nano (3rd Generation) | `nano_3g` | syncable | inferred | — |
 | iPod nano (4th Generation) | `nano_4g` | syncable | inferred | — |
 | iPod nano (5th Generation) | `nano_5g` | syncable | inferred | — |
-| iPod nano (6th Generation) | `nano_6g` | read-only | inferred | Write unsupported (iTunesDB format); read untested on hardware. |
-| iPod nano (7th Generation) | `nano_7g` | none | inferred | — |
+| iPod nano (6th Generation) | `nano_6g` | read-only | hardware | Reads and archives (259 tracks confirmed on hardware); writing needs an iTunesDB format libgpod cannot produce. |
+| iPod nano (7th Generation) | `nano_7g` | read-only | hardware | Reads iTunesDB (1,414 tracks confirmed) and archives cleanly; writing needs the hashAB signature libgpod cannot produce without an external blob podkit does not ship. |
 | iPod shuffle (1st Generation) | `shuffle_1g` | syncable | inferred | — |
 | iPod shuffle (2nd Generation) | `shuffle_2g` | syncable | inferred | — |
-| iPod shuffle (3rd Generation) | `shuffle_3g` | read-only | inferred | Reads iTunesDB; iTunesSD playback DB needs iTunes authentication libgpod cannot produce. |
-| iPod shuffle (4th Generation) | `shuffle_4g` | read-only | hardware | Reads iTunesDB; iTunesSD playback DB needs iTunes authentication libgpod cannot produce. |
+| iPod shuffle (3rd Generation) | `shuffle_3g` | read-only | hardware | Reads iTunesDB; writing the bdhs iTunesSD playback DB is unverified on hardware. |
+| iPod shuffle (4th Generation) | `shuffle_4g` | read-only | hardware | Reads iTunesDB; writing the bdhs iTunesSD playback DB is unverified on hardware. |
 | iPod touch (1st Generation) | `touch_1g` | none | inferred | — |
 | iPod touch (2nd Generation) | `touch_2g` | none | inferred | — |
 | iPod touch (3rd Generation) | `touch_3g` | none | inferred | — |
@@ -81,6 +82,7 @@ after changing the table, then regenerate this block from
 | iPod touch (5th Generation) | `touch_5g` | none | inferred | — |
 | iPod touch (6th Generation) | `touch_6g` | none | inferred | — |
 | iPod touch (7th Generation) | `touch_7g` | none | inferred | — |
+
 <!-- END GENERATED: support-matrix -->
 
 ## Field reference
@@ -104,15 +106,24 @@ after changing the table, then regenerate this block from
 
 - **shuffle 3g / 4g — `read-only`.** A shuffle keeps a libgpod-readable
   `iTunesDB` (metadata) alongside the `iTunesSD` (`bdhs`) playback database the
-  firmware plays from. podkit reads and archives the `iTunesDB`; writing a valid
-  `iTunesSD` needs an iTunes authentication hash libgpod cannot produce. The 4g
-  is `hardware`-confirmed; the 3g is `inferred` (same family, not itself probed).
+  firmware plays from. podkit reads and archives the `iTunesDB`; libgpod does
+  emit the `bdhs` `iTunesSD` these generations use, but no such write has been
+  shown to leave a playable device, so podkit does not attempt it. Both are
+  `hardware`-confirmed.
   See [itunessd-bdhs.md](itunessd-bdhs.md).
 - **nano 6g — `read-only`.** Its write is a format libgpod cannot produce, but
   its read is merely *untested* — and a read is non-destructive, so the tier
   permits the attempt rather than forbidding a safe operation on a guess.
-- **nano 7g, iPod touch (all), not-in-libgpod — `none`.** No mountable database,
-  or Apple's proprietary sync protocol that podkit cannot speak over disk mode.
+- **nano 7g — `read-only`, hardware-confirmed.** libgpod opens its classic
+  iTunesCDB `iTunesDB` fine — a real nano 7G read 1,414 tracks and archived
+  cleanly. Writing needs a hashAB signature, which libgpod only computes via
+  an external `hashab` blob loaded through `LIBGPOD_BLOB_DIR`
+  (`itdb_hashAB.c`); podkit ships no such blob, so the write path fails
+  closed. This corrects an earlier claim that nano 7g had no libgpod table
+  entry at all — it reads fine; only the write is blocked, and for a
+  different reason.
+- **iPod touch (all), not-in-libgpod — `none`.** No mountable database, or
+  Apple's proprietary sync protocol that podkit cannot speak over disk mode.
 
 ## Staying in sync
 

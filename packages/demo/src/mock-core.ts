@@ -177,15 +177,6 @@ export type {
   MediaContentType,
 } from '@podkit/core';
 
-// Device validation types
-export type {
-  DeviceValidationResult,
-  DeviceIssue,
-  DeviceWarning,
-  DeviceCapabilitySummary,
-  UnsupportedReason,
-} from '@podkit/core';
-
 // Sync tag types
 export type { SyncTagData, SyncTagUpdate } from '@podkit/core';
 
@@ -1502,40 +1493,6 @@ export async function getFileDisplayMetadata(_filePath: string) {
 
 export async function getFilesDisplayMetadata(filePaths: string[]) {
   return new Map(filePaths.map((fp) => [fp, { hasArtwork: true, bitrate: 900 }]));
-}
-
-// =============================================================================
-// Device Validation (mock)
-// =============================================================================
-
-export function validateDevice(_device: any, _mountPoint?: string) {
-  return {
-    supported: true,
-    issues: [],
-    warnings: [],
-    capabilities: {
-      music: true,
-      artwork: true,
-      video: true,
-      podcast: true,
-    },
-  };
-}
-
-export function isUnsupportedGeneration(_generation: string): boolean {
-  return false;
-}
-
-export function formatValidationMessages(_result: any): string[] {
-  return [];
-}
-
-export function formatCapabilities(_capabilities: any, _device: any): string[] {
-  return ['    + Music', '    + Album artwork', '    + Video playback', '    + Podcasts'];
-}
-
-export function buildSyncWarnings(_validation: any, _config: any): string[] {
-  return [];
 }
 
 // =============================================================================

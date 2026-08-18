@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { runDump, RAW_DUMP_SUBDIR, REPORT_MD_FILENAME, REPORT_JSON_FILENAME } from './run-dump.js';
 import { MANIFEST_FILENAME } from './raw-dumper.js';
 import { IpodArchiveError } from './errors.js';
+import { CAPTURED_SYSINFO_FILENAME, IDENTITY_CAPTURE_FAILURE_FILENAME } from './device-identity.js';
 
 const FIXED = new Date(Date.UTC(2026, 5, 22, 9, 7, 3));
 
@@ -103,6 +104,37 @@ describe('runDump', () => {
     const filePath = join(volume, 'not-a-dir');
     await writeFile(filePath, 'x');
     await expect(runDump(filePath, dest, { now: FIXED })).rejects.toBeInstanceOf(IpodArchiveError);
+  });
+
+  test('persists the identity-capture-failure sidecar only when a reason is given', async () => {
+    await mkdir(join(volume, 'iPod_Control'), { recursive: true });
+
+    const result = await runDump(volume, dest, {
+      deviceName: 'TERAPOD',
+      volumeLabel: 'IPOD',
+      now: FIXED,
+      identityCaptureFailureReason: 'the device did not respond to the firmware identity inquiry',
+    });
+
+    const reason = await readFile(
+      join(result.outputDir, IDENTITY_CAPTURE_FAILURE_FILENAME),
+      'utf8'
+    );
+    expect(reason).toBe('the device did not respond to the firmware identity inquiry');
+    // No SysInfoExtended was captured on this run — that sidecar stays absent.
+    await expect(stat(join(result.outputDir, CAPTURED_SYSINFO_FILENAME))).rejects.toThrow();
+  });
+
+  test('writes no identity-capture-failure sidecar on a normal run', async () => {
+    await mkdir(join(volume, 'iPod_Control'), { recursive: true });
+
+    const result = await runDump(volume, dest, {
+      deviceName: 'TERAPOD',
+      volumeLabel: 'IPOD',
+      now: FIXED,
+    });
+
+    await expect(stat(join(result.outputDir, IDENTITY_CAPTURE_FAILURE_FILENAME))).rejects.toThrow();
   });
 
   test('throws DEST_NOT_WRITABLE when the destination directory cannot be created', async () => {

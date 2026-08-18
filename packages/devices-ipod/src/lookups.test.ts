@@ -10,8 +10,13 @@ import {
   lookupByModelNumber,
   lookupBySerial,
   lookupByFamilyId,
+  lookupFamilyIdEntry,
   toLibgpodGeneration,
+  toModelNumStr,
+  FAMILY_ID_TABLE,
 } from './lookups.js';
+import { MODEL_NUMBERS } from './tables/model-numbers.js';
+import { GENERATIONS } from './tables/generations.js';
 import { identify } from './identity.js';
 
 import type { IpodChecksumType, IpodGenerationId } from './types.js';
@@ -663,6 +668,10 @@ describe('lookupByFamilyId', () => {
     expect(lookupByFamilyId(9)).toBe('nano_2g');
   });
 
+  test('FamilyID 12 → nano_3g (confirmed: nano-3g-8gb-black.xml, serial 5U8280FNYXX)', () => {
+    expect(lookupByFamilyId(12)).toBe('nano_3g');
+  });
+
   test('FamilyID 15 → nano_4g (confirmed: nano-4g-8gb-black.xml)', () => {
     expect(lookupByFamilyId(15)).toBe('nano_4g');
   });
@@ -671,25 +680,49 @@ describe('lookupByFamilyId', () => {
     expect(lookupByFamilyId(18)).toBe('nano_7g');
   });
 
-  // Spot-checks on research-sourced entries (unconfirmed by real captures)
-  test('FamilyID 1 → classic_3g (research)', () => {
-    expect(lookupByFamilyId(1)).toBe('classic_3g');
+  // Shuffle band — all three read from real hardware. The macOS iPod cache
+  // records `Family ID` separately from `Updater Family ID`; only the former
+  // belongs in this table.
+  test('FamilyID 130 → shuffle_2g (confirmed: shuffle-2g-1gb-pink.xml, serial 6V925GZ9436)', () => {
+    expect(lookupByFamilyId(130)).toBe('shuffle_2g');
   });
 
-  test('FamilyID 5 → mini_1g (research)', () => {
-    expect(lookupByFamilyId(5)).toBe('mini_1g');
+  test('FamilyID 132 → shuffle_3g (confirmed on hardware: serial 4H02918LALD)', () => {
+    expect(lookupByFamilyId(132)).toBe('shuffle_3g');
   });
 
-  test('FamilyID 7 → classic_6g (research)', () => {
-    expect(lookupByFamilyId(7)).toBe('classic_6g');
+  test('FamilyID 133 → shuffle_4g (confirmed on hardware: serial CC4LXAVUF4T0)', () => {
+    expect(lookupByFamilyId(133)).toBe('shuffle_4g');
   });
 
-  test('FamilyID 14 → classic_6g (research; 120GB model shares generation with FamilyID 7)', () => {
-    expect(lookupByFamilyId(14)).toBe('classic_6g');
+  test('no shuffle generation is reachable through a click-wheel-band FamilyID', () => {
+    // 10, 11, 20 and 22 were research guesses that placed shuffles in the
+    // < 100 band. Hardware puts every shuffle in the 130s.
+    for (const familyId of [10, 11, 20, 22]) {
+      expect(lookupByFamilyId(familyId)).toBeUndefined();
+    }
   });
 
-  test('FamilyID 24 → nano_6g (research)', () => {
-    expect(lookupByFamilyId(24)).toBe('nano_6g');
+  // Values whose *number* the hardware anchors rule out, regardless of whether
+  // the generation they named is real. Failing closed here yields an honest
+  // unknown-model error naming the inputs; keeping the guess yields a confident
+  // wrong answer that suppresses it.
+  test('FamilyIDs contradicted by the hardware chronology resolve to nothing', () => {
+    //  4 → photo      (Oct 2004) would sit after the Feb-2005 mini 2G at 3
+    //  5 → mini_1g    (Jan 2004) likewise
+    //  7 → classic_6g (Sep 2007) would sit between Oct 2005 (6) and Sep 2006 (9)
+    //  8 → nano_1g    (Sep 2005) would sit before the Oct-2005 video 5G at 6
+    // 24 → nano_6g    (Sep 2010) would sit after the Sep-2012 nano 7G at 18
+    for (const familyId of [4, 5, 7, 8, 24]) {
+      expect(lookupByFamilyId(familyId)).toBeUndefined();
+    }
+  });
+
+  test('FamilyID 13 resolves to nothing — nano_3g is at 12, on hardware', () => {
+    // Two nano 3Gs report 12 and none reports 13. 13 falls in the window where
+    // the iPod Classic 6G (same month as the nano 3G) would land, so naming it
+    // nano_3g would let a guess shadow a real device.
+    expect(lookupByFamilyId(13)).toBeUndefined();
   });
 
   // Sentinel / boundary cases
@@ -704,18 +737,228 @@ describe('lookupByFamilyId', () => {
   test('returns undefined for negative FamilyID', () => {
     expect(lookupByFamilyId(-1)).toBeUndefined();
   });
+});
+
+// ── lookupFamilyIdEntry ──────────────────────────────────────────────────────
+
+describe('lookupFamilyIdEntry', () => {
+  test('exposes the evidence and the trail behind a hardware value', () => {
+    const entry = lookupFamilyIdEntry(12);
+    expect(entry?.generation).toBe('nano_3g');
+    expect(entry?.evidence).toBe('hardware');
+    expect(entry?.source).toContain('5U8280FNYXX');
+  });
+
+  test('marks a value that no device in this project has confirmed', () => {
+    const entry = lookupFamilyIdEntry(16);
+    expect(entry?.generation).toBe('nano_5g');
+    expect(entry?.evidence).toBe('inferred');
+  });
+
+  test('returns undefined for an unknown FamilyID', () => {
+    expect(lookupFamilyIdEntry(9999)).toBeUndefined();
+  });
+
+  // Tautological today — `lookupByFamilyId` reads `entry.generation`. It is
+  // kept as a seam: if the two ever diverge (a cache, a filter on evidence, a
+  // fallback), this is where that divergence has to be justified.
+  test('agrees with lookupByFamilyId on every entry', () => {
+    for (const [familyId, entry] of Object.entries(FAMILY_ID_TABLE)) {
+      expect(lookupByFamilyId(Number(familyId))).toBe(entry.generation);
+    }
+  });
+});
+
+// The inferred entries that survive (1, 2, 14, 16, 17) deliberately have no
+// value pins. Asserting that an unverified guess resolves to the generation we
+// guessed is what froze the original table: it reads as evidence, and the next
+// contributor treats a green test as confirmation. What is pinned instead is
+// their *labelling* as inferred and the structural rules they must obey. A
+// hardware reading is the only thing that can promote them.
+
+// ── FamilyID table invariants ────────────────────────────────────────────────
+//
+// These constrain what may be *added* to the table. Each one is a rule that a
+// wrong value violates structurally, so it cannot be satisfied by writing the
+// value down more confidently — which is how the original table's guesses
+// survived a test suite that pinned them one by one.
+
+describe('FAMILY_ID_TABLE invariants', () => {
+  type DeviceClass = 'click-wheel' | 'shuffle' | 'ios';
+
+  /** The device class a FamilyID's *number* claims, from the observed bands. */
+  function bandOf(familyId: number): DeviceClass | 'unobserved' {
+    if (familyId > 0 && familyId < 100) return 'click-wheel';
+    if (familyId >= 100 && familyId < 1000) return 'shuffle';
+    if (familyId >= 10000) return 'ios';
+    return 'unobserved';
+  }
+
+  /** The device class a generation actually belongs to. */
+  function classOf(generation: IpodGenerationId): DeviceClass {
+    if (generation.startsWith('shuffle_')) return 'shuffle';
+    if (generation.startsWith('touch_')) return 'ios';
+    return 'click-wheel';
+  }
+
+  // Release dates as YYYY-MM, so string comparison is chronological. External
+  // facts, deliberately kept beside the invariant that consumes them: adding a
+  // FamilyID means stating when the device shipped.
+  const RELEASED: Partial<Record<IpodGenerationId, string>> = {
+    classic_1g: '2001-10',
+    classic_2g: '2002-07',
+    classic_3g: '2003-04',
+    classic_4g: '2004-07',
+    photo: '2004-10',
+    mini_1g: '2004-01',
+    mini_2g: '2005-02',
+    video_5g: '2005-10',
+    video_5_5g: '2006-06',
+    classic_6g: '2007-09',
+    classic_7g: '2009-09',
+    nano_1g: '2005-09',
+    nano_2g: '2006-09',
+    nano_3g: '2007-09',
+    nano_4g: '2008-09',
+    nano_5g: '2009-09',
+    nano_6g: '2010-09',
+    nano_7g: '2012-09',
+    shuffle_1g: '2005-01',
+    shuffle_2g: '2006-09',
+    shuffle_3g: '2009-03',
+    shuffle_4g: '2010-09',
+  };
+
+  const entries = Object.entries(FAMILY_ID_TABLE).map(([id, entry]) => ({
+    familyId: Number(id),
+    ...entry,
+  }));
+
+  test('every entry maps into a band its device class can produce', () => {
+    for (const { familyId, generation } of entries) {
+      expect(`${familyId} → ${generation} (${bandOf(familyId)})`).toBe(
+        `${familyId} → ${generation} (${classOf(generation)})`
+      );
+    }
+  });
+
+  test('every entry carries evidence and a non-empty source', () => {
+    for (const { familyId, evidence, source } of entries) {
+      expect([familyId, evidence]).toEqual([
+        familyId,
+        expect.stringMatching(/^(hardware|inferred)$/),
+      ]);
+      expect(source.trim().length).toBeGreaterThan(0);
+    }
+  });
+
+  // A guess may open a door, never close one. An inferred value that resolves
+  // to a read-only or unsupported generation turns a forum post into a
+  // non-overridable refusal on hardware that may well sync fine; a missing
+  // entry only costs a less specific error message.
+  test('an inferred entry never names a generation podkit refuses to write', () => {
+    for (const { familyId, generation, evidence } of entries) {
+      if (evidence !== 'inferred') continue;
+      expect(`${familyId} → ${generation}: ${GENERATIONS[generation].support.access}`).toBe(
+        `${familyId} → ${generation}: syncable`
+      );
+    }
+  });
+
+  test('every generation in the table has a release date recorded', () => {
+    for (const { generation } of entries) {
+      expect(RELEASED[generation]).toBeString();
+    }
+  });
+
+  // Within a band FamilyID increases with release date. Hardware entries are
+  // the anchors and are never constrained — if two captures ever contradict the
+  // ordering, the ordering assumption is what's wrong, not the capture.
+  test('every inferred entry falls inside the window its hardware anchors leave open', () => {
+    const anchors = entries
+      .filter((e) => e.evidence === 'hardware')
+      .sort((a, b) => a.familyId - b.familyId);
+
+    for (const entry of entries) {
+      if (entry.evidence !== 'inferred') continue;
+      const band = bandOf(entry.familyId);
+      const inBand = anchors.filter((a) => bandOf(a.familyId) === band);
+      const below = inBand.filter((a) => a.familyId < entry.familyId).at(-1);
+      const above = inBand.find((a) => a.familyId > entry.familyId);
+      const released = RELEASED[entry.generation];
+
+      const lowerBound = below ? RELEASED[below.generation] : undefined;
+      const upperBound = above ? RELEASED[above.generation] : undefined;
+      const verdict =
+        (lowerBound && released! < lowerBound) || (upperBound && released! > upperBound)
+          ? `${entry.familyId} → ${entry.generation} (${released}) outside ${lowerBound ?? '-'}..${upperBound ?? '-'}`
+          : 'within anchors';
+      expect(verdict).toBe('within anchors');
+    }
+  });
 
   // classic_1g and classic_2g are intentionally absent (pre-SysInfoExtended era)
   test('no FamilyID entry resolves to classic_1g or classic_2g (pre-SysInfoExtended era)', () => {
-    const allMapped = Array.from({ length: 30 }, (_, i) => lookupByFamilyId(i)).filter(Boolean);
+    const allMapped = entries.map((e) => e.generation);
     expect(allMapped).not.toContain('classic_1g');
     expect(allMapped).not.toContain('classic_2g');
   });
 
   // video_5_5g has no separate FamilyID — it shares FamilyID 6 with video_5g
   test('video_5_5g has no separate FamilyID entry (shares FamilyID 6 with video_5g)', () => {
-    const allMapped = Array.from({ length: 30 }, (_, i) => lookupByFamilyId(i)).filter(Boolean);
+    const allMapped = entries.map((e) => e.generation);
     expect(allMapped).not.toContain('video_5_5g');
     expect(allMapped).toContain('video_5g');
+  });
+
+  // An iOS device has no disk mode and never emits a SysInfoExtended, so a
+  // touch FamilyID cannot be read through the path that fills this table.
+  // The only iOS value ever observed is 10055 (iPod touch 6G, macOS iPod
+  // cache) — far outside the small integers previously guessed for touches.
+  test('no FamilyID entry resolves to an iPod touch generation', () => {
+    for (const { generation } of entries) {
+      expect(generation.startsWith('touch_')).toBe(false);
+    }
+  });
+});
+
+// ── toModelNumStr ───────────────────────────────────────────────────────────
+//
+// The registry is keyed on bare model numbers (`A947`), but the classic
+// SysInfo file and libgpod's own lookup both want the prefixed form. libgpod
+// strips exactly one leading letter before consulting its table, so handing it
+// a bare code would drop a significant character and miss.
+
+describe('toModelNumStr', () => {
+  test('prefixes a bare model number with the retail M', () => {
+    expect(toModelNumStr('A947')).toBe('MA947');
+    expect(toModelNumStr('A446')).toBe('MA446');
+  });
+
+  test('prefixes purely numeric model numbers too', () => {
+    // Early iPods have no letter at all; libgpod only strips a leading
+    // *alpha*, so `M8541` survives the strip as `8541`.
+    expect(toModelNumStr('8541')).toBe('M8541');
+  });
+
+  test('leaves an already-prefixed value alone', () => {
+    expect(toModelNumStr('MA947')).toBe('MA947');
+    expect(toModelNumStr('P9804')).toBe('P9804');
+    expect(toModelNumStr('F9436')).toBe('F9436');
+  });
+
+  test('upper-cases its input', () => {
+    expect(toModelNumStr('a947')).toBe('MA947');
+    expect(toModelNumStr('ma947')).toBe('MA947');
+  });
+
+  test('round-trips every registry entry back through the model-number lookup', () => {
+    // The invariant that matters: prefixing a bare key must never produce a
+    // string the reverse lookup fails on. This would break if a bare model
+    // number ever started with M, P or F, since the prefix-detection would
+    // mistake the first character for a prefix.
+    for (const bare of Object.keys(MODEL_NUMBERS)) {
+      expect(lookupByModelNumber(toModelNumStr(bare))).toBeDefined();
+    }
   });
 });

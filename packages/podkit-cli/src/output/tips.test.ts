@@ -100,6 +100,25 @@ describe('collectTips', () => {
       });
       expect(tips).toHaveLength(0);
     });
+
+    // A read-only device's tracks have no sync tags and never will — podkit
+    // cannot write to it. Telling the user to run a sync contradicts the
+    // refusal printed directly above the tip.
+    it('stays silent for a device podkit cannot sync', () => {
+      const tips = collectTips({
+        syncTagInfo: { trackCount: 1414, syncTagCount: 0, missingArt: 0 },
+        deviceSyncable: false,
+      });
+      expect(tips.filter((t) => t.message.includes('--force-sync-tags'))).toHaveLength(0);
+    });
+
+    it('still fires for a syncable device', () => {
+      const tips = collectTips({
+        syncTagInfo: { trackCount: 100, syncTagCount: 0, missingArt: 0 },
+        deviceSyncable: true,
+      });
+      expect(tips[0]!.message).toContain('--force-sync-tags');
+    });
   });
 
   describe('missing artwork hash tip', () => {

@@ -35,6 +35,14 @@ export interface TipContext {
     syncTagCount: number;
     missingArt: number;
   };
+  /**
+   * Whether podkit can write to this device. Tips that tell the user to run a
+   * sync must stay silent for a read-only device — its tracks legitimately
+   * have no sync tags and never will, so the advice is unfollowable and
+   * contradicts the refusal printed above it. Undefined means "not a device
+   * context", which leaves such tips enabled.
+   */
+  deviceSyncable?: boolean;
 }
 
 export interface TipDefinition {
@@ -79,7 +87,8 @@ const ARTWORK_BASELINE_TIP: TipDefinition = {
 };
 
 const NO_SYNC_TAGS_TIP: TipDefinition = {
-  evaluate: ({ syncTagInfo }) => {
+  evaluate: ({ syncTagInfo, deviceSyncable }) => {
+    if (deviceSyncable === false) return null;
     if (syncTagInfo && syncTagInfo.trackCount > 0 && syncTagInfo.syncTagCount === 0) {
       return {
         message:
@@ -104,7 +113,8 @@ const TRANSFER_MODE_MISMATCH_TIP: TipDefinition = {
 };
 
 const MISSING_ARTWORK_HASH_TIP: TipDefinition = {
-  evaluate: ({ syncTagInfo }) => {
+  evaluate: ({ syncTagInfo, deviceSyncable }) => {
+    if (deviceSyncable === false) return null;
     if (syncTagInfo && syncTagInfo.missingArt > 0 && syncTagInfo.syncTagCount > 0) {
       const plural = syncTagInfo.missingArt === 1 ? '' : 's';
       return {

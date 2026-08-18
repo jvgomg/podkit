@@ -164,11 +164,12 @@ export interface InquiryDetailedResult {
  * ```typescript
  * import { inquireFirmware } from '@podkit/ipod-firmware';
  *
- * const fp = { vendorId: '05ac', productId: '1261', bus: 3, devnum: 4 };
+ * // 0x1263 → iPod nano 4G; values below are from a real nano 4G (8GB Black).
+ * const fp = { vendorId: '05ac', productId: '1263', bus: 3, devnum: 4 };
  * const fw = await inquireFirmware(fp);
  * if (fw) {
- *   console.log(fw.serialNumber);            // "7K74HBYZRP2"
- *   console.log(fw.capabilities?.familyId);   // 120 (nano 4G)
+ *   console.log(fw.serialNumber);            // "5U851AEH3R0"
+ *   console.log(fw.capabilities?.familyId);   // 15 (nano 4G)
  * }
  * ```
  */

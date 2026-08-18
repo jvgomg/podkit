@@ -2,7 +2,11 @@
 
 Hardware devices available for testing podkit's device identification and sync functionality. This document is updated as devices are tested and new data is captured.
 
-Last updated: 2026-05-23 (TASK-324 Phase 5 AC #1, #5, #6 — two state-variant personas added: `ipod-video-5g-corrupt-db`, `echo-mini-populated`; four Sony NW personas swept to canonical `'unsupported'` readiness shape; physical inventory unchanged)
+Last updated: 2026-08-17 (nano 7G #3, 16GB Green, added — corrects the generation's access tier from `none` to `read-only`; it reads and archives cleanly, and the real write blocker is hashAB signing, not an absent libgpod table entry)
+
+Previously: 2026-08-13 (three iPod shuffles added to the inventory — 2G/3G/4G, FamilyIDs 130/132/133, first shuffle SysInfoExtended capture; nano 3G FamilyID recorded as 12 from its in-repo capture, plus a second FamilyID-12 nano 3G noted)
+
+Previously: 2026-05-23 (TASK-324 Phase 5 AC #1, #5, #6 — two state-variant personas added: `ipod-video-5g-corrupt-db`, `echo-mini-populated`; four Sony NW personas swept to canonical `'unsupported'` readiness shape; physical inventory unchanged)
 
 ## Synthesised personas (no hardware)
 
@@ -12,7 +16,7 @@ exercise paths that cannot be tested from physical inventory alone:
 
 | Persona ID | Created | Purpose |
 |------------|---------|---------|
-| `ipod-shuffle-not-supported` | 2026-05-15 | Apple unsupported-PID rejection (shuffle 3G `0x05ac:0x1302`). User does not own a shuffle — pure synthesis from `packages/devices-ipod/src/tables/unsupported.ts`. |
+| `ipod-shuffle-not-supported` | 2026-05-15 | Apple unsupported-PID rejection (shuffle 3G `0x05ac:0x1302`). Pure synthesis from `packages/devices-ipod/src/tables/unsupported.ts` — no shuffle was owned when it was written. Three shuffles have since been acquired (see the shuffle entries below); the persona stays synthetic until re-captured. |
 | `non-ipod-usb-disk` | 2026-05-15 | Non-Apple vendor-no-preset rejection (SanDisk Cruzer Blade `0x0781:0x5567`). Pairs with the SanDisk entry added to `UNSUPPORTED_VENDORS` in `packages/devices-mass-storage/src/unsupported.ts`. |
 | `malformed-sysinfo` | 2026-05-15 | SIE-parser error path. Real iPod 5G Video USB identity + deliberately-truncated SIE XML (`head -c 500` of the iPod 5G fixture). |
 | `ipod-video-5g-corrupt-db` | 2026-05-23 | iTunesDB parser error path. Same USB identity + SIE XML as `ipod-video-5g-iflash-1tb`; FAT32 backing seeded with a 512-byte truncated iTunesDB (`mhbd` magic + zeros, `headerLen = 0`). `parseDatabase` throws "mhbd header too small". |
@@ -64,11 +68,14 @@ the `Source: synthesised (no hardware)` header on those files.
 | Volume name | IPOD | Filesystem |
 | USB Product ID | `0x1262` | USB enumeration |
 | Generation | nano_3g | ipod-models.ts lookup |
-| Apple serial | `XXXXXXXXEED6` | SysInfoExtended |
+| Model number | B261 | Serial suffix lookup (YXX) |
+| Apple serial | `5U8280FNYXX` | SysInfoExtended |
 | FireWire GUID | `000A27001BC8EED6` | USB serial descriptor |
-| FamilyID | unknown — not yet recorded from SysInfoExtended | SysInfoExtended |
+| FamilyID | 12 | SysInfoExtended |
 | Volume format | FAT32 | Filesystem |
 | Modifications | None | |
+
+**Second nano 3G (not yet captured):** serial `YM803JBW13F`, FireWire GUID `000A27001B43D063`, FamilyID 12 — confirming 12 is the nano 3G family value across two units. Its serial suffix `13F` is absent from `SERIAL_TO_MODEL` and its model number (capacity/colour) is unknown, so it resolves on the FamilyID axis only. Capture it if it turns up again.
 
 **Inquiry results (tested 2026-05-09):**
 
@@ -197,6 +204,49 @@ the `Source: synthesised (no hardware)` header on those files.
 **Diff vs nano 7G #1 (Space Gray):** Per-read crypto blob, FireWireGUID, Apple serial, volume format (HFS+ vs FAT32). Otherwise content-identical — confirms nano 7G data structure consistency across units.
 
 **XML capture:** `documents/sysinfo-captures/nano-7g-16gb-blue-usb.xml`
+
+---
+
+### iPod nano 7th Generation #3 (16GB Green)
+
+Read on real hardware 2026-08-17. This unit is the one that corrected podkit's
+nano 7G access tier: it was previously marked `access: 'none'` on the false
+claim that nano 7G had no libgpod table entry at all. It does — reading and
+archiving work fine.
+
+| Field | Value | Source |
+|-------|-------|--------|
+| Volume name | (not recorded) | Filesystem |
+| USB Product ID | `0x1267` | USB enumeration |
+| Generation | nano_7g | ipod-models.ts lookup |
+| Display name | iPod nano 16GB Green (7th Generation) | Generation table |
+| Capacity | 16 GB | USB enumeration |
+| Checksum type | hashAB | Generation table |
+| FireWire GUID | `000A270024A3D983` | USB serial descriptor |
+| Apple serial | `DCYN83SFF0GQ` | SCSI/USB inquiry |
+| FamilyID | 18 | Firmware inquiry |
+| Access tier | **read-only** (corrected from `none`) | This session |
+| Modifications | None | |
+
+**Inquiry / access results (tested 2026-08-17):**
+
+| Method | Result | Notes |
+|--------|--------|-------|
+| `device info` | Works | Reported "Music: 1,414 tracks" — libgpod opened `iPod_Control/iTunes/iTunesCDB` (a compressed classic database) without trouble. |
+| `device archive` | Works | Full library archive succeeded. |
+| Filesystem | Confirms readability | Device also carries `iTunes Library.itlp`, the SQLite database the firmware plays from — separate from the libgpod-readable `iTunesCDB`. |
+| Sync (write) | **Genuinely refused** | Not a false refusal this time: `checksumType: 'hashAB'`, and libgpod does not implement hashAB signing. `itdb_hashAB.c:43-68` (`load_libhashab`) `g_module_open`s an external `hashab` blob from `LIBGPOD_BLOB_DIR` and fails closed when the symbol is absent. podkit ships no such blob (not referenced by `tools/prebuild/*.sh` or `tools/libgpod-macos/build.sh`, none installed). An unsigned database is rejected by the firmware. |
+
+**Why this unit matters:** the prior `access: 'none'` entry for nano 7G was
+itself wrong — it read "not in libgpod's `ipod_info_table`" as "no mountable
+database," but the two are unrelated. libgpod's classic iTunesCDB reader works
+regardless of table membership; the table only gates *write* checksum
+generation. nano 7G's write really is blocked, just for a different, correctly
+identified reason (hashAB), which is exactly the case ADR-024's `read-only`
+tier exists for: readable and archivable, syncing refused.
+
+**No XML capture from this session** (identity confirmed via `device info` /
+`device archive` output, not a raw firmware-inquiry dump).
 
 ---
 
@@ -369,6 +419,46 @@ The USB product ID 0x1209 is shared across Video 5G, 5.5G, and Classic 6G — po
 **Video codecs from firmware:** H.264 Baseline L1.3 (peak 768kbps, max resolution 76800 pixels ≈ 320x240), H.264LC Baseline L3.0 (max 640x480), MPEG-4 (max 2500kbps). Album art: 100x100 (format 1028), 200x200 (format 1029) — matches podkit's `IPOD_ARTWORK_FORMATS.video` exactly.
 
 **XML capture:** `documents/sysinfo-captures/ipod-5g-video-iflash-1tb.xml`
+
+---
+
+### iPod shuffle 2G / 3G / 4G
+
+Three shuffles, all read on 2026-08-13. Together they establish the shuffle
+FamilyID band (130 / 132 / 133), which sits well clear of the click-wheel band
+(`< 100`) — earlier research entries had placed shuffles at 10 / 11 / 20 / 22.
+
+| Field | shuffle 2G (1GB Pink) | shuffle 3G | shuffle 4G (Late 2012) |
+|-------|----------------------|------------|------------------------|
+| Apple serial | `6V925GZ9436` | `4H02918LALD` | `CC4LXAVUF4T0` |
+| FireWire GUID | `000A27001CC67FB7` | `000A27001F33B516` | `000A270023C683AE` |
+| **FamilyID** | **130** | **132** | **133** |
+| Updater Family ID | 133 | 132 | 135 |
+| Firmware | 1.0.4 | 1.1 | 1.0.2 |
+| Model number | A947 (suffix `436`, 1GB Pink) | C384 (suffix `ALD`) | D777 (suffix `4T0`, 2GB Purple) |
+| USB Product ID | `0x1301` (observed) | `0x1302` (table) | `0x1303` (table) |
+| Access tier | syncable | read-only | read-only |
+
+**Do not confuse `Family ID` with `Updater Family ID`.** The macOS iPod cache
+(`~/Library/Preferences/com.apple.iPod.plist`) records both per device, and
+they disagree on two of these three units. Only `Family ID` is the firmware
+value that `FAMILY_ID_TABLE` is keyed on.
+
+**Sources:** the shuffle 2G's values come from its own SysInfoExtended
+(`documents/sysinfo-captures/shuffle-2g-1gb-pink.xml`, 3,558 bytes — the
+repo's first shuffle capture, `MinITunesVersion` 7.2) and are corroborated by
+the macOS iPod cache; the 3G and 4G values come from that cache alone.
+
+**Why this unit matters:** its serial suffix `436` was in neither libgpod's
+table nor podkit's, so the database layer could not identify it — and a shuffle
+it cannot identify gets no `iTunesSD`, which is the only file the hardware plays
+from. A sync reported success and the device played nothing. The suffix is now
+in podkit's serial table (`436` → `A947`, from this unit's own SysInfoExtended),
+podkit hands the resolved model number to the database layer, and `podkit
+doctor` reports an absent, empty or wrong-format `iTunesSD`. The shuffle 2G
+remains the regression device for all of it.
+
+**XML capture:** `documents/sysinfo-captures/shuffle-2g-1gb-pink.xml` (2G only)
 
 ---
 

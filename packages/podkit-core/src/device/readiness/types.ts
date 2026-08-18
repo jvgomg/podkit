@@ -102,6 +102,27 @@ export interface ReadinessInput {
    */
   ipod?: IpodDatabase;
   /**
+   * What the caller intends to do with the device. Defaults to `'write'`.
+   *
+   * A `read-only` generation (shuffle 3G/4G, nano 6G/7G) refuses writes but
+   * reads its `iTunesDB` fine, so the answer to "is this device ready?"
+   * depends on what is being asked of it:
+   *
+   * - `'write'` — the historical behaviour. A `read-only` generation
+   *   short-circuits to `level: 'unsupported'` with its rejection reason
+   *   before any disk probe runs; sync / init / add must not proceed.
+   * - `'read'` — the cascade runs to completion on a `read-only` generation,
+   *   so the caller learns whether the device is partitioned, mounted, has
+   *   SysInfo and opens its database. Every stage probe is non-destructive
+   *   (`stat`, file reads, a libgpod parse), so running them costs the device
+   *   nothing. Access tier `'none'` still short-circuits — those devices have
+   *   no readable disk representation at all.
+   *
+   * The split mirrors the access-intent gate in ADR-024: reads are safe on a
+   * read-only device, writes are not.
+   */
+  requiredAccess?: 'read' | 'write';
+  /**
    * Platform override for filesystem-policy checks (TASK-317.12). Defaults to
    * `process.platform`. Production code never sets this — it exists so tests
    * can exercise the HFS+-on-Linux refusal from a macOS or Linux runner

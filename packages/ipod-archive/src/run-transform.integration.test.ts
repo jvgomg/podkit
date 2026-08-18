@@ -21,7 +21,7 @@ import { runTransform } from './run-transform.js';
 import { writeTrack } from './tag-writer.js';
 import { retagWithFfmpeg, runFfmpegDefault } from './ffmpeg-tag.js';
 import { loadDump } from './dump-loader.js';
-import { writeCapturedSysInfo } from './device-identity.js';
+import { writeCapturedSysInfo, writeIdentityCaptureFailure } from './device-identity.js';
 import { IpodArchiveError } from './errors.js';
 import { rgbaToPng } from './artwork/rgba-to-png.js';
 
@@ -660,6 +660,42 @@ describe('loadDump', () => {
       expect(loaded.identity.capacityGb).toBe(2);
       expect(loaded.identity.color).toBe('Silver');
       expect(loaded.identity.firewireGuid).toBe('000A27001A0647CB');
+    } finally {
+      loaded.db.close();
+    }
+  });
+
+  test('identity-capture-failure sidecar surfaces on the resolved identity', async () => {
+    dump = await seedDump(
+      [{ title: 'A', artist: 'B', album: 'C', albumArtist: 'D', trackNumber: 1, source: MP3 }],
+      false
+    );
+    // Simulate a forced dump-only run (`podkit device archive --force`) where
+    // the CLI's live firmware capture was needed and did not succeed.
+    await writeIdentityCaptureFailure(
+      dump,
+      'the device did not respond to the firmware identity inquiry'
+    );
+
+    const loaded = await loadDump(dump);
+    try {
+      expect(loaded.identity.identityCaptureFailureReason).toBe(
+        'the device did not respond to the firmware identity inquiry'
+      );
+    } finally {
+      loaded.db.close();
+    }
+  });
+
+  test('a normal dump (no failure sidecar) carries no identityCaptureFailureReason', async () => {
+    dump = await seedDump(
+      [{ title: 'A', artist: 'B', album: 'C', albumArtist: 'D', trackNumber: 1, source: MP3 }],
+      false
+    );
+
+    const loaded = await loadDump(dump);
+    try {
+      expect(loaded.identity.identityCaptureFailureReason).toBeUndefined();
     } finally {
       loaded.db.close();
     }

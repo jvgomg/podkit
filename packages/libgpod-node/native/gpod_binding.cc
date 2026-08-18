@@ -121,11 +121,20 @@ Napi::Value Create(const Napi::CallbackInfo& info) {
 
 /**
  * Initialize a new iPod database on a mountpoint.
- * Creates the iPod_Control directory structure, SysInfo file,
- * and an empty iTunesDB ready for use.
+ * Creates the iPod_Control directory structure and an empty iTunesDB ready
+ * for use, plus a SysInfo file **only when a model number is supplied**.
+ *
+ * There is deliberately no default model. itdb_init_ipod() stores whatever
+ * model number it is given as the device's SysInfo `ModelNumStr`, which is
+ * durable identity written to the user's hardware — a default would stamp
+ * every initialised iPod with the same fabricated model, and podkit reads
+ * `ModelNumStr` back as identity evidence. Pass nothing and libgpod writes
+ * no SysInfo at all, which is the honest outcome when the caller does not
+ * know what the device is.
  *
  * @param mountpoint Path to the iPod mount point (directory will be created if needed)
- * @param model Optional model number (e.g., "MA147" for iPod Video 60GB)
+ * @param model Optional model number (e.g., "MA147" for iPod Video 60GB). Omit
+ *              unless it was resolved from the device itself.
  * @param name Optional iPod name (default: "iPod")
  * @returns Database object for the newly initialized iPod
  */
@@ -139,10 +148,13 @@ Napi::Value InitIpod(const Napi::CallbackInfo& info) {
 
     std::string mountpoint = info[0].As<Napi::String>().Utf8Value();
 
-    // Default model: iPod Video 60GB (MA147) - good for testing with artwork/video support
-    std::string model = "MA147";
+    // No default model — see the note above. An absent model becomes a NULL
+    // model_number, and itdb_init_ipod() then skips the SysInfo write entirely.
+    std::string model;
+    bool hasModel = false;
     if (info.Length() >= 2 && info[1].IsString()) {
         model = info[1].As<Napi::String>().Utf8Value();
+        hasModel = !model.empty();
     }
 
     // Default name: "iPod"
@@ -164,7 +176,8 @@ Napi::Value InitIpod(const Napi::CallbackInfo& info) {
 
     // Initialize the iPod structure
     GError* error = nullptr;
-    gboolean success = itdb_init_ipod(mountpoint.c_str(), model.c_str(), name.c_str(), &error);
+    gboolean success = itdb_init_ipod(
+        mountpoint.c_str(), hasModel ? model.c_str() : nullptr, name.c_str(), &error);
 
     if (!success) {
         std::string message = error ? error->message : "Failed to initialize iPod";

@@ -25,6 +25,52 @@ import { IpodError } from './errors.js';
 import { IpodTrackImpl, type IpodDatabaseInternal } from './track.js';
 import { IpodPlaylistImpl, type PlaylistDatabaseInternal } from './playlist.js';
 import * as fs from 'node:fs';
+import * as path from 'node:path';
+
+/** Relative path of the playback database an iPod shuffle plays from. */
+const ITUNESSD_RELATIVE_PATH = ['iPod_Control', 'iTunes', 'iTunesSD'];
+
+/**
+ * Filesystem seam for {@link discardUnvouchedPlaybackDatabase}. Defaults to
+ * `node:fs`; tests pass their own.
+ */
+export interface PlaybackDbFsOps {
+  existsSync(path: string): boolean;
+  rmSync(path: string, options?: { force?: boolean }): void;
+}
+
+/**
+ * Delete a playback database (`iTunesSD`) that an initialisation just created
+ * for a device podkit could not identify.
+ *
+ * libgpod writes an `iTunesSD` during `itdb_init_ipod` when it is given *no*
+ * model number, not only for a device it knows to be a shuffle — and with no
+ * model number it has no generation either, so the format it picks is the
+ * `bdhs` container of the shuffle 3G/4G rather than the flat records a 1G/2G
+ * reads. The result is a playback database claiming to describe a device
+ * nothing has identified, in a format nothing has confirmed it can read.
+ *
+ * No iPod outside the shuffle family plays from this file at all, so removing
+ * it costs a correctly-identified device nothing and spares an unidentified
+ * one a file podkit cannot vouch for.
+ *
+ * `existedBefore` guards the one case that must be left alone: a file the
+ * device already had. libgpod skips the write when one is present, so anything
+ * still there afterwards is the device's own — never ours to delete.
+ *
+ * @returns `true` when a file was removed.
+ */
+export function discardUnvouchedPlaybackDatabase(
+  mountPoint: string,
+  existedBefore: boolean,
+  fsOps: PlaybackDbFsOps = fs
+): boolean {
+  if (existedBefore) return false;
+  const itunesSdPath = path.join(mountPoint, ...ITUNESSD_RELATIVE_PATH);
+  if (!fsOps.existsSync(itunesSdPath)) return false;
+  fsOps.rmSync(itunesSdPath, { force: true });
+  return true;
+}
 
 /**
  * Main interface for interacting with iPod databases.
@@ -114,20 +160,28 @@ export class IpodDatabase implements IpodDatabaseInternal, PlaylistDatabaseInter
   /**
    * Initializes a new iPod database on a mount point.
    *
-   * Creates the full iPod directory structure (iPod_Control/iTunes, etc.),
-   * SysInfo file with device model information, and an empty iTunesDB.
-   * Use this to set up an iPod that has no existing database.
+   * Creates the full iPod directory structure (iPod_Control/iTunes, etc.) and
+   * an empty iTunesDB. Use this to set up an iPod that has no existing
+   * database. A SysInfo file is written only when a model number is supplied.
+   *
+   * With no model number, any `iTunesSD` the initialisation creates is deleted
+   * again before this returns — see {@link discardUnvouchedPlaybackDatabase}.
+   * Callers that know the device is an iPod shuffle must therefore supply its
+   * model number, or the device is left with no playback database at all.
    *
    * @param mountPoint - Path to the iPod mount point (directory will be created if needed)
    * @param options - Optional initialization options
-   * @param options.model - iPod model number (e.g., "MA147"). See IpodDatabase.IpodModels
+   * @param options.model - iPod model number (e.g., "MA147"), written to the
+   *   device's SysInfo `ModelNumStr`. No default: omit it unless the value was
+   *   resolved from the device, since podkit reads `ModelNumStr` back as
+   *   identity evidence. See IpodDatabase.IpodModels
    * @param options.name - Name for the iPod (default: "iPod")
    * @returns Promise resolving to an IpodDatabase instance ready for use
    * @throws {IpodError} If initialization fails
    *
    * @example
    * ```typescript
-   * // Initialize a new iPod with default settings
+   * // Initialize without claiming a model (no SysInfo written)
    * const ipod = await IpodDatabase.initializeIpod('/Volumes/IPOD');
    *
    * // Initialize with specific model
@@ -145,14 +199,25 @@ export class IpodDatabase implements IpodDatabaseInternal, PlaylistDatabaseInter
   static async initializeIpod(
     mountPoint: string,
     options?: {
-      /** iPod model number (e.g., "MA147"). See IpodDatabase.IpodModels for common values. */
+      /**
+       * iPod model number (e.g., "MA147"), written to the device's SysInfo
+       * `ModelNumStr`. No default — omit unless it came from the device.
+       */
       model?: string;
       /** Name for the iPod (default: "iPod") */
       name?: string;
     }
   ): Promise<IpodDatabase> {
+    // Sampled before the init: anything present afterwards that was not here
+    // now is libgpod's, and (with no model number) not a database podkit can
+    // vouch for. See discardUnvouchedPlaybackDatabase.
+    const playbackDbExistedBefore =
+      !options?.model && fs.existsSync(path.join(mountPoint, ...ITUNESSD_RELATIVE_PATH));
     try {
       const db = await Database.initializeIpod(mountPoint, options);
+      if (!options?.model) {
+        discardUnvouchedPlaybackDatabase(mountPoint, playbackDbExistedBefore);
+      }
       return new IpodDatabase(db, mountPoint);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -706,6 +771,56 @@ export class IpodDatabase implements IpodDatabaseInternal, PlaylistDatabaseInter
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new IpodError(`Failed to set device name: ${message}`, 'SAVE_FAILED');
+    }
+  }
+
+  /**
+   * Reads a field from the device's classic SysInfo record.
+   *
+   * @param field SysInfo key, e.g. `ModelNumStr`
+   * @returns The value, or null when the field is not present
+   * @throws {IpodError} If the database is closed (code: DATABASE_CLOSED)
+   */
+  getSysInfo(field: string): string | null {
+    this.assertOpen();
+    try {
+      return this.db.getSysInfo(field);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new IpodError(`Failed to read SysInfo field ${field}: ${message}`, 'NOT_FOUND');
+    }
+  }
+
+  /**
+   * Sets a field in the device's classic SysInfo record.
+   *
+   * This is how podkit corrects the database layer's view of a device it cannot
+   * identify on its own. libgpod resolves an iPod's generation from its own
+   * serial-suffix table and then from `ModelNumStr`; it has no USB product-ID
+   * axis, so a device whose serial suffix it does not know resolves to an
+   * unknown generation — and generation-keyed behaviour (which shadow database
+   * format to write, whether to write one at all, how many music directories to
+   * create) then silently takes the wrong branch.
+   *
+   * Writing a `ModelNumStr` that podkit's own identity cascade resolved *from
+   * the device* corrects every one of those branches at once. Never write a
+   * model number that was not resolved from the hardware.
+   *
+   * The change is in-memory; `save()` persists it to
+   * `iPod_Control/Device/SysInfo`.
+   *
+   * @param field SysInfo key, e.g. `ModelNumStr`
+   * @param value Value to store, or null to remove the field
+   * @throws {IpodError} If the database is closed (code: DATABASE_CLOSED)
+   * @throws {IpodError} If the write fails (code: SAVE_FAILED)
+   */
+  setSysInfo(field: string, value: string | null): void {
+    this.assertOpen();
+    try {
+      this.db.setSysInfo(field, value);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new IpodError(`Failed to set SysInfo field ${field}: ${message}`, 'SAVE_FAILED');
     }
   }
 

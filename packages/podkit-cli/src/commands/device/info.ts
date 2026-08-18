@@ -10,14 +10,13 @@ import { resolveDevicePath, getDeviceIdentity } from '../../device-resolver.js';
 import { OutputContext, formatBytes, formatNumber } from '../../output/index.js';
 import {
   displayFor as displayForCore,
-  formatGeneration,
-  validateDevice,
   DEFAULT_LOSSY_STACK,
   DEFAULT_LOSSLESS_STACK,
 } from '@podkit/core';
 import type { DiscoveredDevice, ReadinessLevel } from '@podkit/core';
-import type { ResolvedDeviceCapabilities } from '@podkit/device-types';
+import type { IpodModel, ResolvedDeviceCapabilities } from '@podkit/device-types';
 import {
+  formatIpodLabel,
   resolveGenerationSupport,
   IPOD_GENERATION_IDS,
   type IpodGenerationId,
@@ -81,6 +80,18 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
 
   // Try to get live status if device is connected
   let liveStatus: DeviceInfoSuccess['status'] | undefined;
+  /**
+   * Identity-cascade model for a mounted iPod, kept alongside `liveStatus`
+   * so the renderer can use the structured fields (family / ordinal /
+   * unsupportedReason) while `liveStatus.model` stays a flat JSON projection.
+   */
+  let ipodModel: IpodModel | undefined;
+  /**
+   * Whether podkit can write to this device, hoisted out of the renderer so
+   * the tip pass can see it. Tips that tell the user to run a sync must stay
+   * silent for a read-only device.
+   */
+  let deviceSyncable = true;
   let databaseErrorIsUnexpected = false;
   let resolvedDeviceCapabilities: import('@podkit/core').DeviceCapabilities | undefined;
   let firmwareDeviceCapabilities: import('@podkit/core').DeviceCapabilities | undefined;
@@ -149,33 +160,47 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
 
             // iPod-specific model and validation info.
             //
-            // The `name` field is fed from the cascade-resolved display name
-            // (`assessIpodIdentity` — composes SysInfoExtended + classic
-            // SysInfo + USB) when available, falling back to libgpod's view
-            // only when the cascade is empty. Pre-TASK-317.03 this used
-            // libgpod's `info.device.modelName` directly, which lost the
-            // capacity/colour suffix and could leak generic strings.
-            if (openedDeviceResult.ipod) {
-              const info = openedDeviceResult.ipod.getInfo();
-              const deviceValidation = validateDevice(info.device, resolveResult.path);
-              let cascadeDisplayName: string | undefined;
-              try {
-                const assessment = await core.assessIpodIdentity(resolveResult.path);
-                cascadeDisplayName = assessment.model?.displayName;
-              } catch {
-                // Cascade assessment is best-effort — fall back to libgpod.
-              }
+            // Every field comes from the identity cascade that `openDevice`
+            // already ran (SysInfoExtended + classic SysInfo + serial + live
+            // USB descriptor). libgpod's `getInfo().device` is deliberately
+            // NOT consulted: it reads `unknown` for any device its own tables
+            // miss — it has no USB axis — which used to produce a report that
+            // named the model correctly in the header while calling it an
+            // unidentifiable device two lines below.
+            //
+            // Validation follows the same source. The only refusal an
+            // identified iPod can carry is its generation's
+            // `unsupportedReason`; a device the cascade cannot identify never
+            // reaches here at all, because `openDevice` throws
+            // `UnknownIpodModelError` for it.
+            ipodModel = openedDeviceResult.ipodModel;
+            if (ipodModel) {
+              const unsupported = ipodModel.unsupportedReason;
               liveStatus.model = {
-                name: cascadeDisplayName ?? info.device.modelName,
-                number: info.device.modelNumber,
-                generation: info.device.generation,
-                capacity: info.device.capacity,
+                name: ipodModel.displayName,
+                number: ipodModel.modelNumber ?? null,
+                generationId: ipodModel.generationId,
+                capacity: ipodModel.capacityGb ?? 0,
               };
-              liveStatus.capabilities = deviceValidation.capabilities;
               liveStatus.validation = {
-                supported: deviceValidation.supported,
-                issues: deviceValidation.issues,
-                warnings: deviceValidation.warnings,
+                supported: unsupported === undefined,
+                issues: unsupported
+                  ? [
+                      {
+                        type: 'unsupported_device',
+                        message: unsupported.headline,
+                        reason: unsupported.kind,
+                        ...(unsupported.details || unsupported.docsUrl
+                          ? {
+                              suggestion: [
+                                ...(unsupported.details ?? []),
+                                ...(unsupported.docsUrl ? [`See: ${unsupported.docsUrl}`] : []),
+                              ].join(' '),
+                            }
+                          : {}),
+                      },
+                    ]
+                  : [],
               };
             }
 
@@ -557,14 +582,12 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
           printSummaryRow(out, 'Status', 'Not mounted');
         }
 
-        // Model line — prefer IpodModel (has color) over database model
-        if (!isMassStorage && readinessData?.model) {
-          printSummaryRow(out, 'Model', readinessData.model.displayName);
-        } else if (!isMassStorage && liveStatus.model) {
-          const capacityStr =
-            liveStatus.model.capacity > 0 ? ` (${liveStatus.model.capacity}GB)` : '';
-          const genStr = formatGeneration(liveStatus.model.generation);
-          printSummaryRow(out, 'Model', `${liveStatus.model.name}${capacityStr} - ${genStr}`);
+        // Model line — the readiness model and the open-device model are both
+        // cascade-resolved; either display name already carries capacity,
+        // colour and generation, so no suffix is composed here.
+        const modelDisplayName = readinessData?.model?.displayName ?? ipodModel?.displayName;
+        if (!isMassStorage && modelDisplayName) {
+          printSummaryRow(out, 'Model', modelDisplayName);
         } else if (!isMassStorage && !liveStatus.model && liveStatus.mounted) {
           printSummaryRow(out, 'Model', 'Unknown \u2014 SysInfo missing');
         }
@@ -580,6 +603,7 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
             ? resolveGenerationSupport(readinessData.model.generationId as IpodGenerationId)
             : undefined;
         if (genSupport) {
+          deviceSyncable = genSupport.access === 'syncable';
           const confidence = genSupport.verified === 'hardware' ? 'hardware-verified' : 'inferred';
           printSummaryRow(out, 'Support', `${genSupport.access} (${confidence})`);
         }
@@ -632,11 +656,24 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
           infoIssues.push(...readinessIssues);
         }
 
-        // Collect validation issues for the Issues zone (iPod only). Skip for
-        // a read-only device: its libgpod-derived validation ("could not
-        // identify model") contradicts the read-only framing, which already
-        // identified the generation from the USB PID.
-        if (!isMassStorage && liveStatus.validation && genSupport?.access !== 'read-only') {
+        // Collect validation issues for the Issues zone (iPod only). Every
+        // issue here restates the cascade's own refusal for this generation,
+        // so it can no longer contradict the Support / Readiness lines above
+        // — they read from the same resolved model.
+        //
+        // The summary zone already prints that refusal as a `Reason:` row for
+        // a read-only device, deliberately framed as a limitation rather than
+        // a fault. Repeating it under a ✗ marker would read as an error
+        // contradicting the "readable and archivable" framing two lines above.
+        //
+        // Skip on the *tier*, not on matching text: the two strings come from
+        // different sources — the USB product-ID table and the cascade's
+        // access-limitation headline — and word the same limitation
+        // differently, so comparing them would silently stop deduplicating
+        // the moment either is reworded.
+        const summaryAlreadyExplained =
+          genSupport?.access === 'read-only' && readinessData?.unsupported !== undefined;
+        if (!isMassStorage && liveStatus.validation && !summaryAlreadyExplained) {
           for (const issue of liveStatus.validation.issues) {
             infoIssues.push({
               marker: issue.type === 'unsupported_device' ? '\u2717' : '!',
@@ -665,20 +702,19 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
           return `Capabilities (from ${display.short}${suffix})`;
         })();
         if (isCapsPeerSection) out.newline();
-        if (
-          !isMassStorage &&
-          genSupport?.access !== 'read-only' &&
-          resolvedDeviceCapabilities &&
-          liveStatus.capabilities &&
-          liveStatus.model
-        ) {
+        if (!isMassStorage && resolvedDeviceCapabilities && ipodModel) {
           printCapabilitySummary(
             out,
             resolvedDeviceCapabilities,
             {
               kind: 'ipod',
-              modelDisplay: formatGeneration(liveStatus.model.generation),
-              supportsPodcast: liveStatus.capabilities.podcast,
+              // Generation label composed from the cascade model's own
+              // family + ordinal, so the "not supported on <model>" tail can
+              // never disagree with the header.
+              modelDisplay: formatIpodLabel({
+                family: ipodModel.family,
+                ordinal: ipodModel.ordinal,
+              }),
             },
             { sectionTitle: capsSectionTitle }
           );
@@ -816,6 +852,7 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
             syncTagCount,
             missingArt,
           },
+          deviceSyncable,
         });
       }
     }

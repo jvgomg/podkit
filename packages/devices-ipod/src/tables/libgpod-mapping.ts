@@ -9,7 +9,6 @@
  * - `lookupByLibgpodName(name)` — reverse map.
  * - `formatGeneration(libgpodName)` — canonical display-name formatter.
  * - `LibgpodDeviceInfo` — input shape for callers that hold libgpod data.
- * - `getUnsupportedReasonByLibgpodName(name)` — categorize unsupported devices.
  *
  * The libgpod type alias is a string union, not an import, to keep this
  * package free of `@podkit/libgpod-node` at runtime.
@@ -187,40 +186,7 @@ export interface LibgpodDeviceInfo {
 // Unsupported-device classification by libgpod generation name
 // =============================================================================
 
-/**
- * Category of unsupported device (keyed by libgpod generation string).
- *
- * - `'ios_device'`        — iPod Touch, iPhone, iPad (Apple proprietary protocol)
- * - `'buttonless_shuffle'` — Shuffle 3G/4G (requires iTunes authentication)
- * - `'nano_6'`            — Nano 6th gen (incompatible iTunesDB format)
- */
-export type UnsupportedGenerationKind = 'ios_device' | 'buttonless_shuffle' | 'nano_6';
-
-const IOS_LIBGPOD_NAMES = new Set([
-  'touch_1',
-  'touch_2',
-  'touch_3',
-  'touch_4',
-  'iphone_1',
-  'iphone_2',
-  'iphone_3',
-  'iphone_4',
-  'ipad_1',
-]);
-
-const BUTTONLESS_SHUFFLE_LIBGPOD_NAMES = new Set(['shuffle_3', 'shuffle_4']);
-
-/**
- * Returns the unsupported kind for a libgpod generation string, or null if
- * the generation is supported by podkit.
- *
- * @param libgpodName - Generation string as returned by libgpod (e.g. 'touch_1', 'nano_6')
- */
-export function getUnsupportedReasonByLibgpodName(
-  libgpodName: string
-): UnsupportedGenerationKind | null {
-  if (IOS_LIBGPOD_NAMES.has(libgpodName)) return 'ios_device';
-  if (BUTTONLESS_SHUFFLE_LIBGPOD_NAMES.has(libgpodName)) return 'buttonless_shuffle';
-  if (libgpodName === 'nano_6') return 'nano_6';
-  return null;
-}
+// Categorising an unsupported device by its libgpod generation string used to
+// live here. Nothing categorises from libgpod's view any more: the cascade
+// resolves a generation first and `unsupportedReason` is derived from podkit's
+// own generation table, which knows the access tier and the reason for it.

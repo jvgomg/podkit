@@ -155,7 +155,16 @@ export interface DiagnosticCheck {
    *   "Database Health".
    */
   scope: 'system' | 'device-readiness' | 'database-health';
-  /** Run the check */
+  /**
+   * Run the check.
+   *
+   * **Detection must not write.** Every mutation belongs in {@link repair} —
+   * including anything a probe might be tempted to treat as harmless (a
+   * scratch file, a directory it creates so a later read succeeds, a
+   * database save). `doctor` runs these checks on read-only devices, where
+   * podkit's promise is that it will not write; a mutating probe would break
+   * that promise silently. `detection-never-writes.test.ts` pins the rule.
+   */
   check(ctx: DiagnosticContext): Promise<CheckResult>;
   /** If this check can auto-repair, how */
   repair?: DiagnosticRepair;

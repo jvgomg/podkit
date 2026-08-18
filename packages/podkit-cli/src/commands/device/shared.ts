@@ -20,6 +20,7 @@ import {
   escapeCsv,
 } from '../display-utils.js';
 import { formatNumber } from '../../output/index.js';
+import { toModelNumStr } from '@podkit/devices-ipod';
 import type { DeviceTrack, DeviceAssessment, IFlashEvidence, DiscoveredDevice } from '@podkit/core';
 import type { DeviceConfig } from '../../config/index.js';
 import type { CoreLoaderDeps, IpodDatabaseStub } from '../../handler-deps.js';
@@ -53,6 +54,102 @@ export interface DeviceOpDeps extends CoreLoaderDeps {
    * inject a spy to assert the sweep ran (or, in dry-run, did NOT run).
    */
   sweepDeviceContent?: typeof import('@podkit/core').sweepDeviceContent;
+  /**
+   * Override the cascade-driven identity assessment used to decide which
+   * model number (if any) to stamp on a newly initialised database.
+   */
+  assessIdentity?: (mountPoint: string) => Promise<import('@podkit/core').IpodIdentityAssessment>;
+}
+
+/**
+ * Resolve the `ModelNumStr` to hand `initializeIpod`, or `undefined`.
+ *
+ * Initialising a database writes the model number it is given to the device's
+ * `iPod_Control/Device/SysInfo` — durable identity that podkit itself later
+ * reads back as evidence of what the device is. So the value must come from
+ * podkit's identity cascade reading *this* device, never from a default.
+ *
+ * Returns `undefined` when the cascade resolves nothing, or resolves only a
+ * generation (USB-derived models carry no model number). Callers pass that
+ * straight through: libgpod writes no SysInfo at all rather than a fabricated
+ * one, and the device keeps whatever identity it already had.
+ *
+ * Throws only for the one case an initialisation must not proceed through —
+ * see {@link assertInitIdentitySufficient}. An identity probe that *fails*
+ * (throws) is not that case: it yields `undefined` like any other unresolved
+ * cascade.
+ */
+export async function resolveInitModelNumStr(
+  core: typeof import('@podkit/core'),
+  deps: DeviceOpDeps,
+  mountPoint: string
+): Promise<string | undefined> {
+  const assess = deps.assessIdentity ?? core.assessIpodIdentity;
+  let assessment: import('@podkit/core').IpodIdentityAssessment;
+  try {
+    assessment = await assess(mountPoint);
+  } catch {
+    return undefined;
+  }
+  assertInitIdentitySufficient(assessment);
+  const modelNumber = assessment.model?.modelNumber;
+  return modelNumber ? toModelNumStr(modelNumber) : undefined;
+}
+
+/**
+ * Refuse an initialisation that would write a playback database in a format
+ * the hardware cannot read.
+ *
+ * An iPod shuffle plays from `iTunesSD`, and the database layer picks that
+ * file's format from the device's *generation*: the flat V1 records for a
+ * shuffle 1G/2G, the `bdhs` container for a 3G/4G. Given no model number it
+ * knows no generation, and the format it falls back to is `bdhs` — so a
+ * 1G/2G initialised in that state receives a playback database it cannot
+ * read, reports no error, and plays nothing. That silent wrong-format write is
+ * exactly what an initialisation must never produce.
+ *
+ * The way out is real identity, not a plausible stand-in: reading
+ * SysInfoExtended off the device's firmware yields its serial, and the serial
+ * resolves the model number. So this refuses and points at that repair.
+ *
+ * Only fires when the cascade positively identified an iPod shuffle. A device
+ * it could not place at all is not known to be a shuffle, so there is nothing
+ * to refuse on — that path initialises and discards the playback database
+ * libgpod writes for an unidentified device (see `IpodDatabase.initializeIpod`).
+ */
+export function assertInitIdentitySufficient(
+  assessment: import('@podkit/core').IpodIdentityAssessment | null | undefined
+): void {
+  const model = assessment?.model;
+  if (!model || model.modelNumber || model.family !== 'iPod shuffle') return;
+
+  throw new CliError({
+    message:
+      `This ${model.displayName}'s model number could not be read from the device. ` +
+      'Initialising now would write its playback database (iTunesSD) in a format ' +
+      'the hardware cannot read, and the device would report no error and play nothing. ' +
+      'Run `podkit doctor --repair sysinfo-extended` first — that reads SysInfoExtended ' +
+      'from the device firmware, which carries the serial the model number comes from — ' +
+      'then run this command again.',
+    code: DeviceErrorCodes.MODEL_NUMBER_REQUIRED,
+    details: {
+      displayName: model.displayName,
+      generation: model.generationId,
+      repair: 'sysinfo-extended',
+    },
+    printText: (o) => {
+      o.error(`Cannot initialise this ${model.displayName}: its model number is unknown.`);
+      o.newline();
+      o.print('An iPod shuffle plays from a separate playback database (iTunesSD), and its');
+      o.print('format depends on which shuffle this is. Without a model number podkit would');
+      o.print('write the wrong one — the device would look fine and play nothing.');
+      o.newline();
+      o.print('Read the model number off the device first:');
+      o.print('  podkit doctor --repair sysinfo-extended');
+      o.newline();
+      o.print('Then run this command again.');
+    },
+  });
 }
 
 // =============================================================================

@@ -13,8 +13,10 @@
  * Parity with the legacy `createIpodCapabilities(libgpodInfo)` adapter
  * is asserted in `capabilities.test.ts` for every generation that has a
  * libgpod equivalent. Generations that map to libgpod's `unknown` (nano 7G,
- * touch 5G–7G) are sourced exclusively from this table and carry
- * `support.access: 'none'`.
+ * touch 5G–7G) are sourced exclusively from this table for capability data.
+ * Their `support.access` differs by generation: nano 7G is `read-only`
+ * (hardware-confirmed readable; hashAB signing unavailable), touch 5G–7G
+ * carry `support.access: 'none'` (no disk mode at all).
  *
  * @module
  */
@@ -189,12 +191,12 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     ordinal: 6,
     checksumType: 'hashAB',
     // Multi-touch nano with no video playback hardware. Write is a format
-    // libgpod cannot produce; read has never been exercised on hardware, so
-    // it stays read-only (a read is non-destructive) rather than none.
+    // libgpod cannot produce. Read is confirmed on hardware: a 16GB nano 6G
+    // (serial DCYGLUGVDDW4) listed and archived 259 tracks cleanly.
     support: {
       access: 'read-only',
-      verified: 'inferred',
-      note: 'Write unsupported (iTunesDB format); read untested on hardware.',
+      verified: 'hardware',
+      note: 'Reads and archives (259 tracks confirmed on hardware); writing needs an iTunesDB format libgpod cannot produce.',
     },
     supportsAlac: false,
     supportsVideo: false,
@@ -205,9 +207,18 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     family: 'iPod nano',
     ordinal: 7,
     checksumType: 'hashAB',
-    // Not in libgpod's ipod_info_table — no mountable database podkit can use.
-    // Hardware specs preserved here for diagnostics (ALAC + video capable).
-    support: { access: 'none', verified: 'inferred' },
+    // Hardware-confirmed readable: podkit read 1,414 tracks off a real
+    // nano 7G (serial DCYN83SFF0GQ) via libgpod's classic iTunesCDB parser,
+    // and `device archive` succeeded. The write refusal is hashAB signing —
+    // libgpod only computes it via an external `hashab` blob loaded through
+    // `LIBGPOD_BLOB_DIR` (itdb_hashAB.c:43-68) and fails closed without it;
+    // podkit ships no such blob. Not a libgpod-table gap, as previously
+    // claimed here.
+    support: {
+      access: 'read-only',
+      verified: 'hardware',
+      note: 'Reads iTunesDB (1,414 tracks confirmed) and archives cleanly; writing needs the hashAB signature libgpod cannot produce without an external blob podkit does not ship.',
+    },
     supportsAlac: true,
     supportsVideo: true,
     artworkMaxResolution: 240, // 240x432
@@ -237,11 +248,12 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     family: 'iPod shuffle',
     ordinal: 3,
     checksumType: 'none',
-    // Same family as the 4g (read-only) but not itself hardware-probed.
+    // Hardware-probed: serial 4H02918LALD, FamilyID 132 (serial suffix ALD →
+    // C384 agrees on generation). Same unverified iTunesSD write path as the 4g.
     support: {
       access: 'read-only',
-      verified: 'inferred',
-      note: 'Reads iTunesDB; iTunesSD playback DB needs iTunes authentication libgpod cannot produce.',
+      verified: 'hardware',
+      note: 'Reads iTunesDB; writing the bdhs iTunesSD playback DB is unverified on hardware.',
     },
     supportsAlac: false,
     supportsVideo: false,
@@ -253,12 +265,14 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     ordinal: 4,
     checksumType: 'none',
     // Confirmed on hardware: readable iTunesDB alongside the iTunesSD the
-    // firmware plays from. Writing a valid iTunesSD needs an iTunes
-    // authentication hash libgpod cannot produce, so read-only.
+    // firmware plays from. libgpod does emit the bdhs iTunesSD these
+    // generations use (no signing or checksum is involved — see
+    // documents/formats/itunessd-bdhs.md), but that write has never been shown
+    // to produce a playable 3g/4g, so the tier stays read-only until it is.
     support: {
       access: 'read-only',
       verified: 'hardware',
-      note: 'Reads iTunesDB; iTunesSD playback DB needs iTunes authentication libgpod cannot produce.',
+      note: 'Reads iTunesDB; writing the bdhs iTunesSD playback DB is unverified on hardware.',
     },
     supportsAlac: false,
     supportsVideo: false,

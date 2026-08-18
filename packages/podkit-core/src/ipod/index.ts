@@ -74,19 +74,3 @@ export {
 export type { CreateVideoTrackOptions } from './video.js';
 
 export { formatGeneration } from '@podkit/devices-ipod';
-
-// Device validation
-export {
-  validateDevice,
-  isUnsupportedGeneration,
-  formatValidationMessages,
-  formatCapabilities,
-  buildSyncWarnings,
-} from './device-validation.js';
-export type {
-  DeviceValidationResult,
-  DeviceIssue,
-  DeviceWarning,
-  DeviceCapabilitySummary,
-  UnsupportedReason,
-} from './device-validation.js';

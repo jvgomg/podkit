@@ -18,7 +18,12 @@ import { OutputContext } from '../../output/index.js';
 import type { ReadinessLevel, ReadinessUnsupportedReason } from '@podkit/core';
 import { DOCS_URLS } from '@podkit/core';
 import { DeviceErrorCodes } from './error-codes.js';
-import { resolveDeviceArg, assertIpodDevice, type DeviceOpDeps } from './shared.js';
+import {
+  resolveDeviceArg,
+  assertIpodDevice,
+  resolveInitModelNumStr,
+  type DeviceOpDeps,
+} from './shared.js';
 import type { DeviceInitOutput } from './output-types.js';
 
 interface InitOptions {
@@ -258,10 +263,20 @@ export async function runDeviceInit(
     }
   }
 
+  // Stamp the device's own model number into the new SysInfo when the cascade
+  // can read one off the hardware, and nothing at all when it cannot. A
+  // fabricated model number here would be written to the user's iPod and read
+  // back later as identity evidence. Resolved before anything is announced,
+  // so a device that cannot be initialised at all says so first.
+  const model = await resolveInitModelNumStr(core, deps, devicePath);
+
   out.print('Initializing iPod database...');
 
   try {
-    const ipod = await IpodDatabase.initializeIpod(devicePath, { name: options.name });
+    const ipod = await IpodDatabase.initializeIpod(devicePath, {
+      name: options.name,
+      ...(model ? { model } : {}),
+    });
     const modelName = ipod.device.modelName;
     ipod.close();
 

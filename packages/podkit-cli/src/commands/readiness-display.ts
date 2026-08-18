@@ -138,6 +138,31 @@ export interface ReadinessIssue {
   fixCommand?: string;
 }
 
+/**
+ * Line substituted for a `Fix:` command when the device refuses writes.
+ *
+ * A read-only device can still surface a finding whose only remedy is a
+ * write. The finding is worth reporting — the user owns the hardware and
+ * deserves to know — but printing a `podkit doctor --repair …` command that
+ * podkit would refuse to run is worse than printing nothing. The command is
+ * dropped and this line explains its absence.
+ */
+export const READ_ONLY_NO_REPAIR_NOTE =
+  'No repair is offered: repairing writes to the device, and podkit does not write to a read-only device.';
+
+/**
+ * Drop every `fixCommand` from a set of issues, replacing it with
+ * {@link READ_ONLY_NO_REPAIR_NOTE} so the reader learns why no command is
+ * shown. Issues that carried no fix command are returned untouched.
+ */
+export function suppressRepairSuggestions(issues: ReadinessIssue[]): ReadinessIssue[] {
+  return issues.map((issue) => {
+    const { fixCommand, ...rest } = issue;
+    if (!fixCommand) return issue;
+    return { ...rest, details: [...issue.details, READ_ONLY_NO_REPAIR_NOTE] };
+  });
+}
+
 // ── Summary rendering ───────────────────────────────────────────────────────
 
 const SYSINFO_DOCS_URL = DOCS_URLS.supportedDevices;

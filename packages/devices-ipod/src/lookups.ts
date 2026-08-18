@@ -19,105 +19,207 @@ import type {
   IpodModelVariant,
 } from './types.js';
 
-// ── FamilyID → IpodGenerationId mapping ─────────────────────────────────────
+// ── FamilyID → generation mapping ───────────────────────────────────────────
 //
-// Apple's FamilyID is a small integer embedded in the SysInfoExtended plist.
+// Apple's FamilyID is an integer embedded in the SysInfoExtended plist.
 // It identifies the iPod family/generation at the firmware level.
 //
 // IMPORTANT — source of truth:
 //   libgpod's ipod_info_table is keyed by model number string, not by FamilyID.
 //   libgpod uses FamilyID only to detect iTunes-phone devices (value >= 10000).
 //   There is NO FamilyID-to-generation table in libgpod or gtkpod.
-//   All entries here come from real device SysInfoExtended plist captures or
+//   Entries here come from real device SysInfoExtended captures, from the macOS
+//   iPod cache (which records the same firmware value per connected device), or
 //   from community SysInfo dumps shared via the iPod Linux wiki and similar
-//   reverse-engineering efforts.
+//   reverse-engineering efforts. Hardware always outranks research.
 //
-// Values confirmed from real device captures in documents/sysinfo-captures/:
-//   3  → mini_2g   (iPod mini 2G 4GB Pink, SCSI inquiry — mini-2g.xml)
-//   6  → video_5g  (iPod 5G Video iFlash 1TB, SCSI inquiry — ipod-5g-video-iflash-1tb.xml)
-//              Note: the captured device is a 5.5G (A446) but reports FamilyID 6.
-//              video_5_5g has no separate FamilyID — both 5G and 5.5G use FamilyID 6.
-//   9  → nano_2g   (iPod nano 2G 4GB Green, SCSI inquiry — nano-2g-4gb-green.xml)
-//  15  → nano_4g   (iPod nano 4G 8GB Black, SCSI inquiry — nano-4g-8gb-black.xml)
-//  18  → nano_7g   (iPod nano 7G 16GB, SCSI + USB inquiry — nano-7g-16gb-{scsi,usb}.xml)
+// Every entry carries its own `evidence` and `source`, so the difference
+// between "a device told us this" and "a forum post told us this" survives in
+// the data rather than in a comment block that a later edit can drift from.
 //
-// Additional values sourced from community SysInfo dumps (iPod Linux wiki,
-// ipodhacks, device teardown records) — marked with (research). These are
-// unconfirmed by a real device capture in this project. Use with caution.
-//   1  → classic_3g  (iPod 3G, 10/15/20/30/40GB — research)
-//   2  → classic_4g  (iPod 4G, 20/40GB — research)
-//   4  → photo       (iPod Photo, 30/40/60GB — research)
-//   5  → mini_1g     (iPod mini 1G — research)
-//   7  → classic_6g  (iPod Classic 6G 80/160GB — research)
-//   8  → nano_1g     (iPod nano 1G — research)
-//  10  → shuffle_1g  (iPod shuffle 1G — research)
-//  11  → shuffle_2g  (iPod shuffle 2G — research)
-//  12  → touch_1g    (iPod touch 1G — research)
-//  13  → nano_3g     (iPod nano 3G — research)
-//  14  → classic_6g  (iPod Classic 6G 120GB — same generation as 7, different FamilyID; research)
-//  16  → nano_5g     (iPod nano 5G — research)
-//  17  → classic_7g  (iPod Classic 7G 160GB — research)
-//  19  → touch_4g    (iPod touch 4G — research)
-//  20  → shuffle_3g  (iPod shuffle 3G — research)
-//  21  → touch_3g    (iPod touch 3G — research)
-//  22  → shuffle_4g  (iPod shuffle 4G — research)
-//  23  → touch_5g    (iPod touch 5G — research; post-libgpod, no iTunes sync)
-//  24  → nano_6g     (iPod nano 6G — research)
-//  25  → touch_6g    (iPod touch 6G — research; post-libgpod, no iTunes sync)
-//  26  → touch_7g    (iPod touch 7G — research; post-libgpod, no iTunes sync)
-//  27  → touch_2g    (iPod touch 2G — research; note: non-sequential, higher than touch_3g=21)
+// Three invariants constrain what may be added here. They are enforced by
+// tests, not at runtime, so a bad entry fails at commit time rather than
+// becoming silently inert on a user's machine:
+//
+//   1. Band. FamilyID is banded by device class, and a value from one band
+//      never names a generation from another:
+//        < 100      disk-mode click-wheel iPods (3, 6, 9, 12, 15, 18 observed)
+//        100 – 999  iPod shuffle                (130, 132, 133 observed)
+//        >= 10000   iOS devices                 (10055 observed — touch 6G)
+//   2. Chronology. Within a band, FamilyID increases with release date. The
+//      hardware entries are the anchors; every inferred entry must fall inside
+//      the release-date window its neighbouring anchors leave open. Hardware is
+//      never constrained by this — if two captures contradict the ordering, the
+//      ordering assumption is what's wrong.
+//   3. Direction of risk. An inferred entry may only name a `syncable`
+//      generation. A guess is allowed to open a door, never to close one: an
+//      unverified value that resolves to a `read-only` or `none` generation
+//      turns a forum post into a non-overridable refusal on someone's working
+//      hardware, whereas a missing entry fails closed with an honest
+//      unknown-model error naming the inputs.
+//
+// Hardware sources: captures live in documents/sysinfo-captures/; the macOS
+// iPod cache is ~/Library/Preferences/com.apple.iPod.plist, which records
+// `Family ID` and `Updater Family ID` as *separate* keys — only the former
+// belongs here. The updater values for the three shuffles below are 133, 132
+// and 135, which is exactly why an updater reading must never be pasted in.
 //
 // Deliberate omissions:
 //   classic_1g, classic_2g — pre-date SysInfoExtended; these devices have no
 //     FamilyID field (SysInfoExtended wasn't introduced until ~2005 on the Photo).
 //     Use USB product ID or SysInfo ModelNumStr to identify these generations.
+//   iPod touch / iPhone / iPad — an iOS device has no disk mode and never emits
+//     a SysInfoExtended, so no touch FamilyID is obtainable through the inquiry
+//     path that fills this table. The only iOS value ever observed here is a
+//     macOS-cache reading of 10055 for an iPod touch 6G — five orders of
+//     magnitude away from the small integers previously guessed for touches,
+//     and consistent with libgpod's own `>= 10000` iTunes-phone test. iOS
+//     devices are refused at the USB product ID instead (tables/unsupported.ts).
+//   photo, mini_1g, nano_1g, nano_6g and a second classic_6g value — previously
+//     carried at 4, 5, 8, 24 and 7. All five contradict the chronology the
+//     hardware anchors establish (e.g. the Photo shipped Oct 2004, a FamilyID
+//     of 4 would put it after the Feb-2005 mini 2G at 3), so the numbers were
+//     wrong even where the generation is real. Removed rather than kept as
+//     inferred: a value known to be misplaced is not weak evidence, it is
+//     counter-evidence.
+//   A second nano_3g at 13 — hardware puts nano_3g at 12 (two units), and no
+//     evidence says what 13 is. 13 sits in the window where the classic 6G
+//     (same month as the nano 3G) would fall, so claiming it for nano_3g is a
+//     guess that could shadow a real device.
+
+/** Whether a FamilyID entry was read off hardware or inferred from research. */
+export type FamilyIdEvidence = 'hardware' | 'inferred';
 
 /**
- * Best-effort mapping from Apple FamilyID (firmware integer) to IpodGenerationId.
+ * One row of the FamilyID table: the generation, how well we know it, and the
+ * evidence trail that backs it.
+ */
+export interface FamilyIdEntry {
+  /** The generation this FamilyID identifies. */
+  readonly generation: IpodGenerationId;
+  /**
+   * `'hardware'` — read from a device podkit has actually seen (SysInfoExtended
+   * capture or macOS iPod cache entry). `'inferred'` — from community SysInfo
+   * dumps, unconfirmed by any device in this project.
+   */
+  readonly evidence: FamilyIdEvidence;
+  /** Where the value came from: device + serial + artifact, or the research trail. */
+  readonly source: string;
+}
+
+/**
+ * Apple FamilyID (firmware integer) → generation, with provenance per entry.
  *
- * Five values are confirmed from real device captures in
- * `documents/sysinfo-captures/` (FamilyIDs 3, 6, 9, 15, 18). All other values
- * are sourced from community SysInfo dumps and are unconfirmed — they may be
- * incorrect, especially for research-marked Touch and post-libgpod generations.
+ * Nine values are confirmed on real hardware (3, 6, 9, 12, 15, 18, 130, 132,
+ * 133); the rest are inferred from community SysInfo dumps and may be wrong.
+ * See the invariants above before adding a row.
  *
  * Note: `video_5_5g` has no separate FamilyID entry because it shares FamilyID
  * 6 with `video_5g`. Both generations have identical capabilities.
- *
- * `classic_1g` and `classic_2g` are intentionally absent — those devices
- * pre-date SysInfoExtended and never expose a FamilyID.
  */
-export const FAMILY_ID_TO_GENERATION: Readonly<Record<number, IpodGenerationId>> = {
-  1: 'classic_3g',
-  2: 'classic_4g',
-  3: 'mini_2g',
-  4: 'photo',
-  5: 'mini_1g',
-  6: 'video_5g',
-  7: 'classic_6g',
-  8: 'nano_1g',
-  9: 'nano_2g',
-  10: 'shuffle_1g',
-  11: 'shuffle_2g',
-  12: 'touch_1g',
-  13: 'nano_3g',
-  14: 'classic_6g',
-  15: 'nano_4g',
-  16: 'nano_5g',
-  17: 'classic_7g',
-  18: 'nano_7g',
-  19: 'touch_4g',
-  20: 'shuffle_3g',
-  21: 'touch_3g',
-  22: 'shuffle_4g',
-  23: 'touch_5g',
-  24: 'nano_6g',
-  25: 'touch_6g',
-  26: 'touch_7g',
-  27: 'touch_2g',
-  // Source: real hardware — iPod shuffle 4G (Late 2012). FamilyID 133 confirmed
-  // by both SysInfoExtended and the macOS iPod cache for serial CC4LXAVUF4T0.
-  // (The inferred `22` above is a separate, un-verified shuffle_4g FamilyID.)
-  133: 'shuffle_4g',
+export const FAMILY_ID_TABLE: Readonly<Record<number, FamilyIdEntry>> = {
+  1: {
+    generation: 'classic_3g',
+    evidence: 'inferred',
+    source:
+      'Community SysInfo dumps (iPod Linux wiki) for the 10/15/20/30/40GB iPod 3G. ' +
+      'Unconfirmed: the 3G predates SysInfoExtended by ~2 years, so it may emit no FamilyID at all.',
+  },
+  2: {
+    generation: 'classic_4g',
+    evidence: 'inferred',
+    source:
+      'Community SysInfo dumps (iPod Linux wiki) for the 20/40GB iPod 4G. ' +
+      'Unconfirmed: like the 3G, it may predate the SysInfoExtended plist entirely.',
+  },
+  3: {
+    generation: 'mini_2g',
+    evidence: 'hardware',
+    source: 'iPod mini 2G 4GB Pink, serial JQ5141TFS4G — sysinfo-captures/mini-2g.xml',
+  },
+  6: {
+    generation: 'video_5g',
+    evidence: 'hardware',
+    source:
+      'iPod 5G Video iFlash 1TB, serial 9C642MEFV9M — sysinfo-captures/ipod-5g-video-iflash-1tb.xml. ' +
+      'The captured unit is a 5.5G (A446) yet reports 6, so 5G and 5.5G share this FamilyID.',
+  },
+  9: {
+    generation: 'nano_2g',
+    evidence: 'hardware',
+    source: 'iPod nano 2G 4GB Green, serial YM7275YSVQH — sysinfo-captures/nano-2g-4gb-green.xml',
+  },
+  12: {
+    generation: 'nano_3g',
+    evidence: 'hardware',
+    source:
+      'Two iPod nano 3Gs: serial 5U8280FNYXX (sysinfo-captures/nano-3g-8gb-black.xml, mirrored by ' +
+      'the ipod-nano-3g-black persona) and serial YM803JBW13F (macOS iPod cache). Corroborated on ' +
+      'two further axes: serial suffix YXX → B261 → nano_3g, and USB PID 0x1262 → nano_3g.',
+  },
+  // Open risk on 12 and 14: the iPod Classic 6G shipped the same month as the
+  // nano 3G (September 2007) and no capture from one exists, so it is not ruled
+  // out that a classic 6G also reports 12. That risk is bounded — the serial
+  // axis is tried first, so only a classic 6G with an unmapped serial suffix
+  // reaches the FamilyID axis at all, and classic_6g and nano_3g carry
+  // identical capability rows (hash58, ALAC, video, artwork 320, both
+  // syncable). A collision costs a wrong display name, not wrong checksums,
+  // artwork format, or transcode targets.
+  14: {
+    generation: 'classic_6g',
+    evidence: 'inferred',
+    source: 'Community SysInfo dumps (iPod Linux wiki) for the 120GB iPod Classic 6G.',
+  },
+  15: {
+    generation: 'nano_4g',
+    evidence: 'hardware',
+    source: 'iPod nano 4G 8GB Black, serial 5U851AEH3R0 — sysinfo-captures/nano-4g-8gb-black.xml',
+  },
+  16: {
+    generation: 'nano_5g',
+    evidence: 'inferred',
+    source: 'Community SysInfo dumps (iPod Linux wiki) for the iPod nano 5G.',
+  },
+  17: {
+    generation: 'nano_6g',
+    evidence: 'hardware',
+    // Read from firmware over USB on a connected iPod nano 6G (16GB, serial
+    // DCYGLUGVDDW4, USB PID 0x1266). Supersedes a research guess of
+    // classic_7g: the Classic 7G's FamilyID is simply unknown, and guessing it
+    // here would have made a nano 6G resolve as a syncable Classic — this
+    // entry sat one unmapped serial suffix away from offering to write to a
+    // device podkit cannot write to.
+    source: 'iPod nano 6G 16GB, serial DCYGLUGVDDW4 — read from firmware over USB',
+  },
+  18: {
+    generation: 'nano_7g',
+    evidence: 'hardware',
+    source:
+      'iPod nano 7G 16GB, serial DCYN72R8FJQ1 — sysinfo-captures/nano-7g-16gb-scsi.xml and -usb.xml',
+  },
+  // ── Shuffle band ──────────────────────────────────────────────────────────
+  // All three read from real hardware on the same day.
+  130: {
+    generation: 'shuffle_2g',
+    evidence: 'hardware',
+    source:
+      'iPod shuffle 2G 1GB Pink, serial 6V925GZ9436 — sysinfo-captures/shuffle-2g-1gb-pink.xml, ' +
+      'corroborated by the macOS iPod cache (updater FamilyID 133 — not this value).',
+  },
+  132: {
+    generation: 'shuffle_3g',
+    evidence: 'hardware',
+    source:
+      'iPod shuffle 3G, serial 4H02918LALD — macOS iPod cache. Serial suffix ALD → C384 ' +
+      'corroborates shuffle_3g on the serial axis.',
+  },
+  133: {
+    generation: 'shuffle_4g',
+    evidence: 'hardware',
+    source:
+      'iPod shuffle 4G (Late 2012), serial CC4LXAVUF4T0 — macOS iPod cache (updater FamilyID 135 ' +
+      '— not this value). Serial suffix 4T0 → D777 corroborates on the serial axis.',
+  },
 } as const;
 
 // ── Build lookup indexes (once at module load) ───────────────────────────────
@@ -215,6 +317,30 @@ export function lookupByModelNumber(modelNumStr: string): ModelEntry | undefined
 }
 
 /**
+ * Render a bare model number back into the `ModelNumStr` form that Apple's own
+ * SysInfo writers produce, and that every consumer of that file expects.
+ *
+ * `IpodModel.modelNumber` holds the bare code (`A947`) because the registry is
+ * keyed that way. Both the classic `iPod_Control/Device/SysInfo` file and
+ * libgpod's model lookup want the prefixed form (`MA947`) — libgpod strips a
+ * single leading letter before consulting its table, so handing it the bare
+ * code would drop a significant character and miss.
+ *
+ * `M` is the retail prefix. Apple also ships `P` (service stock) and `F`
+ * (factory refurbished) for the same hardware; all three resolve identically,
+ * so retail is the right neutral choice when podkit is synthesising the value
+ * from a serial-suffix or FamilyID resolution rather than copying one off the
+ * device.
+ *
+ * Already-prefixed input is returned unchanged, so this is safe to apply to a
+ * value of uncertain provenance.
+ */
+export function toModelNumStr(modelNumber: string): string {
+  const upper = modelNumber.toUpperCase();
+  return /^[MPF]/.test(upper) ? upper : `M${upper}`;
+}
+
+/**
  * Get generation metadata for a generation identifier.
  *
  * @param generationId - Generation identifier
@@ -264,11 +390,34 @@ export function toLibgpodGeneration(generationId: IpodGenerationId): LibgpodGene
 }
 
 /**
+ * Look up a FamilyID entry — generation plus the provenance behind it.
+ *
+ * Use this instead of {@link lookupByFamilyId} wherever the *confidence* in the
+ * answer matters: `device info` output, diagnostics, docs generation, or any
+ * message that would read differently if the value came from a forum post
+ * rather than a device. `evidence: 'inferred'` should be rendered as such.
+ *
+ * @param familyId - The `FamilyID` integer from firmware (e.g., 15 for nano_4g)
+ * @returns The matching entry, or `undefined` for unknown values
+ */
+export function lookupFamilyIdEntry(familyId: number): FamilyIdEntry | undefined {
+  return FAMILY_ID_TABLE[familyId];
+}
+
+/**
  * Look up an IpodGenerationId from an Apple firmware FamilyID integer.
  *
  * FamilyID is the small integer embedded in SysInfoExtended plist under the
  * `FamilyID` key. It identifies the iPod generation/family at the firmware
  * level and is exposed as `IpodIdentity.familyId` after a firmware inquiry.
+ *
+ * Inferred entries resolve exactly like hardware-confirmed ones: provenance
+ * records confidence, it does not gate behaviour (the same split ADR-024 draws
+ * between `support.access` and `support.verified`). What keeps an unverified
+ * guess from driving a refusal is the table invariant that an inferred entry
+ * may only name a `syncable` generation — enforced at commit time, so a bad row
+ * fails the build instead of silently disappearing at runtime. Callers that
+ * want to *show* the difference use {@link lookupFamilyIdEntry}.
  *
  * @param familyId - The `FamilyID` integer from firmware (e.g., 15 for nano_4g)
  * @returns The matching `IpodGenerationId`, or `undefined` for unknown values
@@ -281,5 +430,5 @@ export function toLibgpodGeneration(generationId: IpodGenerationId): LibgpodGene
  * ```
  */
 export function lookupByFamilyId(familyId: number): IpodGenerationId | undefined {
-  return FAMILY_ID_TO_GENERATION[familyId];
+  return FAMILY_ID_TABLE[familyId]?.generation;
 }

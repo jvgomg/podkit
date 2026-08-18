@@ -127,6 +127,11 @@ export const SERIAL_TO_MODEL: Record<string, string> = {
   YXA: 'B233',
   YX6: 'B225',
   YX8: 'A951',
+  // Hardware-attested: serial 6V925GZ9436 (suffix 436). Absent from libgpod's
+  // table. Its SysInfoExtended reports FamilyID 130 and NumMBytes 1024, and the
+  // unit is pink — 1GB Pink shuffle 2G is A947 exactly (see model-numbers.ts),
+  // matching the existing XQ5/XQS suffixes for that same variant.
+  '436': 'A947',
 
   // iPod nano (1st Generation)
   UNA: 'A350',
@@ -212,6 +217,11 @@ export const SERIAL_TO_MODEL: Record<string, string> = {
   '9ZU': 'C297',
 
   // iPod nano (3rd Generation)
+  // Known gap: suffix '13F' (real hardware, serial YM803JBW13F, FamilyID 12)
+  // is a nano 3G but its model number is not recoverable from any in-repo or
+  // libgpod data — the suffix predicts capacity and colour, and guessing those
+  // would fabricate a variant. Add it when the physical device can be read.
+  // Until then that device resolves on the FamilyID axis (12 → nano_3g).
   Y0P: 'A978',
   Y0R: 'A980',
   YXR: 'B249',
@@ -332,6 +342,21 @@ export const SERIAL_TO_MODEL: Record<string, string> = {
   JQ1: 'E971',
   // Source: real hardware — serial DCYL44J8F0GP, device is Blue.
   '0GP': 'D477',
+  // Source: real hardware — serial DCYN83SFF0GQ, device is Green (16GB,
+  // FamilyID 18 read from the macOS iPod cache). D478 is the 2012 Green.
+  // Neighbouring the Blue 0GP → D477 above is consistent with Apple ordering
+  // the 2012 colours D475..D481, but the colour here is observed, not derived
+  // from that ordering — the 2015 refresh has no separate Green.
+  '0GQ': 'D478',
+  // Source: real hardware — serial C7RJR3TLF0GM, device is Pink, FamilyID 18.
+  // Mapped to D475 (2012 Pink). Could be KMV2 (2015 Pink) — unlike Green, Pink
+  // shipped in both runs, and nothing on the device distinguishes them (no
+  // ModelNumStr; SysInfoExtended never carries one). D475 is the better guess
+  // because the two attested neighbours 0GP → D477 and 0GQ → D478 are both
+  // 2012-line codes, so this suffix block is the 2012 run. Both candidates are
+  // 16GB Pink nano_7g with identical capabilities, so the choice changes only
+  // the displayed model number.
+  '0GM': 'D475',
 
   // iPod shuffle (4th Generation) — Late 2012 (Rev A) + Mid 2015 (Rev B), 2GB.
   // Source: The Apple Wiki, Models/iPod. Suffixes are the last 3 of the wiki's

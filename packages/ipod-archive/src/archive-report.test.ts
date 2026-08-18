@@ -563,4 +563,30 @@ describe('renderReadme', () => {
     expect(md).toContain("| Name | NIKKI'S IPO |");
     expect(md).toContain('| Model | iPod shuffle (4th Generation) |');
   });
+
+  test('flags a forced identity-capture failure honestly instead of leaving dashes unexplained', () => {
+    const md = renderReadme({
+      identity: {
+        identityCaptureFailureReason: 'the device did not respond to the firmware identity inquiry',
+      },
+      dumpDate: 0,
+      podkitVersion: 'unknown',
+      stats: computeLibraryStats([]),
+    });
+    expect(md).toContain('Identity could not be captured');
+    expect(md).toContain('the device did not respond to the firmware identity inquiry');
+    expect(md).toContain('--force');
+    // The fields still degrade to dashes underneath the note.
+    expect(md).toContain('| Serial | — |');
+  });
+
+  test('omits the identity-capture-failure note on a normal run', () => {
+    const md = renderReadme({
+      identity: { serialNumber: 'ABC123' },
+      dumpDate: 0,
+      podkitVersion: 'unknown',
+      stats: computeLibraryStats([]),
+    });
+    expect(md).not.toContain('Identity could not be captured');
+  });
 });

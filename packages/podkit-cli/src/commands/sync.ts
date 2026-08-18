@@ -914,7 +914,6 @@ export async function runSync(
   dbSpinner.stop(isIpodDevice ? 'iPod database opened' : 'Device opened');
 
   const adapter: import('@podkit/core').DeviceAdapter = openResult.adapter;
-  const ipod = openResult.ipod;
   const deviceSupportsAlac = openResult.deviceSupportsAlac;
   const deviceCapabilities = openResult.capabilities;
 
@@ -1032,34 +1031,13 @@ export async function runSync(
       );
     }
 
-    // Pre-flight device validation (iPod only)
-    if (ipod) {
-      const ipodDeviceInfo = ipod.getInfo().device;
-      if (ipodDeviceInfo) {
-        const deviceValidation = core.validateDevice(ipodDeviceInfo, devicePath);
-
-        if (!deviceValidation.supported) {
-          const messages = core.formatValidationMessages(deviceValidation);
-          throw new CliError({
-            message: messages[0] ?? 'Device validation failed',
-            code: SyncErrorCodes.DEVICE_UNSUPPORTED,
-            details: { dryRun, device: devicePath },
-            printText: (o) => {
-              o.newline();
-              for (const msg of messages) {
-                o.print(msg);
-              }
-            },
-          });
-        }
-
-        // Note: unknown-model degradation is no longer surfaced as a warning
-        // here. An unresolved model is refused at the unknown-model gate above
-        // (UNKNOWN_IPOD_MODEL); a model resolved via the identity cascade is a
-        // real model, so the old "treated as a generic iPod" warning would be
-        // both unreachable and factually wrong.
-      }
-    }
+    // No post-open device validation runs here. Both refusals it could raise
+    // are already settled upstream by the identity cascade, before any heavy
+    // work: an unsupported generation at the unsupported-device gate
+    // (DEVICE_UNSUPPORTED) and an unidentifiable one at the unknown-model gate
+    // (UNKNOWN_IPOD_MODEL). Re-deriving them from libgpod's post-open view
+    // could only ever produce a false refusal, since that view reads
+    // `unknown` for every device libgpod's own tables miss.
 
     // ----- Resolve codec preferences -----
     // Per-key fallback (device → global → default). Object-level coalesce

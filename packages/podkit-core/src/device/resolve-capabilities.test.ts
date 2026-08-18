@@ -8,6 +8,7 @@ import { describe, expect, it } from 'bun:test';
 
 import { resolveCapabilities, identifyCapabilities } from './resolve-capabilities.js';
 import { UnknownIpodModelError } from './unknown-ipod-model.js';
+import { resolveGenerationSupport, resolveIpodModel } from '@podkit/devices-ipod';
 import type { IpodIdentity, MassStorageIdentity, DeviceIdentity } from '@podkit/device-types';
 import type { FirmwareCapabilities } from '@podkit/device-types';
 
@@ -110,6 +111,33 @@ describe('resolveCapabilities — iPod identity', () => {
 
     expect(caps.supportedAudioCodecs).toContain('flac');
     expect(caps.supportedAudioCodecs).toContain('alac');
+  });
+
+  it('resolves a FamilyID-12 nano with an unmapped serial suffix as a syncable nano 3G', () => {
+    // Real hardware: iPod nano 3G, serial YM803JBW13F, FamilyID 12. The bag
+    // this resolver builds carries serial + FamilyID only — no USB product ID
+    // — and suffix '13F' is not in the serial table, so the FamilyID axis is
+    // the only thing standing between a nano in disk mode and a refusal that
+    // claims it speaks Apple's proprietary sync protocol.
+    const identity = makeIpodIdentity({
+      firewireGuid: '000A27001B43D063',
+      serialNumber: 'YM803JBW13F',
+      familyId: 12,
+    });
+
+    const model = resolveIpodModel({
+      serialNumber: identity.serialNumber,
+      familyId: identity.familyId,
+    });
+    expect(model?.generationId).toBe('nano_3g');
+    expect(model?.unsupportedReason).toBeUndefined();
+    expect(resolveGenerationSupport('nano_3g').access).toBe('syncable');
+
+    // nano_3g hardware: ALAC-capable, video, artwork 320px.
+    const caps = resolveCapabilities(identity);
+    expect(caps.supportedAudioCodecs).toContain('alac');
+    expect(caps.supportsVideo).toBe(true);
+    expect(caps.artworkMaxResolution).toBe(320);
   });
 
   it('resolves capabilities for unsupported devices (unsupportedReason on identity, not on caps)', () => {

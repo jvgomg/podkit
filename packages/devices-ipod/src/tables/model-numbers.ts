@@ -180,13 +180,18 @@ export const MODEL_NUMBERS: Record<string, ModelEntry> = {
   // ── iPod nano (6th Generation) ──────────────────────────────────────────
   C525: { generation: 'nano_6g', capacityGb: 8, color: 'Silver' },
   C526: { generation: 'nano_6g', capacityGb: 16, color: 'Silver' },
-  C688: { generation: 'nano_6g', capacityGb: 8, color: 'Black' },
+  // Apple marketed the dark nano 6G as Graphite — never Black (that is the
+  // 3G/4G-era name) and never Space Gray (that arrives with the 7G in 2013).
+  // Confirmed against a physical 16GB unit, serial DCYGLUGVDDW4. Note
+  // `@podkit/ipod-db`'s model table still says Black: it is a faithful port of
+  // libgpod's `ipod_info_table`, which uses its own `nano_black` naming.
+  C688: { generation: 'nano_6g', capacityGb: 8, color: 'Graphite' },
   C689: { generation: 'nano_6g', capacityGb: 8, color: 'Blue' },
   C690: { generation: 'nano_6g', capacityGb: 8, color: 'Green' },
   C691: { generation: 'nano_6g', capacityGb: 8, color: 'Orange' },
   C692: { generation: 'nano_6g', capacityGb: 8, color: 'Pink' },
   C693: { generation: 'nano_6g', capacityGb: 8, color: 'Red' },
-  C694: { generation: 'nano_6g', capacityGb: 16, color: 'Black' },
+  C694: { generation: 'nano_6g', capacityGb: 16, color: 'Graphite' },
   C695: { generation: 'nano_6g', capacityGb: 16, color: 'Blue' },
   C696: { generation: 'nano_6g', capacityGb: 16, color: 'Green' },
   C697: { generation: 'nano_6g', capacityGb: 16, color: 'Orange' },
