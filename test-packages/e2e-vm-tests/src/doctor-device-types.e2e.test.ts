@@ -2,7 +2,7 @@
  * VM coverage — doctor across device types and presets.
  *
  * Verifies that the production `podkit doctor` binary running inside
- * `podkit-device-harness` selects the correct check set for each device type and
+ * `podkit-device` selects the correct check set for each device type and
  * surfaces unsupported-device readiness without running checks against an
  * unsupported device.
  *
@@ -58,6 +58,7 @@ import {
   echoMini,
   ipodNano7gBlue,
   ipodNano7gSpaceGray,
+  LIMA_DEVICE_HARNESS_VM_NAME,
 } from '@podkit/device-testing';
 
 // ---------------------------------------------------------------------------
@@ -298,7 +299,7 @@ describe('VM: doctor device-types', () => {
           // 1. Start the daemon.
           const { startDaemonForPersona } = await import('@podkit/device-testing');
           await startDaemonForPersona({
-            vmName: 'podkit-device-harness',
+            vmName: LIMA_DEVICE_HARNESS_VM_NAME,
             personaId: echoMini.id,
           });
 
@@ -306,7 +307,7 @@ describe('VM: doctor device-types', () => {
           //    Re-use the helper that withPersona uses internally.
           const { waitForScsiGenericEnumeration } = await import('@podkit/device-testing');
           await waitForScsiGenericEnumeration({
-            vmName: 'podkit-device-harness',
+            vmName: LIMA_DEVICE_HARNESS_VM_NAME,
             personaId: echoMini.id,
             timeoutMs: 5_000,
           });
@@ -385,7 +386,7 @@ describe('VM: doctor device-types', () => {
             .catch(() => {});
           const { stopDaemon } = await import('@podkit/device-testing');
           await stopDaemon({
-            vmName: 'podkit-device-harness',
+            vmName: LIMA_DEVICE_HARNESS_VM_NAME,
             personaId: echoMini.id,
           }).catch(() => {});
           throw err;
@@ -406,7 +407,7 @@ describe('VM: doctor device-types', () => {
           .catch(() => {});
         const { stopDaemon } = await import('@podkit/device-testing');
         await stopDaemon({
-          vmName: 'podkit-device-harness',
+          vmName: LIMA_DEVICE_HARNESS_VM_NAME,
           personaId: echoMini.id,
         }).catch(() => {});
       }, VM_COLD_TIMEOUT_MS);

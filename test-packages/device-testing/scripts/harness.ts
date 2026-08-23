@@ -16,7 +16,7 @@
  * mirrored at the repo root), not direct. The repo-root aliases let a
  * developer type `bun run harness:setup` from anywhere in the tree.
  *
- * @see test-packages/device-testing/lima/podkit-device-harness.yaml
+ * @see test-packages/lima/vms/podkit-device.yaml
  * @see agents/device-testing.md
  * @module
  */
@@ -27,9 +27,15 @@ import * as readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
+import { getVm } from '@podkit/lima';
+
 import { runLimactl } from '../src/runners/lima-limactl.js';
 import { defaultSubprocessRunner } from '../src/subprocess.js';
-import { computeBaselineHash, BASELINE_VM_HASH_PATH } from '../src/baseline-hash.js';
+import {
+  computeBaselineHash,
+  deviceBaselineFiles,
+  BASELINE_VM_HASH_PATH,
+} from '../src/baseline-hash.js';
 import {
   instanceStatus,
   LIMA_DEVICE_HARNESS_VM_NAME,
@@ -56,7 +62,7 @@ const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = path.resolve(SCRIPT_DIR, '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
 const VM = LIMA_DEVICE_HARNESS_VM_NAME;
-const VM_YAML = path.join(PACKAGE_ROOT, 'lima', 'podkit-device-harness.yaml');
+const VM_YAML = getVm('device').yamlPath;
 const VM_YAML_REL = path.relative(REPO_ROOT, VM_YAML);
 
 // The builder VM is a separate Lima instance that cross-compiles Linux
@@ -65,7 +71,7 @@ const VM_YAML_REL = path.relative(REPO_ROOT, VM_YAML);
 // it on demand, so a developer rarely needs to touch it directly. The
 // `builder:stop` / `builder:destroy` subcommands exist as escape hatches
 // (free RAM, force a clean rebuild).
-const BUILDER_VM = 'podkit-linux-builder';
+const BUILDER_VM = getVm('builderGlibc').instanceName;
 
 const USAGE = `Usage: bun run scripts/harness.ts <subcommand>
 
@@ -544,7 +550,7 @@ async function cmdSetup(): Promise<number> {
 }
 
 async function sealBaselineHash(): Promise<number> {
-  const { combinedSha, files } = computeBaselineHash(PACKAGE_ROOT);
+  const { combinedSha, files } = computeBaselineHash(deviceBaselineFiles());
   console.log(
     `[harness:setup] sealing baseline hash (${combinedSha.slice(0, 12)}...; ${files.length} files)`
   );

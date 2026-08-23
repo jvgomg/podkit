@@ -6,7 +6,7 @@
  *   - unit — pure-TS unit tests with injectable transports.
  *   - native — native subprocess tests (`*.darwin.test.ts` / `*.linux.test.ts`).
  *   - VM — full inquiry stack against a synthetic USB device served by a
- *     FunctionFS daemon inside the `podkit-device-harness` Lima VM (this file).
+ *     FunctionFS daemon inside the `podkit-device` Lima VM (this file).
  *
  * # Test grouping convention (standard for VM)
  *

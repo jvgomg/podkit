@@ -62,7 +62,11 @@ export type { RunInVmOpts, RunInVmResult, CopyOutOpts, StageSourceTreeOpts } fro
 export { runInVm, copyOut, stageSourceTree } from './transport.js';
 
 // Baseline hash + drift
-export type { BaselineFileEntry, BaselineHashResult } from './baseline-hash.js';
+export type {
+  TrackedBaselineFile,
+  BaselineFileEntry,
+  BaselineHashResult,
+} from './baseline-hash.js';
 export { computeBaselineHash, BASELINE_VM_HASH_PATH } from './baseline-hash.js';
 
 // In-VM docker-image build/pull

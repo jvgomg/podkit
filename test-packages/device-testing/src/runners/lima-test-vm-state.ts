@@ -28,7 +28,7 @@ import { devTestingPackageRoot } from './paths.js';
 
 /** Options for {@link applyState}. */
 export interface ApplyStateOpts {
-  /** Lima instance name (e.g. `podkit-device-harness`). */
+  /** Lima instance name (e.g. `podkit-device`). */
   vmName: string;
   /** SystemState id to apply (one of the 6 registered states). */
   stateId: SystemStateId;

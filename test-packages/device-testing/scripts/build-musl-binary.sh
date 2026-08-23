@@ -29,7 +29,7 @@
 
 set -euo pipefail
 
-VM_NAME="${MUSL_BUILDER_VM_NAME:-podkit-musl-builder}"
+VM_NAME="${MUSL_BUILDER_VM_NAME:-podkit-builder-musl}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 CLI_BIN_DIR="$REPO_ROOT/packages/podkit-cli/bin"

@@ -2,21 +2,21 @@
 #
 # Turbo task: @podkit/gpod-testing#build:linux-binary
 #
-# Runs on the macOS host. Uses the Lima `podkit-linux-builder` VM to run
+# Runs on the macOS host. Uses the Lima `podkit-builder-glibc` VM to run
 # `make -C tools/gpod-tool` against apt's libgpod-dev, then copies the
 # resulting Linux binary back to the host.
 #
 # Output: test-packages/gpod-testing/bin/gpod-tool-linux-<arch>
 #
 # The produced binary dynamically links libgpod-1.0 + glib-2.0 against the
-# builder VM's apt libraries. The device-harness VM (podkit-device-harness)
-# carries runtime libgpod4 + libglib2.0-0 packages — the same shared-library
-# ABI — so the binary loads cleanly there. ADR-016 §"Builder/test VM split"
-# explicitly endorses libgpod4 in the harness VM for the gpod-tool helper.
+# builder VM's apt libraries. The device-synthesis VM (podkit-device) carries
+# runtime libgpod4 + libglib2.0-0 packages — the same shared-library ABI — so
+# the binary loads cleanly there. ADR-016 §"Builder/test VM split" explicitly
+# endorses libgpod4 in the device VM for the gpod-tool helper.
 
 set -euo pipefail
 
-VM_NAME="${BUILDER_VM_NAME:-podkit-linux-builder}"
+VM_NAME="${BUILDER_VM_NAME:-podkit-builder-glibc}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 GPOD_TESTING_BIN_DIR="$REPO_ROOT/test-packages/gpod-testing/bin"

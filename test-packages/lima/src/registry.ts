@@ -5,10 +5,9 @@
  * ABI-check VM.
  *
  * Each entry pairs a clean TypeScript `id` with the concrete Lima `instanceName`
- * and a pointer to the declarative Lima YAML that still lives at its current
- * on-disk location. (Consolidating the YAMLs under this package and renaming the
- * instances to a consistent scheme is a later phase; this registry models what
- * exists today so callers can stop spelling instance names by hand.)
+ * and a pointer to the declarative Lima YAML, all of which are consolidated
+ * under this package's `vms/` directory. Callers look VMs up by `id` rather
+ * than spelling instance names or YAML paths by hand.
  *
  * @module
  */
@@ -72,55 +71,55 @@ function defineVm(entry: Omit<VmDefinition, 'yamlPath'> & { yamlRelPath: string 
 }
 
 /**
- * The registry. Instance names are the CURRENT names (renames to a consistent
- * scheme are a later phase); YAML paths point at the current on-disk locations
- * (the consolidation into this package is likewise a later phase).
+ * The registry. Instance names follow a single scheme — `podkit-<role>`, with
+ * the libc suffix where a VM is libc-specific — and every YAML lives in this
+ * package's `vms/` directory.
  */
 const REGISTRY: readonly VmDefinition[] = [
   defineVm({
     id: 'device',
-    instanceName: 'podkit-device-harness',
-    yamlRelPath: 'test-packages/device-testing/lima/podkit-device-harness.yaml',
+    instanceName: 'podkit-device',
+    yamlRelPath: 'test-packages/lima/vms/podkit-device.yaml',
     category: 'device',
     archRelevance: 'agnostic',
     trackedForBaseline: true,
   }),
   defineVm({
     id: 'builderGlibc',
-    instanceName: 'podkit-linux-builder',
-    yamlRelPath: 'test-packages/device-testing/lima/podkit-linux-builder.yaml',
+    instanceName: 'podkit-builder-glibc',
+    yamlRelPath: 'test-packages/lima/vms/podkit-builder-glibc.yaml',
     category: 'builder',
     archRelevance: 'glibc',
     trackedForBaseline: false,
   }),
   defineVm({
     id: 'builderMusl',
-    instanceName: 'podkit-musl-builder',
-    yamlRelPath: 'test-packages/device-testing/lima/podkit-musl-builder.yaml',
+    instanceName: 'podkit-builder-musl',
+    yamlRelPath: 'test-packages/lima/vms/podkit-builder-musl.yaml',
     category: 'builder',
     archRelevance: 'musl',
     trackedForBaseline: false,
   }),
   defineVm({
     id: 'testGlibc',
-    instanceName: 'podkit-tests-debian-glibc',
-    yamlRelPath: 'tools/lima/podkit-tests-debian-glibc.yaml',
+    instanceName: 'podkit-test-glibc',
+    yamlRelPath: 'test-packages/lima/vms/podkit-test-glibc.yaml',
     category: 'test-runner',
     archRelevance: 'glibc',
     trackedForBaseline: false,
   }),
   defineVm({
     id: 'testMusl',
-    instanceName: 'podkit-tests-alpine-musl',
-    yamlRelPath: 'tools/lima/podkit-tests-alpine-musl.yaml',
+    instanceName: 'podkit-test-musl',
+    yamlRelPath: 'test-packages/lima/vms/podkit-test-musl.yaml',
     category: 'test-runner',
     archRelevance: 'musl',
     trackedForBaseline: false,
   }),
   defineVm({
-    id: 'demo',
+    id: 'virtualIpod',
     instanceName: 'podkit-virtual-ipod',
-    yamlRelPath: 'tools/lima/podkit-virtual-ipod.yaml',
+    yamlRelPath: 'test-packages/lima/vms/podkit-virtual-ipod.yaml',
     category: 'demo',
     archRelevance: 'agnostic',
     trackedForBaseline: false,
@@ -128,19 +127,12 @@ const REGISTRY: readonly VmDefinition[] = [
   defineVm({
     id: 'abiVerify',
     instanceName: 'podkit-abi-verify',
-    yamlRelPath: 'test-packages/device-testing/lima/podkit-abi-verify.yaml',
+    yamlRelPath: 'test-packages/lima/vms/podkit-abi-verify.yaml',
     category: 'abi',
     archRelevance: 'agnostic',
     trackedForBaseline: false,
   }),
 ];
-
-/**
- * The device-synthesis harness instance name. Kept as a named constant so the
- * many existing call sites that reference it by value continue to resolve
- * through the registry.
- */
-export const LIMA_DEVICE_HARNESS_VM_NAME = 'podkit-device-harness';
 
 /** Every registered VM, in declaration order. */
 export function listVms(): readonly VmDefinition[] {
@@ -165,3 +157,15 @@ export function getVm(idOrInstance: string): VmDefinition {
 export function deviceVm(): VmDefinition {
   return getVm('device');
 }
+
+/**
+ * The device-synthesis harness instance name. Kept as a named constant so the
+ * many existing call sites that reference it by value continue to resolve
+ * through the registry. Derived from the registry rather than restated, so a
+ * future rename has exactly one edit site.
+ *
+ * Reading `instanceName` is a plain property read — it does NOT trip the lazy
+ * `yamlPath` getter — so this module-scope initialisation stays free of any
+ * on-disk path resolution.
+ */
+export const LIMA_DEVICE_HARNESS_VM_NAME = deviceVm().instanceName;

@@ -3,8 +3,9 @@
  *
  * Pure tests — no kernel, no filesystem. They verify the bytes we write to
  * ep0 match what `<linux/usb/functionfs.h>` and `<linux/usb/ch9.h>` expect,
- * so a regression here is caught on the macOS dev host before we ever ship
- * the binary to `podkit-device-harness` (AC #9 of TASK-322.05.01).
+ * so a regression here is caught on the macOS dev host before the binary is
+ * ever shipped into the `podkit-device` VM, where a malformed descriptor
+ * table only surfaces as an opaque ep0 write failure.
  */
 
 import { describe, it, expect } from 'bun:test';

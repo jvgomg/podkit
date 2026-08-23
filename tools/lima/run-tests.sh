@@ -10,8 +10,8 @@
 # `mise run test:linux:cache:clear`) wipes it.
 #
 # VM names:
-#   podkit-tests-debian-glibc — glibc, general Linux env
-#   podkit-tests-alpine-musl — musl, Docker image parity check
+#   podkit-test-glibc — glibc, general Linux env
+#   podkit-test-musl — musl, Docker image parity check
 #
 # Usage:
 #   ./tools/lima/run-tests.sh              # Both VMs
@@ -21,7 +21,7 @@
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
-LIMA_DIR="$REPO_DIR/tools/lima"
+LIMA_DIR="$REPO_DIR/test-packages/lima/vms"
 VM_WORK_DIR="/tmp/podkit-test"
 VM_TURBO_CACHE='$HOME/.cache/podkit-turbo'
 
@@ -146,18 +146,18 @@ target="${1:-all}"
 
 case "$target" in
   debian)
-    ensure_vm "podkit-tests-debian-glibc" "$LIMA_DIR/podkit-tests-debian-glibc.yaml"
-    run_tests "podkit-tests-debian-glibc"
+    ensure_vm "podkit-test-glibc" "$LIMA_DIR/podkit-test-glibc.yaml"
+    run_tests "podkit-test-glibc"
     ;;
   alpine)
-    ensure_vm "podkit-tests-alpine-musl" "$LIMA_DIR/podkit-tests-alpine-musl.yaml"
-    run_tests "podkit-tests-alpine-musl"
+    ensure_vm "podkit-test-musl" "$LIMA_DIR/podkit-test-musl.yaml"
+    run_tests "podkit-test-musl"
     ;;
   all)
-    ensure_vm "podkit-tests-debian-glibc" "$LIMA_DIR/podkit-tests-debian-glibc.yaml"
-    ensure_vm "podkit-tests-alpine-musl" "$LIMA_DIR/podkit-tests-alpine-musl.yaml"
-    run_tests "podkit-tests-debian-glibc"
-    run_tests "podkit-tests-alpine-musl"
+    ensure_vm "podkit-test-glibc" "$LIMA_DIR/podkit-test-glibc.yaml"
+    ensure_vm "podkit-test-musl" "$LIMA_DIR/podkit-test-musl.yaml"
+    run_tests "podkit-test-glibc"
+    run_tests "podkit-test-musl"
     echo ""
     echo "All Linux tests passed."
     ;;

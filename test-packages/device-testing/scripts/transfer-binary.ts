@@ -8,7 +8,8 @@
  * `bun run harness:install` instead.
  *
  * Resolution rules:
- *   - VM defaults to `podkit-device-harness` (override via PODKIT_DEVICE_HARNESS_VM_NAME).
+ *   - VM defaults to the registry's device instance (override via
+ *     PODKIT_DEVICE_HARNESS_VM_NAME).
  *   - Podkit binary resolved from `packages/podkit-cli/bin/podkit-linux-${arch}`
  *     where `${arch}` is `process.arch` mapped to `x64`/`arm64`. Override
  *     via PODKIT_LINUX_BINARY.
@@ -23,6 +24,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { getVm } from '@podkit/lima';
 import { transferBinary } from '../src/runners/lima-test-vm-binary.js';
 import {
   resolveDefaultDummyHcdDaemonBinary,
@@ -49,7 +51,7 @@ function resolvePodkitBinary(): string {
 }
 
 async function main(): Promise<void> {
-  const vmName = process.env['PODKIT_DEVICE_HARNESS_VM_NAME'] ?? 'podkit-device-harness';
+  const vmName = process.env['PODKIT_DEVICE_HARNESS_VM_NAME'] ?? getVm('device').instanceName;
   const podkitPath = resolvePodkitBinary();
 
   if (!fs.existsSync(podkitPath)) {

@@ -114,7 +114,7 @@ describe('transferSystemdUnit (happy path)', () => {
     ]);
 
     const result = await transferSystemdUnit({
-      vmName: 'podkit-device-harness',
+      vmName: 'podkit-device',
       hostUnitPath: hostUnit,
       subprocess: runner,
     });
@@ -122,7 +122,7 @@ describe('transferSystemdUnit (happy path)', () => {
     expect(result.skipped).toBe(false);
     expect(result.reloaded).toBe(true);
     expect(result.hostSha256).toBe(hostSha);
-    expect(result.vmName).toBe('podkit-device-harness');
+    expect(result.vmName).toBe('podkit-device');
     expect(result.vmUnitPath).toBe(DEFAULT_DUMMY_HCD_DAEMON_UNIT_VM_PATH);
 
     expect(calls).toHaveLength(5);
@@ -130,24 +130,24 @@ describe('transferSystemdUnit (happy path)', () => {
     // 1. probe: `limactl shell <vm> -- sh -c 'sha256sum <unit> | awk …'`
     expect(calls[0]!.command).toBe('limactl');
     expect(calls[0]!.args[0]).toBe('shell');
-    expect(calls[0]!.args[1]).toBe('podkit-device-harness');
+    expect(calls[0]!.args[1]).toBe('podkit-device');
     expect(calls[0]!.args[2]).toBe('--');
     expect(calls[0]!.args[3]).toBe('sh');
     expect(calls[0]!.args[4]).toBe('-c');
     expect(calls[0]!.args[5]).toContain('sha256sum');
     expect(calls[0]!.args[5]).toContain(DEFAULT_DUMMY_HCD_DAEMON_UNIT_VM_PATH);
 
-    // 2. copy: `limactl copy <host> podkit-device-harness:/tmp/dummy-hcd-daemon-<uuid>.service`
+    // 2. copy: `limactl copy <host> podkit-device:/tmp/dummy-hcd-daemon-<uuid>.service`
     expect(calls[1]!.args[0]).toBe('copy');
     expect(calls[1]!.args[1]).toBe(hostUnit);
     expect(calls[1]!.args[2]).toMatch(
-      /^podkit-device-harness:\/tmp\/dummy-hcd-daemon-[0-9a-f-]+\.service$/
+      /^podkit-device:\/tmp\/dummy-hcd-daemon-[0-9a-f-]+\.service$/
     );
 
     // 3. install: `limactl shell <vm> -- sudo install -m 0644 <tmp> <vmUnitPath>`
     // -- must come before sudo (separates limactl args from in-VM args).
     expect(calls[2]!.args[0]).toBe('shell');
-    expect(calls[2]!.args[1]).toBe('podkit-device-harness');
+    expect(calls[2]!.args[1]).toBe('podkit-device');
     expect(calls[2]!.args[2]).toBe('--');
     expect(calls[2]!.args[3]).toBe('sudo');
     expect(calls[2]!.args[4]).toBe('install');
@@ -160,7 +160,7 @@ describe('transferSystemdUnit (happy path)', () => {
     // 4. daemon-reload
     expect(calls[3]!.args).toEqual([
       'shell',
-      'podkit-device-harness',
+      'podkit-device',
       '--',
       'sudo',
       'systemctl',
@@ -179,7 +179,7 @@ describe('transferSystemdUnit (happy path)', () => {
     const { runner, calls } = makeScriptedRunner([ok(''), ok(), ok(), ok(), ok()]);
 
     const result = await transferSystemdUnit({
-      vmName: 'podkit-device-harness',
+      vmName: 'podkit-device',
       hostUnitPath: hostUnit,
       vmUnitPath: '/etc/systemd/system/custom@.service',
       subprocess: runner,
@@ -199,7 +199,7 @@ describe('transferSystemdUnit (idempotent on sha256 match)', () => {
     const { runner, calls } = makeScriptedRunner([ok(hostSha + '\n')]);
 
     const result = await transferSystemdUnit({
-      vmName: 'podkit-device-harness',
+      vmName: 'podkit-device',
       hostUnitPath: hostUnit,
       subprocess: runner,
     });
@@ -222,7 +222,7 @@ describe('transferSystemdUnit (idempotent on sha256 match)', () => {
     ]);
 
     const result = await transferSystemdUnit({
-      vmName: 'podkit-device-harness',
+      vmName: 'podkit-device',
       hostUnitPath: hostUnit,
       subprocess: runner,
     });
@@ -244,7 +244,7 @@ describe('transferSystemdUnit (error propagation)', () => {
     let caught: Error | undefined;
     try {
       await transferSystemdUnit({
-        vmName: 'podkit-device-harness',
+        vmName: 'podkit-device',
         hostUnitPath: ghost,
         subprocess: runner,
       });
@@ -258,11 +258,11 @@ describe('transferSystemdUnit (error propagation)', () => {
   });
 
   it('throws when the probe step fails (limactl shell non-zero)', async () => {
-    const { runner } = makeScriptedRunner([fail(1, 'instance "podkit-device-harness" not found')]);
+    const { runner } = makeScriptedRunner([fail(1, 'instance "podkit-device" not found')]);
     let caught: Error | undefined;
     try {
       await transferSystemdUnit({
-        vmName: 'podkit-device-harness',
+        vmName: 'podkit-device',
         hostUnitPath: hostUnit,
         subprocess: runner,
       });
@@ -271,7 +271,7 @@ describe('transferSystemdUnit (error propagation)', () => {
     }
     expect(caught).toBeDefined();
     expect(caught!.message).toMatch(/failed to probe systemd unit/);
-    expect(caught!.message).toContain('podkit-device-harness');
+    expect(caught!.message).toContain('podkit-device');
     expect(caught!.message).toContain('not found');
   });
 
@@ -283,7 +283,7 @@ describe('transferSystemdUnit (error propagation)', () => {
     let caught: Error | undefined;
     try {
       await transferSystemdUnit({
-        vmName: 'podkit-device-harness',
+        vmName: 'podkit-device',
         hostUnitPath: hostUnit,
         subprocess: runner,
       });
@@ -310,7 +310,7 @@ describe('transferSystemdUnit (error propagation)', () => {
     let caught: Error | undefined;
     try {
       await transferSystemdUnit({
-        vmName: 'podkit-device-harness',
+        vmName: 'podkit-device',
         hostUnitPath: hostUnit,
         subprocess: runner,
       });
@@ -344,7 +344,7 @@ describe('transferSystemdUnit (error propagation)', () => {
     let caught: Error | undefined;
     try {
       await transferSystemdUnit({
-        vmName: 'podkit-device-harness',
+        vmName: 'podkit-device',
         hostUnitPath: hostUnit,
         subprocess: runner,
       });
@@ -384,12 +384,12 @@ describe('transferSystemdUnit (atomicity)', () => {
     const b = makeScriptedRunner([ok(''), ok(), ok(), ok(), ok()]);
 
     await transferSystemdUnit({
-      vmName: 'podkit-device-harness',
+      vmName: 'podkit-device',
       hostUnitPath: hostUnit,
       subprocess: a.runner,
     });
     await transferSystemdUnit({
-      vmName: 'podkit-device-harness',
+      vmName: 'podkit-device',
       hostUnitPath: hostUnit,
       subprocess: b.runner,
     });
@@ -397,6 +397,6 @@ describe('transferSystemdUnit (atomicity)', () => {
     const tmpA = a.calls[1]!.args[2];
     const tmpB = b.calls[1]!.args[2];
     expect(tmpA).not.toBe(tmpB);
-    expect(tmpA).toMatch(/^podkit-device-harness:\/tmp\/dummy-hcd-daemon-[0-9a-f-]+\.service$/);
+    expect(tmpA).toMatch(/^podkit-device:\/tmp\/dummy-hcd-daemon-[0-9a-f-]+\.service$/);
   });
 });

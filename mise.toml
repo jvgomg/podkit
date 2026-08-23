@@ -80,17 +80,17 @@ run = "tools/lima/run-tests.sh alpine"
 
 [tasks."test:linux:stop"]
 description = "Stop Linux test VMs (preserves state and turbo cache)"
-run = "limactl stop podkit-tests-debian-glibc 2>/dev/null; limactl stop podkit-tests-alpine-musl 2>/dev/null; echo Done."
+run = "limactl stop podkit-test-glibc 2>/dev/null; limactl stop podkit-test-musl 2>/dev/null; echo Done."
 
 [tasks."test:linux:destroy"]
 description = "Delete Linux test VMs entirely (wipes turbo cache too)"
-run = "limactl delete podkit-tests-debian-glibc --force 2>/dev/null; limactl delete podkit-tests-alpine-musl --force 2>/dev/null; echo Done."
+run = "limactl delete podkit-test-glibc --force 2>/dev/null; limactl delete podkit-test-musl --force 2>/dev/null; echo Done."
 
 [tasks."test:linux:cache:clear"]
 description = "Clear turbo cache inside Linux test VMs without deleting them"
 run = """
-limactl shell podkit-tests-debian-glibc -- rm -rf ~/.cache/podkit-turbo 2>/dev/null || true
-limactl shell podkit-tests-alpine-musl -- rm -rf ~/.cache/podkit-turbo 2>/dev/null || true
+limactl shell podkit-test-glibc -- rm -rf ~/.cache/podkit-turbo 2>/dev/null || true
+limactl shell podkit-test-musl -- rm -rf ~/.cache/podkit-turbo 2>/dev/null || true
 echo Done.
 """
 
@@ -100,7 +100,7 @@ echo Done.
 
 [tasks."vipod:create"]
 description = "Create the virtual iPod Lima VM"
-run = "limactl create --name podkit-virtual-ipod tools/lima/podkit-virtual-ipod.yaml"
+run = "limactl create --name podkit-virtual-ipod test-packages/lima/vms/podkit-virtual-ipod.yaml"
 
 [tasks."vipod:start"]
 description = "Start the virtual iPod VM"

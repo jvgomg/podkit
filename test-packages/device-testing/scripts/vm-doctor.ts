@@ -3,7 +3,7 @@
  * Baseline-drift preflight for the device-harness VM.
  *
  * Hashes the host-side baseline sources
- * (`podkit-device-harness.yaml` + `apply-state.sh`) and compares to the
+ * (`podkit-device.yaml` + `apply-state.sh`) and compares to the
  * hash file written by `harness:setup` at
  * `/var/lib/podkit-device-harness/baseline-hash` inside the VM. A mismatch
  * means the running VM was provisioned from a different version of the
@@ -30,16 +30,14 @@
  * @module
  */
 
-import * as path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
 import { instanceStatus, LIMA_DEVICE_HARNESS_VM_NAME } from '../src/runners/lima-test-vm.js';
 import { runLimactl } from '../src/runners/lima-limactl.js';
 import { defaultSubprocessRunner } from '../src/subprocess.js';
-import { computeBaselineHash, BASELINE_VM_HASH_PATH } from '../src/baseline-hash.js';
-
-const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
-const PACKAGE_ROOT = path.resolve(SCRIPT_DIR, '..');
+import {
+  computeBaselineHash,
+  deviceBaselineFiles,
+  BASELINE_VM_HASH_PATH,
+} from '../src/baseline-hash.js';
 
 function remediation(reason: string): string {
   return [
@@ -80,7 +78,7 @@ async function main(): Promise<number> {
   }
 
   // 2. Compute host-side baseline hash.
-  const { combinedSha, files } = computeBaselineHash(PACKAGE_ROOT);
+  const { combinedSha, files } = computeBaselineHash(deviceBaselineFiles());
 
   // 3. Read VM-side hash. Absence is treated as drift — the VM exists but
   //    was never sealed by `harness:setup`. (A pre-vm-doctor VM created
@@ -119,7 +117,7 @@ async function main(): Promise<number> {
   }
 
   if (vmHash !== combinedSha) {
-    const driftedNames = files.map((f) => `  - ${f.relPath}`).join('\n');
+    const driftedNames = files.map((f) => `  - ${f.label}`).join('\n');
     process.stderr.write(
       remediation(
         `baseline drift detected.\n` +

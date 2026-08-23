@@ -33,12 +33,12 @@ set -eu
 # ---------------------------------------------------------------------------
 
 # Packages required to be present in the `healthy` state. Mirrors the apt
-# install list in test-packages/device-testing/lima/podkit-device-harness.yaml.
+# install list in test-packages/lima/vms/podkit-device.yaml.
 HEALTHY_PACKAGES="ffmpeg libgpod4 libgpod-common libglib2.0-0"
 
 # Kernel modules required to be loaded in the `healthy` state. Mirrors the
-# /etc/modules-load.d/podkit-device-harness.conf list in podkit-device-harness.yaml. `sg` is the
-# SCSI generic driver — /dev/sg* nodes are required by the `inquiry-methods`
+# /etc/modules-load.d/podkit-device-harness.conf list in podkit-device.yaml. `sg` is
+# the SCSI generic driver — /dev/sg* nodes are required by the `inquiry-methods`
 # doctor check.
 HEALTHY_MODULES="dummy_hcd libcomposite usb_f_mass_storage usb_f_fs sg"
 

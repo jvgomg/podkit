@@ -4,7 +4,7 @@
  *
  * Boots the FunctionFS userspace daemon that synthesises an iPod-shaped USB
  * device on Linux `dummy_hcd` for the named persona. Runs inside the
- * `podkit-device-harness` Lima VM (see `test-packages/device-testing/lima/podkit-device-harness.yaml`)
+ * `podkit-device` Lima VM (see `test-packages/lima/vms/podkit-device.yaml`)
  * after being delivered as a `bun build --compile` binary at
  * `/usr/local/bin/dummy-hcd-daemon`.
  *

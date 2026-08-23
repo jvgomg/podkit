@@ -40,7 +40,7 @@ export const DEFAULT_DUMMY_HCD_DAEMON_UNIT_VM_PATH =
 
 /** Options for {@link transferSystemdUnit}. */
 export interface TransferSystemdUnitOpts {
-  /** Lima instance name (e.g. `podkit-device-harness`). */
+  /** Lima instance name (e.g. `podkit-device`). */
   vmName: string;
   /**
    * Absolute path to the host-side unit file. Defaults to the in-repo

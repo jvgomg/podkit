@@ -242,7 +242,7 @@
         "src/runners/**",
         "src/runtime.ts",
         "src/subprocess.ts",
-        "$TURBO_ROOT$/test-packages/device-testing/lima/**",
+        "$TURBO_ROOT$/test-packages/lima/vms/podkit-device.yaml",
         "$TURBO_ROOT$/test-packages/device-testing/scripts/apply-state.sh",
         "package.json",
         "bunfig.toml"
@@ -283,7 +283,7 @@
         "src/runners/lima-test-vm.ts",
         "src/runners/lima-limactl.ts",
         "src/subprocess.ts",
-        "lima/podkit-device-harness.yaml",
+        "$TURBO_ROOT$/test-packages/lima/vms/podkit-device.yaml",
         "scripts/apply-state.sh"
       ],
       "outputs": [],
@@ -303,7 +303,7 @@
       "inputs": [
         "src/**",
         "$TURBO_ROOT$/test-packages/device-testing/src/**",
-        "$TURBO_ROOT$/test-packages/device-testing/lima/**",
+        "$TURBO_ROOT$/test-packages/lima/vms/podkit-device.yaml",
         "$TURBO_ROOT$/test-packages/device-testing/scripts/apply-state.sh",
         "package.json",
         "bunfig.toml"
@@ -324,7 +324,7 @@
       "inputs": [
         "src/**",
         "$TURBO_ROOT$/test-packages/device-testing/src/**",
-        "$TURBO_ROOT$/test-packages/device-testing/lima/**",
+        "$TURBO_ROOT$/test-packages/lima/vms/podkit-device.yaml",
         "$TURBO_ROOT$/test-packages/device-testing/scripts/apply-state.sh",
         "package.json",
         "bunfig.toml"
@@ -343,7 +343,7 @@
         "$TURBO_ROOT$/tools/prebuild/build-linux-glibc.sh",
         "$TURBO_ROOT$/tools/prebuild/get-cflags.sh",
         "$TURBO_ROOT$/tools/prebuild/get-ldflags.sh",
-        "$TURBO_ROOT$/test-packages/device-testing/lima/podkit-linux-builder.yaml",
+        "$TURBO_ROOT$/test-packages/lima/vms/podkit-builder-glibc.yaml",
         "$TURBO_ROOT$/bun.lock",
         "scripts/build-linux-prebuild.sh"
       ],
@@ -371,7 +371,7 @@
         "$TURBO_ROOT$/packages/podkit-cli/scripts/select-gpod-prebuild.sh",
         "$TURBO_ROOT$/packages/libgpod-node/prebuilds/linux-x64/**",
         "$TURBO_ROOT$/packages/libgpod-node/prebuilds/linux-arm64/**",
-        "$TURBO_ROOT$/test-packages/device-testing/lima/podkit-linux-builder.yaml",
+        "$TURBO_ROOT$/test-packages/lima/vms/podkit-builder-glibc.yaml",
         "$TURBO_ROOT$/turbo.json",
         "$TURBO_ROOT$/package.json",
         "$TURBO_ROOT$/bun.lock",
@@ -398,7 +398,7 @@
         "$TURBO_ROOT$/tools/prebuild/build-linux-musl.sh",
         "$TURBO_ROOT$/tools/prebuild/get-cflags.sh",
         "$TURBO_ROOT$/tools/prebuild/get-ldflags.sh",
-        "$TURBO_ROOT$/test-packages/device-testing/lima/podkit-musl-builder.yaml",
+        "$TURBO_ROOT$/test-packages/lima/vms/podkit-builder-musl.yaml",
         "$TURBO_ROOT$/bun.lock",
         "scripts/build-musl-prebuild.sh"
       ],
@@ -421,7 +421,7 @@
         "$TURBO_ROOT$/packages/podkit-cli/scripts/select-gpod-prebuild.sh",
         "$TURBO_ROOT$/packages/libgpod-node/prebuilds/linux-x64-musl/**",
         "$TURBO_ROOT$/packages/libgpod-node/prebuilds/linux-arm64-musl/**",
-        "$TURBO_ROOT$/test-packages/device-testing/lima/podkit-musl-builder.yaml",
+        "$TURBO_ROOT$/test-packages/lima/vms/podkit-builder-musl.yaml",
         "$TURBO_ROOT$/turbo.json",
         "$TURBO_ROOT$/package.json",
         "$TURBO_ROOT$/bun.lock",
@@ -438,7 +438,7 @@
       "env": ["PODKIT_HOST_ARCH"],
       "inputs": [
         "$TURBO_ROOT$/tools/gpod-tool/**",
-        "$TURBO_ROOT$/test-packages/device-testing/lima/podkit-linux-builder.yaml",
+        "$TURBO_ROOT$/test-packages/lima/vms/podkit-builder-glibc.yaml",
         "$TURBO_ROOT$/test-packages/device-testing/scripts/build-gpod-tool-linux.sh"
       ],
       "outputs": ["bin/gpod-tool-linux-*"]

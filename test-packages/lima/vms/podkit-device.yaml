@@ -2,15 +2,15 @@
 #
 # Role: run VM integration tests from ADR-016 against the statically-linked
 # podkit linux-x64 binary produced by the builder VM
-# (test-packages/device-testing/lima/podkit-linux-builder.yaml). This VM is deliberately
+# (test-packages/lima/vms/podkit-builder-glibc.yaml). This VM is deliberately
 # stripped of all development tooling so that dev libraries on PATH cannot mask
 # binary linkage problems — the cornerstone of ADR-016's builder/harness split.
 #
-# Boots as Lima instance name: `podkit-device-harness`.
+# Boots as Lima instance name: `podkit-device`.
 #
 # What this VM HAS:
 #   - Debian 12.10 (pinned via explicit cloud-image URL — same point release
-#     as podkit-linux-builder.yaml and podkit-abi-verify.yaml; bump deliberately and in sync)
+#     as podkit-builder-glibc.yaml and podkit-abi-verify.yaml; bump deliberately and in sync)
 #   - `ffmpeg` (apt) — the only system runtime dep podkit users install
 #   - `libgpod4` + `libgpod-common` + `libglib2.0-0` (apt, runtime-only) —
 #     required by the `gpod-tool` test helper. These are NOT -dev packages;
@@ -30,7 +30,7 @@
 #   - /usr/local/bin/gpod-tool — REQUIRED. Transferred unconditionally by
 #     `bun run harness:install` (which builds it via the
 #     `@podkit/gpod-testing#build:linux-binary` turbo task inside the
-#     podkit-linux-builder VM). The legacy `/tmp/gpod-tool` provisioning
+#     podkit-builder-glibc VM). The legacy `/tmp/gpod-tool` provisioning
 #     step below remains for backwards-compat but is normally a no-op.
 #
 # What this VM explicitly DOES NOT have:
@@ -49,17 +49,17 @@
 # the runtime libgpod ABI in this VM is Debian 12.10's, not the static build's.
 #
 # Usage (manual):
-#   limactl start test-packages/device-testing/lima/podkit-device-harness.yaml --name podkit-device-harness
+#   limactl start test-packages/lima/vms/podkit-device.yaml --name podkit-device
 #   # The runner's transferBinary helper handles this in CI; manually for now:
-#   limactl copy packages/podkit-cli/bin/podkit-linux-* podkit-device-harness:/tmp/podkit
-#   limactl shell podkit-device-harness -- sudo install -m 0755 /tmp/podkit /usr/local/bin/podkit
-#   limactl shell podkit-device-harness -- /usr/local/bin/podkit --version
-#   limactl stop podkit-device-harness
+#   limactl copy packages/podkit-cli/bin/podkit-linux-* podkit-device:/tmp/podkit
+#   limactl shell podkit-device -- sudo install -m 0755 /tmp/podkit /usr/local/bin/podkit
+#   limactl shell podkit-device -- /usr/local/bin/podkit --version
+#   limactl stop podkit-device
 #
 # Verifying the binary-only invariant:
-#   limactl shell podkit-device-harness -- which bun node npm   # must return empty
-#   limactl shell podkit-device-harness -- ls /workspaces /Users 2>/dev/null   # must be empty
-#   limactl shell podkit-device-harness -- dpkg -l | grep -E '\-dev '         # must be empty
+#   limactl shell podkit-device -- which bun node npm   # must return empty
+#   limactl shell podkit-device -- ls /workspaces /Users 2>/dev/null   # must be empty
+#   limactl shell podkit-device -- dpkg -l | grep -E '\-dev '         # must be empty
 
 # Pin the Apple Virtualization framework backend. `vz` boots ~5s vs ~30s
 # for `qemu` on aarch64 hosts, and the VM-test state-mutation path uses
@@ -70,7 +70,7 @@
 vmType: 'vz'
 
 images:
-  # Debian 12.10 point release. Pinned in sync with podkit-linux-builder.yaml and
+  # Debian 12.10 point release. Pinned in sync with podkit-builder-glibc.yaml and
   # podkit-abi-verify.yaml — bumping requires updating all three files plus a
   # re-run of the ABI spike to confirm the static binary still loads.
   - location: 'https://cloud.debian.org/images/cloud/bookworm/20250316-2053/debian-12-generic-arm64-20250316-2053.qcow2'
@@ -214,7 +214,7 @@ provision:
       #
       # gpod-tool is a REQUIRED test-time dependency. The default source is
       # `bun run harness:install`, which builds a Linux gpod-tool inside the
-      # podkit-linux-builder VM and transfers it to /usr/local/bin/gpod-tool
+      # podkit-builder-glibc VM and transfers it to /usr/local/bin/gpod-tool
       # post-boot via the harness's transferBinary helper.
       #
       # This provisioning step is the legacy "stage before first boot" path:

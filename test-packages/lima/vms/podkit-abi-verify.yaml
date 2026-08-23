@@ -13,7 +13,7 @@
 #    (`ldd /usr/local/bin/podkit` shows only stable system libs)."
 #
 # Usage:
-#   limactl start test-packages/device-testing/lima/podkit-abi-verify.yaml --name podkit-abi-verify
+#   limactl start test-packages/lima/vms/podkit-abi-verify.yaml --name podkit-abi-verify
 #   limactl copy packages/podkit-cli/bin/podkit podkit-abi-verify:/tmp/podkit
 #   limactl shell podkit-abi-verify -- sudo install -m 0755 /tmp/podkit /usr/local/bin/podkit
 #   limactl shell podkit-abi-verify -- ldd /usr/local/bin/podkit

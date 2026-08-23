@@ -21,7 +21,7 @@
  *   - `ipodNano7gSpaceGray` — the iPod path. USB-inquiry surface; reaches the
  *     iPod doctor renderer via `--scope system` (we do not drive the full iPod
  *     `doctor -d <path>` text flow because gpod-tool is not installed in
- *     `podkit-device-harness` — see "Scope limitations" below).
+ *     `podkit-device` — see "Scope limitations" below).
  *   - `echoMini` — the mass-storage path. Mounted FAT32 backing exercises the
  *     device-bound mass-storage doctor renderer end-to-end (including the
  *     `podkit doctor — Echo Mini at <path>` header, the `Issues:` block for
@@ -71,6 +71,7 @@ import {
   echoMini,
   ipodNano7gBlue,
   ipodNano7gSpaceGray,
+  LIMA_DEVICE_HARNESS_VM_NAME,
 } from '@podkit/device-testing';
 
 // ---------------------------------------------------------------------------
@@ -531,14 +532,14 @@ describe('VM: doctor output contract', () => {
           // 1. Start the daemon (long-lived for the test group).
           const { startDaemonForPersona } = await import('@podkit/device-testing');
           await startDaemonForPersona({
-            vmName: 'podkit-device-harness',
+            vmName: LIMA_DEVICE_HARNESS_VM_NAME,
             personaId: echoMini.id,
           });
 
           // 2. Wait for /dev/sg* enumeration.
           const { waitForScsiGenericEnumeration } = await import('@podkit/device-testing');
           await waitForScsiGenericEnumeration({
-            vmName: 'podkit-device-harness',
+            vmName: LIMA_DEVICE_HARNESS_VM_NAME,
             personaId: echoMini.id,
             timeoutMs: 5_000,
           });
@@ -611,7 +612,7 @@ describe('VM: doctor output contract', () => {
             .catch(() => {});
           const { stopDaemon } = await import('@podkit/device-testing');
           await stopDaemon({
-            vmName: 'podkit-device-harness',
+            vmName: LIMA_DEVICE_HARNESS_VM_NAME,
             personaId: echoMini.id,
           }).catch(() => {});
           throw err;
@@ -631,7 +632,7 @@ describe('VM: doctor output contract', () => {
           .catch(() => {});
         const { stopDaemon } = await import('@podkit/device-testing');
         await stopDaemon({
-          vmName: 'podkit-device-harness',
+          vmName: LIMA_DEVICE_HARNESS_VM_NAME,
           personaId: echoMini.id,
         }).catch(() => {});
       }, VM_COLD_TIMEOUT_MS);

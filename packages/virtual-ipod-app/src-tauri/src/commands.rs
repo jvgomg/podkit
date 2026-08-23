@@ -18,7 +18,7 @@ pub fn vm_status() -> Result<String, String> {
 #[tauri::command]
 pub fn vm_start() -> Result<(), String> {
     if !vm::vm_exists(VM_NAME) {
-        return Err("VM not created. Run: limactl create --name podkit-virtual-ipod tools/lima/podkit-virtual-ipod.yaml".to_string());
+        return Err("VM not created. Run: limactl create --name podkit-virtual-ipod test-packages/lima/vms/podkit-virtual-ipod.yaml".to_string());
     }
     if !vm::vm_running(VM_NAME) {
         vm::start_vm(VM_NAME)?;

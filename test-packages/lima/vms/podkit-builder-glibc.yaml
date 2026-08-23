@@ -9,7 +9,7 @@
 #   - This is the BUILDER VM. It contains the dev toolchain (Bun, Node,
 #     build-essential, libglib2.0-dev, libgdk-pixbuf-2.0-dev, libplist-dev,
 #     cmake, meson, ninja, etc.).
-#   - The TEST VM (test-packages/device-testing/lima/podkit-device-harness.yaml, lands in
+#   - The TEST VM (test-packages/lima/vms/podkit-device.yaml, lands in
 #     TASK-322.01) is deliberately separate and contains NO dev tools so
 #     that dev libraries on PATH cannot mask binary linkage problems.
 #   - DO NOT add test execution to this yaml. Add it to the test VM yaml.
@@ -25,11 +25,11 @@
 # yaml + the CI base image if changed).
 #
 # Usage (manual):
-#   limactl start test-packages/device-testing/lima/podkit-linux-builder.yaml --name podkit-linux-builder
+#   limactl start test-packages/lima/vms/podkit-builder-glibc.yaml --name podkit-builder-glibc
 #   # Lima transparently mounts $HOME, so the repo is visible inside the VM
 #   # at its macOS path. Invoke the build script from the repo:
-#   limactl shell podkit-linux-builder --workdir "$(pwd)" -- bash tools/prebuild/build-linux-glibc.sh
-#   limactl stop podkit-linux-builder
+#   limactl shell podkit-builder-glibc --workdir "$(pwd)" -- bash tools/prebuild/build-linux-glibc.sh
+#   limactl stop podkit-builder-glibc
 #
 # Usage (via turbo on macOS):
 #   bunx turbo run build:linux-prebuild   # → libgpod-node .node addon

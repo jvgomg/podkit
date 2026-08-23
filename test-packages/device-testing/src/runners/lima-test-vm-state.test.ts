@@ -80,7 +80,7 @@ describe('applyState: copy → chmod → exec sequence', () => {
     ]);
 
     await applyState({
-      vmName: 'podkit-device-harness',
+      vmName: 'podkit-device',
       stateId: 'no-ffmpeg',
       subprocess: runner,
       applyStateScript: SCRIPT_PATH,
@@ -90,11 +90,11 @@ describe('applyState: copy → chmod → exec sequence', () => {
 
     expect(calls[0]!.args[0]).toBe('copy');
     expect(calls[0]!.args[1]).toBe(SCRIPT_PATH);
-    expect(calls[0]!.args[2]).toBe('podkit-device-harness:/tmp/apply-state.sh');
+    expect(calls[0]!.args[2]).toBe('podkit-device:/tmp/apply-state.sh');
 
     expect(calls[1]!.args).toEqual([
       'shell',
-      'podkit-device-harness',
+      'podkit-device',
       '--',
       'sudo',
       'chmod',
@@ -104,7 +104,7 @@ describe('applyState: copy → chmod → exec sequence', () => {
 
     expect(calls[2]!.args).toEqual([
       'shell',
-      'podkit-device-harness',
+      'podkit-device',
       '--',
       'sudo',
       '/tmp/apply-state.sh',
@@ -115,7 +115,7 @@ describe('applyState: copy → chmod → exec sequence', () => {
   it('returns void (no snapshot metadata in the result)', async () => {
     const { runner } = makeScriptedRunner([ok(), ok(), ok()]);
     const result = await applyState({
-      vmName: 'podkit-device-harness',
+      vmName: 'podkit-device',
       stateId: 'healthy',
       subprocess: runner,
       applyStateScript: SCRIPT_PATH,
@@ -150,7 +150,7 @@ describe('applyState: every SystemState id is supported', () => {
       ]);
 
       await applyState({
-        vmName: 'podkit-device-harness',
+        vmName: 'podkit-device',
         stateId,
         subprocess: runner,
         applyStateScript: SCRIPT_PATH,
@@ -176,7 +176,7 @@ describe('applyState: error propagation', () => {
     let caught: Error | undefined;
     try {
       await applyState({
-        vmName: 'podkit-device-harness',
+        vmName: 'podkit-device',
         stateId: 'no-ffmpeg',
         subprocess: runner,
         applyStateScript: SCRIPT_PATH,
@@ -197,7 +197,7 @@ describe('applyState: error propagation', () => {
     let caught: Error | undefined;
     try {
       await applyState({
-        vmName: 'podkit-device-harness',
+        vmName: 'podkit-device',
         stateId: 'no-ffmpeg',
         subprocess: runner,
         applyStateScript: SCRIPT_PATH,
@@ -219,7 +219,7 @@ describe('applyState: error propagation', () => {
     let caught: Error | undefined;
     try {
       await applyState({
-        vmName: 'podkit-device-harness',
+        vmName: 'podkit-device',
         stateId: 'no-ffmpeg',
         subprocess: runner,
         applyStateScript: SCRIPT_PATH,

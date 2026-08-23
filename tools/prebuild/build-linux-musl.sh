@@ -3,7 +3,7 @@
 # Shared Linux musl native-build entry point.
 #
 # Single source of truth invoked by:
-#   - test-packages/device-testing/lima/podkit-musl-builder.yaml (local builds
+#   - test-packages/lima/vms/podkit-builder-musl.yaml (local builds
 #     on macOS via the Lima Alpine builder VM)
 #   - .github/workflows/prebuild.yml     (CI prebuilds for linux-{x64,arm64}-musl,
 #     which run inside alpine:3.21 containers and open-code equivalent steps)
@@ -61,7 +61,7 @@ log() { echo "==> [build-linux-musl] $1"; }
 # ---------------------------------------------------------------------------
 if [ "$(uname)" != "Linux" ]; then
   echo "ERROR: build-linux-musl.sh must run on Linux (uname=$(uname))." >&2
-  echo "       Run via the Lima Alpine builder VM on macOS: limactl shell podkit-musl-builder -- bash $0" >&2
+  echo "       Run via the Lima Alpine builder VM on macOS: limactl shell podkit-builder-musl -- bash $0" >&2
   exit 1
 fi
 

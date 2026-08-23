@@ -3,7 +3,7 @@
 # Shared Linux glibc native-build entry point.
 #
 # Single source of truth invoked by:
-#   - test-packages/device-testing/lima/podkit-linux-builder.yaml (local builds on macOS via Lima)
+#   - test-packages/lima/vms/podkit-builder-glibc.yaml (local builds on macOS via Lima)
 #   - .github/workflows/prebuild.yml         (CI prebuilds for linux-x64/arm64 glibc)
 #   - .github/workflows/build-platform.yml   (glibc release CLI binary for Homebrew/Debian, in ubuntu:20.04)
 #
@@ -59,7 +59,7 @@ log() { echo "==> [build-linux-glibc] $1"; }
 # ---------------------------------------------------------------------------
 if [ "$(uname)" != "Linux" ]; then
   echo "ERROR: build-linux-glibc.sh must run on Linux (uname=$(uname))." >&2
-  echo "       Run via the Lima builder VM on macOS: limactl shell podkit-linux-builder -- bash $0" >&2
+  echo "       Run via the Lima builder VM on macOS: limactl shell podkit-builder-glibc -- bash $0" >&2
   exit 1
 fi
 

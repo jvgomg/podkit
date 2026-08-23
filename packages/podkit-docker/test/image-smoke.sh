@@ -22,7 +22,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 CTX="$SCRIPT_DIR/smoke-context"
 IMAGE="podkit-smoke:test"
-VM_NAME="${BUILDER_VM_NAME:-podkit-linux-builder}"
+VM_NAME="${BUILDER_VM_NAME:-podkit-builder-glibc}"
 VM_SRC="/tmp/podkit-builder-src"
 
 log() { echo "==> [image-smoke] $1"; }

@@ -14,7 +14,7 @@
  * out-of-band — e.g. when debugging the synthesis recipe, or to confirm the
  * deterministic-bytes claim from the command line.
  *
- * Each persona's image is built inside `podkit-device-harness` (mkfs.vfat is
+ * Each persona's image is built inside `podkit-device` (mkfs.vfat is
  * provisioned there) at `/var/device-testing/backing-files/<id>.img`.
  *
  * Deterministic synthesis:
@@ -29,10 +29,11 @@
  * @module
  */
 
+import { getVm } from '@podkit/lima';
 import { personas as defaultPersonas } from '../src/personas/index.js';
 import { ensureBackingFile } from '../src/runners/lima-test-vm-backing-files.js';
 
-const VM_NAME = process.env['PODKIT_DEVICE_HARNESS_VM_NAME'] ?? 'podkit-device-harness';
+const VM_NAME = process.env['PODKIT_DEVICE_HARNESS_VM_NAME'] ?? getVm('device').instanceName;
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);

@@ -2,7 +2,7 @@
 #
 # Role: compile native prebuilds (@podkit/libgpod-node) and the standalone
 # podkit binary for Linux **musl** (Alpine). This is the musl sibling of
-# podkit-linux-builder.yaml (Debian/glibc). Invoked from macOS via the turbo
+# podkit-builder-glibc.yaml (Debian/glibc). Invoked from macOS via the turbo
 # tasks `build:musl-prebuild` and `build:musl-binary`.
 #
 # Why a separate musl builder:
@@ -16,7 +16,7 @@
 #   - This is a BUILDER VM. It contains the dev toolchain (Bun, Node,
 #     build-base, glib-dev/glib-static, libplist-dev, cmake, meson, ninja,
 #     etc.).
-#   - The TEST VM (podkit-tests-alpine-musl.yaml) is deliberately separate.
+#   - The TEST VM (podkit-test-musl.yaml) is deliberately separate.
 #   - DO NOT add test execution to this yaml. Builders must NOT run tests and
 #     must FAIL LOUDLY on provisioning errors (no `|| echo WARN` masks).
 #
@@ -30,14 +30,14 @@
 # Image pinning: Alpine 3.21.7 aarch64/x86_64 cloud images give EXACT parity
 # with the Docker base (alpine:3.21). Bumping the point release is an
 # intentional act (update both URLs). Note this differs from the *test* VM at
-# tools/lima/podkit-tests-alpine-musl.yaml, which pins Alpine 3.23 (the test
+# test-packages/lima/vms/podkit-test-musl.yaml, which pins Alpine 3.23 (the test
 # suite tolerates the minor drift); the *builder* here matches the Docker
 # runtime exactly because the produced binaries ship in that image.
 #
 # Usage (manual):
-#   limactl start test-packages/device-testing/lima/podkit-musl-builder.yaml --name podkit-musl-builder
-#   limactl shell podkit-musl-builder --workdir "$(pwd)" -- bash tools/prebuild/build-linux-musl.sh
-#   limactl stop podkit-musl-builder
+#   limactl start test-packages/lima/vms/podkit-builder-musl.yaml --name podkit-builder-musl
+#   limactl shell podkit-builder-musl --workdir "$(pwd)" -- bash tools/prebuild/build-linux-musl.sh
+#   limactl stop podkit-builder-musl
 #
 # Usage (via the host driver scripts on macOS):
 #   bash test-packages/device-testing/scripts/build-musl-prebuild.sh  # → .node addon

@@ -54,6 +54,7 @@ import {
   stopDaemon,
   waitForScsiGenericEnumeration,
   resolveDefaultPodkitDebugBinary,
+  LIMA_DEVICE_HARNESS_VM_NAME,
 } from '@podkit/device-testing';
 
 // ---------------------------------------------------------------------------
@@ -277,7 +278,7 @@ function spawnPausedSync(pauseKey: string): PausedSyncHandle {
     `/usr/local/bin/podkit-debug --config ${VM_CONFIG_PATH} sync -d ${DEVICE_NAME}`;
   // `setsid` ensures the in-VM podkit-debug runs in its own process group
   // so `pkill` can target it cleanly without sweeping the limactl shell.
-  const child = spawn('limactl', ['shell', 'podkit-device-harness', '--', 'sh', '-c', inner], {
+  const child = spawn('limactl', ['shell', LIMA_DEVICE_HARNESS_VM_NAME, '--', 'sh', '-c', inner], {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   child.stdout?.resume();
@@ -417,11 +418,11 @@ describe('VM: pre-sync sweep SIGKILL round-trip', () => {
     // Echo-mini daemon stays running across the whole suite — we mount
     // its backing file once and reuse for every scenario.
     await startDaemonForPersona({
-      vmName: 'podkit-device-harness',
+      vmName: LIMA_DEVICE_HARNESS_VM_NAME,
       personaId: echoMini.id,
     });
     await waitForScsiGenericEnumeration({
-      vmName: 'podkit-device-harness',
+      vmName: LIMA_DEVICE_HARNESS_VM_NAME,
       personaId: echoMini.id,
       timeoutMs: 5_000,
     });
@@ -434,7 +435,7 @@ describe('VM: pre-sync sweep SIGKILL round-trip', () => {
     await runVm(`rm -rf ${VM_SOURCE_DIR} ${VM_CONFIG_PATH}`).catch(() => {});
     await runVm('rm -rf /tmp/podkit-transcode-* 2>/dev/null || true').catch(() => {});
     await stopDaemon({
-      vmName: 'podkit-device-harness',
+      vmName: LIMA_DEVICE_HARNESS_VM_NAME,
       personaId: echoMini.id,
     }).catch(() => {});
     await limaTestVmRunner.teardown();

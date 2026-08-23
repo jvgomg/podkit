@@ -1,12 +1,16 @@
 /**
  * Unit tests for the typed VM registry. Asserts the external contract: every
  * VM is looked up by id OR instance name, unknown lookups fail loudly, ids are
- * clean identifiers, instance names keep the `podkit-` prefix, and exactly one
- * VM is baseline-tracked (the device-synthesis harness).
+ * clean identifiers, instance names keep the `podkit-` prefix, every yaml
+ * really exists under the package's `vms/` directory, and exactly one VM is
+ * baseline-tracked (the device-synthesis harness).
  */
 
 import { describe, it, expect } from 'bun:test';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 
+import { limaPackageRoot } from './paths.js';
 import {
   listVms,
   getVm,
@@ -55,15 +59,38 @@ describe('VM registry', () => {
     expect(tracked[0]!.id).toBe('device');
   });
 
-  it('keeps the current (pre-rename) instance names', () => {
+  it('maps each id to its Lima instance name', () => {
     const byId = (id: string): VmDefinition => getVm(id);
-    expect(byId('device').instanceName).toBe('podkit-device-harness');
-    expect(byId('builderGlibc').instanceName).toBe('podkit-linux-builder');
-    expect(byId('builderMusl').instanceName).toBe('podkit-musl-builder');
-    expect(byId('testGlibc').instanceName).toBe('podkit-tests-debian-glibc');
-    expect(byId('testMusl').instanceName).toBe('podkit-tests-alpine-musl');
-    expect(byId('demo').instanceName).toBe('podkit-virtual-ipod');
+    expect(byId('device').instanceName).toBe('podkit-device');
+    expect(byId('builderGlibc').instanceName).toBe('podkit-builder-glibc');
+    expect(byId('builderMusl').instanceName).toBe('podkit-builder-musl');
+    expect(byId('testGlibc').instanceName).toBe('podkit-test-glibc');
+    expect(byId('testMusl').instanceName).toBe('podkit-test-musl');
+    expect(byId('virtualIpod').instanceName).toBe('podkit-virtual-ipod');
     expect(byId('abiVerify').instanceName).toBe('podkit-abi-verify');
+  });
+
+  it('resolves every yaml to a file that exists under the package vms/ directory', () => {
+    for (const vm of listVms()) {
+      expect(vm.yamlPath).toBe(path.join(limaPackageRoot(), 'vms', `${vm.instanceName}.yaml`));
+      expect(fs.existsSync(vm.yamlPath)).toBe(true);
+    }
+  });
+
+  it('exposes yamlPath as an accessor so no path is resolved at module load', () => {
+    // Load-bearing: this registry is re-exported into a single-file bundle
+    // whose `import.meta.url` has no source-tree marker for the repo-root
+    // anchor to latch onto. Turning `yamlPath` into a plain field would move
+    // the resolution to import time and crash that bundle on startup.
+    for (const vm of listVms()) {
+      const descriptor = Object.getOwnPropertyDescriptor(vm, 'yamlPath');
+      expect(typeof descriptor?.get).toBe('function');
+      expect(descriptor?.value).toBeUndefined();
+    }
+  });
+
+  it('derives the device-harness constant from the registry', () => {
+    expect(LIMA_DEVICE_HARNESS_VM_NAME).toBe(deviceVm().instanceName);
   });
 
   it('exposes the device harness via the deviceVm() convenience', () => {

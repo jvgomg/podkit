@@ -16,10 +16,10 @@
 
 set -euo pipefail
 
-VM_NAME="${MUSL_BUILDER_VM_NAME:-podkit-musl-builder}"
+VM_NAME="${MUSL_BUILDER_VM_NAME:-podkit-builder-musl}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-BUILDER_YAML="$REPO_ROOT/test-packages/device-testing/lima/podkit-musl-builder.yaml"
+BUILDER_YAML="$REPO_ROOT/test-packages/lima/vms/podkit-builder-musl.yaml"
 
 log() { echo "==> [build:musl-prebuild] $1"; }
 

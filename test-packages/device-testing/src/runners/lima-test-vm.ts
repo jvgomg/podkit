@@ -10,7 +10,7 @@
  * Lifecycle (per ADR-016 §"VM"):
  *
  *   isAvailable() — returns true iff `limactl` is in PATH AND the
- *                   `podkit-device-harness` instance exists. Never throws.
+ *                   `podkit-device` instance exists. Never throws.
  *   prepare()     — boots the VM if stopped, transfers the podkit binary
  *                   (fatal if missing) and gpod-tool (fatal if missing —
  *                   produce one with `bun run harness:install`), transfers
@@ -19,7 +19,7 @@
  *   applyState()  — delegates to applyState({ vmName, stateId }) from
  *                   lima-test-vm-state.ts. Stages and runs apply-state.sh every
  *                   time (~800ms). No snapshot fast-path (see ADR-016).
- *   run()         — `limactl shell podkit-device-harness -- <command>`, honouring
+ *   run()         — `limactl shell podkit-device -- <command>`, honouring
  *                   cwd/env/timeout opts.
  *   teardown()    — no-op between groups; the next applyState() call restores
  *                   the VM to the required state. Does NOT shut down the VM.
@@ -54,6 +54,7 @@ import { transferSystemdUnit } from './lima-test-vm-systemd.js';
 import { ensureBackingFilesForPersonas } from './lima-test-vm-backing-files.js';
 import {
   LIMA_DEVICE_HARNESS_VM_NAME,
+  getVm,
   instanceStatus,
   resolveDefaultPodkitBinary,
   resolveDefaultPodkitDebugBinary,
@@ -486,7 +487,7 @@ export function createLimaTestVmRuntime(opts: CreateLimaTestVmRuntimeOpts = {}):
       if (status === 'missing') {
         throw new Error(
           `[lima-test-vm] instance '${vmName}' is not registered with Lima. ` +
-            `Create it with: limactl start test-packages/device-testing/lima/podkit-device-harness.yaml --name ${vmName}`
+            `Create it with: limactl start ${getVm('device').yamlPath} --name ${vmName}`
         );
       }
       if (status === 'stopped') {

@@ -4,8 +4,8 @@
 # Matches the environment of Homebrew Linux users.
 #
 # Usage:
-#   limactl start tools/lima/podkit-tests-debian-glibc.yaml --name=podkit-tests-debian-glibc
-#   limactl shell podkit-tests-debian-glibc
+#   limactl start test-packages/lima/vms/podkit-test-glibc.yaml --name=podkit-test-glibc
+#   limactl shell podkit-test-glibc
 #   # Or use the wrapper: mise run test:linux:debian
 
 images:
