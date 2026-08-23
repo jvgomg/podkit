@@ -3,10 +3,10 @@ id: TASK-480.02
 title: >-
   P1 — extract @podkit/lima core (registry + podkit-vm CLI + lock + runner
   re-home + shim)
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-23 13:31'
-updated_date: '2026-08-23 14:48'
+updated_date: '2026-08-23 18:31'
 labels:
   - testing
   - ci
