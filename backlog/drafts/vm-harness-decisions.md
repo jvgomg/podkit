@@ -27,8 +27,11 @@ implementation plan must conform to these.
 - **D5 — Package name: `@podkit/lima`.** Names the substrate precisely; frees "harness"/"vm"/
   "device-testing" for higher-level test concepts. Accepts coupling the name to the Lima backend
   (podkit's VM story is Lima-on-macOS; no realistic second backend).
-- **D6 — Placement: `packages/lima/`.** (Maintainer chose `packages/` over a new `tooling/*`
-  workspace or `test-packages/`. Private/unpublished, but lives in `packages/*` for now.)
+- **D6 — Placement: `test-packages/lima/` (AMENDED).** The maintainer reconsidered: the package is
+  private test/build infra, so `test-packages/` is the honest home (not `packages/*`, which is
+  published-adjacent). `test-packages/*` is already a workspace glob, so no root `package.json`
+  workspaces change is needed, and the `@podkit/lima` package name is independent of directory.
+  (Earlier this was `packages/lima/`; the package location moved, name unchanged.)
 - **D7 — The cut (one core owns config + lifecycle).** `@podkit/lima` owns the Lima **substrate**:
   limactl wrapping (`lima-limactl`), idempotent `ensure*` lifecycle + advisory lock + the shared
   CLI, the **VM config registry (all YAMLs)**, `baseline-hash` + drift + `recover`, and generic

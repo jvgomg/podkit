@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-23 13:31'
+updated_date: '2026-08-23 13:58'
 labels:
   - testing
   - ci
@@ -45,3 +46,9 @@ Per D10/D12 + MF3: relocate the 7 YAMLs from `tools/lima/` + `test-packages/devi
 - [ ] #4 computeBaselineHash signature changed to explicit absolute tracked-file paths; both callers (harness + vm-doctor) updated; declaration order preserved; `bunx turbo run @podkit/device-testing#vm:doctor` no longer crashes and correctly detects drift
 - [ ] #5 After a one-time re-provision, `harness:setup` + a full `test:vm` are green against the renamed/registry-owned VMs
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+LOCATION CORRECTION (supersedes the description): the registry + YAMLs live under **test-packages/lima/** (e.g. test-packages/lima/vms/), NOT packages/lima/. See amended D6 in backlog/drafts/vm-harness-decisions.md.
+<!-- SECTION:NOTES:END -->
