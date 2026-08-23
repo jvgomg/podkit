@@ -43,7 +43,14 @@ if ! command -v limactl >/dev/null 2>&1; then
   exit 1
 fi
 
-# Ensure the builder VM exists and is running.
+# Ensure the builder VM exists and is running. The whole check-then-start is
+# serialised by a cross-process lock so a concurrent turbo task (e.g.
+# gpod-testing#build:linux-binary) can't start the same instance at the same
+# moment and crash the hostagent. Read status INSIDE the lock so the decision
+# is atomic with the action.
+source "$SCRIPT_DIR/vm-builder-lock.sh"
+acquire_vm_lock "$VM_NAME"
+trap 'release_vm_lock "$VM_NAME"' EXIT
 status=$(limactl list --format '{{.Status}}' "$VM_NAME" 2>/dev/null || echo "NotFound")
 case "$status" in
   Running)
@@ -63,6 +70,8 @@ case "$status" in
     limactl start --name="$VM_NAME" "$BUILDER_YAML"
     ;;
 esac
+release_vm_lock "$VM_NAME"
+trap - EXIT
 
 # VM-local build tree. Note: /tmp inside the VM is VM-local tmpfs (or ext4
 # on /), NOT a host mount. Anything written here is invisible to macOS until

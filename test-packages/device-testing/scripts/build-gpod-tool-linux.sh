@@ -28,8 +28,15 @@ if ! command -v limactl >/dev/null 2>&1; then
   exit 1
 fi
 
+# Serialise the check-then-start against the concurrent build:linux-prebuild
+# task (which may be creating this same builder VM right now) via a shared
+# cross-process lock; read status INSIDE the lock so the decision is atomic.
+source "$SCRIPT_DIR/vm-builder-lock.sh"
+acquire_vm_lock "$VM_NAME"
+trap 'release_vm_lock "$VM_NAME"' EXIT
 status=$(limactl list --format '{{.Status}}' "$VM_NAME" 2>/dev/null || echo "NotFound")
 if [ "$status" = "NotFound" ] || [ "$status" = "Broken" ]; then
+  release_vm_lock "$VM_NAME"; trap - EXIT
   echo "ERROR: builder VM '$VM_NAME' not available (state=$status). Run" >&2
   echo "       bunx turbo run @podkit/device-testing#build:linux-prebuild first." >&2
   exit 1
@@ -38,6 +45,8 @@ if [ "$status" = "Stopped" ]; then
   log "starting builder VM '$VM_NAME'..."
   limactl start "$VM_NAME"
 fi
+release_vm_lock "$VM_NAME"
+trap - EXIT
 
 # Match the arch suffix to the convention used by the sibling builds
 # (vmArch() in lima-test-vm.ts): arm64 / x64 — not aarch64 / x86_64.
