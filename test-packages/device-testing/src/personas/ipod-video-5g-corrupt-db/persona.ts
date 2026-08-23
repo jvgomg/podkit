@@ -28,7 +28,10 @@
  */
 
 import type { DevicePersona } from '../types.js';
-import sysInfoExtendedXml from '../ipod-video-5g-iflash-1tb/raw/sysinfo-extended.xml' with { type: 'text' };
+import { asRawXmlText } from '../raw-text.js';
+import sysInfoExtendedXmlRaw from '../ipod-video-5g-iflash-1tb/raw/sysinfo-extended.xml' with { type: 'text' };
+
+const sysInfoExtendedXml = asRawXmlText(sysInfoExtendedXmlRaw);
 
 /**
  * Deliberately-truncated iTunesDB binary.

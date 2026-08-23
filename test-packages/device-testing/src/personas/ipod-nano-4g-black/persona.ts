@@ -18,10 +18,13 @@
  */
 
 import type { DevicePersona } from '../types.js';
-import sysInfoExtendedXml from './raw/sysinfo-extended.xml' with { type: 'text' };
+import { asRawXmlText } from '../raw-text.js';
+import sysInfoExtendedXmlRaw from './raw/sysinfo-extended.xml' with { type: 'text' };
 import diskutilPlist from './raw/diskutil.plist' with { type: 'text' };
 import systemProfilerJson from './raw/system-profiler.json' with { type: 'json' };
 import lsblkJson from './raw/lsblk.json' with { type: 'json' };
+
+const sysInfoExtendedXml = asRawXmlText(sysInfoExtendedXmlRaw);
 
 export const ipodNano4gBlack: DevicePersona = {
   id: 'ipod-nano-4g-black',

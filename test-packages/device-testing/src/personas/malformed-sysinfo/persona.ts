@@ -33,7 +33,10 @@ import type { DevicePersona } from '../types.js';
 // The cut lands mid-element (`<key>MaximumSampleRate<` — incomplete tag),
 // which is the exact failure shape a partial USB read would produce on a
 // flaky device.
-import sysInfoExtendedXml from './raw/sysinfo-extended.xml' with { type: 'text' };
+import { asRawXmlText } from '../raw-text.js';
+import sysInfoExtendedXmlRaw from './raw/sysinfo-extended.xml' with { type: 'text' };
+
+const sysInfoExtendedXml = asRawXmlText(sysInfoExtendedXmlRaw);
 
 export const malformedSysinfo: DevicePersona = {
   id: 'malformed-sysinfo',

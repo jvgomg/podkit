@@ -15,13 +15,17 @@
  * JSON imports do not need a declaration here — `resolveJsonModule: true`
  * in the workspace `tsconfig.json` covers them.
  *
+ * `*.xml` is deliberately **not** declared here. `bun-types` 1.4+ ambiently
+ * declares `*.xml` itself (typed as `Bun.XML.Document`, its default
+ * XML-parsing loader), and TypeScript merges every ambient declaration that
+ * matches a given specifier — a second `declare module '*.xml'` here would
+ * just be folded into bun-types' and lose, since ambient declarations can't
+ * be scoped by import attribute. `.xml` imports are typed `Bun.XML.Document`
+ * as a result; call sites use `asRawXmlText` from `./raw-text.js` to assert
+ * the runtime-true `string` that `type: 'text'` actually produces.
+ *
  * @module
  */
-
-declare module '*.xml' {
-  const content: string;
-  export default content;
-}
 
 declare module '*.plist' {
   const content: string;
