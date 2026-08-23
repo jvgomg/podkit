@@ -3,10 +3,10 @@ id: TASK-480.03
 title: >-
   P2 — consolidate VM configs into the registry + rename instances + fix
   computeBaselineHash (MF3)
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-23 13:31'
-updated_date: '2026-08-23 21:45'
+updated_date: '2026-08-23 22:38'
 labels:
   - testing
   - ci

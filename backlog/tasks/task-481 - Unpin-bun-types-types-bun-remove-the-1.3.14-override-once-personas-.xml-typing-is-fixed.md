@@ -3,10 +3,10 @@ id: TASK-481
 title: >-
   Unpin bun-types/@types/bun (remove the 1.3.14 override once personas' .xml
   typing is fixed)
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-23 14:17'
-updated_date: '2026-08-23 19:59'
+updated_date: '2026-08-23 22:38'
 labels:
   - tooling
   - chore

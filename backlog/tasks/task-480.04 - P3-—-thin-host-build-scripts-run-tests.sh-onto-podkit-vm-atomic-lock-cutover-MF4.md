@@ -3,10 +3,10 @@ id: TASK-480.04
 title: >-
   P3 — thin host build scripts + run-tests.sh onto podkit-vm; atomic lock
   cutover (MF4)
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-23 13:31'
-updated_date: '2026-08-23 20:26'
+updated_date: '2026-08-23 23:51'
 labels:
   - testing
   - ci
@@ -41,12 +41,12 @@ Per D8/D11 + MF4: thin `build-linux-prebuild.sh`, `build-linux-binary.sh`, `buil
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The 5 build wrappers + run-tests.sh call `podkit-vm` for ensure + source-staging; the duplicated status/start/rsync logic is removed and the rsync-exclude lists reconciled
-- [ ] #2 Lock cutover is atomic per VM: no window where two starters of the same VM use different (non-interoperating) locks
-- [ ] #3 vm-builder-lock.sh is retired at an explicit point; nothing still references it
-- [ ] #4 tools/prebuild/* recipes are unchanged and import nothing from @podkit/lima; CI `prebuild.yml` path is unaffected (verify no new Lima/@podkit/lima coupling)
-- [ ] #5 `bun run vm:*` commands replace `harness:*`; a full `harness:setup`/`vm:up` + build path is green
-- [ ] #6 A cold host with zero existing Lima instances completes `bun run harness:setup` in a single invocation — no task aborts because another task had not yet created a builder VM
+- [x] #1 The 5 build wrappers + run-tests.sh call `podkit-vm` for ensure + source-staging; the duplicated status/start/rsync logic is removed and the rsync-exclude lists reconciled
+- [x] #2 Lock cutover is atomic per VM: no window where two starters of the same VM use different (non-interoperating) locks
+- [x] #3 vm-builder-lock.sh is retired at an explicit point; nothing still references it
+- [x] #4 tools/prebuild/* recipes are unchanged and import nothing from @podkit/lima; CI `prebuild.yml` path is unaffected (verify no new Lima/@podkit/lima coupling)
+- [x] #5 `bun run vm:*` commands replace `harness:*`; a full `harness:setup`/`vm:up` + build path is green
+- [x] #6 A cold host with zero existing Lima instances completes `bun run harness:setup` in a single invocation — no task aborts because another task had not yet created a builder VM
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -75,4 +75,34 @@ The repo's established convention for reaching a workspace script is `bun run --
 Whichever is chosen, the shell wrappers need a repo-root-relative path since they run from varying working directories.
 
 Related: `cli.ts` gained an `import.meta.main` guard so the module can be imported by tests without executing. Direct invocation was re-verified after that change and still works correctly.
+
+## Outcome
+
+All six callers thinned onto the CLI; ~-680/+658 lines, wrappers 30-60% smaller.
+
+**Invocation form.** `bun "$REPO_ROOT/test-packages/lima/src/cli.ts" <verb>` everywhere (a `PODKIT_VM` array in each shell script), chosen over `bun run --cwd`: one process instead of two, and no dependence on bun's script resolution from a turbo task's cwd. Proven from all three working directories callers actually have. Root gains `vm:up|down|destroy|status|recover|shell`; `harness:setup`/`install`/`status` stay, since they do device work the substrate deliberately does not (binary staging, systemd unit, baseline seal).
+
+**Exclude reconciliation.** Union of the five build wrappers became `DEFAULT_STAGE_EXCLUDES`, which callers extend rather than replace, so a caller can only prune more. Real drift was fixed: gpod-tool had been shipping `ipod-db/fixtures/databases` and `tools/libgpod-macos/build` into the builder, and glibc-binary was shipping host macOS node-gyp intermediates. `packages/libgpod-node/prebuilds` is deliberately NOT in the floor — the prebuild wrappers exclude it, the binary wrappers must carry it in for `compile.sh` to embed; pinned by a test. `run-tests.sh` keeps its aggressive prunes as a separate array: they would break the build wrappers, which need every workspace present for `bun install --frozen-lockfile`.
+
+**Lock cutover.** Atomic by construction — after this change zero processes take the bash lock, because it is deleted. `lima-test-vm.ts prepare()` was moved onto the shared lock in the same change so that adding `vm:up` as a new device starter did not split the device group.
+
+## Three defects found while implementing
+
+1. **`stageSourceTree` had never been executed and was broken.** It emitted `set -o pipefail` into `sh -c`; the guests' `/bin/sh` is dash (busybox ash on Alpine), which rejects it outright — exit 2 before rsync ran. P1 shipped it untested because the wrappers it was written to replace used `bash -c`. Would have broken every VM build on first adoption.
+2. **The lock's retry budget was a tenth of its documented value.** `factor: 1` pins every delay at `minTimeout`, making `maxTimeout` dead config: 600 x 200ms = 2 minutes, not the "multi-minute cold VM create" the comment claimed. A second starter therefore gave up while the first was still provisioning — which is how the first cold-host attempt failed, with `Lock file is already being held`. Now ~30 minutes, and safe because it is bounded by liveness: a dead holder stops refreshing and is reclaimed within the staleness window. `lockRetryBudgetMs()` makes the budget an assertable number, pinned by tests.
+3. **The streaming runner's timeout was advisory.** It settled on `'close'`, which fires only once the child's stdio pipes shut — and a grandchild inherits them, so a forking `sh -c` deferred rejection until the grandchild exited. It now settles on the timer and escalates SIGTERM to SIGKILL. **Only the Linux test VM caught this**: macOS's `sh` execs where dash forks, so four macOS verification passes missed it.
+
+Output streaming was added for `limactl start|create` because routing them through the buffered `execFile` runner would have swallowed the entire cold-create log, making a ten-minute provision indistinguishable from a hang.
+
+## Verification
+
+- **Cold host, one invocation (AC#6):** destroyed `podkit-builder-glibc`, ran `harness:setup` -> exit 0. `build:linux-prebuild` waited on the lock while `gpod-testing#build:linux-binary` cold-created the VM. This is the exact scenario that failed during P2.
+- `test:vm` **232/0**; docker dist+loopback **9/0**
+- `mise run test:linux:debian` **63/63 tasks, 0 failures** on a cold-created `podkit-test-glibc` — the last unexercised wrapper and the fifth renamed instance
+- lint 0/0, typecheck 38/38, build 21/21; `@podkit/lima` 105 tests locally, 102 in-VM
+- Prebuild artifacts: glibc `.node` byte-identical before/after. The musl artifact changed once then stayed stable across two `--force` runs; musl's exclude set was unchanged by this work, and `bun.lock` (a declared input) moved in the preceding dependency commit, which is the likely cause.
+- D8 holds: `grep` finds no `@podkit/lima` or `podkit-vm` in `tools/prebuild/`, and `prebuild.yml` has an empty diff
+- Lock serialisation re-proven with two concurrent starters; `vm-builder-lock.sh` deleted with no remaining references
+
+**Not fixed, filed as TASK-484:** `gpod-testing#build:linux-binary` and `device-testing#build:linux-binary` still `rsync --delete` into the same `/tmp/podkit-builder-src` concurrently. This caused a real exit-23 failure during P2. The VM lock does not cover it — it guards starts, not staging.
 <!-- SECTION:NOTES:END -->
