@@ -17,7 +17,9 @@
  *   install  <instance>   ensure the VM is running (generic precondition; the
  *                         device-specific binary/unit staging lives in the
  *                         device-testing harness)
- *   doctor   <instance>   baseline-drift check for tracked VMs
+ *   doctor   <instance>   report whether a tracked VM carries a sealed baseline
+ *                         hash (the drift comparison itself belongs to the
+ *                         package that owns the VM's non-YAML inputs)
  *
  * This module is a script entry point, so it prints user-facing output and sets
  * the process exit code — unlike the library modules, which stay quiet.
@@ -25,15 +27,14 @@
  * @module
  */
 
-import * as path from 'node:path';
 import * as readline from 'node:readline';
 import { spawnSync } from 'node:child_process';
 
 import { getVm, listVms, type VmDefinition } from './registry.js';
 import { instanceStatus } from './instance-status.js';
-import { ensureRunning, stop, destroy, recover } from './lifecycle.js';
+import { ensureRunning, stop, destroy, recover, type LifecycleOpts } from './lifecycle.js';
 import { runInVm } from './transport.js';
-import { computeBaselineHash, BASELINE_VM_HASH_PATH } from './baseline-hash.js';
+import { BASELINE_VM_HASH_PATH } from './baseline-hash.js';
 
 const VERBS = [
   'ensure',
@@ -56,7 +57,7 @@ Verbs:
   recover   Destroy then recreate + start the VM
   shell     Open an interactive shell inside the VM
   install   Ensure the VM is running (generic precondition for harness install)
-  doctor    Baseline-drift check for tracked VMs
+  doctor    Report whether a tracked VM carries a sealed baseline hash
 
 <instance> is a registry id or a Lima instance name. Known VMs:
 ${listVms()
@@ -82,29 +83,29 @@ async function confirmPrompt(prompt: string): Promise<boolean> {
   }
 }
 
-async function cmdEnsure(def: VmDefinition): Promise<number> {
+async function cmdEnsure(def: VmDefinition, opts: LifecycleOpts): Promise<number> {
   log(`[podkit-vm] ensuring \`${def.instanceName}\` is running...`);
-  await ensureRunning(def);
-  const status = await instanceStatus(def.instanceName);
+  await ensureRunning(def, opts);
+  const status = await instanceStatus(def.instanceName, opts.subprocess);
   log(`[podkit-vm] \`${def.instanceName}\` is ${status}.`);
   return status === 'running' ? 0 : 1;
 }
 
-async function cmdStatus(def: VmDefinition): Promise<number> {
-  const status = await instanceStatus(def.instanceName);
+async function cmdStatus(def: VmDefinition, opts: LifecycleOpts): Promise<number> {
+  const status = await instanceStatus(def.instanceName, opts.subprocess);
   log(status);
   return 0;
 }
 
-async function cmdStop(def: VmDefinition): Promise<number> {
-  await stop(def);
+async function cmdStop(def: VmDefinition, opts: LifecycleOpts): Promise<number> {
+  await stop(def, opts);
   log(`[podkit-vm] \`${def.instanceName}\` stopped (or already stopped).`);
   return 0;
 }
 
-async function cmdDestroy(def: VmDefinition, args: string[]): Promise<number> {
+async function cmdDestroy(def: VmDefinition, args: string[], opts: LifecycleOpts): Promise<number> {
   const yes = args.includes('--yes');
-  const status = await instanceStatus(def.instanceName);
+  const status = await instanceStatus(def.instanceName, opts.subprocess);
   if (status === 'missing') {
     log(`[podkit-vm] \`${def.instanceName}\` does not exist. Nothing to do.`);
     return 0;
@@ -124,15 +125,15 @@ async function cmdDestroy(def: VmDefinition, args: string[]): Promise<number> {
       return 0;
     }
   }
-  await destroy(def);
+  await destroy(def, opts);
   log(`[podkit-vm] \`${def.instanceName}\` deleted.`);
   return 0;
 }
 
-async function cmdRecover(def: VmDefinition): Promise<number> {
+async function cmdRecover(def: VmDefinition, opts: LifecycleOpts): Promise<number> {
   log(`[podkit-vm] recovering \`${def.instanceName}\` (destroy → recreate → start)...`);
-  await recover(def);
-  const status = await instanceStatus(def.instanceName);
+  await recover(def, opts);
+  const status = await instanceStatus(def.instanceName, opts.subprocess);
   log(`[podkit-vm] \`${def.instanceName}\` is ${status}.`);
   if (def.trackedForBaseline) {
     log(
@@ -152,10 +153,10 @@ function cmdShell(def: VmDefinition): number {
   return result.status ?? 0;
 }
 
-async function cmdInstall(def: VmDefinition): Promise<number> {
+async function cmdInstall(def: VmDefinition, opts: LifecycleOpts): Promise<number> {
   // Generic precondition only: make sure the VM is up. The device-specific
   // binary/unit staging stays in the device-testing harness.
-  const code = await cmdEnsure(def);
+  const code = await cmdEnsure(def, opts);
   if (code !== 0) return code;
   log(
     '[podkit-vm] VM is running. Device-specific binaries + systemd units are staged by ' +
@@ -164,23 +165,19 @@ async function cmdInstall(def: VmDefinition): Promise<number> {
   return 0;
 }
 
-async function cmdDoctor(def: VmDefinition): Promise<number> {
+async function cmdDoctor(def: VmDefinition, opts: LifecycleOpts): Promise<number> {
   if (!def.trackedForBaseline) {
     log(`[podkit-vm] \`${def.instanceName}\` is not baseline-tracked. Nothing to check.`);
     return 0;
   }
-  const status = await instanceStatus(def.instanceName);
+  const status = await instanceStatus(def.instanceName, opts.subprocess);
   if (status !== 'running') {
     errorLog(`[podkit-vm] \`${def.instanceName}\` is ${status} — start it before doctor.`);
     return 1;
   }
-  // The baseline files live in the package that owns the VM's YAML: the YAML is
-  // at `<packageRoot>/lima/<instance>.yaml`, so the package root is two levels
-  // up. This derives the path from the registry — no code dependency on the
-  // consuming package.
-  const packageRoot = path.dirname(path.dirname(def.yamlPath));
-  const { combinedSha, files } = computeBaselineHash(packageRoot);
-  const read = await runInVm(def.instanceName, `cat ${BASELINE_VM_HASH_PATH} 2>/dev/null || true`);
+  const read = await runInVm(def.instanceName, `cat ${BASELINE_VM_HASH_PATH} 2>/dev/null || true`, {
+    subprocess: opts.subprocess,
+  });
   const sealed = read.stdout.trim();
   if (!sealed) {
     errorLog(
@@ -189,27 +186,37 @@ async function cmdDoctor(def: VmDefinition): Promise<number> {
     );
     return 1;
   }
-  if (sealed !== combinedSha) {
-    errorLog(
-      `[podkit-vm] baseline DRIFT for \`${def.instanceName}\`:\n` +
-        `  host   = ${combinedSha}\n` +
-        `  sealed = ${sealed}\n` +
-        `  tracked files: ${files.map((f) => f.relPath).join(', ')}`
-    );
-    return 1;
-  }
-  log(`[podkit-vm] baseline OK for \`${def.instanceName}\` (${combinedSha.slice(0, 12)}...).`);
+  // Comparing the sealed hash against the host source needs the VM's full list
+  // of provisioning inputs, and that list spans packages: this package owns the
+  // Lima YAML, but the rest (for the device harness, `apply-state.sh`) belongs
+  // to the package that provisions the VM. Composing it here would mean a
+  // second, silently-divergent copy of that list, so the comparison stays with
+  // the owning package and this verb reports only what it can see for itself.
+  log(
+    `[podkit-vm] \`${def.instanceName}\` carries a sealed baseline hash ` +
+      `(${sealed.slice(0, 12)}...).\n` +
+      '[podkit-vm] Run `bun run vm:doctor` to compare it against the host sources.'
+  );
   return 0;
 }
 
-async function main(): Promise<number> {
-  const verb = process.argv[2];
-  const instance = process.argv[3];
-  const args = process.argv.slice(4);
+/**
+ * Entry point. `argv` and `opts` default to the real process argv and the real
+ * `limactl`/lock so production invocation is unchanged; tests pass both
+ * explicitly to dispatch against a scripted `SubprocessRunner` and a hermetic
+ * lock directory without touching the real process or a real VM.
+ */
+export async function main(
+  argv: readonly string[] = process.argv.slice(2),
+  opts: LifecycleOpts = {}
+): Promise<number> {
+  const verb = argv[0];
+  const instance = argv[1];
+  const args = argv.slice(2);
 
   if (!verb || !(VERBS as readonly string[]).includes(verb)) {
     process.stderr.write(USAGE);
-    return verb ? 1 : 1;
+    return 1;
   }
   if (!instance) {
     errorLog(`[podkit-vm] verb \`${verb}\` requires an <instance> argument.\n`);
@@ -227,30 +234,34 @@ async function main(): Promise<number> {
 
   switch (verb) {
     case 'ensure':
-      return cmdEnsure(def);
+      return cmdEnsure(def, opts);
     case 'status':
-      return cmdStatus(def);
+      return cmdStatus(def, opts);
     case 'stop':
-      return cmdStop(def);
+      return cmdStop(def, opts);
     case 'destroy':
-      return cmdDestroy(def, args);
+      return cmdDestroy(def, args, opts);
     case 'recover':
-      return cmdRecover(def);
+      return cmdRecover(def, opts);
     case 'shell':
       return cmdShell(def);
     case 'install':
-      return cmdInstall(def);
+      return cmdInstall(def, opts);
     case 'doctor':
-      return cmdDoctor(def);
+      return cmdDoctor(def, opts);
     default:
       process.stderr.write(USAGE);
       return 1;
   }
 }
 
-main()
-  .then((code) => process.exit(code))
-  .catch((err) => {
-    errorLog(`[podkit-vm] unexpected error: ${err instanceof Error ? err.message : String(err)}`);
-    process.exit(1);
-  });
+// Script entry point: only run (and exit the process) when this module is
+// executed directly, not when imported — e.g. by unit tests.
+if (import.meta.main) {
+  main()
+    .then((code) => process.exit(code))
+    .catch((err) => {
+      errorLog(`[podkit-vm] unexpected error: ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
+    });
+}
