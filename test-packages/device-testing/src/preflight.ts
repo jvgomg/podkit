@@ -62,7 +62,7 @@ if (!vmTestsTargeted()) {
 const REMEDIATION = [
   '',
   'To bring the VM up:',
-  '  bun run harness:start         (resume if stopped)',
+  '  bun run vm:up device          (create or resume the VM)',
   '  bun run harness:setup         (first-time setup: creates VM, builds + installs binaries)',
   '  bun run harness:status        (see exactly what state things are in)',
   '',

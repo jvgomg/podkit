@@ -11,8 +11,9 @@
  *                              staging the host build wrappers perform today).
  *
  * Every call is routed through the injected `SubprocessRunner` so the transport
- * is unit-testable with scripted `limactl` outputs. These are the shared
- * primitives; migrating the existing build wrappers onto them is a later phase.
+ * is unit-testable with scripted `limactl` outputs. The host build wrappers and
+ * the Linux test runner all stage through {@link stageSourceTree}, so the
+ * exclude floor and the rsync exit-24 tolerance have exactly one definition.
  *
  * @module
  */
@@ -104,6 +105,53 @@ export async function copyOut(opts: CopyOutOpts): Promise<void> {
   }
 }
 
+/**
+ * The host artefacts that must never ride along into a VM-local source tree.
+ *
+ * Every caller that stages the repo into a VM shares this set; a caller that
+ * needs more prunes passes them as `excludes`, which EXTEND (never replace)
+ * these. Keeping the shared floor in one place is the point: the per-script
+ * copies of this list had drifted, so one wrapper shipped host build
+ * intermediates its sibling did not.
+ *
+ * Each entry earns its place:
+ *   - `node_modules` — host-arch native bindings plus Bun's content-addressed
+ *     `.bun/node-gyp@<hash>` directories. Every VM caller reinstalls in-VM so
+ *     the node-gyp paths baked into a build belong to the VM's realm.
+ *   - `.turbo` — task hashes computed for the host arch mean nothing in the VM.
+ *   - `dist` — rebuilt in-VM.
+ *   - `.git` — weight without value to a build.
+ *   - `packages/libgpod-node/build` — node-gyp intermediates with absolute
+ *     host paths baked into `*.d` dep files; reusing them in the VM produces
+ *     stale-state link failures.
+ *   - `packages/podkit-cli/bin`, `packages/demo/bin` — host binaries that would
+ *     shadow the ones the VM is about to produce.
+ *   - `packages/ipod-db/fixtures/databases` — large generated fixtures.
+ *   - `tools/libgpod-macos/build` — macOS-only build output.
+ *   - `*.bun-build`, `*.img` — transient artefacts; `*.bun-build` in particular
+ *     is the file most likely to vanish mid-rsync (see the exit-24 tolerance).
+ *   - `src-tauri/target` — Rust build output, large and host-specific.
+ *
+ * Deliberately NOT here: `packages/libgpod-node/prebuilds`. The prebuild
+ * wrappers exclude it (they are producing it and want a clean tree); the binary
+ * wrappers must carry it in so `compile.sh` can embed it. Callers state which
+ * they are.
+ */
+export const DEFAULT_STAGE_EXCLUDES: readonly string[] = [
+  'node_modules',
+  '.turbo',
+  'dist',
+  '.git',
+  'packages/libgpod-node/build',
+  'packages/podkit-cli/bin',
+  'packages/demo/bin',
+  'packages/ipod-db/fixtures/databases',
+  'tools/libgpod-macos/build',
+  '*.bun-build',
+  '*.img',
+  'src-tauri/target',
+];
+
 /** Options for {@link stageSourceTree}. */
 export interface StageSourceTreeOpts {
   vmName: string;
@@ -115,20 +163,37 @@ export interface StageSourceTreeOpts {
   hostSrc: string;
   /** Absolute VM-local destination directory (typically under `/tmp`). */
   vmDest: string;
-  /** rsync `--exclude` patterns. */
+  /**
+   * Extra rsync `--exclude` patterns, applied ON TOP OF
+   * {@link DEFAULT_STAGE_EXCLUDES} rather than replacing them.
+   */
   excludes?: readonly string[];
+  /**
+   * Run the in-VM rsync under `sudo`. Needed when the destination lives outside
+   * the VM user's home (e.g. `/opt`).
+   */
+  sudo?: boolean;
   /** DI seam for `limactl`; production callers leave unset. */
   subprocess?: SubprocessRunner;
 }
 
 /**
+ * The rsync exit code meaning "some files vanished before they could be
+ * transferred". A benign race with host-side processes touching files during
+ * the sync window (a `bun build --compile` dropping a `*.bun-build` temp file
+ * is the classic offender), so every staging caller tolerates it — centralised
+ * here rather than restated in each wrapper.
+ */
+const RSYNC_VANISHED_EXIT = 24;
+
+/**
  * rsync the host source tree into a VM-local directory.
  *
  * Mirrors the staging the build wrappers perform: an in-VM `rsync -a --delete`
- * from the host-mounted source to a VM-local `/tmp` tree, with the caller's
- * excludes applied. rsync exit 24 ("some files vanished before they could be
- * transferred") is a benign race with host-side processes touching files
- * mid-sync and is tolerated; any other non-zero exit throws.
+ * from the host-mounted source to a VM-local `/tmp` tree, with
+ * {@link DEFAULT_STAGE_EXCLUDES} plus the caller's extra excludes applied.
+ * rsync exit {@link RSYNC_VANISHED_EXIT} is tolerated; any other non-zero exit
+ * throws.
  */
 export async function stageSourceTree(opts: StageSourceTreeOpts): Promise<void> {
   if (!opts.vmName) throw new Error('stageSourceTree: vmName is required.');
@@ -136,15 +201,19 @@ export async function stageSourceTree(opts: StageSourceTreeOpts): Promise<void> 
   if (!opts.vmDest) throw new Error('stageSourceTree: vmDest is required.');
   const subprocess = opts.subprocess ?? defaultSubprocessRunner;
 
-  const excludeArgs = (opts.excludes ?? [])
+  const excludeArgs = [...DEFAULT_STAGE_EXCLUDES, ...(opts.excludes ?? [])]
     .map((pattern) => `--exclude ${shellQuote(pattern)}`)
     .join(' ');
+  const maybeSudo = opts.sudo ? 'sudo ' : '';
   // Trailing slashes matter: `src/` → contents of src copied INTO dest.
+  // `sh` here is the VM's /bin/sh — dash on Debian, busybox ash on Alpine —
+  // so `set -o pipefail` is NOT available (dash rejects it outright). The
+  // script contains no pipeline, so `set -u` alone is the portable equivalent.
   const script =
-    `set -uo pipefail; ` +
-    `mkdir -p ${shellQuote(opts.vmDest)}; ` +
-    `rsync -a --delete ${excludeArgs} ${shellQuote(`${opts.hostSrc}/`)} ${shellQuote(`${opts.vmDest}/`)}; ` +
-    `rc=$?; if [ "$rc" -ne 0 ] && [ "$rc" -ne 24 ]; then exit "$rc"; fi`;
+    `set -u; ` +
+    `${maybeSudo}mkdir -p ${shellQuote(opts.vmDest)}; ` +
+    `${maybeSudo}rsync -a --delete ${excludeArgs} ${shellQuote(`${opts.hostSrc}/`)} ${shellQuote(`${opts.vmDest}/`)}; ` +
+    `rc=$?; if [ "$rc" -ne 0 ] && [ "$rc" -ne ${RSYNC_VANISHED_EXIT} ]; then exit "$rc"; fi`;
 
   const result = await runLimactl(subprocess, ['shell', opts.vmName, '--', 'sh', '-c', script]);
   if (result.exitCode !== 0) {

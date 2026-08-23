@@ -67,14 +67,21 @@ bun run quality --force          # Same, but invalidate turbo caches first (flag
 bun run quality -- --concurrency=4   # Pass flags to underlying scripts after `--`
 mise run test:linux               # Run tests on Debian + Alpine Linux VMs
 
-# Device-harness VM lifecycle (macOS dev; Lima)
-bun run harness:setup            # First-time: create VM, build + install binaries, seal baseline hash
-bun run harness:start            # Resume a stopped VM
-bun run harness:stop             # Stop the VM (preserves state)
+# Generic Lima VM lifecycle — any registered VM (device, builderGlibc, builderMusl,
+# testGlibc, testMusl, virtualIpod, abiVerify). Every start funnels through one
+# advisory lock, so concurrent callers serialise instead of racing.
+bun run vm:up device             # Create the VM if missing, start it if stopped
+bun run vm:down device           # Stop it (preserves state)
+bun run vm:status device         # running | stopped | missing
+bun run vm:shell device          # Interactive shell inside the VM
+bun run vm:destroy device        # Delete it (--yes to skip confirm)
+bun run vm:recover device        # Destroy → recreate → start a wedged VM
+bun run vm:down builderGlibc     # Same verbs for the Linux builder VMs
+
+# Device-harness provisioning (macOS dev; Lima) — what the substrate does NOT do
+bun run harness:setup            # First-time: bring VM up, build + install binaries, seal baseline hash
 bun run harness:status           # Health check: VM, binaries, systemd unit, kernel modules
 bun run harness:install          # Rebuild + transfer podkit/daemon/gpod-tool/unit (manual; test:vm now does this automatically)
-bun run harness:shell            # Interactive shell inside the VM
-bun run harness:destroy          # Delete the VM entirely (--yes to skip confirm)
 bun run test:vm                  # Run VM tests — auto-runs vm:install (cached) + vm:doctor (drift check) first
 bunx turbo run @podkit/device-testing#vm:install  # Force-refresh the in-VM binary outside test:vm
 bunx turbo run @podkit/device-testing#vm:doctor   # Drift-check only — no install
@@ -305,8 +312,9 @@ Key files to understand:
 | VM test harness | `test-packages/device-testing/src/index.ts` |
 | VM test entry | `test-packages/e2e-vm-tests/src/` |
 | FunctionFS daemon | `test-packages/device-testing-daemon/src/main.ts` |
-| VM test Lima configs | `test-packages/device-testing/lima/` |
+| VM test Lima configs | `test-packages/lima/vms/` |
 | Harness lifecycle script | `test-packages/device-testing/scripts/harness.ts` |
+| VM registry + `podkit-vm` CLI | `test-packages/lima/src/registry.ts`, `test-packages/lima/src/cli.ts` |
 | apply-state.sh | `test-packages/device-testing/scripts/apply-state.sh` |
 | gpod-tool CLI | `tools/gpod-tool/gpod-tool.c` |
 | Demo build | `packages/demo/build.ts` |

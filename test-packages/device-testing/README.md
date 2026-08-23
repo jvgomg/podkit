@@ -6,18 +6,18 @@ A single package consolidates fixtures + runners so unit-test mocks and VM/USB-g
 
 ## Harness lifecycle
 
-Eight developer-facing scripts manage the `podkit-device-harness` Lima VM. All are exposed at the repo root as `bun run harness:<name>`; the implementation lives in [`scripts/harness.ts`](scripts/harness.ts).
+Generic lifecycle for the `podkit-device` Lima VM — and every other registered VM — belongs to the `podkit-vm` CLI in `@podkit/lima`, exposed at the repo root as `bun run vm:<verb> <instance>`. What stays here is the device-specific provisioning the substrate deliberately does not know about; the implementation lives in [`scripts/harness.ts`](scripts/harness.ts).
 
 | Script | What it does |
 |--------|--------------|
-| `harness:create` | `limactl create` the VM (idempotent — no-op if it exists) |
-| `harness:start` | Resume a stopped VM |
-| `harness:stop` | Stop the VM (preserves state) |
-| `harness:destroy` | `limactl delete --force` (prompts unless `--yes`) |
-| `harness:shell` | Interactive shell inside the VM |
+| `vm:up device` | Create the VM if missing, start it if stopped (shares the advisory lock) |
+| `vm:down device` | Stop the VM (preserves state) |
+| `vm:destroy device` | Delete the VM (prompts unless `--yes`) |
+| `vm:shell device` | Interactive shell inside the VM |
+| `vm:recover device` | Destroy → recreate → start a wedged VM |
 | `harness:status` | Health check: VM state, SSH, binaries, systemd unit, kernel modules |
 | `harness:install` | Turbo-build podkit + dummy-hcd-daemon, transfer everything, install the systemd unit |
-| `harness:setup` | First-time onboarding: create + start + install + status |
+| `harness:setup` | First-time onboarding: ensure the VM is up + install + seal the baseline hash |
 
 First-time flow: `bun install && bun run harness:setup && bun run test:vm`.
 

@@ -21,7 +21,7 @@
  * minutes; an explicit error with the exact remediation command is a
  * better UX than silent disruption. The remediation is always:
  *
- *   bun run harness:destroy && bun run harness:setup
+ *   bun run vm:destroy device && bun run harness:setup
  *
  * `harness:setup` writes the current hash post-install (see
  * `cmdSetup` in `harness.ts`).
@@ -44,7 +44,7 @@ function remediation(reason: string): string {
     `[vm:doctor] ${reason}`,
     '',
     'To rebuild the VM from the current source-of-truth files:',
-    '  bun run harness:destroy && bun run harness:setup',
+    '  bun run vm:destroy device --yes && bun run harness:setup',
     '',
     'Skipping this check leaves VM tests observing a VM whose provisioning',
     'does not match the YAML / apply-state.sh on disk.',
@@ -72,7 +72,7 @@ async function main(): Promise<number> {
   if (status === 'stopped') {
     process.stderr.write(
       `[vm:doctor] Lima instance \`${vmName}\` is stopped — cannot check baseline drift.\n` +
-        `[vm:doctor] Run \`bun run harness:start\` first.\n`
+        `[vm:doctor] Run \`bun run vm:up device\` first.\n`
     );
     return 1;
   }

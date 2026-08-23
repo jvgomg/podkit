@@ -1,16 +1,19 @@
 #!/usr/bin/env bun
 /**
- * Developer-facing dispatcher for the device-harness Lima VM lifecycle.
+ * Developer-facing dispatcher for the DEVICE-SPECIFIC part of the harness VM.
  *
  * Subcommands:
- *   create   — `limactl create --name <vm> <yaml>` (idempotent: no-op if instance exists)
- *   start    — `limactl start <vm>` (errors with a hint if the instance is missing)
- *   stop     — `limactl stop <vm>` (silent no-op if absent or already stopped)
- *   destroy  — `limactl delete --force <vm>` (interactive confirm unless --yes)
- *   shell    — interactive `limactl shell <vm>` (stdio inherited)
  *   status   — multi-line health check: VM state, SSH, podkit/daemon/gpod-tool/unit, kernel modules
  *   install  — turbo-build podkit + dummy-hcd-daemon, transfer everything, install systemd unit
- *   setup    — first-time onboarding: create + start + install + status
+ *   setup    — first-time onboarding: ensure the VM is up, install, seal the baseline
+ *
+ * Generic VM lifecycle (create/start/stop/destroy/shell, for this VM and every
+ * other) belongs to `podkit-vm` — the single advisory-lock chokepoint — and is
+ * reachable as `bun run vm:up|vm:down|vm:destroy|vm:shell|vm:status <instance>`.
+ * What stays here is what the substrate deliberately does not know: which
+ * binaries and systemd unit this VM needs, and how its baseline hash is sealed.
+ * `setup` therefore calls the shared `ensureRunning` (same lock as every other
+ * starter) and then does the device-specific work.
  *
  * Intended invocation is via the `harness:*` package.json scripts (which are
  * mirrored at the repo root), not direct. The repo-root aliases let a
@@ -23,11 +26,10 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import * as readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
-import { getVm } from '@podkit/lima';
+import { createVmProvisioningRunner, ensureRunning, getVm } from '@podkit/lima';
 
 import { runLimactl } from '../src/runners/lima-limactl.js';
 import { defaultSubprocessRunner } from '../src/subprocess.js';
@@ -61,175 +63,24 @@ import {
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = path.resolve(SCRIPT_DIR, '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
+const DEVICE_VM = getVm('device');
 const VM = LIMA_DEVICE_HARNESS_VM_NAME;
-const VM_YAML = getVm('device').yamlPath;
-const VM_YAML_REL = path.relative(REPO_ROOT, VM_YAML);
-
-// The builder VM is a separate Lima instance that cross-compiles Linux
-// binaries on macOS hosts (libgpod-node prebuilds + podkit standalone +
-// dummy-hcd-daemon). The build-linux-*.sh scripts auto-create + auto-start
-// it on demand, so a developer rarely needs to touch it directly. The
-// `builder:stop` / `builder:destroy` subcommands exist as escape hatches
-// (free RAM, force a clean rebuild).
-const BUILDER_VM = getVm('builderGlibc').instanceName;
 
 const USAGE = `Usage: bun run scripts/harness.ts <subcommand>
 
 Subcommands:
-  create            Create the Lima VM (idempotent)
-  start             Start (or resume) the VM
-  stop              Stop the VM (preserves state)
-  destroy           Delete the VM (--yes to skip the confirm prompt)
-  shell             Interactive shell inside the VM
   status            Health check: VM + binaries + systemd unit + kernel modules
   install           Build + transfer podkit, daemon, gpod-tool, systemd unit
-  setup             create + start + install + status (first-time onboarding)
-  builder:stop      Stop the Linux-builder VM (rarely needed — auto-managed by build scripts)
-  builder:destroy   Delete the Linux-builder VM (--yes to skip the confirm prompt)
+  setup             ensure the VM is up + install + seal baseline (first-time onboarding)
+
+Generic VM lifecycle lives in \`podkit-vm\`:
+  bun run vm:up ${DEVICE_VM.id}        create/start this VM (or any registered VM)
+  bun run vm:down ${DEVICE_VM.id}      stop it
+  bun run vm:destroy ${DEVICE_VM.id}   delete it
+  bun run vm:shell ${DEVICE_VM.id}     interactive shell
 
 These are intended to be invoked via package.json scripts, not directly.
 `;
-
-// ---------------------------------------------------------------------------
-// Subcommand: create
-// ---------------------------------------------------------------------------
-
-async function cmdCreate(): Promise<number> {
-  const status = await instanceStatus(VM).catch(() => 'missing' as const);
-  if (status !== 'missing') {
-    console.log(
-      `[harness:create] Lima instance \`${VM}\` already exists (status: ${status}). Nothing to do.`
-    );
-    return 0;
-  }
-  // Use spawnSync so the user sees Lima's provisioning output directly (the
-  // runLimactl helper buffers stdout/stderr). `--tty=false` accepts the config
-  // as-is instead of dropping into Lima's interactive config-editor prompt.
-  const result = spawnSync('limactl', ['create', '--tty=false', '--name', VM, VM_YAML_REL], {
-    stdio: 'inherit',
-    cwd: REPO_ROOT,
-  });
-  if (result.error) {
-    console.error(`[harness:create] failed to invoke limactl: ${result.error.message}`);
-    return 1;
-  }
-  return result.status ?? 1;
-}
-
-// ---------------------------------------------------------------------------
-// Subcommand: start
-// ---------------------------------------------------------------------------
-
-async function cmdStart(): Promise<number> {
-  const status = await instanceStatus(VM).catch(() => 'missing' as const);
-  if (status === 'missing') {
-    console.error(
-      `[harness:start] Lima instance \`${VM}\` does not exist. Run \`bun run harness:create\` first.`
-    );
-    return 1;
-  }
-  if (status === 'running') {
-    console.log(
-      `[harness:start] Lima instance \`${VM}\` is already running. Use \`bun run harness:status\` to inspect.`
-    );
-    return 0;
-  }
-  const result = spawnSync('limactl', ['start', VM], { stdio: 'inherit' });
-  if (result.error) {
-    console.error(`[harness:start] failed to invoke limactl: ${result.error.message}`);
-    return 1;
-  }
-  return result.status ?? 1;
-}
-
-// ---------------------------------------------------------------------------
-// Subcommand: stop
-// ---------------------------------------------------------------------------
-
-async function cmdStop(): Promise<number> {
-  const status = await instanceStatus(VM).catch(() => 'missing' as const);
-  if (status === 'missing' || status === 'stopped') {
-    // Silent no-op per brief.
-    return 0;
-  }
-  const result = spawnSync('limactl', ['stop', VM], { stdio: 'inherit' });
-  if (result.error) {
-    console.error(`[harness:stop] failed to invoke limactl: ${result.error.message}`);
-    return 1;
-  }
-  return result.status ?? 1;
-}
-
-// ---------------------------------------------------------------------------
-// Subcommand: destroy
-// ---------------------------------------------------------------------------
-
-async function cmdDestroy(args: string[]): Promise<number> {
-  const yes = args.includes('--yes');
-  const status = await instanceStatus(VM).catch(() => 'missing' as const);
-  if (status === 'missing') {
-    console.log(`[harness:destroy] Lima instance \`${VM}\` does not exist. Nothing to do.`);
-    return 0;
-  }
-  if (!yes) {
-    if (!process.stdin.isTTY) {
-      console.error(
-        `[harness:destroy] refusing to delete \`${VM}\` non-interactively. Pass --yes to confirm.`
-      );
-      return 1;
-    }
-    const confirmed = await confirmPrompt(
-      `About to delete Lima instance \`${VM}\` (current status: ${status}). Continue? [y/N] `
-    );
-    if (!confirmed) {
-      console.log('[harness:destroy] aborted.');
-      return 0;
-    }
-  }
-  const result = spawnSync('limactl', ['delete', '--force', VM], { stdio: 'inherit' });
-  if (result.error) {
-    console.error(`[harness:destroy] failed to invoke limactl: ${result.error.message}`);
-    return 1;
-  }
-  return result.status ?? 1;
-}
-
-async function confirmPrompt(prompt: string): Promise<boolean> {
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  try {
-    const answer = await new Promise<string>((resolve) => rl.question(prompt, resolve));
-    return /^y(es)?$/i.test(answer.trim());
-  } finally {
-    rl.close();
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Subcommand: shell
-// ---------------------------------------------------------------------------
-
-async function cmdShell(): Promise<number> {
-  const status = await instanceStatus(VM).catch(() => 'missing' as const);
-  if (status === 'missing') {
-    console.error(
-      `[harness:shell] Lima instance \`${VM}\` does not exist. Run \`bun run harness:create\` first.`
-    );
-    return 1;
-  }
-  if (status === 'stopped') {
-    console.error(
-      `[harness:shell] Lima instance \`${VM}\` is stopped. Run \`bun run harness:start\` first.`
-    );
-    return 1;
-  }
-  // Inherit stdio so the developer gets a real interactive shell.
-  const result = spawnSync('limactl', ['shell', VM], { stdio: 'inherit' });
-  if (result.error) {
-    console.error(`[harness:shell] failed to invoke limactl: ${result.error.message}`);
-    return 1;
-  }
-  return result.status ?? 0;
-}
 
 // ---------------------------------------------------------------------------
 // Subcommand: status
@@ -280,7 +131,7 @@ async function cmdStatus(): Promise<number> {
   if (status !== 'running') {
     console.log(lines.map(fmtLine).join('\n'));
     console.log('');
-    console.log('Status: NOT READY — run `bun run harness:start`');
+    console.log(`Status: NOT READY — run \`bun run vm:up ${DEVICE_VM.id}\``);
     return 0;
   }
 
@@ -383,7 +234,8 @@ async function cmdInstall(): Promise<number> {
   const status = await instanceStatus(VM).catch(() => 'missing' as const);
   if (status !== 'running') {
     console.error(
-      `[harness:install] Lima instance \`${VM}\` is ${status}. Run \`bun run harness:start\` first.`
+      `[harness:install] Lima instance \`${VM}\` is ${status}. ` +
+        `Run \`bun run vm:up ${DEVICE_VM.id}\` first.`
     );
     return 1;
   }
@@ -521,21 +373,25 @@ async function cmdInstall(): Promise<number> {
 // ---------------------------------------------------------------------------
 
 async function cmdSetup(): Promise<number> {
-  let status = await instanceStatus(VM).catch(() => 'missing' as const);
-  if (status === 'missing') {
-    console.log('[harness:setup] VM missing — creating...');
-    const code = await cmdCreate();
-    if (code !== 0) return code;
-    // After `limactl create`, the VM is typically not started yet.
-    status = await instanceStatus(VM).catch(() => 'missing' as const);
+  // Create-or-start through the shared advisory lock, exactly as every other
+  // starter of any VM does — a build wrapper that boots the builder VM at the
+  // same moment cannot interleave with this one.
+  console.log(`[harness:setup] ensuring \`${VM}\` is running...`);
+  try {
+    await ensureRunning(DEVICE_VM, { subprocess: createVmProvisioningRunner() });
+  } catch (err) {
+    console.error(`[harness:setup] ${err instanceof Error ? err.message : String(err)}`);
+    console.error(
+      `[harness:setup] if \`${VM}\` is wedged, recreate it with: bun run vm:recover ${DEVICE_VM.id}`
+    );
+    return 1;
   }
-  if (status === 'stopped' || status === 'missing') {
-    // `missing` here would be surprising (create just succeeded) but handle
-    // it for completeness — cmdStart will surface the error message.
-    console.log('[harness:setup] starting VM...');
-    const code = await cmdStart();
-    if (code !== 0) return code;
+  const status = await instanceStatus(VM).catch(() => 'missing' as const);
+  if (status !== 'running') {
+    console.error(`[harness:setup] \`${VM}\` is ${status} after ensure — cannot continue.`);
+    return 1;
   }
+
   console.log('[harness:setup] installing binaries + systemd unit...');
   const installCode = await cmdInstall();
   if (installCode !== 0) return installCode;
@@ -598,94 +454,22 @@ async function sealBaselineHash(): Promise<number> {
 }
 
 // ---------------------------------------------------------------------------
-// Subcommand: builder:stop
-// ---------------------------------------------------------------------------
-
-async function cmdBuilderStop(): Promise<number> {
-  const status = await instanceStatus(BUILDER_VM).catch(() => 'missing' as const);
-  if (status === 'missing') {
-    console.log(`[harness:builder:stop] no \`${BUILDER_VM}\` instance — nothing to do.`);
-    return 0;
-  }
-  if (status === 'stopped') {
-    console.log(`[harness:builder:stop] \`${BUILDER_VM}\` is already stopped.`);
-    return 0;
-  }
-  const result = spawnSync('limactl', ['stop', BUILDER_VM], { stdio: 'inherit' });
-  if (result.error) {
-    console.error(`[harness:builder:stop] failed to invoke limactl: ${result.error.message}`);
-    return 1;
-  }
-  return result.status ?? 1;
-}
-
-// ---------------------------------------------------------------------------
-// Subcommand: builder:destroy
-// ---------------------------------------------------------------------------
-
-async function cmdBuilderDestroy(args: string[]): Promise<number> {
-  const status = await instanceStatus(BUILDER_VM).catch(() => 'missing' as const);
-  if (status === 'missing') {
-    console.log(`[harness:builder:destroy] no \`${BUILDER_VM}\` instance — nothing to do.`);
-    return 0;
-  }
-  const yes = args.includes('--yes');
-  if (!yes) {
-    if (!process.stdin.isTTY) {
-      console.error(
-        `[harness:builder:destroy] refusing to delete \`${BUILDER_VM}\` non-interactively. ` +
-          'Pass --yes to confirm.'
-      );
-      return 1;
-    }
-    const confirmed = await confirmPrompt(
-      `About to delete Lima instance \`${BUILDER_VM}\` (current status: ${status}). The next build will re-create it (5–10 min first run). Continue? [y/N] `
-    );
-    if (!confirmed) {
-      console.log('[harness:builder:destroy] aborted.');
-      return 0;
-    }
-  }
-  const result = spawnSync('limactl', ['delete', '--force', BUILDER_VM], { stdio: 'inherit' });
-  if (result.error) {
-    console.error(`[harness:builder:destroy] failed to invoke limactl: ${result.error.message}`);
-    return 1;
-  }
-  return result.status ?? 1;
-}
-
-// ---------------------------------------------------------------------------
 // Dispatcher
 // ---------------------------------------------------------------------------
 
 async function main(): Promise<number> {
   const subcommand = process.argv[2];
-  const args = process.argv.slice(3);
   if (!subcommand) {
     process.stderr.write(USAGE);
     return 1;
   }
   switch (subcommand) {
-    case 'create':
-      return cmdCreate();
-    case 'start':
-      return cmdStart();
-    case 'stop':
-      return cmdStop();
-    case 'destroy':
-      return cmdDestroy(args);
-    case 'shell':
-      return cmdShell();
     case 'status':
       return cmdStatus();
     case 'install':
       return cmdInstall();
     case 'setup':
       return cmdSetup();
-    case 'builder:stop':
-      return cmdBuilderStop();
-    case 'builder:destroy':
-      return cmdBuilderDestroy(args);
     default:
       process.stderr.write(`Unknown subcommand: ${subcommand}\n\n${USAGE}`);
       return 1;

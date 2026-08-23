@@ -70,7 +70,7 @@ bun run test:e2e:docker-dist
 Prerequisites:
 
 - The harness VM must be up: `bun run harness:status` (bring it up with
-  `bun run harness:start` / `bun run harness:setup`).
+  `bun run vm:up device` / `bun run harness:setup`).
 - The musl binaries must exist. `test:e2e:docker-dist` depends on
   `@podkit/device-testing#build:musl-binary`; if they are absent, build them
   first with `bunx turbo run build:musl-binary --filter @podkit/device-testing`.

@@ -31,8 +31,8 @@ linkage problems cannot be masked by dev libraries on PATH.
 ### Start it
 
 ```bash
-bun run harness:create   # one-time: registers the Lima instance
-bun run harness:start    # boots / resumes it
+bun run vm:up device   # one-time: registers the Lima instance
+bun run vm:up device    # boots / resumes it
 ```
 
 (`bun run harness:setup` rolls both steps plus the binary install into one.) The scripts live in [`test-packages/device-testing/scripts/harness.ts`](../scripts/harness.ts); see [agents/device-testing.md §"Quick start"](../../../agents/device-testing.md#quick-start-developer).
@@ -192,7 +192,7 @@ for tag in $(limactl snapshot list podkit-device-harness --quiet | grep '^base-'
 done
 
 # Or nuke the VM entirely (slower; full re-provision on next boot)
-bun run harness:destroy --yes
+bun run vm:destroy device --yes
 bun run harness:setup
 ```
 
@@ -329,7 +329,7 @@ the `STATIC_DEPS_DIR/lib/*.a` checks that the script's verify phase performs.
 
 ### Builder VM is degraded / won't start
 ```bash
-bun run harness:builder:destroy
+bun run vm:destroy builderGlibc
 bun run harness:install               # recreates on first run
 ```
 

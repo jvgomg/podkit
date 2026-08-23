@@ -252,8 +252,11 @@ describe('runtime.prepare', () => {
     expect(installCall).toBeDefined();
   });
 
-  it('boots the VM when stopped', async () => {
+  it('boots the VM when stopped, holding the shared advisory lock', async () => {
     const { runner, calls } = makeScriptedRunner([
+      listJsonStopped(),
+      // The shared `ensureRunning` re-reads the status INSIDE the lock so the
+      // check-then-start decision is atomic across processes.
       listJsonStopped(),
       ok(), // limactl start
       ok(podkitSha), // podkit sha match → skip
@@ -271,11 +274,13 @@ describe('runtime.prepare', () => {
       resolveDummyHcdDaemonUnit: () => daemonUnit,
       resolveGpodToolBinary: () => gpodToolBinary,
       personas: [],
+      lock: { lockDir: tmpRoot },
     });
 
     await runtime.prepare();
 
-    expect(calls[1]!.args).toEqual(['start', LIMA_DEVICE_HARNESS_VM_NAME]);
+    expect(calls[1]!.args).toEqual(['list', '--json']);
+    expect(calls[2]!.args).toEqual(['start', LIMA_DEVICE_HARNESS_VM_NAME]);
   });
 
   it('throws a clear error when the instance is missing entirely', async () => {
@@ -297,7 +302,7 @@ describe('runtime.prepare', () => {
     }
     expect(caught).toBeDefined();
     expect(caught!.message).toContain('is not registered with Lima');
-    expect(caught!.message).toContain('limactl start');
+    expect(caught!.message).toContain('harness:setup');
   });
 
   it('transfers the dummy-hcd-daemon when the host binary exists', async () => {

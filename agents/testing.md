@@ -94,9 +94,9 @@ bun run test --filter <pkg>         # All tests for one package (unit + host + i
 bun test test-packages/<pkg>/src/foo.test.ts  # Single file (bypasses turbo)
 ```
 
-For VM tests: `bun run test:vm` from the repo root (or `bun run --cwd test-packages/device-testing test:vm`). The Lima VM is managed via `bun run harness:setup` (first-time), `harness:start` / `harness:stop`, and `harness:status` — see [agents/device-testing.md §"Quick start"](device-testing.md#quick-start-developer).
+For VM tests: `bun run test:vm` from the repo root (or `bun run --cwd test-packages/device-testing test:vm`). The Lima VM is managed via `bun run harness:setup` (first-time), `vm:up device` / `vm:down device`, and `harness:status` — see [agents/device-testing.md §"Quick start"](device-testing.md#quick-start-developer).
 
-**Auto-rebuild + drift detection.** `bun run test:vm` now turbo-depends on `vm:install` (cached fresh-binary install) and `vm:doctor` (baseline-drift check vs the in-VM hash of yaml + apply-state.sh). Running tests against a stale binary or a drifted VM baseline used to silently produce false RED/GREEN cells; today either condition is caught before tests load. On drift, `vm:doctor` exits 1 with the exact remediation command (`bun run harness:destroy && bun run harness:setup`). Force-refresh outside `test:vm` via `bunx turbo run @podkit/device-testing#vm:install`. Full design in [documents/architecture/testing/vm-build-orchestration.md](../documents/architecture/testing/vm-build-orchestration.md).
+**Auto-rebuild + drift detection.** `bun run test:vm` now turbo-depends on `vm:install` (cached fresh-binary install) and `vm:doctor` (baseline-drift check vs the in-VM hash of yaml + apply-state.sh). Running tests against a stale binary or a drifted VM baseline used to silently produce false RED/GREEN cells; today either condition is caught before tests load. On drift, `vm:doctor` exits 1 with the exact remediation command (`bun run vm:destroy device --yes && bun run harness:setup`). Force-refresh outside `test:vm` via `bunx turbo run @podkit/device-testing#vm:install`. Full design in [documents/architecture/testing/vm-build-orchestration.md](../documents/architecture/testing/vm-build-orchestration.md).
 
 ### Quick-reference: doctor invocations for state assertions
 

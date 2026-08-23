@@ -51,14 +51,15 @@ docker compose -f tools/brew-test/docker-compose.yml up --build --exit-code-from
 """
 
 # ---------------------------------------------------------------------------
-# Device-harness + builder VM lifecycle lives in @podkit/device-testing as
-# `bun run harness:*` package scripts (mirrored at the repo root). The
-# Linux-build turbo tasks (`@podkit/device-testing#build:linux-binary` etc.)
-# auto-create + auto-start the builder VM on demand, so a developer rarely
-# touches it directly. See:
-#   - test-packages/device-testing/scripts/harness.ts (dispatcher)
-#   - root package.json scripts (`harness:setup`, `harness:install`,
-#     `harness:builder:stop`, `harness:builder:destroy`, ...)
+# Generic VM lifecycle lives in @podkit/lima's `podkit-vm` CLI, mirrored at the
+# repo root as `bun run vm:up|vm:down|vm:destroy|vm:status|vm:recover|vm:shell
+# <instance>`. Device-specific provisioning (binaries, systemd unit, baseline
+# hash) stays in @podkit/device-testing as `bun run harness:setup|install|status`.
+# The Linux-build turbo tasks (`@podkit/device-testing#build:linux-binary` etc.)
+# create + start their builder VM on demand through the same CLI, so a developer
+# rarely touches it directly. See:
+#   - test-packages/lima/src/cli.ts (podkit-vm)
+#   - test-packages/device-testing/scripts/harness.ts (device provisioning)
 #   - agents/device-testing.md (developer quick start)
 # ---------------------------------------------------------------------------
 
@@ -78,13 +79,22 @@ run = "tools/lima/run-tests.sh debian"
 description = "Run test suite on Alpine VM (musl — Docker image parity)"
 run = "tools/lima/run-tests.sh alpine"
 
+# Lifecycle routes through the podkit-vm CLI rather than raw limactl so every
+# stop/destroy of these instances shares the one code path (and the one lock)
+# that `run-tests.sh` uses to start them.
 [tasks."test:linux:stop"]
 description = "Stop Linux test VMs (preserves state and turbo cache)"
-run = "limactl stop podkit-test-glibc 2>/dev/null; limactl stop podkit-test-musl 2>/dev/null; echo Done."
+run = """
+bun test-packages/lima/src/cli.ts stop podkit-test-glibc
+bun test-packages/lima/src/cli.ts stop podkit-test-musl
+"""
 
 [tasks."test:linux:destroy"]
 description = "Delete Linux test VMs entirely (wipes turbo cache too)"
-run = "limactl delete podkit-test-glibc --force 2>/dev/null; limactl delete podkit-test-musl --force 2>/dev/null; echo Done."
+run = """
+bun test-packages/lima/src/cli.ts destroy podkit-test-glibc --yes
+bun test-packages/lima/src/cli.ts destroy podkit-test-musl --yes
+"""
 
 [tasks."test:linux:cache:clear"]
 description = "Clear turbo cache inside Linux test VMs without deleting them"
@@ -120,27 +130,19 @@ run = """
 #!/usr/bin/env bash
 set -e
 
-HOST_SRC="/Users/james/Development/projects/podkit"
 VM_DIR="/opt/podkit"
 
+# Staging shares the exclude floor + exit-24 tolerance with every other VM
+# caller. --sudo because /opt is not writable by the VM user; `build` and
+# prebuilds/ are extra prunes because this VM rebuilds the native binding
+# itself. The host source root is the repo the CLI itself lives in, so there is
+# no hard-coded home directory here.
 echo "=== Syncing source to VM-local directory ==="
-limactl shell podkit-virtual-ipod -- sudo bash -c "
-  mkdir -p $VM_DIR
-  rsync -a --delete \
-    --exclude node_modules \
-    --exclude .turbo \
-    --exclude dist \
-    --exclude build \
-    --exclude '.git' \
-    --exclude 'packages/podkit-cli/bin' \
-    --exclude 'packages/demo/bin' \
-    --exclude 'packages/ipod-db/fixtures/databases' \
-    --exclude 'packages/libgpod-node/prebuilds' \
-    --exclude 'tools/libgpod-macos/build' \
-    --exclude '*.img' \
-    --exclude 'src-tauri/target' \
-    $HOST_SRC/ $VM_DIR/
-"
+bun test-packages/lima/src/cli.ts stage podkit-virtual-ipod \
+  --dest "$VM_DIR" \
+  --sudo \
+  --exclude build \
+  --exclude 'packages/libgpod-node/prebuilds'
 
 echo "=== Installing dependencies ==="
 limactl shell podkit-virtual-ipod -- sudo bash -c "cd $VM_DIR && bun install"

@@ -8,6 +8,7 @@
  *
  * Verbs:
  *   ensure   <instance>   create + start the VM if needed (idempotent, locked)
+ *   stage    <instance>   rsync the host source tree into a VM-local directory
  *   status   <instance>   print running | stopped | missing
  *   stop     <instance>   stop the VM (no-op if missing/stopped)
  *   destroy  <instance>   delete the VM (--yes to skip the confirm prompt)
@@ -33,11 +34,14 @@ import { spawnSync } from 'node:child_process';
 import { getVm, listVms, type VmDefinition } from './registry.js';
 import { instanceStatus } from './instance-status.js';
 import { ensureRunning, stop, destroy, recover, type LifecycleOpts } from './lifecycle.js';
-import { runInVm } from './transport.js';
+import { runInVm, stageSourceTree, DEFAULT_STAGE_EXCLUDES } from './transport.js';
 import { BASELINE_VM_HASH_PATH } from './baseline-hash.js';
+import { repoRoot } from './paths.js';
+import { createVmProvisioningRunner } from './streaming-runner.js';
 
 const VERBS = [
   'ensure',
+  'stage',
   'status',
   'stop',
   'destroy',
@@ -47,10 +51,15 @@ const VERBS = [
   'doctor',
 ] as const;
 
-const USAGE = `Usage: podkit-vm <verb> <instance> [--yes]
+const USAGE = `Usage: podkit-vm <verb> <instance> [options]
 
 Verbs:
   ensure    Create + start the VM if needed (idempotent; shares the advisory lock)
+  stage     rsync the host source tree into a VM-local directory
+              --dest <path>     VM-local destination (required)
+              --src <path>      host source root (default: the repo root)
+              --exclude <glob>  extra rsync exclude, repeatable (on top of the shared set)
+              --sudo            run the in-VM rsync as root
   status    Print the VM status (running | stopped | missing)
   stop      Stop the VM (no-op if missing or already stopped)
   destroy   Delete the VM (--yes to skip the confirmation prompt)
@@ -85,10 +94,89 @@ async function confirmPrompt(prompt: string): Promise<boolean> {
 
 async function cmdEnsure(def: VmDefinition, opts: LifecycleOpts): Promise<number> {
   log(`[podkit-vm] ensuring \`${def.instanceName}\` is running...`);
-  await ensureRunning(def, opts);
+  try {
+    await ensureRunning(def, opts);
+  } catch (err) {
+    // A VM Lima reports as degraded reads as `stopped` here, and starting it
+    // fails. Recreating it automatically would silently discard a VM the
+    // operator may still want (the device VM carries provisioned state), so
+    // point at the explicit verb instead of destroying anything.
+    errorLog(`[podkit-vm] ${err instanceof Error ? err.message : String(err)}`);
+    errorLog(
+      `[podkit-vm] if \`${def.instanceName}\` is wedged, recreate it with: ` +
+        `podkit-vm recover ${def.id}`
+    );
+    return 1;
+  }
   const status = await instanceStatus(def.instanceName, opts.subprocess);
   log(`[podkit-vm] \`${def.instanceName}\` is ${status}.`);
   return status === 'running' ? 0 : 1;
+}
+
+/**
+ * `stage <instance> --dest <vmDest> [--src <hostSrc>] [--exclude <glob>]... [--sudo]`
+ *
+ * The shell wrappers' entry into {@link stageSourceTree}. `--src` defaults to
+ * the repo root, which is what every caller stages today; `--exclude` adds to
+ * the shared exclude floor rather than replacing it, so a caller can only ever
+ * prune MORE than the floor, never accidentally less.
+ */
+async function cmdStage(def: VmDefinition, args: string[], opts: LifecycleOpts): Promise<number> {
+  let dest: string | undefined;
+  let src: string | undefined;
+  let sudo = false;
+  const excludes: string[] = [];
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    switch (arg) {
+      case '--dest':
+        dest = args[++i];
+        break;
+      case '--src':
+        src = args[++i];
+        break;
+      case '--exclude':
+        {
+          const pattern = args[++i];
+          if (pattern === undefined) {
+            errorLog('[podkit-vm] stage: --exclude requires a pattern.');
+            return 1;
+          }
+          excludes.push(pattern);
+        }
+        break;
+      case '--sudo':
+        sudo = true;
+        break;
+      default:
+        errorLog(`[podkit-vm] stage: unrecognised argument '${arg}'.`);
+        return 1;
+    }
+  }
+
+  if (!dest) {
+    errorLog('[podkit-vm] stage: --dest <vm-local path> is required.');
+    return 1;
+  }
+  const hostSrc = src ?? repoRoot();
+
+  log(`[podkit-vm] staging ${hostSrc} → ${def.instanceName}:${dest}`);
+  try {
+    await stageSourceTree({
+      vmName: def.instanceName,
+      hostSrc,
+      vmDest: dest,
+      excludes,
+      sudo,
+      subprocess: opts.subprocess,
+    });
+  } catch (err) {
+    errorLog(`[podkit-vm] ${err instanceof Error ? err.message : String(err)}`);
+    return 1;
+  }
+  log(`[podkit-vm] staged (${DEFAULT_STAGE_EXCLUDES.length + excludes.length} excludes applied).`);
+  return 0;
 }
 
 async function cmdStatus(def: VmDefinition, opts: LifecycleOpts): Promise<number> {
@@ -232,23 +320,34 @@ export async function main(
     return 1;
   }
 
+  // A cold create runs for minutes; stream its provisioning log so the operator
+  // can tell a slow VM from a wedged one. Probes stay buffered (see
+  // `createVmProvisioningRunner`). Tests inject their own runner and are
+  // unaffected.
+  const resolved: LifecycleOpts = {
+    ...opts,
+    subprocess: opts.subprocess ?? createVmProvisioningRunner(),
+  };
+
   switch (verb) {
     case 'ensure':
-      return cmdEnsure(def, opts);
+      return cmdEnsure(def, resolved);
+    case 'stage':
+      return cmdStage(def, args, resolved);
     case 'status':
-      return cmdStatus(def, opts);
+      return cmdStatus(def, resolved);
     case 'stop':
-      return cmdStop(def, opts);
+      return cmdStop(def, resolved);
     case 'destroy':
-      return cmdDestroy(def, args, opts);
+      return cmdDestroy(def, args, resolved);
     case 'recover':
-      return cmdRecover(def, opts);
+      return cmdRecover(def, resolved);
     case 'shell':
       return cmdShell(def);
     case 'install':
-      return cmdInstall(def, opts);
+      return cmdInstall(def, resolved);
     case 'doctor':
-      return cmdDoctor(def, opts);
+      return cmdDoctor(def, resolved);
     default:
       process.stderr.write(USAGE);
       return 1;

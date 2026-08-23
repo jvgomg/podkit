@@ -34,7 +34,7 @@ set -euo pipefail
 VM_NAME="${BUILDER_VM_NAME:-podkit-builder-glibc}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-BUILDER_YAML="$REPO_ROOT/test-packages/lima/vms/podkit-builder-glibc.yaml"
+PODKIT_VM=(bun "$REPO_ROOT/test-packages/lima/src/cli.ts")
 
 log() { echo "==> [build:linux-prebuild] $1"; }
 
@@ -43,35 +43,13 @@ if ! command -v limactl >/dev/null 2>&1; then
   exit 1
 fi
 
-# Ensure the builder VM exists and is running. The whole check-then-start is
-# serialised by a cross-process lock so a concurrent turbo task (e.g.
-# gpod-testing#build:linux-binary) can't start the same instance at the same
-# moment and crash the hostagent. Read status INSIDE the lock so the decision
-# is atomic with the action.
-source "$SCRIPT_DIR/vm-builder-lock.sh"
-acquire_vm_lock "$VM_NAME"
-trap 'release_vm_lock "$VM_NAME"' EXIT
-status=$(limactl list --format '{{.Status}}' "$VM_NAME" 2>/dev/null || echo "NotFound")
-case "$status" in
-  Running)
-    log "builder VM '$VM_NAME' already running"
-    ;;
-  Stopped)
-    log "starting builder VM '$VM_NAME'..."
-    limactl start "$VM_NAME"
-    ;;
-  NotFound)
-    log "creating builder VM '$VM_NAME' (first run takes 5-10 min)..."
-    limactl start --tty=false --name="$VM_NAME" "$BUILDER_YAML"
-    ;;
-  *)
-    log "builder VM '$VM_NAME' in state '$status'; recreating..."
-    limactl delete "$VM_NAME" --force 2>/dev/null || true
-    limactl start --tty=false --name="$VM_NAME" "$BUILDER_YAML"
-    ;;
-esac
-release_vm_lock "$VM_NAME"
-trap - EXIT
+# Create-or-start the builder VM. `ensure` holds the shared cross-process
+# advisory lock across the whole check-then-act, so a concurrently-scheduled
+# turbo task that needs the same instance (gpod-testing#build:linux-binary)
+# waits rather than racing the hostagent pidfile — and, because ensure CREATES
+# when the instance is absent, either task may legitimately be the first to
+# reach a cold host.
+"${PODKIT_VM[@]}" ensure "$VM_NAME"
 
 # VM-local build tree. Note: /tmp inside the VM is VM-local tmpfs (or ext4
 # on /), NOT a host mount. Anything written here is invisible to macOS until
@@ -85,41 +63,14 @@ HOST_PREBUILDS="$REPO_ROOT/packages/libgpod-node/prebuilds"
 # means every $VAR inside expands in the VM realm without host/VM confusion.
 # Matches the style of build-linux-binary.sh.
 
-log "rsyncing source to '${VM_NAME}:${VM_SRC}'..."
-# Excludes match the macOS-side files that must NOT leak into the VM build:
-#   - node_modules: contains host-arch native bindings + Bun's content-
-#     addressed .bun/node-gyp@<hash> dirs — we run a fresh `bun install`
-#     in-VM below so node-gyp paths are coherent for the VM realm.
-#   - .turbo: host-arch task hashes are meaningless in the VM.
-#   - build/ + prebuilds/: previous run's intermediates; the WHOLE POINT
-#     of this rebuild is to start clean.
-#   - dist/.git/bin/big test assets: weight without value to the build.
-# Exit 24 ('some files vanished before they could be transferred') is a
-# benign race with macOS-side processes touching files during rsync; tolerate
-# 24, fail any other non-zero exit.
-limactl shell --workdir "$REPO_ROOT" "$VM_NAME" bash -c '
-  set -uo pipefail
-  REPO_ROOT=$1
-  VM_SRC=$2
-  mkdir -p "$VM_SRC"
-  rsync -a --delete \
-    --exclude node_modules \
-    --exclude .turbo \
-    --exclude dist \
-    --exclude .git \
-    --exclude "packages/libgpod-node/build" \
-    --exclude "packages/libgpod-node/prebuilds" \
-    --exclude "packages/podkit-cli/bin" \
-    --exclude "packages/demo/bin" \
-    --exclude "packages/ipod-db/fixtures/databases" \
-    --exclude "tools/libgpod-macos/build" \
-    --exclude "*.bun-build" \
-    --exclude "*.img" \
-    --exclude "src-tauri/target" \
-    "$REPO_ROOT/" "$VM_SRC/"
-  rc=$?
-  if [ "$rc" -ne 0 ] && [ "$rc" -ne 24 ]; then exit "$rc"; fi
-' _ "$REPO_ROOT" "$VM_SRC"
+# The shared exclude floor (node_modules, .turbo, dist, .git, host bin dirs,
+# libgpod-node/build, ...) lives in @podkit/lima's stageSourceTree. The one
+# exclude specific to a PREBUILD run is prebuilds/ itself: the whole point of
+# this rebuild is to start clean and copy the fresh artefact back.
+"${PODKIT_VM[@]}" stage "$VM_NAME" \
+  --src "$REPO_ROOT" \
+  --dest "$VM_SRC" \
+  --exclude "packages/libgpod-node/prebuilds"
 
 log "running build-linux-glibc.sh inside '$VM_NAME'..."
 limactl shell --workdir "$VM_SRC" "$VM_NAME" bash -c '

@@ -345,7 +345,9 @@
         "$TURBO_ROOT$/tools/prebuild/get-ldflags.sh",
         "$TURBO_ROOT$/test-packages/lima/vms/podkit-builder-glibc.yaml",
         "$TURBO_ROOT$/bun.lock",
-        "scripts/build-linux-prebuild.sh"
+        "scripts/build-linux-prebuild.sh",
+        "$TURBO_ROOT$/test-packages/lima/src/**",
+        "!$TURBO_ROOT$/test-packages/lima/src/**/*.test.ts"
       ],
       "outputs": [
         "$TURBO_ROOT$/packages/libgpod-node/prebuilds/linux-x64/**",
@@ -375,7 +377,9 @@
         "$TURBO_ROOT$/turbo.json",
         "$TURBO_ROOT$/package.json",
         "$TURBO_ROOT$/bun.lock",
-        "scripts/build-linux-binary.sh"
+        "scripts/build-linux-binary.sh",
+        "$TURBO_ROOT$/test-packages/lima/src/**",
+        "!$TURBO_ROOT$/test-packages/lima/src/**/*.test.ts"
       ],
       "outputs": [
         "$TURBO_ROOT$/packages/podkit-cli/bin/podkit-linux-*",
@@ -400,7 +404,9 @@
         "$TURBO_ROOT$/tools/prebuild/get-ldflags.sh",
         "$TURBO_ROOT$/test-packages/lima/vms/podkit-builder-musl.yaml",
         "$TURBO_ROOT$/bun.lock",
-        "scripts/build-musl-prebuild.sh"
+        "scripts/build-musl-prebuild.sh",
+        "$TURBO_ROOT$/test-packages/lima/src/**",
+        "!$TURBO_ROOT$/test-packages/lima/src/**/*.test.ts"
       ],
       "outputs": [
         "$TURBO_ROOT$/packages/libgpod-node/prebuilds/linux-x64-musl/**",
@@ -425,7 +431,9 @@
         "$TURBO_ROOT$/turbo.json",
         "$TURBO_ROOT$/package.json",
         "$TURBO_ROOT$/bun.lock",
-        "scripts/build-musl-binary.sh"
+        "scripts/build-musl-binary.sh",
+        "$TURBO_ROOT$/test-packages/lima/src/**",
+        "!$TURBO_ROOT$/test-packages/lima/src/**/*.test.ts"
       ],
       "outputs": [
         "$TURBO_ROOT$/packages/podkit-cli/bin/podkit-linux-*-musl",
@@ -439,7 +447,9 @@
       "inputs": [
         "$TURBO_ROOT$/tools/gpod-tool/**",
         "$TURBO_ROOT$/test-packages/lima/vms/podkit-builder-glibc.yaml",
-        "$TURBO_ROOT$/test-packages/device-testing/scripts/build-gpod-tool-linux.sh"
+        "$TURBO_ROOT$/test-packages/device-testing/scripts/build-gpod-tool-linux.sh",
+        "$TURBO_ROOT$/test-packages/lima/src/**",
+        "!$TURBO_ROOT$/test-packages/lima/src/**/*.test.ts"
       ],
       "outputs": ["bin/gpod-tool-linux-*"]
     },

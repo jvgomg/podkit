@@ -71,7 +71,7 @@ cross-check will catch the drift.
 
 Capture from the device-harness VM:
 
-1. Apply the state: `bun run --cwd test-packages/device-testing harness:shell` →
+1. Apply the state: `bun run vm:shell device` →
    `sudo /tmp/apply-state.sh <id>` (or copy the script in first).
 2. Run doctor inside the VM:
    ```

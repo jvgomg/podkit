@@ -17,9 +17,9 @@ bun run test:vm
 Subsequent runs:
 
 ```bash
-bun run harness:start  # if VM is stopped
+bun run vm:up device  # if VM is stopped
 bun run test:vm
-bun run harness:stop   # when done
+bun run vm:down device   # when done
 ```
 
 `bun run harness:status` prints a single-screen health check of the VM, binaries, systemd unit, and kernel modules. `bun run harness:install` re-runs the turbo builds and re-transfers everything (cheap; sha256-skips no-op transfers). All `harness:*` scripts dispatch into `test-packages/device-testing/scripts/harness.ts`.
@@ -27,7 +27,7 @@ bun run harness:stop   # when done
 **`bun run test:vm` is now self-orchestrating.** It turbo-depends on two new tasks:
 
 - `@podkit/device-testing#vm:install` — cached fresh-binary install. Invalidates on changes to podkit/daemon/gpod-tool source globs OR `scripts/harness.ts` / `runners/lima-test-vm-*.ts`. Replays as a cache hit (~300ms) when nothing changed.
-- `@podkit/device-testing#vm:doctor` — preflight drift check. Hashes `podkit-device-harness.yaml` + `apply-state.sh` and compares against the baseline hash sealed inside the VM at `harness:setup`. **No silent recovery** — drift exits 1 with the exact `harness:destroy && harness:setup` remediation command.
+- `@podkit/device-testing#vm:doctor` — preflight drift check. Hashes `podkit-device-harness.yaml` + `apply-state.sh` and compares against the baseline hash sealed inside the VM at `harness:setup`. **No silent recovery** — drift exits 1 with the exact `vm:destroy device --yes && harness:setup` remediation command.
 
 You almost never need `harness:install` directly anymore; `test:vm` covers the binary-freshness contract. Force-refresh via `bunx turbo run @podkit/device-testing#vm:install` if needed (e.g. after a manual rebuild outside the test loop). Drift-check only: `bunx turbo run @podkit/device-testing#vm:doctor`.
 
@@ -280,7 +280,7 @@ bunx turbo run \
   @podkit/gpod-testing#build:linux-binary
 ```
 
-The build scripts (`build-linux-binary.sh`, `build-linux-prebuild.sh`) auto-create + auto-start the builder Lima VM (`podkit-linux-builder`) on demand, so a developer rarely touches that VM directly. To free RAM or force a fresh rebuild: `bun run harness:builder:stop` / `harness:builder:destroy`.
+The build scripts (`build-linux-binary.sh`, `build-linux-prebuild.sh`) auto-create + auto-start the builder Lima VM (`podkit-builder-glibc`) on demand — via `podkit-vm ensure`, which holds the shared advisory lock — so a developer rarely touches that VM directly. To free RAM or force a fresh rebuild: `bun run vm:down builderGlibc` / `bun run vm:destroy builderGlibc`.
 
 **CI:** `.github/workflows/prebuild.yml` invokes the same `build-linux-glibc.sh` script. No duplicated logic.
 
@@ -340,7 +340,7 @@ VM tests are excluded from the default `bun test` run via `bunfig.toml`
 explicitly to override the ignore pattern — `src/vm` in `@podkit/device-testing`,
 `src/` in `@podkit/e2e-vm-tests`.
 
-**Preflight contract:** the preflight script is wired into each VM-test package's `bunfig.toml` as a `[test].preload`, so it runs once before any test files load. The script self-gates on `process.argv` / `npm_lifecycle_event` — it only contacts Lima when the invocation targets VM tests (a `vm/` path segment, an `.e2e.` filename, or the `test:vm` lifecycle event); other `bun test` runs are no-ops. If the Lima VM is not reachable when VM tests are targeted, the preflight exits 1 with a remediation message pointing at `bun run harness:setup` / `harness:start` / `harness:status`. No tests run and nothing is silently skipped. To run non-VM tests instead, use `bun run test:unit` or `bun run test:integration`.
+**Preflight contract:** the preflight script is wired into each VM-test package's `bunfig.toml` as a `[test].preload`, so it runs once before any test files load. The script self-gates on `process.argv` / `npm_lifecycle_event` — it only contacts Lima when the invocation targets VM tests (a `vm/` path segment, an `.e2e.` filename, or the `test:vm` lifecycle event); other `bun test` runs are no-ops. If the Lima VM is not reachable when VM tests are targeted, the preflight exits 1 with a remediation message pointing at `bun run harness:setup` / `vm:up device` / `harness:status`. No tests run and nothing is silently skipped. To run non-VM tests instead, use `bun run test:unit` or `bun run test:integration`.
 
 **Do NOT add skipped tests for assertions blocked on a dep task** — pause
 that stream of work in code and document the dependency in the backlog

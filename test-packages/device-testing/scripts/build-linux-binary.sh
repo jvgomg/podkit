@@ -26,6 +26,7 @@ VM_NAME="${BUILDER_VM_NAME:-podkit-builder-glibc}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 CLI_BIN_DIR="$REPO_ROOT/packages/podkit-cli/bin"
+PODKIT_VM=(bun "$REPO_ROOT/test-packages/lima/src/cli.ts")
 
 log() { echo "==> [build:linux-binary] $1"; }
 
@@ -34,16 +35,11 @@ if ! command -v limactl >/dev/null 2>&1; then
   exit 1
 fi
 
-status=$(limactl list --format '{{.Status}}' "$VM_NAME" 2>/dev/null || echo "NotFound")
-if [ "$status" = "NotFound" ] || [ "$status" = "Broken" ]; then
-  echo "ERROR: builder VM '$VM_NAME' not available (state=$status). Run" >&2
-  echo "       bunx turbo run @podkit/device-testing#build:linux-prebuild first." >&2
-  exit 1
-fi
-if [ "$status" = "Stopped" ]; then
-  log "starting builder VM '$VM_NAME'..."
-  limactl start "$VM_NAME"
-fi
+# Create-or-start the builder VM through the shared advisory lock. This task is
+# DAG-ordered after build:linux-prebuild, but turbo caching means the prebuild
+# can be a cache hit (VM never started) while this task is a miss — so it needs
+# a real start path of its own, not an assume-running guard.
+"${PODKIT_VM[@]}" ensure "$VM_NAME"
 
 # Detect target arch from inside the VM (matches what `bun build --compile`
 # will produce). Lima may run an arm64 image on Apple Silicon and an x64
@@ -70,35 +66,11 @@ esac
 VM_SRC=/tmp/podkit-builder-src
 VM_BIN_DIR="$VM_SRC/packages/podkit-cli/bin"
 
-log "rsyncing source to '${VM_NAME}:${VM_SRC}'..."
-# Lima 2.x: --workdir BEFORE instance, no `--` separator.
-# Excludes match the macOS-side files that must NOT leak into the VM build
-# (node_modules clobbered native bindings; .turbo cached host-arch hashes;
-# dist/.git/bin add weight without value to the build).
-limactl shell --workdir "$REPO_ROOT" "$VM_NAME" bash -c "
-  set -uo pipefail
-  mkdir -p '$VM_SRC'
-  # Exit 24 ('some files vanished before they could be transferred') is a
-  # benign race: bun build --compile and similar tools occasionally drop
-  # short-lived temp files during the rsync window. Tolerate 24, fail any
-  # other non-zero exit. *.bun-build is excluded outright as defence in
-  # depth — it's the most common offender.
-  rsync -a --delete \
-    --exclude node_modules \
-    --exclude .turbo \
-    --exclude dist \
-    --exclude .git \
-    --exclude 'packages/podkit-cli/bin' \
-    --exclude 'packages/demo/bin' \
-    --exclude 'packages/ipod-db/fixtures/databases' \
-    --exclude 'tools/libgpod-macos/build' \
-    --exclude '*.bun-build' \
-    --exclude '*.img' \
-    --exclude 'src-tauri/target' \
-    '$REPO_ROOT/' '$VM_SRC/'
-  rc=\$?
-  if [ \"\$rc\" -ne 0 ] && [ \"\$rc\" -ne 24 ]; then exit \"\$rc\"; fi
-"
+# Stage the source into the VM-local tree. The shared exclude floor lives in
+# @podkit/lima's stageSourceTree; prebuilds/ is deliberately NOT excluded — the
+# glibc .node built by build:linux-prebuild must ride along so compile.sh can
+# embed it.
+"${PODKIT_VM[@]}" stage "$VM_NAME" --src "$REPO_ROOT" --dest "$VM_SRC"
 
 log "compiling podkit binary inside '$VM_NAME' (target=linux-${NODE_ARCH})..."
 limactl shell --workdir "$VM_SRC" "$VM_NAME" bash -c '

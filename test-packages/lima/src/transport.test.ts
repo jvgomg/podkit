@@ -5,7 +5,7 @@
 
 import { describe, it, expect } from 'bun:test';
 
-import { runInVm, copyOut, stageSourceTree } from './transport.js';
+import { runInVm, copyOut, stageSourceTree, DEFAULT_STAGE_EXCLUDES } from './transport.js';
 import type {
   SubprocessRunner,
   SubprocessRunOpts,
@@ -113,6 +113,10 @@ describe('stageSourceTree', () => {
     expect(body).toContain("'/tmp/build/'");
     // benign "files vanished" race is tolerated
     expect(body).toContain('-ne 24');
+    // The VM-side interpreter is `sh` (dash on Debian, busybox ash on Alpine),
+    // neither of which supports `set -o pipefail` — using it aborts the whole
+    // staging step before rsync ever runs.
+    expect(body).not.toContain('pipefail');
   });
 
   it('throws on a non-zero rsync exit', async () => {
@@ -120,5 +124,64 @@ describe('stageSourceTree', () => {
     await expect(
       stageSourceTree({ vmName: 'vm1', hostSrc: '/repo', vmDest: '/tmp/b', subprocess: runner })
     ).rejects.toThrow(/failed to stage source tree/);
+  });
+
+  it('applies the shared exclude floor even when the caller names none', async () => {
+    const { runner, calls } = recorder(ok());
+    await stageSourceTree({
+      vmName: 'vm1',
+      hostSrc: '/repo',
+      vmDest: '/tmp/build',
+      subprocess: runner,
+    });
+    const body = calls[0]!.args[5]!;
+    for (const pattern of DEFAULT_STAGE_EXCLUDES) {
+      expect(body).toContain(`--exclude '${pattern}'`);
+    }
+  });
+
+  it('extends the floor with caller excludes rather than replacing it', async () => {
+    const { runner, calls } = recorder(ok());
+    await stageSourceTree({
+      vmName: 'vm1',
+      hostSrc: '/repo',
+      vmDest: '/tmp/build',
+      excludes: ['packages/libgpod-node/prebuilds'],
+      subprocess: runner,
+    });
+    const body = calls[0]!.args[5]!;
+    expect(body).toContain("--exclude 'packages/libgpod-node/prebuilds'");
+    expect(body).toContain("--exclude 'node_modules'");
+  });
+
+  it('leaves prebuilds stageable by default so binary builds can embed them', () => {
+    // The two prebuild wrappers prune prebuilds/ explicitly; the binary
+    // wrappers must NOT, or compile.sh has no .node to embed.
+    expect(DEFAULT_STAGE_EXCLUDES).not.toContain('packages/libgpod-node/prebuilds');
+  });
+
+  it('runs the rsync under sudo when asked', async () => {
+    const { runner, calls } = recorder(ok());
+    await stageSourceTree({
+      vmName: 'vm1',
+      hostSrc: '/repo',
+      vmDest: '/opt/podkit',
+      sudo: true,
+      subprocess: runner,
+    });
+    const body = calls[0]!.args[5]!;
+    expect(body).toContain('sudo mkdir -p');
+    expect(body).toContain('sudo rsync -a --delete');
+  });
+
+  it('does not invoke sudo by default', async () => {
+    const { runner, calls } = recorder(ok());
+    await stageSourceTree({
+      vmName: 'vm1',
+      hostSrc: '/repo',
+      vmDest: '/tmp/build',
+      subprocess: runner,
+    });
+    expect(calls[0]!.args[5]!).not.toContain('sudo');
   });
 });

@@ -10,7 +10,14 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { acquireVmLock, isVmLocked, withVmLock } from './lock.js';
+import {
+  acquireVmLock,
+  isVmLocked,
+  withVmLock,
+  lockRetryBudgetMs,
+  DEFAULT_RETRIES,
+  DEFAULT_STALE_MS,
+} from './lock.js';
 
 let lockDir: string;
 const INSTANCE = 'podkit-test-lock';
@@ -65,5 +72,33 @@ describe('acquireVmLock / isVmLocked', () => {
     } finally {
       await release();
     }
+  });
+});
+
+describe('contended-acquire wait budget', () => {
+  // A contender that gives up while the holder is still legitimately working
+  // turns "another task is creating this VM" into a build failure — the exact
+  // race the lock exists to prevent. A cold `limactl start` pulls an image and
+  // runs cloud-init, which routinely takes five to ten minutes, so the budget
+  // has to clear that with room to spare.
+  it('waits out a cold VM create rather than giving up mid-create', () => {
+    expect(lockRetryBudgetMs()).toBeGreaterThan(15 * 60 * 1000);
+  });
+
+  // Guards the specific misconfiguration this budget already regressed on
+  // once: proper-lockfile's `factor: 1` holds every delay at `minTimeout`, so
+  // `maxTimeout` becomes dead config and the real budget silently collapses to
+  // retries x minTimeout. Growth between successive retry counts proves the
+  // backoff actually escalates.
+  it('escalates its backoff instead of pinning every retry at the floor', () => {
+    const linearFloor = DEFAULT_RETRIES * 200;
+    expect(lockRetryBudgetMs()).toBeGreaterThan(linearFloor * 5);
+  });
+
+  // The long wait is only safe because a dead holder stops refreshing the
+  // lockfile mtime and is reclaimed as stale — otherwise a crashed process
+  // would wedge every later start for the whole budget.
+  it('reclaims a dead holder far sooner than it would wait for a live one', () => {
+    expect(DEFAULT_STALE_MS).toBeLessThan(lockRetryBudgetMs() / 10);
   });
 });

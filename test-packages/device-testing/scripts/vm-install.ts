@@ -83,7 +83,7 @@ async function main(): Promise<number> {
   if (status === 'stopped') {
     process.stderr.write(
       `[vm:install] Lima instance \`${vmName}\` is stopped.\n` +
-        `[vm:install] Run \`bun run harness:start\` first.\n`
+        `[vm:install] Run \`bun run vm:up device\` first.\n`
     );
     return 1;
   }

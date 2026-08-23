@@ -51,6 +51,7 @@ export {
   DEFAULT_STALE_MS,
   DEFAULT_UPDATE_MS,
   DEFAULT_RETRIES,
+  lockRetryBudgetMs,
 } from './lock.js';
 
 // Lifecycle primitives
@@ -59,7 +60,15 @@ export { status, ensureExists, ensureRunning, stop, destroy, recover } from './l
 
 // Generic transport
 export type { RunInVmOpts, RunInVmResult, CopyOutOpts, StageSourceTreeOpts } from './transport.js';
-export { runInVm, copyOut, stageSourceTree } from './transport.js';
+export { runInVm, copyOut, stageSourceTree, DEFAULT_STAGE_EXCLUDES } from './transport.js';
+
+// Output-streaming subprocess runners (live provisioning logs)
+export type { StreamSink } from './streaming-runner.js';
+export {
+  createStreamingSubprocessRunner,
+  createVmProvisioningRunner,
+  streamsOutput,
+} from './streaming-runner.js';
 
 // Baseline hash + drift
 export type {

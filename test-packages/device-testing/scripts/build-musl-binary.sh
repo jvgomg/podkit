@@ -33,6 +33,7 @@ VM_NAME="${MUSL_BUILDER_VM_NAME:-podkit-builder-musl}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 CLI_BIN_DIR="$REPO_ROOT/packages/podkit-cli/bin"
+PODKIT_VM=(bun "$REPO_ROOT/test-packages/lima/src/cli.ts")
 
 log() { echo "==> [build:musl-binary] $1"; }
 
@@ -47,16 +48,11 @@ fi
 log "ensuring musl prebuild exists (running build-musl-prebuild.sh)..."
 bash "$SCRIPT_DIR/build-musl-prebuild.sh"
 
-status=$(limactl list --format '{{.Status}}' "$VM_NAME" 2>/dev/null || echo "NotFound")
-if [ "$status" = "NotFound" ] || [ "$status" = "Broken" ]; then
-  echo "ERROR: builder VM '$VM_NAME' not available (state=$status)." >&2
-  echo "       Run build-musl-prebuild.sh first." >&2
-  exit 1
-fi
-if [ "$status" = "Stopped" ]; then
-  log "starting builder VM '$VM_NAME'..."
-  limactl start "$VM_NAME"
-fi
+# Create-or-start the musl builder VM through the shared advisory lock. The
+# prebuild driver above will usually have done this already; `ensure` is
+# idempotent, and this task must be able to start the VM on its own because
+# turbo can serve the prebuild from cache without ever booting it.
+"${PODKIT_VM[@]}" ensure "$VM_NAME"
 
 # Detect target arch from inside the VM (matches what `bun build --compile`
 # produces). compile.sh picks the right musl prebuild based on process.arch.
@@ -76,30 +72,10 @@ esac
 VM_SRC=/tmp/podkit-musl-builder-src
 VM_BIN_DIR="$VM_SRC/packages/podkit-cli/bin"
 
-log "rsyncing source to '${VM_NAME}:${VM_SRC}'..."
-# NOTE: prebuilds/ is NOT excluded here (unlike build-musl-prebuild.sh) — the
-# freshly-built linux-${arch}-musl .node must ride along into the compile tree
-# so compile.sh can stage it into the binary. Exit 24 tolerated (benign race).
-limactl shell --workdir "$REPO_ROOT" "$VM_NAME" bash -c "
-  set -uo pipefail
-  mkdir -p '$VM_SRC'
-  rsync -a --delete \
-    --exclude node_modules \
-    --exclude .turbo \
-    --exclude dist \
-    --exclude .git \
-    --exclude 'packages/libgpod-node/build' \
-    --exclude 'packages/podkit-cli/bin' \
-    --exclude 'packages/demo/bin' \
-    --exclude 'packages/ipod-db/fixtures/databases' \
-    --exclude 'tools/libgpod-macos/build' \
-    --exclude '*.bun-build' \
-    --exclude '*.img' \
-    --exclude 'src-tauri/target' \
-    '$REPO_ROOT/' '$VM_SRC/'
-  rc=\$?
-  if [ \"\$rc\" -ne 0 ] && [ \"\$rc\" -ne 24 ]; then exit \"\$rc\"; fi
-"
+# Stage the source into the VM-local tree. prebuilds/ is deliberately NOT
+# excluded (unlike build-musl-prebuild.sh) — the freshly-built
+# linux-${arch}-musl .node must ride along so compile.sh can embed it.
+"${PODKIT_VM[@]}" stage "$VM_NAME" --src "$REPO_ROOT" --dest "$VM_SRC"
 
 log "compiling podkit binary inside '$VM_NAME' (target=linux-${NODE_ARCH}-musl)..."
 limactl shell --workdir "$VM_SRC" "$VM_NAME" bash -c '

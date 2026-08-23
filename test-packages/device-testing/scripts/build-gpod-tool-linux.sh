@@ -20,6 +20,7 @@ VM_NAME="${BUILDER_VM_NAME:-podkit-builder-glibc}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 GPOD_TESTING_BIN_DIR="$REPO_ROOT/test-packages/gpod-testing/bin"
+PODKIT_VM=(bun "$REPO_ROOT/test-packages/lima/src/cli.ts")
 
 log() { echo "==> [build:gpod-tool-linux] $1"; }
 
@@ -28,25 +29,13 @@ if ! command -v limactl >/dev/null 2>&1; then
   exit 1
 fi
 
-# Serialise the check-then-start against the concurrent build:linux-prebuild
-# task (which may be creating this same builder VM right now) via a shared
-# cross-process lock; read status INSIDE the lock so the decision is atomic.
-source "$SCRIPT_DIR/vm-builder-lock.sh"
-acquire_vm_lock "$VM_NAME"
-trap 'release_vm_lock "$VM_NAME"' EXIT
-status=$(limactl list --format '{{.Status}}' "$VM_NAME" 2>/dev/null || echo "NotFound")
-if [ "$status" = "NotFound" ] || [ "$status" = "Broken" ]; then
-  release_vm_lock "$VM_NAME"; trap - EXIT
-  echo "ERROR: builder VM '$VM_NAME' not available (state=$status). Run" >&2
-  echo "       bunx turbo run @podkit/device-testing#build:linux-prebuild first." >&2
-  exit 1
-fi
-if [ "$status" = "Stopped" ]; then
-  log "starting builder VM '$VM_NAME'..."
-  limactl start "$VM_NAME"
-fi
-release_vm_lock "$VM_NAME"
-trap - EXIT
+# Create-or-start the builder VM. `ensure` takes the shared advisory lock for
+# the whole check-then-act, so the concurrently-scheduled
+# device-testing#build:linux-prebuild task cannot start the same instance at the
+# same moment. Crucially it also CREATES the instance when absent: the two tasks
+# have no ordering edge in turbo, so on a host with no builder VM either one may
+# arrive first, and refusing to create here used to abort the entire run.
+"${PODKIT_VM[@]}" ensure "$VM_NAME"
 
 # Match the arch suffix to the convention used by the sibling builds
 # (vmArch() in lima-test-vm.ts): arm64 / x64 — not aarch64 / x86_64.
@@ -65,26 +54,8 @@ esac
 # mount; staging into /tmp keeps the host tree untouchable.
 VM_SRC=/tmp/podkit-builder-src
 
-log "rsyncing source to '${VM_NAME}:${VM_SRC}'..."
-# Exit 24 ('some files vanished before they could be transferred') is a benign
-# race during concurrent host activity; tolerate it, fail any other non-zero.
-limactl shell --workdir "$REPO_ROOT" "$VM_NAME" bash -c "
-  set -uo pipefail
-  mkdir -p '$VM_SRC'
-  rsync -a --delete \
-    --exclude node_modules \
-    --exclude .turbo \
-    --exclude dist \
-    --exclude .git \
-    --exclude 'packages/podkit-cli/bin' \
-    --exclude 'packages/demo/bin' \
-    --exclude '*.bun-build' \
-    --exclude '*.img' \
-    --exclude 'src-tauri/target' \
-    '$REPO_ROOT/' '$VM_SRC/'
-  rc=\$?
-  if [ \"\$rc\" -ne 0 ] && [ \"\$rc\" -ne 24 ]; then exit \"\$rc\"; fi
-"
+# Stage the source into the VM-local tree using the shared exclude floor.
+"${PODKIT_VM[@]}" stage "$VM_NAME" --src "$REPO_ROOT" --dest "$VM_SRC"
 
 log "building gpod-tool inside '$VM_NAME' (target=linux-${NODE_ARCH})..."
 limactl shell --workdir "$VM_SRC" "$VM_NAME" bash -c '

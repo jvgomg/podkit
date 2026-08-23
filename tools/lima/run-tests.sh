@@ -21,41 +21,47 @@
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
-LIMA_DIR="$REPO_DIR/test-packages/lima/vms"
 VM_WORK_DIR="/tmp/podkit-test"
 VM_TURBO_CACHE='$HOME/.cache/podkit-turbo'
+PODKIT_VM=(bun "$REPO_DIR/test-packages/lima/src/cli.ts")
 
+# Extra prunes on top of the shared exclude floor that @podkit/lima applies to
+# every staged tree. The test VMs rebuild everything from source and run the
+# suite, so this run strips documentation, generated fixtures and every build
+# output the VM is about to regenerate — weight the build wrappers keep because
+# they need a `bun install --frozen-lockfile` to resolve every workspace.
+TEST_VM_EXCLUDES=(
+  --exclude '.claude/'
+  --exclude '.changeset/.cache/'
+  --exclude 'build/'
+  --exclude 'bin/'
+  --exclude 'target/'
+  --exclude 'packages/libgpod-node/prebuilds/'
+  --exclude 'test-packages/gpod-testing/templates/'
+  --exclude 'packages/demo/demo.gif'
+  --exclude 'packages/docs-site/'
+  --exclude 'tools/gpod-tool/gpod-tool'
+  --exclude 'tools/gpod-tool/*.o'
+  --exclude 'tools/libgpod-macos/'
+  --exclude 'docs/'
+  --exclude 'adr/'
+  --exclude 'backlog/'
+  --exclude 'devices/'
+  --exclude 'test/manual-collection/'
+)
+
+# Create-or-start a test VM through the shared advisory lock — the same lock
+# every other VM starter in the repo uses, so a `mise run test:linux` racing a
+# builder task or a `vm:up` cannot double-start an instance.
 ensure_vm() {
-  local name=$1 config=$2
+  local name=$1
 
   if ! command -v limactl &>/dev/null; then
     echo "ERROR: limactl not found. Install with: brew install lima" >&2
     exit 1
   fi
 
-  local status
-  status=$(limactl list --format '{{.Status}}' "$name" 2>/dev/null || echo "NotFound")
-
-  if [ "$status" != "NotFound" ]; then
-    case "$status" in
-      Running)
-        echo "$name is already running."
-        ;;
-      Stopped)
-        echo "Starting $name..."
-        limactl start "$name"
-        ;;
-      *)
-        # Broken/degraded state — recreate
-        echo "$name is in state '$status', recreating..."
-        limactl delete "$name" --force 2>/dev/null || true
-        limactl start "$config" --name="$name"
-        ;;
-    esac
-  else
-    echo "Creating $name (this takes a few minutes on first run)..."
-    limactl start "$config" --name="$name"
-  fi
+  "${PODKIT_VM[@]}" ensure "$name"
 }
 
 run_tests() {
@@ -64,46 +70,19 @@ run_tests() {
   echo "=== Running tests on $name ==="
   echo "Syncing repo to VM-local directory..."
 
-  # rsync is intentionally aggressive with excludes: only ship sources, configs,
-  # and the few asset directories tests actually need. Everything build-related
-  # is rebuilt inside the VM. Turbo cache lives at $HOME/.cache/podkit-turbo
-  # (outside this directory) so --delete cannot touch it.
+  # Staging goes through the shared helper: one exclude floor, one rsync
+  # exit-24 tolerance. Turbo cache lives at $HOME/.cache/podkit-turbo (outside
+  # the staged directory) so --delete cannot touch it.
+  "${PODKIT_VM[@]}" stage "$name" \
+    --src "$REPO_DIR" \
+    --dest "$VM_WORK_DIR" \
+    "${TEST_VM_EXCLUDES[@]}"
+
   limactl shell "$name" -- bash -c "
     set -e
     export PATH=\$HOME/.bun/bin:\$PATH
     export TURBO_CACHE_DIR=$VM_TURBO_CACHE
     mkdir -p \$TURBO_CACHE_DIR
-
-    mkdir -p $VM_WORK_DIR
-    rsync -a --delete \
-      --exclude '.git/' \
-      --exclude 'node_modules/' \
-      --exclude '.turbo/' \
-      --exclude '.claude/' \
-      --exclude '.changeset/.cache/' \
-      --exclude 'dist/' \
-      --exclude 'build/' \
-      --exclude 'bin/' \
-      --exclude 'packages/*/dist/' \
-      --exclude 'packages/*/build/' \
-      --exclude 'packages/*/bin/' \
-      --exclude 'packages/*/.turbo/' \
-      --exclude 'target/' \
-      --exclude 'packages/*/src-tauri/target/' \
-      --exclude 'packages/libgpod-node/prebuilds/' \
-      --exclude 'test-packages/gpod-testing/templates/' \
-      --exclude 'packages/ipod-db/fixtures/databases/' \
-      --exclude 'packages/demo/demo.gif' \
-      --exclude 'packages/docs-site/' \
-      --exclude 'tools/gpod-tool/gpod-tool' \
-      --exclude 'tools/gpod-tool/*.o' \
-      --exclude 'tools/libgpod-macos/' \
-      --exclude 'docs/' \
-      --exclude 'adr/' \
-      --exclude 'backlog/' \
-      --exclude 'devices/' \
-      --exclude 'test/manual-collection/' \
-      '$REPO_DIR/' '$VM_WORK_DIR/'
 
     cd '$VM_WORK_DIR'
     bun install
@@ -146,16 +125,16 @@ target="${1:-all}"
 
 case "$target" in
   debian)
-    ensure_vm "podkit-test-glibc" "$LIMA_DIR/podkit-test-glibc.yaml"
+    ensure_vm "podkit-test-glibc"
     run_tests "podkit-test-glibc"
     ;;
   alpine)
-    ensure_vm "podkit-test-musl" "$LIMA_DIR/podkit-test-musl.yaml"
+    ensure_vm "podkit-test-musl"
     run_tests "podkit-test-musl"
     ;;
   all)
-    ensure_vm "podkit-test-glibc" "$LIMA_DIR/podkit-test-glibc.yaml"
-    ensure_vm "podkit-test-musl" "$LIMA_DIR/podkit-test-musl.yaml"
+    ensure_vm "podkit-test-glibc"
+    ensure_vm "podkit-test-musl"
     run_tests "podkit-test-glibc"
     run_tests "podkit-test-musl"
     echo ""

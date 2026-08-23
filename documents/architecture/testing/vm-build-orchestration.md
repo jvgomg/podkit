@@ -110,7 +110,7 @@ test file.
 | Knowing **when** to re-transfer | `vm:install` turbo task (new). |
 | Detecting VM baseline drift | `scripts/vm-doctor.ts` + `vm:doctor` turbo task (new). |
 | Writing the baseline hash | `harness.ts setup` (modified to seal the hash post-install). |
-| Surfacing remediation to the developer | `vm-doctor.ts` error text — explicit `harness:destroy && harness:setup` instructions. |
+| Surfacing remediation to the developer | `vm-doctor.ts` error text — explicit `vm:destroy device --yes && harness:setup` instructions. |
 
 The harness scripts remain the single point of binary transfer; the
 turbo layer above orchestrates **when** that point is reached and
@@ -133,7 +133,7 @@ guarantees a **drift check** runs first.
 
 - Do NOT auto-rebuild the VM on drift. The cost is minutes; the
   remediation message points the developer at the explicit
-  `harness:destroy && harness:setup` flow. Save destructive operations
+  `vm:destroy device --yes && harness:setup` flow. Save destructive operations
   behind explicit flags.
 
 - `vm:install` and `vm:doctor` must remain idempotent — re-running
@@ -155,7 +155,7 @@ guarantees a **drift check** runs first.
 | Both VM running + hashes match + binaries current        | `vm:doctor` exits 0, `vm:install` cache hit, tests proceed. |
 
 `vm:doctor` failure messages name the files that drifted and the exact
-remediation command (`bun run harness:destroy && bun run harness:setup`).
+remediation command (`bun run vm:destroy device --yes && bun run harness:setup`).
 No silent recovery, no auto-rebuild.
 
 ---
@@ -166,7 +166,7 @@ This orchestration does **not** cover:
 
 - **Builder-VM lifecycle.** The `podkit-linux-builder` VM auto-creates
   on first use of `build:linux-binary` and is otherwise developer-managed
-  via `harness:builder:stop`/`harness:builder:destroy`. No turbo
+  via `vm:down builderGlibc`/`vm:destroy builderGlibc`. No turbo
   involvement.
 - **Test discovery.** Whether a given `.e2e.test.ts` file runs is
   governed by `bun test`'s path glob; the orchestration only ensures the

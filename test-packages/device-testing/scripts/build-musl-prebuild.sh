@@ -19,7 +19,7 @@ set -euo pipefail
 VM_NAME="${MUSL_BUILDER_VM_NAME:-podkit-builder-musl}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-BUILDER_YAML="$REPO_ROOT/test-packages/lima/vms/podkit-builder-musl.yaml"
+PODKIT_VM=(bun "$REPO_ROOT/test-packages/lima/src/cli.ts")
 
 log() { echo "==> [build:musl-prebuild] $1"; }
 
@@ -28,58 +28,21 @@ if ! command -v limactl >/dev/null 2>&1; then
   exit 1
 fi
 
-# Ensure the builder VM exists and is running.
-status=$(limactl list --format '{{.Status}}' "$VM_NAME" 2>/dev/null || echo "NotFound")
-case "$status" in
-  Running)
-    log "builder VM '$VM_NAME' already running"
-    ;;
-  Stopped)
-    log "starting builder VM '$VM_NAME'..."
-    limactl start "$VM_NAME"
-    ;;
-  NotFound)
-    log "creating builder VM '$VM_NAME' (first run takes 5-10 min)..."
-    limactl start --tty=false --name="$VM_NAME" "$BUILDER_YAML"
-    ;;
-  *)
-    log "builder VM '$VM_NAME' in state '$status'; recreating..."
-    limactl delete "$VM_NAME" --force 2>/dev/null || true
-    limactl start --tty=false --name="$VM_NAME" "$BUILDER_YAML"
-    ;;
-esac
+# Create-or-start the musl builder VM through the shared advisory lock (the
+# same one every other starter of this instance uses).
+"${PODKIT_VM[@]}" ensure "$VM_NAME"
 
 # VM-local build tree (VM-local tmpfs/ext4, NOT a host mount). Only the final
 # prebuild artifact crosses back to the host via the host-mounted prebuilds dir.
 VM_SRC=/tmp/podkit-musl-libgpod-build
 HOST_PREBUILDS="$REPO_ROOT/packages/libgpod-node/prebuilds"
 
-log "rsyncing source to '${VM_NAME}:${VM_SRC}'..."
-# Excludes mirror build-linux-prebuild.sh. Exit 24 ('some files vanished') is a
-# benign race with macOS-side processes; tolerate 24, fail any other non-zero.
-limactl shell --workdir "$REPO_ROOT" "$VM_NAME" bash -c '
-  set -uo pipefail
-  REPO_ROOT=$1
-  VM_SRC=$2
-  mkdir -p "$VM_SRC"
-  rsync -a --delete \
-    --exclude node_modules \
-    --exclude .turbo \
-    --exclude dist \
-    --exclude .git \
-    --exclude "packages/libgpod-node/build" \
-    --exclude "packages/libgpod-node/prebuilds" \
-    --exclude "packages/podkit-cli/bin" \
-    --exclude "packages/demo/bin" \
-    --exclude "packages/ipod-db/fixtures/databases" \
-    --exclude "tools/libgpod-macos/build" \
-    --exclude "*.bun-build" \
-    --exclude "*.img" \
-    --exclude "src-tauri/target" \
-    "$REPO_ROOT/" "$VM_SRC/"
-  rc=$?
-  if [ "$rc" -ne 0 ] && [ "$rc" -ne 24 ]; then exit "$rc"; fi
-' _ "$REPO_ROOT" "$VM_SRC"
+# Stage the source into the VM-local tree. Same shared exclude floor as the
+# glibc prebuild; prebuilds/ is pruned because this run produces it.
+"${PODKIT_VM[@]}" stage "$VM_NAME" \
+  --src "$REPO_ROOT" \
+  --dest "$VM_SRC" \
+  --exclude "packages/libgpod-node/prebuilds"
 
 log "running build-linux-musl.sh inside '$VM_NAME'..."
 limactl shell --workdir "$VM_SRC" "$VM_NAME" bash -c '

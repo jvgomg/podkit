@@ -16,6 +16,7 @@ import * as path from 'node:path';
 import { main } from './cli.js';
 import { getVm } from './registry.js';
 import { acquireVmLock, isVmLocked } from './lock.js';
+import { repoRoot } from './paths.js';
 import { BASELINE_VM_HASH_PATH } from './baseline-hash.js';
 import type {
   SubprocessRunner,
@@ -229,16 +230,12 @@ describe('the shared advisory lock around create/start', () => {
     const release = await acquireVmLock(INSTANCE, { lockDir, staleMs: 5000 });
     try {
       const { runner, calls } = makeScriptedRunner([]); // any call here would be a real bug
-      let code = '';
-      try {
-        await main(['ensure', 'device'], {
-          subprocess: runner,
-          lock: { lockDir, staleMs: 5000, retries: 0 },
-        });
-      } catch (err) {
-        code = (err as { code?: string }).code ?? '';
-      }
-      expect(code).toBe('ELOCKED');
+      const code = await main(['ensure', 'device'], {
+        subprocess: runner,
+        lock: { lockDir, staleMs: 5000, retries: 0 },
+      });
+      expect(code).toBe(1);
+      expect(stderrText()).toContain('Lock file is already being held');
       expect(calls).toHaveLength(0);
     } finally {
       await release();
@@ -247,9 +244,12 @@ describe('the shared advisory lock around create/start', () => {
 
   it('releases the lock when ensure fails, so a subsequent start is not wedged', async () => {
     const { runner } = makeScriptedRunner([listStatus('missing'), fail('disk full')]);
-    await expect(
-      main(['ensure', 'device'], { subprocess: runner, lock: { lockDir, staleMs: 5000 } })
-    ).rejects.toThrow(/failed to create\+start.*disk full/s);
+    const code = await main(['ensure', 'device'], {
+      subprocess: runner,
+      lock: { lockDir, staleMs: 5000 },
+    });
+    expect(code).toBe(1);
+    expect(stderrText()).toMatch(/failed to create\+start.*disk full/s);
 
     expect(await isVmLocked(INSTANCE, { lockDir, staleMs: 5000 })).toBe(false);
 
@@ -257,5 +257,121 @@ describe('the shared advisory lock around create/start', () => {
     // immediately, with zero retries, right after the failure.
     const release = await acquireVmLock(INSTANCE, { lockDir, staleMs: 5000, retries: 0 });
     await release();
+  });
+
+  it('points a failed ensure at `recover` instead of deleting the VM itself', async () => {
+    const { runner, calls } = makeScriptedRunner([listStatus('stopped'), fail('hostagent wedged')]);
+    const code = await main(['ensure', 'device'], {
+      subprocess: runner,
+      lock: { lockDir, staleMs: 5000 },
+    });
+    expect(code).toBe(1);
+    expect(stderrText()).toContain('podkit-vm recover device');
+    // A destructive auto-recreate would show up as a `delete` call.
+    expect(calls.some((c) => c.args[0] === 'delete')).toBe(false);
+  });
+});
+
+describe('ensure', () => {
+  it('CREATES a missing instance rather than demanding someone else made it first', async () => {
+    // Two independently-scheduled build tasks share a builder VM with no
+    // ordering edge between them, so on a host where that VM does not exist
+    // yet either one can arrive first. A verb that refuses to create would
+    // abort whichever task got there first.
+    const builder = getVm('builderGlibc');
+    const { runner, calls } = makeScriptedRunner([
+      listStatus('missing'), // probe inside the lock: no such instance
+      ok(), // limactl start --name=… <yaml>
+      ok(JSON.stringify({ name: builder.instanceName, status: 'Running' })), // post-condition
+    ]);
+    const code = await main(['ensure', 'builderGlibc'], { subprocess: runner });
+    expect(code).toBe(0);
+    const create = calls[1]!.args;
+    expect(create[0]).toBe('start');
+    expect(create).toContain(`--name=${builder.instanceName}`);
+    expect(create[create.length - 1]).toBe(builder.yamlPath);
+  });
+
+  it('starts a stopped instance without recreating it', async () => {
+    const { runner, calls } = makeScriptedRunner([
+      listStatus('stopped'),
+      ok(),
+      listStatus('running'),
+    ]);
+    const code = await main(['ensure', 'device'], { subprocess: runner });
+    expect(code).toBe(0);
+    expect(calls[1]!.args).toEqual(['start', INSTANCE]);
+  });
+
+  it('is a no-op when the instance is already running', async () => {
+    const { runner, calls } = makeScriptedRunner([listStatus('running'), listStatus('running')]);
+    const code = await main(['ensure', 'device'], { subprocess: runner });
+    expect(code).toBe(0);
+    expect(calls.every((c) => c.args[0] === 'list')).toBe(true);
+  });
+});
+
+describe('stage', () => {
+  it('stages the repo root into the VM with the shared exclude floor', async () => {
+    const { runner, calls } = makeScriptedRunner([ok()]);
+    const code = await main(['stage', 'device', '--dest', '/tmp/work'], { subprocess: runner });
+    expect(code).toBe(0);
+    const body = calls[0]!.args[5]!;
+    expect(calls[0]!.args.slice(0, 5)).toEqual(['shell', INSTANCE, '--', 'sh', '-c']);
+    expect(body).toContain("--exclude 'node_modules'");
+    expect(body).toContain("'/tmp/work/'");
+    // --src defaults to the repo this package lives in.
+    expect(body).toContain(`'${repoRoot()}/'`);
+  });
+
+  it('honours an explicit --src, repeated --exclude, and --sudo', async () => {
+    const { runner, calls } = makeScriptedRunner([ok()]);
+    const code = await main(
+      [
+        'stage',
+        'device',
+        '--src',
+        '/elsewhere',
+        '--dest',
+        '/opt/podkit',
+        '--exclude',
+        'first',
+        '--exclude',
+        'second',
+        '--sudo',
+      ],
+      { subprocess: runner }
+    );
+    expect(code).toBe(0);
+    const body = calls[0]!.args[5]!;
+    expect(body).toContain("'/elsewhere/'");
+    expect(body).toContain("--exclude 'first'");
+    expect(body).toContain("--exclude 'second'");
+    expect(body).toContain('sudo rsync');
+  });
+
+  it('refuses to guess a destination', async () => {
+    const { runner, calls } = makeScriptedRunner([]);
+    const code = await main(['stage', 'device'], { subprocess: runner });
+    expect(code).toBe(1);
+    expect(stderrText()).toContain('--dest');
+    expect(calls).toHaveLength(0);
+  });
+
+  it('rejects an unrecognised argument rather than silently ignoring it', async () => {
+    const { runner, calls } = makeScriptedRunner([]);
+    const code = await main(['stage', 'device', '--dest', '/tmp/w', '--exclud', 'typo'], {
+      subprocess: runner,
+    });
+    expect(code).toBe(1);
+    expect(stderrText()).toContain("unrecognised argument '--exclud'");
+    expect(calls).toHaveLength(0);
+  });
+
+  it('reports a failed rsync as an operator message, not a stack trace', async () => {
+    const { runner } = makeScriptedRunner([fail('rsync: connection unexpectedly closed', 12)]);
+    const code = await main(['stage', 'device', '--dest', '/tmp/work'], { subprocess: runner });
+    expect(code).toBe(1);
+    expect(stderrText()).toContain('failed to stage source tree');
   });
 });

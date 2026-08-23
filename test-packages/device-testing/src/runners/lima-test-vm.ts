@@ -54,8 +54,10 @@ import { transferSystemdUnit } from './lima-test-vm-systemd.js';
 import { ensureBackingFilesForPersonas } from './lima-test-vm-backing-files.js';
 import {
   LIMA_DEVICE_HARNESS_VM_NAME,
+  ensureRunning,
   getVm,
   instanceStatus,
+  type VmLockOptions,
   resolveDefaultPodkitBinary,
   resolveDefaultPodkitDebugBinary,
   resolveDefaultDaemonLinuxBinary,
@@ -458,6 +460,12 @@ export interface CreateLimaTestVmRuntimeOpts {
   resolveGpodToolBinary?: () => string;
   /** Persona set to emit in the sidecar. Defaults to the full registry. */
   personas?: Iterable<DevicePersona>;
+  /**
+   * Advisory-lock tuning for the VM boot. Production callers leave this unset
+   * (the real per-instance lock in the OS temp dir); tests point it at a temp
+   * directory so a unit run never contends with a real VM's lock.
+   */
+  lock?: VmLockOptions;
 }
 
 /**
@@ -474,6 +482,7 @@ export function createLimaTestVmRuntime(opts: CreateLimaTestVmRuntimeOpts = {}):
   const resolveDummyHcdDaemonUnit = opts.resolveDummyHcdDaemonUnit;
   const resolveGpodToolBinary =
     opts.resolveGpodToolBinary ?? (() => resolveDefaultGpodToolBinary());
+  const lock = opts.lock;
 
   return {
     id: ID,
@@ -482,19 +491,20 @@ export function createLimaTestVmRuntime(opts: CreateLimaTestVmRuntimeOpts = {}):
       return status !== 'missing';
     },
     async prepare() {
-      // 1. Boot the VM if stopped. Missing → throw with a clear hint.
+      // 1. Boot the VM if stopped, through the shared advisory lock so this
+      //    never races another starter. A MISSING instance is not created
+      //    here: an unprovisioned VM has no binaries, no systemd unit and no
+      //    sealed baseline, so silently conjuring one would trade a clear
+      //    error for a confusing mid-suite failure.
       const status = await instanceStatus(vmName, subprocess);
       if (status === 'missing') {
         throw new Error(
           `[lima-test-vm] instance '${vmName}' is not registered with Lima. ` +
-            `Create it with: limactl start ${getVm('device').yamlPath} --name ${vmName}`
+            'Create and provision it with: bun run harness:setup'
         );
       }
       if (status === 'stopped') {
-        const startResult = await runLimactl(subprocess, ['start', vmName]);
-        if (startResult.exitCode !== 0) {
-          throw limactlError(`failed to start lima instance ${vmName}`, startResult);
-        }
+        await ensureRunning(getVm(vmName), { subprocess, lock });
       }
 
       // 2. Transfer the podkit binary. This is the only artefact whose

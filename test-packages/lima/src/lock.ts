@@ -38,10 +38,22 @@ export const DEFAULT_STALE_MS = 30_000;
 /** Default mtime-refresh interval for a held lock (well under the stale window). */
 export const DEFAULT_UPDATE_MS = 5_000;
 /**
- * Default per-attempt retry ceiling. With `maxTimeout` at ~2s this waits out a
- * multi-minute cold VM create before giving up.
+ * Default retry count for a contended acquire. Paired with the backoff in
+ * {@link lockfileOptions} (200ms doubling to a 2s ceiling) this waits roughly
+ * half an hour before giving up.
+ *
+ * That budget has to clear the SLOWEST legitimate hold, not the typical one: a
+ * cold `limactl start` that downloads an image and runs cloud-init takes five
+ * to ten minutes, and the contender is usually a sibling turbo task that must
+ * simply wait for it. Giving up early turns "someone else is creating the VM"
+ * into a build failure — which is the exact race the lock exists to prevent.
+ *
+ * Waiting this long is safe because it is bounded by liveness, not just by the
+ * clock: a holder refreshes the lockfile mtime every {@link DEFAULT_UPDATE_MS},
+ * so if it dies the lock goes stale within {@link DEFAULT_STALE_MS} and the
+ * next contender reclaims it rather than waiting out the full budget.
  */
-export const DEFAULT_RETRIES = 600;
+export const DEFAULT_RETRIES = 900;
 
 /** Options for the lock helpers. */
 export interface VmLockOptions {
@@ -69,6 +81,28 @@ export function lockPathFor(instanceName: string, lockDir: string = os.tmpdir())
   return path.join(lockDir, `podkit-vmlock-${instanceName}`);
 }
 
+/** Backoff shape for a contended acquire. See {@link DEFAULT_RETRIES}. */
+const RETRY_BACKOFF = { factor: 2, minTimeout: 200, maxTimeout: 2_000 } as const;
+
+/**
+ * Total time a contender will wait before giving up, for a given retry count.
+ *
+ * Derived from {@link RETRY_BACKOFF} rather than assumed, so the wait budget is
+ * an assertable number instead of a claim in a comment. A `factor` of 1 would
+ * silently pin every delay at `minTimeout` and collapse this to a fraction of
+ * its intended value, which is why the budget is pinned by a test.
+ */
+export function lockRetryBudgetMs(retries: number = DEFAULT_RETRIES): number {
+  let total = 0;
+  for (let attempt = 0; attempt < retries; attempt++) {
+    total += Math.min(
+      RETRY_BACKOFF.minTimeout * RETRY_BACKOFF.factor ** attempt,
+      RETRY_BACKOFF.maxTimeout
+    );
+  }
+  return total;
+}
+
 function lockfileOptions(opts: VmLockOptions): properLockfile.LockOptions {
   const lockDir = opts.lockDir ?? os.tmpdir();
   // Ensure the lock directory exists so the `<path>.lock` mkdir can succeed.
@@ -79,12 +113,7 @@ function lockfileOptions(opts: VmLockOptions): properLockfile.LockOptions {
     // The lock target is a synthetic path that need not exist — do not resolve
     // symlinks or require the file to be present.
     realpath: false,
-    retries: {
-      retries: opts.retries ?? DEFAULT_RETRIES,
-      factor: 1,
-      minTimeout: 200,
-      maxTimeout: 2_000,
-    },
+    retries: { retries: opts.retries ?? DEFAULT_RETRIES, ...RETRY_BACKOFF },
   };
 }
 
