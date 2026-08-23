@@ -40,12 +40,12 @@ case "$status" in
     ;;
   NotFound)
     log "creating builder VM '$VM_NAME' (first run takes 5-10 min)..."
-    limactl start --name="$VM_NAME" "$BUILDER_YAML"
+    limactl start --tty=false --name="$VM_NAME" "$BUILDER_YAML"
     ;;
   *)
     log "builder VM '$VM_NAME' in state '$status'; recreating..."
     limactl delete "$VM_NAME" --force 2>/dev/null || true
-    limactl start --name="$VM_NAME" "$BUILDER_YAML"
+    limactl start --tty=false --name="$VM_NAME" "$BUILDER_YAML"
     ;;
 esac
 

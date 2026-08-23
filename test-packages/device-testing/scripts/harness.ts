@@ -96,9 +96,10 @@ async function cmdCreate(): Promise<number> {
     );
     return 0;
   }
-  // Use spawnSync so the user sees Lima's interactive provisioning output
-  // directly (the runLimactl helper buffers stdout/stderr).
-  const result = spawnSync('limactl', ['create', '--name', VM, VM_YAML_REL], {
+  // Use spawnSync so the user sees Lima's provisioning output directly (the
+  // runLimactl helper buffers stdout/stderr). `--tty=false` accepts the config
+  // as-is instead of dropping into Lima's interactive config-editor prompt.
+  const result = spawnSync('limactl', ['create', '--tty=false', '--name', VM, VM_YAML_REL], {
     stdio: 'inherit',
     cwd: REPO_ROOT,
   });

@@ -1,0 +1,5 @@
+[test]
+# Exclude *.integration.test.ts from the default `bun test` (test:unit) run: the
+# advisory-lock mutual-exclusion test spawns real child processes and waits out
+# a staleness window. It is run explicitly (`bun test src/lock.integration.test.ts`).
+pathIgnorePatterns = ["**/*.integration.test.ts"]

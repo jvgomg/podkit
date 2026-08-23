@@ -1,0 +1,39 @@
+{
+  "name": "@podkit/lima",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Lima VM substrate for podkit: typed VM registry, idempotent lifecycle, a single cross-process advisory lock, generic transport, and the podkit-vm CLI",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "podkit-vm": "./src/cli.ts"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "bun build src/index.ts --outdir dist --target node --external @podkit/device-types --external proper-lockfile && bun run build:types",
+    "build:types": "tsc -p tsconfig.build.json --emitDeclarationOnly --outDir dist",
+    "test": "true",
+    "test:unit": "bun test --pass-with-no-tests",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@podkit/device-types": "workspace:*",
+    "proper-lockfile": "^4.1.2"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/proper-lockfile": "^4.1.4",
+    "bun-types": "latest"
+  }
+}

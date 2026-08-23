@@ -10,7 +10,7 @@
 import { spawn } from 'node:child_process';
 import { stat } from 'node:fs/promises';
 import type { SubprocessRunner } from '@podkit/device-types';
-import { defaultSubprocessRunner } from '../subprocess-runner.js';
+import { defaultSubprocessRunner } from '@podkit/device-types';
 import type {
   Transcoder,
   TranscoderCapabilities,

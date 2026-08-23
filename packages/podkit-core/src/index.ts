@@ -16,8 +16,8 @@ export type {
   SubprocessRunner,
   SubprocessRunOpts,
   SubprocessRunResult,
-} from './subprocess-runner.js';
-export { defaultSubprocessRunner } from './subprocess-runner.js';
+} from '@podkit/device-types';
+export { defaultSubprocessRunner } from '@podkit/device-types';
 
 // Collection adapters
 export type {

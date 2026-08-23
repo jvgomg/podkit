@@ -1,14 +1,12 @@
 /**
- * lima-docker-image — build the podkit Docker image *inside* the
- * `podkit-device-harness` Lima VM from the local Dockerfile and the prebuilt
- * linux binaries.
+ * docker-image — build (or pull) the podkit Docker image *inside* the
+ * device-harness Lima VM from the local Dockerfile and the prebuilt linux
+ * binaries.
  *
  * The device-harness VM ships nerdctl + containerd and a native arm64 kernel,
  * so a single-arch (native) image build needs no buildx / QEMU / `--platform`.
- * This is the Tier-5 Docker scaffold: it stages a build context that matches
- * the layout {@link file://../../../../packages/podkit-docker/Dockerfile}
- * expects (the same layout CI assembles in `.github/workflows/docker.yml`),
- * then runs `nerdctl build` inside the VM.
+ * This stages a build context that matches the layout the Dockerfile expects
+ * (the same layout CI assembles), then runs `nerdctl build` inside the VM.
  *
  * Context layout staged in the VM (rooted at {@link BUILD_CONTEXT_VM_DIR}):
  *
@@ -27,14 +25,14 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import { defaultSubprocessRunner, type SubprocessRunner } from '../subprocess.js';
-import { limactlError, runLimactl, shellQuote } from './lima-limactl.js';
+import { defaultSubprocessRunner, type SubprocessRunner } from '@podkit/device-types';
+import { limactlError, runLimactl, shellQuote } from './limactl.js';
 import { repoRoot } from './paths.js';
+import { LIMA_DEVICE_HARNESS_VM_NAME } from './registry.js';
 import {
-  LIMA_DEVICE_HARNESS_VM_NAME,
   resolveDefaultDaemonLinuxMuslBinary,
   resolveDefaultPodkitMuslBinary,
-} from './lima-test-vm.js';
+} from './binary-paths.js';
 
 // ---------------------------------------------------------------------------
 // Constants

@@ -149,13 +149,15 @@ export {
   DEFAULT_DUMMY_HCD_DAEMON_VM_PATH,
 } from './runners/lima-test-vm.js';
 
-// Lima docker-image build + pull (vm-docker-image surface; doc-053 stages 1 & 2)
+// Lima docker-image build + pull (vm-docker-image surface; doc-053 stages 1 & 2).
+// The implementation now lives in the Lima substrate package; re-export it so
+// the device-testing public surface is unchanged.
 export type {
   BuildPodkitImageInVmOpts,
   BuildPodkitImageInVmResult,
   PullPodkitImageInVmOpts,
   EnsurePodkitImageInVmOpts,
-} from './runners/lima-docker-image.js';
+} from '@podkit/lima';
 export {
   buildPodkitImageInVm,
   pullPodkitImageInVm,
@@ -163,7 +165,7 @@ export {
   DEFAULT_PODKIT_IMAGE_TAG,
   DOCKER_DIST_IMAGE_ENV,
   BUILD_CONTEXT_VM_DIR,
-} from './runners/lima-docker-image.js';
+} from '@podkit/lima';
 
 // Mass-storage backing-file synthesis (TASK-348)
 export type {

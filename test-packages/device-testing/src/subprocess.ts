@@ -7,7 +7,7 @@
  * @module
  */
 
-import { defaultSubprocessRunner } from '@podkit/core';
+import { defaultSubprocessRunner } from '@podkit/device-types';
 import type {
   SubprocessRunner,
   SubprocessRunOpts,

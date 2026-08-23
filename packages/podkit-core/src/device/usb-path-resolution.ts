@@ -16,7 +16,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { SubprocessRunner, UsbFingerprint } from '@podkit/device-types';
-import { defaultSubprocessRunner } from '../subprocess-runner.js';
+import { defaultSubprocessRunner } from '@podkit/device-types';
 import { extractProductId, extractVendorId, parseLocationId } from './usb-enumeration.js';
 
 // ── Types ────────────────────────────────────────────────────────────────────

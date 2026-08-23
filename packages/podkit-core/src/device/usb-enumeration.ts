@@ -19,7 +19,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { SubprocessRunner } from '@podkit/device-types';
-import { defaultSubprocessRunner } from '../subprocess-runner.js';
+import { defaultSubprocessRunner } from '@podkit/device-types';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 

@@ -1,11 +1,16 @@
 /**
- * Default real-subprocess runner for podkit-core.
+ * Default real-subprocess runner.
  *
- * Implements the `SubprocessRunner` interface defined in `@podkit/device-types`
- * by spawning the real binary via `child_process.execFile`. The framework that
- * layers capture/replay on top lives in `@podkit/device-testing` so production
- * never depends on the test harness; callsites accept a `SubprocessRunner`
- * parameter typed against the interface and default to this runner.
+ * Implements the `SubprocessRunner` interface (defined alongside in
+ * `./subprocess.ts`) by spawning the real binary via `child_process.execFile`.
+ * It lives in `@podkit/device-types` — the low-dependency leaf both
+ * `@podkit/core` and `@podkit/lima` depend on — so the VM-orchestration
+ * substrate can use it without depending on the heavier `@podkit/core`
+ * (which pulls native `@podkit/libgpod-node` + metadata libraries). The
+ * capture/replay framework that layers on top lives in `@podkit/device-testing`
+ * so production never depends on the test harness; callsites accept a
+ * `SubprocessRunner` parameter typed against the interface and default to this
+ * runner.
  *
  * Semantics (must match the interface contract):
  *
@@ -20,11 +25,7 @@
  */
 
 import { execFile } from 'node:child_process';
-import type {
-  SubprocessRunner,
-  SubprocessRunOpts,
-  SubprocessRunResult,
-} from '@podkit/device-types';
+import type { SubprocessRunner, SubprocessRunOpts, SubprocessRunResult } from './subprocess.js';
 
 /** Maximum captured stdout/stderr size — large enough for ffmpeg `-encoders` output. */
 const DEFAULT_MAX_BUFFER = 64 * 1024 * 1024;
@@ -67,5 +68,3 @@ export const defaultSubprocessRunner: SubprocessRunner = {
     });
   },
 };
-
-export type { SubprocessRunner, SubprocessRunOpts, SubprocessRunResult };

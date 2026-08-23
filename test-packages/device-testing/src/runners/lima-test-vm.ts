@@ -52,207 +52,43 @@ import { applyState as applyStateRaw } from './lima-test-vm-state.js';
 import { limactlError, runLimactl, shellQuote, type LimactlResult } from './lima-limactl.js';
 import { transferSystemdUnit } from './lima-test-vm-systemd.js';
 import { ensureBackingFilesForPersonas } from './lima-test-vm-backing-files.js';
-import { repoRoot } from './paths.js';
+import {
+  LIMA_DEVICE_HARNESS_VM_NAME,
+  instanceStatus,
+  resolveDefaultPodkitBinary,
+  resolveDefaultPodkitDebugBinary,
+  resolveDefaultDaemonLinuxBinary,
+  resolveDefaultPodkitMuslBinary,
+  resolveDefaultDaemonLinuxMuslBinary,
+  resolveDefaultDummyHcdDaemonBinary,
+  resolveDefaultGpodToolBinary,
+} from '@podkit/lima';
+
+// The Lima substrate (instance name, status probe, host binary resolvers) now
+// lives in `@podkit/lima`. Re-export the symbols this module has historically
+// exported so existing import sites (`./runners/lima-test-vm.js`) keep resolving.
+export {
+  LIMA_DEVICE_HARNESS_VM_NAME,
+  instanceStatus,
+  resolveDefaultPodkitBinary,
+  resolveDefaultPodkitDebugBinary,
+  resolveDefaultDaemonLinuxBinary,
+  resolveDefaultPodkitMuslBinary,
+  resolveDefaultDaemonLinuxMuslBinary,
+  resolveDefaultDummyHcdDaemonBinary,
+  resolveDefaultGpodToolBinary,
+};
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Lima instance name the runner manages. */
-export const LIMA_DEVICE_HARNESS_VM_NAME = 'podkit-device-harness';
 /** Sidecar destination inside the VM. */
 export const SIDECAR_VM_PATH = '/var/device-testing/personas.json';
 /** Default destination inside the VM for the dummy-hcd-daemon binary. */
 export const DEFAULT_DUMMY_HCD_DAEMON_VM_PATH = '/usr/local/bin/dummy-hcd-daemon';
 
 const ID: RunnerId = 'lima-test-vm';
-
-// ---------------------------------------------------------------------------
-// Env-var resolution helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Resolve the default host path to the compiled podkit linux binary.
- *
- * Reads `PODKIT_LINUX_BINARY` if set; otherwise falls back to the per-arch
- * default at `packages/podkit-cli/bin/podkit-linux-<arch>` (matching the
- * Turbo build output).
- */
-export function resolveDefaultPodkitBinary(env: NodeJS.ProcessEnv = process.env): string {
-  const override = env['PODKIT_LINUX_BINARY'];
-  if (override && override.length > 0) return override;
-  const arch = vmArch();
-  return path.resolve(repoRoot(), 'packages', 'podkit-cli', 'bin', `podkit-linux-${arch}`);
-}
-
-/**
- * Resolve the default host path to the compiled podkit-debug linux binary.
- *
- * Same shape as {@link resolveDefaultPodkitBinary} but for the dev-hooks-
- * active build (`bin/podkit-debug-linux-<arch>`). Reads
- * `PODKIT_LINUX_DEBUG_BINARY` if set; otherwise falls back to the per-arch
- * default. See `documents/architecture/dev-builds.md` for why the debug
- * binary ships side-by-side with the production one.
- */
-export function resolveDefaultPodkitDebugBinary(env: NodeJS.ProcessEnv = process.env): string {
-  const override = env['PODKIT_LINUX_DEBUG_BINARY'];
-  if (override && override.length > 0) return override;
-  const arch = vmArch();
-  return path.resolve(repoRoot(), 'packages', 'podkit-cli', 'bin', `podkit-debug-linux-${arch}`);
-}
-
-/**
- * Resolve the default host path to the compiled podkit-daemon linux binary.
- *
- * Mirrors {@link resolveDefaultPodkitBinary} for the background sync daemon.
- * Reads `PODKIT_DAEMON_LINUX_BINARY` if set; otherwise falls back to the
- * per-arch default at `packages/podkit-daemon/bin/podkit-daemon-linux-<arch>`
- * (matching the Turbo build output). Used when staging the Docker build
- * context inside the VM.
- */
-export function resolveDefaultDaemonLinuxBinary(env: NodeJS.ProcessEnv = process.env): string {
-  const override = env['PODKIT_DAEMON_LINUX_BINARY'];
-  if (override && override.length > 0) return override;
-  const arch = vmArch();
-  return path.resolve(
-    repoRoot(),
-    'packages',
-    'podkit-daemon',
-    'bin',
-    `podkit-daemon-linux-${arch}`
-  );
-}
-
-/**
- * Resolve the default host path to the compiled **musl** podkit linux binary.
- *
- * The podkit Docker image is `FROM alpine:3.21` (musl), so anything COPYed into
- * it must be musl-linked — the glibc binaries above cannot start there. Reads
- * `PODKIT_LINUX_MUSL_BINARY` if set; otherwise falls back to the per-arch
- * default at `packages/podkit-cli/bin/podkit-linux-<arch>-musl` (the
- * `build:musl-binary` output). See [[project_local_build_parity.md]].
- */
-export function resolveDefaultPodkitMuslBinary(env: NodeJS.ProcessEnv = process.env): string {
-  const override = env['PODKIT_LINUX_MUSL_BINARY'];
-  if (override && override.length > 0) return override;
-  const arch = vmArch();
-  return path.resolve(repoRoot(), 'packages', 'podkit-cli', 'bin', `podkit-linux-${arch}-musl`);
-}
-
-/**
- * Resolve the default host path to the compiled **musl** podkit-daemon linux
- * binary. Mirrors {@link resolveDefaultPodkitMuslBinary} for the daemon. Reads
- * `PODKIT_DAEMON_LINUX_MUSL_BINARY` if set; otherwise the per-arch default at
- * `packages/podkit-daemon/bin/podkit-daemon-linux-<arch>-musl`.
- */
-export function resolveDefaultDaemonLinuxMuslBinary(env: NodeJS.ProcessEnv = process.env): string {
-  const override = env['PODKIT_DAEMON_LINUX_MUSL_BINARY'];
-  if (override && override.length > 0) return override;
-  const arch = vmArch();
-  return path.resolve(
-    repoRoot(),
-    'packages',
-    'podkit-daemon',
-    'bin',
-    `podkit-daemon-linux-${arch}-musl`
-  );
-}
-
-/** Resolve the host path of the dummy-hcd-daemon binary (per arch). */
-export function resolveDefaultDummyHcdDaemonBinary(env: NodeJS.ProcessEnv = process.env): string {
-  const override = env['PODKIT_DUMMY_HCD_DAEMON_BINARY'];
-  if (override && override.length > 0) return override;
-  const arch = vmArch();
-  return path.resolve(
-    repoRoot(),
-    'test-packages',
-    'device-testing-daemon',
-    'dist',
-    `dummy-hcd-daemon-linux-${arch}`
-  );
-}
-
-/**
- * Resolve the host path of the gpod-tool linux binary.
- *
- * gpod-tool is a REQUIRED part of the device-testing harness. The default
- * resolves to the per-arch output of the
- * `@podkit/gpod-testing#build:linux-binary` turbo task — produced by
- * `bun run harness:install` (which invokes that task transitively). The
- * `PODKIT_GPOD_TOOL_BINARY` env var remains an optional override for
- * developers pointing at a custom build.
- */
-export function resolveDefaultGpodToolBinary(env: NodeJS.ProcessEnv = process.env): string {
-  const override = env['PODKIT_GPOD_TOOL_BINARY'];
-  if (override && override.length > 0) return override;
-  const arch = vmArch();
-  return path.resolve(
-    repoRoot(),
-    'test-packages',
-    'gpod-testing',
-    'bin',
-    `gpod-tool-linux-${arch}`
-  );
-}
-
-/**
- * Map Node.js `process.arch` to the suffix used in Linux binary filenames.
- * The test VM is `aarch64` on Apple Silicon hosts and `amd64`/`x86_64` on
- * Intel; binary filenames use `arm64` and `x64` (Bun's convention).
- */
-function vmArch(): 'arm64' | 'x64' {
-  return process.arch === 'arm64' ? 'arm64' : 'x64';
-}
-
-// ---------------------------------------------------------------------------
-// isAvailable / VM status
-// ---------------------------------------------------------------------------
-
-/** Result of {@link instanceStatus}. */
-type InstanceStatus = 'running' | 'stopped' | 'missing';
-
-interface LimactlListEntry {
-  name?: string;
-  status?: string;
-}
-
-/**
- * Probe the Lima instance status. Returns `missing` for both "limactl not
- * installed" and "no such instance", since the runner reaches the same
- * "unavailable" conclusion either way.
- */
-export async function instanceStatus(
-  vmName: string = LIMA_DEVICE_HARNESS_VM_NAME,
-  subprocess: SubprocessRunner = defaultSubprocessRunner
-): Promise<InstanceStatus> {
-  let result: LimactlResult;
-  try {
-    result = await subprocess.run('limactl', ['list', '--json']);
-  } catch {
-    return 'missing';
-  }
-  if (result.exitCode !== 0) {
-    return 'missing';
-  }
-  // `limactl list --json` prints one JSON object per line (NDJSON). Parse each
-  // line independently; ignore parse errors so an unexpected Lima version
-  // change does not turn into a hard failure.
-  for (const line of result.stdout.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    let entry: LimactlListEntry;
-    try {
-      entry = JSON.parse(trimmed) as LimactlListEntry;
-    } catch {
-      continue;
-    }
-    if (entry.name !== vmName) continue;
-    const status = (entry.status ?? '').toLowerCase();
-    if (status === 'running') return 'running';
-    return 'stopped';
-  }
-  return 'missing';
-}
 
 // ---------------------------------------------------------------------------
 // Persona sidecar emission

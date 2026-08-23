@@ -1,8 +1,8 @@
 /**
  * Unit tests for the docker-dist image source switch — the pull path and the
  * `ensurePodkitImageInVm` build-vs-pull selection. Strategy mirrors the other
- * lima-test-vm runner tests: inject a scripted `SubprocessRunner` that records
- * `limactl` invocations and returns canned results. No real `limactl`, no VM.
+ * substrate tests: inject a scripted `SubprocessRunner` that records `limactl`
+ * invocations and returns canned results. No real `limactl`, no VM.
  *
  * The build path itself (`buildPodkitImageInVm`) is exercised end-to-end by the
  * vm-docker-image e2e; here we only assert the *routing* and the pull mechanics.
@@ -15,12 +15,12 @@ import {
   ensurePodkitImageInVm,
   DEFAULT_PODKIT_IMAGE_TAG,
   DOCKER_DIST_IMAGE_ENV,
-} from './lima-docker-image.js';
-import type { SubprocessRunner, SubprocessRunOpts, SubprocessRunResult } from '../subprocess.js';
-
-// ---------------------------------------------------------------------------
-// Scripted SubprocessRunner
-// ---------------------------------------------------------------------------
+} from './docker-image.js';
+import type {
+  SubprocessRunner,
+  SubprocessRunOpts,
+  SubprocessRunResult,
+} from '@podkit/device-types';
 
 interface ScriptedCall {
   command: string;
@@ -65,17 +65,9 @@ function vmCommand(call: ScriptedCall): string[] {
   return dashDash >= 0 ? call.args.slice(dashDash + 1) : call.args;
 }
 
-// ---------------------------------------------------------------------------
-// env helpers
-// ---------------------------------------------------------------------------
-
 afterEach(() => {
   delete process.env[DOCKER_DIST_IMAGE_ENV];
 });
-
-// ---------------------------------------------------------------------------
-// pullPodkitImageInVm
-// ---------------------------------------------------------------------------
 
 describe('pullPodkitImageInVm', () => {
   const TAG = 'ghcr.io/jvgomg/podkit:edge';
@@ -116,11 +108,7 @@ describe('pullPodkitImageInVm', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// ensurePodkitImageInVm — build-vs-pull routing
-// ---------------------------------------------------------------------------
-
-describe('ensurePodkitImageInVm', () => {
+describe('ensurePodkitImageInVm — build-vs-pull routing', () => {
   it('pulls the override tag when the env switch is set', async () => {
     const override = 'ghcr.io/jvgomg/podkit:edge';
     process.env[DOCKER_DIST_IMAGE_ENV] = override;
@@ -134,9 +122,6 @@ describe('ensurePodkitImageInVm', () => {
 
   it('trims whitespace-only env values back to the build path', async () => {
     process.env[DOCKER_DIST_IMAGE_ENV] = '   ';
-    // Build path: ensureContainerServices (containerd, buildkit) then an image
-    // inspect that succeeds → idempotent early return with the default tag. No
-    // host files or real build needed.
     const { runner, calls } = makeScriptedRunner([ok(), ok(), ok()]);
 
     const tag = await ensurePodkitImageInVm({ subprocess: runner });
@@ -146,7 +131,6 @@ describe('ensurePodkitImageInVm', () => {
   });
 
   it('builds locally (default tag) when the env switch is unset', async () => {
-    // containerd start, buildkit start, image inspect (exit 0 → already built).
     const { runner, calls } = makeScriptedRunner([ok(), ok(), ok()]);
 
     const tag = await ensurePodkitImageInVm({ subprocess: runner });

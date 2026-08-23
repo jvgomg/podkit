@@ -16,7 +16,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "bun build src/index.ts --outdir dist --target node --external @podkit/core --external @podkit/device-types && bun run build:types",
+    "build": "bun build src/index.ts --outdir dist --target node --external @podkit/core --external @podkit/device-types --external @podkit/lima && bun run build:types",
     "build:types": "tsc -p tsconfig.build.json --emitDeclarationOnly --outDir dist",
     "test": "true",
     "test:unit": "bun test --pass-with-no-tests",
@@ -44,7 +44,8 @@
   },
   "dependencies": {
     "@podkit/core": "workspace:*",
-    "@podkit/device-types": "workspace:*"
+    "@podkit/device-types": "workspace:*",
+    "@podkit/lima": "workspace:*"
   },
   "devDependencies": {
     "@podkit/ipod-db": "workspace:*",

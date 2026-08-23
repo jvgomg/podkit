@@ -10,7 +10,7 @@
  */
 
 import type { SubprocessRunner } from '@podkit/device-types';
-import { defaultSubprocessRunner } from '../../subprocess-runner.js';
+import { defaultSubprocessRunner } from '@podkit/device-types';
 import type { DiagnosticCheck, CheckResult, DiagnosticContext } from '../types.js';
 
 const FFMPEG = process.env['FFMPEG_PATH'] ?? 'ffmpeg';

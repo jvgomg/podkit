@@ -21,7 +21,7 @@ import type { DeviceAssessment } from '../assessment.js';
 import { detectIFlash } from '../assessment.js';
 import { VolumeLabelError } from '../types.js';
 import type { SubprocessRunner, UsbFingerprint } from '@podkit/device-types';
-import { defaultSubprocessRunner } from '../../subprocess-runner.js';
+import { defaultSubprocessRunner } from '@podkit/device-types';
 import { parseLocationId } from '../usb-enumeration.js';
 
 /**
