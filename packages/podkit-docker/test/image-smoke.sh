@@ -23,7 +23,10 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 CTX="$SCRIPT_DIR/smoke-context"
 IMAGE="podkit-smoke:test"
 VM_NAME="${BUILDER_VM_NAME:-podkit-builder-glibc}"
-VM_SRC="/tmp/podkit-builder-src"
+# The daemon is compiled in the tree build:linux-binary already staged, so this
+# reads the SAME staging area that task owns — from @podkit/lima's registry, not
+# from a literal that could drift away from it.
+VM_SRC="$(bun "$REPO_ROOT/test-packages/lima/src/cli.ts" stage-path "$VM_NAME" --area glibcBinary)"
 
 log() { echo "==> [image-smoke] $1"; }
 fail() { echo "FAIL: $1" >&2; exit 1; }

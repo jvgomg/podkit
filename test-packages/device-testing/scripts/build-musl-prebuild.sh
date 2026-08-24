@@ -34,7 +34,9 @@ fi
 
 # VM-local build tree (VM-local tmpfs/ext4, NOT a host mount). Only the final
 # prebuild artifact crosses back to the host via the host-mounted prebuilds dir.
-VM_SRC=/tmp/podkit-musl-libgpod-build
+# Destination comes from @podkit/lima's staging-area registry (see the glibc
+# sibling) — no wrapper spells its own staging path.
+VM_SRC="$("${PODKIT_VM[@]}" stage-path "$VM_NAME" --area muslPrebuild)"
 HOST_PREBUILDS="$REPO_ROOT/packages/libgpod-node/prebuilds"
 
 # Stage the source into the VM-local tree. Same shared exclude floor as the

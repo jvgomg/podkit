@@ -375,3 +375,63 @@ describe('stage', () => {
     expect(stderrText()).toContain('failed to stage source tree');
   });
 });
+
+describe('stage-path', () => {
+  it('prints the destination of a declared area and nothing else', async () => {
+    const { runner, calls } = makeScriptedRunner([]);
+    const code = await main(['stage-path', 'builderGlibc', '--area', 'glibcBinary'], {
+      subprocess: runner,
+    });
+    expect(code).toBe(0);
+    // Shell wrappers capture this into a variable, so it must be the bare path.
+    expect(stdoutText()).toBe('/tmp/podkit-builder-src\n');
+    // Resolving a path must not touch a VM.
+    expect(calls).toHaveLength(0);
+  });
+
+  it('gives the gpod-tool build a different directory from the CLI binary build', async () => {
+    const { runner } = makeScriptedRunner([]);
+    await main(['stage-path', 'builderGlibc', '--area', 'glibcBinary'], { subprocess: runner });
+    const binaryDest = stdoutText();
+    stdoutWrite.mockClear();
+    await main(['stage-path', 'builderGlibc', '--area', 'glibcGpodTool'], { subprocess: runner });
+    expect(stdoutText()).not.toBe(binaryDest);
+  });
+
+  it('refuses an area that belongs to a different VM', async () => {
+    const { runner } = makeScriptedRunner([]);
+    const code = await main(['stage-path', 'builderMusl', '--area', 'glibcBinary'], {
+      subprocess: runner,
+    });
+    expect(code).toBe(1);
+    expect(stderrText()).toContain('belongs to podkit-builder-glibc');
+    expect(stdoutText()).toBe('');
+  });
+
+  it('fails loudly on an unknown area rather than printing an empty path', async () => {
+    const { runner } = makeScriptedRunner([]);
+    const code = await main(['stage-path', 'builderGlibc', '--area', 'nope'], {
+      subprocess: runner,
+    });
+    expect(code).toBe(1);
+    expect(stderrText()).toContain("no staging area registered for 'nope'");
+    expect(stdoutText()).toBe('');
+  });
+
+  it('requires --area', async () => {
+    const { runner } = makeScriptedRunner([]);
+    const code = await main(['stage-path', 'builderGlibc'], { subprocess: runner });
+    expect(code).toBe(1);
+    expect(stderrText()).toContain('--area');
+    expect(stdoutText()).toBe('');
+  });
+
+  it('rejects an unrecognised argument rather than silently ignoring it', async () => {
+    const { runner } = makeScriptedRunner([]);
+    const code = await main(['stage-path', 'builderGlibc', '--are', 'glibcBinary'], {
+      subprocess: runner,
+    });
+    expect(code).toBe(1);
+    expect(stderrText()).toContain("unrecognised argument '--are'");
+  });
+});

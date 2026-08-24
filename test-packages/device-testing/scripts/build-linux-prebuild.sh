@@ -54,7 +54,9 @@ fi
 # VM-local build tree. Note: /tmp inside the VM is VM-local tmpfs (or ext4
 # on /), NOT a host mount. Anything written here is invisible to macOS until
 # we explicitly copy it back via the host-mounted prebuilds dir.
-VM_SRC=/tmp/podkit-libgpod-build
+# Destination comes from @podkit/lima's staging-area registry, which is where
+# every VM-local staging directory is declared and checked for collisions.
+VM_SRC="$("${PODKIT_VM[@]}" stage-path "$VM_NAME" --area glibcPrebuild)"
 HOST_PREBUILDS="$REPO_ROOT/packages/libgpod-node/prebuilds"
 
 # Host-side variables are passed into the single-quoted heredocs via the

@@ -130,7 +130,9 @@ run = """
 #!/usr/bin/env bash
 set -e
 
-VM_DIR="/opt/podkit"
+# The VM-local destination is declared in @podkit/lima's staging-area registry
+# alongside every other one, so collisions are a property of a single file.
+VM_DIR="$(bun test-packages/lima/src/cli.ts stage-path podkit-virtual-ipod --area virtualIpod)"
 
 # Staging shares the exclude floor + exit-24 tolerance with every other VM
 # caller. --sudo because /opt is not writable by the VM user; `build` and

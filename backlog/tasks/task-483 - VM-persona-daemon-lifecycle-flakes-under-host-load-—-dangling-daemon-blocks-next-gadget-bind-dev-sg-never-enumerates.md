@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-23 21:45'
-updated_date: '2026-08-24 00:32'
+updated_date: '2026-08-24 21:03'
 labels:
   - testing
   - vm
@@ -91,4 +91,77 @@ Re-read both `quality` run logs side by side. The description hypothesises "the 
 - Two distinct failure shapes: hook timeouts, and `waitForScsiGenericEnumeration` finding no `/dev/sg*`. Run 1 also produced a backing-file synthesis `exit=1` with no output.
 
 **Load is the differentiator, not code.** Standalone `test:vm` is 232/0 repeatedly on the same tree and the same VM; only the full `quality` DAG reproduces it. The device VM is 2 CPU / 2 GiB while the host runs a full parallel build.
+
+## Reproduced OUTSIDE `quality`, and the mechanism is clearer than "persona-daemon lifecycle"
+
+2026-08-24: a **standalone** `bun run test:vm` — no `quality`, nothing else running — failed **116 pass / 11 fail**, with hook timeouts of 92s, 150s, 168s, 229s, 331s and **397s**. That same command had been reliably 232/0 all day on the same tree.
+
+The difference was host state, not code. I had left **four** Lima VMs running (device 2 GiB + builder-glibc 4 GiB + builder-musl 4 GiB + test-glibc 4 GiB ≈ 14 GiB committed on a 32 GiB host); every earlier green run had three. At failure time:
+
+```
+vm.swapusage: total = 5120.00M  used = 4333.44M  free = 786.56M
+```
+
+Swap was 85% consumed — the host was thrashing.
+
+**The decisive observation:** the failures are NOT confined to gadget or persona setup. *Every* `limactl shell podkit-device` invocation was failing, including trivial ones with no USB involvement at all:
+
+```
+error: limactl shell podkit-device failed: Command failed: limactl shell podkit-device -- sh -c /usr/local/bin/podkit device scan --json
+error: limactl shell podkit-device -- sh -c set -e; sudo mkdir -p '/var/device-testing/backing-files'; ... failed
+```
+
+So the broken thing is the **`limactl shell` transport itself under host memory pressure**, not daemon teardown. `/dev/sg*` never enumerating and backing-file synthesis returning `exit=1` with no output are both downstream of the same cause: the shell transport into the guest is unreliable, so in-guest commands do not complete.
+
+Immediately afterwards, with the run finished, the VM was perfectly healthy — `limactl shell podkit-device -- uptime` returned instantly, load 0.23, 1.6 GB available, disk 22% used. Nothing was wrong *inside* the guest.
+
+Stopping the two VMs the suite does not need (`vm:down testGlibc`, `vm:down builderMusl`) freed 8 GiB.
+
+## What this changes about the fix
+
+The "suggested investigation" in the description aims at the wrong layer. Revised:
+
+1. **Fail fast and diagnose.** A 397-second hook wait is never useful. When a `limactl shell` fails or a wait loop stalls, the harness should surface *"the VM transport is failing — host may be under memory pressure"* with the host's swap/VM state, rather than a generic timeout in whichever test drew the short straw. The current output actively misleads: it looks like a persona bug.
+2. **Bound the VM budget.** Four concurrent Lima VMs on a 32 GiB host is over-subscribed. Options: have `test:vm` stop VMs it does not need, warn when more than N are running, or check available memory in preflight and refuse with a clear message. Note `preflight.ts` already exists as the natural home and already hard-fails with remediation text for a down VM.
+3. **Only then** look at daemon teardown — `killed 1 dangling process` still precedes failures and may be a real secondary leak, but it is likely a symptom of commands not completing rather than the root cause.
+
+The earlier `quality` failures are almost certainly the same thing: `quality` saturates the host, and the VM transport degrades. That also explains why the failing *set* varied between runs while the file order did not — whichever test is running when pressure peaks is the one that fails.
+
+## ROOT CAUSE FOUND: leaked UDC bindings exhaust the dummy_hcd slots
+
+Inspecting the device VM directly after a bad run:
+
+```
+=== configfs gadgets ===
+(empty)
+=== UDC state ===
+/sys/class/udc/dummy_udc.0: configured     <- leaked
+/sys/class/udc/dummy_udc.1: configured     <- leaked
+/sys/class/udc/dummy_udc.2: not attached
+/sys/class/udc/dummy_udc.3: not attached
+=== /dev/sg* ===
+none
+```
+
+**Two UDCs are pinned in `configured` state while configfs contains no gadgets at all.** The gadget directories were torn down but the UDCs were never released. `dummy_hcd num=4` provides four slots; two were burnt.
+
+This explains every observation that the earlier hypotheses did not:
+
+- **Escalating severity across runs** (282s max -> 397s -> 3.6M ms / 60 min): leaks accumulate, so each run starts with fewer usable slots.
+- **Recovery between failures within a run**: while free slots remained, the next persona could still bind. That is why the suite passed files #8-#13 after failing #7 — it was not "recovering", it was consuming the remaining slots.
+- **`/dev/sg*` never appearing**: with no free UDC, the gadget never binds, so no SCSI generic node is created.
+- **Why standalone `test:vm` was green all day and then was not**: the VM accumulated leaks over many runs.
+
+**Host memory pressure is the trigger, not the mechanism.** Thrashing caused daemons to be killed mid-teardown; a daemon killed between "remove gadget from configfs" and "release the UDC" leaks a slot permanently. So the two observations are one story: pressure -> killed teardown -> leaked slot -> subsequent binds hang -> enormous timeouts.
+
+**The leak is not recoverable in-place.** Reloading `usb_f_fs`, `usb_f_mass_storage`, `libcomposite` and `dummy_hcd` cleared `dummy_udc.0` but left `.1` still `configured`, and `.0` failed to re-register at all — leaving three slots where there should be four. A destroy + `harness:setup` is the reliable remediation.
+
+## Revised fix directions
+
+1. **Make teardown crash-safe.** Releasing the UDC must not depend on the daemon surviving to do it. Either unbind the UDC *before* removing the gadget from configfs, or — more robustly — have persona *setup* reap any orphaned gadget/UDC state idempotently before binding, so a killed teardown cannot poison the next test.
+2. **Assert the slot budget and fail loudly.** `withPersona` (or `preflight.ts`) should count free UDCs and, on finding fewer than expected, fail immediately with something like *"2 of 4 dummy_hcd slots are leaked — run `bun run vm:recover device`"*. That converts a 60-minute mystery timeout into a one-line diagnosis. This is the single highest-value change.
+3. **Bound the waits.** Nothing here should ever wait 60 minutes; a gadget bind either works in seconds or is not going to.
+4. Only then consider host-pressure mitigation (fewer concurrent VMs, serialising `test:vm` within `quality`) — it reduces how often teardowns get killed, but crash-safe teardown is what actually fixes it.
+
+**Not a regression from TASK-482 or TASK-484.** Both landed just before the bad runs, which made them look implicated. Ruled out: `transport.ts`'s only change since the last green run is the `graphify-out` exclude; the in-VM daemon binary sha256 matches the host build exactly; and the failures are in-guest gadget binding, which neither change touches.
 <!-- SECTION:NOTES:END -->

@@ -91,6 +91,7 @@ podkit-vm <verb> <instance> [options]
 |------|--------------|
 | `ensure` | Create + start the VM if needed. Idempotent, locked. |
 | `stage` | rsync the host source tree into a VM-local directory (`--dest`, `--src`, `--exclude`, `--sudo`). |
+| `stage-path` | Print the VM-local path a declared staging area owns (`--area`). Prints the bare path so shell wrappers can capture it. |
 | `status` | Print `running` \| `stopped` \| `missing`. |
 | `stop` | Stop the VM; no-op if missing or already stopped. |
 | `destroy` | Delete the VM (`--yes` to skip the confirmation prompt; refuses non-interactively without it). |
@@ -134,10 +135,11 @@ once; doing so crashes Lima's hostagent, which is the intermittent build failure
 this lock exists to prevent. `ensureExists` and `ensureRunning` therefore read
 the status **inside** the lock, so check-then-act is atomic across processes.
 
-**It does not guard source staging.** Two builder tasks can still
-`rsync --delete` into the same VM-local directory concurrently; that is a
-separate, known hazard tracked in the backlog. Do not assume the lock covers
-more than the start.
+**It does not guard source staging.** Concurrent staging is kept safe by
+construction instead — every VM-local destination has exactly one declared
+owner in the [staging-area registry](#the-staging-area-registry), so no two
+callers ever rsync into the same tree and there is nothing for a lock to
+serialise. Do not assume the lock covers more than the start.
 
 ### Liveness and staleness
 
@@ -202,7 +204,8 @@ that approach was rejected.
   VM. A timeout surfaces as exit code 124.
 - `copyOut({ vmName, vmPath, hostPath })` — copy a file out of a VM.
 - `stageSourceTree({ vmName, hostSrc, vmDest, excludes, sudo })` — rsync the host
-  source tree into a VM-local directory.
+  source tree into a VM-local directory. `vmDest` comes from the
+  [staging-area registry](#the-staging-area-registry), never from a literal.
 
 ### The exclude floor
 
@@ -227,6 +230,59 @@ Callers state which they are.
 rsync exit code 24 ("some files vanished before transfer") is tolerated in one
 place here rather than restated in every wrapper — it is a benign race with host
 processes touching files during the sync window.
+
+Exit code **23** is deliberately *not* tolerated, and the distinction matters.
+24 is a file disappearing on the **sending** side, which leaves the destination
+consistent. 23 means the transfer could not complete in the **destination** —
+the classic cause being a second `rsync --delete` writing the same tree — and
+the staged tree really is inconsistent afterwards. Widening the tolerance to
+cover 23 would convert a loud failure into a silently corrupt build.
+
+### The staging-area registry
+
+`src/staging.ts` declares every VM-local staging destination with exactly one
+owner:
+
+| Area | VM | Destination | Owner |
+|------|----|-------------|-------|
+| `glibcPrebuild` | `builderGlibc` | `/tmp/podkit-libgpod-build` | `@podkit/device-testing#build:linux-prebuild` |
+| `glibcBinary` | `builderGlibc` | `/tmp/podkit-builder-src` | `@podkit/device-testing#build:linux-binary` |
+| `glibcGpodTool` | `builderGlibc` | `/tmp/podkit-gpod-tool-src` | `@podkit/gpod-testing#build:linux-binary` |
+| `muslPrebuild` | `builderMusl` | `/tmp/podkit-musl-libgpod-build` | `@podkit/device-testing#build:musl-prebuild` |
+| `muslBinary` | `builderMusl` | `/tmp/podkit-musl-builder-src` | `@podkit/device-testing#build:musl-binary` |
+| `testGlibc` | `testGlibc` | `/tmp/podkit-test` | `tools/lima/run-tests.sh` |
+| `testMusl` | `testMusl` | `/tmp/podkit-test` | `tools/lima/run-tests.sh` |
+| `virtualIpod` | `virtualIpod` | `/opt/podkit` | mise `vipod:install` |
+
+It exists because the destinations used to be bare strings in five separate
+shell wrappers, and two of them had drifted onto the same path: the CLI-binary
+build and the gpod-tool build both staged into `/tmp/podkit-builder-src`, with
+no ordering edge between their turbo tasks. On a warm tree both rsyncs finished
+in under a second and rarely overlapped; on a cold builder both transferred over
+a gigabyte and reliably collided with exit 23.
+
+The invariant `findStagingCollision` enforces (pinned by `staging.test.ts`) is
+that no two areas in the same VM share a directory **or nest** — a `--delete`
+in a parent wipes a child just as thoroughly as a direct collision. The same
+path in two different VMs is fine, which is why the check is keyed on
+`(vm, dest)`.
+
+Wrappers never spell a destination. They ask for it:
+
+```bash
+VM_SRC="$(bun test-packages/lima/src/cli.ts stage-path "$VM_NAME" --area glibcBinary)"
+```
+
+`stage-path` re-checks that the area really belongs to the VM you named, so a
+musl wrapper pointed at a glibc area fails immediately rather than producing an
+artefact linked against the wrong libc.
+
+To add an area: add the entry, extend `staging.test.ts`, and have the caller
+read it through `stage-path`. Prefer a **new** directory over reusing an
+existing one — the disk cost of a second tree is small next to a corrupt build,
+and a wrapper that only needs part of the repo should narrow its `--src` rather
+than share someone else's tree (the gpod-tool build stages
+`tools/gpod-tool` alone, a few hundred KB instead of a gigabyte).
 
 ---
 

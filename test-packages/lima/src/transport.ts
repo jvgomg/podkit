@@ -127,6 +127,9 @@ export async function copyOut(opts: CopyOutOpts): Promise<void> {
  *   - `packages/podkit-cli/bin`, `packages/demo/bin` — host binaries that would
  *     shadow the ones the VM is about to produce.
  *   - `packages/ipod-db/fixtures/databases` — large generated fixtures.
+ *   - `graphify-out` — the host-local knowledge-graph output. Gitignored, read
+ *     by no VM, and the single largest thing in the tree (hundreds of MB), so
+ *     it dominated the transfer window of every cold stage.
  *   - `tools/libgpod-macos/build` — macOS-only build output.
  *   - `*.bun-build`, `*.img` — transient artefacts; `*.bun-build` in particular
  *     is the file most likely to vanish mid-rsync (see the exit-24 tolerance).
@@ -146,6 +149,7 @@ export const DEFAULT_STAGE_EXCLUDES: readonly string[] = [
   'packages/podkit-cli/bin',
   'packages/demo/bin',
   'packages/ipod-db/fixtures/databases',
+  'graphify-out',
   'tools/libgpod-macos/build',
   '*.bun-build',
   '*.img',

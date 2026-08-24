@@ -62,6 +62,15 @@ export { status, ensureExists, ensureRunning, stop, destroy, recover } from './l
 export type { RunInVmOpts, RunInVmResult, CopyOutOpts, StageSourceTreeOpts } from './transport.js';
 export { runInVm, copyOut, stageSourceTree, DEFAULT_STAGE_EXCLUDES } from './transport.js';
 
+// VM-local staging destinations (one declared owner per directory)
+export type { StagingArea } from './staging.js';
+export {
+  listStagingAreas,
+  getStagingArea,
+  stagingDestFor,
+  findStagingCollision,
+} from './staging.js';
+
 // Output-streaming subprocess runners (live provisioning logs)
 export type { StreamSink } from './streaming-runner.js';
 export {

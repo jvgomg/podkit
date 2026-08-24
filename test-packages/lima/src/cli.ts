@@ -9,6 +9,7 @@
  * Verbs:
  *   ensure   <instance>   create + start the VM if needed (idempotent, locked)
  *   stage    <instance>   rsync the host source tree into a VM-local directory
+ *   stage-path <instance> print the VM-local path of a declared staging area
  *   status   <instance>   print running | stopped | missing
  *   stop     <instance>   stop the VM (no-op if missing/stopped)
  *   destroy  <instance>   delete the VM (--yes to skip the confirm prompt)
@@ -35,6 +36,7 @@ import { getVm, listVms, type VmDefinition } from './registry.js';
 import { instanceStatus } from './instance-status.js';
 import { ensureRunning, stop, destroy, recover, type LifecycleOpts } from './lifecycle.js';
 import { runInVm, stageSourceTree, DEFAULT_STAGE_EXCLUDES } from './transport.js';
+import { stagingDestFor } from './staging.js';
 import { BASELINE_VM_HASH_PATH } from './baseline-hash.js';
 import { repoRoot } from './paths.js';
 import { createVmProvisioningRunner } from './streaming-runner.js';
@@ -42,6 +44,7 @@ import { createVmProvisioningRunner } from './streaming-runner.js';
 const VERBS = [
   'ensure',
   'stage',
+  'stage-path',
   'status',
   'stop',
   'destroy',
@@ -60,6 +63,8 @@ Verbs:
               --src <path>      host source root (default: the repo root)
               --exclude <glob>  extra rsync exclude, repeatable (on top of the shared set)
               --sudo            run the in-VM rsync as root
+  stage-path Print the VM-local path of a declared staging area
+              --area <id>       staging-area id (required)
   status    Print the VM status (running | stopped | missing)
   stop      Stop the VM (no-op if missing or already stopped)
   destroy   Delete the VM (--yes to skip the confirmation prompt)
@@ -176,6 +181,42 @@ async function cmdStage(def: VmDefinition, args: string[], opts: LifecycleOpts):
     return 1;
   }
   log(`[podkit-vm] staged (${DEFAULT_STAGE_EXCLUDES.length + excludes.length} excludes applied).`);
+  return 0;
+}
+
+/**
+ * `stage-path <instance> --area <id>`
+ *
+ * Print the VM-local destination a declared staging area owns, and nothing
+ * else — shell wrappers capture stdout into a variable, so any decoration here
+ * would end up in an rsync destination path.
+ *
+ * This exists so a build wrapper never spells its staging directory as a
+ * literal. Two wrappers that each hard-coded the same `/tmp` path is precisely
+ * how two `rsync --delete` runs ended up in one tree; routing them through the
+ * area registry makes that collision a single-file, test-checkable property.
+ */
+function cmdStagePath(def: VmDefinition, args: string[]): number {
+  let areaId: string | undefined;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--area') {
+      areaId = args[++i];
+      continue;
+    }
+    errorLog(`[podkit-vm] stage-path: unrecognised argument '${arg}'.`);
+    return 1;
+  }
+  if (!areaId) {
+    errorLog('[podkit-vm] stage-path: --area <id> is required.');
+    return 1;
+  }
+  try {
+    log(stagingDestFor(def.instanceName, areaId));
+  } catch (err) {
+    errorLog(`[podkit-vm] ${err instanceof Error ? err.message : String(err)}`);
+    return 1;
+  }
   return 0;
 }
 
@@ -334,6 +375,8 @@ export async function main(
       return cmdEnsure(def, resolved);
     case 'stage':
       return cmdStage(def, args, resolved);
+    case 'stage-path':
+      return cmdStagePath(def, args);
     case 'status':
       return cmdStatus(def, resolved);
     case 'stop':

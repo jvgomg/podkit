@@ -63,7 +63,11 @@ esac
 # mounted tree, leaving the host with a broken symlink to a VM-only path and
 # the macOS-side node_modules destroyed (moved into the VM's tmpfs). Use a
 # fully VM-local checkout to make the host tree untouchable by the build.
-VM_SRC=/tmp/podkit-builder-src
+# The staging directory is looked up in @podkit/lima's staging-area registry
+# rather than spelled here. It used to be a literal, and the sibling gpod-tool
+# wrapper spelled the SAME literal — two `rsync --delete` runs into one tree,
+# with no ordering edge between the two turbo tasks to keep them apart.
+VM_SRC="$("${PODKIT_VM[@]}" stage-path "$VM_NAME" --area glibcBinary)"
 VM_BIN_DIR="$VM_SRC/packages/podkit-cli/bin"
 
 # Stage the source into the VM-local tree. The shared exclude floor lives in

@@ -69,7 +69,11 @@ esac
 # Build inside a VM-local copy of the source tree, NOT the macOS-mounted repo
 # (see build-linux-binary.sh for the full rationale — a host-mounted build
 # tree lets the VM destroy the host's node_modules).
-VM_SRC=/tmp/podkit-musl-builder-src
+# Destination comes from @podkit/lima's staging-area registry, which keeps this
+# tree distinct from the musl prebuild's — the musl pair is not scheduled
+# concurrently today, but nothing enforced that, so the separation is now
+# declared rather than incidental.
+VM_SRC="$("${PODKIT_VM[@]}" stage-path "$VM_NAME" --area muslBinary)"
 VM_BIN_DIR="$VM_SRC/packages/podkit-cli/bin"
 
 # Stage the source into the VM-local tree. prebuilds/ is deliberately NOT

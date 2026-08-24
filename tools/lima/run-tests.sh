@@ -2,7 +2,8 @@
 #
 # Run the podkit test suite inside Lima VMs.
 #
-# The repo is rsynced to a VM-local directory (/tmp/podkit-test) — host's
+# The repo is rsynced to a VM-local directory (declared in @podkit/lima's
+# staging-area registry, one directory per VM) — host's
 # macOS native binaries and node_modules are excluded so the VM rebuilds
 # fresh against its own libc. Turbo cache lives outside the source tree
 # at $HOME/.cache/podkit-turbo so it survives `limactl stop/start` and is
@@ -21,7 +22,6 @@
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
-VM_WORK_DIR="/tmp/podkit-test"
 VM_TURBO_CACHE='$HOME/.cache/podkit-turbo'
 PODKIT_VM=(bun "$REPO_DIR/test-packages/lima/src/cli.ts")
 
@@ -66,9 +66,16 @@ ensure_vm() {
 
 run_tests() {
   local name=$1
+  local area=$2
+  # The VM-local destination is declared in @podkit/lima's staging-area
+  # registry rather than spelled here, so no two callers can end up rsyncing
+  # into the same tree.
+  local VM_WORK_DIR
+  VM_WORK_DIR="$("${PODKIT_VM[@]}" stage-path "$name" --area "$area")"
+
   echo ""
   echo "=== Running tests on $name ==="
-  echo "Syncing repo to VM-local directory..."
+  echo "Syncing repo to VM-local directory ($VM_WORK_DIR)..."
 
   # Staging goes through the shared helper: one exclude floor, one rsync
   # exit-24 tolerance. Turbo cache lives at $HOME/.cache/podkit-turbo (outside
@@ -126,17 +133,17 @@ target="${1:-all}"
 case "$target" in
   debian)
     ensure_vm "podkit-test-glibc"
-    run_tests "podkit-test-glibc"
+    run_tests "podkit-test-glibc" testGlibc
     ;;
   alpine)
     ensure_vm "podkit-test-musl"
-    run_tests "podkit-test-musl"
+    run_tests "podkit-test-musl" testMusl
     ;;
   all)
     ensure_vm "podkit-test-glibc"
     ensure_vm "podkit-test-musl"
-    run_tests "podkit-test-glibc"
-    run_tests "podkit-test-musl"
+    run_tests "podkit-test-glibc" testGlibc
+    run_tests "podkit-test-musl" testMusl
     echo ""
     echo "All Linux tests passed."
     ;;

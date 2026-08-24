@@ -49,18 +49,27 @@ case "$TARGET_ARCH" in
     ;;
 esac
 
-# Build inside a VM-local copy of the source tree (matches build-linux-binary.sh).
-# A direct $REPO_ROOT build would clobber host-side artefacts via Lima's $HOME
-# mount; staging into /tmp keeps the host tree untouchable.
-VM_SRC=/tmp/podkit-builder-src
+# Build inside a VM-local copy of the source tree. A direct $REPO_ROOT build
+# would clobber host-side artefacts via Lima's $HOME mount; staging keeps the
+# host tree untouchable.
+#
+# The destination comes from @podkit/lima's staging-area registry, which grants
+# it its own directory. It previously shared build-linux-binary.sh's tree, and
+# turbo schedules the two tasks concurrently with no ordering edge, so their
+# `rsync --delete` runs collided (rsync exit 23) whenever the tree was cold
+# enough for the transfers to overlap.
+VM_SRC="$("${PODKIT_VM[@]}" stage-path "$VM_NAME" --area glibcGpodTool)"
 
-# Stage the source into the VM-local tree using the shared exclude floor.
-"${PODKIT_VM[@]}" stage "$VM_NAME" --src "$REPO_ROOT" --dest "$VM_SRC"
+# Only tools/gpod-tool is staged: the Makefile compiles a single .c against
+# apt's libgpod-1.0/glib-2.0 via pkg-config and reaches outside its own
+# directory only for the optional private-header path, which is a macOS-local
+# build output the shared exclude floor prunes anyway. Staging the whole repo
+# here would copy over a gigabyte to run one `make`.
+"${PODKIT_VM[@]}" stage "$VM_NAME" --src "$REPO_ROOT/tools/gpod-tool" --dest "$VM_SRC"
 
 log "building gpod-tool inside '$VM_NAME' (target=linux-${NODE_ARCH})..."
 limactl shell --workdir "$VM_SRC" "$VM_NAME" bash -c '
   set -euo pipefail
-  cd tools/gpod-tool
   make clean
   make
   # Smoke: bare-help is sufficient — gpod-tool has no --version flag, and
@@ -71,7 +80,7 @@ limactl shell --workdir "$VM_SRC" "$VM_NAME" bash -c '
 
 mkdir -p "$GPOD_TESTING_BIN_DIR"
 DEST="$GPOD_TESTING_BIN_DIR/gpod-tool-linux-${NODE_ARCH}"
-log "copying ${VM_NAME}:${VM_SRC}/tools/gpod-tool/gpod-tool -> ${DEST}..."
-limactl copy "${VM_NAME}:${VM_SRC}/tools/gpod-tool/gpod-tool" "$DEST"
+log "copying ${VM_NAME}:${VM_SRC}/gpod-tool -> ${DEST}..."
+limactl copy "${VM_NAME}:${VM_SRC}/gpod-tool" "$DEST"
 chmod +x "$DEST"
 log "produced $DEST"
