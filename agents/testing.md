@@ -314,7 +314,7 @@ drift in which surfaces run:
 - **Phase 2** — `turbo run test:e2e:docker-dist test:e2e:docker-loopback`.
 
 The split is deliberate: `qa` already contains `test:vm`, and both `test:vm` and
-`test:e2e:docker-dist` drive the single shared `podkit-device-harness` VM.
+`test:e2e:docker-dist` drive the single shared `podkit-device` VM.
 Running them concurrently collides on the gadget/mount state (a bare-FAT
 `gpod-tool init` fails), so the docker phase must wait for `qa` to release the
 VM. Extra flags pass through to both phases: `bun run quality --force`, or

@@ -23,7 +23,7 @@ bun run test:vm
 bun run --cwd test-packages/e2e-vm-tests test:vm
 ```
 
-VM tests are excluded from the default `bun test` run via `bunfig.toml`. They opt in via the `test:vm` script, which passes `src/` explicitly. The same `bunfig.toml` preloads the shared `@podkit/device-testing/preflight` script, which probes the `podkit-device-harness` Lima VM and exits 1 with a remediation message if Lima is missing or the VM isn't answering — fail-fast, no silent skip. The preflight self-gates on `process.argv` / `npm_lifecycle_event` so a non-VM `bun test` invocation in this package no-ops cleanly.
+VM tests are excluded from the default `bun test` run via `bunfig.toml`. They opt in via the `test:vm` script, which passes `src/` explicitly. The same `bunfig.toml` preloads the shared `@podkit/device-testing/preflight` script, which probes the `podkit-device` Lima VM and exits 1 with a remediation message if Lima is missing or the VM isn't answering — fail-fast, no silent skip. The preflight self-gates on `process.argv` / `npm_lifecycle_event` so a non-VM `bun test` invocation in this package no-ops cleanly.
 
 ## Test layout
 

@@ -57,7 +57,7 @@ surface (Lima VM) — see the [test taxonomy](../documents/architecture/testing/
 
 ### Running the vm-docker-image e2e locally
 
-This stage builds the real Alpine/musl image inside the `podkit-device-harness`
+This stage builds the real Alpine/musl image inside the `podkit-device`
 Lima VM and drives it against a synthesized USB iPod (5G Video persona) with
 `nerdctl run --device` passthrough: `device add` (live USB firmware inquiry →
 SysInfoExtended write), a real FLAC→AAC sync, then a read-back — all through the

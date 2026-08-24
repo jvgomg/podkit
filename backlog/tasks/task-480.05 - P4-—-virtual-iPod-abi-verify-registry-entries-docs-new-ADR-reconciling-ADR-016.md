@@ -3,9 +3,10 @@ id: TASK-480.05
 title: >-
   P4 — virtual-iPod + abi-verify registry entries; docs + new ADR reconciling
   ADR-016
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-08-23 13:32'
+updated_date: '2026-08-23 23:52'
 labels:
   - testing
   - ci

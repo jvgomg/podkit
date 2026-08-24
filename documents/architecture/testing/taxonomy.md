@@ -59,7 +59,7 @@ An E2E test's Surface is a triple: **Runtime × Source × Device**.
   |---|---|
   | `host-binary` | the compiled binary on the dev/CI host |
   | `host-docker-image` | the shipped Docker **image** run as a container on the host |
-  | `vm-binary` | the binary inside the `podkit-device-harness` Lima VM |
+  | `vm-binary` | the binary inside the `podkit-device` Lima VM |
   | `vm-docker-image` | the shipped Docker image run as a container **inside** the VM |
 - **Source** — where the music comes from:
   | Value | Meaning |

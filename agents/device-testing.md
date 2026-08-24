@@ -27,7 +27,7 @@ bun run vm:down device   # when done
 **`bun run test:vm` is now self-orchestrating.** It turbo-depends on two new tasks:
 
 - `@podkit/device-testing#vm:install` — cached fresh-binary install. Invalidates on changes to podkit/daemon/gpod-tool source globs OR `scripts/harness.ts` / `runners/lima-test-vm-*.ts`. Replays as a cache hit (~300ms) when nothing changed.
-- `@podkit/device-testing#vm:doctor` — preflight drift check. Hashes `podkit-device-harness.yaml` + `apply-state.sh` and compares against the baseline hash sealed inside the VM at `harness:setup`. **No silent recovery** — drift exits 1 with the exact `vm:destroy device --yes && harness:setup` remediation command.
+- `@podkit/device-testing#vm:doctor` — preflight drift check. Hashes `podkit-device.yaml` + `apply-state.sh` and compares against the baseline hash sealed inside the VM at `harness:setup`. **No silent recovery** — drift exits 1 with the exact `vm:destroy device --yes && harness:setup` remediation command.
 
 You almost never need `harness:install` directly anymore; `test:vm` covers the binary-freshness contract. Force-refresh via `bunx turbo run @podkit/device-testing#vm:install` if needed (e.g. after a manual rebuild outside the test loop). Drift-check only: `bunx turbo run @podkit/device-testing#vm:doctor`.
 
@@ -186,7 +186,7 @@ Determinism contract: two runs of the same persona must produce a byte-identical
 
 **Runner implementation:** `test-packages/device-testing/src/runners/lima-test-vm-backing-files.ts` (`ensureBackingFile`, `resolveSeedEntries`, `buildSeedCommands`). Persona-side validation runs up front on the host so a bad `initialContent` entry surfaces before the VM is touched.
 
-**VM provisioning prerequisites** for seeding: `mtools` package (provides `mcopy` + `mmd`), provisioned by `test-packages/device-testing/lima/podkit-device-harness.yaml`. Operates on partition-less FAT32 images via `MTOOLS_SKIP_CHECK=1`.
+**VM provisioning prerequisites** for seeding: `mtools` package (provides `mcopy` + `mmd`), provisioned by `test-packages/lima/vms/podkit-device.yaml`. Operates on partition-less FAT32 images via `MTOOLS_SKIP_CHECK=1`.
 
 ## `SystemState` registry
 
@@ -219,7 +219,7 @@ For VM tests: also add the matching mutation branch to `scripts/apply-state.sh` 
 `TestRuntime` abstracts where a VM test executes. Two implementations:
 
 - **`local-linux`** — runs the FunctionFS daemon as a subprocess on the current Linux host. Use on Linux dev hosts directly.
-- **`lima-test-vm`** — wraps `local-linux` execution inside the Lima test VM at `test-packages/device-testing/lima/podkit-device-harness.yaml`. Use on macOS dev hosts.
+- **`lima-test-vm`** — wraps `local-linux` execution inside the Lima test VM at `test-packages/lima/vms/podkit-device.yaml`. Use on macOS dev hosts.
 
 Auto-register pattern: importing `@podkit/device-testing` registers both `local-linux` and `lima-test-vm` via a side-effect at the bottom of `src/index.ts` (no platform guard). Tests call `getRunner(id)` and receive whichever backend is available.
 
@@ -263,11 +263,24 @@ Single source of truth: `tools/prebuild/build-linux-glibc.sh`.
 
 | Path | Purpose |
 |------|---------|
-| `test-packages/device-testing/lima/podkit-linux-builder.yaml` | Builder VM — Debian 12.10 + full dev toolchain; produces linux-x64 glibc prebuilds + standalone binary |
-| `test-packages/device-testing/lima/podkit-abi-verify.yaml` | ABI verify VM — stock Debian 12.10 + ffmpeg only; no dev packages; smoke-checks `ldd` |
-| `test-packages/device-testing/lima/podkit-device-harness.yaml` | Test VM (`podkit-device-harness`) — kernel modules + gpod-tool runtime libs; the gpod-tool binary itself is built by `@podkit/gpod-testing#build:linux-binary` and transferred unconditionally by `bun run harness:install`. Runs T3 tests. |
+| `test-packages/lima/vms/podkit-builder-glibc.yaml` | Builder VM — Debian 12.10 + full dev toolchain; produces linux-x64 glibc prebuilds + standalone binary |
+| `test-packages/lima/vms/podkit-abi-verify.yaml` | ABI verify VM — stock Debian 12.10 + ffmpeg only; no dev packages; smoke-checks `ldd` |
+| `test-packages/lima/vms/podkit-device.yaml` | Test VM (`podkit-device`) — kernel modules + gpod-tool runtime libs; the gpod-tool binary itself is built by `@podkit/gpod-testing#build:linux-binary` and transferred unconditionally by `bun run harness:install`. Runs T3 tests. |
 
-For the full operator manual, see [`test-packages/device-testing/lima/README.md`](../test-packages/device-testing/lima/README.md).
+These three VMs are separate machines on purpose ([ADR-016](../adr/adr-016-linux-vm-test-harness.md)): the builder has the dev toolchain, the other two have none, so a binary with hidden dynamic linkage cannot pass its tests on a host that happens to have `libgpod.so` around. For the registry, the `podkit-vm` CLI and the shared lock that manage all of them, see [`test-packages/lima/README.md`](../test-packages/lima/README.md) and [ADR-027](../adr/adr-027-lima-vm-substrate-consolidation.md).
+
+**The binary-only invariant.** After boot, none of these should produce output in the device VM:
+
+```bash
+limactl shell podkit-device -- which bun node npm         # all empty
+limactl shell podkit-device -- dpkg -l | grep -E ' -dev '  # no -dev packages
+```
+
+The yaml itself fails provisioning if `bun`, `node`, `npm` or any `-dev` package was somehow installed, and there is no `mounts:` entry, so the host source tree is invisible inside the VM.
+
+`ffmpeg` is the one deliberate exception: podkit invokes it as a subprocess (transcoding), never links it, and every user installs it from their OS package manager. The runtime `libgpod4` / `libgpod-common` / `libglib2.0-0` packages present in the device VM are there **for `gpod-tool` only** — the test helper that populates iPod databases, which dynamically links libgpod-1.0 + glib-2.0. podkit itself statically links libgpod, gdk-pixbuf, glib and libplist, so `ldd /usr/local/bin/podkit` inside the VM must show only stable system libraries; any libgpod / libglib / libgdk-pixbuf line is a build regression in `tools/prebuild/build-static-deps.sh`.
+
+**gpod-tool sourcing.** `gpod-tool` is a **required** test-time dependency — the harness fails fast if it is missing. It is built inside `podkit-builder-glibc` (which has `libgpod-dev` via apt) by the `@podkit/gpod-testing#build:linux-binary` turbo task, emitting `test-packages/gpod-testing/bin/gpod-tool-linux-<arch>`. `bun run harness:install` invokes the task transitively and unconditionally transfers the result to `/usr/local/bin/gpod-tool`. `PODKIT_GPOD_TOOL_BINARY` overrides the source path for debugging; leave it unset otherwise.
 
 **Local build:**
 
@@ -282,7 +295,34 @@ bunx turbo run \
 
 The build scripts (`build-linux-binary.sh`, `build-linux-prebuild.sh`) auto-create + auto-start the builder Lima VM (`podkit-builder-glibc`) on demand — via `podkit-vm ensure`, which holds the shared advisory lock — so a developer rarely touches that VM directly. To free RAM or force a fresh rebuild: `bun run vm:down builderGlibc` / `bun run vm:destroy builderGlibc`.
 
-**CI:** `.github/workflows/prebuild.yml` invokes the same `build-linux-glibc.sh` script. No duplicated logic.
+**CI:** `.github/workflows/prebuild.yml` invokes the same `build-linux-glibc.sh` script. No duplicated logic. `tools/prebuild/*` are pure bash recipes with no Bun/Node dependency at their outer layer — CI runs them directly with no Lima involved, and they import nothing from `@podkit/lima`. Only the host wrappers (ensure VM → stage → run recipe → copy out) know about Lima.
+
+The musl/Alpine paths in `prebuild.yml` and `build-platform.yml` run inside Alpine containers with their own static-link nuances; locally they mirror through `podkit-builder-musl`. See [ADR-026](../adr/adr-026-dual-libc-linux-distribution.md).
+
+### Build troubleshooting
+
+**`ldd` shows libgpod / libglib / libgdk-pixbuf.** The static-link path is broken. Inspect the `--enable-static` / `--disable-shared` / `-fPIC` flags and the `STATIC_DEPS_DIR/lib/*.a` verify phase in `tools/prebuild/build-static-deps.sh`.
+
+**Native binding fails to load inside the binary.** Re-run with verification skipped, then inspect the `.node`:
+
+```bash
+SKIP_VERIFY=1 limactl shell podkit-builder-glibc -- bash tools/prebuild/build-linux-glibc.sh
+limactl shell podkit-builder-glibc -- ldd packages/libgpod-node/prebuilds/linux-*/*.node
+```
+
+Any `libgpod`, `libgdk_pixbuf`, `libglib` or `libplist` line is a regression in `build-static-deps.sh`.
+
+**Cache miss every run.** Check the inputs glob actually matches your sources:
+
+```bash
+bunx turbo run @podkit/device-testing#build:linux-prebuild --dry-run=json | jq '.tasks[].inputs'
+```
+
+Both build tasks hash `PODKIT_HOST_ARCH` into the cache key so a shared remote cache cannot surface a wrong-arch binary. `harness:install` sets it from `process.arch`; when invoking `bunx turbo` directly, `export PODKIT_HOST_ARCH=$(uname -m)` first.
+
+**Debian point-release drift.** `podkit-builder-glibc.yaml` and `podkit-abi-verify.yaml` both pin Debian 12.10 via explicit cloud-image URLs. If you bump one, bump both and re-run the manual ABI check.
+
+**Builder VM wedged.** `bun run vm:recover builderGlibc`.
 
 ## Where to write a VM test
 
@@ -296,7 +336,7 @@ Reference implementation for harness self-tests: `test-packages/device-testing/s
 **Filename:** `*.e2e.test.ts` under the appropriate package's `src/` (harness self-tests stay under `src/vm/`; feature tests live at `src/` root of `@podkit/e2e-vm-tests`). The `bunfig.toml` `pathIgnorePatterns` in both packages excludes `*.e2e.test.ts` from the default `bun test` run; `bun run test:vm` opts them back in by passing the test directory explicitly.
 
 **Imports (podkit feature tests in `@podkit/e2e-vm-tests`):** Everything comes from `@podkit/device-testing`:
-- `limaTestVmRunner` — the `TestRuntime` implementation that executes commands inside `podkit-device-harness`.
+- `limaTestVmRunner` — the `TestRuntime` implementation that executes commands inside `podkit-device`.
 - `groupPersonasByState`, `resolveStarterPersonas`, `VM_WARM_TIMEOUT_MS`, `VM_COLD_TIMEOUT_MS`.
 - `withPersona`, `runJsonCommand`.
 - Persona + `SystemState` named exports (`ipodVideo5gIflash1tb`, `echoMini`, `healthy`, etc.).
@@ -371,4 +411,5 @@ nodes, verifies clean teardown.
 - [ADR-017](../adr/adr-017-device-persona-fixtures.md) — `DevicePersona` + `SystemState` fixture registry design
 - [test-packages/device-testing/README.md](../test-packages/device-testing/README.md) — package-level API and public exports
 - [agents/testing.md](testing.md) — test stack overview, tagging convention, quick-reference commands
-- [test-packages/device-testing/lima/README.md](../test-packages/device-testing/lima/README.md) — builder and ABI-verify VM operator manual
+- [test-packages/lima/README.md](../test-packages/lima/README.md) — the VM registry, the `podkit-vm` CLI, the advisory lock, and source staging
+- [ADR-027](../adr/adr-027-lima-vm-substrate-consolidation.md) — why VM configs and lifecycle live in one substrate package

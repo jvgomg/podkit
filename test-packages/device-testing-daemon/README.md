@@ -7,8 +7,8 @@ SysInfoExtended-driven inquiry personas) and pure mass-storage gadgets
 [ADR-016](../../adr/adr-016-linux-vm-test-harness.md) for the full
 architecture.
 
-The daemon runs inside the `podkit-device-harness` Lima VM
-(`test-packages/device-testing/lima/podkit-device-harness.yaml`). It is delivered as a single
+The daemon runs inside the `podkit-device` Lima VM
+(`test-packages/lima/vms/podkit-device.yaml`). It is delivered as a single
 self-contained binary produced by `bun build --compile`; the test VM has
 no Bun, no Node, no source tree.
 
@@ -138,7 +138,7 @@ machinery in `@podkit/device-testing`:
 ```ts
 import { transferBinary } from '@podkit/device-testing';
 await transferBinary({
-  vmName: 'podkit-device-harness',
+  vmName: 'podkit-device',
   binaryPath: 'test-packages/device-testing-daemon/dist/dummy-hcd-daemon-linux-arm64',
   vmPath: '/usr/local/bin/dummy-hcd-daemon',
 });

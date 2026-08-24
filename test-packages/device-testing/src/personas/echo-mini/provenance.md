@@ -117,7 +117,7 @@ Provisional. `expectedCapabilities` mirrors the built-in `echo-mini` preset shap
 
 ## Mass-storage backing file (VM synthesis)
 
-**Source:** synthesised inside `podkit-device-harness` at `prepare()` time — no
+**Source:** synthesised inside `podkit-device` at `prepare()` time — no
 host-side artefact, no committed binary, no git LFS.
 
 **Recipe:** `massStorageBackingFile.synthesis = { sizeMiB: 64, filesystem:

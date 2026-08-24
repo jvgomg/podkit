@@ -11,7 +11,11 @@ explicit drift detection between the running VM and the source-of-truth
 provisioning scripts.
 
 Companion reading:
-[adr/adr-016 — Linux VM test harness](../../../adr/adr-016-linux-vm-test-harness.md).
+[adr/adr-016 — Linux VM test harness](../../../adr/adr-016-linux-vm-test-harness.md)
+and
+[adr/adr-027 — Lima VM substrate consolidation](../../../adr/adr-027-lima-vm-substrate-consolidation.md)
+(the VM registry, the `podkit-vm` CLI, and the advisory lock every VM
+start routes through).
 
 ---
 
@@ -20,7 +24,7 @@ Companion reading:
 Two coupled concerns sit between `bun run test:vm` and a meaningful test
 result:
 
-1. **Binary freshness.** The VM under `podkit-device-harness` runs the
+1. **Binary freshness.** The VM under `podkit-device` runs the
    Linux binary at `/usr/local/bin/podkit`. That binary was built from a
    host source tree at some past time. If `packages/podkit-core/src/**` or
    `packages/podkit-cli/src/**` (etc.) have changed since the binary was
@@ -28,7 +32,7 @@ result:
    GREEN cells with no signal in the failure message.
 
 2. **VM baseline drift.** The running VM was provisioned from
-   `test-packages/device-testing/lima/podkit-device-harness.yaml` at some
+   `test-packages/lima/vms/podkit-device.yaml` at some
    past `harness:setup`. If the yaml has changed (new apt package, new
    kernel module, new fstab line) the VM is missing pieces; tests fail
    with apparent symptoms that are really provisioning gaps. Similarly,
@@ -77,7 +81,7 @@ so a manual re-run is always safe.
 ### `@podkit/device-testing#vm:doctor` (turbo task — new)
 
 A short preflight script (`scripts/vm-doctor.ts`) that hashes
-`podkit-device-harness.yaml` + `apply-state.sh` and compares to a hash
+`podkit-device.yaml` + `apply-state.sh` and compares to a hash
 file inside the VM at `/var/lib/podkit-device-harness/baseline-hash`.
 Inputs are the yaml + script + the doctor script itself; no outputs (the
 task asserts a condition, it doesn't produce artefacts).
@@ -127,7 +131,7 @@ guarantees a **drift check** runs first.
   a new install step lands in `harness.ts` — list it in `vm:install`
   inputs.
 
-- Any new line in `podkit-device-harness.yaml` (apt package, module,
+- Any new line in `podkit-device.yaml` (apt package, module,
   fstab entry) or `apply-state.sh` (new state, new helper) automatically
   contributes to the baseline hash; no further wiring needed.
 
@@ -150,7 +154,7 @@ guarantees a **drift check** runs first.
 | `harness.ts` or transfer helpers changed                 | Turbo invalidates `vm:install` → re-runs (binaries unchanged → sha256 probe skips the actual copies; marker file is rewritten). |
 | Marker file deleted but inputs unchanged                 | Turbo cache hit; the install is not re-run (this is fine — the in-VM binary still matches the build output). |
 | VM destroyed + recreated manually without `setup`        | `vm:doctor` reads the VM's hash file (absent), reports drift, exits 1 with remediation. |
-| `podkit-device-harness.yaml` changed since last setup    | `vm:doctor` reports drift with the file name and exits 1. |
+| `podkit-device.yaml` changed since last setup    | `vm:doctor` reports drift with the file name and exits 1. |
 | `apply-state.sh` changed since last setup                | Same as yaml. |
 | Both VM running + hashes match + binaries current        | `vm:doctor` exits 0, `vm:install` cache hit, tests proceed. |
 
@@ -164,10 +168,11 @@ No silent recovery, no auto-rebuild.
 
 This orchestration does **not** cover:
 
-- **Builder-VM lifecycle.** The `podkit-linux-builder` VM auto-creates
-  on first use of `build:linux-binary` and is otherwise developer-managed
-  via `vm:down builderGlibc`/`vm:destroy builderGlibc`. No turbo
-  involvement.
+- **Builder-VM lifecycle.** The `podkit-builder-glibc` VM auto-creates
+  on first use of `build:linux-binary` — through `podkit-vm ensure` and
+  its shared advisory lock, not through turbo — and is otherwise
+  developer-managed via `vm:down builderGlibc`/`vm:destroy builderGlibc`.
+  Deliberately no turbo ordering node: see ADR-027.
 - **Test discovery.** Whether a given `.e2e.test.ts` file runs is
   governed by `bun test`'s path glob; the orchestration only ensures the
   binary it observes is current.
@@ -185,8 +190,8 @@ This orchestration does **not** cover:
 - **Marker file format.** Today the marker is a single sha256-of-sha256s
   line. If a future test needs to know which artefact was last shipped
   (e.g. for a manual ldd probe), the marker can be extended to JSON.
-- **Multiple VMs.** Only `podkit-device-harness` is in scope. The Linux
-  test VMs (`podkit-tests-debian-glibc`, `podkit-tests-alpine-musl`,
+- **Multiple VMs.** Only `podkit-device` is in scope. The Linux
+  test VMs (`podkit-test-glibc`, `podkit-test-musl`,
   `podkit-virtual-ipod`) have their own lifecycles; if any acquires a
   test:vm-style suite, the same pattern should be lifted into a shared
   helper.
@@ -199,7 +204,7 @@ This orchestration does **not** cover:
 - `test-packages/device-testing/scripts/harness.ts` — install
   implementation.
 - `test-packages/device-testing/scripts/vm-doctor.ts` — drift preflight.
-- `test-packages/device-testing/lima/podkit-device-harness.yaml` —
+- `test-packages/lima/vms/podkit-device.yaml` —
   baseline yaml.
 - `test-packages/device-testing/scripts/apply-state.sh` — state runtime.
 - `adr/adr-016-linux-vm-test-harness.md` — overall VM-test split.

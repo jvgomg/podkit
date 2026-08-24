@@ -9,7 +9,16 @@ sidebar:
 
 ## Status
 
-**Accepted**
+**Accepted** — VM orchestration and config ownership consolidated by [ADR-027](/developers/adr/adr-027-lima-vm-substrate-consolidation).
+
+> **Orchestration note (2026-08-24):** the Lima instance names and yaml
+> paths below are as they stood at decision time. All VM configs now live
+> in `test-packages/lima/vms/` behind a typed registry, and every VM start
+> routes through the shared advisory lock in `@podkit/lima` — see
+> [ADR-027](/developers/adr/adr-027-lima-vm-substrate-consolidation) for
+> the current names and the mapping. The **architecture below is
+> unchanged**: the builder, test and device VMs remain physically separate
+> instances, and the "one recipe, two callers" build invariant still holds.
 
 > **Naming note (2026-07-12):** This ADR's "three-tier" language and the
 > "Tier-3" label for the VM layer predate the canonical

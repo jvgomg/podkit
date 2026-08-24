@@ -30,19 +30,20 @@ packages/            # Published / published-adjacent packages
 └── virtual-ipod-server/ # Lima VM backend — USB gadget + REST/WebSocket API
 
 test-packages/             # Testing infrastructure (private, not published)
-├── device-testing/        # VM test harness — DevicePersona + SystemState registries, TestRuntime, Lima yamls, apply-state.sh
+├── device-testing/        # VM test harness — DevicePersona + SystemState registries, TestRuntime, apply-state.sh
 ├── device-testing-daemon/ # Userspace daemon — synthesises iPod USB gadgets (FunctionFS + mass-storage) on dummy_hcd
 ├── e2e-tests/             # End-to-end CLI tests on the host (dummy + real iPod). Docker-gated files live in the `src/docker-source/` surface dir
 ├── e2e-shared/            # Cross-cutting helpers shared by every e2e package (CLI runner, preflight, error assertions)
 ├── e2e-vm-tests/          # End-to-end podkit feature tests inside the Lima VM
 ├── gpod-testing/          # Test utilities for iPod environments (no hardware needed)
+├── lima/                  # Lima VM substrate — typed VM registry + all VM yamls, lifecycle, advisory lock, `podkit-vm` CLI
 └── test-fixtures/         # Static + dynamic test fixtures (audio + video, lib + CLI generators)
 
 tools/
 ├── demo/            # Live demo documentation for the virtual iPod system
 ├── gpod-tool/       # C CLI for iPod database operations
 ├── libgpod-macos/   # macOS build scripts for libgpod
-└── lima/            # Lima VM configs (Debian, Alpine, virtual-ipod)
+└── lima/            # Linux test-suite runner (`run-tests.sh`); VM configs live in `test-packages/lima/vms/`
 
 devices/             # Device documentation profiles (specs, capabilities, research)
 ```
@@ -253,7 +254,7 @@ The virtual iPod system creates a synthetic iPod for demonstrating podkit. It co
 - `@podkit/virtual-ipod-server` — Runs inside a Lima VM. Manages USB gadget via configfs + dummy_hcd (Apple vendor/product IDs). Serves iPod filesystem over REST + WebSocket. podkit sees the virtual device as a real iPod with zero code changes.
 - `@podkit/virtual-ipod-app` — Tauri v2 macOS app. Frameless transparent window shaped like an iPod. Manages Lima VM lifecycle.
 
-**Lima VM (`tools/lima/podkit-virtual-ipod.yaml`):**
+**Lima VM (`test-packages/lima/vms/podkit-virtual-ipod.yaml`):**
 - Debian 12 with dummy_hcd + configfs USB gadget support
 - `mise run vipod:install` rsyncs source to `/opt/podkit/` (VM-local, won't touch macOS node_modules), builds, and installs podkit binary to `/usr/local/bin`
 - `mise run vipod:shell` drops into an isolated `james@lima-virtual-ipod:~$` with podkit in PATH and tab completion
@@ -312,7 +313,7 @@ Key files to understand:
 | VM test harness | `test-packages/device-testing/src/index.ts` |
 | VM test entry | `test-packages/e2e-vm-tests/src/` |
 | FunctionFS daemon | `test-packages/device-testing-daemon/src/main.ts` |
-| VM test Lima configs | `test-packages/lima/vms/` |
+| Lima VM configs (all VMs) | `test-packages/lima/vms/` |
 | Harness lifecycle script | `test-packages/device-testing/scripts/harness.ts` |
 | VM registry + `podkit-vm` CLI | `test-packages/lima/src/registry.ts`, `test-packages/lima/src/cli.ts` |
 | apply-state.sh | `test-packages/device-testing/scripts/apply-state.sh` |
@@ -326,9 +327,8 @@ Key files to understand:
 | Docker entrypoint | `packages/podkit-docker/entrypoint.sh` |
 | Dockerfile | `packages/podkit-docker/Dockerfile` |
 | Linux device manager | `packages/podkit-core/src/device/platforms/linux.ts` |
-| Lima VM configs | `tools/lima/` |
 | Diagnostics framework | `packages/podkit-core/src/diagnostics/` |
-| Lima test runner | `tools/lima/run-tests.sh` |
+| Linux test-suite runner | `tools/lima/run-tests.sh` |
 | iPod DB parser | `packages/ipod-db/src/index.ts` |
 | iPod DB reader facade | `packages/ipod-db/src/reader.ts` |
 | iPod DB fixture generator | `packages/ipod-db/fixtures/generate.ts` |
@@ -337,7 +337,7 @@ Key files to understand:
 | Virtual iPod server | `packages/virtual-ipod-server/src/main.ts` |
 | Virtual iPod USB gadget | `packages/virtual-ipod-server/src/gadget.ts` |
 | Virtual iPod Tauri app | `packages/virtual-ipod-app/src/App.tsx` |
-| Virtual iPod Lima config | `tools/lima/podkit-virtual-ipod.yaml` |
+| Virtual iPod Lima config | `test-packages/lima/vms/podkit-virtual-ipod.yaml` |
 | Live demo guide | `tools/demo/README.md` |
 | Device-types entry | `packages/device-types/src/index.ts` |
 | iPod identity | `packages/devices-ipod/src/identity.ts` |

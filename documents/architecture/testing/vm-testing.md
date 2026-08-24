@@ -6,7 +6,7 @@ sidebar:
 ---
 
 Describes how end-to-end tests run podkit against a real-looking iPod
-inside the `podkit-device-harness` Lima VM — the **E2E** depth on the
+inside the `podkit-device` Lima VM — the **E2E** depth on the
 `vm-binary` · `local-dir` · `usb-synth` surface of the
 [test taxonomy](./taxonomy.md). The VM is the only place podkit's
 USB/SCSI/filesystem code paths get exercised against a device-shaped
@@ -34,7 +34,7 @@ These are the deepest tests in podkit's [depth taxonomy](./taxonomy.md#2-depth):
 2. **Integration** — multi-module tests inside one process. Run on
    macOS, no VM.
 3. **End-to-end (VM)** — full `podkit` binary running inside
-   `podkit-device-harness` against a synthesised USB device. This doc is
+   `podkit-device` against a synthesised USB device. This doc is
    the `vm-binary` · `usb-synth` surface.
 
 An E2E test on this surface exercises the binary end-to-end: USB inquiry, SCSI passthrough,
@@ -503,7 +503,7 @@ This document does **not** cover:
   `tools/device-testing/dummy-hcd/README.md` and the daemon's
   per-file JSDoc.
 - **CI vs local execution.** Today every VM E2E test runs against the
-  developer's local `podkit-device-harness` instance. CI runs the
+  developer's local `podkit-device` instance. CI runs the
   same suite against an identically-named VM provisioned per job.
   The provisioning script is the canonical source of both.
 - **Matrix harness conventions.** `skipBug`/`skipRedundant`/

@@ -82,7 +82,7 @@ Capture from the device-harness VM:
    strictly; summaries are kept as documentation.
 4. Update the golden file for `healthy`:
    ```
-   limactl shell podkit-device-harness -- podkit doctor --scope system --json \
+   limactl shell podkit-device -- podkit doctor --scope system --json \
      | jq '{overallStatus: (if .healthy then "healthy" elif (.checks|any(.status=="fail")) then "fail" else "warn" end), checks: [.checks[] | {id, status, summary}]}' \
      > test-packages/device-testing/src/system-states/__fixtures__/healthy-doctor-output.golden.json
    ```

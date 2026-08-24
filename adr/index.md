@@ -32,6 +32,7 @@ This section contains Architecture Decision Records (ADRs) documenting significa
 | [ADR-022](/developers/adr/adr-022-sync-tag-sole-quality-truth) | The Sync Tag Is the Sole Quality Truth | Accepted | 2026-06-27 |
 | [ADR-023](/developers/adr/adr-023-lossy-reduction-down-only) | Lossy Reduction Is a Down-Only, Transfer-Mode-Defaulted Axis | Accepted | 2026-06-30 |
 | [ADR-024](/developers/adr/adr-024-device-access-tiers) | Device Support Is a Tri-State Access Tier With Orthogonal Verification Provenance | Accepted | 2026-07-05 |
+| [ADR-027](/developers/adr/adr-027-lima-vm-substrate-consolidation) | Lima VM Substrate Consolidation (`@podkit/lima`) | Accepted | 2026-08-24 |
 
 ## What is an ADR?
 
