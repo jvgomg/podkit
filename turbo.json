@@ -227,6 +227,19 @@
       "outputs": ["fixtures/**"],
       "cache": true
     },
+    "@podkit/device-testing#test:unit": {
+      "dependsOn": ["build", "^build"],
+      "inputs": [
+        "src/**",
+        "!src/**/*.integration.test.ts",
+        "!src/**/*.perf.test.ts",
+        "!src/**/*.e2e.test.ts",
+        "bunfig.toml",
+        "package.json",
+        "scripts/**"
+      ],
+      "outputs": []
+    },
     "@podkit/device-testing#test:vm": {
       "dependsOn": [
         "build",

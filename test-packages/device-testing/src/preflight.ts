@@ -22,8 +22,13 @@
  * We must NOT bring down those runs when the VM is offline. The script sniffs
  * `process.argv` and `process.env.npm_lifecycle_event` for VM-test indicators
  * (a `vm/` segment, a `.e2e.` filename, or a `test:vm` lifecycle event); if
- * none match, the preload exits 0 silently and the test run proceeds without
- * touching Lima.
+ * none match, the module does nothing at all and simply finishes — it must
+ * NOT call `process.exit()` in that branch. A preload that terminates the
+ * process (even with code 0) aborts the whole `bun test` run before any test
+ * file loads, which previously made every unit test in this package silently
+ * non-executing under `test:unit` while still reporting a clean pass. See
+ * `scripts/assert-min-tests.ts` for the guard that now catches a regression
+ * of that shape.
  *
  * @see adr/adr-016-linux-vm-test-harness.md
  * @module
@@ -53,52 +58,61 @@ function vmTestsTargeted(): boolean {
   );
 }
 
-if (!vmTestsTargeted()) {
-  // No VM tests in this invocation — let unit/integration runs proceed
-  // without contacting Lima.
-  process.exit(0);
+// Bun's `[test].preload` runs this module to completion (or to a thrown
+// error / process.exit()) *before* it loads a single test file. There is no
+// way to "skip forward" from here — whatever we do or don't do next is the
+// only thing standing between this invocation and bun's test loader. A
+// preload that calls `process.exit()` unconditionally (even with code 0)
+// terminates the entire `bun test` process, unit tests included, and every
+// package that preloads this module inherits that outcome. So the guard
+// below is written the other way around from a typical early-return: do
+// nothing at all — no Lima contact, no exit call — unless VM tests are
+// actually targeted. Falling off the end of the module is what lets bun
+// proceed to load test files normally.
+if (vmTestsTargeted()) {
+  const REMEDIATION = [
+    '',
+    'To bring the VM up:',
+    '  bun run vm:up device          (create or resume the VM)',
+    '  bun run harness:setup         (first-time setup: creates VM, builds + installs binaries)',
+    '  bun run harness:status        (see exactly what state things are in)',
+    '',
+    'Then re-run `bun run test:vm`.',
+    '',
+    'VM tests refuse to silently skip — bring the VM up or invoke a different test script (`bun run test:unit`, `bun run test:integration`).',
+    '',
+  ].join('\n');
+
+  const bail = (headline: string): never => {
+    process.stderr.write(`[vm-preflight] ${headline}\n${REMEDIATION}`);
+    process.exit(1);
+  };
+
+  const status = await instanceStatus().catch(() => 'missing' as const);
+  if (status === 'missing') {
+    bail(`Lima instance \`${LIMA_DEVICE_HARNESS_VM_NAME}\` is not registered.`);
+  }
+  if (status === 'stopped') {
+    bail(`Lima instance \`${LIMA_DEVICE_HARNESS_VM_NAME}\` is stopped.`);
+  }
+
+  // Status is 'running' — verify SSH actually answers. `limactl shell` returns
+  // non-zero with "Connection refused" / "Connection reset" when the daemon
+  // isn't accepting yet, which means the suite would fail in beforeAll.
+  const probe = await runLimactl(defaultSubprocessRunner, [
+    'shell',
+    LIMA_DEVICE_HARNESS_VM_NAME,
+    '--',
+    '/bin/true',
+  ]).catch((err) => ({ exitCode: 1, stdout: '', stderr: String(err) }));
+
+  if (probe.exitCode !== 0) {
+    bail(
+      `Lima instance \`${LIMA_DEVICE_HARNESS_VM_NAME}\` is reachable to limactl but SSH is refusing: ${probe.stderr.trim()}`
+    );
+  }
+
+  process.stdout.write('[vm-preflight] VM ready.\n');
 }
-
-const REMEDIATION = [
-  '',
-  'To bring the VM up:',
-  '  bun run vm:up device          (create or resume the VM)',
-  '  bun run harness:setup         (first-time setup: creates VM, builds + installs binaries)',
-  '  bun run harness:status        (see exactly what state things are in)',
-  '',
-  'Then re-run `bun run test:vm`.',
-  '',
-  'VM tests refuse to silently skip — bring the VM up or invoke a different test script (`bun run test:unit`, `bun run test:integration`).',
-  '',
-].join('\n');
-
-function bail(headline: string): never {
-  process.stderr.write(`[vm-preflight] ${headline}\n${REMEDIATION}`);
-  process.exit(1);
-}
-
-const status = await instanceStatus().catch(() => 'missing' as const);
-if (status === 'missing') {
-  bail(`Lima instance \`${LIMA_DEVICE_HARNESS_VM_NAME}\` is not registered.`);
-}
-if (status === 'stopped') {
-  bail(`Lima instance \`${LIMA_DEVICE_HARNESS_VM_NAME}\` is stopped.`);
-}
-
-// Status is 'running' — verify SSH actually answers. `limactl shell` returns
-// non-zero with "Connection refused" / "Connection reset" when the daemon
-// isn't accepting yet, which means the suite would fail in beforeAll.
-const probe = await runLimactl(defaultSubprocessRunner, [
-  'shell',
-  LIMA_DEVICE_HARNESS_VM_NAME,
-  '--',
-  '/bin/true',
-]).catch((err) => ({ exitCode: 1, stdout: '', stderr: String(err) }));
-
-if (probe.exitCode !== 0) {
-  bail(
-    `Lima instance \`${LIMA_DEVICE_HARNESS_VM_NAME}\` is reachable to limactl but SSH is refusing: ${probe.stderr.trim()}`
-  );
-}
-
-process.stdout.write('[vm-preflight] VM ready.\n');
+// else: no VM tests in this invocation — module falls off the end here.
+// Unit/integration runs proceed without contacting Lima.

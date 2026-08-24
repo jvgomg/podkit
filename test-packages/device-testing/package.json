@@ -13,13 +13,17 @@
     "./preflight": "./src/preflight.ts"
   },
   "files": [
-    "dist"
+    "dist",
+    "scripts"
   ],
+  "bin": {
+    "assert-min-tests": "./scripts/assert-min-tests.ts"
+  },
   "scripts": {
     "build": "bun build src/index.ts --outdir dist --target node --external @podkit/core --external @podkit/device-types --external @podkit/lima && bun run build:types",
     "build:types": "tsc -p tsconfig.build.json --emitDeclarationOnly --outDir dist",
     "test": "true",
-    "test:unit": "bun test --pass-with-no-tests",
+    "test:unit": "bun run scripts/assert-min-tests.ts --pass-with-no-tests",
     "test:vm": "bun test src/vm --path-ignore-patterns= --pass-with-no-tests",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist",

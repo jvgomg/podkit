@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-23 21:45'
+updated_date: '2026-08-24 00:32'
 labels:
   - testing
   - vm
@@ -50,3 +51,44 @@ One run also showed `failed to synthesise partitioned FAT32 backing file for per
 
 **Repro:** `bun run quality` on a tree where everything else is cached, so `test:vm` is the main remaining work. Failed on both attempts.
 <!-- SECTION:DESCRIPTION:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+## Evidence review — the cascade hypothesis in the description is NOT supported
+
+Re-read both `quality` run logs side by side. The description hypothesises "the first failure is the real one and the rest are collateral". The logs do not support that, and anyone starting from it will be looking for the wrong thing.
+
+**Test-file execution order is identical across both runs** (bun is deterministic here). Failure *positions* differ:
+
+| # | file | run 1 | run 2 |
+|---|---|---|---|
+| 1 | parser-stderr-silence | pass | pass |
+| 2 | doctor-device-types | pass | pass |
+| 3 | discovery | pass | pass |
+| 4 | unsupported-cascade | pass | pass |
+| 5 | volume-uuid-defensive | pass | pass |
+| 6 | system-state-cross-check | pass | pass |
+| 7 | discovery-reconciliation | **FAIL** (synthesis exit=1) | pass |
+| 8 | device-add-no-verify | pass | pass |
+| 9 | udev-usb-scope | pass | **FAIL** (hook timeout 72s) |
+| 10 | doctor-consistent-sections | pass | pass |
+| 11 | doctor-output-contract | pass | **FAIL** (`ls /dev/sg*`) |
+| 12 | doctor-scope-refactor | pass | pass |
+| 13 | save-failure-matrix | pass | pass |
+| 14 | doctor-sysinfo-modelnum-mismatch | **FAIL** (80s) | pass |
+| 15 | inquiry-usb-transport-down | **FAIL** (282s) | pass |
+| 16 | doctor-sysinfo-repair | pass | pass |
+| 17 | pre-sync-sweep | pass | pass |
+| 18 | hfsplus-refusal | **FAIL** (139s) | **FAIL** |
+
+**What this rules out.** A strict cascade would mean everything after the first failure degrades. It does not: run 1 fails at #7 and then passes #8-#13 cleanly before failing again at #14; run 2 fails at #9, passes #10, fails #11, then passes #12-#17. The harness recovers between failures, so whatever leaks is being cleaned up — just not reliably or not fast enough.
+
+**What survives as signal:**
+- **Every** failure is immediately preceded by `killed 1 dangling process`. That message is the strongest lead: a process outlives its test and bun reaps it. Find who logs it and what it is killing.
+- `hfsplus-refusal` (#18) failed in **both** runs — the only file that did. Either it is genuinely the most fragile, or being last makes it the most likely to inherit accumulated VM state. Worth checking whether it passes when run alone under the same host load.
+- Failure durations are absurd (72s, 80s, 139s, 282s) against a 5s-ish expectation, so a teardown or wait path has a very long or absent timeout. Even once the root cause is fixed, those bounds should be tightened so a future failure surfaces in seconds rather than minutes.
+- Two distinct failure shapes: hook timeouts, and `waitForScsiGenericEnumeration` finding no `/dev/sg*`. Run 1 also produced a backing-file synthesis `exit=1` with no output.
+
+**Load is the differentiator, not code.** Standalone `test:vm` is 232/0 repeatedly on the same tree and the same VM; only the full `quality` DAG reproduces it. The device VM is 2 CPU / 2 GiB while the host runs a full parallel build.
+<!-- SECTION:NOTES:END -->

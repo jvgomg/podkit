@@ -267,6 +267,9 @@
     "test-packages/device-testing": {
       "name": "@podkit/device-testing",
       "version": "0.0.1",
+      "bin": {
+        "assert-min-tests": "./scripts/assert-min-tests.ts",
+      },
       "dependencies": {
         "@podkit/core": "workspace:*",
         "@podkit/device-types": "workspace:*",
