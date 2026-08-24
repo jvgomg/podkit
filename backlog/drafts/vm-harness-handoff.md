@@ -1,58 +1,55 @@
 # Handoff — VM-harness consolidation (TASK-480 / doc-059)
 
-_Phase A (P0 + P1) complete and on `main`. Phase B (P2→P3→P4) ready to pick up._
+_Epic complete. All phases landed on branch `vm-harness-phase-b`, not yet merged to `main`._
 
 ## Status
 
 | Phase | Task | What | Status |
 |-------|------|------|--------|
-| P0 | 480.01 | Builder-VM start race → shared cross-process lock | ✅ Done — `e67f69ef` |
-| P1 | 480.02 | Extract `@podkit/lima` substrate + re-export shim | ✅ Done — `16a02b0f` (+ `829a9e86` backlog) |
-| P2 | 480.03 | Configs → registry + instance renames + `computeBaselineHash` (MF3) | ▫ To Do (unblocked) |
-| P3 | 480.04 | Thin build scripts + `run-tests.sh` onto `podkit-vm`; atomic lock cutover (MF4) | ▫ To Do (unblocked) |
-| P4 | 480.05 | vipod + abi-verify registry entries; docs + new ADR | ▫ To Do (unblocked) |
-| — | 481 | Unpin `bun-types`/`@types/bun` (remove 1.3.14 override) | ▫ To Do (low) |
+| P0 | 480.01 | Builder-VM start race → shared cross-process lock | ✅ Done — `e67f69ef` (on `main`) |
+| P1 | 480.02 | Extract `@podkit/lima` substrate + re-export shim | ✅ Done — `16a02b0f` (on `main`) |
+| P2 | 480.03 | Configs → registry + instance renames + `computeBaselineHash` (MF3) | ✅ Done — `f863005c` |
+| P3 | 480.04 | Build wrappers + `run-tests.sh` onto the CLI; atomic lock cutover (MF4) | ✅ Done — `695875fe` |
+| P4 | 480.05 | Registry entries verified; docs + ADR-027 | ✅ Done — `e1e0b852` |
+| — | 481 | Unpin `bun-types`/`@types/bun` | ✅ Done — `248743fe` |
 
-## What landed in Phase A
+Branch commits, oldest first: `7d01bc7f` (e2e assertion fix) · `248743fe` (bun-types) · `f863005c` (P2) · `32b18c0c` (CLI tests) · `66ed3179` (backlog) · `695875fe` (P3) · `de76d15b` (backlog) · `e1e0b852` (P4).
 
-`@podkit/lima` (`test-packages/lima/`, **private**) now owns the Lima substrate:
-- typed **VM registry** (`registry.ts`) — all 7 VMs, **current** names + yaml paths (renames/move are P2)
-- **`podkit-vm` CLI** — `ensure|status|stop|destroy|recover|install|doctor|shell`, the single lock chokepoint
-- **advisory lock** (`lock.ts`, `proper-lockfile`) — liveness-aware, stale-reclaiming, never auto-stops, no ref-counting
-- `ensure*`/`recover` **lifecycle**, generic **transport** (`runInVm`/`copyOut`/`stageSourceTree`), `baseline-hash`, the docker-image runner
+## Where things live now
 
-`@podkit/device-testing` consumes it via a **complete re-export shim** (`src/index.ts`) — no downstream import site changed. `SubprocessRunner` default impl moved `@podkit/core` → `@podkit/device-types` (re-exported from core), so **lima depends only on `@podkit/device-types` + `proper-lockfile`** (cycle-free, verified).
+`@podkit/lima` (`test-packages/lima/`, private) owns the Lima substrate. **Read `test-packages/lima/README.md` first** — it is the substrate's own doc. **ADR-027** records the decision and its reconciliation with ADR-016.
 
-**Verification:** repo typecheck 38/38, oxlint 0/0, 56 lima tests (53 unit via scripted-runner seam + 3 real-process lock integration). VM-green: `test:vm` **232/0**, `docker-dist` + `docker-loopback` **9/0**. Sonnet review: **SHIP**, no must-fix.
+- All 7 VM YAMLs: `test-packages/lima/vms/`
+- Registry: `src/registry.ts` — the only place an instance name is spelled
+- CLI: `src/cli.ts`, verbs `ensure|status|stop|destroy|recover|shell|install|doctor|stage`
+- Lock: `src/lock.ts` — one advisory lock, every start funnels through it
 
-## Binding references
+Instances: `podkit-device`, `podkit-builder-glibc`, `podkit-builder-musl`, `podkit-test-glibc`, `podkit-test-musl`, `podkit-virtual-ipod`, `podkit-abi-verify`.
 
-- **Spec:** `doc-059` (RFC).
-- **Decisions (authoritative):** `backlog/drafts/vm-harness-decisions.md` — D1–D15 + post-review resolutions + MF1–MF4. Overrides everything where they differ.
-- **Impl plan:** `backlog/drafts/vm-harness-implementation-plan.md` — its P0/P1 sections are **superseded**; P2–P4 still guide.
-- **Design context:** `backlog/drafts/vm-harness-package-design.md`. Reconciles with **ADR-016** (builder/test VM separation preserved; only orchestration + config centralized).
+Developer commands: `bun run vm:up|down|destroy|status|recover|shell <id>`. `harness:setup`/`install`/`status` remain — they do device-specific work (binary staging, systemd unit, baseline seal) the substrate deliberately does not.
 
-## Must-know for Phase B
+## Traps for the next person
 
-- **Placement** is `test-packages/lima/` (D6 amended from `packages/`). `test-packages/*` is already a workspace glob; the `@podkit/lima` name is location-independent.
-- **MF3 (P2, mandatory):** `computeBaselineHash` still takes a single `packageRoot`. When P2 moves the device YAML into lima, its two tracked files (`…/podkit-device-harness.yaml` + `apply-state.sh`) split across packages → the current signature **throws** (not "drift") on the first `vm:doctor`. Change to an explicit absolute tracked-file list (or `(coreRoot, deviceTestingRoot)`); update both callers (`harness.ts`, `vm-doctor.ts`); preserve declaration order for hash stability.
-- **MF4 (P3):** the P0 bash lock (`vm-builder-lock.sh`, mkdir + owner-PID at `${TMPDIR}/podkit-vmlock-<vm>`) and the P1 `proper-lockfile` CLI lock **do not interoperate**. Migrate **all** starters of a given VM to the CLI in one atomic step; retire `vm-builder-lock.sh` at an explicit point.
-- **Coordination is single-layer** — the shared lock only. **No turbo `ensure:<instance>` nodes** (amended D11/D13; a `cache:false` ensure node would boot VMs on cache hits).
-- **Build-tooling boundary (D8):** `tools/prebuild/*` recipes stay put and must **not** import `@podkit/lima` — CI (`prebuild.yml`) runs them directly with no Lima.
-- **GOTCHA proven in P1:** any lima module that resolves paths at **module-load** (anchoring on the `test-packages/lima` marker in `import.meta.url`) **crashes the compiled FunctionFS daemon** — its bunfs binary (`/$bunfs/root/…`) has no such path. Keep all `repoRoot()`/path anchoring **inside function bodies / lazy**. **Only full VM-green catches this class** — unit tests, typecheck, and review all pass from source.
-- **Instance rename scheme (P2, D12):** `podkit-device-harness`→`podkit-device`; `podkit-linux-builder`→`podkit-builder-glibc`; `podkit-musl-builder`→`podkit-builder-musl`; `podkit-tests-debian-glibc`→`podkit-test-glibc`; `podkit-tests-alpine-musl`→`podkit-test-musl`; `podkit-virtual-ipod` + `podkit-abi-verify` kept. Registry `id`s are clean TS identifiers.
+- **Invoke the CLI as `bun "$REPO_ROOT/test-packages/lima/src/cli.ts" <verb>`.** `bunx podkit-vm` does NOT work: there is no `node_modules/@podkit` and no linked workspace bin, so bunx falls through to npm and 404s. The old implementation plan says `bunx podkit-vm` in ~7 places; it is wrong.
+- **Keep path resolution lazy.** Anything in `@podkit/lima` that resolves a repo path at module load crashes the compiled FunctionFS daemon — its bunfs paths (`/$bunfs/root/…`) carry no source-tree marker. Unit tests, typecheck and review all pass when this is broken; only a full VM run catches it. `registry.ts`'s `yamlPath` getter is pinned by a test for this reason.
+- **The guests' `/bin/sh` is dash** (busybox ash on Alpine). No `pipefail`. This silently broke `stageSourceTree` for its entire pre-adoption life.
+- **The lock guards VM starts, not source staging.** Two builder tasks still `rsync --delete` into the same VM directory concurrently — TASK-484.
+- **`podkit-device-harness` still appears legitimately** as in-VM guest paths (`/var/lib/…`, two `/etc/` conf files, a udev rule filename) and inside env-var *names*. Only the Lima instance was renamed. Grep before you sed.
 
-## Outside this epic (for the maintainer)
+## Open follow-ups
 
-1. **`main` `quality` gate is red since Aug 18** — TASK-479 commit `947ee3cd` removed the fabricated MA147 iPod-Video identity, but the host e2e `device init/reset > modelName /Video/i` (`test-packages/e2e-tests/src/commands/device.test.ts`, dated Jun 23) wasn't updated → returns "Invalid". Fold that test update into **task-479.12/.13**. Until then, verify VM work via `test:vm` + docker surfaces directly, **not** full `quality`.
-2. **bun-types pin** (1.3.14 via root `overrides`, TASK-481) — kept per maintainer steer; unpin when convenient (a floating `"latest"` now resolves to a persona-breaking 1.4.0).
+- **TASK-482** (high) — `@podkit/device-testing#test:unit` executes **zero tests**; a `preflight` `process.exit(0)` during bunfig preload kills the run. The runner and persona suites have not been running. Verify that package from the repo root until fixed.
+- **TASK-483** (high) — `@podkit/e2e-vm-tests#test:vm` flakes under full `quality` parallelism (leaked persona daemon blocks the next gadget bind). Green standalone at 232/0. **This is why `bun run quality` is still red.**
+- **TASK-484** (medium) — the shared staging-dir race above.
+- `adr/index.md` is missing rows for ADR-016, 017, 018, 025, 026 (pre-existing). The docs site has no ADR sync wiring, so `/developers/adr/…` links resolve to nothing published.
 
-## How to run / verify (until the quality gate is un-redded)
+## Verify
 
 ```bash
-bun run harness:setup   # cold create (non-interactive), builds+installs, seals baseline
-bun run test:vm         # → 232 pass / 0 fail  (device-testing 38 + e2e-vm-tests 194)
-bunx turbo run @podkit/e2e-vm-tests#test:e2e:docker-dist @podkit/e2e-tests#test:e2e:docker-loopback
+bun run harness:setup    # works on a cold host in one invocation now
+bun run test:vm          # → 232 pass / 0 fail
+bunx turbo run @podkit/e2e-vm-tests#test:e2e:docker-dist @podkit/e2e-tests#test:e2e:docker-loopback  # → 9/0
+mise run test:linux:debian   # → 63/63 tasks on podkit-test-glibc
 ```
 
-`bun run vm:*` shorthand + the `podkit-vm` CLI as a root command land in **P3**; for now the existing `harness:*` commands drive it (through lima under the hood).
+`bun run quality` is red only on TASK-483. The `/Video/i` host-e2e failure that blocked it since Aug 18 is fixed on this branch.
