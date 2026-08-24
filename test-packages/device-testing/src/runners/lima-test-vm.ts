@@ -361,6 +361,21 @@ export async function resetBackingFile(opts: ResetBackingFileOpts): Promise<void
 // Daemon lifecycle (systemd instance unit)
 // ---------------------------------------------------------------------------
 
+/**
+ * Bound for starting or stopping a persona's daemon unit.
+ *
+ * `systemctl start` is `Type=simple` and returns as soon as the daemon
+ * `exec()`s; `systemctl stop` is bounded by the unit's own `TimeoutStopSec`
+ * before systemd escalates to SIGKILL. Neither can legitimately take anywhere
+ * near this long — the headroom is for the SSH round trip on a loaded host,
+ * not for the systemd operation itself.
+ *
+ * Without a bound, a wedged `limactl shell` here blocks the test's hook with
+ * no upper limit at all, and the suite reports a hook that ran for minutes
+ * with no indication of what it was waiting on.
+ */
+export const DAEMON_LIFECYCLE_TIMEOUT_MS = 45_000;
+
 /** Options for {@link startDaemonForPersona}. */
 export interface StartDaemonOpts {
   vmName: string;
@@ -384,15 +399,11 @@ export async function startDaemonForPersona(opts: StartDaemonOpts): Promise<void
   if (!opts.personaId) throw new Error('startDaemonForPersona: personaId is required.');
 
   const unit = `dummy-hcd-daemon@${opts.personaId}.service`;
-  const result = await runLimactl(subprocess, [
-    'shell',
-    opts.vmName,
-    '--',
-    'sudo',
-    'systemctl',
-    'start',
-    unit,
-  ]);
+  const result = await runLimactl(
+    subprocess,
+    ['shell', opts.vmName, '--', 'sudo', 'systemctl', 'start', unit],
+    { timeoutMs: DAEMON_LIFECYCLE_TIMEOUT_MS }
+  );
   if (result.exitCode !== 0) {
     throw limactlError(`failed to start ${unit} in ${opts.vmName}`, result);
   }
@@ -406,15 +417,11 @@ export async function stopDaemon(opts: StopDaemonOpts): Promise<void> {
   const unit = opts.personaId
     ? `dummy-hcd-daemon@${opts.personaId}.service`
     : 'dummy-hcd-daemon@*.service';
-  const result = await runLimactl(subprocess, [
-    'shell',
-    opts.vmName,
-    '--',
-    'sudo',
-    'systemctl',
-    'stop',
-    unit,
-  ]);
+  const result = await runLimactl(
+    subprocess,
+    ['shell', opts.vmName, '--', 'sudo', 'systemctl', 'stop', unit],
+    { timeoutMs: DAEMON_LIFECYCLE_TIMEOUT_MS }
+  );
   // systemd exit 5 = "no such unit / not loaded / not running" — treat as
   // success so callers (notably VM teardown) can `stopDaemon` blindly
   // without first checking whether anything is running.

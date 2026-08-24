@@ -15,6 +15,21 @@
  * harness isn't up — the developer either sees green or sees this message
  * with the exact commands to fix it.
  *
+ * # USB device-controller budget
+ *
+ * Reachability is not the only precondition. Personas bind to a fixed number
+ * of emulated device controllers, and a daemon killed before it could tear
+ * down leaves its binding behind with nothing to release it. Once the last
+ * controller is claimed nothing enumerates, and the suite reports that as a
+ * timeout in whichever test happened to be running — a message that says
+ * nothing about controllers, arriving minutes later.
+ *
+ * So the budget is counted here too, before a single gadget binds: exhaustion
+ * is a hard failure naming every leaked binding, and a leak that has not yet
+ * exhausted it is a warning (those release themselves when their own persona
+ * next starts). See `runners/lima-test-vm-udc-slots.ts` for why occupancy is
+ * read from configfs and never from `/sys/class/udc/<n>/state`.
+ *
  * # Self-gating
  *
  * Bun's `[test].preload` fires on every `bun test` invocation in the package,
@@ -36,7 +51,17 @@
 
 import { instanceStatus, LIMA_DEVICE_HARNESS_VM_NAME } from './runners/lima-test-vm.js';
 import { runLimactl } from './runners/lima-limactl.js';
+import {
+  formatUdcSlotFailure,
+  formatUdcSlotShortfall,
+  formatUdcSlotSummary,
+  formatUdcSlotWarning,
+  probeUdcSlots,
+} from './runners/lima-test-vm-udc-slots.js';
 import { defaultSubprocessRunner } from './subprocess.js';
+
+/** Bound for the SSH liveness probe. `/bin/true` over a healthy link is instant. */
+const SSH_PROBE_TIMEOUT_MS = 30_000;
 
 function vmTestsTargeted(): boolean {
   // `test:e2e:docker-dist` is the local-only Docker Tier-5 run (the shipped
@@ -99,17 +124,52 @@ if (vmTestsTargeted()) {
   // Status is 'running' — verify SSH actually answers. `limactl shell` returns
   // non-zero with "Connection refused" / "Connection reset" when the daemon
   // isn't accepting yet, which means the suite would fail in beforeAll.
-  const probe = await runLimactl(defaultSubprocessRunner, [
-    'shell',
-    LIMA_DEVICE_HARNESS_VM_NAME,
-    '--',
-    '/bin/true',
-  ]).catch((err) => ({ exitCode: 1, stdout: '', stderr: String(err) }));
+  const probe = await runLimactl(
+    defaultSubprocessRunner,
+    ['shell', LIMA_DEVICE_HARNESS_VM_NAME, '--', '/bin/true'],
+    { timeoutMs: SSH_PROBE_TIMEOUT_MS }
+  ).catch((err) => ({ exitCode: 1, stdout: '', stderr: String(err) }));
 
   if (probe.exitCode !== 0) {
     bail(
       `Lima instance \`${LIMA_DEVICE_HARNESS_VM_NAME}\` is reachable to limactl but SSH is refusing: ${probe.stderr.trim()}`
     );
+  }
+
+  // Personas bind to a fixed number of emulated USB device controllers. Once
+  // they are all claimed nothing can enumerate, and the suite reports that as a
+  // timeout in whichever test happened to be running — a failure that says
+  // nothing about controllers and takes a long time to say it. Counting them
+  // here, before a single gadget is bound, turns that into one line.
+  const slots = await probeUdcSlots({ vmName: LIMA_DEVICE_HARNESS_VM_NAME }).catch(
+    (err: unknown) => {
+      process.stderr.write(
+        `[vm-preflight] could not read USB controller state (continuing): ` +
+          `${err instanceof Error ? err.message : String(err)}\n`
+      );
+      return null;
+    }
+  );
+
+  if (slots) {
+    const shortfall = formatUdcSlotShortfall(slots);
+    if (shortfall) process.stderr.write(`[vm-preflight] ${shortfall}\n`);
+
+    const failure = formatUdcSlotFailure(slots);
+    if (failure) {
+      process.stderr.write(
+        `[vm-preflight] ${failure}\n\n` +
+          'To rebuild the VM from scratch:\n' +
+          '  bun run vm:recover device     (destroy → recreate → start)\n' +
+          '  bun run harness:setup         (reinstall binaries + seal the baseline)\n\n' +
+          'Then re-run `bun run test:vm`.\n'
+      );
+      process.exit(1);
+    }
+
+    const warning = formatUdcSlotWarning(slots);
+    if (warning) process.stderr.write(`[vm-preflight] ${warning}\n`);
+    process.stdout.write(`[vm-preflight] ${formatUdcSlotSummary(slots)}\n`);
   }
 
   process.stdout.write('[vm-preflight] VM ready.\n');

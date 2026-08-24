@@ -62,6 +62,19 @@ export interface ApplyStateOpts {
  * Errors from any sub-step propagate with descriptive messages that include
  * the underlying `limactl` stderr.
  */
+/**
+ * Bound for one `apply-state.sh` run.
+ *
+ * The script mutates the VM to match a `SystemState` — moving binaries aside,
+ * changing permissions, remounting. It is a per-group cost measured in
+ * seconds, so this is deliberately loose: it exists to catch a wedged transport
+ * rather than to police the script's own runtime.
+ */
+export const APPLY_STATE_TIMEOUT_MS = 5 * 60_000;
+
+/** Bound for the two small staging steps that precede the script run. */
+const STAGE_TIMEOUT_MS = 60_000;
+
 export async function applyState(opts: ApplyStateOpts): Promise<void> {
   const { vmName, stateId } = opts;
   const subprocess = opts.subprocess ?? defaultSubprocessRunner;
@@ -77,37 +90,30 @@ export async function applyState(opts: ApplyStateOpts): Promise<void> {
   const scriptVmPath = '/tmp/apply-state.sh';
 
   // ── Stage apply-state.sh inside the VM ─────────────────────────────────────
-  const copyResult = await runLimactl(subprocess, [
-    'copy',
-    scriptHostPath,
-    `${vmName}:${scriptVmPath}`,
-  ]);
+  const copyResult = await runLimactl(
+    subprocess,
+    ['copy', scriptHostPath, `${vmName}:${scriptVmPath}`],
+    { timeoutMs: STAGE_TIMEOUT_MS }
+  );
   if (copyResult.exitCode !== 0) {
     throw limactlError(`failed to copy apply-state.sh to ${vmName}:${scriptVmPath}`, copyResult);
   }
 
   // ── Make script executable + invoke under sudo ─────────────────────────────
-  const chmodResult = await runLimactl(subprocess, [
-    'shell',
-    vmName,
-    '--',
-    'sudo',
-    'chmod',
-    '0755',
-    scriptVmPath,
-  ]);
+  const chmodResult = await runLimactl(
+    subprocess,
+    ['shell', vmName, '--', 'sudo', 'chmod', '0755', scriptVmPath],
+    { timeoutMs: STAGE_TIMEOUT_MS }
+  );
   if (chmodResult.exitCode !== 0) {
     throw limactlError(`failed to chmod ${scriptVmPath} in ${vmName}`, chmodResult);
   }
 
-  const applyResult = await runLimactl(subprocess, [
-    'shell',
-    vmName,
-    '--',
-    'sudo',
-    scriptVmPath,
-    stateId,
-  ]);
+  const applyResult = await runLimactl(
+    subprocess,
+    ['shell', vmName, '--', 'sudo', scriptVmPath, stateId],
+    { timeoutMs: APPLY_STATE_TIMEOUT_MS }
+  );
   if (applyResult.exitCode !== 0) {
     throw limactlError(`apply-state.sh ${stateId} failed in ${vmName}`, applyResult);
   }

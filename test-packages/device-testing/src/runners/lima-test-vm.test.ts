@@ -23,6 +23,7 @@ import {
   resetBackingFile,
   startDaemonForPersona,
   stopDaemon,
+  DAEMON_LIFECYCLE_TIMEOUT_MS,
   instanceStatus,
   LIMA_DEVICE_HARNESS_VM_NAME,
   SIDECAR_VM_PATH,
@@ -885,6 +886,20 @@ describe('startDaemonForPersona', () => {
       /personaId is required/
     );
   });
+
+  it('bounds the invocation so a wedged shell cannot stall the test hook', async () => {
+    // `limactl shell` opens an SSH session. Unbounded, a session that never
+    // completes its handshake blocks the caller's hook indefinitely — the
+    // failure then shows up as a hook that ran for minutes with nothing to
+    // say about what it was waiting on.
+    const { runner, calls } = makeScriptedRunner([ok()]);
+    await startDaemonForPersona({
+      vmName: LIMA_DEVICE_HARNESS_VM_NAME,
+      personaId: 'echo-mini',
+      subprocess: runner,
+    });
+    expect(calls[0]!.opts?.timeoutMs).toBe(DAEMON_LIFECYCLE_TIMEOUT_MS);
+  });
 });
 
 describe('stopDaemon', () => {
@@ -902,6 +917,12 @@ describe('stopDaemon', () => {
     const { runner, calls } = makeScriptedRunner([ok()]);
     await stopDaemon({ vmName: LIMA_DEVICE_HARNESS_VM_NAME, subprocess: runner });
     expect(calls[0]!.args).toContain('dummy-hcd-daemon@*.service');
+  });
+
+  it('bounds the invocation so a wedged shell cannot stall teardown', async () => {
+    const { runner, calls } = makeScriptedRunner([ok()]);
+    await stopDaemon({ vmName: LIMA_DEVICE_HARNESS_VM_NAME, subprocess: runner });
+    expect(calls[0]!.opts?.timeoutMs).toBe(DAEMON_LIFECYCLE_TIMEOUT_MS);
   });
 
   it('treats systemd exit 5 (no-such-unit) as success — idempotent stop', async () => {

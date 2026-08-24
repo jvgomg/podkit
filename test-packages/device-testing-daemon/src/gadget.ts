@@ -172,9 +172,12 @@ export function attachUdc(gadgetPath: string): string {
     return candidate;
   }
   throw new Error(
-    `attachUdc: every UDC is already bound (${udcList.join(', ')}; claimed: ${Array.from(
-      claimed
-    ).join(', ')}). Increase dummy_hcd num= or stop the conflicting gadget.`
+    `attachUdc: all ${udcList.length} UDC slot(s) are claimed by other gadgets ` +
+      `(${udcList.join(', ')}; claimed: ${Array.from(claimed).join(', ')}). ` +
+      `Each claiming gadget is listed under ${CONFIGFS_ROOT}; one with no ` +
+      `running dummy-hcd-daemon unit behind it is a leak from a daemon that ` +
+      `was killed before it could tear down. Remove the orphaned directory, ` +
+      `or rebuild the VM, to free its slot.`
   );
 }
 
@@ -272,14 +275,64 @@ export function destroyGadget(
   }
 }
 
+/**
+ * Release any leftover configfs state sitting at `gadgetPath` before a fresh
+ * bind, and report whether there was anything to release.
+ *
+ * A daemon that exits without running its signal handler — SIGKILL from the
+ * unit's stop timeout, an OOM kill, a host that loses power — leaves its
+ * gadget directory behind with a live UDC binding. Nothing else ever cleans
+ * that up: configfs has no owning process, so the tree and the binding survive
+ * until something explicitly removes them.
+ *
+ * The consequences land on the *next* daemon rather than the one that died,
+ * which is what makes the failure so hard to read:
+ *
+ *   - The stale binding holds a UDC. `attachUdc` correctly counts it as
+ *     claimed, so it picks a different slot; with `dummy_hcd num=N` only N
+ *     personas' worth of leaks fit before every bind fails.
+ *   - The stale FunctionFS function instance is still attached to the bound
+ *     gadget, so `mount -t functionfs <instance>` for the same persona fails
+ *     with EBUSY ("already mounted or mount point busy") — that persona can
+ *     never start again, no matter how many times systemd restarts it.
+ *
+ * Reaping at *setup* rather than fixing up teardown is deliberate: teardown
+ * only runs when the process survives to run it, and the whole failure mode
+ * here is a process that did not. Setup-side reaping is the only ordering that
+ * also covers SIGKILL and power loss.
+ *
+ * Safe to call unconditionally. Only the caller's own gadget directory is
+ * touched, so a second persona running concurrently under its own gadget name
+ * is unaffected. Returns `false` when there was nothing to reap.
+ */
+export function reapStaleGadget(
+  gadgetPath: string,
+  ffsInstance: string,
+  onWarn: (message: string) => void = () => {}
+): boolean {
+  if (!existsSync(gadgetPath)) return false;
+  const staleUdc = readUdc(gadgetPath);
+  onWarn(
+    `reapStaleGadget: leftover configfs tree at ${gadgetPath}` +
+      (staleUdc ? ` still bound to ${staleUdc}` : ' (unbound)') +
+      ` — a previous daemon exited without tearing down. Releasing it before rebinding.`
+  );
+  destroyGadget(gadgetPath, ffsInstance, onWarn);
+  return true;
+}
+
+/** Read a gadget's currently bound UDC name, or `''` when unbound/absent. */
+function readUdc(gadgetPath: string): string {
+  try {
+    return readFileSync(`${gadgetPath}/UDC`, 'utf-8').trim();
+  } catch {
+    return '';
+  }
+}
+
 /** Inspect whether the gadget is currently bound to a UDC. */
 export function isBound(gadgetPath: string): boolean {
-  try {
-    const udc = readFileSync(`${gadgetPath}/UDC`, 'utf-8').trim();
-    return udc.length > 0;
-  } catch {
-    return false;
-  }
+  return readUdc(gadgetPath).length > 0;
 }
 
 // ---------------------------------------------------------------------------

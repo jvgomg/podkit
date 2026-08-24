@@ -118,6 +118,24 @@ export {
 export type { ApplyStateOpts } from './runners/lima-test-vm-state.js';
 export { applyState } from './runners/lima-test-vm-state.js';
 
+// Lima test-VM USB device-controller slot accounting
+export type {
+  ProbeUdcSlotsOpts,
+  UdcClaim,
+  UdcSlotReport,
+} from './runners/lima-test-vm-udc-slots.js';
+export {
+  CONFIGFS_GADGET_ROOT,
+  formatUdcSlotFailure,
+  formatUdcSlotShortfall,
+  formatUdcSlotSummary,
+  formatUdcSlotWarning,
+  GADGET_NAME_PREFIX,
+  parseUdcSlotProbe,
+  probeUdcSlots,
+  UDC_SLOT_PROBE_TIMEOUT_MS,
+} from './runners/lima-test-vm-udc-slots.js';
+
 // Lima test-VM TestRuntime (TASK-322.04)
 export type {
   CreateLimaTestVmRuntimeOpts,

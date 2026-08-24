@@ -7,5 +7,5 @@
  * @module
  */
 
-export type { LimactlResult } from '@podkit/lima';
+export type { LimactlResult, RunLimactlOpts } from '@podkit/lima';
 export { runLimactl, limactlError, shellQuote } from '@podkit/lima';

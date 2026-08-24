@@ -42,6 +42,41 @@ import {
 } from '../runners/lima-test-vm.js';
 import { defaultSubprocessRunner, type SubprocessRunner } from '../subprocess.js';
 import { runLimactl } from '../runners/lima-limactl.js';
+import {
+  formatUdcSlotSummary,
+  formatUdcSlotFailure,
+  probeUdcSlots,
+} from '../runners/lima-test-vm-udc-slots.js';
+
+// ---------------------------------------------------------------------------
+// Wall-clock bounds
+// ---------------------------------------------------------------------------
+
+/**
+ * Bound for a single `limactl shell` probe issued from inside a polling loop.
+ *
+ * A poll loop that checks its deadline *between* iterations is not bounded at
+ * all if one iteration never returns — and `limactl shell` opens an SSH
+ * session, which can hang indefinitely when the VM is starved. Each probe is
+ * therefore given the time remaining on the caller's deadline, floored at this
+ * value so a probe issued near the deadline still gets a fair chance to answer
+ * on a loaded host rather than being cut off mid-handshake.
+ */
+const PROBE_MIN_TIMEOUT_MS = 2_000;
+
+/**
+ * Bound for the best-effort journal dump attached to a timeout message.
+ *
+ * This runs on a path that has already failed, so it must not be able to add
+ * materially to the failure's duration: better a timeout error with no journal
+ * than one that takes minutes to arrive.
+ */
+const DAEMON_LOG_TIMEOUT_MS = 15_000;
+
+/** Time left on `deadline`, floored so a probe is never given a useless budget. */
+function probeTimeout(deadline: number): number {
+  return Math.max(PROBE_MIN_TIMEOUT_MS, deadline - Date.now());
+}
 
 // ---------------------------------------------------------------------------
 // Persona lifecycle
@@ -148,23 +183,29 @@ export async function waitForScsiGenericEnumeration(opts: {
   const deadline = Date.now() + timeoutMs;
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    const probe = await runLimactl(subprocess, [
-      'shell',
-      opts.vmName,
-      '--',
-      'sh',
-      '-c',
-      // `ls /dev/sg* 2>/dev/null | head -n1` outputs the first match or
-      // nothing. We branch on whether stdout is non-empty.
-      'ls /dev/sg* 2>/dev/null | head -n1',
-    ]);
+    const probe = await runLimactl(
+      subprocess,
+      [
+        'shell',
+        opts.vmName,
+        '--',
+        'sh',
+        '-c',
+        // `ls /dev/sg* 2>/dev/null | head -n1` outputs the first match or
+        // nothing. We branch on whether stdout is non-empty.
+        'ls /dev/sg* 2>/dev/null | head -n1',
+      ],
+      { timeoutMs: probeTimeout(deadline) }
+    ).catch(() => ({ exitCode: 1, stdout: '', stderr: '' }));
     if (probe.exitCode === 0 && probe.stdout.trim().length > 0) return;
     if (Date.now() >= deadline) {
+      const slotSuffix = await udcSlotSuffix(subprocess, opts.vmName);
       const logSuffix = await daemonLogSuffix(subprocess, opts.vmName, opts.personaId);
       throw new Error(
         `withPersona: timed out after ${timeoutMs}ms waiting for /dev/sg* to ` +
           `appear in ${opts.vmName} for persona '${opts.personaId}'. ` +
-          `Is the dummy-hcd-daemon binding mass-storage correctly?${logSuffix}`
+          `Is the dummy-hcd-daemon binding mass-storage correctly?` +
+          `${slotSuffix}${logSuffix}`
       );
     }
     await new Promise((resolve) => setTimeout(resolve, 150));
@@ -198,33 +239,63 @@ export async function waitForUsbEnumeration(opts: {
   const deadline = Date.now() + timeoutMs;
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    const probe = await runLimactl(subprocess, [
-      'shell',
-      opts.vmName,
-      '--',
-      'sh',
-      '-c',
-      // Match on sysfs — the same source podkit's Linux USB walk reads — not
-      // `lsusb`, which is NOT installed on the harness VM. sysfs
-      // idVendor/idProduct are lower-case 4-hex with no `0x` prefix, exactly
-      // our `vid`/`pid`. Prints `MATCH` when the enumerated device appears.
-      `for dir in /sys/bus/usb/devices/*; do ` +
-        `[ "$(cat "$dir/idVendor" 2>/dev/null)" = '${vid}' ] || continue; ` +
-        `[ "$(cat "$dir/idProduct" 2>/dev/null)" = '${pid}' ] || continue; ` +
-        `echo MATCH; break; ` +
-        `done`,
-    ]);
+    const probe = await runLimactl(
+      subprocess,
+      [
+        'shell',
+        opts.vmName,
+        '--',
+        'sh',
+        '-c',
+        // Match on sysfs — the same source podkit's Linux USB walk reads — not
+        // `lsusb`, which is NOT installed on the harness VM. sysfs
+        // idVendor/idProduct are lower-case 4-hex with no `0x` prefix, exactly
+        // our `vid`/`pid`. Prints `MATCH` when the enumerated device appears.
+        `for dir in /sys/bus/usb/devices/*; do ` +
+          `[ "$(cat "$dir/idVendor" 2>/dev/null)" = '${vid}' ] || continue; ` +
+          `[ "$(cat "$dir/idProduct" 2>/dev/null)" = '${pid}' ] || continue; ` +
+          `echo MATCH; break; ` +
+          `done`,
+      ],
+      { timeoutMs: probeTimeout(deadline) }
+    ).catch(() => ({ exitCode: 1, stdout: '', stderr: '' }));
     if (probe.exitCode === 0 && probe.stdout.includes('MATCH')) return;
     if (Date.now() >= deadline) {
+      const slotSuffix = await udcSlotSuffix(subprocess, opts.vmName);
       const logSuffix = await daemonLogSuffix(subprocess, opts.vmName, opts.persona.id);
       throw new Error(
         `withPersona: timed out after ${timeoutMs}ms waiting for USB device ` +
           `${idPair} to enumerate in ${opts.vmName} for persona ` +
           `'${opts.persona.id}'. The daemon may bind a UDC but never publish ` +
-          `FunctionFS descriptors — is the gadget enumerating?${logSuffix}`
+          `FunctionFS descriptors — is the gadget enumerating?` +
+          `${slotSuffix}${logSuffix}`
       );
     }
     await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+}
+
+/**
+ * Best-effort USB device-controller accounting, formatted as a suffix for an
+ * enumeration-timeout error.
+ *
+ * A gadget that never enumerates is most often a gadget that never got a
+ * controller to bind to, and the controller budget is finite. Stating the
+ * budget at the point of failure is the difference between "some test timed
+ * out" and "there was nowhere left to bind". Returns '' on any error.
+ */
+async function udcSlotSuffix(subprocess: SubprocessRunner, vmName: string): Promise<string> {
+  try {
+    const report = await probeUdcSlots({
+      vmName,
+      subprocess,
+      timeoutMs: DAEMON_LOG_TIMEOUT_MS,
+    });
+    const failure = formatUdcSlotFailure(report);
+    return `\n--- ${formatUdcSlotSummary(report)}${failure ? `\n${failure}` : ''}`;
+  } catch {
+    // Swallow — the timeout message stands on its own.
+    return '';
   }
 }
 
@@ -241,18 +312,22 @@ async function daemonLogSuffix(
 ): Promise<string> {
   let daemonLog = '';
   try {
-    const log = await runLimactl(subprocess, [
-      'shell',
-      vmName,
-      '--',
-      'sudo',
-      'journalctl',
-      '-u',
-      `dummy-hcd-daemon@${personaId}.service`,
-      '-n',
-      '20',
-      '--no-pager',
-    ]);
+    const log = await runLimactl(
+      subprocess,
+      [
+        'shell',
+        vmName,
+        '--',
+        'sudo',
+        'journalctl',
+        '-u',
+        `dummy-hcd-daemon@${personaId}.service`,
+        '-n',
+        '20',
+        '--no-pager',
+      ],
+      { timeoutMs: DAEMON_LOG_TIMEOUT_MS }
+    );
     daemonLog = log.stdout.trim() || log.stderr.trim();
   } catch {
     // Swallow — the timeout message stands on its own.

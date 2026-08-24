@@ -14,10 +14,18 @@
  *   2. Load + validate the JSON sidecar produced by the lima-test-vm runner.
  *   3. Look up the named persona; fail clearly if missing.
  *   4. (--dry-run only) Print a summary and exit 0.
- *   5. Build the configfs gadget tree from the persona descriptor.
- *   6. Mount FunctionFS, open ep0, start the event loop.
- *   7. Bind the gadget to the first UDC.
- *   8. On SIGINT/SIGTERM: tear everything down in reverse order, exit 0.
+ *   5. Reap any configfs tree left at our gadget name by a previous daemon
+ *      that was killed before it could tear down.
+ *   6. Build the configfs gadget tree from the persona descriptor.
+ *   7. Mount FunctionFS, open ep0, start the event loop.
+ *   8. Bind the gadget to the first UDC.
+ *   9. On SIGINT/SIGTERM: tear everything down in reverse order, exit 0.
+ *
+ * Step 5 is what makes the lifecycle crash-safe. Teardown (step 9) only runs
+ * when the process survives to run it; a SIGKILL from the unit's stop timeout,
+ * an OOM kill, or a host power loss skips it entirely and strands a bound UDC
+ * plus a FunctionFS instance that the *next* start cannot re-mount. Reaping on
+ * the way in covers every one of those, where fixing teardown covers none.
  *
  * Failure modes:
  *
@@ -34,7 +42,14 @@ import { readFileSync } from 'node:fs';
 import { parseSidecar, type SidecarPersona } from '@podkit/device-testing';
 
 import { parseArgs, type CliOptions } from './cli.js';
-import { attachUdc, createGadget, destroyGadget, unbindGadget } from './gadget.js';
+import {
+  attachUdc,
+  createGadget,
+  CONFIGFS_ROOT,
+  destroyGadget,
+  reapStaleGadget,
+  unbindGadget,
+} from './gadget.js';
 import { runFunctionFs, type FunctionFsHandle } from './functionfs.js';
 
 const EXIT_OK = 0;
@@ -174,6 +189,17 @@ async function runWithGadget(opts: CliOptions, persona: SidecarPersona): Promise
   installSignal('SIGTERM');
 
   try {
+    // Release anything a previous daemon left behind under our gadget name
+    // before touching the kernel. A daemon that was killed rather than
+    // signalled never ran the teardown below, so its configfs tree is still
+    // there holding a UDC — and while it holds one, this persona's FunctionFS
+    // instance cannot be re-mounted and the slot cannot be re-used. Teardown
+    // is not a safe place to fix that: the failure mode is precisely a
+    // process that did not live long enough to tear down.
+    reapStaleGadget(`${CONFIGFS_ROOT}/${opts.gadgetName}`, opts.gadgetName, (m) =>
+      console.error(`[reap] ${m}`)
+    );
+
     const gadget = createGadget({
       name: opts.gadgetName,
       persona,

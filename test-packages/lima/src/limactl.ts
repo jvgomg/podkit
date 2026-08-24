@@ -19,28 +19,75 @@ export interface LimactlResult {
   exitCode: number;
 }
 
+/** Options for {@link runLimactl}. */
+export interface RunLimactlOpts {
+  /**
+   * Hard wall-clock bound for the invocation, in milliseconds. Omitted means
+   * "wait forever", which is only appropriate for genuinely open-ended work
+   * (image builds, rsync staging).
+   *
+   * Anything on a per-test hot path SHOULD pass a bound: `limactl shell` opens
+   * an SSH session, and an SSH session that never completes its handshake
+   * leaves the caller blocked with no upper limit. Callers that poll in a loop
+   * must bound the individual probe too — a deadline check between iterations
+   * is never reached if one iteration never returns.
+   */
+  timeoutMs?: number;
+}
+
 /**
  * Run `limactl <args>` via the supplied subprocess runner. Returns the
  * `{stdout, stderr, exitCode}` triple. Throws a descriptive `Error` with an
- * install hint when the binary itself is missing (ENOENT / "not found").
+ * install hint when the binary itself is missing (ENOENT / "not found"), and a
+ * `timed out after Nms` error when `opts.timeoutMs` elapses.
  *
  * Callers are expected to check `result.exitCode` themselves — this helper
  * only throws for transport-level failures (limactl unavailable, signal
- * killing the process, etc.), not for normal non-zero exits.
+ * killing the process, timeout), not for normal non-zero exits.
  */
 export async function runLimactl(
   subprocess: SubprocessRunner,
-  args: string[]
+  args: string[],
+  opts: RunLimactlOpts = {}
 ): Promise<LimactlResult> {
+  const { timeoutMs } = opts;
   try {
-    return await subprocess.run('limactl', args);
+    return await subprocess.run(
+      'limactl',
+      args,
+      typeof timeoutMs === 'number' ? { timeoutMs } : undefined
+    );
   } catch (err) {
     const cause = err instanceof Error ? err.message : String(err);
+    // `execFile`'s timeout kills the child with a signal, so the rejection
+    // carries a generic "killed"/"SIGTERM" message with no mention of the
+    // bound that was exceeded. Say so explicitly — a bound that fires
+    // anonymously is barely better than no bound at all.
+    if (typeof timeoutMs === 'number' && isTimeoutRejection(err)) {
+      throw new Error(
+        `limactl ${args.join(' ')} timed out after ${timeoutMs}ms. ` +
+          `The VM is not answering — it may be starved of host CPU/memory, ` +
+          `or its SSH session may be wedged.`
+      );
+    }
     const hint = /ENOENT|not found/i.test(cause)
       ? ' (is `limactl` installed? `brew install lima`)'
       : '';
     throw new Error(`limactl ${args.join(' ')} failed: ${cause}${hint}`);
   }
+}
+
+/**
+ * Recognise the rejection `child_process.execFile` produces when its
+ * `timeout` option fires: the child is killed by a signal, so `killed` is
+ * `true` and/or the error carries a `SIGTERM`/`SIGKILL` signal rather than a
+ * numeric exit code.
+ */
+function isTimeoutRejection(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false;
+  const candidate = err as { killed?: boolean; signal?: string | null };
+  if (candidate.killed === true) return true;
+  return candidate.signal === 'SIGTERM' || candidate.signal === 'SIGKILL';
 }
 
 /**

@@ -15,7 +15,7 @@
  */
 
 // limactl wrapper
-export type { LimactlResult } from './limactl.js';
+export type { LimactlResult, RunLimactlOpts } from './limactl.js';
 export { runLimactl, limactlError, shellQuote } from './limactl.js';
 
 // Path anchoring

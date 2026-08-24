@@ -3,10 +3,10 @@ id: TASK-483
 title: >-
   VM persona-daemon lifecycle flakes under host load — dangling daemon blocks
   next gadget bind, /dev/sg* never enumerates
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-23 21:45'
-updated_date: '2026-08-24 21:03'
+updated_date: '2026-08-24 21:43'
 labels:
   - testing
   - vm
@@ -164,4 +164,86 @@ This explains every observation that the earlier hypotheses did not:
 4. Only then consider host-pressure mitigation (fewer concurrent VMs, serialising `test:vm` within `quality`) — it reduces how often teardowns get killed, but crash-safe teardown is what actually fixes it.
 
 **Not a regression from TASK-482 or TASK-484.** Both landed just before the bad runs, which made them look implicated. Ruled out: `transport.ts`'s only change since the last green run is the `graphify-out` exclude; the in-VM daemon binary sha256 matches the host build exactly; and the failures are in-guest gadget binding, which neither change touches.
+
+## Correction: `state=configured` is not evidence of a leak — the earlier root-cause reading was wrong
+
+The "ROOT CAUSE FOUND" note above reads `/sys/class/udc/*/state` as occupancy. It is not. On `dummy_hcd` that field **latches** at `configured` the first time any gadget binds and never returns to `not attached`. `gadget.ts#attachUdc` already documents this; the observation was taken without it.
+
+Reproduced directly on a healthy VM. One clean start + clean stop of a single persona:
+
+```
+BEFORE:  dummy_udc.0=configured  .1=not attached  .2=not attached  .3=not attached   gadgets=[]
+STARTED: dummy_udc.0=configured  ...   gadgets=[podkit-ipod-video-5g-iflash-1tb]  UDC=dummy_udc.0  /dev/sg0
+AFTER:   dummy_udc.0=configured  ...   gadgets=[]  (no /dev/sg*)
+```
+
+Run two personas concurrently (the dual-daemon test does exactly this) and stop both cleanly:
+
+```
+AFTER STOP BOTH: dummy_udc.0=configured  dummy_udc.1=configured  .2=not attached  .3=not attached
+gadgets: []
+```
+
+That is byte-for-byte the "two UDCs pinned in `configured` while configfs holds no gadgets at all" signature quoted as proof of a leak. It is what a **fully successful** run leaves behind. Both slots then re-bound immediately on the next start, so nothing was burnt. The escalating-severity story built on top of that reading ("leaks accumulate, each run starts with fewer usable slots") does not hold, and neither does "the leak is not recoverable in place".
+
+The authoritative occupancy signal is the configfs side: a controller is claimed iff some `<gadget>/UDC` file names it. That file *is* cleared on unbind.
+
+## A real leak does exist, with a different mechanism and a much narrower blast radius
+
+Manufactured by starting a daemon outside systemd and `kill -9`ing it, so teardown is skipped exactly as a stop-timeout SIGKILL or an OOM kill would skip it.
+
+- **FunctionFS personas** (`ipod-*`): the kernel unbinds the gadget when the dying process closes `ep0`, so the controller is released. What survives is the configfs tree and the FunctionFS mount — and that is enough to make the *same persona* unstartable forever: `mount -t functionfs` then fails `exit=32: already mounted or mount point busy`, and `Restart=on-failure` just loops on it.
+- **Mass-storage-only personas** (`echo-mini`, `echo-mini-populated`): no ep0 exists, so the kernel never notices. Verified stranded state after `kill -9`, with no daemon alive:
+  ```
+  gadgets: [podkit-echo-mini]
+    podkit-echo-mini UDC=[dummy_udc.0]
+  /dev/sg0 still live
+  ```
+  That is a genuinely leaked controller: nothing in the system will ever release it.
+
+So the fix directions in the previous note were right, for a reason that was partly wrong. Host memory pressure killing daemons mid-teardown remains the trigger; crash-unsafe setup (not teardown) is the mechanism.
+
+## What landed
+
+1. **Crash-safe reap on setup, not reorder on teardown.** Teardown already unbinds the UDC before removing the tree, so there is no window to reorder — and reordering could not help anyway, since the failure is a process that never ran teardown at all. `reapStaleGadget()` (`device-testing-daemon/src/gadget.ts`) releases any leftover tree at the daemon's own gadget name before `createGadget`. Covers SIGKILL, OOM and power loss; touches only its own gadget, so a concurrent persona is unaffected.
+2. **Slot accounting + loud preflight failure.** New `runners/lima-test-vm-udc-slots.ts` reads controllers, claims and live units in one round trip and classifies a claim with no active unit as leaked. Wired into `preflight.ts` (once per suite, before anything binds) and into the enumeration-timeout messages. Verified against four manufactured leaks: the suite now aborts up front naming every leaked binding and the remediation, instead of timing out somewhere downstream.
+3. **Bounded waits.** `runLimactl` gained an optional `timeoutMs`. The unbounded `limactl shell` was the source of the multi-minute hooks — the poll loops checked their deadline *between* iterations, which bounds nothing if one iteration never returns. Each probe is now bounded by its remaining deadline; daemon start/stop 45s; journal dump 15s; apply-state 5m.
+
+Leaked slots are now recoverable in place: after burning all four and reaping, the VM was back to 4/4 free with no rebuild. `bun run test:vm` green (194 pass / 0 fail in e2e-vm-tests, all 22 turbo tasks successful), VM left with no gadgets, no mounts, no units.
+
+# CORRECTION: the "leaked UDC" root cause above is WRONG. Read this before the sections above it.
+
+**`/sys/class/udc/<n>/state` latches on dummy_hcd.** Once any gadget binds a controller, that field reads `configured` forever and never returns to `not attached`, even after a clean unbind. So "`configured` with an empty configfs" is the **normal, healthy** reading after any successful run — not evidence of a leak.
+
+This is documented in the very file that manages the binding, `device-testing-daemon/src/gadget.ts:149`:
+
+> We deliberately do NOT read `/sys/class/udc/<n>/state`: on dummy_hcd that field latches at `configured` once any gadget has bound the UDC and never goes back to `not attached`, even after an unbind. The UDC file in configfs IS reset to empty on unbind, so it is the only reliable source.
+
+Demonstrated by a single clean start+stop of one persona reproducing the exact "leak" signature, and confirmed live: all four controllers currently read `configured` with configfs empty, all four demonstrably free, `test:vm` green.
+
+**The authoritative signal is `<gadget>/UDC` in configfs**, which IS cleared on unbind.
+
+What this invalidates: the accumulating-leak narrative, the "escalating severity across runs" explanation, and "the leak is not recoverable in place". The VM rebuild that appeared to fix things is confounded — it relieved host memory pressure at the same moment.
+
+## What was actually wrong
+
+**1. Nothing bounded the transport.** `runLimactl` accepted no timeout and `defaultSubprocessRunner` has no default, so any `limactl shell` could hang indefinitely. Worse, the poll loops (`waitForScsiGenericEnumeration`, `waitForUsbEnumeration`) checked their deadline *between* iterations — which bounds nothing if one iteration never returns. **That** is where 397s and 3.6M ms came from, not slot exhaustion. The 5s budget was never the problem.
+
+**2. A real leak exists, with a narrower mechanism than I described.** Teardown is already in the safe order (unbind UDC -> shut down FFS -> destroy gadget), and `systemctl stop` sends SIGCONT with SIGTERM, so there is no window to reorder away. What strands state is the whole teardown being skipped — SIGKILL after `TimeoutStopSec=10`, OOM kill, power loss:
+   - **FunctionFS personas**: the kernel unbinds when the dying process closes `ep0`, so the controller IS released — but the configfs tree and FunctionFS mount survive, which makes *that persona* permanently unstartable (`mount -t functionfs` fails `already mounted or mount point busy`, and `Restart=on-failure` loops on it).
+   - **Mass-storage-only personas** (`echo-mini`, `echo-mini-populated`): no ep0, so the kernel never notices. Genuinely leaked controller with nothing to release it.
+
+## Fix
+
+- **`reapStaleGadget()`** in `gadget.ts`, called from `main.ts` before `createGadget`. Releases leftover state at the daemon's *own* gadget name only, so concurrent personas are untouched. Robust to SIGKILL/OOM/power-loss, which fixing teardown could never be. Verified: `kill -9` a mass-storage daemon -> controller leaked -> next start reaps it and binds. All four controllers were deliberately leaked and every one recovered by start/stop cycling, **no VM rebuild**.
+- **Slot accounting** (`lima-test-vm-udc-slots.ts`), reading `<gadget>/UDC` and cross-checking live units — a claim with no daemon behind it is a leak; a claim with a live unit is another persona in flight. Wired into `preflight.ts` and into enumeration-timeout messages. With all four leaked the suite aborts immediately naming the remediation; with some leaked it warns and continues, since those self-heal on next start. Also flags a controller-count shortfall against the module's `num=`.
+- **Real bounds**: `runLimactl` takes `timeoutMs` and reports `timed out after Nms` explicitly. Each enumeration probe gets the caller's remaining deadline floored at 2s; daemon start/stop 45s; journal dump 15s; preflight SSH and slot probes 30s; apply-state 5min.
+
+## Verification
+
+`test:vm` 194 pass / 44 skip / 0 fail, 22/22 turbo tasks. Unit: device-testing 322, daemon 54, lima 123, all green — 36 new tests (reap 8, slot accounting 19, wait bounds 7, lifecycle bounds 2). lint and typecheck (38/38) clean. No slots left leaked.
+
+## Flagged, not fixed
+
+`@podkit/device-testing#test:vm` and `@podkit/e2e-vm-tests#test:vm` both have `dependsOn: []`, so turbo may run them **concurrently against the same VM**, starting and stopping overlapping persona units. A plausible independent contributor to the original flakes, and nothing here addresses it.
 <!-- SECTION:NOTES:END -->
