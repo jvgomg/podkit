@@ -1,9 +1,10 @@
 ---
 id: TASK-485
 title: 'Two test:vm turbo tasks can run concurrently against the same device VM'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-24 21:43'
+updated_date: '2026-08-28 17:22'
 labels:
   - testing
   - vm
@@ -37,3 +38,31 @@ This is a plausible independent contributor to the flakiness investigated under 
 
 Option 1 is likely right for the immediate problem; option 2 is the more complete answer if VM-driving surfaces keep multiplying.
 <!-- SECTION:DESCRIPTION:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+## Closed as invalid — the premise is wrong; this was fixed three months before the task was filed. No code changed.
+
+`turbo.json` already carries an explicit ordering edge: `@podkit/e2e-vm-tests#test:vm` lists `@podkit/device-testing#test:vm` in its `dependsOn`. Confirmed in the file and in `bunx turbo run test:vm --dry=json`:
+
+```
+== @podkit/device-testing#test:vm
+  dependents:   ["@podkit/e2e-vm-tests#test:vm"]
+
+== @podkit/e2e-vm-tests#test:vm
+  dependencies: [... "@podkit/device-testing#test:vm" ...]
+```
+
+It landed in commit `41129637`, *"fix(turbo): serialise the two test:vm suites against the same harness VM"* (26 May 2026), whose message documents the same three flakes and the same reasoning as this task.
+
+**Where the false claim came from.** "Both declare `dependsOn: []`" describes the *generic* `test:vm` entry (`turbo.json:108`). Both VM-driving packages have per-package overrides that supersede it, and only those two packages define a `test:vm` script at all — the other ~20 entries in a dry run are turbo's synthetic no-ops. The wording was inherited verbatim from TASK-483's closing "Flagged, not fixed" note, written months after the fix had already landed, and I filed this task from it without checking the override. That note has now been corrected so this does not regenerate.
+
+**Empirically confirmed too:** in a full `test:vm`, all 67 `device-testing:test:vm` output lines occupy log lines 490-556 and the first `e2e-vm-tests:test:vm` line is 557 — zero interleaving. In a run where `device-testing#test:vm` failed, `e2e-vm-tests#test:vm` never started, which is the edge gating in action.
+
+**The sibling hazard is handled as well:** `test-packages/device-testing/scripts/run-mirror-body.ts:18` splits `quality` into two phases explicitly because `test:vm` and `docker-dist` share the one harness VM.
+
+Because no fix was warranted, the ordering-edge-versus-lock trade was not weighed and no documented contract was widened — the lock's "guards VM starts, not in-VM activity" boundary in the substrate README and ADR-027 is untouched and still accurate.
+
+Verified while here: `test:vm` 239/0, lint 0/0, typecheck 38/38.
+<!-- SECTION:NOTES:END -->

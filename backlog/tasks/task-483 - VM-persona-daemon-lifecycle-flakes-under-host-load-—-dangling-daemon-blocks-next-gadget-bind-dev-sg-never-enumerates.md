@@ -6,7 +6,7 @@ title: >-
 status: Done
 assignee: []
 created_date: '2026-08-23 21:45'
-updated_date: '2026-08-24 21:43'
+updated_date: '2026-08-28 17:22'
 labels:
   - testing
   - vm
@@ -246,4 +246,14 @@ What this invalidates: the accumulating-leak narrative, the "escalating severity
 ## Flagged, not fixed
 
 `@podkit/device-testing#test:vm` and `@podkit/e2e-vm-tests#test:vm` both have `dependsOn: []`, so turbo may run them **concurrently against the same VM**, starting and stopping overlapping persona units. A plausible independent contributor to the original flakes, and nothing here addresses it.
+
+## Correction to this task's own "Flagged, not fixed" note above
+
+That note claims `@podkit/device-testing#test:vm` and `@podkit/e2e-vm-tests#test:vm` both declare `dependsOn: []` and may therefore run concurrently against one VM. **That is wrong**, and it generated a spurious follow-up (TASK-485, now closed as invalid).
+
+The two VM suites have been explicitly serialised since commit `41129637` (26 May 2026), *"fix(turbo): serialise the two test:vm suites against the same harness VM"*: `@podkit/e2e-vm-tests#test:vm` lists `@podkit/device-testing#test:vm` in its `dependsOn`. `dependsOn: []` describes the *generic* `test:vm` entry at `turbo.json:108`; both VM-driving packages have per-package overrides that supersede it, and they are the only two packages defining a `test:vm` script at all.
+
+Confirmed in `--dry=json` and empirically: in a full run the two suites' output does not interleave at all, and when the first fails the second never starts.
+
+The lesson for anyone reading the rest of these notes: this task's diagnosis went through two disproved hypotheses before landing on the real one, and this flagged note was a third wrong claim that survived to the end. Check the per-task overrides in `turbo.json`, not the generic entry, before concluding anything about scheduling.
 <!-- SECTION:NOTES:END -->

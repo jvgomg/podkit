@@ -1,10 +1,10 @@
 ---
 id: TASK-486
 title: VM stop/destroy have no timeout and print nothing while hanging
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-28 00:46'
-updated_date: '2026-08-28 01:26'
+updated_date: '2026-08-28 01:33'
 labels:
   - testing
   - vm
