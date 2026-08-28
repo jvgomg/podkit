@@ -149,7 +149,11 @@ describe('VM: initialContent seeding for FAT32 backing files', () => {
     it(
       `seeds ${persona.id} backing image with declared initialContent`,
       async () => {
-        const result = await ensureBackingFile({ vmName: VM_NAME, persona });
+        const result = await ensureBackingFile({
+          vmName: VM_NAME,
+          persona,
+          computeSha256: true,
+        });
         expect(result.personaId).toBe(persona.id);
         expect(result.sha256).toMatch(/^[0-9a-f]{64}$/);
 
@@ -180,6 +184,7 @@ describe('VM: initialContent seeding for FAT32 backing files', () => {
       const first = await ensureBackingFile({
         vmName: VM_NAME,
         persona: echoMiniPopulated,
+        computeSha256: true,
       });
       // Sleep a couple seconds so the VM clock advances past any mtools
       // default-timestamp granularity (FAT entries store 2-second precision).
@@ -188,8 +193,10 @@ describe('VM: initialContent seeding for FAT32 backing files', () => {
       const second = await ensureBackingFile({
         vmName: VM_NAME,
         persona: echoMiniPopulated,
+        computeSha256: true,
       });
       expect(second.sha256).toBe(first.sha256);
+      expect(second.sha256).not.toBeNull();
     },
     VM_WARM_TIMEOUT_MS * 3
   );

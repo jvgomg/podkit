@@ -33,8 +33,24 @@
  *
  * Determinism is achieved through `mkfs.vfat --invariant`: a single flag that
  * fixes the volume ID, creation timestamps, OEM string, and any other
- * normally-random fields to constants. We sha256-probe each image after
- * synthesis to assert byte-stability and skip rebuilds on hash match (idempotency).
+ * normally-random fields to constants.
+ *
+ * **Synthesis always rebuilds, and that is the point.** The gadget binds the
+ * canonical `<vmPath>` straight into `mass_storage.0/lun.0/file`, so the guest
+ * writes tests perform (`gpod-tool init`, a `podkit sync`) land in the image
+ * itself. Rebuilding from the recipe on every `prepare()` is therefore not
+ * redundant work — it is what returns each persona to its declared initial
+ * state. A content-addressed skip keyed on the recipe would hand the next run
+ * the *previous* run's mutations.
+ *
+ * The rebuild is also nearly free. Measured inside `podkit-device` on a 256 MiB
+ * persona: `truncate` + `mkfs.vfat --invariant` is **12 ms**, while a single
+ * `sha256sum` of the result is **750 ms** — sixty times the cost of the work it
+ * was verifying. Hashing is therefore opt-in ({@link EnsureBackingFileOpts.computeSha256}),
+ * used by the determinism test and the out-of-band build script, and skipped on
+ * the `prepare()` hot path. What the build always emits instead is the finished
+ * image's size, which costs nothing, proves the script ran to its last line, and
+ * asserts the file that survived the atomic `mv` is the declared size.
  *
  * Output paths inside the VM live under {@link BACKING_FILES_VM_DIR} keyed by
  * persona id. The runner emits these paths into the persona sidecar's
@@ -51,6 +67,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { FILE_COPY_TIMEOUT_MS } from '@podkit/lima';
+
 import type { DevicePersona } from '../personas/types.js';
 import { defaultSubprocessRunner, type SubprocessRunner } from '../subprocess.js';
 import { writeMbrWrappedHfsplusImage } from './hfsplus-image-writer.js';
@@ -59,6 +77,67 @@ import { devTestingPackageRoot } from './paths.js';
 
 /** In-VM directory where the runner stages synthesised backing files. */
 export const BACKING_FILES_VM_DIR = '/var/device-testing/backing-files';
+
+// ---------------------------------------------------------------------------
+// Wall-clock bounds
+//
+// Every `limactl` call in this module now carries one, and they come in two
+// shapes because the calls do two different kinds of thing.
+//
+//   - Calls that touch NO image bytes (`mkdir -p`, `rm -f`, staging-dir
+//     cleanup) are the "should finish in milliseconds" bucket. Their whole
+//     budget is the SSH round trip on a loaded host, so they take the flat
+//     {@link VM_ROUND_TRIP_TIMEOUT_MS}.
+//   - Calls whose cost scales with the image (the sha256 probe, the build
+//     script, the HFS+ `install`) take a bound derived from `sizeMiB` via
+//     {@link imageWorkTimeoutMs}.
+//
+// `limactl copy` is the substrate's own primitive and keeps the substrate's own
+// bound, `FILE_COPY_TIMEOUT_MS`, rather than a second derivation of the same
+// thing here.
+//
+// Both shapes go through `runLimactl`, which owns the descriptive
+// `timed out after Nms` message. A bound that fires anonymously as execFile's
+// generic "killed" is most of the way back to having no bound at all — which is
+// what an unbounded `sha256sum` in this module produced when it ran for 20
+// minutes on a file that hashes in 750 ms and died reporting only
+// `Command failed: …`. That is a wedged SSH session, not slow work, and no
+// bound derived from the work will ever be tight enough to be wrong about it.
+// ---------------------------------------------------------------------------
+
+/**
+ * Bound for an in-VM command that does no work proportional to the image, and
+ * the additive headroom underneath every size-derived bound below.
+ *
+ * Nothing here can legitimately take anywhere near this long: `mkdir -p` and
+ * `rm -f` are syscalls. The budget is the SSH round trip on a host deep in swap
+ * with a contended channel — the same figure, for the same reason, as the
+ * daemon lifecycle bound in `./lima-test-vm.js`.
+ */
+export const VM_ROUND_TRIP_TIMEOUT_MS = 45_000;
+
+/**
+ * Throughput floor, in MiB/s, used to size the bounds on operations that read
+ * or write a whole image.
+ *
+ * Measured inside `podkit-device` (2 vCPU, arm64): `sha256sum` of a 256 MiB
+ * backing image runs at ~340 MiB/s, and `truncate` + `mkfs.vfat --invariant`
+ * over the same size costs 12 ms. The floor is set ~85x below the slower of
+ * those, which is what a VM starved of host CPU by a concurrent build looks
+ * like. Anything past the resulting bound is a wedged session, not slow work.
+ */
+const IMAGE_THROUGHPUT_FLOOR_MIB_PER_S = 4;
+
+/**
+ * Wall-clock bound for an in-VM operation whose cost scales with the image:
+ * one SSH round trip's headroom plus the image size at the throughput floor.
+ *
+ * For the largest persona (256 MiB) that is 109s against 0.75s of measured
+ * work; for the smallest (32 MiB) it is 53s.
+ */
+export function imageWorkTimeoutMs(sizeMiB: number): number {
+  return VM_ROUND_TRIP_TIMEOUT_MS + Math.ceil(sizeMiB / IMAGE_THROUGHPUT_FLOOR_MIB_PER_S) * 1_000;
+}
 
 /**
  * Fixed epoch used as `SOURCE_DATE_EPOCH` for mtools invocations.
@@ -78,23 +157,50 @@ export interface EnsureBackingFileResult {
   personaId: string;
   /** In-VM absolute path to the backing image. */
   vmPath: string;
-  /** sha256 of the synthesised image. */
-  sha256: string;
   /**
-   * `true` when a pre-existing image at `vmPath` already had bytes identical
-   * to the rebuild. Telemetry-only today (the function always rebuilds —
-   * `mkfs.vfat --invariant` is ~100ms per persona, dominated by the limactl
-   * round-trip). Surfaces a future skip-optimisation signal: when this is
-   * consistently `true` across personas, the always-rebuild step is wasted
-   * work and a recipe-hash sidecar at `<vmPath>.recipe` would let us skip.
+   * Size of the finished image in bytes, read back from the VM after the
+   * atomic `mv`. Always present: `stat` is free, and reading it back is what
+   * proves the build script reached its last line.
    */
-  wasAlreadyIdentical: boolean;
+  sizeBytes: number;
+  /**
+   * sha256 of the synthesised image, or `null` when the caller did not ask for
+   * one (see {@link EnsureBackingFileOpts.computeSha256}).
+   *
+   * The HFS+ branch always populates this: there the digest is not a
+   * verification but the input to a real decision — whether to re-send the
+   * image over `limactl copy` — so it is cheaper than the transfer it avoids.
+   */
+  sha256: string | null;
+  /**
+   * `true` when the image already at `vmPath` was byte-identical to the one
+   * this call produced, `null` when no hash was computed and the question was
+   * therefore never asked.
+   *
+   * Telemetry on the FAT32 paths (they rebuild regardless — see the note on
+   * the module about why that rebuild is the reset). Load-bearing on the HFS+
+   * path, where `true` means the `limactl copy` was skipped.
+   */
+  wasAlreadyIdentical: boolean | null;
 }
 
 /** Options for {@link ensureBackingFile}. */
 export interface EnsureBackingFileOpts {
   vmName: string;
   persona: DevicePersona;
+  /**
+   * Also hash the finished image (and the pre-existing one, to populate
+   * `wasAlreadyIdentical`). Off by default.
+   *
+   * The hash proves the recipe → bytes mapping is stable, which is a property
+   * of the recipe and needs asserting once, not on every `prepare()`. Paying
+   * for it per persona per test file is what made this path the slowest thing
+   * in `prepare()`: two `sha256sum` passes over ~1.5 GiB of images is ~9s of
+   * the ~12s the batch takes uncontended, and multiples of that on a loaded
+   * host. Callers that want the digest — the determinism test and the
+   * out-of-band `build:backing-file` driver — ask for it.
+   */
+  computeSha256?: boolean;
   subprocess?: SubprocessRunner;
 }
 
@@ -102,12 +208,11 @@ export interface EnsureBackingFileOpts {
  * Synthesise the FAT32 backing image for one persona inside the VM and return
  * the VM path the daemon should bind in `mass_storage.0/lun.0/file`.
  *
- * **Always rebuilds.** `mkfs.vfat --invariant` is deterministic — re-running
- * with the same recipe produces byte-identical output, so a stale image at
- * `vmPath` is safe to overwrite. The atomic `mv` from `<vmPath>.tmp` keeps
- * a half-written image from ever being visible. The function probes the
- * pre-existing sha256 to populate `wasAlreadyIdentical` as a future
- * skip-optimisation signal, but does not act on it.
+ * **Always rebuilds**, and the rebuild is the reset: the gadget serves
+ * `vmPath` directly, so tests mutate the image in place, and re-running the
+ * deterministic recipe is what puts the persona back in its declared initial
+ * state. The atomic `mv` from `<vmPath>.tmp.<pid>` keeps a half-written image
+ * from ever being visible.
  *
  * Throws if the persona has no `massStorageBackingFile` or has only a
  * pre-built `imagePath` (we don't synthesise in that case).
@@ -179,6 +284,8 @@ export async function ensureBackingFile(
     });
   }
 
+  const computeSha256 = opts.computeSha256 ?? false;
+
   // Resolve + validate `initialContent` host paths up front so a bad fixture
   // surfaces before we touch the VM. Returns empty when no seeding is needed.
   const seedEntries = resolveSeedEntries(opts.persona);
@@ -202,6 +309,7 @@ export async function ensureBackingFile(
       vmPath,
       sizeMiB,
       label,
+      computeSha256,
       subprocess,
     });
   }
@@ -232,7 +340,8 @@ export async function ensureBackingFile(
   //      while the file is still the .tmp — so post-mv the image is byte-
   //      complete before any consumer can observe it.
   //   4. atomic rename to <vmPath>
-  //   5. emit sha256 on stdout
+  //   5. emit the finished image's size on stdout, then its sha256 when the
+  //      caller asked for one
   //
   // `set -e` is portable (dash + bash). We deliberately avoid `-o pipefail`
   // because Debian's `/bin/sh` is dash, which does not support it. The
@@ -272,50 +381,40 @@ export async function ensureBackingFile(
     ...buildSeedCommands({ stageDir, tmpVar: '"$TMP"', entries: seedEntries }),
     `sudo mv "$TMP" ${shellQuote(vmPath)}`,
     `sudo rm -rf ${shellQuote(stageDir)}`,
-    `sha256sum ${shellQuote(vmPath)} | awk '{print $1}'`,
+    ...buildReportCommands({ vmPath, computeSha256 }),
   ].join('; ');
 
-  // Idempotency probe: if a file already exists, take its sha256. If it
-  // matches the post-build sha (after a re-build) we'd know we're stable —
-  // but a cheaper approach is to fingerprint by (sizeMiB, label, sha256)
-  // and trust the recipe → bytes mapping (we proved it elsewhere). For
-  // now, always probe + rebuild; sub-second per persona, and atomic rename
-  // means a stale half-written image can never poison a test run.
-  //
-  // Future optimisation: check size + a "recipe hash" sidecar at
-  // <vmPath>.recipe so we skip the mkfs.vfat call. Out of scope for
-  // Image build is ~100ms per persona, dominated by limactl shell round-trip.
-  const probe = await runLimactl(subprocess, [
-    'shell',
-    opts.vmName,
-    '--',
-    'sh',
-    '-c',
-    `if [ -f ${shellQuote(vmPath)} ]; then sha256sum ${shellQuote(vmPath)} | awk '{print $1}'; else echo absent; fi`,
-  ]);
-  if (probe.exitCode !== 0) {
-    throw limactlError(`failed to probe backing file at ${opts.vmName}:${vmPath}`, probe);
-  }
-  const existingSha = probe.stdout.trim();
+  // Byte-stability probe: hash whatever is already at `vmPath` so the result
+  // can report whether the rebuild changed anything. Skipped unless the caller
+  // asked for a digest — on a 256 MiB image this single call costs 60x the
+  // build it is asking about.
+  const existingSha = computeSha256
+    ? await probeExistingSha256({
+        vmName: opts.vmName,
+        vmPath,
+        sizeMiB,
+        subprocess,
+      })
+    : null;
 
-  // Build (or rebuild) the image. The script writes a deterministic image,
-  // so post-build sha256 is stable across runs of the same recipe.
+  // Build (or rebuild) the image. The script writes a deterministic image, so
+  // a stale image at `vmPath` — including one a previous run's tests wrote
+  // through the gadget — is safe to overwrite.
   let build;
   try {
-    build = await runLimactl(subprocess, ['shell', opts.vmName, '--', 'sh', '-c', buildScript]);
+    build = await runLimactl(subprocess, ['shell', opts.vmName, '--', 'sh', '-c', buildScript], {
+      timeoutMs: imageWorkTimeoutMs(sizeMiB),
+    });
   } finally {
     // Build-script `rm -rf` only runs on the success path (set -e aborts
     // earlier on failure). Always sweep the stage dir on the way out so a
     // partial-build failure does not leave fixtures behind for later runs.
     if (seedEntries.length > 0) {
-      await runLimactl(subprocess, [
-        'shell',
-        opts.vmName,
-        '--',
-        'sh',
-        '-c',
-        `rm -rf ${shellQuote(stageDir)}`,
-      ]).catch(() => undefined);
+      await runLimactl(
+        subprocess,
+        ['shell', opts.vmName, '--', 'sh', '-c', `rm -rf ${shellQuote(stageDir)}`],
+        { timeoutMs: VM_ROUND_TRIP_TIMEOUT_MS }
+      ).catch(() => undefined);
     }
   }
   if (build.exitCode !== 0) {
@@ -324,20 +423,124 @@ export async function ensureBackingFile(
       build
     );
   }
-  const sha256 = build.stdout.trim();
-  if (!/^[0-9a-f]{64}$/.test(sha256)) {
-    throw new Error(
-      `ensureBackingFile: persona '${opts.persona.id}' synthesis returned ` +
-        `non-sha256 stdout '${sha256.slice(0, 80)}' — VM output unexpected.`
-    );
-  }
+  const report = parseBuildReport({
+    personaId: opts.persona.id,
+    stdout: build.stdout,
+    sizeMiB,
+    computeSha256,
+  });
 
   return {
     personaId: opts.persona.id,
     vmPath,
-    sha256,
-    wasAlreadyIdentical: existingSha === sha256,
+    sizeBytes: report.sizeBytes,
+    sha256: report.sha256,
+    wasAlreadyIdentical: existingSha === null ? null : existingSha === report.sha256,
   };
+}
+
+/** Options for {@link probeExistingSha256}. */
+interface ProbeExistingSha256Opts {
+  vmName: string;
+  vmPath: string;
+  sizeMiB: number;
+  subprocess: SubprocessRunner;
+}
+
+/**
+ * sha256 whatever is currently at `vmPath` inside the VM, or return `'absent'`
+ * when nothing is there.
+ *
+ * Bounded by {@link imageWorkTimeoutMs}. The bound is the whole reason this is
+ * a named function: an unbounded version of this exact call once ran for 20
+ * minutes on an image that hashes in 750 ms and surfaced as a bare
+ * `Command failed: …` at the end of it.
+ */
+async function probeExistingSha256(opts: ProbeExistingSha256Opts): Promise<string> {
+  const probe = await runLimactl(
+    opts.subprocess,
+    [
+      'shell',
+      opts.vmName,
+      '--',
+      'sh',
+      '-c',
+      `if [ -f ${shellQuote(opts.vmPath)} ]; then sha256sum ${shellQuote(opts.vmPath)} | awk '{print $1}'; else echo absent; fi`,
+    ],
+    { timeoutMs: imageWorkTimeoutMs(opts.sizeMiB) }
+  );
+  if (probe.exitCode !== 0) {
+    throw limactlError(`failed to probe backing file at ${opts.vmName}:${opts.vmPath}`, probe);
+  }
+  return probe.stdout.trim();
+}
+
+/**
+ * Trailing lines every build script emits: the finished image's size, then its
+ * sha256 when the caller asked for one.
+ *
+ * The size line is not optional. `stat` costs nothing on a sparse file, and it
+ * is what makes a silently-truncated script detectable: it can only appear on
+ * stdout if the script survived `set -e` all the way past the atomic `mv`, and
+ * its value is checked against the recipe by {@link parseBuildReport}.
+ */
+function buildReportCommands(opts: { vmPath: string; computeSha256: boolean }): string[] {
+  const quoted = shellQuote(opts.vmPath);
+  const cmds = [`stat -c %s ${quoted}`];
+  if (opts.computeSha256) cmds.push(`sha256sum ${quoted} | awk '{print $1}'`);
+  return cmds;
+}
+
+/** Parsed trailing output of a build script. */
+interface BuildReport {
+  sizeBytes: number;
+  sha256: string | null;
+}
+
+/**
+ * Parse (and validate) the trailing lines {@link buildReportCommands} emits.
+ *
+ * The size is checked against the recipe rather than merely recorded — a build
+ * that produced the wrong number of bytes is a broken image, and the daemon
+ * would happily serve it.
+ */
+function parseBuildReport(opts: {
+  personaId: string;
+  stdout: string;
+  sizeMiB: number;
+  computeSha256: boolean;
+}): BuildReport {
+  const lines = opts.stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+
+  const sizeLine = lines[0] ?? '';
+  if (!/^\d+$/.test(sizeLine)) {
+    throw new Error(
+      `ensureBackingFile: persona '${opts.personaId}' synthesis returned ` +
+        `non-numeric size stdout '${sizeLine.slice(0, 80)}' — VM output unexpected.`
+    );
+  }
+  const sizeBytes = Number(sizeLine);
+  const expectedBytes = opts.sizeMiB * 1024 * 1024;
+  if (sizeBytes !== expectedBytes) {
+    throw new Error(
+      `ensureBackingFile: persona '${opts.personaId}' synthesis produced ${sizeBytes} bytes, ` +
+        `expected ${expectedBytes} (${opts.sizeMiB} MiB).`
+    );
+  }
+
+  if (!opts.computeSha256) return { sizeBytes, sha256: null };
+
+  const shaLine = lines[1] ?? '';
+  if (!/^[0-9a-f]{64}$/.test(shaLine)) {
+    throw new Error(
+      `ensureBackingFile: persona '${opts.personaId}' synthesis returned ` +
+        `non-sha256 stdout '${shaLine.slice(0, 80)}' — VM output unexpected.`
+    );
+  }
+  return { sizeBytes, sha256: shaLine };
 }
 
 /**
@@ -352,8 +555,13 @@ export async function ensureBackingFile(
  * test VM (where hfsprogs is unpackaged).
  *
  * Idempotency: sha256 the just-written host image, probe the VM-side
- * file's sha256, skip the copy on match. `wasAlreadyIdentical` is set the
- * same way as the FAT32 path so callers can treat both symmetrically.
+ * file's sha256, skip the copy on match.
+ *
+ * This is the one branch that hashes unconditionally, and it is not
+ * verification — the digest decides whether to re-send the image over
+ * `limactl copy`, and hashing 32 MiB is cheaper than transferring it. So
+ * `sha256` and `wasAlreadyIdentical` are always populated here even when the
+ * caller did not ask for a digest.
  */
 interface SynthesiseHfsplusBackingFileOpts {
   vmName: string;
@@ -373,35 +581,33 @@ async function synthesiseHfsplusBackingFile(
     // but `read()` returns zero-filled bytes for holes, so the digest is
     // over the full logical content.
     const sha256 = sha256HostFile(hostTmp);
+    const sizeBytes = opts.sizeMiB * 1024 * 1024;
 
     // Probe — skip the limactl copy if the VM already has a byte-identical
     // image. Without skip, every `prepare()` re-uploads the full sizeMiB.
-    const probe = await runLimactl(opts.subprocess, [
-      'shell',
-      opts.vmName,
-      '--',
-      'sh',
-      '-c',
-      `if [ -f ${shellQuote(opts.vmPath)} ]; then sha256sum ${shellQuote(opts.vmPath)} | awk '{print $1}'; else echo absent; fi`,
-    ]);
-    if (probe.exitCode !== 0) {
-      throw limactlError(`failed to probe backing file at ${opts.vmName}:${opts.vmPath}`, probe);
-    }
-    const wasAlreadyIdentical = probe.stdout.trim() === sha256;
+    const existingSha = await probeExistingSha256({
+      vmName: opts.vmName,
+      vmPath: opts.vmPath,
+      sizeMiB: opts.sizeMiB,
+      subprocess: opts.subprocess,
+    });
+    const wasAlreadyIdentical = existingSha === sha256;
     if (wasAlreadyIdentical) {
-      return { personaId: opts.personaId, vmPath: opts.vmPath, sha256, wasAlreadyIdentical };
+      return {
+        personaId: opts.personaId,
+        vmPath: opts.vmPath,
+        sizeBytes,
+        sha256,
+        wasAlreadyIdentical,
+      };
     }
 
     // Ensure target directory exists. `mkdir -p` is idempotent.
-    const ensureDir = await runLimactl(opts.subprocess, [
-      'shell',
-      opts.vmName,
-      '--',
-      'sudo',
-      'mkdir',
-      '-p',
-      BACKING_FILES_VM_DIR,
-    ]);
+    const ensureDir = await runLimactl(
+      opts.subprocess,
+      ['shell', opts.vmName, '--', 'sudo', 'mkdir', '-p', BACKING_FILES_VM_DIR],
+      { timeoutMs: VM_ROUND_TRIP_TIMEOUT_MS }
+    );
     if (ensureDir.exitCode !== 0) {
       throw limactlError(`failed to ensure ${BACKING_FILES_VM_DIR} in ${opts.vmName}`, ensureDir);
     }
@@ -410,40 +616,43 @@ async function synthesiseHfsplusBackingFile(
     // to the canonical path. `install -D -m 0644` is atomic (rename within
     // the same fs) and sets mode in one step.
     const vmTmp = `/tmp/hfsplus-${randomUUID()}.img`;
-    const copy = await runLimactl(opts.subprocess, ['copy', hostTmp, `${opts.vmName}:${vmTmp}`]);
+    const copy = await runLimactl(opts.subprocess, ['copy', hostTmp, `${opts.vmName}:${vmTmp}`], {
+      timeoutMs: FILE_COPY_TIMEOUT_MS,
+    });
     if (copy.exitCode !== 0) {
       throw limactlError(
         `limactl copy failed sending HFS+ backing image to ${opts.vmName}:${vmTmp}`,
         copy
       );
     }
-    const install = await runLimactl(opts.subprocess, [
-      'shell',
-      opts.vmName,
-      '--',
-      'sudo',
-      'install',
-      '-D',
-      '-m',
-      '0644',
-      vmTmp,
-      opts.vmPath,
-    ]);
+    // `install` copies the whole image between two VM-local filesystems, so it
+    // gets the size-derived bound rather than the flat round-trip one.
+    const install = await runLimactl(
+      opts.subprocess,
+      ['shell', opts.vmName, '--', 'sudo', 'install', '-D', '-m', '0644', vmTmp, opts.vmPath],
+      { timeoutMs: imageWorkTimeoutMs(opts.sizeMiB) }
+    );
     if (install.exitCode !== 0) {
       // Best-effort cleanup of the staging file before propagating.
-      await runLimactl(opts.subprocess, ['shell', opts.vmName, '--', 'rm', '-f', vmTmp]).catch(
-        () => undefined
-      );
+      await runLimactl(opts.subprocess, ['shell', opts.vmName, '--', 'rm', '-f', vmTmp], {
+        timeoutMs: VM_ROUND_TRIP_TIMEOUT_MS,
+      }).catch(() => undefined);
       throw limactlError(
         `sudo install failed promoting ${vmTmp} → ${opts.vmPath} in ${opts.vmName}`,
         install
       );
     }
-    await runLimactl(opts.subprocess, ['shell', opts.vmName, '--', 'rm', '-f', vmTmp]).catch(
-      () => undefined
-    );
+    await runLimactl(opts.subprocess, ['shell', opts.vmName, '--', 'rm', '-f', vmTmp], {
+      timeoutMs: VM_ROUND_TRIP_TIMEOUT_MS,
+    }).catch(() => undefined);
 
-    return { personaId: opts.personaId, vmPath: opts.vmPath, sha256, wasAlreadyIdentical: false };
+    return {
+      personaId: opts.personaId,
+      vmPath: opts.vmPath,
+      sizeBytes,
+      sha256,
+      wasAlreadyIdentical: false,
+    };
   } finally {
     try {
       fs.unlinkSync(hostTmp);
@@ -469,6 +678,7 @@ interface SynthesisePartitionedFat32Opts {
   vmPath: string;
   sizeMiB: number;
   label: string;
+  computeSha256: boolean;
   subprocess: SubprocessRunner;
 }
 
@@ -487,8 +697,9 @@ interface SynthesisePartitionedFat32Opts {
  *
  * Determinism: `truncate` (fixed size) + `sfdisk label-id` (fixed disk id) +
  * `mkfs.vfat --invariant -n <label>` (fixed volume id + timestamps) give a
- * byte-identical image across runs, so the always-rebuild + sha probe stay
- * valid (verified: two builds hash identically).
+ * byte-identical image across runs, which is what makes the unconditional
+ * rebuild a reset rather than a source of drift (verified: two builds hash
+ * identically).
  *
  * The whole build runs under one `sudo sh -c` with `set -e`, and the loop
  * device is detached on every path via a `trap` so a mid-build failure never
@@ -497,20 +708,17 @@ interface SynthesisePartitionedFat32Opts {
 async function synthesisePartitionedFat32BackingFile(
   opts: SynthesisePartitionedFat32Opts
 ): Promise<EnsureBackingFileResult> {
-  // Idempotency probe (mirrors the whole-disk path): read any existing image's
-  // sha so `wasAlreadyIdentical` reflects byte-stability.
-  const probe = await runLimactl(opts.subprocess, [
-    'shell',
-    opts.vmName,
-    '--',
-    'sh',
-    '-c',
-    `if [ -f ${shellQuote(opts.vmPath)} ]; then sha256sum ${shellQuote(opts.vmPath)} | awk '{print $1}'; else echo absent; fi`,
-  ]);
-  if (probe.exitCode !== 0) {
-    throw limactlError(`failed to probe backing file at ${opts.vmName}:${opts.vmPath}`, probe);
-  }
-  const existingSha = probe.stdout.trim();
+  // Byte-stability probe (mirrors the whole-disk path): read any existing
+  // image's sha so `wasAlreadyIdentical` reflects byte-stability. Only when
+  // the caller asked for a digest — see the note on `computeSha256`.
+  const existingSha = opts.computeSha256
+    ? await probeExistingSha256({
+        vmName: opts.vmName,
+        vmPath: opts.vmPath,
+        sizeMiB: opts.sizeMiB,
+        subprocess: opts.subprocess,
+      })
+    : null;
 
   // Build script. `$$`-suffixed scratch path avoids the concurrent-prepare
   // race documented on the whole-disk path. The `trap` detaches the loop on
@@ -530,36 +738,33 @@ async function synthesisePartitionedFat32BackingFile(
     'sudo losetup -d "$LOOP"',
     'trap - EXIT',
     `sudo mv "$TMP" ${shellQuote(opts.vmPath)}`,
-    `sha256sum ${shellQuote(opts.vmPath)} | awk '{print $1}'`,
+    ...buildReportCommands({ vmPath: opts.vmPath, computeSha256: opts.computeSha256 }),
   ].join('; ');
 
-  const build = await runLimactl(opts.subprocess, [
-    'shell',
-    opts.vmName,
-    '--',
-    'sh',
-    '-c',
-    buildScript,
-  ]);
+  const build = await runLimactl(
+    opts.subprocess,
+    ['shell', opts.vmName, '--', 'sh', '-c', buildScript],
+    { timeoutMs: imageWorkTimeoutMs(opts.sizeMiB) }
+  );
   if (build.exitCode !== 0) {
     throw limactlError(
       `failed to synthesise partitioned FAT32 backing file for persona '${opts.personaId}' in ${opts.vmName}`,
       build
     );
   }
-  const sha256 = build.stdout.trim();
-  if (!/^[0-9a-f]{64}$/.test(sha256)) {
-    throw new Error(
-      `ensureBackingFile: persona '${opts.personaId}' partitioned synthesis returned ` +
-        `non-sha256 stdout '${sha256.slice(0, 80)}' — VM output unexpected.`
-    );
-  }
+  const report = parseBuildReport({
+    personaId: opts.personaId,
+    stdout: build.stdout,
+    sizeMiB: opts.sizeMiB,
+    computeSha256: opts.computeSha256,
+  });
 
   return {
     personaId: opts.personaId,
     vmPath: opts.vmPath,
-    sha256,
-    wasAlreadyIdentical: existingSha === sha256,
+    sizeBytes: report.sizeBytes,
+    sha256: report.sha256,
+    wasAlreadyIdentical: existingSha === null ? null : existingSha === report.sha256,
   };
 }
 
@@ -599,6 +804,21 @@ export interface EnsureBackingFilesForPersonasOpts {
  *
  * Personas with `imagePath` (pre-built) are skipped here — the older
  * `stageBackingFile()` helper handles those.
+ *
+ * **No digests.** This is the `prepare()` hot path: every VM test file's
+ * `beforeAll` runs it, against the whole registry, inside the per-group cold
+ * budget. It wants the images correct and present, and nothing it returns
+ * mentions a hash — so it does not pay for one. That takes the batch from
+ * ~12s (of which ~9s was `sha256sum`) to roughly one SSH round trip per
+ * persona.
+ *
+ * **No heartbeat.** `startHeartbeat` earns its place on waits long enough that
+ * an operator has to decide whether to keep waiting; with the hashing gone this
+ * loop is a second of round trips, and each call inside it now carries a bound
+ * that names the persona and the `limactl` argv when it fires. There is also no
+ * progress sink to wire it to — `TestRuntime.prepare()` takes no reporter, and
+ * threading one through the interface to narrate a one-second loop would be a
+ * worse trade than the silence.
  */
 export async function ensureBackingFilesForPersonas(
   opts: EnsureBackingFilesForPersonasOpts
@@ -761,21 +981,28 @@ async function stageSeedFixtures(opts: StageSeedFixturesOpts): Promise<void> {
 
   // Create the per-persona scratch dir (idempotent). /tmp is tmpfs, no sudo
   // needed; the trailing `rm -rf` in the build script cleans it up.
-  const mkdir = await runLimactl(opts.subprocess, [
-    'shell',
-    opts.vmName,
-    '--',
-    'sh',
-    '-c',
-    `rm -rf ${shellQuote(opts.stageDir)} && mkdir -p ${shellQuote(opts.stageDir)}`,
-  ]);
+  const mkdir = await runLimactl(
+    opts.subprocess,
+    [
+      'shell',
+      opts.vmName,
+      '--',
+      'sh',
+      '-c',
+      `rm -rf ${shellQuote(opts.stageDir)} && mkdir -p ${shellQuote(opts.stageDir)}`,
+    ],
+    { timeoutMs: VM_ROUND_TRIP_TIMEOUT_MS }
+  );
   if (mkdir.exitCode !== 0) {
     throw limactlError(`failed to prepare seed stage dir ${opts.vmName}:${opts.stageDir}`, mkdir);
   }
 
   for (const entry of opts.entries) {
     const dest = `${opts.vmName}:${opts.stageDir}/${entry.stagedBasename}`;
-    const copy = await runLimactl(opts.subprocess, ['copy', entry.hostPath, dest]);
+    // Single-file transfer — the substrate's own primitive and its own bound.
+    const copy = await runLimactl(opts.subprocess, ['copy', entry.hostPath, dest], {
+      timeoutMs: FILE_COPY_TIMEOUT_MS,
+    });
     if (copy.exitCode !== 0) {
       throw limactlError(`failed to copy seed fixture ${entry.hostPath} → ${dest}`, copy);
     }

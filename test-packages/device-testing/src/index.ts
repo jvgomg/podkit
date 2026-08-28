@@ -185,7 +185,7 @@ export {
   BUILD_CONTEXT_VM_DIR,
 } from '@podkit/lima';
 
-// Mass-storage backing-file synthesis (TASK-348)
+// Mass-storage backing-file synthesis
 export type {
   EnsureBackingFileOpts,
   EnsureBackingFileResult,

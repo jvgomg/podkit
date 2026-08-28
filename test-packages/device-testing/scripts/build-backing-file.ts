@@ -75,9 +75,13 @@ async function main(): Promise<void> {
   for (const persona of personasToBuild) {
     const synth = persona.massStorageBackingFile!.synthesis!;
     console.log(`    ${persona.id}: ${synth.sizeMiB} MiB FAT32 label='${synth.label}'`);
-    const result = await ensureBackingFile({ vmName: VM_NAME, persona });
+    // `computeSha256` is opt-in and off on the runner's hot path (hashing a
+    // 256 MiB image costs sixty times the build it verifies). This driver
+    // exists to confirm the deterministic-bytes claim from the command line,
+    // so it is exactly the caller that should pay for the digest.
+    const result = await ensureBackingFile({ vmName: VM_NAME, persona, computeSha256: true });
     const tag = result.wasAlreadyIdentical ? 'unchanged' : 'rebuilt';
-    console.log(`      → ${result.vmPath} sha256=${result.sha256.slice(0, 16)}… (${tag})`);
+    console.log(`      → ${result.vmPath} sha256=${result.sha256?.slice(0, 16)}… (${tag})`);
   }
   console.log(`==> done.`);
 }

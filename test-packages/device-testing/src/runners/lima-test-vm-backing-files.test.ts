@@ -11,8 +11,10 @@ import { describe, it, expect } from 'bun:test';
 import {
   ensureBackingFile,
   ensureBackingFilesForPersonas,
+  imageWorkTimeoutMs,
   vmPathForPersona,
   BACKING_FILES_VM_DIR,
+  VM_ROUND_TRIP_TIMEOUT_MS,
 } from './lima-test-vm-backing-files.js';
 import type { DevicePersona } from '../personas/types.js';
 import type { SubprocessRunner, SubprocessRunOpts, SubprocessRunResult } from '../subprocess.js';
@@ -54,6 +56,9 @@ const fail = (code: number, stderr: string): SubprocessRunResult => ({
 
 // 64-char hex sha256, used as canned synthesis output
 const SHA = 'a'.repeat(64);
+
+/** Canned `stat -c %s` output for a `sizeMiB` image (the build script's first line). */
+const sizeLine = (sizeMiB: number): string => `${sizeMiB * 1024 * 1024}\n`;
 
 function makePersona(overrides: Partial<DevicePersona> = {}): DevicePersona {
   return {
@@ -127,8 +132,7 @@ describe('vmPathForPersona', () => {
 describe('ensureBackingFile', () => {
   it('invokes limactl shell with the deterministic synthesis script', async () => {
     const { runner, calls } = makeScriptedRunner([
-      ok('absent'), // probe: file missing
-      ok(SHA + '\n'), // build script returns sha256
+      ok(sizeLine(64)), // build script reports the finished image size
     ]);
     const result = await ensureBackingFile({
       vmName: 'podkit-device',
@@ -138,36 +142,94 @@ describe('ensureBackingFile', () => {
     expect(result).toEqual({
       personaId: 'echo-mini',
       vmPath: `${BACKING_FILES_VM_DIR}/echo-mini.img`,
-      sha256: SHA,
-      wasAlreadyIdentical: false,
+      sizeBytes: 64 * 1024 * 1024,
+      sha256: null,
+      wasAlreadyIdentical: null,
     });
 
-    // Probe call shape
+    // One call only: no hash was asked for, so nothing probed the image.
+    expect(calls).toHaveLength(1);
     expect(calls[0]!.command).toBe('limactl');
     expect(calls[0]!.args[0]).toBe('shell');
     expect(calls[0]!.args[1]).toBe('podkit-device');
 
     // Build call: the script should mention truncate, mkfs.vfat --invariant,
-    // and the label.
-    const buildScript = calls[1]!.args.join(' ');
+    // and the label — and report the size rather than hashing.
+    const buildScript = calls[0]!.args.join(' ');
     expect(buildScript).toContain('truncate -s 64M');
     expect(buildScript).toContain('mkfs.vfat --invariant -F 32');
     expect(buildScript).toContain("'ECHO_MINI'");
     expect(buildScript).toContain(`${BACKING_FILES_VM_DIR}/echo-mini.img`);
+    expect(buildScript).toContain('stat -c %s');
+    expect(buildScript).not.toContain('sha256sum');
+  });
+
+  it('bounds the build on the image size so a wedged session cannot hang the caller', async () => {
+    const { runner, calls } = makeScriptedRunner([ok(sizeLine(64))]);
+    await ensureBackingFile({
+      vmName: 'podkit-device',
+      persona: makePersona(),
+      subprocess: runner,
+    });
+    expect(calls[0]!.opts?.timeoutMs).toBe(imageWorkTimeoutMs(64));
+  });
+
+  it('bounds the sha256 probe on the image size', async () => {
+    const { runner, calls } = makeScriptedRunner([
+      ok('absent'), // probe
+      ok(sizeLine(64) + SHA + '\n'), // build: size then sha
+    ]);
+    await ensureBackingFile({
+      vmName: 'podkit-device',
+      persona: makePersona(),
+      computeSha256: true,
+      subprocess: runner,
+    });
+    expect(calls[0]!.args.join(' ')).toContain('sha256sum');
+    expect(calls[0]!.opts?.timeoutMs).toBe(imageWorkTimeoutMs(64));
+  });
+
+  it('hashes only when asked, and then reports both size and digest', async () => {
+    const { runner, calls } = makeScriptedRunner([
+      ok('absent'), // probe: file missing
+      ok(sizeLine(64) + SHA + '\n'),
+    ]);
+    const result = await ensureBackingFile({
+      vmName: 'podkit-device',
+      persona: makePersona(),
+      computeSha256: true,
+      subprocess: runner,
+    });
+    expect(result.sha256).toBe(SHA);
+    expect(result.sizeBytes).toBe(64 * 1024 * 1024);
+    expect(result.wasAlreadyIdentical).toBe(false);
+    expect(calls[1]!.args.join(' ')).toContain('sha256sum');
   });
 
   it('reports wasAlreadyIdentical=true when the existing sha256 matches the rebuild output', async () => {
     const { runner } = makeScriptedRunner([
       ok(SHA + '\n'), // probe: pre-existing
-      ok(SHA + '\n'), // build: same sha
+      ok(sizeLine(64) + SHA + '\n'), // build: same sha
     ]);
     const result = await ensureBackingFile({
       vmName: 'podkit-device',
       persona: makePersona(),
+      computeSha256: true,
       subprocess: runner,
     });
     expect(result.wasAlreadyIdentical).toBe(true);
     expect(result.sha256).toBe(SHA);
+  });
+
+  it('rejects a build whose image is not the size the recipe declared', async () => {
+    const { runner } = makeScriptedRunner([ok(sizeLine(32))]);
+    await expect(
+      ensureBackingFile({
+        vmName: 'podkit-device',
+        persona: makePersona(),
+        subprocess: runner,
+      })
+    ).rejects.toThrow(/produced 33554432 bytes, expected 67108864/);
   });
 
   it('throws when persona has no massStorageBackingFile', async () => {
@@ -245,6 +307,16 @@ describe('ensureBackingFile', () => {
     // The copy call (call #3) carries the host→VM transfer.
     expect(calls[2]!.args[0]).toBe('copy');
     expect(calls[2]!.args[2]).toContain('podkit-device:/tmp/hfsplus-');
+
+    // Every call is bounded: the size-derived bound on the ones that move or
+    // read the whole image, the flat round-trip bound on `mkdir` and `rm`.
+    expect(calls[0]!.opts?.timeoutMs).toBe(imageWorkTimeoutMs(2)); // probe
+    expect(calls[1]!.opts?.timeoutMs).toBe(VM_ROUND_TRIP_TIMEOUT_MS); // mkdir -p
+    expect(calls[3]!.opts?.timeoutMs).toBe(imageWorkTimeoutMs(2)); // install
+    expect(calls[4]!.opts?.timeoutMs).toBe(VM_ROUND_TRIP_TIMEOUT_MS); // rm staging
+    for (const call of calls) {
+      expect(typeof call.opts?.timeoutMs).toBe('number');
+    }
   });
 
   it('skips the limactl copy when the VM already has the byte-identical HFS+ image', async () => {
@@ -274,7 +346,7 @@ describe('ensureBackingFile', () => {
     // Second invocation — probe returns the matching sha256, so the helper
     // must NOT issue mkdir / copy / install / rm. Single scripted response.
     const { runner: secondRunner, calls: secondCalls } = makeScriptedRunner([
-      ok(first.sha256 + '\n'),
+      ok(`${first.sha256 ?? ''}\n`),
     ]);
     const second = await ensureBackingFile({
       vmName: 'podkit-device',
@@ -382,10 +454,7 @@ describe('ensureBackingFile', () => {
   });
 
   it('surfaces a descriptive error on a non-zero build exit', async () => {
-    const { runner } = makeScriptedRunner([
-      ok('absent'), // probe
-      fail(1, 'mkfs.vfat: command not found'),
-    ]);
+    const { runner } = makeScriptedRunner([fail(1, 'mkfs.vfat: command not found')]);
     await expect(
       ensureBackingFile({
         vmName: 'podkit-device',
@@ -395,12 +464,24 @@ describe('ensureBackingFile', () => {
     ).rejects.toThrow(/synthesise backing file/);
   });
 
-  it("throws when the build script's stdout isn't a sha256", async () => {
-    const { runner } = makeScriptedRunner([ok('absent'), ok('not-a-sha\n')]);
+  it("throws when the build script's stdout isn't a size", async () => {
+    const { runner } = makeScriptedRunner([ok('not-a-size\n')]);
     await expect(
       ensureBackingFile({
         vmName: 'podkit-device',
         persona: makePersona(),
+        subprocess: runner,
+      })
+    ).rejects.toThrow(/non-numeric size/);
+  });
+
+  it("throws when a requested digest isn't a sha256", async () => {
+    const { runner } = makeScriptedRunner([ok('absent'), ok(sizeLine(64) + 'not-a-sha\n')]);
+    await expect(
+      ensureBackingFile({
+        vmName: 'podkit-device',
+        persona: makePersona(),
+        computeSha256: true,
         subprocess: runner,
       })
     ).rejects.toThrow(/non-sha256/);
@@ -458,12 +539,9 @@ describe('ensureBackingFilesForPersonas', () => {
   });
 
   it('synthesises every persona with a synthesis recipe and returns a vmPath map', async () => {
-    const { runner } = makeScriptedRunner([
-      ok('absent'),
-      ok(SHA + '\n'),
-      ok('absent'),
-      ok('b'.repeat(64) + '\n'),
-    ]);
+    // One call per persona: the batch path asks for no digests, so neither
+    // the pre-build probe nor the post-build hash is issued.
+    const { runner, calls } = makeScriptedRunner([ok(sizeLine(64)), ok(sizeLine(128))]);
     const result = await ensureBackingFilesForPersonas({
       vmName: 'podkit-device',
       personas: [
@@ -482,5 +560,9 @@ describe('ensureBackingFilesForPersonas', () => {
       ['one', `${BACKING_FILES_VM_DIR}/one.img`],
       ['two', `${BACKING_FILES_VM_DIR}/two.img`],
     ]);
+    expect(calls).toHaveLength(2);
+    for (const call of calls) {
+      expect(call.args.join(' ')).not.toContain('sha256sum');
+    }
   });
 });

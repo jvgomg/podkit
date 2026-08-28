@@ -3,10 +3,10 @@ id: TASK-488
 title: >-
   Backing-file synthesis in prepare() is load-sensitive and outside the
   bounded-wait work
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-08-28 17:22'
-updated_date: '2026-08-28 19:32'
+updated_date: '2026-08-28 20:07'
 labels:
   - testing
   - vm

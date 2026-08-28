@@ -175,7 +175,7 @@ See [`documents/persona-capture-playbook.md`](../documents/persona-capture-playb
 
 ### Mass-storage backing files (FAT32 synthesis)
 
-Personas that drive `usb_f_mass_storage` (Echo Mini today; future Sony Walkman variants) declare a `massStorageBackingFile.synthesis` recipe instead of committing a multi-MiB binary fixture. The lima-test-vm runner synthesises the image inside the VM via `truncate` + `mkfs.vfat --invariant` — byte-deterministic and cheap (~100 ms per persona, dominated by limactl round-trip).
+Personas that drive `usb_f_mass_storage` (Echo Mini today; future Sony Walkman variants) declare a `massStorageBackingFile.synthesis` recipe instead of committing a multi-MiB binary fixture. The lima-test-vm runner synthesises the image inside the VM via `truncate` + `mkfs.vfat --invariant` — byte-deterministic and cheap (12 ms for a 256 MiB image; a whole-registry batch is ~2s, dominated by the limactl round-trip per persona).
 
 Two seeding paths:
 
@@ -183,6 +183,10 @@ Two seeding paths:
 - **Seeded backing image** — add `synthesis.initialContent: Array<{path, sourceFixture}>`. `path` is the in-image absolute path (no leading `/`, ASCII-safe charset only). `sourceFixture` is the persona-relative host path (e.g. `./raw/iTunesDB`). The runner `limactl copy`s each fixture into a per-persona scratch dir, then `mcopy`s into the post-`mkfs.vfat` image with `SOURCE_DATE_EPOCH` fixed so the seeded bytes don't perturb determinism. Used by `echo-mini-populated` and `ipod-video-5g-corrupt-db`.
 
 Determinism contract: two runs of the same persona must produce a byte-identical sha256. The runner's `EnsureBackingFileResult.sha256` is the tripwire — assert it in your test if you depend on byte-stability. See `src/vm/backing-file-content.e2e.test.ts` for the canonical determinism check (one `it` runs `ensureBackingFile` twice and compares).
+
+The digest is **opt-in**: pass `computeSha256: true`, or `sha256` comes back `null`. Hashing a 256 MiB image inside the VM costs ~750 ms against the ~12 ms the build itself takes, so `prepare()` — which synthesises the whole registry in every VM test file's `beforeAll` — does not pay for it. Every build still reports its finished size, which is checked against the recipe.
+
+Synthesis always rebuilds, and the rebuild is the reset: the gadget serves the canonical image path directly, so tests mutate the image in place, and re-running the deterministic recipe is what returns a persona to its declared initial state. Do not add a recipe-keyed skip — it would serve the next run the previous run's writes.
 
 **Runner implementation:** `test-packages/device-testing/src/runners/lima-test-vm-backing-files.ts` (`ensureBackingFile`, `resolveSeedEntries`, `buildSeedCommands`). Persona-side validation runs up front on the host so a bad `initialContent` entry surfaces before the VM is touched.
 
