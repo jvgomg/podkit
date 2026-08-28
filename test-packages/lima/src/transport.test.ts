@@ -37,6 +37,39 @@ function recorder(result: SubprocessRunResult): {
 const ok = (stdout = ''): SubprocessRunResult => ({ stdout, stderr: '', exitCode: 0 });
 
 describe('runInVm', () => {
+  // execFile kills a timed-out child with a signal, so the raw rejection says
+  // only "killed" and never names the bound that fired. A bound that reports
+  // itself anonymously is barely better than no bound, so the descriptive
+  // message is the point of routing this through the shared limactl wrapper
+  // rather than spawning directly.
+  it('names the bound that fired when a call times out', async () => {
+    const timedOut: SubprocessRunner = {
+      async run() {
+        const err = new Error('Command failed: limactl shell vm1') as Error & {
+          killed?: boolean;
+          signal?: string;
+        };
+        err.killed = true;
+        err.signal = 'SIGTERM';
+        throw err;
+      },
+    };
+    await expect(
+      runInVm('vm1', 'sleep 99', { subprocess: timedOut, timeoutMs: 2_000 })
+    ).rejects.toThrow(/timed out after 2000ms/);
+  });
+
+  it('keeps the install hint when limactl itself is missing', async () => {
+    const missing: SubprocessRunner = {
+      async run() {
+        throw new Error('spawn limactl ENOENT');
+      },
+    };
+    await expect(runInVm('vm1', 'true', { subprocess: missing })).rejects.toThrow(
+      /brew install lima/
+    );
+  });
+
   it('shells into the VM and forwards the command', async () => {
     const { runner, calls } = recorder(ok('hi'));
     const res = await runInVm('vm1', 'echo hi', { subprocess: runner });

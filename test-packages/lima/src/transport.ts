@@ -19,7 +19,7 @@
  */
 
 import { defaultSubprocessRunner, type SubprocessRunner } from '@podkit/device-types';
-import { limactlError, runLimactl, shellQuote, type LimactlResult } from './limactl.js';
+import { limactlError, runLimactl, shellQuote } from './limactl.js';
 
 /** Options honoured by {@link runInVm}. */
 export interface RunInVmOpts {
@@ -56,22 +56,16 @@ export async function runInVm(
   if (!vmName) throw new Error('runInVm: vmName is required.');
   const subprocess = opts.subprocess ?? defaultSubprocessRunner;
   const wrapped = wrapCommand(command, opts);
-  const subprocessOpts =
-    typeof opts.timeoutMs === 'number' ? { timeoutMs: opts.timeoutMs } : undefined;
-  let result: LimactlResult;
-  try {
-    result = await subprocess.run(
-      'limactl',
-      ['shell', vmName, '--', 'sh', '-c', wrapped],
-      subprocessOpts
-    );
-  } catch (err) {
-    const cause = err instanceof Error ? err.message : String(err);
-    const hint = /ENOENT|not found/i.test(cause)
-      ? ' (is `limactl` installed? `brew install lima`)'
-      : '';
-    throw new Error(`limactl shell ${vmName} failed: ${cause}${hint}`);
-  }
+  // Route through runLimactl rather than calling the runner directly: it owns
+  // the transport-level error vocabulary, including the explicit "timed out
+  // after Nms" message. Spawning here instead would bound the call but let the
+  // bound fire anonymously as execFile's generic "killed", which is most of
+  // the way back to having no bound at all.
+  const result = await runLimactl(
+    subprocess,
+    ['shell', vmName, '--', 'sh', '-c', wrapped],
+    typeof opts.timeoutMs === 'number' ? { timeoutMs: opts.timeoutMs } : {}
+  );
   return { stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode };
 }
 
