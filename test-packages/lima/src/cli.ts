@@ -97,6 +97,22 @@ async function confirmPrompt(prompt: string): Promise<boolean> {
   }
 }
 
+/**
+ * Report a lifecycle failure as a diagnosis rather than as an "unexpected
+ * error" traceback. A bounded operation that trips its bound is an EXPECTED
+ * outcome of this CLI — it is the whole reason the bound exists — so it should
+ * arrive with a next step attached.
+ */
+function reportLifecycleFailure(def: VmDefinition, verb: string, err: unknown): number {
+  errorLog(`[podkit-vm] ${verb} failed: ${err instanceof Error ? err.message : String(err)}`);
+  errorLog(
+    `[podkit-vm] \`${def.instanceName}\` may now be in an inconsistent state. ` +
+      `Check it with: podkit-vm status ${def.id} — and if it is wedged, ` +
+      `recreate it with: podkit-vm recover ${def.id}`
+  );
+  return 1;
+}
+
 async function cmdEnsure(def: VmDefinition, opts: LifecycleOpts): Promise<number> {
   log(`[podkit-vm] ensuring \`${def.instanceName}\` is running...`);
   try {
@@ -106,12 +122,7 @@ async function cmdEnsure(def: VmDefinition, opts: LifecycleOpts): Promise<number
     // fails. Recreating it automatically would silently discard a VM the
     // operator may still want (the device VM carries provisioned state), so
     // point at the explicit verb instead of destroying anything.
-    errorLog(`[podkit-vm] ${err instanceof Error ? err.message : String(err)}`);
-    errorLog(
-      `[podkit-vm] if \`${def.instanceName}\` is wedged, recreate it with: ` +
-        `podkit-vm recover ${def.id}`
-    );
-    return 1;
+    return reportLifecycleFailure(def, 'ensure', err);
   }
   const status = await instanceStatus(def.instanceName, opts.subprocess);
   log(`[podkit-vm] \`${def.instanceName}\` is ${status}.`);
@@ -227,7 +238,11 @@ async function cmdStatus(def: VmDefinition, opts: LifecycleOpts): Promise<number
 }
 
 async function cmdStop(def: VmDefinition, opts: LifecycleOpts): Promise<number> {
-  await stop(def, opts);
+  try {
+    await stop(def, opts);
+  } catch (err) {
+    return reportLifecycleFailure(def, 'stop', err);
+  }
   log(`[podkit-vm] \`${def.instanceName}\` stopped (or already stopped).`);
   return 0;
 }
@@ -254,14 +269,22 @@ async function cmdDestroy(def: VmDefinition, args: string[], opts: LifecycleOpts
       return 0;
     }
   }
-  await destroy(def, opts);
+  try {
+    await destroy(def, opts);
+  } catch (err) {
+    return reportLifecycleFailure(def, 'destroy', err);
+  }
   log(`[podkit-vm] \`${def.instanceName}\` deleted.`);
   return 0;
 }
 
 async function cmdRecover(def: VmDefinition, opts: LifecycleOpts): Promise<number> {
   log(`[podkit-vm] recovering \`${def.instanceName}\` (destroy → recreate → start)...`);
-  await recover(def, opts);
+  try {
+    await recover(def, opts);
+  } catch (err) {
+    return reportLifecycleFailure(def, 'recover', err);
+  }
   const status = await instanceStatus(def.instanceName, opts.subprocess);
   log(`[podkit-vm] \`${def.instanceName}\` is ${status}.`);
   if (def.trackedForBaseline) {
@@ -363,11 +386,17 @@ export async function main(
 
   // A cold create runs for minutes; stream its provisioning log so the operator
   // can tell a slow VM from a wedged one. Probes stay buffered (see
-  // `createVmProvisioningRunner`). Tests inject their own runner and are
-  // unaffected.
+  // `createVmProvisioningRunner`). The heartbeat is wired here and nowhere
+  // else: this is the only module in the package that is allowed to print, and
+  // a silent multi-minute wait is the whole complaint an operator has when a
+  // VM verb hangs. Tests inject their own runner and are unaffected.
   const resolved: LifecycleOpts = {
     ...opts,
-    subprocess: opts.subprocess ?? createVmProvisioningRunner(),
+    subprocess:
+      opts.subprocess ??
+      createVmProvisioningRunner({
+        report: (line) => errorLog(`[podkit-vm] ${line}`),
+      }),
   };
 
   switch (verb) {

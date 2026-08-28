@@ -193,6 +193,56 @@ Coordination between callers is **single-layer**: the lock, and nothing else.
 There is deliberately no turbo `ensure:<vm>` ordering node — see ADR-027 for why
 that approach was rejected.
 
+### Bounds are asymmetric, and that is the design
+
+A `vm:down` that collided with an in-flight boot once hung for **2m47s with no
+output at all** before being killed by hand, leaving the instance listed as
+`Running` with SSH refused. The lifecycle passed no bound to any of its
+`limactl` calls, so there was nothing to distinguish "provisioning a large
+image" from "wedged forever".
+
+The naive fix — a timeout on all four — would be worse than the hang. A cold
+`limactl start` that downloads an image and runs cloud-init legitimately takes
+five to ten minutes on a developer's laptop, and any bound tight enough to be
+useful for `stop` would abort a legitimate create. **A killed create leaves a
+half-built instance**, which is a worse position than waiting.
+
+So the operations are bounded by different instruments, chosen per operation:
+
+| Operation | Instrument | Value | Basis |
+|-----------|-----------|-------|-------|
+| `stop` | wall clock | `STOP_TIMEOUT_MS` = 180s | Two systemd `DefaultTimeoutStopSec` stop-jobs (90s each on Debian) plus hypervisor teardown |
+| `destroy` | wall clock | `DESTROY_TIMEOUT_MS` = 90s | `delete --force` awaits no guest shutdown; the dominant term is unlinking a multi-GB diffdisk |
+| `ensureRunning`, warm start | wall clock | `WARM_START_TIMEOUT_MS` = 600s | Lima re-runs every `mode: system`/`mode: user` provision script on **every** boot, so a warm start repeats the device VM's `apt-get` work — a cold create minus the image download |
+| `ensureExists` / `ensureRunning`, **cold create** | **liveness** | `PROVISIONING_IDLE_TIMEOUT_MS` = 15 min of *no output* | Sized above the whole documented five-to-ten-minute cold create, so a slow-but-progressing provision can never trip it |
+
+The last row is the interesting one. `limactl start`/`create` stream their
+hostagent log through `createVmProvisioningRunner`, and every chunk rearms the
+watchdog — so the bound measures *silence*, not duration. A create that is
+merely slow keeps logging and runs as long as it needs; a create that has said
+nothing for longer than a healthy create takes end to end is wedged, and is
+aborted with a message naming `podkit-vm recover`.
+
+**Do not add a `timeoutMs` to the create path.** A test pins its absence and
+says why.
+
+### Heartbeat
+
+Even a correctly-bounded wait is undiagnosable while it is silent. The CLI (and
+`harness:setup`) pass a `report` sink to `createVmProvisioningRunner`, which
+emits a line every `DEFAULT_HEARTBEAT_MS` (30s) for **any** `limactl`
+invocation:
+
+```
+[podkit-vm] still waiting on `limactl stop podkit-device` (2m30s elapsed)
+[podkit-vm] still waiting on `limactl start --tty=false …` (6m00s elapsed, 45s since last output)
+```
+
+Streamed calls also report time since last output — the same number the idle
+watchdog acts on, so an operator watches the value that is about to fire rather
+than being surprised by it. Library modules pass no sink and start no timer:
+only the CLI prints.
+
 ---
 
 ## Transport and source staging
@@ -383,6 +433,10 @@ bun run test:unit --filter @podkit/lima
   `gpod-tool` and musl binaries.
 - `src/streaming-runner.ts` — a `SubprocessRunner` that streams output live, so a
   multi-minute cold VM create shows its provisioning log and an operator can tell
-  a slow VM from a wedged one. Status probes stay buffered.
+  a slow VM from a wedged one. Also owns the no-output liveness watchdog and the
+  SIGTERM→SIGKILL escalation for a child that will not die. Status probes stay
+  buffered.
+- `src/progress.ts` — the elapsed-time heartbeat primitive. Reporting only; it
+  never kills anything.
 - `src/docker-image.ts` — build/pull the podkit Docker image *inside* a VM (no
   persona or system-state coupling, so it belongs to the substrate).

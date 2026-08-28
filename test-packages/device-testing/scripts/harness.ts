@@ -378,7 +378,14 @@ async function cmdSetup(): Promise<number> {
   // same moment cannot interleave with this one.
   console.log(`[harness:setup] ensuring \`${VM}\` is running...`);
   try {
-    await ensureRunning(DEVICE_VM, { subprocess: createVmProvisioningRunner() });
+    await ensureRunning(DEVICE_VM, {
+      subprocess: createVmProvisioningRunner({
+        // A cold create here is the longest-running thing this script does;
+        // the heartbeat keeps it distinguishable from a wedge even during the
+        // silent stretches of cloud-init.
+        report: (line) => console.error(`[harness:setup] ${line}`),
+      }),
+    });
   } catch (err) {
     console.error(`[harness:setup] ${err instanceof Error ? err.message : String(err)}`);
     console.error(

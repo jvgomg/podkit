@@ -56,7 +56,17 @@ export {
 
 // Lifecycle primitives
 export type { LifecycleOpts, RecoverOpts } from './lifecycle.js';
-export { status, ensureExists, ensureRunning, stop, destroy, recover } from './lifecycle.js';
+export {
+  status,
+  ensureExists,
+  ensureRunning,
+  stop,
+  destroy,
+  recover,
+  STOP_TIMEOUT_MS,
+  DESTROY_TIMEOUT_MS,
+  WARM_START_TIMEOUT_MS,
+} from './lifecycle.js';
 
 // Generic transport
 export type { RunInVmOpts, RunInVmResult, CopyOutOpts, StageSourceTreeOpts } from './transport.js';
@@ -71,13 +81,24 @@ export {
   findStagingCollision,
 } from './staging.js';
 
-// Output-streaming subprocess runners (live provisioning logs)
-export type { StreamSink } from './streaming-runner.js';
+// Output-streaming subprocess runners (live provisioning logs + liveness bound)
+export type {
+  StreamSink,
+  StreamingRunnerOptions,
+  VmProvisioningRunnerOptions,
+} from './streaming-runner.js';
 export {
   createStreamingSubprocessRunner,
   createVmProvisioningRunner,
   streamsOutput,
+  DEFAULT_KILL_GRACE_MS,
+  PROVISIONING_KILL_GRACE_MS,
+  PROVISIONING_IDLE_TIMEOUT_MS,
 } from './streaming-runner.js';
+
+// Elapsed-time progress reporting for long-running invocations
+export type { ProgressReport, HeartbeatOpts, HeartbeatHandle } from './progress.js';
+export { startHeartbeat, formatElapsed, DEFAULT_HEARTBEAT_MS } from './progress.js';
 
 // Baseline hash + drift
 export type {

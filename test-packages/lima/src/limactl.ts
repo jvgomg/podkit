@@ -41,6 +41,11 @@ export interface RunLimactlOpts {
  * install hint when the binary itself is missing (ENOENT / "not found"), and a
  * `timed out after Nms` error when `opts.timeoutMs` elapses.
  *
+ * A runner with its own liveness watchdog (the streaming runner's
+ * `idleTimeoutMs`) rejects with a message that does NOT name the command,
+ * precisely so this wrapper's `limactl <args> failed: …` prefix reads as one
+ * sentence rather than repeating it.
+ *
  * Callers are expected to check `result.exitCode` themselves — this helper
  * only throws for transport-level failures (limactl unavailable, signal
  * killing the process, timeout), not for normal non-zero exits.
@@ -85,9 +90,15 @@ export async function runLimactl(
  */
 function isTimeoutRejection(err: unknown): boolean {
   if (typeof err !== 'object' || err === null) return false;
-  const candidate = err as { killed?: boolean; signal?: string | null };
+  const candidate = err as { killed?: boolean; signal?: string | null; message?: string };
   if (candidate.killed === true) return true;
-  return candidate.signal === 'SIGTERM' || candidate.signal === 'SIGKILL';
+  if (candidate.signal === 'SIGTERM' || candidate.signal === 'SIGKILL') return true;
+  // The streaming runner settles on its own timer rather than on the child's
+  // `close` (a grandchild holding the pipes open would otherwise defer the
+  // rejection past the deadline), so its rejection is a plain `Error` with
+  // neither `killed` nor `signal` set. Recognise it by the vocabulary it
+  // produces, so both runners reach the same descriptive message.
+  return typeof candidate.message === 'string' && /timed out after \d+ms/.test(candidate.message);
 }
 
 /**

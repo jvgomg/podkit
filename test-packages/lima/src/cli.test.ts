@@ -129,6 +129,75 @@ describe('status', () => {
   });
 });
 
+describe('stop', () => {
+  it('diagnoses a stop that trips its bound, instead of reporting an unexpected error', async () => {
+    // A bounded operation that trips its bound is an EXPECTED outcome of this
+    // CLI — it is the whole reason the bound exists — so it must arrive with
+    // the bound named and a next step attached, not as a stray traceback.
+    const listing = makeScriptedRunner([listStatus('running')]);
+    const timingOut: SubprocessRunner = {
+      async run(command, args, opts) {
+        if (args[0] === 'list') return listing.runner.run(command, args, opts);
+        throw Object.assign(new Error('Command failed'), { killed: true, signal: 'SIGTERM' });
+      },
+    };
+    const code = await main(['stop', 'device'], { subprocess: timingOut });
+    expect(code).toBe(1);
+    const err = stderrText();
+    expect(err).toContain('timed out after');
+    expect(err).toContain('podkit-vm recover device');
+    expect(err).not.toContain('unexpected error');
+  });
+});
+
+describe('teardown failures reach the operator as diagnoses', () => {
+  // Hermetic lock dir: `recover` reaches the lock only if the destroy leg
+  // succeeds, but pinning it keeps the test off the real VM's lock file
+  // regardless of where the failure lands.
+  let recoverLockDir: string;
+  beforeEach(() => {
+    recoverLockDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lima-cli-teardown-lock-'));
+  });
+  afterEach(() => {
+    fs.rmSync(recoverLockDir, { recursive: true, force: true });
+  });
+
+  /** A runner that answers status probes and throws an `execFile`-shaped timeout for anything else. */
+  function timingOutAfter(statuses: SubprocessRunResult[]): SubprocessRunner {
+    const listing = makeScriptedRunner(statuses);
+    return {
+      async run(command, args, opts) {
+        if (args[0] === 'list') return listing.runner.run(command, args, opts);
+        throw Object.assign(new Error('Command failed'), { killed: true, signal: 'SIGTERM' });
+      },
+    };
+  }
+
+  it('diagnoses a destroy that trips its bound', async () => {
+    // Two status probes: one for the confirm-prompt message, one inside the
+    // lifecycle `destroy()`.
+    const code = await main(['destroy', 'device', '--yes'], {
+      subprocess: timingOutAfter([listStatus('running'), listStatus('running')]),
+    });
+    expect(code).toBe(1);
+    const err = stderrText();
+    expect(err).toContain('destroy failed');
+    expect(err).toContain('podkit-vm recover device');
+    expect(stdoutText()).not.toContain('deleted');
+  });
+
+  it('diagnoses a recover that trips a bound part-way through', async () => {
+    const code = await main(['recover', 'device'], {
+      subprocess: timingOutAfter([listStatus('running')]),
+      lock: { lockDir: recoverLockDir, staleMs: 5000 },
+    });
+    expect(code).toBe(1);
+    expect(stderrText()).toContain('recover failed');
+    // A half-finished recover must not be reported as a running VM.
+    expect(stdoutText()).not.toContain('is running');
+  });
+});
+
 describe('destroy', () => {
   it('is a no-op and never calls delete when the instance is already missing', async () => {
     const { runner, calls } = makeScriptedRunner([listStatus('missing')]);

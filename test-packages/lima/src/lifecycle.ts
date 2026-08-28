@@ -20,6 +20,62 @@ import { instanceStatus, type InstanceStatus } from './instance-status.js';
 import { getVm, type VmDefinition } from './registry.js';
 import { withVmLock, type VmLockOptions } from './lock.js';
 
+// ---------------------------------------------------------------------------
+// Wall-clock bounds
+//
+// These are ASYMMETRIC on purpose, and the asymmetry is the whole design.
+//
+// `stop`, `destroy` and a warm `start` act on an instance that already exists.
+// Their legitimate duration is bounded by things we can name — a guest's
+// shutdown-job timeout, the removal of a disk image, a boot plus the per-boot
+// provision scripts — so a wall clock is the right instrument, and an
+// unbounded one is how a `vm:down` racing an in-flight boot hangs silently for
+// minutes with nothing to distinguish it from work.
+//
+// A COLD create is different in kind: it downloads a cloud image and runs
+// cloud-init, and no wall-clock bound is simultaneously tight enough to catch a
+// wedge and loose enough to spare a legitimate provision — and aborting one
+// mid-flight leaves a half-created instance, which is worse than the hang. That
+// path is therefore bounded by LIVENESS instead (no output for
+// `PROVISIONING_IDLE_TIMEOUT_MS`, see `./streaming-runner.js`), and passes no
+// `timeoutMs` here. That is deliberate, not an oversight.
+// ---------------------------------------------------------------------------
+
+/**
+ * Bound for `limactl stop` — a graceful guest shutdown.
+ *
+ * The dominant term is the guest init system's stop-job timeout: systemd's
+ * `DefaultTimeoutStopSec` is 90s on Debian, and a single unit that refuses to
+ * die costs exactly that before the shutdown proceeds. Budget two such jobs
+ * plus the hypervisor teardown. Below 90s this would abort shutdowns that were
+ * always going to succeed; far above it, it stops being a bound.
+ */
+export const STOP_TIMEOUT_MS = 180_000;
+
+/**
+ * Bound for `limactl delete --force`.
+ *
+ * Lower than {@link STOP_TIMEOUT_MS} because `--force` does not wait on a
+ * graceful guest shutdown at all — it tears the hypervisor down and removes the
+ * instance directory, so the dominant term is unlinking a multi-gigabyte
+ * diffdisk. One stop-job timeout's worth of headroom covers a driver that
+ * falls back to a polite stop on the way out.
+ */
+export const DESTROY_TIMEOUT_MS = 90_000;
+
+/**
+ * Bound for a WARM `limactl start <name>` — an instance that already exists and
+ * is merely stopped.
+ *
+ * Not as short as "just a boot": Lima re-runs every `mode: system` / `mode:
+ * user` provision script on every boot, so a warm start of the device VM
+ * repeats its `apt-get update`/install and its provisioning guards. Its
+ * legitimate worst case is therefore a cold create minus the image download —
+ * the top of the five-to-ten-minute range this package documents for a cold
+ * start. Anything past that is not a slow boot.
+ */
+export const WARM_START_TIMEOUT_MS = 600_000;
+
 /** Common options threaded through the lifecycle primitives. */
 export interface LifecycleOpts {
   /** DI seam for `limactl`; production callers leave unset. */
@@ -62,6 +118,8 @@ export async function ensureExists(
     async () => {
       const current = await instanceStatus(def.instanceName, subprocess);
       if (current !== 'missing') return;
+      // No `timeoutMs`: a cold create is bounded by liveness, not the clock.
+      // See the wall-clock bounds note at the top of this module.
       const result = await runLimactl(subprocess, [
         'create',
         '--tty=false',
@@ -95,6 +153,10 @@ export async function ensureRunning(
       const current = await instanceStatus(def.instanceName, subprocess);
       if (current === 'running') return;
       if (current === 'missing') {
+        // Cold create: no wall-clock bound (see the note at the top of this
+        // module). Production callers reach this path only through the CLI or
+        // the harness, both of which supply the streaming provisioning runner,
+        // so the no-output watchdog applies.
         const created = await runLimactl(subprocess, [
           'start',
           '--tty=false',
@@ -106,8 +168,12 @@ export async function ensureRunning(
         }
         return;
       }
-      // stopped → start
-      const started = await runLimactl(subprocess, ['start', def.instanceName]);
+      // stopped → start. Bounded: unlike the create above, this instance
+      // already exists, so its duration is a boot plus the per-boot provision
+      // scripts rather than an image download.
+      const started = await runLimactl(subprocess, ['start', def.instanceName], {
+        timeoutMs: WARM_START_TIMEOUT_MS,
+      });
       if (started.exitCode !== 0) {
         throw limactlError(`failed to start lima instance ${def.instanceName}`, started);
       }
@@ -125,7 +191,9 @@ export async function stop(vm: string | VmDefinition, opts: LifecycleOpts = {}):
   const subprocess = opts.subprocess ?? defaultSubprocessRunner;
   const current = await instanceStatus(def.instanceName, subprocess);
   if (current === 'missing' || current === 'stopped') return;
-  const result = await runLimactl(subprocess, ['stop', def.instanceName]);
+  const result = await runLimactl(subprocess, ['stop', def.instanceName], {
+    timeoutMs: STOP_TIMEOUT_MS,
+  });
   if (result.exitCode !== 0) {
     throw limactlError(`failed to stop lima instance ${def.instanceName}`, result);
   }
@@ -139,7 +207,9 @@ export async function destroy(vm: string | VmDefinition, opts: LifecycleOpts = {
   const subprocess = opts.subprocess ?? defaultSubprocessRunner;
   const current = await instanceStatus(def.instanceName, subprocess);
   if (current === 'missing') return;
-  const result = await runLimactl(subprocess, ['delete', '--force', def.instanceName]);
+  const result = await runLimactl(subprocess, ['delete', '--force', def.instanceName], {
+    timeoutMs: DESTROY_TIMEOUT_MS,
+  });
   if (result.exitCode !== 0) {
     throw limactlError(`failed to delete lima instance ${def.instanceName}`, result);
   }
