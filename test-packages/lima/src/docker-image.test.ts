@@ -8,14 +8,21 @@
  * vm-docker-image e2e; here we only assert the *routing* and the pull mechanics.
  */
 
-import { describe, it, expect, afterEach } from 'bun:test';
+import { describe, it, expect, afterEach, beforeAll, afterAll } from 'bun:test';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 
 import {
+  buildPodkitImageInVm,
   pullPodkitImageInVm,
   ensurePodkitImageInVm,
   DEFAULT_PODKIT_IMAGE_TAG,
   DOCKER_DIST_IMAGE_ENV,
+  VM_HOUSEKEEPING_TIMEOUT_MS,
+  IMAGE_PRUNE_TIMEOUT_MS,
 } from './docker-image.js';
+import { FILE_COPY_TIMEOUT_MS } from './transport.js';
 import type {
   SubprocessRunner,
   SubprocessRunOpts,
@@ -139,5 +146,144 @@ describe('ensurePodkitImageInVm — build-vs-pull routing', () => {
     expect(vmCommand(calls[0]!)).toEqual(['sudo', 'systemctl', 'start', 'containerd']);
     expect(vmCommand(calls[1]!)).toEqual(['sudo', 'systemctl', 'start', 'buildkit']);
     expect(calls.some((c) => vmCommand(c).includes('pull'))).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Wall-clock bounds
+//
+// The build path is a long tail hanging off a series of very short steps. The
+// short ones must be bounded — an unbounded `mkdir` behind a wedged SSH session
+// blocks with no output and nothing naming what is being waited on. The long
+// ones must NOT be, because a bound that fires on a legitimate slow build is
+// worse than no bound at all.
+//
+// Every assertion here reads the `opts` the injected runner was handed, which
+// is the same object `runLimactl` forwards — so it also pins that these calls
+// go through the wrapper that owns the descriptive `timed out after Nms`
+// message, rather than spawning `limactl` directly.
+// ---------------------------------------------------------------------------
+
+/** Stub host binaries so the build path can run without a real compile. */
+function withStubbedMuslBinaries(): { dir: string; restore: () => void } {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'podkit-image-bounds-'));
+  const cli = path.join(dir, 'podkit');
+  const daemon = path.join(dir, 'podkit-daemon');
+  fs.writeFileSync(cli, '#!/bin/sh\n');
+  fs.writeFileSync(daemon, '#!/bin/sh\n');
+  const priorCli = process.env['PODKIT_LINUX_MUSL_BINARY'];
+  const priorDaemon = process.env['PODKIT_DAEMON_LINUX_MUSL_BINARY'];
+  process.env['PODKIT_LINUX_MUSL_BINARY'] = cli;
+  process.env['PODKIT_DAEMON_LINUX_MUSL_BINARY'] = daemon;
+  return {
+    dir,
+    restore() {
+      if (priorCli === undefined) delete process.env['PODKIT_LINUX_MUSL_BINARY'];
+      else process.env['PODKIT_LINUX_MUSL_BINARY'] = priorCli;
+      if (priorDaemon === undefined) delete process.env['PODKIT_DAEMON_LINUX_MUSL_BINARY'];
+      else process.env['PODKIT_DAEMON_LINUX_MUSL_BINARY'] = priorDaemon;
+      fs.rmSync(dir, { recursive: true, force: true });
+    },
+  };
+}
+
+/** Find the single recorded call whose in-VM argv contains every fragment. */
+function callWith(calls: ScriptedCall[], ...fragments: string[]): ScriptedCall {
+  const match = calls.filter((call) => fragments.every((f) => call.args.includes(f)));
+  if (match.length !== 1) {
+    throw new Error(
+      `expected exactly one call containing [${fragments.join(', ')}], found ${match.length}`
+    );
+  }
+  return match[0]!;
+}
+
+describe('docker-image wall-clock bounds', () => {
+  it('bounds `systemctl start` on the pull path', async () => {
+    const { runner, calls } = makeScriptedRunner([ok(), ok()]);
+    await pullPodkitImageInVm({ tag: 'ghcr.io/jvgomg/podkit:edge', subprocess: runner });
+    expect(callWith(calls, 'systemctl', 'containerd').opts?.timeoutMs).toBe(
+      VM_HOUSEKEEPING_TIMEOUT_MS
+    );
+  });
+
+  // A registry fetch of a multi-hundred-megabyte image over whatever connection
+  // the developer is on. No wall clock is simultaneously tight enough to catch
+  // a wedge and loose enough to spare a legitimate pull on a slow link.
+  it('leaves `nerdctl pull` unbounded', async () => {
+    const { runner, calls } = makeScriptedRunner([ok(), ok()]);
+    await pullPodkitImageInVm({ tag: 'ghcr.io/jvgomg/podkit:edge', subprocess: runner });
+    expect(callWith(calls, 'pull').opts?.timeoutMs).toBeUndefined();
+  });
+
+  it('bounds the image-existence probe on the idempotency check', async () => {
+    const { runner, calls } = makeScriptedRunner([ok(), ok(), ok()]);
+    const tag = await ensurePodkitImageInVm({ subprocess: runner });
+    expect(tag).toBe(DEFAULT_PODKIT_IMAGE_TAG);
+    expect(callWith(calls, 'inspect').opts?.timeoutMs).toBe(VM_HOUSEKEEPING_TIMEOUT_MS);
+  });
+
+  describe('the full build path', () => {
+    let stubs: ReturnType<typeof withStubbedMuslBinaries>;
+    beforeAll(() => {
+      stubs = withStubbedMuslBinaries();
+    });
+    afterAll(() => stubs.restore());
+
+    async function recordBuild(): Promise<ScriptedCall[]> {
+      const { runner, calls } = makeScriptedRunner(Array.from({ length: 20 }, () => ok()));
+      await buildPodkitImageInVm({
+        force: true,
+        imageArch: process.arch === 'arm64' ? 'arm64' : 'amd64',
+        subprocess: runner,
+      });
+      return calls;
+    }
+
+    it('bounds every short housekeeping step', async () => {
+      const calls = await recordBuild();
+      for (const fragments of [
+        ['systemctl', 'containerd'],
+        ['systemctl', 'buildkit'],
+        ['rm', '-rf'],
+        ['chmod', '+x'],
+      ]) {
+        expect(callWith(calls, ...fragments).opts?.timeoutMs).toBe(VM_HOUSEKEEPING_TIMEOUT_MS);
+      }
+      const mkdirs = calls.filter((call) => call.args.includes('mkdir'));
+      expect(mkdirs.length).toBeGreaterThan(0);
+      for (const mkdir of mkdirs) {
+        expect(mkdir.opts?.timeoutMs).toBe(VM_HOUSEKEEPING_TIMEOUT_MS);
+      }
+    });
+
+    it('bounds each staged file copy on the shared transport bound', async () => {
+      const calls = await recordBuild();
+      const copies = calls.filter((call) => call.args[0] === 'copy');
+      // Dockerfile, entrypoint, CLI binary, daemon binary.
+      expect(copies).toHaveLength(4);
+      for (const copy of copies) {
+        expect(copy.opts?.timeoutMs).toBe(FILE_COPY_TIMEOUT_MS);
+      }
+    });
+
+    // Prune scales with the content store rather than being constant-time like
+    // the housekeeping steps, so it carries its own (larger) bound.
+    it('bounds the prune separately from the housekeeping steps', async () => {
+      const calls = await recordBuild();
+      expect(callWith(calls, 'prune').opts?.timeoutMs).toBe(IMAGE_PRUNE_TIMEOUT_MS);
+      expect(IMAGE_PRUNE_TIMEOUT_MS).toBeGreaterThan(VM_HOUSEKEEPING_TIMEOUT_MS);
+    });
+
+    // The genuinely open-ended call: a cold build pulls a base image over the
+    // network and writes hundreds of megabytes of layers, and aborting one
+    // mid-flight leaves the caller reasoning about a partial image.
+    it('leaves `nerdctl build` unbounded', async () => {
+      const calls = await recordBuild();
+      const build = calls.at(-1)!;
+      expect(build.args.at(-1)).toContain('nerdctl');
+      expect(build.args.at(-1)).toContain('build');
+      expect(build.opts?.timeoutMs).toBeUndefined();
+    });
   });
 });

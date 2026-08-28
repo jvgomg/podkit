@@ -5,7 +5,13 @@
 
 import { describe, it, expect } from 'bun:test';
 
-import { runInVm, copyOut, stageSourceTree, DEFAULT_STAGE_EXCLUDES } from './transport.js';
+import {
+  runInVm,
+  copyOut,
+  stageSourceTree,
+  DEFAULT_STAGE_EXCLUDES,
+  FILE_COPY_TIMEOUT_MS,
+} from './transport.js';
 import type {
   SubprocessRunner,
   SubprocessRunOpts,
@@ -119,6 +125,29 @@ describe('copyOut', () => {
     expect(calls[0]!.args).toEqual(['copy', 'vm1:/in/vm/file', '/host/file']);
   });
 
+  it('bounds the copy on a wall clock derived from a throughput floor', async () => {
+    const { runner, calls } = recorder(ok());
+    await copyOut({
+      vmName: 'vm1',
+      vmPath: '/in/vm/file',
+      hostPath: '/host/file',
+      subprocess: runner,
+    });
+    expect(calls[0]!.opts?.timeoutMs).toBe(FILE_COPY_TIMEOUT_MS);
+  });
+
+  it('keeps the bound loose enough for the largest artefact the substrate moves', () => {
+    // A compiled podkit binary is ~120 MB. The bound must survive that payload
+    // at a throughput floor two orders of magnitude below the ~170 MB/s the
+    // Lima SSH loopback actually delivers — a bound that fires on a legitimate
+    // copy is worse than no bound at all.
+    const largestArtefactMb = 120;
+    const degradedThroughputMbPerSec = 1;
+    expect(FILE_COPY_TIMEOUT_MS).toBeGreaterThan(
+      (largestArtefactMb / degradedThroughputMbPerSec) * 1000
+    );
+  });
+
   it('throws on a non-zero exit', async () => {
     const { runner } = recorder({ stdout: '', stderr: 'no such file', exitCode: 1 });
     await expect(
@@ -216,5 +245,21 @@ describe('stageSourceTree', () => {
       subprocess: runner,
     });
     expect(calls[0]!.args[5]!).not.toContain('sudo');
+  });
+
+  // A cold stage copies a multi-gigabyte tree whose duration is set by how much
+  // the host changed since the last sync — a figure no wall clock can bound
+  // without eventually aborting a stage that would have succeeded. Same
+  // carve-out the cold create has. Liveness (the entry point's heartbeat), not
+  // the clock, is what makes it diagnosable.
+  it('passes no wall-clock bound — staging is open-ended by design', async () => {
+    const { runner, calls } = recorder(ok());
+    await stageSourceTree({
+      vmName: 'vm1',
+      hostSrc: '/repo',
+      vmDest: '/tmp/build',
+      subprocess: runner,
+    });
+    expect(calls[0]!.opts?.timeoutMs).toBeUndefined();
   });
 });

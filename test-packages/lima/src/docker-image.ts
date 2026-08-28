@@ -27,6 +27,7 @@ import * as path from 'node:path';
 
 import { defaultSubprocessRunner, type SubprocessRunner } from '@podkit/device-types';
 import { limactlError, runLimactl, shellQuote } from './limactl.js';
+import { FILE_COPY_TIMEOUT_MS } from './transport.js';
 import { repoRoot } from './paths.js';
 import { LIMA_DEVICE_HARNESS_VM_NAME } from './registry.js';
 import {
@@ -58,6 +59,59 @@ const DOCKER_DIST_VERSION = '0.0.0-docker-dist';
 const DOCKERFILE_REL = 'packages/podkit-docker/Dockerfile';
 /** Relative path (inside the context) of the entrypoint, matching the Dockerfile COPY. */
 const ENTRYPOINT_REL = 'packages/podkit-docker/entrypoint.sh';
+
+// ---------------------------------------------------------------------------
+// Wall-clock bounds
+//
+// Bounded per call site, not per module — same rule as `./lifecycle.js` and
+// `./transport.js`, and for the same reason: a bound that fires on a legitimate
+// slow operation is worse than no bound at all.
+//
+// The build path is a long tail hanging off a series of very short steps. The
+// short ones (`systemctl start`, `mkdir -p`, `chmod`, `rm -rf`, `nerdctl image
+// inspect`, `nerdctl system prune`) all complete in well under a second on the
+// harness VM and are bounded here. The two that legitimately run for minutes —
+// `nerdctl build` and `nerdctl pull` — are not, and say so at their call sites.
+//
+// Every bound is passed through `runLimactl`, which owns the descriptive
+// `timed out after Nms` message.
+// ---------------------------------------------------------------------------
+
+/**
+ * Bound for the short in-VM steps that bracket the build: `systemctl start`,
+ * `mkdir -p`, `chmod +x`, `rm -rf` of the staged context, and `nerdctl image
+ * inspect`.
+ *
+ * None of these does meaningful work. Measured on the device-harness VM they
+ * land between 69 ms and 310 ms — including genuinely cold starts of
+ * `containerd` and `buildkit`, both `Type=notify`, at ~110 ms each, and an
+ * `rm -rf` of a context holding 230 MB of staged binaries at 77 ms (unlinking
+ * four files is metadata work, not data movement).
+ *
+ * So the bound is not sized off the operation at all; it is sized off how far
+ * the one SSH round trip in front of it can stretch on a loaded host. That is
+ * the same reasoning — and deliberately the same value — as the persona daemon
+ * units in `@podkit/device-testing`. Two orders of magnitude above the measured
+ * worst case: anything slower is a wedged `limactl shell`, not a slow `mkdir`.
+ */
+export const VM_HOUSEKEEPING_TIMEOUT_MS = 45_000;
+
+/**
+ * Bound for `nerdctl system prune -af`.
+ *
+ * Separated from {@link VM_HOUSEKEEPING_TIMEOUT_MS} because its cost is the one
+ * in this group that scales with something: the size of the containerd content
+ * store and the buildkit cache. It still scales gently, because clearing them
+ * is unlinking blobs rather than moving bytes — measured at 267 ms against a
+ * populated store (a 353 MB image plus its build cache).
+ *
+ * The store cannot outgrow the harness VM's 20 GB disk, so extrapolating that
+ * rate to a full disk stays well under a minute even allowing an order of
+ * magnitude for a store made of many small blobs. Two minutes is therefore
+ * roughly two full-disk prunes' worth of headroom; past it, buildkitd is not
+ * answering rather than the store being large.
+ */
+export const IMAGE_PRUNE_TIMEOUT_MS = 120_000;
 
 // ---------------------------------------------------------------------------
 // Options / result
@@ -136,15 +190,11 @@ async function startUnit(
   vmName: string,
   unit: string
 ): Promise<void> {
-  const start = await runLimactl(subprocess, [
-    'shell',
-    vmName,
-    '--',
-    'sudo',
-    'systemctl',
-    'start',
-    unit,
-  ]);
+  const start = await runLimactl(
+    subprocess,
+    ['shell', vmName, '--', 'sudo', 'systemctl', 'start', unit],
+    { timeoutMs: VM_HOUSEKEEPING_TIMEOUT_MS }
+  );
   if (start.exitCode !== 0) {
     throw limactlError(`failed to start ${unit}.service in ${vmName}`, start);
   }
@@ -178,11 +228,17 @@ async function copyIntoVm(
     throw new Error(`buildPodkitImageInVm: host file not found: ${hostPath}`);
   }
   const parent = path.posix.dirname(vmDest);
-  const mkdir = await runLimactl(subprocess, ['shell', vmName, '--', 'mkdir', '-p', parent]);
+  const mkdir = await runLimactl(subprocess, ['shell', vmName, '--', 'mkdir', '-p', parent], {
+    timeoutMs: VM_HOUSEKEEPING_TIMEOUT_MS,
+  });
   if (mkdir.exitCode !== 0) {
     throw limactlError(`failed to mkdir ${parent} in ${vmName}`, mkdir);
   }
-  const copy = await runLimactl(subprocess, ['copy', hostPath, `${vmName}:${vmDest}`]);
+  // The payload here is a ~120 MB compiled binary, which is exactly the case
+  // `FILE_COPY_TIMEOUT_MS` is derived from — share it rather than restate it.
+  const copy = await runLimactl(subprocess, ['copy', hostPath, `${vmName}:${vmDest}`], {
+    timeoutMs: FILE_COPY_TIMEOUT_MS,
+  });
   if (copy.exitCode !== 0) {
     throw limactlError(`failed to copy ${hostPath} → ${vmName}:${vmDest}`, copy);
   }
@@ -219,16 +275,11 @@ export async function buildPodkitImageInVm(
 
   // 1. Idempotency: skip when the image already exists and force is falsy.
   if (!opts.force) {
-    const inspect = await runLimactl(subprocess, [
-      'shell',
-      vmName,
-      '--',
-      'sudo',
-      'nerdctl',
-      'image',
-      'inspect',
-      tag,
-    ]);
+    const inspect = await runLimactl(
+      subprocess,
+      ['shell', vmName, '--', 'sudo', 'nerdctl', 'image', 'inspect', tag],
+      { timeoutMs: VM_HOUSEKEEPING_TIMEOUT_MS }
+    );
     if (inspect.exitCode === 0) {
       return { tag };
     }
@@ -258,14 +309,11 @@ export async function buildPodkitImageInVm(
 
   // 2. Stage a fresh context. Wipe any prior context so a stale binary can't
   //    leak into the build.
-  const rm = await runLimactl(subprocess, [
-    'shell',
-    vmName,
-    '--',
-    'rm',
-    '-rf',
-    BUILD_CONTEXT_VM_DIR,
-  ]);
+  const rm = await runLimactl(
+    subprocess,
+    ['shell', vmName, '--', 'rm', '-rf', BUILD_CONTEXT_VM_DIR],
+    { timeoutMs: VM_HOUSEKEEPING_TIMEOUT_MS }
+  );
   if (rm.exitCode !== 0) {
     throw limactlError(`failed to clear ${BUILD_CONTEXT_VM_DIR} in ${vmName}`, rm);
   }
@@ -281,30 +329,21 @@ export async function buildPodkitImageInVm(
   await copyIntoVm(subprocess, vmName, daemonBinary, daemonVmPath);
 
   // 3. chmod +x the binaries in-VM (limactl copy does not preserve mode).
-  const chmod = await runLimactl(subprocess, [
-    'shell',
-    vmName,
-    '--',
-    'chmod',
-    '+x',
-    cliVmPath,
-    daemonVmPath,
-  ]);
+  const chmod = await runLimactl(
+    subprocess,
+    ['shell', vmName, '--', 'chmod', '+x', cliVmPath, daemonVmPath],
+    { timeoutMs: VM_HOUSEKEEPING_TIMEOUT_MS }
+  );
   if (chmod.exitCode !== 0) {
     throw limactlError(`failed to chmod binaries in ${vmName}`, chmod);
   }
 
   // 4. Disk guard: prune dangling images/containers/build cache before build.
-  const prune = await runLimactl(subprocess, [
-    'shell',
-    vmName,
-    '--',
-    'sudo',
-    'nerdctl',
-    'system',
-    'prune',
-    '-af',
-  ]);
+  const prune = await runLimactl(
+    subprocess,
+    ['shell', vmName, '--', 'sudo', 'nerdctl', 'system', 'prune', '-af'],
+    { timeoutMs: IMAGE_PRUNE_TIMEOUT_MS }
+  );
   if (prune.exitCode !== 0) {
     throw limactlError(`nerdctl system prune failed in ${vmName}`, prune);
   }
@@ -334,6 +373,15 @@ export async function buildPodkitImageInVm(
     .map(shellQuote)
     .join(' ');
 
+  // No `timeoutMs`: this is the genuinely open-ended call in the module. A
+  // cold build pulls the Alpine base over the network, copies ~230 MB of
+  // binaries into layers and writes them to the content store; a warm one with
+  // the buildkit cache primed is a fraction of that. Measured end to end
+  // (including the base-image pull) at ~29s on this host, but the network leg
+  // is not something a wall clock can bound honestly, and aborting a build
+  // mid-flight leaves the caller reasoning about a partial image. Liveness is
+  // the right instrument here, and callers that want it inject the provisioning
+  // runner through the `subprocess` seam.
   const build = await runLimactl(subprocess, [
     'shell',
     vmName,
@@ -388,6 +436,10 @@ export async function pullPodkitImageInVm(
 
   await startUnit(subprocess, vmName, 'containerd');
 
+  // No `timeoutMs`, for the same reason as `nerdctl build`: the dominant term
+  // is a registry fetch of a multi-hundred-megabyte image over whatever
+  // connection the developer happens to be on. Any wall clock tight enough to
+  // catch a wedged pull would abort a legitimate one on a slow link.
   const pull = await runLimactl(subprocess, [
     'shell',
     vmName,

@@ -257,6 +257,27 @@ only the CLI prints.
   source tree into a VM-local directory. `vmDest` comes from the
   [staging-area registry](#the-staging-area-registry), never from a literal.
 
+### Bounds, again per operation
+
+The same classification the lifecycle uses applies here, and the three
+primitives land in three different buckets:
+
+| Operation | Instrument | Value | Basis |
+|-----------|-----------|-------|-------|
+| `runInVm` | caller's wall clock | none by default | Its duration *is* the caller's command, and callers run in-VM `bun install`s and full turbo builds through it. A default here would abort a build the substrate knows nothing about |
+| `copyOut` (and the docker context copies) | wall clock | `FILE_COPY_TIMEOUT_MS` = 150s | One file, and the biggest one the substrate moves is a ~120 MB compiled binary. Measured at ~170 MB/s over the Lima SSH loopback; the bound is 120 MB at a 1 MB/s floor (a host deep in swap) plus 30s for the handshake |
+| `stageSourceTree` | **none** | — | A cold stage copies a multi-gigabyte tree whose duration is set by how much the host changed since the last `--delete` sync. Same carve-out as the cold create; a test pins the absence |
+
+`stageSourceTree` is not silent while it runs: the CLI's `stage` verb injects
+the provisioning runner, so a long rsync prints `still waiting on … (Nm
+elapsed)` every 30s. Liveness, not the clock, is what makes it diagnosable —
+and it is wired at the entry point, not in the library.
+
+The `mkdir -p` in front of the rsync deliberately shares that call. Splitting it
+out to bound it separately would buy an SSH round trip on every stage to guard
+against a hang whose only cause — a wedged `limactl shell` — the rsync that
+follows would hit anyway.
+
 ### The exclude floor
 
 `DEFAULT_STAGE_EXCLUDES` is the set of host artefacts that must never ride along
@@ -439,4 +460,12 @@ bun run test:unit --filter @podkit/lima
 - `src/progress.ts` — the elapsed-time heartbeat primitive. Reporting only; it
   never kills anything.
 - `src/docker-image.ts` — build/pull the podkit Docker image *inside* a VM (no
-  persona or system-state coupling, so it belongs to the substrate).
+  persona or system-state coupling, so it belongs to the substrate). Its bounds
+  follow the same split: a long tail hanging off a series of very short steps.
+
+  | Operation | Instrument | Value | Basis |
+  |-----------|-----------|-------|-------|
+  | `systemctl start`, `mkdir -p`, `chmod +x`, `rm -rf <ctx>`, `nerdctl image inspect` | wall clock | `VM_HOUSEKEEPING_TIMEOUT_MS` = 45s | Measured at 69–310 ms each, including genuinely cold `containerd`/`buildkit` starts at ~110 ms. Sized off the SSH round trip on a loaded host, not the work — same reasoning and same value as the persona daemon units |
+  | `nerdctl system prune -af` | wall clock | `IMAGE_PRUNE_TIMEOUT_MS` = 120s | The one step whose cost scales — with the content store and buildkit cache. Still gentle (unlinking blobs, not moving bytes): 267 ms against a 353 MB image plus its build cache, and the store is capped by the VM's 20 GB disk |
+  | `nerdctl build` | **none** | — | Pulls a base image over the network and writes hundreds of MB of layers; aborting one mid-flight leaves a partial image to reason about |
+  | `nerdctl pull` | **none** | — | A registry fetch over whatever connection the developer is on |

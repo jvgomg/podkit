@@ -70,7 +70,13 @@ export {
 
 // Generic transport
 export type { RunInVmOpts, RunInVmResult, CopyOutOpts, StageSourceTreeOpts } from './transport.js';
-export { runInVm, copyOut, stageSourceTree, DEFAULT_STAGE_EXCLUDES } from './transport.js';
+export {
+  runInVm,
+  copyOut,
+  stageSourceTree,
+  DEFAULT_STAGE_EXCLUDES,
+  FILE_COPY_TIMEOUT_MS,
+} from './transport.js';
 
 // VM-local staging destinations (one declared owner per directory)
 export type { StagingArea } from './staging.js';
@@ -122,4 +128,6 @@ export {
   DEFAULT_PODKIT_IMAGE_TAG,
   DOCKER_DIST_IMAGE_ENV,
   BUILD_CONTEXT_VM_DIR,
+  VM_HOUSEKEEPING_TIMEOUT_MS,
+  IMAGE_PRUNE_TIMEOUT_MS,
 } from './docker-image.js';
