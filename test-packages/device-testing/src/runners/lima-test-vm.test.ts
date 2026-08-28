@@ -183,6 +183,45 @@ describe('instanceStatus', () => {
 });
 
 // ---------------------------------------------------------------------------
+// run — timeout reporting
+// ---------------------------------------------------------------------------
+
+describe('runtime.run timeout reporting', () => {
+  // This is the primitive behind every VM test's in-VM command, so it is the
+  // likeliest place in the harness to hit a bound. execFile kills a timed-out
+  // child with a signal, so the raw rejection says only "killed" and names
+  // neither the timeout nor the VM — a bound that reports itself anonymously
+  // sends whoever reads the failure looking in the wrong place.
+  it('names the bound and the VM when an in-VM command times out', async () => {
+    const timedOut: SubprocessRunner = {
+      async run() {
+        const err = new Error('Command failed: limactl shell podkit-device') as Error & {
+          killed?: boolean;
+          signal?: string;
+        };
+        err.killed = true;
+        err.signal = 'SIGTERM';
+        throw err;
+      },
+    };
+    const runtime = createLimaTestVmRuntime({ subprocess: timedOut });
+    await expect(runtime.run('sleep 30', { timeoutMs: 2_000 })).rejects.toThrow(
+      /timed out after 2000ms/
+    );
+  });
+
+  it('keeps the install hint when limactl itself is missing', async () => {
+    const missing: SubprocessRunner = {
+      async run() {
+        throw new Error('spawn limactl ENOENT');
+      },
+    };
+    const runtime = createLimaTestVmRuntime({ subprocess: missing });
+    await expect(runtime.run('true')).rejects.toThrow(/brew install lima/);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // isAvailable
 // ---------------------------------------------------------------------------
 

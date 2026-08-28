@@ -49,7 +49,7 @@ import { defaultSubprocessRunner, type SubprocessRunner } from '../subprocess.js
 import type { RunOpts, RunResult, RunnerId, TestRuntime } from '../runtime.js';
 import { transferBinary, transferGpodTool } from './lima-test-vm-binary.js';
 import { applyState as applyStateRaw } from './lima-test-vm-state.js';
-import { limactlError, runLimactl, shellQuote, type LimactlResult } from './lima-limactl.js';
+import { limactlError, runLimactl, shellQuote } from './lima-limactl.js';
 import { transferSystemdUnit } from './lima-test-vm-systemd.js';
 import { ensureBackingFilesForPersonas } from './lima-test-vm-backing-files.js';
 import {
@@ -646,22 +646,17 @@ async function runViaLimactl(
   opts: RunOpts = {}
 ): Promise<RunResult> {
   const wrapped = wrapCommand(command, opts);
-  let result: LimactlResult;
-  const subprocessOpts =
-    typeof opts.timeoutMs === 'number' ? { timeoutMs: opts.timeoutMs } : undefined;
-  try {
-    result = await subprocess.run(
-      'limactl',
-      ['shell', vmName, '--', 'sh', '-c', wrapped],
-      subprocessOpts
-    );
-  } catch (err) {
-    const cause = err instanceof Error ? err.message : String(err);
-    const hint = /ENOENT|not found/i.test(cause)
-      ? ' (is `limactl` installed? `brew install lima`)'
-      : '';
-    throw new Error(`limactl shell ${vmName} failed: ${cause}${hint}`);
-  }
+  // Route through runLimactl rather than spawning here. This is the primitive
+  // behind every VM test's `run()`, so it is the single most likely place to
+  // hit a bound — and a bound that fires as execFile's anonymous "killed",
+  // naming neither the timeout nor the VM, is most of the way back to having
+  // no bound at all. runLimactl owns that vocabulary; duplicating the spawn
+  // duplicated the install hint and silently dropped the timeout message.
+  const result = await runLimactl(
+    subprocess,
+    ['shell', vmName, '--', 'sh', '-c', wrapped],
+    typeof opts.timeoutMs === 'number' ? { timeoutMs: opts.timeoutMs } : {}
+  );
   return {
     stdout: result.stdout,
     stderr: result.stderr,
