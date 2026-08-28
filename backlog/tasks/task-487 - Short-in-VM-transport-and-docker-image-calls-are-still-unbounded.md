@@ -1,10 +1,10 @@
 ---
 id: TASK-487
 title: Short in-VM transport and docker-image calls are still unbounded
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-28 01:26'
-updated_date: '2026-08-28 17:23'
+updated_date: '2026-08-28 19:32'
 labels:
   - testing
   - vm

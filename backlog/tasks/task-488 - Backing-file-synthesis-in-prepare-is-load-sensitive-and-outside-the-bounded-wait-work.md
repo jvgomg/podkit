@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-08-28 17:22'
+updated_date: '2026-08-28 19:32'
 labels:
   - testing
   - vm
@@ -38,3 +39,23 @@ So the failure mode those tasks fixed is not fully eliminated — it has retreat
 
 **Repro:** run `bun run test:vm` while something else saturates the host (a full `typecheck` or `build` is enough). Not deterministic.
 <!-- SECTION:DESCRIPTION:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+## A second, worse instance of the same shape — and it is not the persona loop
+
+Observed 2026-08-28 during the transport-bounding work: `mass-storage-binding.e2e.test.ts`'s `beforeEach` ran for **20.1 minutes** and died on an unbounded `limactl shell … sha256sum` in `ensureBackingFile` (`test-packages/device-testing/src/runners/lima-test-vm-backing-files.ts:288`), reporting only `Command failed: …` with no further detail.
+
+The file is 256 MB and hashing it takes about a second. So this was a **wedged SSH session, not slow work** — the same diagnosis as the original incident behind the wait-bounding work, in the one module that work did not reach. It passed standalone in 25s, and the full re-run was 239/0 with the device-testing suite taking 80s rather than 1292s.
+
+This sharpens the task. Two distinct call sites in the same file are unbounded:
+- `ensureBackingFilesForPersonas` (line ~611) — the synthesis loop, which is genuinely slow work under load
+- `ensureBackingFile` (line ~288) — a `sha256sum` that should take a second and has no business running for twenty minutes
+
+The second is the clearer bug and the cheaper fix: it is exactly the "should finish in seconds" bucket that `transport.ts` and `docker-image.ts` were just classified into, and the same instrument applies. Route it through `runLimactl` with a bound derived from the file size, and the failure becomes a named timeout in seconds instead of a twenty-minute hook.
+
+The first still needs the judgement the task describes — whether to bound per step, derive the hook budget from the work, or make synthesis content-addressed so most of it is skipped.
+
+**Also worth noting from the same session:** `stageSourceTree` into `podkit-builder-musl` failed twice with `exit=255` (SSH transport failure, sub-second) while `build:linux-prebuild` was compiling in `podkit-builder-glibc` concurrently, then succeeded when run alone. A second data point that concurrent staging into two VMs on this host is fragile — unrelated to the bounds, since a sub-second failure is not a timeout.
+<!-- SECTION:NOTES:END -->
