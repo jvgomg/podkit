@@ -52,12 +52,23 @@ export const DEFAULT_KILL_GRACE_MS = 2_000;
 /**
  * Kill grace for a `limactl start`/`create` we have declared wedged.
  *
- * Much longer than {@link DEFAULT_KILL_GRACE_MS} on purpose: `limactl start`
- * supervises a hostagent that owns the hypervisor process, and its signal
- * handling exists to unwind that ownership rather than orphan it. The promise
- * has already settled by the time this grace runs, so the wait costs the caller
- * nothing — it only buys `limactl` room to leave the instance in a state the
- * next `start` can resume from.
+ * Longer than {@link DEFAULT_KILL_GRACE_MS}, but NOT because `limactl` unwinds
+ * anything when asked. Measured: the `limactl start` process exits ~7ms after
+ * SIGTERM, silently, with no shutdown of its own. The hostagent child that
+ * actually owns the hypervisor is simply reparented to init and **carries on** —
+ * in one measurement it went on to finish booting and reach READY some 30s
+ * after its parent died.
+ *
+ * So this grace never elapses in practice: the child's `close` fires almost
+ * immediately and cancels the escalation. It is kept as a non-zero floor for a
+ * future `limactl` that does handle the signal, not as a wait anything depends
+ * on today.
+ *
+ * The consequence worth understanding is that killing the wrapper does not
+ * cancel the provision. What actually reclaims an orphaned hostagent is
+ * `destroy()` (`limactl delete --force`), which reads the pidfile and kills the
+ * hostagent and hypervisor by PID. `recover` is therefore the honest remedy
+ * after an aborted create, and that is what the error text points at.
  */
 export const PROVISIONING_KILL_GRACE_MS = 15_000;
 

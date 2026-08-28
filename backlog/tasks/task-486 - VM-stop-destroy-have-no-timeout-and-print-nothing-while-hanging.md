@@ -4,7 +4,7 @@ title: VM stop/destroy have no timeout and print nothing while hanging
 status: Done
 assignee: []
 created_date: '2026-08-28 00:46'
-updated_date: '2026-08-28 01:33'
+updated_date: '2026-08-28 19:46'
 labels:
   - testing
   - vm
@@ -128,4 +128,39 @@ A review pass closed four further gaps: `cmdEnsure` still duplicated the new sha
 ## Not verified
 
 Whether `limactl` 2.1.1 actually unwinds its hostagent on SIGTERM — the 15s kill grace assumes it tries. And whether a real cold `harness:setup` keeps its output gaps under 15 minutes; the shim modelled 55s gaps, while the real silent stretch is cloud-init's `apt-get install`. If a real cold setup ever trips the watchdog, the threshold is a single constant with its derivation written beside it.
+
+## Both "not verified" assumptions now measured against real VMs
+
+### 1. `limactl` does NOT unwind its hostagent on SIGTERM — the constant is fine, the reasoning behind it was wrong
+
+Measured on `podkit-builder-musl` with sub-millisecond polling:
+
+- `limactl start` exits **~7.5ms** after SIGTERM, silently. No shutdown log, no cleanup phase at all.
+- The `limactl hostagent` child that actually owns the hypervisor is **reparented to init and carries on unaffected**. In one run it went on to finish booting and reach `READY` roughly 30s after its parent had died. `limactl list` reports the instance as `Broken` ("host agent is running but driver is not") in the interim.
+- Because the wrapper dies in ~7ms whenever the signal lands — tested both early in boot and after readiness — the 15s SIGKILL escalation **never actually elapses**: `close` fires almost immediately and cancels it.
+
+So neither risk in the original question materialises. There is no cleanup to interrupt, and nothing blocks for 15s. **The constant stays at 15s**; what was wrong was the docblock, which claimed `limactl`'s "signal handling exists to unwind that ownership rather than orphan it". Reality is precisely the opposite. Comment corrected.
+
+**The consequence worth carrying forward:** aborting the wrapper does not cancel the provision. What actually reclaims an orphaned hostagent is `destroy()` — `limactl delete --force` reads the pidfile and kills the hostagent and vz driver by PID, verified to leave zero stray processes in 35ms. That makes `recover` the honest remedy after an aborted create, which is what the error text already points at.
+
+### 2. Cold-create output gaps sit far inside the 15-minute watchdog
+
+| Provision | base | hostagent lines | span | **max inter-line gap** |
+|---|---|---|---|---|
+| `podkit-builder-musl` | Alpine / `apk` | 51 | 80.6s | **25.96s** |
+| `podkit-builder-glibc` | Debian 12 / `apt-get` | 53 | 2m46s | **64s** |
+
+Against the 900s threshold that is a 35x and 14x margin respectively. The Debian figure is the one that answers the original worry ("the real silent stretch is cloud-init's `apt-get install`"): `podkit-builder-glibc.yaml` runs `apt-get update` plus `apt-get install`, the same provisioning profile as `podkit-device.yaml` on the same Debian bookworm image.
+
+Two details make this a real answer rather than a lucky one:
+- The hostagent log contains **zero** provisioning output (`grep -c 'apk\|apt-get\|provision\|cloud-init'` → 0), so a long guest provision genuinely surfaces as a gap rather than being masked by unrelated chatter.
+- On the musl VM the largest gap was early kernel boot, *before* `apk add` began — and provisioning was confirmed to have really run (gcc, cmake, meson, ninja, node and bun 1.4.0 all present afterwards), so the 80s window covers genuine package installation.
+
+Incidentally, the boot is noisy — repeated "guest agent events closed unexpectedly" and boot-script retries every 3-6s during a ~50s stretch. Self-resolving, and it usefully keeps the idle watchdog re-armed rather than producing silence.
+
+The heartbeat was also observed firing on a real provision for the first time (previously only against a shim): `still waiting on 'limactl start …' (30s elapsed, 1s since last output)` and `(1m00s elapsed, 8s since last output)`.
+
+### Correction to my own attribution
+
+I initially reported the 64s figure as coming from a *device VM* cold create. It is `podkit-builder-glibc`, from a log dated 2026-08-24. The verifying agent was right to challenge the claim. Its own reasoning for doing so was unsound — it inferred from `podkit-device`'s 17h uptime that no such log could exist, conflating "not recreated during this session" with "never recorded" — but the challenge was correct and the label was mine to get wrong. The measurement stands, and because `builder-glibc` is the apt-based Debian profile, it answers the apt question the agent believed was still open.
 <!-- SECTION:NOTES:END -->
