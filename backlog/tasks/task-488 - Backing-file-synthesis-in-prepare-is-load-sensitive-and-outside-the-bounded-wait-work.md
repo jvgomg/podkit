@@ -3,10 +3,10 @@ id: TASK-488
 title: >-
   Backing-file synthesis in prepare() is load-sensitive and outside the
   bounded-wait work
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-28 17:22'
-updated_date: '2026-08-28 20:07'
+updated_date: '2026-08-28 20:36'
 labels:
   - testing
   - vm
@@ -58,4 +58,46 @@ The second is the clearer bug and the cheaper fix: it is exactly the "should fin
 The first still needs the judgement the task describes — whether to bound per step, derive the hook budget from the work, or make synthesis content-addressed so most of it is skipped.
 
 **Also worth noting from the same session:** `stageSourceTree` into `podkit-builder-musl` failed twice with `exit=255` (SSH transport failure, sub-second) while `build:linux-prebuild` was compiling in `podkit-builder-glibc` concurrently, then succeeded when run alone. A second data point that concurrent staging into two VMs on this host is fragile — unrelated to the bounds, since a sub-second failure is not a timeout.
+
+## Resolved — and both framings in this task were wrong
+
+The task assumed synthesis was slow work needing either a bound or a cache. Measured inside `podkit-device` (2 vCPU, arm64), 256 MiB image:
+
+| operation | cost |
+|---|---|
+| `truncate` + `mkfs.vfat --invariant` | **12 ms** |
+| one `sha256sum` | **750 ms** |
+
+The synthesis is not slow. What consumed the 60s budget was **verification**: the FAT32 paths hashed both the existing and the rebuilt image purely to populate `wasAlreadyIdentical`, a field whose own comment admitted the code "does not act on" — and which the batch caller discarded. Nine personas, hashed twice each, is ~9s of a 12s batch. Only the HFS+ branch used a hash for a real decision (skipping a `limactl copy`); that one was kept.
+
+### Why caching would have been wrong, not merely unnecessary
+
+This task called content-addressed caching "likely the highest-value option". It would have been a correctness bug. `gadget.ts:129` writes the canonical `vmPath` straight into `mass_storage.0/lun.0/file`, so the gadget serves the image **in place** and tests mutate it. The unconditional rebuild is not waste — **it is the reset**. A recipe-keyed skip would have served the next run the previous run's writes. Confirmed in the baseline run, where two personas reported `rebuilt` rather than `unchanged` precisely because the prior suite had written to them.
+
+It would also have been slower: safely detecting that mutation means hashing current content (750 ms) in order to skip a 12 ms build — 60x the work it avoids.
+
+Deriving the hook budget from the work was rejected too: it treats the symptom, since the work was 12 ms.
+
+### What landed
+
+Hashing is opt-in (`computeSha256`, default off), used by the determinism e2e test and the out-of-band build driver. In its place the build always emits `stat -c %s` — free, proves the script survived `set -e` past the atomic `mv`, and is **checked against the recipe**, so a wrong-sized image now fails loudly where nothing checked at all before. `sha256`/`wasAlreadyIdentical` became nullable; `sizeBytes` is always present.
+
+All **10** `limactl` call sites in the module are now bounded via `runLimactl`. `imageWorkTimeoutMs` = 45s SSH headroom (matching the sibling daemon-lifecycle bound) plus image size at a **4 MiB/s floor**, ~85x below the measured 340 MiB/s — the same floor-not-measurement reasoning as the transport bounds. 256 MiB → 109s against 0.75s of real work. `limactl copy` reuses the substrate's `FILE_COPY_TIMEOUT_MS` rather than inventing a second derivation.
+
+No heartbeat: the loop is now ~2s, `prepare()` has no progress sink, and threading a reporter through the runtime interface to narrate two seconds is a worse trade than silence. Each call already fails naming the persona and the argv.
+
+**Batch: 12.0s → 2.0s.** `device-testing#test:vm` 42s, down from ~80s.
+
+### The reset was proven, since the design now depends on it
+
+- Mutated `echo-mini.img` in the VM (`dd` at 1 MiB) → hash changed; re-ran the batch → hash returned exactly to `bd2a378b…`. The rebuild restores recipe bytes.
+- Changed a recipe input (label `ECHO_MINI` → `ECHO_ALT`) → different bytes at the same path; reverted → original hash. Determinism and input-sensitivity both hold.
+
+### Verification
+
+device-testing 340 tests / 0 fail; lint 0/0; typecheck 38/38; `test:vm` **239/0** on two consecutive runs plus a third by the lead, confirming correctness back-to-back over the changed path.
+
+### Left for a follow-up
+
+`stageBackingFile`/`resetBackingFile` (`lima-test-vm.ts:225-290`) carry the identical defect — an unbounded `sha256sum` probe and an unbounded `limactl copy`. They serve the legacy pre-built `imagePath` case that **no current persona uses**; only scripted unit tests reach them. The same instrument applies, but the fix would be unexercised by the VM suite, so it was judged a separate task rather than an untested drive-by.
 <!-- SECTION:NOTES:END -->
