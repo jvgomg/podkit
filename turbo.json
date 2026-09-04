@@ -289,7 +289,7 @@
       "cache": true
     },
     "@podkit/device-testing#vm:doctor": {
-      "dependsOn": [],
+      "dependsOn": ["@podkit/lima#build"],
       "inputs": [
         "scripts/vm-doctor.ts",
         "src/baseline-hash.ts",
