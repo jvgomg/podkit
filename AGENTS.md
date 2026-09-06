@@ -159,6 +159,18 @@ When working on anything related to feature requests, planned features, or the r
 
 This project uses Backlog.md for task management via MCP tools. **Never edit backlog files directly** — always use the MCP tools.
 
+The server is declared in this repo's `.mcp.json`, so any clone gets it. It runs
+as `mise exec -- backlog mcp start` because `npm:backlog.md` is pinned in
+`mise.toml` as a project tool and is therefore not on plain `PATH` — Claude Code
+spawns the server itself and does not inherit the directory's mise activation.
+It used to be configured in Claude Code's *user* scope on one machine, which
+started a stdio server for every session in every repo and did not exist at all
+on other machines.
+
+If the tools are missing, the server needs allowing: project-scope `.mcp.json`
+servers must be named in `enabledMcpjsonServers` (or approved interactively)
+before they load.
+
 ### When to Create Tasks
 
 **Create a task** when work requires planning or decisions (investigating bugs, designing features, choosing approaches).
