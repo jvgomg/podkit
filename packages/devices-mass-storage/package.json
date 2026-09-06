@@ -1,6 +1,6 @@
 {
   "name": "@podkit/devices-mass-storage",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Mass-storage device presets and types for podkit (Echo Mini, Rockbox, generic DAPs)",
   "type": "module",
   "main": "./dist/index.js",

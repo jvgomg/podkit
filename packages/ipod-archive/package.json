@@ -1,6 +1,6 @@
 {
   "name": "@podkit/ipod-archive",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "iPod archive: raw dump + browsable archive transform (read-only, checksummed)",
   "type": "module",
   "main": "./dist/index.js",

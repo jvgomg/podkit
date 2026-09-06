@@ -1,6 +1,6 @@
 {
   "name": "@podkit/e2e-vm-tests",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "End-to-end VM tests for podkit features running against the @podkit/device-testing harness",
   "type": "module",
   "private": true,

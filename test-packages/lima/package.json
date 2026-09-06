@@ -1,6 +1,6 @@
 {
   "name": "@podkit/lima",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "private": true,
   "description": "Lima VM substrate for podkit: typed VM registry, idempotent lifecycle, a single cross-process advisory lock, generic transport, and the podkit-vm CLI",
   "type": "module",
