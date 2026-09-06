@@ -404,7 +404,7 @@ export class MassStorageTrack implements DeviceTrack {
     // manifest will silently mark as managed.
     //
     // The `'pre-rename-track'` pause key is a test seam — see
-    // `documents/architecture/dev-builds.md`. In a debug build invoked
+    // `docs/architecture/dev-builds.md`. In a debug build invoked
     // with `PODKIT_DEV_PAUSE_KEY=pre-rename-track`, the call blocks
     // forever after the `.podkit-tmp` lands but before the rename, so
     // e2e tests can SIGKILL the sync and assert the next sync's sweep
@@ -1450,7 +1450,7 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
    * settle before failures are surfaced (see `flushPending` for the shared
    * shape used by stages 2–4). The move stage is bespoke — fail-fast,
    * ENOENT-skip with warning, no clear-on-throw — see
-   * `documents/architecture/sync/save-transactions.md` §save-stage-asymmetries.
+   * `docs/architecture/sync/save-transactions.md` §save-stage-asymmetries.
    *
    * Moves run first so subsequent tag/picture writes target the new paths.
    * The manifest is written last so a torn save doesn't promote half-flushed

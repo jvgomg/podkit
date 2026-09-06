@@ -58,7 +58,7 @@ import type {
 //      hardware, whereas a missing entry fails closed with an honest
 //      unknown-model error naming the inputs.
 //
-// Hardware sources: captures live in documents/sysinfo-captures/; the macOS
+// Hardware sources: captures live in docs/sysinfo-captures/; the macOS
 // iPod cache is ~/Library/Preferences/com.apple.iPod.plist, which records
 // `Family ID` and `Updater Family ID` as *separate* keys — only the former
 // belongs here. The updater values for the three shuffles below are 133, 132

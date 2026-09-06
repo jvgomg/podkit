@@ -18,8 +18,8 @@ advisory lock — see
 Both are `test-runner` entries in the registry (`testGlibc` / `testMusl`). They
 are distinct from the builder VMs that compile release artefacts and from the
 device VM that runs USB-gadget tests — see
-[ADR-016](../../adr/adr-016-linux-vm-test-harness.md) and
-[ADR-027](../../adr/adr-027-lima-vm-substrate-consolidation.md).
+[ADR-016](../../docs/adr/adr-016-linux-vm-test-harness.md) and
+[ADR-027](../../docs/adr/adr-027-lima-vm-substrate-consolidation.md).
 
 ## Prerequisites
 
@@ -135,7 +135,7 @@ bun run vm:recover testGlibc   # destroy → recreate → start
 
 - [`test-packages/lima/README.md`](../../test-packages/lima/README.md) — the VM
   registry, the `podkit-vm` CLI, the advisory lock, and source staging.
-- [ADR-016](../../adr/adr-016-linux-vm-test-harness.md) — why builder, test and
+- [ADR-016](../../docs/adr/adr-016-linux-vm-test-harness.md) — why builder, test and
   device VMs are physically separate.
-- [ADR-027](../../adr/adr-027-lima-vm-substrate-consolidation.md) — why the VM
+- [ADR-027](../../docs/adr/adr-027-lima-vm-substrate-consolidation.md) — why the VM
   configs and lifecycle live in one package.

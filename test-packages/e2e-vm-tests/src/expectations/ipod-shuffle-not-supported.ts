@@ -5,7 +5,7 @@
  * tests can import what they assert against without coupling persona fixture
  * data to assertion shape.
  *
- * @see adr/adr-017-device-persona-fixtures.md §"Schema v3 — May 2026"
+ * @see docs/adr/adr-017-device-persona-fixtures.md §"Schema v3 — May 2026"
  */
 
 import type { DeviceCapabilities } from '@podkit/device-types';

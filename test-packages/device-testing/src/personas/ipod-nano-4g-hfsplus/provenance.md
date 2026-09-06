@@ -56,5 +56,5 @@ persona convention for synthesised siblings.
 - Refusal CLI path: `packages/podkit-cli/src/commands/device/add.ts`
 - HFS+ image writer: `test-packages/device-testing/src/runners/hfsplus-image-writer.ts`
 - VM-test scenario: `test-packages/e2e-vm-tests/src/hfsplus-refusal.e2e.test.ts`
-- VM-testing doc: `documents/architecture/testing/vm-testing.md` §5.6
-- ADR-017: `adr/adr-017-device-persona-fixtures.md`
+- VM-testing doc: `docs/architecture/testing/vm-testing.md` §5.6
+- ADR-017: `docs/adr/adr-017-device-persona-fixtures.md`

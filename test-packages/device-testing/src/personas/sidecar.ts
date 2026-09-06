@@ -32,7 +32,7 @@
  * project a `DevicePersona` into a `SidecarPersona` live in `sidecar-build.ts`,
  * which is host-side only.
  *
- * @see adr/adr-017-device-persona-fixtures.md
+ * @see docs/adr/adr-017-device-persona-fixtures.md
  * @see test-packages/device-testing-daemon/README.md
  * @module
  */

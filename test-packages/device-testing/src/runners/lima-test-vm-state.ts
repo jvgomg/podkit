@@ -11,7 +11,7 @@
  * fast/slow path (QEMU-only; deleted May 2026). See ADR-016
  * §"Snapshot-based state layering (historical)" for the full rationale.
  *
- * @see adr/adr-016-linux-vm-test-harness.md
+ * @see docs/adr/adr-016-linux-vm-test-harness.md
  * @see test-packages/device-testing/scripts/apply-state.sh
  * @module
  */

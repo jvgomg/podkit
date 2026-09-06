@@ -16,8 +16,8 @@ Its only dependency is `@podkit/device-types` (for the `SubprocessRunner`
 interface) — never `@podkit/core`, so the substrate cannot drag native bindings
 or metadata libraries into a build script.
 
-See [ADR-027](../../adr/adr-027-lima-vm-substrate-consolidation.md) for why this
-package exists, and [ADR-016](../../adr/adr-016-linux-vm-test-harness.md) for
+See [ADR-027](../../docs/adr/adr-027-lima-vm-substrate-consolidation.md) for why this
+package exists, and [ADR-016](../../docs/adr/adr-016-linux-vm-test-harness.md) for
 why the builder, test and device VMs are physically separate machines.
 
 ---

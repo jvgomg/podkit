@@ -13,7 +13,7 @@
  * - imports a hook through a path the bundler can't tree-shake,
  *
  * the symbol survives the build and this test fails. See
- * `documents/architecture/dev-builds.md` for the full pattern.
+ * `docs/architecture/dev-builds.md` for the full pattern.
  */
 
 import { describe, expect, it } from 'bun:test';

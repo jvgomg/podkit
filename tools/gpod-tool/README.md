@@ -280,6 +280,6 @@ describe('iPod sync', () => {
 
 ## Related Documentation
 
-- [ADR-005: iPod Test Environment](../../docs/adr/ADR-005-test-ipod-environment.md)
-- [docs/LIBGPOD.md](../../docs/LIBGPOD.md)
-- [docs/IPOD-INTERNALS.md](../../docs/IPOD-INTERNALS.md)
+- [ADR-005: iPod Test Environment](../../docs/adr/adr-005-test-ipod-environment.md)
+- [docs/LIBGPOD.md](../../packages/docs-site/src/content/docs/developers/libgpod.md)
+- [docs/IPOD-INTERNALS.md](../../packages/docs-site/src/content/docs/devices/ipod-internals.md)

@@ -11,7 +11,7 @@
  * # Mechanics
  *
  * The debug build of podkit (`bin/podkit-debug`, see
- * `documents/architecture/dev-builds.md`) carries an active
+ * `docs/architecture/dev-builds.md`) carries an active
  * {@link devPause}/{@link devPauseSync} hook surface. Two pause keys are
  * wired:
  *

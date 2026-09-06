@@ -6,7 +6,7 @@
  * state by injecting matching subprocess responses; VM tests apply it by
  * staging and running `apply-state.sh <id>` in the test VM.
  *
- * @see adr/adr-017-device-persona-fixtures.md
+ * @see docs/adr/adr-017-device-persona-fixtures.md
  * @module
  */
 

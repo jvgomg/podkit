@@ -105,7 +105,7 @@ export const VIDEO_RETRY_CONFIG: Required<RetryConfig> = {
  * intentionally chose the operation type, so it's the next best signal.
  * Anything left over is `unknown`.
  *
- * See `documents/architecture/error-handling.md` for the responsibility
+ * See `docs/architecture/error-handling.md` for the responsibility
  * model. See `./errors.ts` for `CategorizedSyncError` and its subclasses.
  */
 export function categorizeError(error: Error, operationType: string): ErrorCategory {

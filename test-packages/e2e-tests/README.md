@@ -270,7 +270,7 @@ await withVideoSourceDir(async (sourceDir) => {
 
 ## Docker-Based Tests
 
-Tests that require Docker (Navidrome / Subsonic today; other containerised back-ends in future) live in the `src/docker-source/` surface directory — the `docker-sidecar` Surface in [the test taxonomy](../../documents/architecture/testing/taxonomy.md). The directory (not a filename suffix) is what gates them: `test:e2e` excludes it, `test:e2e:docker` selects it.
+Tests that require Docker (Navidrome / Subsonic today; other containerised back-ends in future) live in the `src/docker-source/` surface directory — the `docker-sidecar` Surface in [the test taxonomy](../../docs/architecture/testing/taxonomy.md). The directory (not a filename suffix) is what gates them: `test:e2e` excludes it, `test:e2e:docker` selects it.
 
 ### Running Docker Tests
 

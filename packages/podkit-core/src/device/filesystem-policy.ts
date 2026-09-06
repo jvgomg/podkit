@@ -13,7 +13,7 @@
  *
  * Refusing cleanly with a docs link is structurally cleaner than trying to
  * patch all three friction points. macOS HFS+ is unchanged — the policy is
- * Linux-only. See TASK-317.12 and `docs/devices/linux-filesystems.md`.
+ * Linux-only. See TASK-317.12 and `packages/docs-site/src/content/docs/devices/linux-filesystems.md`.
  */
 
 import { DOCS_URLS } from '../docs-urls.js';

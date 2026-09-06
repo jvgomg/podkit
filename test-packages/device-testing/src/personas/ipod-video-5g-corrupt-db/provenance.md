@@ -114,6 +114,6 @@ persona fires at `sysinfo` stage; this persona fires at `database` stage.
 - Parser under test: `packages/ipod-db/src/itunesdb/records/mhbd.ts` (`parseMhbd`)
 - Database entry point: `packages/ipod-db/src/itunesdb/parser.ts` (`parseDatabase`)
 - Contrast fixture: `test-packages/device-testing/src/personas/malformed-sysinfo/` (SIE-layer fault)
-- Capture playbook: `documents/persona-capture-playbook.md` §"Synthesised personas (no hardware)"
-- ADR-017: `adr/adr-017-device-persona-fixtures.md`
+- Capture playbook: `docs/persona-capture-playbook.md` §"Synthesised personas (no hardware)"
+- ADR-017: `docs/adr/adr-017-device-persona-fixtures.md`
 - Parent task: TASK-324 Phase 5 (AC #1 part A)

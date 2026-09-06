@@ -25,7 +25,7 @@
  * platform (distinct PID `0x0269`, 20 GB HDD).
  *
  * @see devices/sony-walkman-nw-a-series.md
- * @see documents/test-devices.md §"Sony Walkman NW-A1200 (8GB HDD)"
+ * @see docs/test-devices.md §"Sony Walkman NW-A1200 (8GB HDD)"
  * @module
  */
 

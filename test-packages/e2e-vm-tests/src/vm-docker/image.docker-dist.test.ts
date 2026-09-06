@@ -1,7 +1,7 @@
 /**
  * E2E · vm-docker-image · usb-synth — the shipped musl image driving a
  * synthesized USB iPod inside the device-harness Lima VM, with real device
- * passthrough. (doc-053 rollout stage 5; taxonomy: documents/architecture/testing/taxonomy.md)
+ * passthrough. (doc-053 rollout stage 5; taxonomy: docs/architecture/testing/taxonomy.md)
  *
  * This is the ONLY surface that exercises the container's real device-access path
  * end to end: the production `alpine:3.21` (musl) image, built from the same
@@ -19,7 +19,7 @@
  * `quality` DAG: it builds a full Docker image in the VM (minutes) and drives a
  * live synthesized USB device, so it is expensive and fragile. It runs
  * locally-only via `bun run test:e2e:docker-dist` (see this package's
- * `package.json` and `agents/docker.md`). The dedicated directory also means a
+ * `package.json` and `docs/agents/docker.md`). The dedicated directory also means a
  * stray `bun test` elsewhere in the repo will not accidentally kick off an
  * image build — bunfig.toml's `pathIgnorePatterns` excludes the `vm-docker/`
  * directory; only the explicit `test:e2e:docker-dist` script re-includes it.
@@ -69,7 +69,7 @@
  *
  * @see test-packages/device-testing/src/runners/lima-docker-image.ts (buildPodkitImageInVm)
  * @see test-packages/device-testing/src/vm/mount-persona.ts (resolvePersonaDeviceNodes)
- * @see agents/docker.md ("Running the vm-docker-image e2e locally")
+ * @see docs/agents/docker.md ("Running the vm-docker-image e2e locally")
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';

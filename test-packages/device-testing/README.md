@@ -1,6 +1,6 @@
 # @podkit/device-testing
 
-Shared fixture registries and the `TestRuntime` harness consumed by every unit test and VM test in podkit's device test stack (see [ADR-016](../../adr/adr-016-linux-vm-test-harness.md) and [ADR-017](../../adr/adr-017-device-persona-fixtures.md)).
+Shared fixture registries and the `TestRuntime` harness consumed by every unit test and VM test in podkit's device test stack (see [ADR-016](../../docs/adr/adr-016-linux-vm-test-harness.md) and [ADR-017](../../docs/adr/adr-017-device-persona-fixtures.md)).
 
 A single package consolidates fixtures + runners so unit-test mocks and VM/USB-gadget responses can never drift — they derive from the same TypeScript object.
 
@@ -51,7 +51,7 @@ Importing the package auto-registers `local-linux`. VM runners (`lima-test-vm`) 
 
 ## Adding a persona
 
-Personas land in TASK-321.02 (starter set: `ipod-video-5g-fresh`, `ipod-nano-7g-populated`, `echo-mini-empty`). Workflow once the agent guide ships in TASK-321.08 (`agents/device-testing.md`):
+Personas land in TASK-321.02 (starter set: `ipod-video-5g-fresh`, `ipod-nano-7g-populated`, `echo-mini-empty`). Workflow once the agent guide ships in TASK-321.08 (`docs/agents/device-testing.md`):
 
 1. Capture USB descriptor, SysInfoExtended XML, `lsblk -J`, `system_profiler`, and `diskutil` output from real hardware (`scripts/capture-persona.ts`).
 2. Author a `src/personas/<id>/persona.ts` exporting a `DevicePersona`.

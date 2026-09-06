@@ -9,7 +9,7 @@
  * `podkit doctor --scope system` output. Unit tests mock subprocess
  * responses to match a state; VM tests apply the state via `apply-state.sh`.
  *
- * @see adr/adr-017-device-persona-fixtures.md §"SystemState schema"
+ * @see docs/adr/adr-017-device-persona-fixtures.md §"SystemState schema"
  * @module
  */
 

@@ -73,6 +73,6 @@ swap to a different real-iPod source XML before truncating).
 - SIE parser under test: `packages/ipod-firmware/src/plist/parser.ts` (`parsePlist`)
 - Readiness cascade rule: `packages/podkit-core/src/device/readiness/determine-level.ts:88` ("SysInfo check failed" → `needs-repair`)
 - Sibling synthesised personas: `ipod-shuffle-not-supported/`, `non-ipod-usb-disk/`
-- Capture playbook: `documents/persona-capture-playbook.md` §"Synthesised personas (no hardware)"
-- ADR-017: `adr/adr-017-device-persona-fixtures.md`
+- Capture playbook: `docs/persona-capture-playbook.md` §"Synthesised personas (no hardware)"
+- ADR-017: `docs/adr/adr-017-device-persona-fixtures.md`
 - Parent task: TASK-324 Phase 5 (AC #4)

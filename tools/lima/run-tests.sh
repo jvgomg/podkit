@@ -44,7 +44,7 @@ TEST_VM_EXCLUDES=(
   --exclude 'tools/gpod-tool/*.o'
   --exclude 'tools/libgpod-macos/'
   --exclude 'docs/'
-  --exclude 'adr/'
+  --exclude 'docs/adr/'
   --exclude 'backlog/'
   --exclude 'devices/'
   --exclude 'test/manual-collection/'

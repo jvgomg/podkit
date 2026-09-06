@@ -20,7 +20,7 @@
  * a valid MP3 frame header).
  *
  * @see test-packages/device-testing/src/personas/echo-mini/persona.ts (empty sibling)
- * @see documents/persona-capture-playbook.md §"Synthesised personas (no hardware)"
+ * @see docs/persona-capture-playbook.md §"Synthesised personas (no hardware)"
  * @module
  */
 

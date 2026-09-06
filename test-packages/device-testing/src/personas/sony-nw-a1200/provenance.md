@@ -148,7 +148,7 @@ Deferred. Same rationale as `sony-nw-a1000` and `sony-nw-a3000` — Linux output
 
 - Sibling personas: `sony-nw-a1000`, `sony-nw-a3000`.
 - Device profile: `devices/sony-walkman-nw-a-series.md` (updated this session to add NW-A1200 to the per-model PID table, document `MEDIAGO/MediaGo.xml` as a new detection signal, and clarify that PIDs follow hardware platform — not capacity or generation — and that DB version is mutable per device).
-- Inventory entry: `documents/test-devices.md` §"Sony Walkman NW-A1200 (8GB HDD)" (added this session).
+- Inventory entry: `docs/test-devices.md` §"Sony Walkman NW-A1200 (8GB HDD)" (added this session).
 
 ## Open research questions
 

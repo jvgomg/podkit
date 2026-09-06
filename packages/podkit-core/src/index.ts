@@ -63,7 +63,7 @@ export type {
   PlanOptions,
   TranscodePresetRef,
   SourceCategory,
-  // Unified warning types — see documents/architecture/error-handling.md.
+  // Unified warning types — see docs/architecture/error-handling.md.
   // Replaces the prior SyncWarning + ExecutionWarning split.
   Warning,
   WarningPhase,
@@ -193,7 +193,7 @@ export {
   VIDEO_RETRY_CONFIG,
 } from './sync/engine/error-handling.js';
 
-// Typed sync errors — see documents/architecture/error-handling.md
+// Typed sync errors — see docs/architecture/error-handling.md
 export {
   CategorizedSyncError,
   DatabaseWriteError,
@@ -840,7 +840,7 @@ export { streamToTempFile, cleanupTempFile } from './utils/stream.js';
 // Canonical docs site URL builder
 export { DOCS_BASE_URL, DOCS_URLS, docsUrl } from './docs-urls.js';
 
-// Dev hooks — compile-time-stripped test seams. See documents/architecture/dev-builds.md.
+// Dev hooks — compile-time-stripped test seams. See docs/architecture/dev-builds.md.
 // Production builds (__PODKIT_DEV_HOOKS__=false) tree-shake the body away;
 // debug builds (__PODKIT_DEV_HOOKS__=true) activate the pause primitive.
 export { devPause, devPauseSync } from './dev/hooks.js';

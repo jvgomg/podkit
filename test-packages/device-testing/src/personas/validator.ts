@@ -2,7 +2,7 @@
  * Load-time validator for {@link DevicePersona} shape.
  *
  * Surfaces the mechanical constraints documented at
- * `documents/architecture/testing/vm-testing.md` §5 as registry-load errors
+ * `docs/architecture/testing/vm-testing.md` §5 as registry-load errors
  * instead of cryptic kernel timeouts inside the VM. Today three constraints
  * are checked statically:
  *
@@ -57,7 +57,7 @@ export const MAX_ID_ASCII_CHARS = 32;
 export const ID_REGEX = /^[a-z0-9-]+$/;
 
 /** Documentation pointer baked into error messages. */
-const DOC_REF = 'documents/architecture/testing/vm-testing.md';
+const DOC_REF = 'docs/architecture/testing/vm-testing.md';
 
 /**
  * Validate `persona.description` fits in the USB string descriptor

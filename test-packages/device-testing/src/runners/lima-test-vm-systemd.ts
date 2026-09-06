@@ -21,7 +21,7 @@
  * - **DI seam.** Accepts a `SubprocessRunner` so unit tests can replay the
  *   `limactl` interactions without a real VM.
  *
- * @see adr/adr-016-linux-vm-test-harness.md
+ * @see docs/adr/adr-016-linux-vm-test-harness.md
  * @see test-packages/device-testing-daemon/dummy-hcd-daemon@.service
  * @module
  */

@@ -180,11 +180,11 @@ When implementation begins (`devices/sony-walkman-nw-a-series.md` § "Implementa
 ## Cross-references
 
 - Device profile: `devices/sony-walkman-nw-a-series.md` (created this session)
-- Inventory entry: `documents/test-devices.md` §"Sony Walkman NW-A1000 (6GB HDD)" (added this session)
+- Inventory entry: `docs/test-devices.md` §"Sony Walkman NW-A1000 (6GB HDD)" (added this session)
 - Mass-storage preset module: `packages/devices-mass-storage/src/presets/built-in.ts` (no Sony NW-A preset)
 - USB hints: `packages/devices-mass-storage/src/usb-hints.ts` (no `0x054c:0x026a` entry)
-- ADR-017: `adr/adr-017-device-persona-fixtures.md`
-- Capture playbook: `documents/persona-capture-playbook.md`
+- ADR-017: `docs/adr/adr-017-device-persona-fixtures.md`
+- Capture playbook: `docs/persona-capture-playbook.md`
 - Schema followups observed here:
   - `usbDescriptor.deviceSerial` is typed as `string` (not `string | null`) — NW-A1000 has no serial, encoded as empty string. Consider making the field nullable for older / non-serial devices.
   - `ReadinessLevel` lacks `'unsupported'` (same gap as touch-5G and sony-nwz-e384).

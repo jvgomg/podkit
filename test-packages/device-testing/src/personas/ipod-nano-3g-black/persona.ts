@@ -10,8 +10,8 @@
  * Expected outputs (capabilities, readiness, doctor JSON) live in
  * `@podkit/e2e-vm-tests/src/expectations/ipod-nano-3g-black.ts` (schema v3).
  *
- * @see documents/test-devices.md §"iPod nano 3rd Generation (8GB Black)"
- * @see documents/sysinfo-captures/nano-3g-8gb-black.xml
+ * @see docs/test-devices.md §"iPod nano 3rd Generation (8GB Black)"
+ * @see docs/sysinfo-captures/nano-3g-8gb-black.xml
  * @module
  */
 

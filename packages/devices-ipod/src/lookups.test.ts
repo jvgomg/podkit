@@ -655,7 +655,7 @@ describe('toLibgpodGeneration', () => {
 // ── lookupByFamilyId ─────────────────────────────────────────────────────────
 
 describe('lookupByFamilyId', () => {
-  // Confirmed from real device SysInfoExtended captures in documents/sysinfo-captures/
+  // Confirmed from real device SysInfoExtended captures in docs/sysinfo-captures/
   test('FamilyID 3 → mini_2g (confirmed: mini-2g.xml)', () => {
     expect(lookupByFamilyId(3)).toBe('mini_2g');
   });

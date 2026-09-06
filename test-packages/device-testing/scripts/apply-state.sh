@@ -23,8 +23,8 @@
 # script is the in-VM realisation of those definitions; the TypeScript registry
 # is the source of truth, the script is the executor.
 #
-# See: adr/adr-016-linux-vm-test-harness.md §"Snapshot-based state layering"
-#      adr/adr-017-device-persona-fixtures.md §"SystemState schema"
+# See: docs/adr/adr-016-linux-vm-test-harness.md §"Snapshot-based state layering"
+#      docs/adr/adr-017-device-persona-fixtures.md §"SystemState schema"
 
 set -eu
 

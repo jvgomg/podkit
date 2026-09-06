@@ -313,7 +313,7 @@ export interface DeviceAdapter<T extends DeviceTrack = DeviceTrack> {
    * accumulated alongside the rest of the execution warnings into
    * `ExecuteResult.warnings`. Adapters must never write to stderr directly.
    *
-   * See `documents/architecture/error-handling.md` for the responsibility
+   * See `docs/architecture/error-handling.md` for the responsibility
    * model.
    */
   setWarningSink?(sink: import('../sync/engine/types.js').WarningSink): void;

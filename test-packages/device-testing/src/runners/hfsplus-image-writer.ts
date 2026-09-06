@@ -68,7 +68,7 @@
  *
  * - Apple TN1150 — HFS+ Volume Format spec (Volume Header, finderInfo).
  * - libblkid HFS+ probe — `libblkid/src/superblocks/hfs.c` (UUID synthesis).
- * - `documents/architecture/testing/vm-testing.md` §5.6 — VM-side rationale.
+ * - `docs/architecture/testing/vm-testing.md` §5.6 — VM-side rationale.
  * - `packages/podkit-core/src/device/platforms/linux.ts` (`walk()` —
  *   the consumer of the partition-with-UUID shape).
  *

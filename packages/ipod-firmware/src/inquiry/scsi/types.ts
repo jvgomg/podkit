@@ -36,7 +36,7 @@ export const DEFAULT_VPD_ALLOC_LEN = 252;
  * Larger ceiling for VPD re-reads when the page-length field reports more
  * than `DEFAULT_VPD_ALLOC_LEN - VPD_HEADER_BYTES` payload bytes. 64 KiB is
  * comfortably above the largest captured SysInfoExtended subpage seen in
- * `documents/sysinfo-captures/`.
+ * `docs/sysinfo-captures/`.
  */
 export const MAX_VPD_ALLOC_LEN = 65535;
 

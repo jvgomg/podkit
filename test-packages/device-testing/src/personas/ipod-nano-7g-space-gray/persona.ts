@@ -10,8 +10,8 @@
  * Expected outputs (capabilities, readiness, doctor JSON) live in
  * `@podkit/e2e-vm-tests/src/expectations/ipod-nano-7g-space-gray.ts` (schema v3).
  *
- * @see documents/test-devices.md §"iPod nano 7th Generation (16GB)"
- * @see documents/sysinfo-captures/nano-7g-16gb-usb.xml
+ * @see docs/test-devices.md §"iPod nano 7th Generation (16GB)"
+ * @see docs/sysinfo-captures/nano-7g-16gb-usb.xml
  * @module
  */
 

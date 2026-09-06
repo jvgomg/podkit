@@ -75,7 +75,7 @@
  *
  * @see test-packages/e2e-vm-tests/src/vm-docker/image.docker-dist.test.ts (the one-shot CLI sibling)
  * @see packages/podkit-daemon/src/device-poller.ts (the two detection lanes)
- * @see agents/docker.md ("Running the vm-docker-image e2e locally")
+ * @see docs/agents/docker.md ("Running the vm-docker-image e2e locally")
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';

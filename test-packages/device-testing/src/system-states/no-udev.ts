@@ -13,7 +13,7 @@
  * (or apply-state.sh starts removing the podkit rule), update this
  * fixture and the cross-check test will catch the drift.
  *
- * @see adr/adr-017-device-persona-fixtures.md §"SystemState schema"
+ * @see docs/adr/adr-017-device-persona-fixtures.md §"SystemState schema"
  * @see test-packages/e2e-vm-tests/src/system-state-cross-check.e2e.test.ts
  * @module
  */

@@ -16,4 +16,4 @@ Also lands as type-level groundwork for the future container-aware sync work: `A
 
 `DirectoryAdapter` now uses each `.ogg` file's probed stream codec (already populated by `music-metadata`) to distinguish Vorbis, Opus, and OGG-FLAC — same pattern as the existing AAC/ALAC distinction for `.m4a`. `SubsonicAdapter` additionally checks the API's `contentType` field for Opus-in-`.ogg`. The Subsonic check is best-effort because most Subsonic servers report container MIME (`audio/ogg`) regardless of stream codec; deeper probing is deferred until evidence of real-world impact.
 
-User-facing reference page added at `docs/reference/codec-support.md` explaining the codec/container model and what each `AudioCodec` value means.
+User-facing reference page added at `packages/docs-site/src/content/docs/reference/codec-support.md` explaining the codec/container model and what each `AudioCodec` value means.

@@ -34,7 +34,7 @@ export interface CliResult {
  *
  * - `'production'` (default): the bundled `dist/main.js` (`bun build
  *   --target bun`) invoked under `bun`. Hook bodies (see
- *   `documents/architecture/dev-builds.md`) are tree-shaken away. This is a
+ *   `docs/architecture/dev-builds.md`) are tree-shaken away. This is a
  *   fast e2e proxy — per ADR-021 the user-shipped artefact is the Bun
  *   `--compile` binary (`bin/podkit`), not this bundle, but both run under
  *   the Bun runtime so the proxy is faithful (`bun:sqlite` etc. resolve).
@@ -159,7 +159,7 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
 
     // 'production' runs the bundle under bun; 'debug' (and a PODKIT_CLI_BINARY
     // override) invoke a standalone compiled binary directly. See
-    // documents/architecture/dev-builds.md.
+    // docs/architecture/dev-builds.md.
     const [command, commandArgs] = cliSpawnArgv(binary, args);
 
     const child = spawn(command, commandArgs, {

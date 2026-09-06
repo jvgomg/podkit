@@ -23,7 +23,7 @@
  *   - Hard drive: 20 GB (vs A1000's 6 GB).
  *
  * @see devices/sony-walkman-nw-a-series.md
- * @see documents/test-devices.md §"Sony Walkman NW-A3000 (20GB HDD)"
+ * @see docs/test-devices.md §"Sony Walkman NW-A3000 (20GB HDD)"
  * @module
  */
 

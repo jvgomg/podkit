@@ -15,7 +15,7 @@
  * preset vs full OpenMG writer).
  *
  * @see devices/sony-walkman-nw-a-series.md
- * @see documents/test-devices.md §"Sony Walkman NW-A1000 (6GB HDD)"
+ * @see docs/test-devices.md §"Sony Walkman NW-A1000 (6GB HDD)"
  * @module
  */
 

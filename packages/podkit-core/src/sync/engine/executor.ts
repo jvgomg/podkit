@@ -325,7 +325,7 @@ export class SyncExecutor<TSource, TDevice, TOp extends BaseOperation = SyncOper
     // `device.save()` can throw a typed CategorizedSyncError subclass
     // (TagWriteError / MoveError / SidecarWriteError / PictureWriteError
     // from the mass-storage adapter, DatabaseWriteError from the iPod
-    // adapter — see documents/architecture/sync/save-transactions.md §3).
+    // adapter — see docs/architecture/sync/save-transactions.md §3).
     // Catch the throw, attribute it to the last operation as a synthetic
     // per-op failure, and yield a `phase: 'failed'` progress so the
     // presenter records it in `collectedErrors` and the formatter emits

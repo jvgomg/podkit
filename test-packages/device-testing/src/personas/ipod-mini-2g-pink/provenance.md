@@ -37,9 +37,9 @@ Deferred. Linux captures completed this session for four representative personas
 
 ## SysInfoExtended source
 
-- Origin: `documents/sysinfo-captures/mini-2g.xml`
+- Origin: `docs/sysinfo-captures/mini-2g.xml`
 - Copied to: `raw/sysinfo-extended.xml`
-- Inquiry transport used: SCSI (USB inquiry fails on mini 2G — see `documents/test-devices.md`)
+- Inquiry transport used: SCSI (USB inquiry fails on mini 2G — see `docs/test-devices.md`)
 - Size: 2,413 bytes (smallest capture in the inventory — no artwork, no video)
 
 ## Expected-* fields status
@@ -48,7 +48,7 @@ Provisional. Values stubbed from the generation table (`mini_2g`: `supportsAlac:
 
 ## Cross-references
 
-- Inventory entry: `documents/test-devices.md` §"iPod mini 2nd Generation (4GB Pink)"
-- ADR-017: `adr/adr-017-device-persona-fixtures.md`
-- Capture playbook: `documents/persona-capture-playbook.md`
+- Inventory entry: `docs/test-devices.md` §"iPod mini 2nd Generation (4GB Pink)"
+- ADR-017: `docs/adr/adr-017-device-persona-fixtures.md`
+- Capture playbook: `docs/persona-capture-playbook.md`
 - TASK-321.02 (persona capture starter set)

@@ -9,7 +9,7 @@
  * Cross-cut: where TASK-307's original wording predates TASK-308's
  * "warn → unhealthy → exit 2" decision (notably AC #4's exit-code semantics
  * for `--repair` validation), we pin against the locked-in decision recorded
- * in agents/testing.md §"Doctor exit-code & overall-health semantics".
+ * in docs/agents/testing.md §"Doctor exit-code & overall-health semantics".
  *
  * @see backlog/tasks/task-307 - Doctor-CLI-flag-matrix.md
  * @see packages/podkit-cli/src/commands/doctor-exit-code.test.ts — TASK-308 sibling

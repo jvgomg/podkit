@@ -41,7 +41,7 @@ export function resolveDefaultPodkitBinary(env: NodeJS.ProcessEnv = process.env)
  * Same shape as {@link resolveDefaultPodkitBinary} but for the dev-hooks-active
  * build (`bin/podkit-debug-linux-<arch>`). Reads `PODKIT_LINUX_DEBUG_BINARY` if
  * set; otherwise falls back to the per-arch default. See
- * `documents/architecture/dev-builds.md` for why the debug binary ships
+ * `docs/architecture/dev-builds.md` for why the debug binary ships
  * side-by-side with the production one.
  */
 export function resolveDefaultPodkitDebugBinary(env: NodeJS.ProcessEnv = process.env): string {

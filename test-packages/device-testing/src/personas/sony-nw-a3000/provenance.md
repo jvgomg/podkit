@@ -121,7 +121,7 @@ Deferred. Same rationale as `sony-nw-a1000` — Linux output is expected to matc
 
 - Sibling persona: `test-packages/device-testing/src/personas/sony-nw-a1000/` — read first for full OpenMG background.
 - Device profile: `devices/sony-walkman-nw-a-series.md` (now updated with A3000 entry + PID-per-model correction + OpenMG version note).
-- Inventory entry: `documents/test-devices.md` §"Sony Walkman NW-A3000 (20GB HDD)" (added this session).
+- Inventory entry: `docs/test-devices.md` §"Sony Walkman NW-A3000 (20GB HDD)" (added this session).
 - Schema followups: same as `sony-nw-a1000` (nullable `deviceSerial`, missing `'unsupported'` `ReadinessLevel`).
 
 ## Open research questions

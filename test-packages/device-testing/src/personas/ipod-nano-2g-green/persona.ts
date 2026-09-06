@@ -10,8 +10,8 @@
  * Expected outputs (capabilities, readiness, doctor JSON) live in
  * `@podkit/e2e-vm-tests/src/expectations/ipod-nano-2g-green.ts` (schema v3).
  *
- * @see documents/test-devices.md §"iPod nano 2nd Generation (4GB Green)"
- * @see documents/sysinfo-captures/nano-2g-4gb-green.xml
+ * @see docs/test-devices.md §"iPod nano 2nd Generation (4GB Green)"
+ * @see docs/sysinfo-captures/nano-2g-4gb-green.xml
  * @module
  */
 

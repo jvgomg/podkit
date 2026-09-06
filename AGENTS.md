@@ -46,7 +46,18 @@ tools/
 └── lima/            # Linux test-suite runner (`run-tests.sh`); VM configs live in `test-packages/lima/vms/`
 
 devices/             # Device documentation profiles (specs, capabilities, research)
+
+docs/                # Internal documentation (agents + contributors; not published)
+├── agents/          # Per-subsystem agent guides + agent-skill configuration
+├── adr/             # Architecture Decision Records (decision log, frozen at decision time)
+├── architecture/    # How subsystems are wired, plus cross-cutting conventions.md
+├── principles/      # Behavioural promises podkit makes to a user's library
+├── formats/         # iPod database/format reference (generations, iTunesSD/BDHS)
+└── sysinfo-captures/ # Captured SysInfoExtended XML from real hardware
 ```
+
+The user-facing documentation site lives in its own package: sources are
+`packages/docs-site/src/content/docs/`. Nothing under `docs/` is published.
 
 ## Quick Reference
 
@@ -117,35 +128,35 @@ podkit device music --format json       # List music on device
 | util-linux | Pre-installed | N/A | `lsblk` | Linux device manager |
 | Lima | N/A | `brew install lima` | N/A | Cross-platform testing |
 
-See [docs/developers/development.md](docs/developers/development.md) for full setup instructions.
+See [packages/docs-site/src/content/docs/developers/development.md](packages/docs-site/src/content/docs/developers/development.md) for full setup instructions.
 
 ## Documentation
 
-The `docs/` directory is organized for web publication (Starlight-compatible). Read [agents/documentation.md](agents/documentation.md) for the full documentation map, file conventions, and maintenance guidelines.
+User-facing documentation is published from `packages/docs-site/` (Starlight/Astro); its pages live in `packages/docs-site/src/content/docs/`. The root `docs/` directory is *internal* documentation for agents and contributors and is not published. Read [docs/agents/documentation.md](docs/agents/documentation.md) for the full documentation map, file conventions, and maintenance guidelines.
 
 ## Architecture Docs
 
-`documents/architecture/` holds the slow-moving, settled descriptions of how podkit is put together — what each subsystem owns, the primitives it exposes, the responsibility boundaries between layers, and the conventions a new contributor (or agent) must follow. **Read [documents/architecture/README.md](documents/architecture/README.md) before working on a subsystem you don't know.**
+`docs/architecture/` holds the slow-moving, settled descriptions of how podkit is put together — what each subsystem owns, the primitives it exposes, the responsibility boundaries between layers, and the conventions a new contributor (or agent) must follow. **Read [docs/architecture/README.md](docs/architecture/README.md) before working on a subsystem you don't know.**
 
-Cross-cutting rules (typed errors, no `console.warn` in core, sink-not-stderr, test-pins-contract) live in [documents/architecture/conventions.md](documents/architecture/conventions.md) — these apply to every package and every PR.
+Cross-cutting rules (typed errors, no `console.warn` in core, sink-not-stderr, test-pins-contract) live in [docs/architecture/conventions.md](docs/architecture/conventions.md) — these apply to every package and every PR.
 
 Per-subsystem docs follow a consistent eight-section template described in the README. Landed docs include:
-- [sync/error-handling.md](documents/architecture/sync/error-handling.md) — typed errors, warning sinks, retry policy
-- [collection-adapters/subsonic.md](documents/architecture/collection-adapters/subsonic.md) — Subsonic adapter, playlist-scoped sourcing, resolver, empty-playlist guard
+- [sync/error-handling.md](docs/architecture/sync/error-handling.md) — typed errors, warning sinks, retry policy
+- [collection-adapters/subsonic.md](docs/architecture/collection-adapters/subsonic.md) — Subsonic adapter, playlist-scoped sourcing, resolver, empty-playlist guard
 
 When a refactor changes a convention, update the relevant architecture doc in the same PR. When you settle a new convention not yet documented, file a new doc or extend an existing one.
 
-The architecture docs are distinct from the rough-edges journals in `backlog/docs/doc-NNN-*.md` (working catalogue of *what's still smelly*) and from ADRs in `adr/` (decision log frozen at decision time). Don't duplicate content across them — link.
+The architecture docs are distinct from the rough-edges journals in `backlog/docs/doc-NNN-*.md` (working catalogue of *what's still smelly*) and from ADRs in `docs/adr/` (decision log frozen at decision time). Don't duplicate content across them — link.
 
 ## Design Principles
 
-`documents/principles/` holds the *why* layer above ADRs — the behavioural promises podkit makes to a user's library (e.g. never silently degrade, settings are ceilings, the source is truth) and the philosophy behind the metadata/artwork (transfer mode) and bitrate/codec (transcoding) axes. **Read [documents/principles/README.md](documents/principles/README.md) before changing user-facing sync/transcoding behaviour**, and lift a new cross-cutting promise into a principle when an ADR reveals one.
+`docs/principles/` holds the *why* layer above ADRs — the behavioural promises podkit makes to a user's library (e.g. never silently degrade, settings are ceilings, the source is truth) and the philosophy behind the metadata/artwork (transfer mode) and bitrate/codec (transcoding) axes. **Read [docs/principles/README.md](docs/principles/README.md) before changing user-facing sync/transcoding behaviour**, and lift a new cross-cutting promise into a principle when an ADR reveals one.
 
 Principles are the *why*; ADRs decide *how* to honour them; architecture docs *wire* them; PRDs must *conform*. Link, never duplicate.
 
 ## Feature Requests & GitHub Discussions
 
-Feature requests are managed through GitHub Discussions (Ideas category), with links in the documentation and backlog tasks. **See [agents/feature-requests.md](agents/feature-requests.md) for the complete guide** covering:
+Feature requests are managed through GitHub Discussions (Ideas category), with links in the documentation and backlog tasks. **See [docs/agents/feature-requests.md](docs/agents/feature-requests.md) for the complete guide** covering:
 
 - Creating, updating, and closing discussions via the GitHub API
 - The current discussions registry (all feature discussions with numbers and URLs)
@@ -196,7 +207,7 @@ Documents:  document_list, document_view, document_create, document_update
 
 ## Architecture Decision Records (ADRs)
 
-ADRs document significant technical decisions. See [adr/](adr/) for the full workflow.
+ADRs document significant technical decisions. See [docs/adr/](docs/adr/) for the full workflow.
 
 ### When to Create ADRs
 
@@ -221,44 +232,44 @@ These decisions are documented in ADRs — read the full ADR for context:
 
 | Decision | Summary | ADR |
 |----------|---------|-----|
-| Runtime | Bun for dev, Node.js for distribution | [ADR-001](adr/adr-001-runtime.md) |
-| libgpod bindings | N-API (node-addon-api) directly | [ADR-002](adr/adr-002-libgpod-binding.md) |
-| Transcoding | FFmpeg with AAC encoder | [ADR-003](adr/adr-003-transcoding.md) |
-| Collection sources | Adapter pattern | [ADR-004](adr/adr-004-collection-sources.md) |
-| Test environments | gpod-tool + temp directories | [ADR-005](adr/adr-005-test-ipod-environment.md) |
-| Video transcoding | FFmpeg with H.264/M4V output | [ADR-006](adr/adr-006-video-transcoding.md) |
-| Self-healing sync | Detect and upgrade changed source files | [ADR-009](adr/adr-009-self-healing-sync.md) |
-| Artwork change detection | Hash-based artwork diffing with opt-in scanning | [ADR-012](adr/adr-012-artwork-change-detection.md) |
+| Runtime | Bun for dev, Node.js for distribution | [ADR-001](docs/adr/adr-001-runtime.md) |
+| libgpod bindings | N-API (node-addon-api) directly | [ADR-002](docs/adr/adr-002-libgpod-binding.md) |
+| Transcoding | FFmpeg with AAC encoder | [ADR-003](docs/adr/adr-003-transcoding.md) |
+| Collection sources | Adapter pattern | [ADR-004](docs/adr/adr-004-collection-sources.md) |
+| Test environments | gpod-tool + temp directories | [ADR-005](docs/adr/adr-005-test-ipod-environment.md) |
+| Video transcoding | FFmpeg with H.264/M4V output | [ADR-006](docs/adr/adr-006-video-transcoding.md) |
+| Self-healing sync | Detect and upgrade changed source files | [ADR-009](docs/adr/adr-009-self-healing-sync.md) |
+| Artwork change detection | Hash-based artwork diffing with opt-in scanning | [ADR-012](docs/adr/adr-012-artwork-change-detection.md) |
 
 ## Testing
 
-Read [agents/testing.md](agents/testing.md) when writing, running, or debugging tests.
+Read [docs/agents/testing.md](docs/agents/testing.md) when writing, running, or debugging tests.
 
 Quick reference: `bun run test:unit --filter <package>` for targeted tests, `bun run test` for all, `bun test path/to/file.test.ts` for a single file.
 
 ## libgpod-node: Native Bindings
 
-Read [agents/libgpod-node.md](agents/libgpod-node.md) when modifying the N-API bindings or investigating libgpod edge cases.
+Read [docs/agents/libgpod-node.md](docs/agents/libgpod-node.md) when modifying the N-API bindings or investigating libgpod edge cases.
 
 ## ipod-firmware: USB inquiry + bundling
 
-Read [agents/ipod-firmware.md](agents/ipod-firmware.md) when working on the firmware inquiry orchestrator, the diagnostic logger surface, or bundling `@podkit/ipod-firmware` (or anything that depends on it transitively) into a single-file binary.
+Read [docs/agents/ipod-firmware.md](docs/agents/ipod-firmware.md) when working on the firmware inquiry orchestrator, the diagnostic logger surface, or bundling `@podkit/ipod-firmware` (or anything that depends on it transitively) into a single-file binary.
 
 ## Demo GIF
 
-Read [agents/demo.md](agents/demo.md) when making CLI or core changes that could affect the demo recording.
+Read [docs/agents/demo.md](docs/agents/demo.md) when making CLI or core changes that could affect the demo recording.
 
 ## Shell Completions
 
-Read [agents/shell-completions.md](agents/shell-completions.md) when modifying CLI commands or options.
+Read [docs/agents/shell-completions.md](docs/agents/shell-completions.md) when modifying CLI commands or options.
 
 ## Docker Image
 
-Read [agents/docker.md](agents/docker.md) when working on Docker distribution, the entrypoint, or daemon mode.
+Read [docs/agents/docker.md](docs/agents/docker.md) when working on Docker distribution, the entrypoint, or daemon mode.
 
 ## Virtual iPod
 
-The virtual iPod system creates a synthetic iPod for demonstrating podkit. It consists of four packages and a Lima VM. See [backlog/docs/doc-028](backlog/docs/doc-028%20-%20Virtual-iPod-Architecture-and-Package-Design.md) for the full architecture document and [tools/demo/README.md](tools/demo/README.md) for the live demo guide.
+The virtual iPod system creates a synthetic iPod for demonstrating podkit. It consists of four packages and a Lima VM. See [backlog/docs/doc-028](backlog/docs/doc-028%20-%20Virtual-iPod-Architecture-and-Package-Design.md) for the full architecture document and [tools/demo/README.md](./packages/demo/README.md) for the live demo guide.
 
 **Packages:**
 - `@podkit/ipod-db` — Pure TypeScript iTunesDB/ArtworkDB parser. Browser-compatible (DataView-based, no Node.js Buffer). Used by ipod-web to read real iPod databases. Shares foundational work with the libgpod-node replacement (m-8).
@@ -281,7 +292,7 @@ The virtual iPod system creates a synthetic iPod for demonstrating podkit. It co
 
 ## Release Workflow
 
-Read [agents/releases.md](agents/releases.md) when creating changesets, reviewing release PRs, or publishing releases.
+Read [docs/agents/releases.md](docs/agents/releases.md) when creating changesets, reviewing release PRs, or publishing releases.
 
 Quick reference: `bunx changeset` to create a changeset. **A changeset is required for any user-facing change to a distributed package:**
 
@@ -291,13 +302,13 @@ Quick reference: `bunx changeset` to create a changeset. **A changeset is requir
 - `@podkit/daemon`
 - `@podkit/docker`
 
-The `podkit` CLI is **not** published to npm — it ships as a Bun `--compile` binary (Homebrew / GitHub Release / Docker; see [ADR-021](adr/adr-021-cli-bun-binary-distribution.md)) — but it is still **changeset-versioned**: the changeset config sets `privatePackages.version: true`, so a changeset for `podkit` bumps its version and generates its changelog entry for the binary/Docker release. See [agents/releases.md](agents/releases.md) for the full policy.
+The `podkit` CLI is **not** published to npm — it ships as a Bun `--compile` binary (Homebrew / GitHub Release / Docker; see [ADR-021](docs/adr/adr-021-cli-bun-binary-distribution.md)) — but it is still **changeset-versioned**: the changeset config sets `privatePackages.version: true`, so a changeset for `podkit` bumps its version and generates its changelog entry for the binary/Docker release. See [docs/agents/releases.md](docs/agents/releases.md) for the full policy.
 
-Docs site deploys from a dedicated `docs-live` branch, not from `main`. Releases sync `docs-live` automatically; docs-only updates between releases require a cherry-pick from `main` to `docs-live`. See the "Docs Site Deployment" section in [agents/releases.md](agents/releases.md).
+Docs site deploys from a dedicated `docs-live` branch, not from `main`. Releases sync `docs-live` automatically; docs-only updates between releases require a cherry-pick from `main` to `docs-live`. See the "Docs Site Deployment" section in [docs/agents/releases.md](docs/agents/releases.md).
 
 ## Config Migrations
 
-Read [agents/config-migrations.md](agents/config-migrations.md) when making breaking changes to the config file format.
+Read [docs/agents/config-migrations.md](docs/agents/config-migrations.md) when making breaking changes to the config file format.
 
 ## Device Profiles
 

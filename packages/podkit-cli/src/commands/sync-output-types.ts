@@ -6,7 +6,7 @@
  * `VideoPresenter` classes + `types.ts` (test surface) consume these
  * directly without pulling in the whole sync module.
  *
- * See `documents/architecture/error-handling.md` for the unified warning
+ * See `docs/architecture/error-handling.md` for the unified warning
  * + categorized-error model these types serialise.
  */
 
@@ -17,7 +17,7 @@
  * (e.g. pre-flight free-space failure) leave it empty. When the underlying
  * error is a {@link CategorizedSyncError} subclass, `class` and `causes`
  * carry the typed-error provenance so JSON consumers don't have to scrape
- * the message body. See `documents/architecture/error-handling.md`.
+ * the message body. See `docs/architecture/error-handling.md`.
  */
 export interface ErrorInfo {
   track: string;
@@ -38,7 +38,7 @@ export interface ErrorInfo {
  * Replaces the prior PlanWarningInfo + ExecutionWarningInfo split. Consumers
  * pick by `phase`. Track refs are structured; consumers format as they wish.
  *
- * See documents/architecture/error-handling.md for the responsibility model.
+ * See docs/architecture/error-handling.md for the responsibility model.
  */
 export interface WarningInfo {
   phase: 'plan' | 'execute';

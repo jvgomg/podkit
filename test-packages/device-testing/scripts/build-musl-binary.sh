@@ -102,7 +102,7 @@ limactl shell --workdir "$VM_SRC" "$VM_NAME" bash -c '
     exit 1
   fi
 
-  # Debug binary — same source, dev hooks active (see documents/architecture/dev-builds.md).
+  # Debug binary — same source, dev hooks active (see docs/architecture/dev-builds.md).
   echo "==> compiling podkit binary (debug)..."
   PODKIT_DEV_HOOKS=1 bash packages/podkit-cli/scripts/compile.sh
 

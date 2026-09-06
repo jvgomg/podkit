@@ -10,7 +10,7 @@
  * New runners register themselves via `registerRunner()` (see `runners/registry.ts`)
  * without modifying this file.
  *
- * @see adr/adr-016-linux-vm-test-harness.md
+ * @see docs/adr/adr-016-linux-vm-test-harness.md
  * @module
  */
 

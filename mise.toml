@@ -65,7 +65,7 @@ docker compose -f tools/brew-test/docker-compose.yml up --build --exit-code-from
 # rarely touches it directly. See:
 #   - test-packages/lima/src/cli.ts (podkit-vm)
 #   - test-packages/device-testing/scripts/harness.ts (device provisioning)
-#   - agents/device-testing.md (developer quick start)
+#   - docs/agents/device-testing.md (developer quick start)
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------

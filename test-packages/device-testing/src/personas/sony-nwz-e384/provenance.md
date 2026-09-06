@@ -133,11 +133,11 @@ When a Sony preset is added to `packages/devices-mass-storage/src/presets/built-
 ## Cross-references
 
 - Device profile: `devices/sony-walkman-nwz-e380.md` (created this session)
-- Inventory entry: `documents/test-devices.md` §"Sony Walkman NWZ-E384 (8GB)" (added this session)
+- Inventory entry: `docs/test-devices.md` §"Sony Walkman NWZ-E384 (8GB)" (added this session)
 - Mass-storage preset module: `packages/devices-mass-storage/src/presets/built-in.ts` (no Sony preset yet)
 - USB hints: `packages/devices-mass-storage/src/usb-hints.ts` (no `0x054c:0x0882` entry yet)
-- ADR-017: `adr/adr-017-device-persona-fixtures.md`
-- Capture playbook: `documents/persona-capture-playbook.md`
+- ADR-017: `docs/adr/adr-017-device-persona-fixtures.md`
+- Capture playbook: `docs/persona-capture-playbook.md`
 - Schema followups discovered while writing this persona:
   - `ReadinessLevel` lacks `'unsupported'` — see `ipod-touch-5g-unsupported/provenance.md` for the same finding.
   - `partitionLayout.partitions` lacks a `lun` field — relevant for multi-LUN mass-storage devices (Echo Mini); not affected here (Walkman is single-LUN).

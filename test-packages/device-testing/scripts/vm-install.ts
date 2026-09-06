@@ -26,7 +26,7 @@
  * with a single summary line. Both end at the same place — the VM has the
  * same bytes — but the entry points differ.
  *
- * @see documents/architecture/testing/vm-build-orchestration.md
+ * @see docs/architecture/testing/vm-build-orchestration.md
  * @module
  */
 

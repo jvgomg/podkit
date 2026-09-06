@@ -118,7 +118,7 @@ async function runDoctor(devicePath: string, extraArgs: string[] = []) {
   // libusb availability, udev rule). Those depend on the host environment and
   // are exercised by their own unit tests with injected probes; asserting on
   // them here couples the test result to whatever the dev box happens to have
-  // installed. See agents/testing.md for the system-check testing strategy.
+  // installed. See docs/agents/testing.md for the system-check testing strategy.
   return runCliJson<DoctorOutput>([
     'doctor',
     '--device',

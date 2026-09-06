@@ -1,6 +1,6 @@
 /**
  * Drift test: pins the generated support-matrix table in
- * `documents/formats/generations.md` to `renderSupportMatrixMarkdown()`.
+ * `docs/formats/generations.md` to `renderSupportMatrixMarkdown()`.
  *
  * The doc embeds the matrix between `BEGIN GENERATED` / `END GENERATED`
  * markers. If the generation table changes and the doc block is not
@@ -17,7 +17,7 @@ import { renderSupportMatrixMarkdown } from './support.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // src → devices-ipod → packages → repo root
 const REPO_ROOT = resolve(__dirname, '..', '..', '..');
-const DOC_PATH = resolve(REPO_ROOT, 'documents', 'formats', 'generations.md');
+const DOC_PATH = resolve(REPO_ROOT, 'docs', 'formats', 'generations.md');
 
 const BEGIN_MARKER = '<!-- BEGIN GENERATED: support-matrix -->';
 const END_MARKER = '<!-- END GENERATED: support-matrix -->';
@@ -34,7 +34,7 @@ function extractGeneratedRegion(doc: string): string {
   return doc.slice(begin + BEGIN_MARKER.length, end).trim();
 }
 
-describe('documents/formats/generations.md support matrix', () => {
+describe('docs/formats/generations.md support matrix', () => {
   it('matches renderSupportMatrixMarkdown() exactly', () => {
     const doc = readFileSync(DOC_PATH, 'utf8');
     expect(extractGeneratedRegion(doc)).toBe(renderSupportMatrixMarkdown());

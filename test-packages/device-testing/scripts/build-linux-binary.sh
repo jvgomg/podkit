@@ -98,7 +98,7 @@ limactl shell --workdir "$VM_SRC" "$VM_NAME" bash -c '
   fi
 
   # Debug binary — same source, hooks active. Tests that need the
-  # devPause(key) primitive (see documents/architecture/dev-builds.md)
+  # devPause(key) primitive (see docs/architecture/dev-builds.md)
   # opt into bin/podkit-debug via the e2e cli runner. Production
   # binary above is unaffected — the `--define __PODKIT_DEV_HOOKS__=false`
   # path in compile.sh tree-shakes the hook bodies away there.

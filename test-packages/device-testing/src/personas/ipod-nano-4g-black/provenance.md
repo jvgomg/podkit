@@ -80,7 +80,7 @@ Complete. `lsblkJson` populated; all USB-descriptor checks reconciled; the Apple
 
 ## SysInfoExtended source
 
-- Origin: `documents/sysinfo-captures/nano-4g-8gb-black.xml`
+- Origin: `docs/sysinfo-captures/nano-4g-8gb-black.xml`
 - Copied to: `raw/sysinfo-extended.xml`
 - Inquiry transport used: USB (preferred) — also captured via SCSI in prior sessions; USB capture contains a per-read crypto blob (content otherwise identical)
 - Size: 14,297 bytes
@@ -91,7 +91,7 @@ Provisional. Values stubbed from generation table (`nano_4g`: `supportsAlac: tru
 
 ## Cross-references
 
-- Inventory entry: `documents/test-devices.md` §"iPod nano 4th Generation (8GB Black)"
-- ADR-017: `adr/adr-017-device-persona-fixtures.md`
-- Capture playbook: `documents/persona-capture-playbook.md`
+- Inventory entry: `docs/test-devices.md` §"iPod nano 4th Generation (8GB Black)"
+- ADR-017: `docs/adr/adr-017-device-persona-fixtures.md`
+- Capture playbook: `docs/persona-capture-playbook.md`
 - TASK-321.02 (persona capture starter set)

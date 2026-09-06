@@ -8,8 +8,8 @@
  * Expected outputs (capabilities, readiness, doctor JSON) live in
  * `@podkit/e2e-vm-tests/src/expectations/ipod-mini-2g-pink.ts` (schema v3).
  *
- * @see documents/test-devices.md §"iPod mini 2nd Generation (4GB Pink)"
- * @see documents/sysinfo-captures/mini-2g.xml
+ * @see docs/test-devices.md §"iPod mini 2nd Generation (4GB Pink)"
+ * @see docs/sysinfo-captures/mini-2g.xml
  * @module
  */
 

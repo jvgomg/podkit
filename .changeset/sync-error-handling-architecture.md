@@ -11,7 +11,7 @@ flow through an injected `WarningSink` and surface alongside hard errors
 in `SyncOutput.warnings`. `console.warn` / `console.error` is now banned
 in core.
 
-See `documents/architecture/sync/error-handling.md` for the full
+See `docs/architecture/sync/error-handling.md` for the full
 responsibility model.
 
 ## Breaking API changes

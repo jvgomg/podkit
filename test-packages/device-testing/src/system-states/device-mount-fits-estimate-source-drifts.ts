@@ -27,7 +27,7 @@
  * The system-scope doctor output is identical to `healthy` because the
  * loopback is a per-test artefact, not a host-environment misconfiguration.
  *
- * @see adr/adr-018-free-space-pre-flight-strategy.md
+ * @see docs/adr/adr-018-free-space-pre-flight-strategy.md
  * @see test-packages/e2e-vm-tests/src/save-failure-matrix.e2e.test.ts (TASK-412 estimate-drift cell)
  * @module
  */
