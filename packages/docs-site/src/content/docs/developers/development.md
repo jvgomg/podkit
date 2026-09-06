@@ -11,14 +11,17 @@ This guide covers setting up a development environment for podkit on macOS, Linu
 
 podkit requires the following dependencies for development:
 
-| Dependency | Purpose | Required |
-|------------|---------|----------|
-| **Bun** | JavaScript runtime and package manager | Yes |
-| **libgpod** | C library for iPod database access | Yes (dev only — prebuilt binaries ship with releases) |
-| **FFmpeg** | Audio transcoding (FLAC to AAC) | Yes |
-| **GLib 2.0** | C utility library (libgpod dependency) | Yes (dev only) |
-| **libplist** | Apple property list library (libgpod dependency) | Yes (dev only) |
-| **gdk-pixbuf** | Image handling for album artwork | Yes (dev only) |
+| Dependency | Purpose | Kind |
+|------------|---------|------|
+| **Bun** | JavaScript runtime and package manager | Dev toolchain |
+| **FFmpeg** | Audio transcoding (FLAC to AAC) | Runtime dependency — users *and* contributors |
+| **libgpod** | C library for iPod database access | Prebuild library |
+| **GLib 2.0** | C utility library (libgpod dependency) | Prebuild library |
+| **libplist** | Apple property list library (libgpod dependency) | Prebuild library |
+| **gdk-pixbuf** | Image handling for album artwork | Prebuild library |
+| **pkg-config** | Locates the prebuild libraries at compile time | Prebuild tool |
+
+These kinds are defined in [`CONTEXT.md`](https://github.com/jvgomg/podkit/blob/main/CONTEXT.md). The short version: a *prebuild library* is statically linked into a native artifact and absent from the shipped result; a *prebuild tool* produces that artifact but is linked into nothing; a *runtime dependency* is shelled out to at run time and no prebuilt artifact ever removes it.
 
 :::note
 End users do **not** need libgpod, GLib, or other native libraries installed. Released versions of podkit ship prebuilt native binaries with all native dependencies statically linked. These development dependencies are only needed when modifying native code or building from a git checkout.
@@ -30,7 +33,7 @@ End users do **not** need libgpod, GLib, or other native libraries installed. Re
 |------------|-----------------|-------|
 | Bun | 1.0+ | For development; distributes as Node.js |
 | libgpod | 0.8.3 | Last release (2013), still functional |
-| FFmpeg | 4.0+ | Needs AAC encoder support |
+| FFmpeg | 4.0+ | Needs AAC encoder support. Contributors get 9.0.1 via the `mise.toml` pin |
 | GLib | 2.16+ | Required by libgpod |
 | libplist | 2.3+ | Required for newer iPod support |
 
@@ -58,17 +61,31 @@ curl -fsSL https://bun.sh/install | bash
 
 ### Step 2: Install FFmpeg
 
-Stock Homebrew FFmpeg works for running and developing podkit itself, but its bottle currently omits `libvorbis`, which the `@podkit/test-fixtures` package needs to synthesise OGG Vorbis test files. Two paths:
-
-**Quick (default Homebrew ffmpeg):**
+The repo pins FFmpeg in `mise.toml`, so the recommended path is to let mise provide it:
 
 ```bash
-brew install ffmpeg
+mise install
 ```
 
-With this, integration tests that need `libvorbis` (the mass-storage tag writer OGG Vorbis round-trip tests) will fail loudly with an install hint rather than skipping.
+This installs conda-forge's `gpl_*` FFmpeg build, which carries every encoder `@podkit/test-fixtures` asserts on — `libvorbis`, `libopus`, `libmp3lame`, `aac`, `flac` and `mjpeg`, plus `libx264` and `libvpx-vp9` for the video fixtures — identically on macOS and Linux. It sits alongside any system FFmpeg rather than replacing it.
 
-**Full encoder coverage (recommended for contributors running the full test suite):**
+It is only on `PATH` where mise is active, so either [activate mise in your shell](https://mise.jdx.dev/getting-started.html) or prefix commands with `mise exec --`.
+
+Validate your install matches what test-fixtures expects:
+
+```bash
+bun run --filter @podkit/test-fixtures check-ffmpeg
+```
+
+:::note
+This pin is for contributors only. FFmpeg is a *runtime dependency* of podkit — end users install it through their own package manager, and podkit resolves it from `PATH` (or `$FFMPEG_PATH`). Nothing about the mise pin ships to users.
+:::
+
+#### Homebrew alternative
+
+If you would rather not use mise, stock Homebrew FFmpeg works for running and developing podkit itself, but its bottle currently omits `libvorbis`, which `@podkit/test-fixtures` needs to synthesise OGG Vorbis test files. With stock FFmpeg, integration tests that need `libvorbis` (the mass-storage tag writer OGG Vorbis round-trip tests) fail loudly with an install hint rather than skipping.
+
+For full encoder coverage without mise:
 
 ```bash
 # Remove the stock ffmpeg if installed — the tap version replaces it.
@@ -80,18 +97,9 @@ brew install homebrew-ffmpeg/ffmpeg/ffmpeg --with-fdk-aac
 
 The tap requires `libvorbis`, `libopus`, and `lame` (MP3) as build deps, so they're always enabled — no `--with-libvorbis` / `--with-libopus` / `--with-libmp3lame` flags exist (or are needed). The `--with-fdk-aac` flag is optional; macOS already has the high-quality `aac_at` encoder via VideoToolbox.
 
-Validate your install matches what test-fixtures expects:
-
-```bash
-bun run --filter @podkit/test-fixtures check-ffmpeg
-```
-
-Verify AAC encoder support:
-
-```bash
-ffmpeg -encoders 2>/dev/null | grep aac
-# Should show: aac (native) and aac_at (AudioToolbox)
-```
+:::caution
+On macOS, Homebrew's FFmpeg exposes the `aac_at` (AudioToolbox) encoder. Whether the conda-forge build does has not been confirmed — check with `ffmpeg -encoders | grep aac_at`. No fixture or test requires it; it only affects which encoders `podkit doctor` reports as available. If you are working on macOS encoder selection specifically, prefer the Homebrew tap.
+:::
 
 ### Step 3: Build and Install libgpod
 
@@ -138,6 +146,10 @@ pkg-config --modversion libgpod-1.0
 ```
 
 ## Linux
+
+:::tip
+On every Linux distribution below, `ffmpeg` can come from the `mise.toml` pin instead of your package manager — run `mise install` and drop `ffmpeg` from the system package list. That gets you the same encoder set contributors on macOS have, which distro FFmpeg builds do not always match. The remaining packages are prebuild libraries and tools, and must come from the system.
+:::
 
 ### Debian / Ubuntu
 

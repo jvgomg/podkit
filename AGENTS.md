@@ -120,13 +120,18 @@ podkit device music --format json       # List music on device
 
 **For end users:** Only FFmpeg is required. libgpod is statically linked into prebuilt binaries.
 
-| Dependency | Debian/Ubuntu | macOS | Alpine | Required for |
-|------------|---------------|-------|--------|--------------|
-| FFmpeg | `ffmpeg` | `brew install ffmpeg` | `ffmpeg` | Users + developers |
-| libgpod | `libgpod-dev` | Build from source (see `tools/libgpod-macos/`) | `libgpod-dev` (community) | Development only |
-| GLib | `libglib2.0-dev` | `brew install glib` (installed as libgpod dep) | `glib-dev` | Development only |
+| Dependency | Debian/Ubuntu | macOS | Alpine | Kind |
+|------------|---------------|-------|--------|------|
+| FFmpeg | `mise install` (pinned), or `ffmpeg` | `mise install` (pinned), or see below | `ffmpeg` | Runtime dependency |
+| libgpod | `libgpod-dev` | Build from source (see `tools/libgpod-macos/`) | `libgpod-dev` (community) | Prebuild library |
+| GLib | `libglib2.0-dev` | `brew install glib` (installed as libgpod dep) | `glib-dev` | Prebuild library |
+| pkg-config | `pkg-config` | `brew install pkg-config` | `pkgconf` | Prebuild tool |
 | util-linux | Pre-installed | N/A | `lsblk` | Linux device manager |
 | Lima | N/A | `brew install lima` | N/A | Cross-platform testing |
+
+Dependency *kinds* are defined in [CONTEXT.md](CONTEXT.md). A **prebuild library** is statically linked into a native artifact and absent from the shipped result; a **prebuild tool** produces that artifact but is linked into nothing; a **runtime dependency** is shelled out to at run time and no prebuilt artifact removes it.
+
+FFmpeg is pinned in `mise.toml` (`"conda:ffmpeg"`) because `@podkit/test-fixtures` asserts on a specific encoder set that stock Homebrew FFmpeg does not satisfy. Prefer `mise install` over a system FFmpeg when developing.
 
 See [packages/docs-site/src/content/docs/developers/development.md](packages/docs-site/src/content/docs/developers/development.md) for full setup instructions.
 
