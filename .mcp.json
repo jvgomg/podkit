@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "backlog": {
+      "command": "mise",
+      "args": ["exec", "--", "backlog", "mcp", "start"]
+    }
+  }
+}
