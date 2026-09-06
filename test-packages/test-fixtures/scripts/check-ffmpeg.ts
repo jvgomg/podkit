@@ -70,13 +70,20 @@ function installHint(missing: EncoderRequirement[]): string {
   lines.push(`Missing ffmpeg encoders: ${codecs}.`);
   lines.push('');
   lines.push('test-fixtures synthesises audio across every codec podkit accepts.');
-  lines.push('Install hints:');
+  lines.push('');
+  lines.push('  Recommended (all platforms) — the repo pins a build with every');
+  lines.push('  required encoder in mise.toml:');
+  lines.push('    mise install');
+  lines.push('  Then run commands under an activated mise shell, or via `mise exec --`.');
+  lines.push('');
+  lines.push('Or install via your system package manager:');
   lines.push('');
 
   switch (pm) {
     case 'brew':
       lines.push('  macOS (detected: Homebrew)');
-      lines.push("    Homebrew's stock ffmpeg currently omits libvorbis.");
+      lines.push("    Homebrew's stock ffmpeg currently omits libvorbis, so the tap below");
+      lines.push('    is needed if you are not using the mise pin above.');
       lines.push('    Use the homebrew-ffmpeg tap, which ships libvorbis, libopus, and libmp3lame');
       lines.push('    as required dependencies (no --with-* flags needed for those):');
       lines.push(

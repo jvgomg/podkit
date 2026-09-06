@@ -4,6 +4,16 @@ lima = "2.1.1"
 rust = "latest"
 python = "3.12"
 
+# FFmpeg. Pinned via the explicit `conda:` backend rather than the bare
+# `ffmpeg` registry name: that name also resolves to an asdf plugin which
+# compiles from source, and the registry's backend order is not a contract.
+# The conda-forge `gpl_*` build (highest build number on linux-64, osx-64 and
+# osx-arm64 alike) is the one variant carrying every encoder
+# @podkit/test-fixtures asserts on — libvorbis, libopus, libmp3lame, aac, flac,
+# mjpeg, plus libx264/libvpx-vp9 for the video fixtures. Stock Homebrew ffmpeg
+# omits libvorbis, which is why contributors previously needed a brew tap.
+"conda:ffmpeg" = "9.0.1"
+
 # LSP for Claude
 "npm:typescript" = "6.0.3"
 "npm:typescript-language-server" = "5.3.0"
