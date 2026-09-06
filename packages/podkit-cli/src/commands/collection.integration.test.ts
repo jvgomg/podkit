@@ -423,3 +423,30 @@ describe('runCollectionVideo', () => {
     });
   });
 });
+
+// =============================================================================
+// collection music — heading annotation
+// =============================================================================
+
+describe('runCollectionMusic — playlist heading annotation', () => {
+  // Negative case: a directory collection has no playlist, so the stats
+  // heading must not carry a `(playlist: ...)` suffix. Positive (playlist-
+  // scoped Subsonic) coverage lives in the docker e2e suite, which has a real
+  // server to scope against.
+  //
+  // This is an integration test because it scans real generated audio
+  // fixtures off disk through the directory adapter.
+  it('does not annotate the stats heading for a collection without a playlist', async () => {
+    const ctx = makeContext({
+      music: { local: { path: AUDIO_FIXTURES_PATH } },
+      defaults: { music: 'local' },
+    });
+    const { out, stdout, exitCode } = makeOut(false);
+    await runMusic(ctx, { format: 'table' }, out);
+
+    expect(exitCode.get()).toBeUndefined();
+    const text = stdout.text();
+    expect(text).toContain("Music in collection 'local':");
+    expect(text).not.toContain('(playlist:');
+  });
+});
