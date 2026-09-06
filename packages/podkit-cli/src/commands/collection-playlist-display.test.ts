@@ -5,14 +5,18 @@
  *   - `collection list` table: PLAYLIST column shows name or '-'
  *   - `getAllCollections` resolver: playlist field populated from config
  *   - `collection info` text + JSON: playlist name + status (OK/MISSING/AMBIGUOUS/ERROR)
- *   - `collection music` heading: annotated with playlist name
+ *
+ * The `collection music` heading-annotation case lives in
+ * `collection.integration.test.ts`: it scans real generated audio fixtures off
+ * disk, so it needs the `generate-static-fixtures` turbo dependency that only
+ * `test:integration` declares.
  *
  * No real network is used. Tests that need adapter behaviour inject a fake
  * adapter factory via the `adapterFactory` parameter of `runCollectionInfo`.
  */
 
 import { describe, expect, it, mock } from 'bun:test';
-import { runCollectionInfo, runCollectionMusic, runCollectionList } from './collection.js';
+import { runCollectionInfo, runCollectionList } from './collection.js';
 import { getAllCollections } from '../resolvers/collection.js';
 import { BufferExitCodeSink, OutputContext } from '../output/index.js';
 import { runWithContext, type CliContext } from '../context.js';
@@ -99,14 +103,6 @@ function runInfo(
   return runWithContext(ctx, () =>
     runAction(out, () => runCollectionInfo(options, out, adapterFactory))
   );
-}
-
-function runMusic(
-  ctx: CliContext,
-  options: Parameters<typeof runCollectionMusic>[0],
-  out: OutputContext
-): Promise<unknown> {
-  return runWithContext(ctx, () => runAction(out, () => runCollectionMusic(options, out)));
 }
 
 function runList(
@@ -527,49 +523,5 @@ describe('runCollectionInfo — JSON playlist fields', () => {
     expect(col.playlist).toBeUndefined();
     expect(col.playlistStatus).toBeUndefined();
     expect(col.playlistTrackCount).toBeUndefined();
-  });
-});
-
-// =============================================================================
-// collection music — heading annotation
-// =============================================================================
-
-describe('runCollectionMusic — playlist heading annotation', () => {
-  it('annotates the stats heading with playlist name for playlist-scoped subsonic', async () => {
-    // We test this with a subsonic config. The adapter will try to connect()
-    // but will fail because no real server is available. However, the heading
-    // is set BEFORE the adapter is used for tracks, so we need to intercept at
-    // the CliError level. Actually, it is caught as COLLECTION_SCAN_FAILED.
-    //
-    // Better approach: test with a real directory collection that has no playlist
-    // for the negative case, and test the heading logic via the string interpolation
-    // by checking the positive case fails gracefully with a heading already set.
-    //
-    // Since runCollectionMusic tries to call adapter.connect() on a real Subsonic
-    // adapter (which will fail without a server), the heading annotation for subsonic
-    // is best verified through a unit test of the heading expression.
-    //
-    // For the text surface: we verify the heading via the stats mode on a directory
-    // collection (no playlist) to confirm it is NOT annotated, then verify the
-    // annotation expression by testing the heading string building logic separately.
-    //
-    // NOTE: Full subsonic music listing tests belong in the docker e2e suite.
-    // Here we verify the directory (no-playlist) negative case and the heading
-    // logic inferred from CollectionConfig.
-
-    // Negative case: directory collection — no playlist annotation
-    const { getStaticFixturesRoot } = await import('@podkit/test-fixtures');
-    const { join } = await import('node:path');
-    const fixturesPath = join(getStaticFixturesRoot(), 'audio');
-
-    const ctx = makeContext({ local: { path: fixturesPath } }, {}, { music: 'local' });
-    const { out, stdout, exitCode } = makeOut(false);
-    await runMusic(ctx, { format: 'table' }, out);
-
-    expect(exitCode.get()).toBeUndefined();
-    const text = stdout.text();
-    // The heading should contain the collection name but NOT "(playlist: ...)"
-    expect(text).toContain("Music in collection 'local':");
-    expect(text).not.toContain('(playlist:');
   });
 });
