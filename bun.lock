@@ -18,7 +18,7 @@
     },
     "packages/compatibility": {
       "name": "@podkit/compatibility",
-      "version": "0.0.1",
+      "version": "0.0.2",
       "dependencies": {
         "@podkit/libgpod-node": "workspace:*",
       },
@@ -36,7 +36,7 @@
     },
     "packages/device-types": {
       "name": "@podkit/device-types",
-      "version": "0.0.1",
+      "version": "0.1.0",
       "devDependencies": {
         "@types/bun": "latest",
         "bun-types": "latest",
@@ -44,7 +44,7 @@
     },
     "packages/devices-ipod": {
       "name": "@podkit/devices-ipod",
-      "version": "0.0.1",
+      "version": "0.1.0",
       "dependencies": {
         "@podkit/device-types": "workspace:*",
         "@podkit/ipod-firmware": "workspace:*",
@@ -56,7 +56,7 @@
     },
     "packages/devices-mass-storage": {
       "name": "@podkit/devices-mass-storage",
-      "version": "0.0.1",
+      "version": "0.1.0",
       "dependencies": {
         "@podkit/device-types": "workspace:*",
       },
@@ -67,7 +67,7 @@
     },
     "packages/docs-site": {
       "name": "@podkit/docs-site",
-      "version": "0.0.2",
+      "version": "0.0.3",
       "dependencies": {
         "@astrojs/starlight": "^0.33.0",
         "@podkit/compatibility": "workspace:*",
@@ -85,7 +85,7 @@
     },
     "packages/ipod-archive": {
       "name": "@podkit/ipod-archive",
-      "version": "0.0.0",
+      "version": "0.0.1",
       "dependencies": {
         "@podkit/device-types": "workspace:*",
         "@podkit/devices-ipod": "workspace:*",
@@ -114,7 +114,7 @@
     },
     "packages/ipod-firmware": {
       "name": "@podkit/ipod-firmware",
-      "version": "0.0.1",
+      "version": "0.1.0",
       "dependencies": {
         "@podkit/device-types": "workspace:*",
         "koffi": "^2.13.0",
@@ -154,7 +154,7 @@
     },
     "packages/libgpod-node": {
       "name": "@podkit/libgpod-node",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "dependencies": {
         "node-addon-api": "^8.3.1",
       },
@@ -169,7 +169,7 @@
     },
     "packages/podkit-cli": {
       "name": "podkit",
-      "version": "0.6.0",
+      "version": "0.7.0",
       "dependencies": {
         "@podkit/core": "workspace:*",
         "@podkit/device-types": "workspace:*",
@@ -194,7 +194,7 @@
     },
     "packages/podkit-core": {
       "name": "@podkit/core",
-      "version": "0.6.0",
+      "version": "0.7.0",
       "dependencies": {
         "@ctrl/video-filename-parser": "^5.4.1",
         "@podkit/device-types": "workspace:*",
@@ -216,7 +216,7 @@
     },
     "packages/podkit-daemon": {
       "name": "@podkit/daemon",
-      "version": "0.2.2",
+      "version": "0.3.0",
       "dependencies": {
         "@podkit/core": "workspace:*",
       },
@@ -227,7 +227,7 @@
     },
     "packages/podkit-docker": {
       "name": "@podkit/docker",
-      "version": "0.2.3",
+      "version": "0.3.0",
       "dependencies": {
         "@podkit/daemon": "workspace:*",
         "podkit": "workspace:*",
@@ -266,7 +266,7 @@
     },
     "test-packages/device-testing": {
       "name": "@podkit/device-testing",
-      "version": "0.0.1",
+      "version": "0.0.2",
       "bin": {
         "assert-min-tests": "./scripts/assert-min-tests.ts",
       },
@@ -284,7 +284,7 @@
     },
     "test-packages/device-testing-daemon": {
       "name": "@podkit/device-testing-daemon",
-      "version": "0.0.1",
+      "version": "0.0.2",
       "dependencies": {
         "@podkit/device-testing": "workspace:*",
       },
@@ -296,7 +296,7 @@
     },
     "test-packages/e2e-shared": {
       "name": "@podkit/e2e-shared",
-      "version": "0.0.0",
+      "version": "0.0.1",
       "dependencies": {
         "@podkit/gpod-testing": "workspace:*",
         "@podkit/test-fixtures": "workspace:*",
@@ -329,7 +329,7 @@
     },
     "test-packages/e2e-vm-tests": {
       "name": "@podkit/e2e-vm-tests",
-      "version": "0.0.0",
+      "version": "0.0.1",
       "dependencies": {
         "@podkit/core": "workspace:*",
         "@podkit/device-testing": "workspace:*",
@@ -356,7 +356,7 @@
     },
     "test-packages/lima": {
       "name": "@podkit/lima",
-      "version": "0.0.1",
+      "version": "0.0.2",
       "bin": {
         "podkit-vm": "./src/cli.ts",
       },
@@ -372,7 +372,7 @@
     },
     "test-packages/test-fixtures": {
       "name": "@podkit/test-fixtures",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "devDependencies": {
         "@types/bun": "latest",
         "bun-types": "latest",
