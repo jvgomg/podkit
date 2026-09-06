@@ -267,7 +267,7 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     // Confirmed on hardware: readable iTunesDB alongside the iTunesSD the
     // firmware plays from. libgpod does emit the bdhs iTunesSD these
     // generations use (no signing or checksum is involved — see
-    // documents/formats/itunessd-bdhs.md), but that write has never been shown
+    // docs/formats/itunessd-bdhs.md), but that write has never been shown
     // to produce a playable 3g/4g, so the tier stays read-only until it is.
     support: {
       access: 'read-only',

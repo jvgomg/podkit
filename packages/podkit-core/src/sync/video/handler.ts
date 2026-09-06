@@ -59,7 +59,7 @@ import { VideoTrackClassifier } from './classifier.js';
  * Dependency-injection seam for {@link VideoHandler}. Tests pass stubbed
  * `transcodeVideo`, `probeVideo`, and filesystem helpers so the handler can
  * be exercised without a real FFmpeg or filesystem. See
- * `agents/testing.md` §"Mocking: prefer DI over mock.module()".
+ * `docs/agents/testing.md` §"Mocking: prefer DI over mock.module()".
  *
  * Defaults pull the real implementations from sibling modules.
  */

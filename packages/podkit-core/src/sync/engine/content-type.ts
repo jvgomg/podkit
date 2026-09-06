@@ -66,7 +66,7 @@ export interface ExecutionContext {
    * Always populated by `SyncExecutor.execute()`; handlers may rely on its
    * presence in batch mode.
    *
-   * See `documents/architecture/sync/error-handling.md` §4 for the layer
+   * See `docs/architecture/sync/error-handling.md` §4 for the layer
    * responsibilities.
    */
   warningSink?: WarningSink;

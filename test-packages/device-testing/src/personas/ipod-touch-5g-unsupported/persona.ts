@@ -12,7 +12,7 @@
  * Expected outputs (capabilities, readiness, doctor JSON) live in
  * `@podkit/e2e-vm-tests/src/expectations/ipod-touch-5g-unsupported.ts` (schema v3).
  *
- * @see documents/test-devices.md §"iPod touch 5th Generation (iOS)"
+ * @see docs/test-devices.md §"iPod touch 5th Generation (iOS)"
  * @see packages/devices-ipod/src/tables/unsupported.ts (productId `12aa`)
  * @module
  */

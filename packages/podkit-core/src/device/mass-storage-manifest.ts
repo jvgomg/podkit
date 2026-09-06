@@ -36,7 +36,7 @@ export function manifestPath(mountPoint: string): string {
  * in-flight `podkit sync` that reads the manifest at `open()`, mutates
  * `managedFiles` in-memory, and writes the full manifest back at `save()`
  * will clobber this prune if both run unlocked. See
- * `documents/architecture/sync/planning.md` §6 for the writer-surfaces
+ * `docs/architecture/sync/planning.md` §6 for the writer-surfaces
  * enumeration and lock-acquisition rules.
  *
  * Behaviour:

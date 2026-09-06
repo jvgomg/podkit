@@ -30,7 +30,7 @@
  *   #15 → 'metadata — scope=device, applicableTo=[ipod]'
  *
  * @see backlog/tasks/task-304
- * @see adr/adr-013 (artwork corruption investigation)
+ * @see docs/adr/adr-013 (artwork corruption investigation)
  */
 
 import { afterEach, describe, expect, it, mock } from 'bun:test';

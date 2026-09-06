@@ -426,7 +426,7 @@ export const SAVE_FAIL_CELLS: readonly SaveFailCell[] = generateFanOut();
  *
  * ENOSPC special case: the planner-level pre-flight free-space check
  * intercepts BEFORE `save()` can fire its typed errors — see
- * `documents/architecture/sync/planning.md` "Free-space contract —
+ * `docs/architecture/sync/planning.md` "Free-space contract —
  * plan-time" + `save-transactions.md` "Free-space contract — execute-
  * time". This cell pins the plan-time envelope path; the ADR-018
  * post-sweep recompute path (sweep partial-fail + still insufficient)

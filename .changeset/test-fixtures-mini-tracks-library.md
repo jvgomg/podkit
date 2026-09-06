@@ -11,4 +11,4 @@ Each generator calls a new `requireEncoder()` guard before invoking ffmpeg. If t
 
 The mass-storage tag writer integration test (`packages/podkit-core/src/device/mass-storage-tag-writer.integration.test.ts`) drops its inline `generateOgg`, `generateOpus`, `generateFlac`, `generateM4a`, `generateMp3` helpers and the `HAS_LIBVORBIS` skip predicate. The OGG Vorbis tests now run unconditionally — they fail loudly with an install hint when libvorbis is absent rather than skipping silently.
 
-Developer docs (`docs/developers/development.md`) updated to point macOS contributors at the `homebrew-ffmpeg/ffmpeg` tap for full encoder coverage.
+Developer docs (`packages/docs-site/src/content/docs/developers/development.md`) updated to point macOS contributors at the `homebrew-ffmpeg/ffmpeg` tap for full encoder coverage.

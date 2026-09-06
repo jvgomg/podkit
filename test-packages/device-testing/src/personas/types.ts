@@ -21,12 +21,12 @@
  * Migration: every persona dropped the three fields. Tests previously
  * asserting against `persona.expected*` now import the expectation map.
  *
- * See `adr/adr-017-device-persona-fixtures.md` §"Schema v3 — May 2026".
+ * See `docs/adr/adr-017-device-persona-fixtures.md` §"Schema v3 — May 2026".
  *
  * # Schema version 2 (2026-05-23)
  *
  * Three coordinated changes versus v1. See
- * `adr/adr-017-device-persona-fixtures.md` §"Schema v2 — May 2026".
+ * `docs/adr/adr-017-device-persona-fixtures.md` §"Schema v2 — May 2026".
  *
  *   1. `usbDescriptor` extended from a flat device-level record to the full
  *      USB descriptor tree: device descriptor + configurations[] + interfaces[]
@@ -51,7 +51,7 @@
  * Per ADR-017 §"Schema versioning", schema bumps are coordinated commits
  * across the whole registry as a single coordinated commit.
  *
- * @see adr/adr-017-device-persona-fixtures.md
+ * @see docs/adr/adr-017-device-persona-fixtures.md
  * @module
  */
 
@@ -257,7 +257,7 @@ export interface LunPartitionLayout {
  * header seeds `finderInfo[6..7]` with a non-zero value so blkid
  * synthesises a UUID — without one, the Linux platform's
  * `findIpodDevices` filter drops the partition and refusal never
- * fires (see `documents/architecture/testing/vm-testing.md` §5.6).
+ * fires (see `docs/architecture/testing/vm-testing.md` §5.6).
  * `initialContent` is rejected for HFS+ (the only consumer reads the
  * volume header, never the data area); the `label` field is accepted
  * for schema symmetry but unused — the HFS+ writer does not embed a

@@ -28,7 +28,7 @@ const FIXTURE_PATH = join(
   '..',
   '..',
   '..',
-  'documents',
+  'docs',
   'sysinfo-captures',
   'nano-2g-4gb-green.xml'
 );

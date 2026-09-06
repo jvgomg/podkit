@@ -14,7 +14,7 @@
  * VM-test (Lima VM, FunctionFS gadget) is deferred behind TASK-322.05.01.
  *
  * @see backlog/tasks/task-306
- * @see adr/adr-016-test-harness-foundations.md
+ * @see docs/adr/adr-016-test-harness-foundations.md
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';

@@ -13,7 +13,7 @@
  * "iPod" in a mass-storage device path → mis-classified as a database error).
  * Typed errors close that hole and document the policy at the throw site.
  *
- * See `documents/architecture/error-handling.md` for the full responsibility
+ * See `docs/architecture/error-handling.md` for the full responsibility
  * model.
  *
  * @module
@@ -146,7 +146,7 @@ export class DatabaseWriteError extends CategorizedSyncError {
  * Carries structured detail so `--json` consumers can render without
  * scraping the message body.
  *
- * See `adr/adr-018-free-space-pre-flight-strategy.md`.
+ * See `docs/adr/adr-018-free-space-pre-flight-strategy.md`.
  */
 export class InsufficientSpaceAfterCleanup extends CategorizedSyncError {
   readonly category = 'space' as const;

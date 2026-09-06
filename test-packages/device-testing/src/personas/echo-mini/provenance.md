@@ -158,11 +158,11 @@ string, and any timestamps. Re-running the recipe is byte-identical.
 
 ## Cross-references
 
-- Inventory entry: `documents/test-devices.md` §"FiiO Snowsky Echo Mini (mass-storage DAP)"
+- Inventory entry: `docs/test-devices.md` §"FiiO Snowsky Echo Mini (mass-storage DAP)"
 - Preset definition: `packages/devices-mass-storage/src/presets/built-in.ts`
 - USB hints: `packages/devices-mass-storage/src/usb-hints.ts`
-- ADR-017: `adr/adr-017-device-persona-fixtures.md`
-- Capture playbook: `documents/persona-capture-playbook.md`
+- ADR-017: `docs/adr/adr-017-device-persona-fixtures.md`
+- Capture playbook: `docs/persona-capture-playbook.md`
 - TASK-321.02 (persona capture starter set)
 - TASK-348 — mass-storage backing-file synthesis
 - TASK-317.12 — HFS+ refusal on Linux (why FAT32)

@@ -23,7 +23,7 @@
  * recovered" from "parser failed and identity lost".
  *
  * @see packages/ipod-firmware/src/plist/parser.ts (`parsePlist` — entry point under test)
- * @see documents/persona-capture-playbook.md §"Synthesised personas (no hardware)"
+ * @see docs/persona-capture-playbook.md §"Synthesised personas (no hardware)"
  * @module
  */
 

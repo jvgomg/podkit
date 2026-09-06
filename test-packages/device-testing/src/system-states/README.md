@@ -19,7 +19,7 @@ Unit tests inject matching subprocess responses to simulate a state.
 VM tests stage the state inside the test VM via `apply-state.sh ${id}` (the
 runner copies + invokes the script through `applyState`).
 
-See [ADR-017](../../../../adr/adr-017-device-persona-fixtures.md) §"SystemState schema"
+See [ADR-017](../../../../docs/adr/adr-017-device-persona-fixtures.md) §"SystemState schema"
 for the full design rationale.
 
 ## Cross-check (don't let fixtures drift)
@@ -64,7 +64,7 @@ cross-check will catch the drift.
 5. Wire the in-VM mutation into `../../../scripts/apply-state.sh` (add a
    `apply_<state_id>` action + case branch).
 6. Reseal the baseline hash if you touched `apply-state.sh`
-   (see [`vm-doctor.ts`](../../../scripts/vm-doctor.ts)).
+   (see [`vm-doctor.ts`](../../scripts/vm-doctor.ts)).
 7. Write the `expectedDoctorSystemOutput` — see below.
 
 ## How `expectedDoctorSystemOutput` is captured and updated

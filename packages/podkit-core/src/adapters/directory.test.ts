@@ -2,7 +2,7 @@
  * Unit tests for DirectoryAdapter
  *
  * Fakes for `glob` and `music-metadata`'s `parseFile` are injected via the
- * `DirectoryAdapterDeps` constructor seam (agents/testing.md §"Mocking:
+ * `DirectoryAdapterDeps` constructor seam (docs/agents/testing.md §"Mocking:
  * prefer DI over mock.module()") so this file does not touch Bun's
  * process-global module registry.
  */

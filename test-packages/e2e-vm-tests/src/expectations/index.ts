@@ -7,7 +7,7 @@
  * per-persona modules under this directory; the registry below provides a
  * single entry point keyed by `DevicePersona.id`.
  *
- * @see adr/adr-017-device-persona-fixtures.md §"Schema v3 — May 2026"
+ * @see docs/adr/adr-017-device-persona-fixtures.md §"Schema v3 — May 2026"
  * @module
  */
 

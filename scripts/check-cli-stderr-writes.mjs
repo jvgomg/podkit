@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Convention §2a enforcement (documents/architecture/conventions.md):
+ * Convention §2a enforcement (docs/architecture/conventions.md):
  * No direct `process.stdout.write` / `process.stderr.write` inside
  * `packages/podkit-cli/src/commands/`. CLI commands must route output
  * through `OutputContext` (`out.print`, `out.error`, `out.warn`,
@@ -65,7 +65,7 @@ if (violations.length > 0) {
   for (const v of violations) console.error(`  ${v}`);
   console.error('');
   console.error(
-    'CLI commands must write through OutputContext. See documents/architecture/conventions.md §2a.'
+    'CLI commands must write through OutputContext. See docs/architecture/conventions.md §2a.'
   );
   console.error(
     'If this is a legitimate new carve-out, update both the ALLOW set in this script AND §2a.'

@@ -21,7 +21,7 @@
   **docs vs current code / CLI behavior**; changesets are only a *pointer to
   where to look*.
 - **Out of scope (decided):**
-  - Architecture docs (`documents/architecture/`) — internal, don't ship, don't
+  - Architecture docs (`docs/architecture/`) — internal, don't ship, don't
     gate. Deferred to a separate follow-up.
   - Full doc-page reconciliation net — skipped. Coverage is changeset-indexed.
   - Release branch mechanics, changeset freeze, PR-merge timing — the **user

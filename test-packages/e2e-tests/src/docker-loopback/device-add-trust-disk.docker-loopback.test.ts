@@ -1,7 +1,7 @@
 /**
  * E2E · `host-docker-image` · `local-dir` · `loopback-fat` — the shipped image
  * driving the **podkit CLI** against a real loopback FAT block device, VM-free.
- * (doc-053 Tier-4; taxonomy: documents/architecture/testing/taxonomy.md)
+ * (doc-053 Tier-4; taxonomy: docs/architecture/testing/taxonomy.md)
  *
  * # Why this is a CLI surface, not a daemon one
  *

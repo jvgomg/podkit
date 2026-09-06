@@ -10,7 +10,7 @@
  * but at the doctor system-scope layer it produces output identical to
  * `healthy`.
  *
- * @see adr/adr-017-device-persona-fixtures.md §"SystemState schema"
+ * @see docs/adr/adr-017-device-persona-fixtures.md §"SystemState schema"
  * @see test-packages/e2e-vm-tests/src/system-state-cross-check.e2e.test.ts
  * @module
  */

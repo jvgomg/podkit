@@ -74,7 +74,7 @@ Complete. `lsblkJson` populated; APM hypothesis resolved (no hidden Apple_MDFW);
 
 ## SysInfoExtended source
 
-- Origin: `documents/sysinfo-captures/nano-7g-16gb-blue-usb.xml`
+- Origin: `docs/sysinfo-captures/nano-7g-16gb-blue-usb.xml`
 - Copied to: `raw/sysinfo-extended.xml`
 - Inquiry transport used: USB (preferred; includes per-read crypto blob — otherwise content-identical to nano 7G #1)
 - Size: 47,000 bytes
@@ -85,7 +85,7 @@ Provisional. Stubs based on generation table + SIE highlights (nano 7G capabilit
 
 ## Cross-references
 
-- Inventory entry: `documents/test-devices.md` §"iPod nano 7th Generation #2 (16GB Blue)"
-- ADR-017: `adr/adr-017-device-persona-fixtures.md`
-- Capture playbook: `documents/persona-capture-playbook.md`
+- Inventory entry: `docs/test-devices.md` §"iPod nano 7th Generation #2 (16GB Blue)"
+- ADR-017: `docs/adr/adr-017-device-persona-fixtures.md`
+- Capture playbook: `docs/persona-capture-playbook.md`
 - TASK-321.02 (persona capture starter set)

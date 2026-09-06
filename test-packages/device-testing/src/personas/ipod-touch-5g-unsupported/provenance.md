@@ -37,8 +37,8 @@ Provisional. Rejection-case persona — `expectedCapabilities: null`. `expectedR
 
 ## Cross-references
 
-- Inventory entry: `documents/test-devices.md` §"iPod touch 5th Generation (iOS)"
+- Inventory entry: `docs/test-devices.md` §"iPod touch 5th Generation (iOS)"
 - Unsupported-table entry: `packages/devices-ipod/src/tables/unsupported.ts:83` (`'12aa': itouch('5th generation')`)
-- ADR-017: `adr/adr-017-device-persona-fixtures.md`
-- Capture playbook: `documents/persona-capture-playbook.md`
+- ADR-017: `docs/adr/adr-017-device-persona-fixtures.md`
+- Capture playbook: `docs/persona-capture-playbook.md`
 - TASK-321.02 (persona capture starter set)

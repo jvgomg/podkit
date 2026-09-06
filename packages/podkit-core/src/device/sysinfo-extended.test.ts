@@ -15,7 +15,7 @@ import { resolveIpodModel } from '@podkit/devices-ipod';
  * Cut-down SysInfoExtended for an iPod nano 3G (8GB Black).
  *
  * Every identifier is taken from the real capture at
- * `documents/sysinfo-captures/nano-3g-8gb-black.xml` — FireWireGUID,
+ * `docs/sysinfo-captures/nano-3g-8gb-black.xml` — FireWireGUID,
  * SerialNumber, FamilyID 12, UpdaterFamilyID 26, VisibleBuildID, DBVersion.
  *
  * `ModelNumber` is the one key that device's SysInfoExtended does not carry

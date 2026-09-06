@@ -13,7 +13,7 @@
  * different decision owned by the classifier's lossless stack.
  *
  * @see ADR-023 (Lossy Reduction Is a Down-Only, Transfer-Mode-Defaulted Axis)
- * @see documents/principles/transcoding.md
+ * @see docs/principles/transcoding.md
  * @module
  */
 

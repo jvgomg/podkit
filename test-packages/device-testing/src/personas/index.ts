@@ -1,14 +1,14 @@
 /**
  * Device persona registry.
  *
- * See `documents/persona-capture-playbook.md` for the capture workflow.
+ * See `docs/persona-capture-playbook.md` for the capture workflow.
  * Entries are listed in chronological capture order so the registry mirrors
  * the order provenance docs were written — useful when scanning recent work.
  *
  * Every entry passes through {@link validatePersona} and
  * {@link validateInitialContentExists} before being added to the map —
  * load-time surfacing of the mechanical constraints documented at
- * `documents/architecture/testing/vm-testing.md` §5. A persona that violates
+ * `docs/architecture/testing/vm-testing.md` §5. A persona that violates
  * the id/description/sourceFixture rules throws here rather than at the
  * EOVERFLOW/ENAMETOOLONG syscall inside the VM, which was historically the
  * symptom (see TASK-426 for context).

@@ -30,7 +30,7 @@
  * `prepare()` and `run()`. The runner does not auto-start the daemon — tests
  * choose when, because the daemon is per-persona.
  *
- * @see adr/adr-016-linux-vm-test-harness.md
+ * @see docs/adr/adr-016-linux-vm-test-harness.md
  * @see test-packages/device-testing-daemon/README.md
  * @module
  */

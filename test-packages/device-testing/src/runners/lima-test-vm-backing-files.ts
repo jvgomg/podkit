@@ -18,7 +18,7 @@
  * as `fstype=hfsplus` with a UUID, which is what the Linux platform's
  * `findIpodDevices` needs to include it. See
  * `synthesiseHfsplusBackingFile` below + the architecture doc
- * `documents/architecture/testing/vm-testing.md` §5.6.
+ * `docs/architecture/testing/vm-testing.md` §5.6.
  *
  * Why in-VM (vs host then `limactl copy`):
  *

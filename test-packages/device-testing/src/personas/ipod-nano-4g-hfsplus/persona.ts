@@ -37,10 +37,10 @@
  * the HOST via `runners/hfsplus-image-writer.ts` (`hfsprogs` is
  * unpackaged on arm64 in Debian bookworm, so an in-VM `mkfs.hfsplus`
  * path is impossible) and `limactl copy`'s it into the VM. See the
- * architecture doc `documents/architecture/testing/vm-testing.md` §5.6.
+ * architecture doc `docs/architecture/testing/vm-testing.md` §5.6.
  *
  * @see packages/podkit-core/src/device/filesystem-policy.ts
- * @see documents/architecture/testing/vm-testing.md
+ * @see docs/architecture/testing/vm-testing.md
  * @module
  */
 

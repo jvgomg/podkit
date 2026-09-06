@@ -3,7 +3,7 @@
  *
  * Each fixture test loads a real SysInfoExtended XML capture, runs parsePlist
  * then extractFromPlist, and asserts the values match the known hardware
- * inventory in documents/test-devices.md.
+ * inventory in docs/test-devices.md.
  */
 
 import { describe, it, expect } from 'bun:test';
@@ -13,7 +13,7 @@ import { parsePlist } from '../plist/parser.js';
 import { extractFromPlist, bigintToFireWireGuid } from './extract.js';
 
 // Resolve fixture paths relative to project root (not this file's location)
-const FIXTURES = resolve(import.meta.dir, '../../../..', 'documents/sysinfo-captures');
+const FIXTURES = resolve(import.meta.dir, '../../../..', 'docs/sysinfo-captures');
 
 function loadFixture(name: string): string {
   return readFileSync(resolve(FIXTURES, name), 'utf-8');

@@ -27,7 +27,7 @@ const SIDECAR_EXTENSIONS = ['.jpg', '.jpeg', '.png'] as const;
  * Dependency-injection seam for {@link DirectoryAdapter}. Tests pass fakes
  * for `glob` and `music-metadata`'s `parseFile` so the adapter can be
  * exercised without a real filesystem or real audio files. See
- * `agents/testing.md` §"Mocking: prefer DI over mock.module()".
+ * `docs/agents/testing.md` §"Mocking: prefer DI over mock.module()".
  *
  * Defaults pull the real implementations from `glob` and `music-metadata`.
  */

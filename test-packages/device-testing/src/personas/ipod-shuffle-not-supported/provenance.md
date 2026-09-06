@@ -53,6 +53,6 @@ reaches a state where this data could be inspected".
 - Unsupported-table entry: `packages/devices-ipod/src/tables/unsupported.ts:58` (`'1302': SHUFFLE_REASON`)
 - Readiness short-circuit: `packages/podkit-core/src/device/readiness/determine-level.ts` (`determineLevel` unsupported branch)
 - Sibling rejection personas: `ipod-touch-5g-unsupported/` (physical-capture variant), `sony-nwz-e384/` (non-Apple mass-storage variant)
-- Capture playbook: `documents/persona-capture-playbook.md` §"Synthesised personas (no hardware)"
-- ADR-017: `adr/adr-017-device-persona-fixtures.md`
+- Capture playbook: `docs/persona-capture-playbook.md` §"Synthesised personas (no hardware)"
+- ADR-017: `docs/adr/adr-017-device-persona-fixtures.md`
 - Parent task: TASK-324 Phase 5 (AC #3)

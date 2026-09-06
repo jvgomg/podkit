@@ -21,7 +21,7 @@
  * Expected outputs (capabilities, readiness, doctor JSON) live in
  * `@podkit/e2e-vm-tests/src/expectations/echo-mini.ts` (schema v3).
  *
- * @see documents/test-devices.md §"FiiO Snowsky Echo Mini (mass-storage DAP)"
+ * @see docs/test-devices.md §"FiiO Snowsky Echo Mini (mass-storage DAP)"
  * @module
  */
 

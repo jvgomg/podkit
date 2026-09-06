@@ -26,7 +26,7 @@
  * `harness:setup` writes the current hash post-install (see
  * `cmdSetup` in `harness.ts`).
  *
- * @see documents/architecture/testing/vm-build-orchestration.md
+ * @see docs/architecture/testing/vm-build-orchestration.md
  * @module
  */
 

@@ -30,7 +30,7 @@
 //     });
 //
 // The caller stages the platform-correct usb prebuild at the given absolute
-// path before invoking the build. See agents/ipod-firmware.md for the
+// path before invoking the build. See docs/agents/ipod-firmware.md for the
 // staging recipe.
 
 const NAMESPACE = 'podkit-usb-native';

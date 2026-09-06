@@ -9,4 +9,4 @@ The fix resolves the post-upgrade bitrate as `prepared.bitrate ?? source.bitrate
 
 Adds a `--force-sync-tags` bitrate backfill pass for pre-existing copied tracks whose iPod-side bitrate is 0 — symmetric with the existing artwork-hash baseline backfill. New users get correct bitrate tracking on first sync; existing users opt in with `--force-sync-tags`.
 
-Documents the upgrade-path semantics (format-upgrade gate, quality-upgrade gate, baseline write + backfill) in `documents/architecture/sync/upgrades.md`.
+Documents the upgrade-path semantics (format-upgrade gate, quality-upgrade gate, baseline write + backfill) in `docs/architecture/sync/upgrades.md`.

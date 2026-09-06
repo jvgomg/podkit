@@ -15,7 +15,7 @@
  * `@podkit/e2e-vm-tests/src/expectations/sony-nwz-e384.ts` (schema v3).
  *
  * @see devices/sony-walkman-nwz-e380.md
- * @see documents/test-devices.md §"Sony Walkman NWZ-E384 (8GB)"
+ * @see docs/test-devices.md §"Sony Walkman NWZ-E384 (8GB)"
  * @module
  */
 

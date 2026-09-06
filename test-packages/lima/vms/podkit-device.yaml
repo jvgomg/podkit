@@ -123,7 +123,7 @@ provision:
       # READ the image, which kernel-side blkid does from the on-disk magic
       # without any HFS+ userspace tools or `hfsplus.ko` kernel module.
       # See `test-packages/device-testing/src/runners/hfsplus-image-writer.ts`
-      # and `documents/architecture/testing/vm-testing.md` §5.6.
+      # and `docs/architecture/testing/vm-testing.md` §5.6.
       apt-get install -y --no-install-recommends \
         ffmpeg \
         libgpod4 \

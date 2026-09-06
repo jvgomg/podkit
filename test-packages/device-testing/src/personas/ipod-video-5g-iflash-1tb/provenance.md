@@ -13,7 +13,7 @@
 ## Mac capture session
 
 - Date / time: 2026-05-13
-- Volume: `TERAPOD` — recognized as FAT32 but **not auto-mounted** during capture (no `MountPoint` key in plist). Per `documents/test-devices.md`, manual mount target is `/private/tmp/podkit-TERAPOD`.
+- Volume: `TERAPOD` — recognized as FAT32 but **not auto-mounted** during capture (no `MountPoint` key in plist). Per `docs/test-devices.md`, manual mount target is `/private/tmp/podkit-TERAPOD`.
 - Disk: `/dev/disk4` (FDisk_partition_scheme, 1003294294016 bytes total, 2048-byte sectors)
 - Commands run:
   - `system_profiler SPUSBDataType -json` → `raw/system-profiler.json`
@@ -44,7 +44,7 @@ Deferred. Linux captures completed this session for four representative personas
 
 ## SysInfoExtended source
 
-- Origin: `documents/sysinfo-captures/ipod-5g-video-iflash-1tb.xml`
+- Origin: `docs/sysinfo-captures/ipod-5g-video-iflash-1tb.xml`
 - Copied to: `raw/sysinfo-extended.xml`
 - Inquiry transport used: SCSI (USB inquiry fails on iPod 5G — pre-nano-3G boundary)
 - Size: 9,693 bytes
@@ -95,9 +95,9 @@ any time with `bun run build:backing-file ipod-video-5g-iflash-1tb` (from
 
 ## Cross-references
 
-- Inventory entry: `documents/test-devices.md` §"iPod 5th Generation Video (iFlash 1TB mod)"
-- ADR-017: `adr/adr-017-device-persona-fixtures.md`
-- Capture playbook: `documents/persona-capture-playbook.md`
+- Inventory entry: `docs/test-devices.md` §"iPod 5th Generation Video (iFlash 1TB mod)"
+- ADR-017: `docs/adr/adr-017-device-persona-fixtures.md`
+- Capture playbook: `docs/persona-capture-playbook.md`
 - TASK-321.02 (persona capture starter set)
 - TASK-348 — mass-storage backing-file synthesis
 - TASK-317.12 — HFS+ refusal on Linux (why FAT32)

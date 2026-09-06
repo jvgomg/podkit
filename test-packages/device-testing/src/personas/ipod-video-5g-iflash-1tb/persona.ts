@@ -11,8 +11,8 @@
  * Expected outputs (capabilities, readiness, doctor JSON) live in
  * `@podkit/e2e-vm-tests/src/expectations/ipod-video-5g-iflash-1tb.ts` (schema v3).
  *
- * @see documents/test-devices.md §"iPod 5th Generation Video (iFlash 1TB mod)"
- * @see documents/sysinfo-captures/ipod-5g-video-iflash-1tb.xml
+ * @see docs/test-devices.md §"iPod 5th Generation Video (iFlash 1TB mod)"
+ * @see docs/sysinfo-captures/ipod-5g-video-iflash-1tb.xml
  * @module
  */
 

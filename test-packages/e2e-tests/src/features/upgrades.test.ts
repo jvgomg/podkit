@@ -7,7 +7,7 @@
  * - Normalization update — soundcheck / ReplayGain re-write when source
  *   values change.
  * - Format upgrade (MP3 → FLAC re-routed to transcode) — see
- *   `documents/architecture/sync/upgrades.md` for why this gate is
+ *   `docs/architecture/sync/upgrades.md` for why this gate is
  *   suppressed when the iPod track is already AAC.
  * - Quality upgrade (MP3 source bitrate rises past the iPod-stored copy) —
  *   requires both `source.bitrate` and the iPod track's persisted bitrate

@@ -19,7 +19,7 @@
  * first `add-direct-copy` of a non-trivial flac source therefore fails with
  * ENOSPC during the file copy. See save-failure-rules.ts for the assertions.
  *
- * @see adr/adr-017-device-persona-fixtures.md §"SystemState schema"
+ * @see docs/adr/adr-017-device-persona-fixtures.md §"SystemState schema"
  * @module
  */
 

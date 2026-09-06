@@ -20,7 +20,7 @@
  * developer type `bun run harness:setup` from anywhere in the tree.
  *
  * @see test-packages/lima/vms/podkit-device.yaml
- * @see agents/device-testing.md
+ * @see docs/agents/device-testing.md
  * @module
  */
 
@@ -284,7 +284,7 @@ async function cmdInstall(): Promise<number> {
 
   // 2b. podkit-debug binary — best-effort. Ships side-by-side with the
   //     production binary for e2e tests that need devPause(key) (see
-  //     documents/architecture/dev-builds.md). Treat as optional so
+  //     docs/architecture/dev-builds.md). Treat as optional so
   //     older builders that don't yet produce it stay usable.
   const podkitDebugPath = resolveDefaultPodkitDebugBinary();
   if (fs.existsSync(podkitDebugPath)) {

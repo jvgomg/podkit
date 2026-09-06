@@ -45,7 +45,7 @@
  * has an extra or a mismatched entry, the diff message names the
  * offending id(s) so the failure points straight at the drift.
  *
- * @see adr/adr-017-device-persona-fixtures.md §"SystemState schema"
+ * @see docs/adr/adr-017-device-persona-fixtures.md §"SystemState schema"
  * @see test-packages/device-testing/src/system-states/types.ts
  * @module
  */

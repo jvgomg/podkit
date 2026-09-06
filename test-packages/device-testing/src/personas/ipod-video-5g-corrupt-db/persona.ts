@@ -23,7 +23,7 @@
  *
  * @see packages/ipod-db/src/itunesdb/parser.ts (`parseDatabase`)
  * @see packages/ipod-db/src/itunesdb/records/mhbd.ts (`parseMhbd`)
- * @see documents/persona-capture-playbook.md §"Synthesised personas (no hardware)"
+ * @see docs/persona-capture-playbook.md §"Synthesised personas (no hardware)"
  * @module
  */
 

@@ -12,8 +12,8 @@
  * Importing this module auto-registers the `local-linux` runner so consumers
  * do not need to wire it themselves.
  *
- * @see adr/adr-016-linux-vm-test-harness.md
- * @see adr/adr-017-device-persona-fixtures.md
+ * @see docs/adr/adr-016-linux-vm-test-harness.md
+ * @see docs/adr/adr-017-device-persona-fixtures.md
  * @module
  */
 

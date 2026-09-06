@@ -16,7 +16,7 @@
  *     on-disk file actually gets rewritten (Bug 1: false success).
  *
  * Stubs for `ensureSysInfoExtended` and `resolveUsbDeviceFromPath` are
- * injected via the `SysInfoExtendedRepairDeps` seam (agents/testing.md
+ * injected via the `SysInfoExtendedRepairDeps` seam (docs/agents/testing.md
  * §"Mocking: prefer DI over mock.module()") so this file does not touch
  * Bun's process-global module registry.
  */

@@ -98,6 +98,6 @@ persona will produce an **empty** FAT32. unit smoke tests are unaffected
 - Shared host-probe payloads: `test-packages/device-testing/src/personas/echo-mini/raw/`
 - Backing-file synthesiser: `test-packages/device-testing/src/runners/lima-test-vm-backing-files.ts`
 - Synthesis script (manual): `test-packages/device-testing/scripts/build-backing-file.ts`
-- Capture playbook: `documents/persona-capture-playbook.md` §"Synthesised personas (no hardware)"
-- ADR-017: `adr/adr-017-device-persona-fixtures.md`
+- Capture playbook: `docs/persona-capture-playbook.md` §"Synthesised personas (no hardware)"
+- ADR-017: `docs/adr/adr-017-device-persona-fixtures.md`
 - Parent task: TASK-324 Phase 5 (AC #1 part B)

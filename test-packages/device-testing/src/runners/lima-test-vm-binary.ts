@@ -21,7 +21,7 @@
  *   `limactl` invocations without touching the host or a real VM. Production
  *   callers should leave the default in place.
  *
- * @see adr/adr-016-linux-vm-test-harness.md "Builder VM / test VM split"
+ * @see docs/adr/adr-016-linux-vm-test-harness.md "Builder VM / test VM split"
  * @see test-packages/lima/vms/podkit-device.yaml
  * @module
  */
@@ -38,7 +38,7 @@ export const DEFAULT_PODKIT_VM_PATH = '/usr/local/bin/podkit';
  * (`__PODKIT_DEV_HOOKS__=true`, hooks active). E2E tests that need to
  * pause podkit mid-flight (e.g. for SIGKILL round-trip coverage) invoke
  * this path explicitly via the e2e cli runner's `binary: 'debug'`
- * option. See `documents/architecture/dev-builds.md`.
+ * option. See `docs/architecture/dev-builds.md`.
  */
 export const DEFAULT_PODKIT_DEBUG_VM_PATH = '/usr/local/bin/podkit-debug';
 /** Default destination inside the VM for the gpod-tool helper. */

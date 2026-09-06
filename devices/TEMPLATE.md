@@ -65,7 +65,7 @@ artwork:
 # When documenting OGG-family support, name the **audio stream codec**
 # (Vorbis, Opus, OGG-FLAC), not the container. `.ogg` and `.opus` are file
 # extensions on the same OGG container — devices commonly support one
-# without the other. See docs/reference/codec-support.md for the full
+# without the other. See packages/docs-site/src/content/docs/reference/codec-support.md for the full
 # codec/container model.
 audio_formats:
   lossy:

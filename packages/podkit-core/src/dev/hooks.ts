@@ -17,7 +17,7 @@
  * tests, or any user-facing behaviour. Anyone tempted to use them for runtime
  * config: stop and use a config flag instead.
  *
- * See `documents/architecture/dev-builds.md` for the full pattern, the
+ * See `docs/architecture/dev-builds.md` for the full pattern, the
  * production-cleanliness smoke test, and the recipe for adding new hooks.
  *
  * @module

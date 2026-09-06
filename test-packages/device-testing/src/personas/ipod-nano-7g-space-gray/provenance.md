@@ -7,7 +7,7 @@
 **Capture host (Linux):** linka — Linux capture deferred (see Linux capture session below)
 **Hardware serial:** `000A270024A23E9E` (FireWire GUID; also USB serial)
 **Apple serial:** `DCYN72R8FJQ1` (serial-suffix `FJQ1` — not in podkit's serial-to-model lookup table; family + variant inferred via SCSI/USB inquiry)
-**Apple model number:** unknown — serial suffix `FJQ1` not in podkit's lookup table (see `documents/test-devices.md`)
+**Apple model number:** unknown — serial suffix `FJQ1` not in podkit's lookup table (see `docs/test-devices.md`)
 
 ## Mac capture session
 
@@ -38,7 +38,7 @@ Deferred. Linux captures completed this session for four representative personas
 
 ## SysInfoExtended source
 
-- Origin: `documents/sysinfo-captures/nano-7g-16gb-usb.xml` (preferred — playbook also lists a `-scsi.xml` for this device but USB carries 14x more data)
+- Origin: `docs/sysinfo-captures/nano-7g-16gb-usb.xml` (preferred — playbook also lists a `-scsi.xml` for this device but USB carries 14x more data)
 - Copied to: `raw/sysinfo-extended.xml`
 - Inquiry transport used: USB
 - Size: 47,100 bytes
@@ -86,9 +86,9 @@ string, and any timestamps. Re-running the recipe is byte-identical.
 
 ## Cross-references
 
-- Inventory entry: `documents/test-devices.md` §"iPod nano 7th Generation (16GB)"
-- ADR-017: `adr/adr-017-device-persona-fixtures.md`
-- Capture playbook: `documents/persona-capture-playbook.md`
+- Inventory entry: `docs/test-devices.md` §"iPod nano 7th Generation (16GB)"
+- ADR-017: `docs/adr/adr-017-device-persona-fixtures.md`
+- Capture playbook: `docs/persona-capture-playbook.md`
 - TASK-321.02 (persona capture starter set)
 - TASK-348 — mass-storage backing-file synthesis
 - TASK-317.12 — HFS+ refusal on Linux (why FAT32)

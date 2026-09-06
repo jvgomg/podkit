@@ -14,7 +14,7 @@ function repoPath(...parts: string[]): string {
 }
 
 function loadFixture(name: string): string {
-  return readFileSync(repoPath('documents/sysinfo-captures', `${name}.xml`), 'utf-8');
+  return readFileSync(repoPath('docs/sysinfo-captures', `${name}.xml`), 'utf-8');
 }
 
 /** Assert the root is a dict and return its value map. */

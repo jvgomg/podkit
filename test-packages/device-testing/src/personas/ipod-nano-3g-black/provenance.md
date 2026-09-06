@@ -77,7 +77,7 @@ Complete. `lsblkJson` field on the persona is now populated; all USB-descriptor 
 
 ## SysInfoExtended source
 
-- Origin: `documents/sysinfo-captures/nano-3g-8gb-black.xml`
+- Origin: `docs/sysinfo-captures/nano-3g-8gb-black.xml`
 - Copied to: `raw/sysinfo-extended.xml`
 - Inquiry transport used: USB (preferred — nano 3G boundary case; SIE is byte-stable across reads, no per-read crypto blob)
 - Size: 12,131 bytes
@@ -88,7 +88,7 @@ Provisional. Values stubbed from generation table (`nano_3g`: `supportsAlac: tru
 
 ## Cross-references
 
-- Inventory entry: `documents/test-devices.md` §"iPod nano 3rd Generation (8GB Black)"
-- ADR-017: `adr/adr-017-device-persona-fixtures.md`
-- Capture playbook: `documents/persona-capture-playbook.md`
+- Inventory entry: `docs/test-devices.md` §"iPod nano 3rd Generation (8GB Black)"
+- ADR-017: `docs/adr/adr-017-device-persona-fixtures.md`
+- Capture playbook: `docs/persona-capture-playbook.md`
 - TASK-321.02 (persona capture starter set)

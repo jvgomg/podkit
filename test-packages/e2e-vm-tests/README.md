@@ -2,7 +2,7 @@
 
 End-to-end tests that exercise **podkit features** against the synthesised devices produced by `@podkit/device-testing`. The harness itself (persona registry, system-state registry, the `lima-test-vm` runner, the FunctionFS daemon, the `withPersona` fixture, the bunfig-wired preflight gate) lives in `@podkit/device-testing`; this package is a pure consumer.
 
-See [ADR-016](../../adr/adr-016-linux-vm-test-harness.md) for the architecture.
+See [ADR-016](../../docs/adr/adr-016-linux-vm-test-harness.md) for the architecture.
 
 ## Why a separate package?
 
@@ -27,7 +27,7 @@ VM tests are excluded from the default `bun test` run via `bunfig.toml`. They op
 
 ## Test layout
 
-One `*.e2e.test.ts` file per podkit-feature surface under VM coverage. Each file follows the suite shape documented in [agents/device-testing.md](../../agents/device-testing.md):
+One `*.e2e.test.ts` file per podkit-feature surface under VM coverage. Each file follows the suite shape documented in [docs/agents/device-testing.md](../../docs/agents/device-testing.md):
 
 1. Group `it()` blocks under one `describe` per `SystemState` (the runner's `applyState` is the cold-path step — run it once per group, not once per test).
 2. Use `withPersona({ persona }, async () => { … })` to manage daemon lifecycle for a persona inside a test.

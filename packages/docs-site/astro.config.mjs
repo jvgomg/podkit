@@ -30,7 +30,7 @@ export default defineConfig({
   },
   vite: {
     resolve: {
-      // Allow MDX files in symlinked docs/ to resolve Starlight components
+      // Let MDX pages under src/content/docs/ resolve Starlight components
       alias: {
         '@astrojs/starlight/components': resolve(
           __dirname,

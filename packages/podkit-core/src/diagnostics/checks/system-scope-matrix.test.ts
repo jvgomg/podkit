@@ -17,7 +17,7 @@
  * subprocess, filesystem, or native binding is touched.
  *
  * @see backlog/tasks/task-301
- * @see adr/adr-017-device-persona-fixtures.md
+ * @see docs/adr/adr-017-device-persona-fixtures.md
  */
 
 import { describe, it, expect } from 'bun:test';

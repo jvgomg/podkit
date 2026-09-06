@@ -65,6 +65,6 @@ top-level `unsupportedReason` field on the `ReadinessResult` and the
 - Mass-storage unsupported table: `packages/devices-mass-storage/src/unsupported.ts` (SanDisk entry added in TASK-324)
 - Mass-storage classifier composer: `packages/devices-mass-storage/src/classify.ts` (where the SanDisk vendor lookup runs)
 - Sibling rejection personas: `ipod-shuffle-not-supported/` (Apple unsupported-PID variant), `sony-nwz-e384/` (Sony vendor-no-preset variant — same UNSUPPORTED_VENDORS path)
-- Capture playbook: `documents/persona-capture-playbook.md` §"Synthesised personas (no hardware)"
-- ADR-017: `adr/adr-017-device-persona-fixtures.md`
+- Capture playbook: `docs/persona-capture-playbook.md` §"Synthesised personas (no hardware)"
+- ADR-017: `docs/adr/adr-017-device-persona-fixtures.md`
 - Parent task: TASK-324 Phase 5 (AC #3)

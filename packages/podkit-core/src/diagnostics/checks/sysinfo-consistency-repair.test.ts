@@ -12,7 +12,7 @@
  * These tests exercise the underlying `runSysInfoExtendedRepair` runner
  * directly with `force=true` (matching how `sysinfoConsistencyCheck.repair`
  * wires it). USB resolution + `ensureSysInfoExtended` are injected via the
- * `SysInfoExtendedRepairDeps` seam (agents/testing.md §"Mocking: prefer DI
+ * `SysInfoExtendedRepairDeps` seam (docs/agents/testing.md §"Mocking: prefer DI
  * over mock.module()") so this file does not touch Bun's process-global
  * module registry.
  *

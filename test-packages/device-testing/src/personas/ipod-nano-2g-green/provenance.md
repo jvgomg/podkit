@@ -20,7 +20,7 @@
   - `sudo fdisk /dev/disk4` — read MBR partition table
 - Notes:
   - `vendor_id` reported as `"apple_vendor_id"`; encoded as `0x05ac`.
-  - **Inventory doc discrepancy:** `documents/test-devices.md` lists this device's USB Product ID as `0x1205`, but live capture reports `0x1260`. Persona uses `0x1260` (live capture is authoritative). Inventory doc should be corrected on the next sweep.
+  - **Inventory doc discrepancy:** `docs/test-devices.md` lists this device's USB Product ID as `0x1205`, but live capture reports `0x1260`. Persona uses `0x1260` (live capture is authoritative). Inventory doc should be corrected on the next sweep.
   - USB `bDeviceClass / bDeviceSubclass / bDeviceProtocol` not surfaced — set to `0` per the composite-device convention confirmed across the four sibling personas that completed Linux capture this session.
   - Single MBR partition (FAT32) starting at sector 48195. Sectors 0..48194 (~94 MiB) are unallocated reserved space holding iPod firmware — same pattern as mini 2G and iPod 5G Video. Encoded as a synthetic `index: 1, type: 'firmware'` entry.
   - Note: 2048-byte device sectors (different from mini 2G's 512 and nano 3G's 4096).
@@ -37,18 +37,18 @@ Deferred. Linux captures completed this session for four representative personas
 
 ## SysInfoExtended source
 
-- Origin: `documents/sysinfo-captures/nano-2g-4gb-green.xml`
+- Origin: `docs/sysinfo-captures/nano-2g-4gb-green.xml`
 - Copied to: `raw/sysinfo-extended.xml`
 - Inquiry transport used: SCSI (USB inquiry fails on nano 2G)
 - Size: 6,280 bytes
 
 ## Expected-* fields status
 
-Provisional. Values stubbed from generation table (`nano_2g`: `supportsAlac: false`, `supportsVideo: false`, artwork 176x132) plus iPod defaults. Audio codecs from SIE highlights in `documents/test-devices.md`: AAC, MP3, AIFF, WAV (no ALAC — diverges from generation-table default; the compute-expected pass per TASK-321.02 ACs will reconcile this).
+Provisional. Values stubbed from generation table (`nano_2g`: `supportsAlac: false`, `supportsVideo: false`, artwork 176x132) plus iPod defaults. Audio codecs from SIE highlights in `docs/test-devices.md`: AAC, MP3, AIFF, WAV (no ALAC — diverges from generation-table default; the compute-expected pass per TASK-321.02 ACs will reconcile this).
 
 ## Cross-references
 
-- Inventory entry: `documents/test-devices.md` §"iPod nano 2nd Generation (4GB Green)"
-- ADR-017: `adr/adr-017-device-persona-fixtures.md`
-- Capture playbook: `documents/persona-capture-playbook.md`
+- Inventory entry: `docs/test-devices.md` §"iPod nano 2nd Generation (4GB Green)"
+- ADR-017: `docs/adr/adr-017-device-persona-fixtures.md`
+- Capture playbook: `docs/persona-capture-playbook.md`
 - TASK-321.02 (persona capture starter set)

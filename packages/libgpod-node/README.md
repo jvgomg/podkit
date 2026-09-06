@@ -265,6 +265,6 @@ mise run tools:build
 
 ## See Also
 
-- [docs/LIBGPOD.md](../../docs/LIBGPOD.md) - libgpod research and API documentation
+- [docs/LIBGPOD.md](../../packages/docs-site/src/content/docs/developers/libgpod.md) - libgpod research and API documentation
 - [test-packages/gpod-testing/](../../test-packages/gpod-testing/) - Test utilities for iPod environments
 - [packages/podkit-core/](../podkit-core/) - High-level IpodDatabase API

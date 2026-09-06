@@ -6,7 +6,7 @@
  *
  * Fakes for `transcodeVideo`, `probeVideo`, `executor-fs` (mkdir/stat/rm),
  * and `createVideoTrackInput` / `isVideoMediaType` are injected via the
- * `VideoHandlerDeps` constructor seam (agents/testing.md §"Mocking: prefer
+ * `VideoHandlerDeps` constructor seam (docs/agents/testing.md §"Mocking: prefer
  * DI over mock.module()"). The handler can be exercised end-to-end without
  * a real FFmpeg, real filesystem, or Bun's process-global module registry.
  */

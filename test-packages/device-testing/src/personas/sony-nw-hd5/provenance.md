@@ -144,7 +144,7 @@ Deferred. Same rationale as the NW-A personas — Linux output expected to match
 - Family device profile: `devices/sony-walkman-nw-hd-series.md` (created this session)
 - Sibling Sony personas: `sony-nw-a1000`, `sony-nw-a1200`, `sony-nw-a3000` (different product line — NW-A "HDD WALKMAN")
 - Sony mass-storage Walkman: `sony-nwz-e384` (yet another Sony product line — NWZ flash Walkman, fully mass-storage compatible without SonicStage)
-- Inventory entry: `documents/test-devices.md` §"Sony Walkman NW-HD5 (20GB HDD)" (added this session)
+- Inventory entry: `docs/test-devices.md` §"Sony Walkman NW-HD5 (20GB HDD)" (added this session)
 - Schema followups: same as the NW-A personas (`deviceSerial: string | null`, `ReadinessLevel` lacks `'unsupported'`)
 
 ## Open research questions

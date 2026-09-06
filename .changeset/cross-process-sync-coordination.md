@@ -24,4 +24,4 @@ Crash-safe: the lock file is unlinked in `finally`; if a process is SIGKILLed mi
 
 **Removed internals:** `SESSION_START_MS` constant and `sessionStartMsOverride` plumbing in `pre-sync-sweep.ts` are gone — replaced wholesale by the PID-file liveness probe.
 
-See `documents/architecture/sync/planning.md` §6 for the cross-process coordination design.
+See `docs/architecture/sync/planning.md` §6 for the cross-process coordination design.

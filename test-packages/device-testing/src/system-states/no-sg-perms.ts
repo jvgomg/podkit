@@ -12,7 +12,7 @@
  * transport down, since sg-perms only gates the SCSI fallback, which
  * inquiry-methods ignores while USB is available.
  *
- * @see adr/adr-017-device-persona-fixtures.md §"SystemState schema"
+ * @see docs/adr/adr-017-device-persona-fixtures.md §"SystemState schema"
  * @see test-packages/e2e-vm-tests/src/system-state-cross-check.e2e.test.ts
  * @module
  */

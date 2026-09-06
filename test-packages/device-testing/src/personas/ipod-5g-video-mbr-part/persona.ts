@@ -23,7 +23,7 @@
  * are never bound at once (the harness runs personas serially), but a distinct
  * id keeps device-node resolution unambiguous and the intent legible.
  *
- * @see documents/test-devices.md §"iPod 5th Generation Video (iFlash 1TB mod)"
+ * @see docs/test-devices.md §"iPod 5th Generation Video (iFlash 1TB mod)"
  * @see test-packages/device-testing/src/runners/lima-test-vm-backing-files.ts (partitioned synthesis)
  * @module
  */

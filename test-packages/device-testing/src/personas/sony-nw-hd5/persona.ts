@@ -25,7 +25,7 @@
  *   - **Older `01TREE` numbering** (uses hex `0A`–`0F` ids that NW-A skips).
  *
  * @see devices/sony-walkman-nw-hd-series.md
- * @see documents/test-devices.md §"Sony Walkman NW-HD5 (20GB HDD)"
+ * @see docs/test-devices.md §"Sony Walkman NW-HD5 (20GB HDD)"
  * @module
  */
 

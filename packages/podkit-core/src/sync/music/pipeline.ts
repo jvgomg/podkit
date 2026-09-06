@@ -1471,7 +1471,7 @@ export class MusicPipeline implements SyncExecutor {
     // sync's sweep reaps the orphaned `podkit-transcode-<uuid>/`
     // scratch dir. Production builds tree-shake the entire branch —
     // neither the call nor the key string survives the bundle. See
-    // `documents/architecture/dev-builds.md`.
+    // `docs/architecture/dev-builds.md`.
     if (typeof __PODKIT_DEV_HOOKS__ !== 'undefined' && __PODKIT_DEV_HOOKS__) {
       await devPause('pre-rename-transcode');
     }

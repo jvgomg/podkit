@@ -45,7 +45,7 @@
  * `scripts/assert-min-tests.ts` for the guard that now catches a regression
  * of that shape.
  *
- * @see adr/adr-016-linux-vm-test-harness.md
+ * @see docs/adr/adr-016-linux-vm-test-harness.md
  * @module
  */
 

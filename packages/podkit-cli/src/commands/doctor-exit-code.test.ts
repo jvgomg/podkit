@@ -1,7 +1,7 @@
 /**
  * Exit-code & overall-health matrix for `podkit doctor` (TASK-308).
  *
- * Pins the decision recorded in `agents/testing.md` §"Doctor exit-code &
+ * Pins the decision recorded in `docs/agents/testing.md` §"Doctor exit-code &
  * overall-health semantics": `healthy = readinessHealthy && every check is
  * pass-or-skip`; warn counts as unhealthy; exit codes are 0 (clean), 1
  * (CliError / repair failure), 2 (ran cleanly but found issues).
