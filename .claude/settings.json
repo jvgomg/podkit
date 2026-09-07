@@ -35,5 +35,6 @@
         ]
       }
     ]
-  }
+  },
+  "enabledMcpjsonServers": ["backlog", "graphify"]
 }
