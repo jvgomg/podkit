@@ -32,7 +32,10 @@ This section contains Architecture Decision Records (ADRs) documenting significa
 | [ADR-022](./adr-022-sync-tag-sole-quality-truth.md) | The Sync Tag Is the Sole Quality Truth | Accepted | 2026-06-27 |
 | [ADR-023](./adr-023-lossy-reduction-down-only.md) | Lossy Reduction Is a Down-Only, Transfer-Mode-Defaulted Axis | Accepted | 2026-06-30 |
 | [ADR-024](./adr-024-device-access-tiers.md) | Device Support Is a Tri-State Access Tier With Orthogonal Verification Provenance | Accepted | 2026-07-05 |
+| [ADR-025](./adr-025-canonical-test-taxonomy.md) | Canonical Test Taxonomy — Depth × Surface, No Tier Numbers | Accepted | 2026-07-12 |
+| [ADR-026](./adr-026-dual-libc-linux-distribution.md) | Dual-libc Linux Distribution (glibc + musl) | Accepted | 2026-08-04 |
 | [ADR-027](./adr-027-lima-vm-substrate-consolidation.md) | Lima VM Substrate Consolidation (`@podkit/lima`) | Accepted | 2026-08-24 |
+| [ADR-028](./adr-028-substrate-agnostic-device-harness.md) | Substrate-Agnostic Device Harness | Accepted | 2026-09-07 |
 
 ## What is an ADR?
 
