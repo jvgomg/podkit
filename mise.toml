@@ -18,6 +18,11 @@ python = "3.12"
 "npm:typescript" = "6.0.3"
 "npm:typescript-language-server" = "5.3.0"
 
+# Knowledge-graph tool (see CLAUDE.md). Pinned as a project tool so every
+# clone resolves the same version, and so the committed .husky/post-commit
+# hook can find it on PATH via the mise shims.
+"pipx:graphifyy" = "0.9.55"
+
 # Backlog CLI. Pinned here rather than installed globally because .mcp.json
 # starts it as an MCP server, and a project tool is not on plain PATH - hence
 # the `mise exec` wrapper there.
