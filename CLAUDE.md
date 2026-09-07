@@ -40,9 +40,12 @@ graph is already current — so the `SessionStart` hook
   background. Agents fall back to grep meanwhile, because graphify's
   `PreToolUse` guard goes quiet when no graph is present.
 
-Claude Code branches worktrees from the remote default branch unless
-`worktree.baseRef` is `"head"`, so if you want the zero-cost path to be the norm
-rather than the exception, set that in `.claude/settings.json`.
+`.claude/settings.json` sets `worktree.baseRef: "head"`, so worktrees branch
+from the commit you are on rather than the remote default branch. That makes the
+match case — and so the zero-cost path — the norm rather than the exception, and
+it is also what subagents want when they need to operate on in-progress work.
+The cost is that a worktree inherits your current branch state instead of
+starting clean from `main`.
 
 Do not commit absolute paths into the hooks: `graphify hook install` regenerates
 `.husky/post-commit` and `.husky/post-checkout` with a machine- and
