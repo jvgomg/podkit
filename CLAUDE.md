@@ -10,10 +10,28 @@ Rules:
 - Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
 - After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
 
-Setup: graphify is pinned in `mise.toml` (`"pipx:graphifyy"`), so `mise install`
-is all a clone needs — the git hooks resolve the interpreter through
-`mise where`. Do not commit absolute paths here: `graphify hook install`
-regenerates `.husky/post-commit` and `.husky/post-checkout` with a machine- and
+Setup: nothing under `graphify-out/` is committed — it is gitignored in full,
+and each checkout builds its own. graphify itself is pinned in `mise.toml`
+(`"pipx:graphifyy"`), so a clone needs only:
+
+```bash
+mise install          # installs graphify (and bun, ffmpeg, ...)
+mise run graph:build  # builds graphify-out/ — AST-only, offline, ~45s
+```
+
+The git hooks then keep it current on every commit and branch switch. They find
+the interpreter via `mise where`, so no absolute path is committed.
+
+**Worktrees:** `.husky/post-commit` and `post-checkout` deliberately no-op in a
+worktree (they compare `git rev-parse --git-dir` against `--git-common-dir` and
+exit when they differ), and `graphify-out/` is gitignored so a new worktree
+starts without one. Run `mise run graph:build` inside the worktree if you want a
+graph there; it costs ~45s and ~23 MB, and `git worktree remove` cleans it up.
+Agents that skip this simply fall back to grep — the `PreToolUse` guard in
+`.claude/settings.json` stays silent when no graph is present.
+
+Do not commit absolute paths into the hooks: `graphify hook install` regenerates
+`.husky/post-commit` and `.husky/post-checkout` with a machine- and
 version-specific interpreter path baked in, and those files are tracked. If you
 re-run it, re-apply the portability block (the `_PINNED` mise lookup) and the
 `|| true` on `command -v graphify` — without the latter, husky's `sh -e` aborts

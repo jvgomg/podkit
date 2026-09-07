@@ -68,9 +68,13 @@ __pycache__/
 uv.lock
 
 
-# graphify
-graphify-out/cost.json
-graphify-out/cache/
-
-# ignore full for now
+# graphify — knowledge-graph output. Nothing here is committed.
+#
+# graphify's docs recommend committing graphify-out/ so a team shares one map.
+# We deliberately don't: it grows ~60 KB of packed history per code-touching
+# commit (~10 MB/month at this repo's rate, against a 23 MB history), the
+# dated backup directories graphify writes (e.g. graphify-out/2026-09-07/) are
+# ~17 MB each, and rebuilding is free, offline and takes ~45s.
+#
+# Build it after cloning with:  mise run graph:build
 graphify-out/
