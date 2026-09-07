@@ -32,6 +32,24 @@ python = "3.12"
 # Add local bin directory to PATH for project tools
 _.path = ["./bin"]
 
+[tasks."graph:build"]
+description = "Build the graphify knowledge graph (AST-only, offline, no API cost)"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+
+if ! command -v graphify >/dev/null 2>&1; then
+  echo "graphify not found. Run 'mise install' first (it is pinned in mise.toml)." >&2
+  exit 1
+fi
+
+# `update` re-extracts every code file and rewrites graphify-out/, so it works
+# equally as a first build on a fresh clone and as a refresh afterwards.
+# --force lets it overwrite a graph that has more nodes than the rebuild, which
+# is correct after a branch switch or a refactor that deleted code.
+graphify update . --force
+"""
+
 [tasks."tools:build"]
 description = "Build all native tools (gpod-tool)"
 run = """
