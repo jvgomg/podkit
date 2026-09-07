@@ -3,6 +3,10 @@
     "backlog": {
       "command": "mise",
       "args": ["exec", "--", "backlog", "mcp", "start"]
+    },
+    "graphify": {
+      "command": "mise",
+      "args": ["exec", "--", "graphify-mcp", "--graph", "graphify-out/graph.json"]
     }
   }
 }

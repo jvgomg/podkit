@@ -21,7 +21,7 @@ python = "3.12"
 # Knowledge-graph tool (see CLAUDE.md). Pinned as a project tool so every
 # clone resolves the same version, and so the committed .husky/post-commit
 # hook can find it on PATH via the mise shims.
-"pipx:graphifyy" = "0.9.55"
+"pipx:graphifyy" = { version = "0.9.55", extras = ["mcp"] }
 
 # Backlog CLI. Pinned here rather than installed globally because .mcp.json
 # starts it as an MCP server, and a project tool is not on plain PATH - hence
