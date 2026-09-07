@@ -24,11 +24,25 @@ the interpreter via `mise where`, so no absolute path is committed.
 
 **Worktrees:** `.husky/post-commit` and `post-checkout` deliberately no-op in a
 worktree (they compare `git rev-parse --git-dir` against `--git-common-dir` and
-exit when they differ), and `graphify-out/` is gitignored so a new worktree
-starts without one. Run `mise run graph:build` inside the worktree if you want a
-graph there; it costs ~45s and ~23 MB, and `git worktree remove` cleans it up.
-Agents that skip this simply fall back to grep — the `PreToolUse` guard in
-`.claude/settings.json` stays silent when no graph is present.
+exit when they differ), so nothing rebuilds the graph there automatically.
+
+Instead of rebuilding, worktrees *inherit and validate* the graph.
+`.worktreeinclude` copies `graphify-out/` into every worktree Claude Code
+creates, which takes ~0s against ~45s to build one. Copy-then-rebuild would
+save nothing — `graphify update` re-extracts ~1160 of 1486 files even when the
+graph is already current — so the `SessionStart` hook
+(`.claude/hooks/graphify-graph-check.sh`) compares `built_at_commit` in
+`graph.json` against the checkout's HEAD instead:
+
+- **match** — the copy is correct, nothing runs (the common case when the
+  worktree branches from the commit you were on).
+- **mismatch** — the graph is retired to `graph.stale.json` and rebuilt in the
+  background. Agents fall back to grep meanwhile, because graphify's
+  `PreToolUse` guard goes quiet when no graph is present.
+
+Claude Code branches worktrees from the remote default branch unless
+`worktree.baseRef` is `"head"`, so if you want the zero-cost path to be the norm
+rather than the exception, set that in `.claude/settings.json`.
 
 Do not commit absolute paths into the hooks: `graphify hook install` regenerates
 `.husky/post-commit` and `.husky/post-checkout` with a machine- and

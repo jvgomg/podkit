@@ -1,0 +1,22 @@
+# Gitignored files Claude Code copies into worktrees it creates.
+# A file is copied only if it matches a pattern here AND is gitignored.
+
+# The knowledge graph. Copying it is ~0s and makes a worktree usable
+# immediately; building one costs ~45s. Note that copy-then-rebuild saves
+# nothing — `graphify update` re-extracts ~1160 of 1486 files even when the
+# graph is already current — so the graph is validated, never refreshed:
+# graph.json records `built_at_commit`, and the SessionStart hook in
+# .claude/settings.json compares it against the checkout's HEAD and retires
+# the graph if they differ. Dated backup directories (graphify-out/<date>/,
+# ~18 MB) are deliberately not listed.
+graphify-out/graph.json
+graphify-out/manifest.json
+graphify-out/GRAPH_REPORT.md
+graphify-out/.graphify_labels.json
+graphify-out/.graphify_labels.json.sig
+graphify-out/.graphify_root
+graphify-out/cache/**
+
+# Prebuilt C helper. Rebuilding needs libgpod headers + make, and
+# @podkit/gpod-testing shells out to it, so test:unit needs it present.
+bin/gpod-tool
