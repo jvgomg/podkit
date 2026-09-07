@@ -53,7 +53,10 @@ if [ -z "$GRAPHIFY_PYTHON" ]; then
 fi
 # Third probe: resolve via the graphify launcher on PATH (shebang probe).
 if [ -z "$GRAPHIFY_PYTHON" ]; then
-    GRAPHIFY_BIN=$(command -v graphify 2>/dev/null)
+    # `|| true`: husky runs hooks with `sh -e`, and dash's `command -v`
+    # exits 127 (not 1) when the command is absent, which aborts the hook
+    # before the python3 fallback below can run.
+    GRAPHIFY_BIN=$(command -v graphify 2>/dev/null || true)
     if [ -n "$GRAPHIFY_BIN" ]; then
         case "$GRAPHIFY_BIN" in
             *.exe) _SHEBANG="" ;;
