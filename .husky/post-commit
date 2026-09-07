@@ -69,7 +69,14 @@ GRAPHIFY_PYTHON=""
 _PINNED=""
 if command -v mise >/dev/null 2>&1; then
     _GFY_MISE_DIR=$(mise where "pipx:graphifyy" 2>/dev/null || true)
-    [ -n "$_GFY_MISE_DIR" ] && _PINNED="$_GFY_MISE_DIR/graphifyy/bin/python"
+    if [ -n "$_GFY_MISE_DIR" ]; then
+        # POSIX venv layout, then the Windows one (Git Bash / MSYS).
+        if [ -x "$_GFY_MISE_DIR/graphifyy/bin/python" ]; then
+            _PINNED="$_GFY_MISE_DIR/graphifyy/bin/python"
+        elif [ -x "$_GFY_MISE_DIR/graphifyy/Scripts/python.exe" ]; then
+            _PINNED="$_GFY_MISE_DIR/graphifyy/Scripts/python.exe"
+        fi
+    fi
 fi
 if [ -n "$_PINNED" ] && [ -x "$_PINNED" ] && "$_PINNED" -c "$_GFY_PROBE" 2>/dev/null; then
     GRAPHIFY_PYTHON="$_PINNED"
