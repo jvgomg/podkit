@@ -21,7 +21,7 @@
  * @tags docker
  */
 
-import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'bun:test';
+import { it, expect, beforeAll, beforeEach, afterAll } from 'bun:test';
 import { mkdir, readdir, rm, copyFile, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -36,7 +36,7 @@ import {
 } from '@podkit/e2e-shared';
 import { withTarget } from '../targets/index.js';
 import { getTrackPath, Tracks } from '../helpers/fixtures.js';
-import { isDockerAvailable } from '../sources/subsonic.js';
+import { describeContainerSuite, isContainerRuntimeAvailable } from '../docker/availability.js';
 import { startNavidromeContainer, type NavidromeContainer } from '../docker/index.js';
 
 import type { SyncOutput } from 'podkit/types';
@@ -50,7 +50,6 @@ ensureFixturesExist('synthetic-tests');
 // Test Setup
 // =============================================================================
 
-let dockerAvailable = false;
 let navidromeContainer: NavidromeContainer | null = null;
 let tempDir: string;
 let musicDir: string;
@@ -211,10 +210,11 @@ checkArtwork = true
 }
 
 beforeAll(async () => {
-  dockerAvailable = await isDockerAvailable();
-  if (!dockerAvailable) {
-    throw new Error('Docker is not available — required for @podkit/e2e-tests docker suite.');
-  }
+  // Skip, don't fail: an environment with no container runtime has not broken
+  // anything, it just cannot cover this surface (ADR-028 §5). The suite bodies
+  // are skipped via describeContainerSuite; this guard keeps the shared setup
+  // from running for a suite that will not execute.
+  if (!isContainerRuntimeAvailable()) return;
 
   // Create temp directories + a starter fixture so Navidrome's initial scan
   // sees at least one album. beforeEach wipes this before every test.
@@ -265,7 +265,7 @@ afterAll(async () => {
 // Tests
 // =============================================================================
 
-describe('artwork change detection (Subsonic)', () => {
+describeContainerSuite('artwork change detection (Subsonic)', () => {
   it('detects changed artwork via Subsonic after re-embedding', async () => {
     await createArtworkFixtures(musicDir);
     await restartNavidrome();

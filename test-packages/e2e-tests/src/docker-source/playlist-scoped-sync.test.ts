@@ -29,7 +29,7 @@ import { randomUUID } from 'node:crypto';
 import { getStaticFixturesRoot } from '@podkit/test-fixtures';
 import { runCli, runCliJson, cleanupTempConfig } from '@podkit/e2e-shared';
 import { startNavidromeContainer, type NavidromeContainer } from '../docker/index.js';
-import { isDockerAvailable } from '../sources/subsonic.js';
+import { describeContainerSuite, isContainerRuntimeAvailable } from '../docker/availability.js';
 import { withTarget } from '../targets/index.js';
 
 import type { SyncOutput } from 'podkit/types';
@@ -71,10 +71,11 @@ let complementTrackTitle = '';
 let emptyPlaylistName = '';
 
 beforeAll(async () => {
-  const dockerAvailable = await isDockerAvailable();
-  if (!dockerAvailable) {
-    throw new Error('Docker is not available — required for @podkit/e2e-tests docker suite.');
-  }
+  // Skip, don't fail: an environment with no container runtime has not broken
+  // anything, it just cannot cover this surface (ADR-028 §5). The suite bodies
+  // are skipped via describeContainerSuite; this guard keeps the shared setup
+  // from running for a suite that will not execute.
+  if (!isContainerRuntimeAvailable()) return;
 
   tempDir = join(tmpdir(), `podkit-playlist-sync-${randomUUID()}`);
   const musicDir = join(tempDir, 'music');
@@ -238,7 +239,7 @@ music = "workout"
 // Scenario 1: Real playlist sync
 // =============================================================================
 
-describe('playlist-scoped sync', () => {
+describeContainerSuite('playlist-scoped sync', () => {
   describe('scenario 1: real playlist sync', () => {
     it('syncs only playlist tracks to device, leaving non-playlist tracks absent', async () => {
       await withTarget(async (target) => {
@@ -575,13 +576,12 @@ describe('playlist-scoped sync', () => {
 });
 
 // =============================================================================
-// Infrastructure: verify Docker gate works
+// Infrastructure: verify the container-runtime gate works
 // =============================================================================
 
-describe('Docker gate', () => {
-  it('Docker is available (this suite only runs when Docker is present)', async () => {
-    const available = await isDockerAvailable();
-    expect(available).toBe(true);
+describeContainerSuite('container-runtime gate', () => {
+  it('runs only when a container runtime is available', () => {
+    expect(isContainerRuntimeAvailable()).toBe(true);
   });
 });
 

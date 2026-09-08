@@ -12,7 +12,7 @@
  * @tags docker
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
+import { it, expect, beforeAll, afterAll } from 'bun:test';
 import { mkdtemp, rm, copyFile, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -26,7 +26,7 @@ import {
 } from '@podkit/e2e-shared';
 import { withTarget } from '../targets/index.js';
 import { getTrackPath, Tracks } from '../helpers/fixtures.js';
-import { isDockerAvailable } from '../sources/subsonic.js';
+import { describeContainerSuite, isContainerRuntimeAvailable } from '../docker/availability.js';
 import { startNavidromeContainer, type NavidromeContainer } from '../docker/index.js';
 
 requireMetaflac();
@@ -47,7 +47,6 @@ interface DeviceTrack {
 // Test Setup
 // =============================================================================
 
-let dockerAvailable = false;
 let navidromeContainer: NavidromeContainer | null = null;
 let tempDir: string;
 let serverPort: number;
@@ -96,10 +95,11 @@ async function createCompilationFixtures(musicDir: string): Promise<void> {
 }
 
 beforeAll(async () => {
-  dockerAvailable = await isDockerAvailable();
-  if (!dockerAvailable) {
-    throw new Error('Docker is not available — required for @podkit/e2e-tests docker suite.');
-  }
+  // Skip, don't fail: an environment with no container runtime has not broken
+  // anything, it just cannot cover this surface (ADR-028 §5). The suite bodies
+  // are skipped via describeContainerSuite; this guard keeps the shared setup
+  // from running for a suite that will not execute.
+  if (!isContainerRuntimeAvailable()) return;
 
   // Create temp directories and fixtures
   tempDir = join(tmpdir(), `podkit-comp-subsonic-${randomUUID()}`);
@@ -142,7 +142,7 @@ afterAll(async () => {
 // Tests
 // =============================================================================
 
-describe('compilation albums via Subsonic', () => {
+describeContainerSuite('compilation albums via Subsonic', () => {
   it('syncs compilation flag from Navidrome to iPod', async () => {
     await withTarget(async (target) => {
       // Create Subsonic config

@@ -42,13 +42,13 @@
  * @tags docker
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
+import { it, expect, beforeAll, afterAll } from 'bun:test';
 import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { runCli, runCliJson } from '@podkit/e2e-shared';
-import { isDockerAvailable } from '../sources/subsonic.js';
+import { describeContainerSuite, isContainerRuntimeAvailable } from '../docker/availability.js';
 
 /**
  * JSON success envelope produced by `podkit device add --format json`.
@@ -74,12 +74,11 @@ interface DeviceAddJsonSuccess {
 let tempDir: string;
 
 beforeAll(async () => {
-  const dockerAvailable = await isDockerAvailable();
-  if (!dockerAvailable) {
-    throw new Error(
-      'Docker is not available — required for the device-add docker suite. Run `bun run test:e2e:docker` with Docker running.'
-    );
-  }
+  // Skip, don't fail: an environment with no container runtime has not broken
+  // anything, it just cannot cover this surface (ADR-028 §5). The suite bodies
+  // are skipped via describeContainerSuite; this guard keeps the shared setup
+  // from running for a suite that will not execute.
+  if (!isContainerRuntimeAvailable()) return;
 
   tempDir = await mkdtemp(join(tmpdir(), `podkit-device-add-docker-${randomUUID().slice(0, 8)}-`));
 });
@@ -98,7 +97,7 @@ afterAll(async () => {
 // --no-validate (config-inject tier): zero device I/O
 // =============================================================================
 
-describe('podkit device add --no-validate (config-inject, Docker context)', () => {
+describeContainerSuite('podkit device add --no-validate (config-inject, Docker context)', () => {
   /**
    * Core contract: --no-validate writes a device config row from CLI args
    * with ZERO device I/O. The device does not need to exist. The iPod does not
@@ -219,7 +218,7 @@ describe('podkit device add --no-validate (config-inject, Docker context)', () =
 // --no-verify (trust-disk tier): SCSI-gap caveat documented
 // =============================================================================
 
-describe('podkit device add --no-verify (trust-disk, Docker context)', () => {
+describeContainerSuite('podkit device add --no-verify (trust-disk, Docker context)', () => {
   /**
    * CAVEAT — SCSI gap (doc-046):
    *

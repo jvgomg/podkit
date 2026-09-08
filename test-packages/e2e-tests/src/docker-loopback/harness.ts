@@ -18,7 +18,7 @@ import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { runDockerCommand } from '../docker/container-manager.js';
+import { containerRuntime, runContainerCommand } from '../docker/runtime.js';
 import { containerRegistry } from '../docker/container-registry.js';
 import { LABELS, generateContainerName } from '../docker/constants.js';
 
@@ -29,10 +29,10 @@ export interface ExecResult {
   exitCode: number;
 }
 
-/** Run `docker exec <id> sh -c <script>` and capture output + exit code (never throws on non-zero). */
+/** Run `<runtime> exec <id> sh -c <script>` and capture output + exit code (never throws on non-zero). */
 function dockerExec(containerId: string, script: string): Promise<ExecResult> {
   return new Promise((resolvePromise, reject) => {
-    const proc = spawn('docker', ['exec', containerId, 'sh', '-c', script], {
+    const proc = spawn(containerRuntime(), ['exec', containerId, 'sh', '-c', script], {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let stdout = '';
@@ -61,7 +61,7 @@ export interface LoopbackContainer {
 export async function startLoopbackContainer(image: string): Promise<LoopbackContainer> {
   const name = generateContainerName('loopback');
   const id = (
-    await runDockerCommand([
+    await runContainerCommand([
       'run',
       '-d',
       '--rm',
@@ -103,7 +103,7 @@ export async function startLoopbackContainer(image: string): Promise<LoopbackCon
         // Container already stopped — nothing to detach.
       }
       try {
-        await runDockerCommand(['stop', id]);
+        await runContainerCommand(['stop', id]);
       } finally {
         containerRegistry.unregister(id);
       }

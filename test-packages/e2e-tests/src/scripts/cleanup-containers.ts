@@ -3,9 +3,9 @@
  * Manual cleanup script for orphaned test containers.
  *
  * Usage:
- *   bun run cleanup:docker           # Remove stopped containers
- *   bun run cleanup:docker --force   # Remove all test containers (including running)
- *   bun run cleanup:docker --list    # Just list, don't remove
+ *   bun run cleanup           # Remove stopped containers
+ *   bun run cleanup:force     # Remove all test containers (including running)
+ *   bun run cleanup:list      # Just list, don't remove
  */
 
 import { cleanupOrphanContainers, findTestContainers } from '../docker/index.js';

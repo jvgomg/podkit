@@ -75,6 +75,8 @@ HOST_PREBUILDS="$REPO_ROOT/packages/libgpod-node/prebuilds"
   --exclude "packages/libgpod-node/prebuilds"
 
 log "running build-linux-glibc.sh inside '$VM_NAME'..."
+# Guest script — $ expands in the VM, not here.
+# shellcheck disable=SC2016
 limactl shell --workdir "$VM_SRC" "$VM_NAME" bash -c '
   set -euo pipefail
   HOST_PREBUILDS=$1

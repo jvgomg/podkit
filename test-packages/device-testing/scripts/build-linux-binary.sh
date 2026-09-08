@@ -77,6 +77,9 @@ VM_BIN_DIR="$VM_SRC/packages/podkit-cli/bin"
 "${PODKIT_VM[@]}" stage "$VM_NAME" --src "$REPO_ROOT" --dest "$VM_SRC"
 
 log "compiling podkit binary inside '$VM_NAME' (target=linux-${NODE_ARCH})..."
+# The single-quoted body is the *guest* script: $ must expand inside the VM,
+# not on this host. Double-quoting it here would interpolate host values.
+# shellcheck disable=SC2016
 limactl shell --workdir "$VM_SRC" "$VM_NAME" bash -c '
   set -euo pipefail
   export PATH="/usr/local/bin:$HOME/.bun/bin:$PATH"

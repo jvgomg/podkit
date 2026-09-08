@@ -129,6 +129,6 @@ export async function checkForOrphans(): Promise<void> {
         `[docker-cleanup]   ${stopped.length} stopped: ${stopped.map((c) => c.name).join(', ')}`
       );
     }
-    console.warn(`[docker-cleanup]   Run 'bun run cleanup:docker' to remove them.`);
+    console.warn(`[docker-cleanup]   Run 'bun run cleanup' to remove them.`);
   }
 }

@@ -22,6 +22,8 @@
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+# Literal on purpose: $HOME must resolve to the VM user's home, not this host's.
+# shellcheck disable=SC2016
 VM_TURBO_CACHE='$HOME/.cache/podkit-turbo'
 PODKIT_VM=(bun "$REPO_DIR/test-packages/lima/src/cli.ts")
 

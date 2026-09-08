@@ -22,7 +22,7 @@ import { randomUUID } from 'node:crypto';
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 import { getStaticFixturesRoot } from '@podkit/test-fixtures';
 import { startNavidromeContainer, type NavidromeContainer } from '../docker/index.js';
-import { isDockerAvailable } from '../sources/subsonic.js';
+import { describeContainerSuite, isContainerRuntimeAvailable } from '../docker/availability.js';
 
 // =============================================================================
 // Test Setup
@@ -32,10 +32,11 @@ let container: NavidromeContainer | null = null;
 let tempDir: string | null = null;
 
 beforeAll(async () => {
-  const dockerAvailable = await isDockerAvailable();
-  if (!dockerAvailable) {
-    throw new Error('Docker is not available — required for @podkit/e2e-tests docker suite.');
-  }
+  // Skip, don't fail: an environment with no container runtime has not broken
+  // anything, it just cannot cover this surface (ADR-028 §5). The suite bodies
+  // are skipped via describeContainerSuite; this guard keeps the shared setup
+  // from running for a suite that will not execute.
+  if (!isContainerRuntimeAvailable()) return;
 
   tempDir = join(tmpdir(), `podkit-playlist-seeding-${randomUUID()}`);
   const musicDir = join(tempDir, 'music');
@@ -78,7 +79,7 @@ afterAll(async () => {
 // Playlist-seeding harness tests
 // =============================================================================
 
-describe('NavidromeContainer playlist seeding', () => {
+describeContainerSuite('NavidromeContainer playlist seeding', () => {
   describe('listSongIds', () => {
     it('returns at least one song id after the library scan', async () => {
       const ids = await container!.listSongIds();

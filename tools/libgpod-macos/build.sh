@@ -144,9 +144,12 @@ configure_build() {
     cd "$BUILD_DIR/$LIBGPOD_DIR"
 
     # Set up environment for Homebrew
-    export PKG_CONFIG_PATH="$(brew --prefix)/lib/pkgconfig:$(brew --prefix libplist)/lib/pkgconfig:$PKG_CONFIG_PATH"
-    export CFLAGS="-I$(brew --prefix)/include -I$(brew --prefix libplist)/include"
-    export LDFLAGS="-L$(brew --prefix)/lib -L$(brew --prefix libplist)/lib"
+    # Assign then export separately: `export VAR=$(...)` masks the command
+    # substitution's exit status, so a failing `brew --prefix` would go unnoticed.
+    PKG_CONFIG_PATH="$(brew --prefix)/lib/pkgconfig:$(brew --prefix libplist)/lib/pkgconfig:$PKG_CONFIG_PATH"
+    CFLAGS="-I$(brew --prefix)/include -I$(brew --prefix libplist)/include"
+    LDFLAGS="-L$(brew --prefix)/lib -L$(brew --prefix libplist)/lib"
+    export PKG_CONFIG_PATH CFLAGS LDFLAGS
 
     # Run autoreconf to regenerate build system
     log_info "  Running autoreconf..."
@@ -172,11 +175,14 @@ build_libgpod() {
     cd "$BUILD_DIR/$LIBGPOD_DIR"
 
     # Set up environment for Homebrew
-    export PKG_CONFIG_PATH="$(brew --prefix)/lib/pkgconfig:$(brew --prefix libplist)/lib/pkgconfig:$PKG_CONFIG_PATH"
-    export CFLAGS="-I$(brew --prefix)/include -I$(brew --prefix libplist)/include"
-    export LDFLAGS="-L$(brew --prefix)/lib -L$(brew --prefix libplist)/lib"
+    # Assign then export separately: `export VAR=$(...)` masks the command
+    # substitution's exit status, so a failing `brew --prefix` would go unnoticed.
+    PKG_CONFIG_PATH="$(brew --prefix)/lib/pkgconfig:$(brew --prefix libplist)/lib/pkgconfig:$PKG_CONFIG_PATH"
+    CFLAGS="-I$(brew --prefix)/include -I$(brew --prefix libplist)/include"
+    LDFLAGS="-L$(brew --prefix)/lib -L$(brew --prefix libplist)/lib"
+    export PKG_CONFIG_PATH CFLAGS LDFLAGS
 
-    make -j$(sysctl -n hw.ncpu)
+    make -j"$(sysctl -n hw.ncpu)"
 
     log_info "Build complete"
 }
@@ -217,7 +223,8 @@ verify_install() {
     log_info "Verifying libgpod installation..."
 
     if pkg-config --exists libgpod-1.0; then
-        local version=$(pkg-config --modversion libgpod-1.0)
+        local version
+        version=$(pkg-config --modversion libgpod-1.0)
         log_info "  libgpod version: $version"
         log_info "  Include path: $(pkg-config --cflags libgpod-1.0)"
         log_info "  Library path: $(pkg-config --libs libgpod-1.0)"

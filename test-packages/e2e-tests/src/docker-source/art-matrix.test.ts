@@ -16,7 +16,8 @@
 
 import { cleanupTempConfig, ensureFixturesExist } from '@podkit/e2e-shared';
 
-import { SubsonicTestSource, isDockerAvailable } from '../sources/subsonic';
+import { SubsonicTestSource } from '../sources/subsonic';
+import { describeContainerSuite, isContainerRuntimeAvailable } from '../docker/availability.js';
 import { createSubsonicConfig } from '../helpers/subsonic-config';
 import { withTarget } from '../targets';
 import { scenarioFormatCells } from '../matrix/axes';
@@ -54,30 +55,33 @@ async function runPass(checkArtwork: boolean): Promise<Map<string, StaticArtObse
   });
 }
 
-defineMatrix({
-  title: 'artwork matrix — subsonic adapter',
-  cells: scenarioFormatCells(),
-  cellKey: staticCellKey,
-  cellLabel: staticCellLabel,
-  passes: [false, true],
-  passLabel: (pass) => `--check-artwork ${pass ? 'on' : 'off'}`,
-  predict: predictSubsonic,
-  runPass,
-  timeoutMs: 1500000,
-  setup: async () => {
-    if (!(await isDockerAvailable())) {
-      throw new Error('Docker is not available — required for the art-matrix subsonic suite.');
-    }
-    source = new SubsonicTestSource();
-    console.log('Starting Navidrome container for art matrix...');
-    await source.setup();
-    console.log(`Navidrome ready at ${source.serverUrl}`);
-  },
-  teardown: async () => {
-    if (source) {
-      console.log('Stopping Navidrome container...');
-      await source.teardown();
-      source = null;
-    }
-  },
-});
+// Skip the whole matrix rather than failing when no container runtime exists
+// (ADR-028 §5). defineMatrix registers its suites at module scope, so the
+// guard has to sit here rather than inside `setup`.
+const containerRuntimeReady = isContainerRuntimeAvailable();
+if (!containerRuntimeReady) describeContainerSuite('artwork matrix — subsonic adapter', () => {});
+if (containerRuntimeReady)
+  defineMatrix({
+    title: 'artwork matrix — subsonic adapter',
+    cells: scenarioFormatCells(),
+    cellKey: staticCellKey,
+    cellLabel: staticCellLabel,
+    passes: [false, true],
+    passLabel: (pass) => `--check-artwork ${pass ? 'on' : 'off'}`,
+    predict: predictSubsonic,
+    runPass,
+    timeoutMs: 1500000,
+    setup: async () => {
+      source = new SubsonicTestSource();
+      console.log('Starting Navidrome container for art matrix...');
+      await source.setup();
+      console.log(`Navidrome ready at ${source.serverUrl}`);
+    },
+    teardown: async () => {
+      if (source) {
+        console.log('Stopping Navidrome container...');
+        await source.teardown();
+        source = null;
+      }
+    },
+  });

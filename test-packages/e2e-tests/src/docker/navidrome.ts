@@ -116,9 +116,12 @@ export async function startNavidromeContainer(opts: NavidromeOptions): Promise<N
   const handle: ContainerHandle = await launchContainer({
     image: NAVIDROME_IMAGE,
     source: opts.label ?? 'subsonic',
-    // Port 0 lets the OS pick a free host port, avoiding conflicts when several
-    // Navidrome containers run concurrently.
-    ports: [`0:${NAVIDROME_PORT}`],
+    // A bare container port publishes to a free host port chosen by the
+    // runtime, avoiding conflicts when several Navidrome containers run
+    // concurrently. Spelled without a `0:` host side because Docker reads host
+    // port 0 as "pick one" while Podman rejects it outright; the bare form
+    // means the same thing to both.
+    ports: [`${NAVIDROME_PORT}`],
     volumes: [musicVolume, `${opts.dataDir}:/data`],
     env: [
       `ND_DEVAUTOCREATEADMINPASSWORD=${password}`,
@@ -152,7 +155,8 @@ export async function startNavidromeContainer(opts: NavidromeOptions): Promise<N
 
       await handle.restart();
 
-      // A `docker restart` with dynamic port allocation reassigns the host port.
+      // Re-read rather than reuse: Docker reassigns the host port on restart,
+      // rootless Podman on slirp4netns keeps it.
       port = await handle.hostPort(NAVIDROME_PORT);
       await waitForServer(port, password, serverTimeoutMs);
       await waitForLibraryScan(port, password, restartOpts?.minAlbums ?? minAlbums, scanTimeoutMs);

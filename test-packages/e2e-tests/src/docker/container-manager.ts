@@ -1,20 +1,20 @@
 /**
  * Container manager with automatic tracking and labeling.
  *
- * Wraps Docker operations to ensure containers are:
+ * Wraps container operations to ensure containers are:
  * - Labeled for identification
  * - Registered in the process registry
  * - Cleanable via orphan detection
  */
 
-import { spawn } from 'node:child_process';
 import { containerRegistry } from './container-registry.js';
 import { LABELS, generateContainerName } from './constants.js';
+import { runContainerCommand } from './runtime.js';
 
 export interface StartContainerOptions {
   image: string;
   source: string; // Source identifier (e.g., 'subsonic')
-  ports?: string[]; // Port mappings: ['4533:4533']
+  ports?: string[]; // Port mappings: ['4533:4533'], or ['4533'] for a random host port
   volumes?: string[]; // Volume mounts: ['/host:/container:ro']
   env?: string[]; // Environment: ['KEY=value']
   name?: string; // Override generated name
@@ -26,35 +26,12 @@ interface StartContainerResult {
 }
 
 /**
- * Run a docker command and return stdout
+ * Run a container-runtime command and return stdout.
+ *
+ * @deprecated Prefer importing `runContainerCommand` from `./runtime.js`. Kept
+ * as an alias because the name is used across the e2e suites.
  */
-export function runDockerCommand(args: string[]): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const proc = spawn('docker', args, { stdio: ['ignore', 'pipe', 'pipe'] });
-    let stdout = '';
-    let stderr = '';
-
-    proc.stdout.on('data', (data) => {
-      stdout += data.toString();
-    });
-
-    proc.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
-
-    proc.on('close', (code) => {
-      if (code === 0) {
-        resolve(stdout);
-      } else {
-        reject(new Error(`Docker command failed (exit ${code}): ${stderr || stdout}`));
-      }
-    });
-
-    proc.on('error', (err) => {
-      reject(err);
-    });
-  });
-}
+export const runDockerCommand = runContainerCommand;
 
 /**
  * Start a Docker container with automatic labeling and registration.
@@ -99,7 +76,7 @@ export async function startContainer(
   // Image must be last
   args.push(options.image);
 
-  const containerId = (await runDockerCommand(args)).trim();
+  const containerId = (await runContainerCommand(args)).trim();
 
   // Register for cleanup
   containerRegistry.register(containerId, options.source, containerName);
@@ -110,14 +87,14 @@ export async function startContainer(
 /**
  * Get the host port assigned to a container's exposed port.
  *
- * Useful when starting a container with `-p 0:<containerPort>` to let the OS
+ * Useful when starting a container with `-p <containerPort>` to let the runtime
  * pick a free host port, then querying the actual assignment afterwards.
  */
 export async function getContainerPort(
   containerId: string,
   containerPort: number
 ): Promise<number> {
-  const output = await runDockerCommand(['port', containerId, String(containerPort)]);
+  const output = await runContainerCommand(['port', containerId, String(containerPort)]);
   // Output format: "0.0.0.0:12345\n" or "[::]:12345\n" (or both lines)
   const match = output.match(/:(\d+)/);
   if (!match) {
@@ -133,7 +110,7 @@ export async function getContainerPort(
  */
 export async function stopContainer(containerId: string): Promise<void> {
   try {
-    await runDockerCommand(['stop', containerId]);
+    await runContainerCommand(['stop', containerId]);
   } finally {
     containerRegistry.unregister(containerId);
   }
