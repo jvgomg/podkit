@@ -4,7 +4,7 @@ title: Add a CI backstop that actually runs tests on push
 status: In Progress
 assignee: []
 created_date: '2026-09-07 23:36'
-updated_date: '2026-09-08 18:21'
+updated_date: '2026-09-08 19:11'
 labels:
   - testing
   - ci
@@ -38,16 +38,16 @@ This is a backstop, not the primary gate — rapid local loops remain the point,
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A CI job runs unit and integration tests on pull requests
-- [ ] #2 A CI job runs the host-binary · local-dir · dir E2E surface
-- [ ] #3 A CI job runs the docker-sidecar surface
+- [x] #1 A CI job runs unit and integration tests on pull requests
+- [x] #2 A CI job runs the host-binary · local-dir · dir E2E surface
+- [x] #3 A CI job runs the docker-sidecar surface
 - [ ] #4 Turbo caching is configured so the job is not rebuilding everything from scratch each run
-- [ ] #5 The docs-only path filter on pr-checks.yml does not cause the test job to be skipped on code-only PRs
-- [ ] #6 pr-checks.yml is deleted and the docs-site build is still covered on PRs, via turbo rather than a path filter
-- [ ] #7 //#lint hashes shell scripts and excludes node_modules/dist/build, closing the cached-green shellcheck hole
+- [x] #5 The docs-only path filter on pr-checks.yml does not cause the test job to be skipped on code-only PRs
+- [x] #6 pr-checks.yml is deleted and the docs-site build is still covered on PRs, via turbo rather than a path filter
+- [x] #7 //#lint hashes shell scripts and excludes node_modules/dist/build, closing the cached-green shellcheck hole
 - [ ] #8 TEST_CONCURRENCY and TEST_TIMEOUT are in globalPassThroughEnv, and a final tuning pass sets concurrency to the highest value that is stable
-- [ ] #9 node is pinned in mise.toml so `mise install` alone provisions a working build
-- [ ] #10 A pre-flight step fails the job when docker, gpod-tool, ffmpeg, ffprobe or metaflac is missing
+- [x] #9 node is pinned in mise.toml so `mise install` alone provisions a working build
+- [x] #10 A pre-flight step fails the job when docker, gpod-tool, ffmpeg, ffprobe or metaflac is missing
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -103,4 +103,24 @@ Turbo key uses `github.run_id` as a *deliberate* miss with `restore-keys` doing 
 The investigation surfaced a genuine product bug on the same path — native `aac` VBR discards `targetKbps`, so the quality cap is silently exceeded on every host without `aac_at`/`libfdk_aac`, including `ubuntu-latest`. Filed as task-499 (High), with the fragile encoder-calibrated e2e assertions catalogued in task-500. **task-499 does not block this task** — the e2e suite is green as it stands — but CI will be running against the buggy path from day one.
 
 **Verified locally (2026-09-08).** The four CI commands resolve to 155 turbo tasks with no `test:vm`, no `docker-loopback`, no `docker-dist`, and no `@podkit/test-fixtures#generate-fixtures` (the manual-inspection collection); only `podkit#compile`, not `compile:debug`. `//#lint` inputs went from 22,752 hashed files to 1,176 — zero from `node_modules` or `dist`, and 29 shell scripts now included, matching what `lint:shell` actually checks. `ci.yml` parses; every embedded `run` block shellchecks clean apart from a deliberate SC2012 on `ls -t` (mtime order is the point; filenames are turbo hashes), which is annotated inline. `bun run lint` 0 errors / 0 warnings; `format:check` clean apart from the six pre-existing offenders task-492 recorded.
+
+**CI green on run 5 (2026-09-08).** PR #70, run 34266500844: 9m28s wall clock, every step passing. Notably faster than the 28–40 min cold estimate — mise-action's own cache and the bun install cache both hit, and turbo replays within the run once `build` has run.
+
+AC #4 and #8 deliberately left unchecked:
+- **#4** — the caching is configured and works *within* a run, but cross-run restore is unproven: saves are main-only by design, and no main run has happened yet. Verify after the first push to main.
+- **#8** — `TEST_CONCURRENCY`/`TEST_TIMEOUT` are in `globalPassThroughEnv`, but the tuning pass has not happened. `2` was the conservative starting point and it passed twice; raising it stepwise is the remaining work.
+
+**Every one of the five runs died on a pre-existing defect, not a CI misconfiguration.** That is the finding that justifies the task:
+
+| run | died at | cause |
+|---|---|---|
+| 1 | `bun install` | `bun.lock` stale **on main** — `@types/bun` 1.4.1 vs 1.4.2. Nothing had run a frozen install since the drift; the next release would have failed. |
+| 2 | unit+integration | `@podkit/ipod-web#test:unit` read `@podkit/ipod-db`'s *generated* fixtures without declaring the turbo edge. Passed anywhere the generator had ever run. |
+| 3 | `test:e2e` | `lossy-preserve-efficiency` compared two bitrates that task-499 makes identical; failed on both attempts, so `retry = 1` did not mask it. |
+| 4 | `test:e2e:docker` | Navidrome under **rootful** Docker writes root-owned files into a bind mount the harness later wipes — EACCES. Invisible under the dev host's rootless Podman. |
+| 5 | — | green |
+
+Runs 1, 2 and 4 were latent bugs no machine in the project could have found, which is precisely the ADR-028 §6 argument.
+
+**Unresolved, raised with the owner:** `@types/bun` is `"latest"` in 21 manifests. A dist-tag is re-resolved against the registry on every install, so `--frozen-lockfile` will break again on the next upstream publish — on somebody else's unrelated PR. Options are pin-to-range, drop `--frozen-lockfile` on CI, or refresh reactively. Not decided.
 <!-- SECTION:NOTES:END -->
