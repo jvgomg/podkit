@@ -44,7 +44,7 @@
     "@podkit/device-testing": "workspace:*",
     "@podkit/gpod-testing": "workspace:*",
     "@podkit/test-fixtures": "workspace:*",
-    "@types/bun": "latest",
+    "@types/bun": "^1.4.2",
     "bats": "^1.11.1",
     "bun-types": "latest"
   }

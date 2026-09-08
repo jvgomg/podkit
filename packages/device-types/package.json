@@ -23,7 +23,7 @@
     "clean": "rm -rf dist"
   },
   "devDependencies": {
-    "@types/bun": "latest",
+    "@types/bun": "^1.4.2",
     "bun-types": "latest"
   }
 }

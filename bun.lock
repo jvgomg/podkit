@@ -30,7 +30,7 @@
         "podkit": "workspace:*",
       },
       "devDependencies": {
-        "@types/bun": "latest",
+        "@types/bun": "^1.4.2",
         "bun-types": "latest",
       },
     },
@@ -38,7 +38,7 @@
       "name": "@podkit/device-types",
       "version": "0.0.1",
       "devDependencies": {
-        "@types/bun": "latest",
+        "@types/bun": "^1.4.2",
         "bun-types": "latest",
       },
     },
@@ -50,7 +50,7 @@
         "@podkit/ipod-firmware": "workspace:*",
       },
       "devDependencies": {
-        "@types/bun": "latest",
+        "@types/bun": "^1.4.2",
         "bun-types": "latest",
       },
     },
@@ -61,7 +61,7 @@
         "@podkit/device-types": "workspace:*",
       },
       "devDependencies": {
-        "@types/bun": "latest",
+        "@types/bun": "^1.4.2",
         "bun-types": "latest",
       },
     },
@@ -97,7 +97,7 @@
       "devDependencies": {
         "@podkit/gpod-testing": "workspace:*",
         "@podkit/test-fixtures": "workspace:*",
-        "@types/bun": "latest",
+        "@types/bun": "^1.4.2",
         "@types/pngjs": "^6.0.5",
         "bun-types": "latest",
       },
@@ -108,7 +108,7 @@
       "devDependencies": {
         "@podkit/gpod-testing": "workspace:*",
         "@podkit/libgpod-node": "workspace:*",
-        "@types/bun": "latest",
+        "@types/bun": "^1.4.2",
         "bun-types": "latest",
       },
     },
@@ -121,7 +121,7 @@
         "usb": "^2.17.0",
       },
       "devDependencies": {
-        "@types/bun": "latest",
+        "@types/bun": "^1.4.2",
         "bun-types": "latest",
       },
     },
@@ -140,7 +140,7 @@
         "@podkit/ipod-db": "workspace:*",
         "@testing-library/dom": "^10.4.1",
         "@testing-library/react": "^16.0.0",
-        "@types/bun": "latest",
+        "@types/bun": "^1.4.2",
         "@types/react": "^19.0.0",
         "@types/react-dom": "^19.0.0",
         "@vitejs/plugin-react": "^4.4.0",
@@ -161,7 +161,7 @@
       "devDependencies": {
         "@podkit/gpod-testing": "workspace:*",
         "@podkit/test-fixtures": "workspace:*",
-        "@types/bun": "latest",
+        "@types/bun": "^1.4.2",
         "bun-types": "latest",
         "node-gyp": "^11.0.0",
         "prebuildify": "^6.0.1",
@@ -187,7 +187,7 @@
         "@podkit/device-testing": "workspace:*",
         "@podkit/gpod-testing": "workspace:*",
         "@podkit/test-fixtures": "workspace:*",
-        "@types/bun": "latest",
+        "@types/bun": "^1.4.2",
         "bats": "^1.11.1",
         "bun-types": "latest",
       },
@@ -210,7 +210,7 @@
       "devDependencies": {
         "@podkit/gpod-testing": "workspace:*",
         "@podkit/test-fixtures": "workspace:*",
-        "@types/bun": "latest",
+        "@types/bun": "^1.4.2",
         "bun-types": "latest",
       },
     },
@@ -221,7 +221,7 @@
         "@podkit/core": "workspace:*",
       },
       "devDependencies": {
-        "@types/bun": "latest",
+        "@types/bun": "^1.4.2",
         "bun-types": "latest",
       },
     },
@@ -260,7 +260,7 @@
         "hono": "^4.0.0",
       },
       "devDependencies": {
-        "@types/bun": "latest",
+        "@types/bun": "^1.4.2",
         "bun-types": "latest",
       },
     },
@@ -278,7 +278,7 @@
       "devDependencies": {
         "@podkit/ipod-db": "workspace:*",
         "@podkit/ipod-firmware": "workspace:*",
-        "@types/bun": "latest",
+        "@types/bun": "^1.4.2",
         "bun-types": "latest",
       },
     },
@@ -289,7 +289,7 @@
         "@podkit/device-testing": "workspace:*",
       },
       "devDependencies": {
-        "@types/bun": "latest",
+        "@types/bun": "^1.4.2",
         "bun-types": "latest",
         "typescript": "^5.9.0",
       },
@@ -302,7 +302,7 @@
         "@podkit/test-fixtures": "workspace:*",
       },
       "devDependencies": {
-        "@types/bun": "latest",
+        "@types/bun": "^1.4.2",
         "bun-types": "latest",
         "typescript": "^5.9.0",
       },
@@ -323,7 +323,7 @@
         "podkit": "workspace:*",
       },
       "devDependencies": {
-        "@types/bun": "latest",
+        "@types/bun": "^1.4.2",
         "bun-types": "latest",
       },
     },
@@ -338,7 +338,7 @@
       "devDependencies": {
         "@podkit/ipod-db": "workspace:*",
         "@podkit/ipod-firmware": "workspace:*",
-        "@types/bun": "latest",
+        "@types/bun": "^1.4.2",
         "bun-types": "latest",
       },
     },
@@ -350,7 +350,7 @@
       },
       "devDependencies": {
         "@podkit/test-fixtures": "workspace:*",
-        "@types/bun": "latest",
+        "@types/bun": "^1.4.2",
         "bun-types": "latest",
       },
     },
@@ -365,7 +365,7 @@
         "proper-lockfile": "^4.1.2",
       },
       "devDependencies": {
-        "@types/bun": "latest",
+        "@types/bun": "^1.4.2",
         "@types/proper-lockfile": "^4.1.4",
         "bun-types": "latest",
       },
@@ -374,7 +374,7 @@
       "name": "@podkit/test-fixtures",
       "version": "0.0.0",
       "devDependencies": {
-        "@types/bun": "latest",
+        "@types/bun": "^1.4.2",
         "bun-types": "latest",
         "typescript": "^5.9.0",
       },
@@ -2288,10 +2288,6 @@
     "@npmcli/agent/lru-cache": ["lru-cache@10.4.3", "", {}, "sha512-JNAzZcXrCt42VGLuYz0zfAzDfAvJWW6AfYlDBQyDV5DClI2m5sAmK+OIO7s59XfsRsWHp02jAJrRadPRGTt6SQ=="],
 
     "@pnpm/network.ca-file/graceful-fs": ["graceful-fs@4.2.10", "", {}, "sha512-9ByhssR2fPVsNZj478qUUbKfmL0+t5BDVyjShtyZZLiK7ZDAArFFfopyOTj0M05wE2tJPisA4iTnnXl2YoPvOA=="],
-
-    "@podkit/virtual-ipod-server/@types/bun": ["@types/bun@1.4.0", "", { "dependencies": { "bun-types": "1.4.0" } }, "sha512-K+lZULY23vRgK/CfTjFIV+tyifaNdSMlPh9j+6mQ/cLfpOznLyAuzgV/JQysyECpkBQLVMSyvjlr2fBUSA9wFQ=="],
-
-    "@podkit/virtual-ipod-server/bun-types": ["bun-types@1.4.0", "", { "dependencies": { "@types/node": "*" } }, "sha512-iIKw23BspnQQYd3prITOBxeUsxBHnwzX6YJfGMuNOZzeNcMmVqzIIVGRm1l69ogaPQmb4wB6BN8mA5bE9YuC5Q=="],
 
     "@rollup/pluginutils/estree-walker": ["estree-walker@2.0.2", "", {}, "sha512-Rfkk/Mp/DL7JVje3u18FxFujQlTNR2q6QfMSMB7AvCBx91NGj/ba3kCfza0f6dVDbw7YlRf/nDrn7pQrCCyQ/w=="],
 
