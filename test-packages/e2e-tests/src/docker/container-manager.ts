@@ -9,7 +9,7 @@
 
 import { containerRegistry } from './container-registry.js';
 import { LABELS, generateContainerName } from './constants.js';
-import { runContainerCommand } from './runtime.js';
+import { hostUserSpec, isRootlessRuntime, runContainerCommand } from './runtime.js';
 
 export interface StartContainerOptions {
   image: string;
@@ -18,6 +18,14 @@ export interface StartContainerOptions {
   volumes?: string[]; // Volume mounts: ['/host:/container:ro']
   env?: string[]; // Environment: ['KEY=value']
   name?: string; // Override generated name
+  /**
+   * Run the container as the host user when the runtime would otherwise run it
+   * as real root. Set this whenever the container writes into a bind-mounted
+   * host directory the test later has to delete — see the `--user` block in
+   * {@link startContainer}. Leave it off for containers that genuinely need
+   * root inside (the docker-loopback harness `mknod`s loop devices).
+   */
+  runAsHostUser?: boolean;
 }
 
 interface StartContainerResult {
@@ -57,6 +65,18 @@ export async function startContainer(
     '--label',
     LABELS.startedAt(timestamp),
   ];
+
+  // Under a rootful runtime the container's root is the host's root, so
+  // anything it writes into a bind mount is root-owned and the test user cannot
+  // remove it afterwards — `navidrome.ts`'s restart wipes its data dir and hit
+  // exactly that on CI (EACCES). Rootless runtimes already map container root
+  // to the invoking user, and passing --user there would map to a *subuid* and
+  // reintroduce the problem, so this is conditional on the probe rather than on
+  // the runtime's name.
+  if (options.runAsHostUser && !isRootlessRuntime()) {
+    const user = hostUserSpec();
+    if (user) args.push('--user', user);
+  }
 
   // Add port mappings
   for (const port of options.ports ?? []) {

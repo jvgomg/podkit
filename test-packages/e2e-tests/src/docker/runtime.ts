@@ -12,7 +12,7 @@
  * and ADR-028 for why the Linux dev host runs this surface locally at all.
  */
 
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 
 /** Environment variable selecting the container runtime binary. */
 export const CONTAINER_RUNTIME_ENV = 'PODKIT_CONTAINER_RUNTIME';
@@ -67,4 +67,61 @@ export function runContainerCommand(args: string[]): Promise<string> {
       reject(err);
     });
   });
+}
+
+/** Cached rootlessness probe result, populated once per process. */
+let rootlessCache: boolean | null = null;
+
+/**
+ * Is the configured runtime rootless — i.e. does a container's `root` map to
+ * the invoking user on the host rather than to the host's real root?
+ *
+ * This is the difference that decides file ownership on a bind mount. Rootless
+ * Podman (the Linux dev host, see docs/environments/linux-dev-host.md) writes
+ * container-root files as the invoking user, so the harness can clean them up.
+ * Rootful Docker (GitHub runners) writes them as real root, and the test user
+ * then cannot unlink them.
+ *
+ * Probed rather than inferred from the runtime's *name*: rootless Docker and
+ * rootful Podman both exist, so `docker` vs `podman` is not the question being
+ * asked. Podman exposes the answer directly; Docker only surfaces it inside
+ * `SecurityOptions`.
+ *
+ * On an unreadable answer this reports rootless, which is the fail-safe
+ * direction: it preserves the behaviour every caller had before this existed,
+ * so a runtime we cannot interrogate is never made worse than it was.
+ */
+export function isRootlessRuntime(): boolean {
+  if (rootlessCache !== null) return rootlessCache;
+
+  const podman = runtimeInfo('{{.Host.Security.Rootless}}');
+  if (podman.ok && (podman.out === 'true' || podman.out === 'false')) {
+    return (rootlessCache = podman.out === 'true');
+  }
+
+  const docker = runtimeInfo('{{.SecurityOptions}}');
+  if (docker.ok) {
+    return (rootlessCache = /name=rootless/.test(docker.out));
+  }
+
+  return (rootlessCache = true);
+}
+
+/** `<runtime> info --format <format>`, reduced to success plus trimmed stdout. */
+function runtimeInfo(format: string): { ok: boolean; out: string } {
+  const result = spawnSync(containerRuntime(), ['info', '--format', format], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  });
+  return { ok: result.status === 0, out: (result.stdout ?? '').trim() };
+}
+
+/**
+ * `uid:gid` of the current process, or null where the platform has no such
+ * concept (Windows) — in which case the caller must not pass `--user`.
+ */
+export function hostUserSpec(): string | null {
+  const uid = process.getuid?.();
+  const gid = process.getgid?.();
+  return uid === undefined || gid === undefined ? null : `${uid}:${gid}`;
 }

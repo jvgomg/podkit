@@ -7,7 +7,13 @@
  */
 
 import { describe, it, expect, afterEach } from 'bun:test';
-import { containerRuntime, CONTAINER_RUNTIME_ENV, DEFAULT_CONTAINER_RUNTIME } from './runtime.js';
+import {
+  containerRuntime,
+  hostUserSpec,
+  isRootlessRuntime,
+  CONTAINER_RUNTIME_ENV,
+  DEFAULT_CONTAINER_RUNTIME,
+} from './runtime.js';
 
 const original = process.env[CONTAINER_RUNTIME_ENV];
 
@@ -48,5 +54,24 @@ describe('containerRuntime', () => {
     expect(containerRuntime()).toBe('podman');
     process.env[CONTAINER_RUNTIME_ENV] = 'nerdctl';
     expect(containerRuntime()).toBe('nerdctl');
+  });
+});
+
+describe('hostUserSpec', () => {
+  it('renders uid:gid on a POSIX host', () => {
+    // The value is passed straight to `--user`, so the shape is the contract:
+    // anything but two integers separated by a colon is rejected by the runtime.
+    expect(hostUserSpec()).toMatch(/^\d+:\d+$/);
+  });
+});
+
+describe('isRootlessRuntime', () => {
+  it('answers with a boolean and caches it', () => {
+    // Probed by shelling out, so the only portable assertion is the shape — the
+    // answer legitimately differs between a dev host (rootless Podman) and CI
+    // (rootful Docker), which is the whole reason it is probed and not assumed.
+    const first = isRootlessRuntime();
+    expect(typeof first).toBe('boolean');
+    expect(isRootlessRuntime()).toBe(first);
   });
 });
