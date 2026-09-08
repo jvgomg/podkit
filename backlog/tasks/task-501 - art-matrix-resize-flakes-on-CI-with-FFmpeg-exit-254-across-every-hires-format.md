@@ -4,7 +4,7 @@ title: art-matrix suites flake with FFmpeg exit 254 across every hires format
 status: In Progress
 assignee: []
 created_date: '2026-09-08 19:35'
-updated_date: '2026-09-08 23:27'
+updated_date: '2026-09-08 23:54'
 labels:
   - testing
   - ci
@@ -77,7 +77,7 @@ Since the inputs were present, suspicion falls on the **output** path — a temp
 - [x] #1 The FFmpeg exit-254 cause is identified — specifically whether the missing path is an input or an output
 - [x] #2 The failure is reproducible on demand (e.g. under forced concurrency or an induced delay) rather than only observed
 - [x] #3 The race is fixed, or the test made robust to it, without weakening what it asserts about resize behaviour
-- [ ] #4 The fix is validated across enough consecutive CI runs to be meaningfully better than 1-in-4
+- [x] #4 The fix is validated across enough consecutive CI runs to be meaningfully better than 1-in-4
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -204,4 +204,36 @@ The honest numbers, probability of N consecutive greens if the old rate still he
 | 12 | 0.7% | 3.2% |
 
 AC #4 says "meaningfully better than 1-in-4", so p = 0.25 is the column that matters: **11-12 consecutive greens** to rule it out at 95%. Equivalently by the rule of three — zero failures in N trials puts the 95% upper bound at ~3/N — 12 runs bound the rate below 25%.
+
+## AC #4: the CI evidence
+
+Ran a purpose-built stress matrix (`.github/workflows/e2e-stress.yml`, 12 parallel samples per wave, ci.yml's exact env, no turbo cache — a restored `@podkit/e2e-tests#test:e2e` entry is keyed on `src/**` and would have let eleven samples replay one recorded pass).
+
+| wave | tree | `TEST_CONCURRENCY` | run | result |
+|---|---|---|---|---|
+| control | grace check removed | 2 | 34291403111 | **1 red / 12** |
+| fixed | as landed | 2 | 34291539101 | **0 red / 12** |
+| control, amplified | grace check removed | 6 | 34292069757 | 0 red / 12 |
+
+The control red is the bug by name, on the real runner:
+
+```
+"category": "transcode",
+"message": "FFmpeg exited with code 254: Error opening output
+  /tmp/podkit-transcode-679cca45-…/01-wav-track-….m4a.podkit-tmp: No such file or directory"
+```
+
+Every failing track names the **same** `podkit-transcode-679cca45-…` directory. That is the diagnosis confirmed in production rather than inferred — and it is only legible because of the `describeFFmpegFailure` change; on the old code this line read `FFmpeg exited with code 254` and named nothing. Spot-checked two fixed-wave samples to confirm they really ran (`37 passed, 0 failed`, 250s and 314s) rather than short-circuiting.
+
+**What this does and does not establish.** Twelve consecutive greens rejects a 1-in-4 rate at 95% (`0.75^12` = 3.2%), which is what AC #4 asks for, so it is checked. But the control puts the true baseline nearer 8% than 25%, and against an 8% baseline twelve greens would happen 35% of the time with nothing fixed. Fisher's exact on the pooled control condition (3 failures / 18, counting the two historical CI runs) against 0 / 12 gives **p ≈ 0.20** — the waves alone do not separate the two conditions. The dispositive evidence remains the three deterministic reproductions, which fail on the unfixed walker and run in CI's unit+integration step on every push. AC #4 is met on its own terms; it is not the reason to believe the fix.
+
+## Negative result: TEST_CONCURRENCY does not amplify this race
+
+The obvious way to make a rare flake common is more concurrent processes — more open mkdir-to-stamp windows, more sweeps, and on 4 vCPUs longer event-loop stalls widening each window. Measured against the **pre-fix** walker it went the other way: 1/12 at `TEST_CONCURRENCY=2`, **0/12 at 6**, identical hardware and trees. Whatever sets the collision rate, it is not the process count. Recorded in the workflow header so nobody spends another wave on that lever.
+
+This also walks back something asserted earlier in these notes. I called the repo owner's "the *lower* setting is worse, which is counter-intuitive" reading a coincidence of which machines run which setting. On identical hardware the lower setting is the one that reproduced. 1 versus 0 out of 12 is statistically nothing (Fisher p = 1.0), so this is not evidence *for* the original hypothesis either — but it is not the coincidence I claimed, and the mechanism behind the rate is still unexplained.
+
+## Artifacts
+
+Branches `stress/task-501-control`, `stress/task-501-control-c6` carry a DO-NOT-MERGE revert of the walker fix and exist only to make the control falsifiable. The waves' logs outlive them, so the branches can be deleted once read. `e2e-stress.yml` itself is worth keeping: it turns "is this flaky?" from weeks of organic pushes into one wave, and it now carries the negative result.
 <!-- SECTION:NOTES:END -->
