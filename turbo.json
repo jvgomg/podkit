@@ -114,7 +114,6 @@
       "dependsOn": [
         "^build",
         "podkit#compile",
-        "podkit#compile:debug",
         "@podkit/gpod-testing#generate-templates",
         "@podkit/test-fixtures#generate-static-fixtures"
       ],
@@ -125,7 +124,6 @@
       "dependsOn": [
         "^build",
         "podkit#compile",
-        "podkit#compile:debug",
         "@podkit/gpod-testing#generate-templates",
         "@podkit/test-fixtures#generate-static-fixtures"
       ],
