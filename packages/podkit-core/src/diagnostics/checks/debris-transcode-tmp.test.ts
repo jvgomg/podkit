@@ -4,15 +4,18 @@
  * The walker walks `os.tmpdir()` for `podkit-transcode-<uuid>/` dirs and
  * decides whether each one is abandoned via the `.owner` sibling file:
  *
- * - missing `.owner` → reap (pre-`.owner` legacy debris OR crash before write)
- * - malformed `.owner` → reap (treat as no owner)
- * - `.owner` PID is dead → reap (SIGKILLed prior process)
+ * - missing `.owner`, dir older than the grace window → reap (pre-`.owner`
+ *   legacy debris OR crash before write)
+ * - missing `.owner`, dir freshly touched → skip (a sibling between its
+ *   `mkdir` and its `writeOwnership`; TASK-501)
+ * - malformed `.owner` → same two cases as missing
+ * - `.owner` PID is dead → reap immediately (SIGKILLed prior process)
  * - `.owner` start-time mismatch → reap (PID reuse guard)
  * - `.owner` is the live current process → skip (sibling protection)
  */
 
 import { describe, it, expect } from 'bun:test';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, utimes, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -50,6 +53,15 @@ async function makeTranscodeDir(
   return dir;
 }
 
+/**
+ * Push a directory's mtime back so it reads as debris rather than as a
+ * sibling mid-setup. A day is far outside any plausible grace window.
+ */
+async function ageOut(dir: string): Promise<void> {
+  const old = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  await utimes(dir, old, old);
+}
+
 // ── Walker ───────────────────────────────────────────────────────────────────
 
 describe('walkAbandonedTranscodeDirs', () => {
@@ -62,10 +74,11 @@ describe('walkAbandonedTranscodeDirs', () => {
     });
   });
 
-  it('reaps dirs with no .owner file (legacy debris / pre-owner crash)', async () => {
+  it('reaps aged dirs with no .owner file (legacy debris / pre-owner crash)', async () => {
     await withFakeTmp(async (root) => {
-      await makeTranscodeDir(root, 'aaaa', { 'output.m4a': 'partial' });
+      const dir = await makeTranscodeDir(root, 'aaaa', { 'output.m4a': 'partial' });
       // No `.owner` written.
+      await ageOut(dir);
       const result = await walkAbandonedTranscodeDirs(root);
       expect(result).toHaveLength(1);
       expect(result[0]!.path).toContain('podkit-transcode-aaaa');
@@ -73,13 +86,51 @@ describe('walkAbandonedTranscodeDirs', () => {
     });
   });
 
-  it('reaps dirs with malformed .owner', async () => {
+  it('reaps aged dirs with malformed .owner', async () => {
     await withFakeTmp(async (root) => {
       const dir = await makeTranscodeDir(root, 'bad-json', { 'output.m4a': 'partial' });
       await writeFile(join(dir, '.owner'), 'not json {');
+      await ageOut(dir);
       const result = await walkAbandonedTranscodeDirs(root);
       expect(result).toHaveLength(1);
       expect(result[0]!.path).toContain('podkit-transcode-bad-json');
+    });
+  });
+
+  // TASK-501. `.owner` cannot be written in the same syscall as the mkdir
+  // that precedes it, so there is always a window where a live scratch dir
+  // has no owner marker. Reaping in that window deletes the output
+  // directory of a running sync, and every transcode after it fails with
+  // FFmpeg exit 254 (ENOENT). A missing `.owner` is only ever legitimate on
+  // debris, which is by definition not brand new — so age is what separates
+  // the two.
+  it('SKIPS a fresh dir with no .owner (sibling between mkdir and stamp)', async () => {
+    await withFakeTmp(async (root) => {
+      await makeTranscodeDir(root, 'mid-setup', { 'wip.m4a': 'still writing' });
+      const result = await walkAbandonedTranscodeDirs(root);
+      expect(result).toEqual([]);
+    });
+  });
+
+  it('SKIPS a fresh dir with a half-written .owner', async () => {
+    await withFakeTmp(async (root) => {
+      const dir = await makeTranscodeDir(root, 'half-stamped', { 'wip.m4a': 'still writing' });
+      await writeFile(join(dir, '.owner'), '{"pid":');
+      const result = await walkAbandonedTranscodeDirs(root);
+      expect(result).toEqual([]);
+    });
+  });
+
+  it('reaps a fresh dir whose .owner PID is dead, without waiting out the grace window', async () => {
+    // The grace window exists only because a missing `.owner` is ambiguous.
+    // A dead owner is not ambiguous, so freshness must not protect it —
+    // otherwise a SIGKILL leaves debris that the next sync cannot clear.
+    await withFakeTmp(async (root) => {
+      const dir = await makeTranscodeDir(root, 'fresh-dead', { 'output.m4a': 'partial' });
+      await writeOwnership(join(dir, '.owner'), { pid: 999_999, startTimeMs: Date.now() });
+      const result = await walkAbandonedTranscodeDirs(root);
+      expect(result).toHaveLength(1);
+      expect(result[0]!.path).toContain('podkit-transcode-fresh-dead');
     });
   });
 
@@ -135,11 +186,12 @@ describe('walkAbandonedTranscodeDirs', () => {
 
   it('aggregates sizes across multiple files within an abandoned dir', async () => {
     await withFakeTmp(async (root) => {
-      await makeTranscodeDir(root, 'cccc', {
+      const dir = await makeTranscodeDir(root, 'cccc', {
         'a.m4a': 'a'.repeat(100),
         'b.m4a': 'b'.repeat(50),
       });
-      // No `.owner` → abandoned.
+      // No `.owner` + aged out → abandoned.
+      await ageOut(dir);
       const result = await walkAbandonedTranscodeDirs(root);
       expect(result).toHaveLength(1);
       expect(result[0]!.bytes).toBe(150);
@@ -158,6 +210,7 @@ describe('removeAbandonedDir', () => {
   it('removes the directory and reports bytes freed', async () => {
     await withFakeTmp(async (root) => {
       const dir = await makeTranscodeDir(root, 'dddd', { 'out.m4a': 'x'.repeat(42) });
+      await ageOut(dir);
       const result = await walkAbandonedTranscodeDirs(root);
       expect(result).toHaveLength(1);
 

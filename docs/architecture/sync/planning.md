@@ -468,9 +468,26 @@ reads `.owner` for every candidate dir under `os.tmpdir()` and decides:
 
 - live owner → skip (current process OR sibling podkit process).
 - dead owner → reap (SIGKILLed prior process).
-- missing/malformed `.owner` → reap (legacy pre-`.owner` debris OR a
-  crash between `mkdir` and the ownership write — the latter only
-  leaks an empty dir, harmless).
+- missing/malformed `.owner`, dir untouched for longer than
+  `OWNERLESS_GRACE_MS` (60s) → reap (legacy pre-`.owner` debris OR a
+  crash between `mkdir` and the ownership write).
+- missing/malformed `.owner`, dir freshly touched → skip.
+
+The last rule is the fix for TASK-501. `.owner` cannot be created in the
+same syscall as the `mkdir` before it, so a live scratch dir always
+passes through a window with no owner marker. That window was originally
+dismissed as leaking "only an empty dir, harmless" — but the dir is the
+*victim's output directory* for the rest of its run, so reaping it made
+every subsequent transcode fail with FFmpeg exit 254 (ENOENT) at once,
+with `bytesTransferred: 0`. It only ever fired under CI load, where the
+gap between the two operations stretches from microseconds to whatever
+the event loop takes to come back.
+
+Age is what separates the two cases: a missing `.owner` is legitimate
+only on debris, and debris is never brand new. A dead *owner* is
+unambiguous and is still reaped on sight, so SIGKILL leftovers are
+cleared by the very next sync and the daemon behaviour below is
+unaffected.
 
 This replaces the previous mtime-based `SESSION_START_MS` floor, which
 was correct for one-shot CLI invocations but missed the daemon's own
@@ -479,7 +496,7 @@ creation, so the walker incorrectly treated them as "live sibling
 work"). The `.owner` probe is sibling-safe by construction and
 daemon-correct in the same primitive.
 
-Cross-references: TASK-402 + TASK-404.
+Cross-references: TASK-402 + TASK-404 + TASK-501.
 
 ## 7. Open work
 

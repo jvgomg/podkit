@@ -16,6 +16,7 @@ import {
   buildOpusArgs,
   buildMp3Args,
   buildFlacArgs,
+  describeFFmpegFailure,
   FFmpegNotFoundError,
   TranscodeError,
 } from './ffmpeg.js';
@@ -1426,5 +1427,49 @@ describe('AAC_PRESETS', () => {
 
   it('has only 3 presets (high, medium, low)', () => {
     expect(Object.keys(AAC_PRESETS)).toEqual(['high', 'medium', 'low']);
+  });
+});
+
+// =============================================================================
+// FFmpeg failure description
+// =============================================================================
+
+describe('describeFFmpegFailure', () => {
+  // A bare exit code is not a diagnosis. TASK-501 spent four CI runs
+  // inferring ENOENT from `254` and still could not tell an unreadable input
+  // from an unwritable output, because the sync layer reported only the
+  // number. FFmpeg says which it was on stderr; carry it.
+  it('surfaces the first FFmpeg diagnostic, stripped of its component prefix', () => {
+    const stderr = [
+      'ffmpeg version 9.0.1 Copyright (c) 2000-2026 the FFmpeg developers',
+      '  configuration: --prefix=/opt --enable-gpl',
+      'Input #0, flac, from /music/track.flac:',
+      '[out#0/ipod @ 0x55f1] Error opening output /tmp/gone/out.m4a: No such file or directory',
+      'Error opening output file /tmp/gone/out.m4a.',
+      'Error opening output files: No such file or directory',
+    ].join('\n');
+
+    expect(describeFFmpegFailure(254, stderr)).toBe(
+      'FFmpeg exited with code 254: Error opening output /tmp/gone/out.m4a: No such file or directory'
+    );
+  });
+
+  it('distinguishes an unreadable input from an unwritable output', () => {
+    const stderr = '[in#0 @ 0x55f1] Error opening input: No such file or directory';
+    expect(describeFFmpegFailure(254, stderr)).toContain('Error opening input');
+  });
+
+  it('falls back to the bare code when stderr carries no diagnostic', () => {
+    expect(describeFFmpegFailure(1, 'ffmpeg version 9.0.1\n  configuration: --prefix=/opt')).toBe(
+      'FFmpeg exited with code 1'
+    );
+    expect(describeFFmpegFailure(null, '')).toBe('FFmpeg exited with code null');
+  });
+
+  it('truncates a runaway diagnostic line', () => {
+    const long = `Error opening output ${'x'.repeat(500)}`;
+    const described = describeFFmpegFailure(254, long);
+    expect(described.length).toBeLessThan(300);
+    expect(described.endsWith('…')).toBe(true);
   });
 });

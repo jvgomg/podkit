@@ -1,10 +1,10 @@
 ---
 id: TASK-501
 title: art-matrix suites flake with FFmpeg exit 254 across every hires format
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-09-08 19:35'
-updated_date: '2026-09-08 21:12'
+updated_date: '2026-09-08 22:00'
 labels:
   - testing
   - ci
@@ -12,6 +12,17 @@ dependencies: []
 references:
   - test-packages/e2e-tests/src/features/art-matrix-resize.test.ts
   - test-packages/e2e-tests/src/matrix/artwork-rules.ts
+modified_files:
+  - packages/podkit-core/src/diagnostics/scanners/transcode-tmp-walker.ts
+  - packages/podkit-core/src/diagnostics/checks/debris-transcode-tmp.test.ts
+  - packages/podkit-core/src/sync/engine/pre-sync-sweep.test.ts
+  - >-
+    packages/podkit-core/src/sync/engine/sweep-transcode-race.integration.test.ts
+  - packages/podkit-core/src/sync/music/pipeline.ts
+  - packages/podkit-core/src/transcode/ffmpeg.ts
+  - packages/podkit-core/src/transcode/ffmpeg.test.ts
+  - docs/architecture/sync/planning.md
+  - .changeset/transcode-scratch-sweep-race.md
 priority: high
 type: bug
 ordinal: 280000
@@ -63,9 +74,9 @@ Since the inputs were present, suspicion falls on the **output** path — a temp
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The FFmpeg exit-254 cause is identified — specifically whether the missing path is an input or an output
-- [ ] #2 The failure is reproducible on demand (e.g. under forced concurrency or an induced delay) rather than only observed
-- [ ] #3 The race is fixed, or the test made robust to it, without weakening what it asserts about resize behaviour
+- [x] #1 The FFmpeg exit-254 cause is identified — specifically whether the missing path is an input or an output
+- [x] #2 The failure is reproducible on demand (e.g. under forced concurrency or an induced delay) rather than only observed
+- [x] #3 The race is fixed, or the test made robust to it, without weakening what it asserts about resize behaviour
 - [ ] #4 The fix is validated across enough consecutive CI runs to be meaningfully better than 1-in-4
 <!-- AC:END -->
 
@@ -105,4 +116,73 @@ What makes it plausible:
 Concrete way to test it: run `test:e2e` on CI at `TEST_CONCURRENCY` 1, 2 and 4 several times each via `workflow_dispatch`, and record failure rate per setting. If 1 is clean, that is strong evidence for a cross-file interaction and narrows the search to whatever the art-matrix files share — a temp path, the fixture root, or the artwork cache.
 
 This also blocks task-495 AC #8: the concurrency tuning pass must not be attempted until this is understood, or the two changes confound each other and neither result means anything.
+
+## Cause found: the pre-sync sweep deletes a sibling's live scratch directory
+
+It is the **output** path, and it is not the art-matrix suites' fault — it is a production concurrency bug in `@podkit/core` that the e2e suite is simply the only thing here that runs concurrently enough to hit.
+
+`sync/music/pipeline.ts` creates `<os.tmpdir()>/podkit-transcode-<uuid>/` and *then* writes the `.owner` marker into it:
+
+```ts
+await mkdir(transcodeDir, { recursive: true });
+// A crash between mkdir and the write below leaves the dir without an
+// `.owner` file, which the walker treats as orphaned and reaps — the
+// worst-case is a just-created empty dir gets reaped, harmless.
+await writeOwnership(join(transcodeDir, '.owner'), OWN_IDENTITY);
+```
+
+That comment is the bug. The dir is not "a just-created empty dir" — it is this process's **output directory for the rest of the run**. `walkAbandonedTranscodeDirs` classified any `podkit-transcode-*` dir with no `.owner` as debris, so a *sibling* `podkit sync` sweeping inside that window deleted it. Every subsequent transcode in the victim then wrote into a path that no longer existed.
+
+Confirmed against the real code, no timing needed — `runPreSyncSweep` + `runPreliminariesPreFlight` on a scratch dir with no `.owner` leaves the tmp root empty — and carried through a real FFmpeg run:
+
+```
+exitCode: 254
+message : FFmpeg exited with code 254: Error opening output …/podkit-transcode-gone/out.m4a: No such file or directory
+```
+
+That is the CI signature exactly — `category: "transcode"`, every track failing at once, `bytesTransferred: 0`, `retryAttempts: 0` (the failure is at the sync layer, beneath bun's `retry = 1`).
+
+### Why the observations line up
+
+- **All formats at once, `bytesTransferred: 0`, `duration: 7.56`** — one shared resource vanished for the whole pass, as the description suspected. `completed: 2` are the direct copies that need no scratch dir.
+- **Only on CI** — the window is `mkdir` → `writeFile` → `rename`, so its width is set by how long a saturated host takes to schedule the continuations between them. On a 4-vCPU runner with two files each saturating FFmpeg that stretches from microseconds to tens of milliseconds; the dev host and macOS never get slow enough.
+- **Both failures in the art-matrix family** — those files run by far the most syncs (device × transfer-mode × format), so they open the most windows *and* run the most sweeps. Likeliest victim and likeliest reaper at once.
+- **`ensureFixturesExist` passing, nothing deleting the fixture root** — correct, and why "suspicion falls on the output path" was right.
+
+### The `TEST_CONCURRENCY` hypothesis: half right
+
+Concurrency is necessary — a sibling must be sweeping while another sets up, so `TEST_CONCURRENCY=1` would have been clean. But the "the *lower* setting is worse, which is counter-intuitive" reading was a coincidence of which machines run which setting. The discriminator is host **load**, not the number: CI is the only loaded machine and happens to be the only one running 2. The 1/2/4 matrix would have shown 1 clean and told us little else.
+
+This unblocks task-495 AC #8 — the tuning pass is no longer confounded, because what it would have measured is fixed.
+
+## Fix
+
+`walkAbandonedTranscodeDirs` now leaves an `.owner`-less dir alone until it has gone `OWNERLESS_GRACE_MS` (60s) untouched. A missing `.owner` is only ever legitimate on debris — pre-`.owner` leftovers or a crash — and debris is by definition not brand new, so **age** is what separates the two cases. A *dead owner* stays unambiguous and is still reaped on sight, so SIGKILL leftovers are cleared by the very next sync and the daemon self-reaping behaviour TASK-402 added is untouched.
+
+Rejected: staging the dir under a non-matching name and `rename()`ing it into place once stamped. That closes the window for the final name but just moves it to the staging name, which then either leaks forever or needs the same grace rule — more machinery for the same guarantee.
+
+Also rewrote the pipeline comment that asserted the window was harmless; that belief is why this shipped.
+
+`docs/architecture/sync/planning.md` §"Consumer B — transcode-tmp `.owner`" updated with the fourth rule.
+
+## Diagnosability
+
+`TranscodeError` carried FFmpeg's stderr in a field the sync error report never reached, so the message was the bare `FFmpeg exited with code 254` — and 254 is `-ENOENT`, which covers *both* an unreadable input and an unwritable output. Four CI runs went into inferring what one line of stderr says outright. `describeFFmpegFailure` now folds FFmpeg's first diagnostic into the message, stripped of its `[component @ 0xADDR]` prefix (which varies run to run and would make identical failures look distinct). The next occurrence of anything in this class names its own path.
+
+## Residual, recorded not chased
+
+`isAlive` compares the owner's start time within ±2s. A false negative there — a wall-clock step between the write and the read — would reap a *live* sibling's dir with the same consequences. No evidence it has ever fired, and the tuple check is deliberate PID-reuse defence, so it is noted rather than changed.
+
+Separately: a transcode that fails with ENOENT on its own scratch dir is not retried. Having the pipeline re-create the dir on retry would have self-healed this, but it changes retry semantics for a case that should no longer arise.
+
+## Verification
+
+- `pre-sync-sweep.test.ts` — two seam tests reproducing the race deterministically: the sweep must not flag a mid-setup sibling, and a full sweep + pre-flight must leave its directory and its in-flight file on disk. Both fail on the unfixed walker.
+- `debris-transcode-tmp.test.ts` — walker-level: fresh + unmarked skipped, fresh + half-written `.owner` skipped, aged + unmarked reaped, and fresh + **dead owner** still reaped (so freshness cannot become a blanket amnesty).
+- `sweep-transcode-race.integration.test.ts` — the whole chain through a real FFmpeg: sweep the window, then transcode into the scratch dir. Fails on the unfixed walker.
+- `bun run test` 65/65 tasks, `bun run test:e2e` 37/37, lint + typecheck + prettier clean.
+
+## AC #4 is deliberately left open
+
+It asks for validation across consecutive CI runs, which cannot be done from here — it needs runs after this merges. The deterministic reproductions above are stronger evidence than a run count, but they are not the thing the AC asks for, so the task stays In Progress until CI has actually been watched. Suggested bar: 6 consecutive green `test:e2e` runs on `main`, which at the observed ~33% would be a 1-in-730 fluke.
 <!-- SECTION:NOTES:END -->

@@ -686,10 +686,15 @@ export class MusicPipeline implements SyncExecutor {
         await mkdir(transcodeDir, { recursive: true });
         // Stamp ownership BEFORE the first transcode op. The walker
         // reads `.owner` to tell a live transcode session apart from
-        // SIGKILLed prior debris. A crash between mkdir and the write
-        // below leaves the dir without an `.owner` file, which the
-        // walker treats as orphaned and reaps — the worst-case is a
-        // just-created empty dir gets reaped, harmless.
+        // SIGKILLed prior debris.
+        //
+        // The dir is unmarked between these two lines, and a sibling
+        // sweeping in that window used to reap it — which cost this
+        // process its output directory, not just an empty dir, so every
+        // transcode after it failed with FFmpeg ENOENT (TASK-501). The
+        // walker now leaves a freshly-touched unmarked dir alone, so the
+        // window is covered rather than merely narrow; see
+        // `transcode-tmp-walker.ts` (`OWNERLESS_GRACE_MS`).
         await writeOwnership(join(transcodeDir, '.owner'), OWN_IDENTITY);
       }
 

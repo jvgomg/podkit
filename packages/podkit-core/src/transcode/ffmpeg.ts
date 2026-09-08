@@ -52,6 +52,40 @@ export class TranscodeError extends Error {
 }
 
 /**
+ * Build the message for a non-zero FFmpeg exit.
+ *
+ * FFmpeg's exit codes are errno negated into a byte — 254 is `-ENOENT` and
+ * covers both "cannot read the input" and "cannot write the output", which
+ * is exactly the distinction a caller needs and cannot recover from the
+ * number. Its stderr says which, so the first diagnostic line is folded into
+ * the message rather than left in the `stderr` field where the sync layer's
+ * error report never reaches it (TASK-501).
+ *
+ * The `[component @ 0xADDRESS]` prefix is stripped: it varies run to run, so
+ * leaving it in would make otherwise-identical failures look distinct.
+ */
+export function describeFFmpegFailure(code: number | null, stderr: string): string {
+  const base = `FFmpeg exited with code ${code}`;
+  const diagnostic = firstFFmpegDiagnostic(stderr);
+  return diagnostic === null ? base : `${base}: ${diagnostic}`;
+}
+
+/** Longest diagnostic we will append; anything beyond is elided. */
+const MAX_DIAGNOSTIC_CHARS = 200;
+
+function firstFFmpegDiagnostic(stderr: string): string | null {
+  for (const raw of stderr.split('\n')) {
+    const line = raw.replace(/^\[[^\]]*\]\s*/, '').trim();
+    if (line === '') continue;
+    if (!/error|invalid|no such file|failed|denied|permission|not permitted/i.test(line)) continue;
+    return line.length > MAX_DIAGNOSTIC_CHARS
+      ? `${line.slice(0, MAX_DIAGNOSTIC_CHARS)}\u2026`
+      : line;
+  }
+  return null;
+}
+
+/**
  * AAC encoders in priority order (best first)
  */
 const ENCODER_PRIORITY = ['aac_at', 'libfdk_aac', 'aac'] as const;
@@ -939,7 +973,9 @@ export class FFmpegTranscoder implements Transcoder {
         const duration = Date.now() - startTime;
 
         if (code !== 0) {
-          reject(new TranscodeError(`FFmpeg exited with code ${code}`, code ?? undefined, stderr));
+          reject(
+            new TranscodeError(describeFFmpegFailure(code, stderr), code ?? undefined, stderr)
+          );
           return;
         }
 

@@ -11,7 +11,8 @@
  */
 
 import { describe, it, expect } from 'bun:test';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, utimes, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -60,7 +61,9 @@ async function makeFiles(root: string, files: Record<string, string>): Promise<v
 /**
  * Build a `podkit-transcode-<uuid>/` dir with no `.owner` — represents
  * either pre-`.owner` legacy debris or a crash before the ownership
- * write. Both cases must reap.
+ * write. Both cases must reap, but only once the dir is old enough that
+ * it cannot be a sibling still setting itself up (see
+ * `makeSiblingMidSetupTranscodeDir`).
  */
 async function makeAbandonedTranscodeDir(
   hostTmp: string,
@@ -72,7 +75,28 @@ async function makeAbandonedTranscodeDir(
   for (const [name, content] of Object.entries(files)) {
     await writeFile(join(dir, name), content);
   }
-  // No `.owner` written → walker treats as abandoned.
+  // No `.owner` written → walker treats as abandoned...
+  // ...once it has aged out of the ownerless grace window.
+  const old = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  await utimes(dir, old, old);
+}
+
+/**
+ * Build a `podkit-transcode-<uuid>/` dir with no `.owner` and a fresh
+ * mtime — a sibling `podkit sync` caught between its `mkdir` and its
+ * `writeOwnership`. Its files are live, not debris.
+ */
+async function makeSiblingMidSetupTranscodeDir(
+  hostTmp: string,
+  uuid: string,
+  files: Record<string, string> = {}
+): Promise<string> {
+  const dir = join(hostTmp, `podkit-transcode-${uuid}`);
+  await mkdir(dir, { recursive: true });
+  for (const [name, content] of Object.entries(files)) {
+    await writeFile(join(dir, name), content);
+  }
+  return dir;
 }
 
 /**
@@ -309,6 +333,49 @@ describe('runPreSyncSweep', () => {
       });
     });
 
+    // TASK-501. A concurrent `podkit sync` mkdirs its scratch dir and only
+    // then writes `.owner`. A sibling sweeping in that window used to see a
+    // `podkit-transcode-*` dir with no `.owner`, call it debris, and delete
+    // it — taking the live session's output directory with it. Every
+    // subsequent transcode in the victim then wrote into a path that no
+    // longer existed, so FFmpeg exited 254 (ENOENT) on every remaining
+    // track at once, with `bytesTransferred: 0`.
+    it('SKIPS a sibling caught between mkdir and its .owner write', async () => {
+      await withTempDirs(async (mount, hostTmp) => {
+        await makeSiblingMidSetupTranscodeDir(hostTmp, 'mid-setup', {
+          'wip.m4a': 'still writing',
+        });
+        const result = await runPreSyncSweep({
+          mountPoint: mount,
+          deviceType: 'mass-storage',
+          contentPaths: DEFAULT_CONTENT_PATHS,
+          tmpDirOverride: hostTmp,
+        });
+        expect(result.debrisCleanup).toBeUndefined();
+      });
+    });
+
+    it('leaves a mid-setup sibling on disk through a full sweep + pre-flight', async () => {
+      await withTempDirs(async (mount, hostTmp) => {
+        const victim = await makeSiblingMidSetupTranscodeDir(hostTmp, 'victim', {
+          'wip.m4a': 'still writing',
+        });
+        const preliminaries = await runPreSyncSweep({
+          mountPoint: mount,
+          deviceType: 'mass-storage',
+          contentPaths: DEFAULT_CONTENT_PATHS,
+          tmpDirOverride: hostTmp,
+        });
+        const { sink } = makeSink();
+        await runPreliminariesPreFlight(preliminaries, { dryRun: false, warningSink: sink });
+
+        // The victim's scratch dir — and the transcode in flight inside it —
+        // must survive the sibling's sweep.
+        expect(existsSync(victim)).toBe(true);
+        expect(existsSync(join(victim, 'wip.m4a'))).toBe(true);
+      });
+    });
+
     it('aggregates device debris + host transcode-tmp into one cleanup', async () => {
       await withTempDirs(async (mount, hostTmp) => {
         await makeFiles(mount, {
@@ -370,7 +437,6 @@ describe('runPreliminariesPreFlight', () => {
       // Adapter must NOT be invoked in dry-run.
       expect(prunedCalls).toBe(0);
       // File still on disk.
-      const { existsSync } = await import('node:fs');
       expect(existsSync(target)).toBe(true);
       expect(warnings).toEqual([]);
     });
