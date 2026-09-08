@@ -16,6 +16,14 @@ name: E2E Stress
 # Deliberately NOT part of ci.yml: a stress experiment must not be able to
 # destabilise the gate, and this needs its own concurrency group so a wave
 # isn't cancelled by the next push.
+#
+# **Raising TEST_CONCURRENCY does not amplify a race — measured, task-501.**
+# The obvious lever for making a rare flake common is more concurrent
+# processes. Against the pre-fix walker it produced *fewer* failures, not more:
+# 1/12 at ci.yml's TEST_CONCURRENCY=2 (run 34291403111) and 0/12 at 6 (run
+# 34292069757), on identical hardware and trees. Whatever sets the collision
+# rate, it is not the process count. Don't spend a wave on that lever again
+# without a mechanism to explain why it should work this time.
 
 on:
   # Pushing to a `stress/**` branch runs a wave. This trigger, unlike
