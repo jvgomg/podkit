@@ -1,0 +1,131 @@
+name: E2E Stress
+
+# Repeats `test:e2e` N times in parallel to measure a flake rate, rather than
+# waiting for one to surface organically (task-501). One `quality` run is one
+# sample; ruling out a 1-in-4 failure rate at 95% confidence needs eleven or
+# twelve consecutive greens, which is weeks of organic pushes and minutes of
+# matrix.
+#
+# **A green sweep only means something next to a red one.** Twelve greens are
+# equally consistent with "fixed" and "this workflow never exercises the path",
+# so run the positive control first: push the same tree with the fix reverted
+# to a second `stress/**` branch and confirm this goes red at roughly the rate
+# being investigated. If the control comes back green, the harness is wrong and
+# no number of greens on the fix counts for anything.
+#
+# Deliberately NOT part of ci.yml: a stress experiment must not be able to
+# destabilise the gate, and this needs its own concurrency group so a wave
+# isn't cancelled by the next push.
+
+on:
+  # Pushing to a `stress/**` branch runs a wave. This trigger, unlike
+  # workflow_dispatch, works from a branch without the workflow first having
+  # landed on the default branch.
+  push:
+    branches: ['stress/**']
+  # Available once this file is on main; `ref` picks the branch to stress.
+  workflow_dispatch:
+    inputs:
+      repeats:
+        description: 'Samples to run (max 20 — the concurrent-job ceiling)'
+        required: false
+        default: '12'
+
+concurrency:
+  group: e2e-stress-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  DEBIAN_FRONTEND: noninteractive
+  TURBO_TELEMETRY_DISABLED: 1
+  DO_NOT_TRACK: 1
+
+  # Every one of these must match ci.yml. The failure under investigation is a
+  # function of runner load and process concurrency, so a stress job that
+  # diverges from the real gate measures a different thing and proves nothing.
+  PODKIT_CLI_BINARY: ${{ github.workspace }}/packages/podkit-cli/bin/podkit
+  TEST_CONCURRENCY: 2
+  TEST_TIMEOUT: 120000
+
+jobs:
+  sample:
+    name: Sample ${{ matrix.run }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      # The whole point is to count reds. Stopping at the first one throws away
+      # the rate.
+      fail-fast: false
+      matrix:
+        run: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            build-essential pkg-config \
+            libgpod-dev libglib2.0-dev libplist-dev libgdk-pixbuf-2.0-dev
+
+      - name: Set up toolchain
+        uses: jdx/mise-action@v4
+        with:
+          install_args: bun node conda:ffmpeg conda:libflac
+
+      - name: Cache bun install cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      # No turbo cache, unlike ci.yml. `@podkit/e2e-tests#test:e2e` is cached on
+      # `src/**`, so a restored entry would let eleven of the twelve samples
+      # replay one recorded pass — twelve green cells, one actual measurement.
+      # Building cold costs a few minutes per job and is free on a public repo.
+
+      - name: Build gpod-tool
+        run: |
+          mise run tools:build
+          echo "$PWD/bin" >> "$GITHUB_PATH"
+
+      - name: Pre-flight
+        run: |
+          status=0
+          for tool in gpod-tool ffmpeg ffprobe metaflac node bun; do
+            if command -v "$tool" >/dev/null 2>&1; then
+              echo "ok: $tool -> $(command -v "$tool")"
+            else
+              echo "::error::missing required tool: $tool"
+              status=1
+            fi
+          done
+          exit $status
+
+      - name: E2E — host-binary · local-dir · dir
+        run: bunx turbo run test:e2e
+
+  tally:
+    name: Tally
+    needs: [sample]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report the rate
+        env:
+          RESULT: ${{ needs.sample.result }}
+        run: |
+          echo "Sample matrix result: $RESULT"
+          echo "Per-sample outcomes are the 'Sample N' checks; count the reds there."
+          if [[ "$RESULT" == "success" ]]; then
+            echo "All samples green."
+          else
+            echo "::warning::At least one sample failed — read the rate off the matrix."
+          fi
