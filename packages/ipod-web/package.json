@@ -22,7 +22,7 @@
     "@podkit/ipod-db": "workspace:*",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.0.0",
-    "@types/bun": "latest",
+    "@types/bun": "^1.4.2",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.4.0",

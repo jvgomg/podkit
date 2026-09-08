@@ -28,7 +28,7 @@
     "@podkit/core": "workspace:*"
   },
   "devDependencies": {
-    "@types/bun": "latest",
+    "@types/bun": "^1.4.2",
     "bun-types": "latest"
   }
 }
