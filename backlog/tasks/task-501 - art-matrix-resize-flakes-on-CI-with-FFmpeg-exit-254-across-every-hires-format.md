@@ -4,7 +4,7 @@ title: art-matrix suites flake with FFmpeg exit 254 across every hires format
 status: In Progress
 assignee: []
 created_date: '2026-09-08 19:35'
-updated_date: '2026-09-08 22:14'
+updated_date: '2026-09-08 23:27'
 labels:
   - testing
   - ci
@@ -191,4 +191,17 @@ It asks for validation across consecutive CI runs, which cannot be done from her
 `/code-review` flagged that `firstFFmpegDiagnostic` duplicated a pre-existing `extractFFmpegError` in `video/transcode.ts` — same job, divergent keyword sets, same base message string, two extractors in core that would drift. Both paths now share `transcode/ffmpeg-error.ts`, whose keyword set is the union (it picks up video's `does not contain any stream`, which the audio version would have missed). Video's message shape changes with it, from a bare diagnostic to `FFmpeg exited with code N: <diagnostic>` — nothing pinned the old shape.
 
 Also tightened the integration test: `runSiblingSweep` collected warnings it never asserted on; it now returns them and the test requires the sweep to be silent, not merely ineffective.
+
+**Correction to the run-count above.** "6 consecutive green runs — a 1-in-730 fluke at ~33%" was wrong: `0.33^6` is the chance of six consecutive *failures*. Six consecutive **greens** at a 33% failure rate is `0.67^6` ≈ 9%, about 1 in 11 — nowhere near conclusive, and 6 was therefore far too low a bar.
+
+The honest numbers, probability of N consecutive greens if the old rate still held:
+
+| N | at p = 0.33 (observed) | at p = 0.25 (the AC's bar) |
+|---|---|---|
+| 6 | 9.0% | 17.8% |
+| 8 | 4.1% | 10.0% |
+| 11 | 1.0% | 4.2% |
+| 12 | 0.7% | 3.2% |
+
+AC #4 says "meaningfully better than 1-in-4", so p = 0.25 is the column that matters: **11-12 consecutive greens** to rule it out at 95%. Equivalently by the rule of three — zero failures in N trials puts the 95% upper bound at ~3/N — 12 runs bound the rate below 25%.
 <!-- SECTION:NOTES:END -->
