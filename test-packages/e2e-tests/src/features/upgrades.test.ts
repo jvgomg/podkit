@@ -530,6 +530,27 @@ async function findIpodMusicFiles(ipodPath: string): Promise<string[]> {
   return files;
 }
 
+/**
+ * Read the audio codec of the single track currently on the device.
+ *
+ * Asserting the *codec* is the encoder-independent way to pin "the device copy
+ * is lossless" / "the device copy is lossy" — see the lossless→lossy boundary
+ * test for why comparing bitrates across the boundary is not.
+ *
+ * Throws if the device does not hold exactly one audio file, so a mis-set-up
+ * test fails loudly rather than silently probing the wrong file.
+ */
+async function getSoleDeviceAudioCodec(ipodPath: string): Promise<string> {
+  const files = await findIpodMusicFiles(ipodPath);
+  if (files.length !== 1) {
+    throw new Error(`expected exactly 1 audio file on the device, found ${files.length}`);
+  }
+  return execSync(
+    `ffprobe -v error -select_streams a:0 -show_entries stream=codec_name -of csv=p=0 "${files[0]!}"`,
+    { encoding: 'utf-8' }
+  ).trim();
+}
+
 describe('self-healing sync: format upgrade (MP3 → FLAC)', () => {
   it('upgrades MP3 to AAC with correct .m4a extension', async () => {
     requireFFmpeg();
@@ -1248,6 +1269,15 @@ describe('self-healing sync: source-down suppression (degraded source)', () => {
 // and `--skip-upgrades` is the master veto.
 // =============================================================================
 
+/**
+ * Target bitrate of the `high` quality preset, in kbps (`AAC_PRESETS.high`).
+ *
+ * ADR-023 §2 makes this a hard *ceiling*: no transcode target may exceed it,
+ * including a forced re-encode under `preserve`. Duplicated here rather than
+ * imported because these tests drive the CLI as a black box.
+ */
+const HIGH_CAP_KBPS = 256;
+
 describe('self-healing sync: reduction axis (convert/preserve) and preconditions', () => {
   it('never follows a degraded source down — suppressed under convert as well as the default', async () => {
     requireFFmpeg();
@@ -1426,7 +1456,7 @@ describe('self-healing sync: reduction axis (convert/preserve) and preconditions
           '--json',
         ]);
         expect(json1?.result?.completed).toBe(1);
-        const losslessBitrate = (await target.getTracks())[0]!.bitrate;
+        expect(await getSoleDeviceAudioCodec(target.path)).toBe('alac');
 
         // Step 2: switch the target to a lossy preset under preserve
         // (`--bitrate-reduce never`). Crossing the lossless/lossy boundary is a
@@ -1465,7 +1495,20 @@ describe('self-healing sync: reduction axis (convert/preserve) and preconditions
         expect(skipJson?.plan?.tracksToUpdate ?? 0).toBe(0);
 
         // Step 4: real re-encode under preserve — the device copy drops to lossy
-        // AAC (bitrate below the lossless copy). A re-sync is then a no-op.
+        // AAC, and lands at or below the quality=high cap (256 kbps), which
+        // ADR-023 §2 makes a hard ceiling even under preserve. A re-sync is
+        // then a no-op.
+        //
+        // This deliberately does NOT assert `lossyBitrate < losslessBitrate`.
+        // That comparison is not a property of the boundary re-encode: it
+        // depends on how well the *lossless* codec happened to compress this
+        // particular input relative to the AAC encoder's VBR calibration. The
+        // fixture here is a 2 s 440 Hz sine, which ALAC squeezes to ~144 kbps —
+        // below what FFmpeg's native `aac` encoder emits at `-q:a 5` for any
+        // input (~228 kbps), so the comparison inverts on hosts without
+        // `aac_at`/`libfdk_aac` while the product behaves correctly. Codec +
+        // cap are the contract; their relative bitrates on a synthetic tone
+        // are not.
         const { json: realJson } = await runCliJson<SyncOutput>([
           '--config',
           configPath,
@@ -1479,8 +1522,9 @@ describe('self-healing sync: reduction axis (convert/preserve) and preconditions
           '--json',
         ]);
         expect(realJson?.result?.completed).toBe(1);
+        expect(await getSoleDeviceAudioCodec(target.path)).toBe('aac');
         const lossyBitrate = (await target.getTracks())[0]!.bitrate;
-        expect(lossyBitrate).toBeLessThan(losslessBitrate);
+        expect(lossyBitrate).toBeLessThanOrEqual(HIGH_CAP_KBPS);
 
         const { json: reJson } = await runCliJson<SyncOutput>([
           '--config',
