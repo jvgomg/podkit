@@ -22,6 +22,7 @@ import {
   TranscodeError,
 } from './ffmpeg.js';
 import type { TranscodeProgress } from './types.js';
+import { AAC_PRESETS } from './types.js';
 
 requireFFmpeg();
 requireFfprobe();
@@ -684,5 +685,145 @@ describe('isFFmpegAvailable', () => {
     const available = await isFFmpegAvailable('/nonexistent/ffmpeg');
 
     expect(available).toBe(false);
+  });
+});
+
+// =============================================================================
+// Quality preset bitrate ceiling (ADR-023 §2, TASK-499)
+// =============================================================================
+
+/**
+ * Read the *audio stream* bitrate of a file, in kbps.
+ *
+ * Deliberately not `transcoder.probe()`, which reports `format.bit_rate` —
+ * the whole container, so a kbps or two of MP4 overhead rides on top of what
+ * the encoder was asked for. The ceiling this suite defends is the encoder's,
+ * so the stream is what it has to measure.
+ */
+async function streamBitrateKbps(file: string): Promise<number> {
+  const stdout = await new Promise<string>((resolve, reject) => {
+    const proc = spawn('ffprobe', [
+      '-v',
+      'error',
+      '-select_streams',
+      'a:0',
+      '-show_entries',
+      'stream=bit_rate',
+      '-of',
+      'csv=p=0',
+      file,
+    ]);
+    let out = '';
+    let err = '';
+    proc.stdout.on('data', (d: Buffer) => (out += d.toString()));
+    proc.stderr.on('data', (d: Buffer) => (err += d.toString()));
+    proc.on('error', reject);
+    proc.on('close', (code) =>
+      code === 0 ? resolve(out) : reject(new Error(`ffprobe failed: ${err}`))
+    );
+  });
+
+  const parsed = parseInt(stdout.trim(), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`ffprobe reported no stream bitrate for ${file}: ${JSON.stringify(stdout)}`);
+  }
+  return Math.round(parsed / 1000);
+}
+
+describe('quality preset bitrate ceiling', () => {
+  let transcoder: FFmpegTranscoder;
+  let ceilingDir: string;
+  let hardSource: string;
+  let encoder: string;
+
+  beforeAll(async () => {
+    transcoder = new FFmpegTranscoder();
+    ceilingDir = await mkdtemp(join(tmpdir(), 'podkit-bitrate-ceiling-'));
+    encoder = (await transcoder.detect()).preferredEncoder;
+
+    // Pink noise: incompressible by design, so the encoder spends every bit
+    // its rate control will let it. A sine or a quiet fixture would sail under
+    // any cap and prove nothing — the original bug (native aac reusing
+    // libfdk's 1-5 quality number) hid for exactly that reason.
+    hardSource = join(ceilingDir, 'hard-source.flac');
+    await new Promise<void>((resolve, reject) => {
+      const proc = spawn('ffmpeg', [
+        '-f',
+        'lavfi',
+        '-i',
+        'anoisesrc=color=pink:sample_rate=44100:duration=10:amplitude=0.8:seed=499',
+        '-ac',
+        '2',
+        '-c:a',
+        'flac',
+        '-y',
+        hardSource,
+      ]);
+      let err = '';
+      proc.stderr.on('data', (d: Buffer) => (err += d.toString()));
+      proc.on('error', reject);
+      proc.on('close', (code) =>
+        code === 0 ? resolve() : reject(new Error(`FFmpeg failed: ${err}`))
+      );
+    });
+  });
+
+  afterAll(async () => {
+    if (ceilingDir) {
+      await rm(ceilingDir, { recursive: true, force: true });
+    }
+  });
+
+  /**
+   * Headroom allowed above the cap, as a fraction of it.
+   *
+   * Native `aac` gets none: podkit drives it with `-b:a`, whose rate control
+   * tracks the request to within a kbps even on noise, so the ceiling is
+   * enforceable exactly.
+   *
+   * `aac_at` and `libfdk_aac` expose only a quality index — podkit picks the
+   * index nearest the target and the encoder decides the rest, so on content
+   * this hard it can land somewhat over. That gap is a known limitation of
+   * those encoders' VBR surface, not of the preset resolution, and it is not
+   * what TASK-499 fixed.
+   */
+  const headroom = (enc: string): number => (enc === 'aac' ? 1 : 1.15);
+
+  for (const preset of ['high', 'medium', 'low'] as const) {
+    const cap = AAC_PRESETS[preset].targetKbps;
+
+    it(`keeps the ${preset} preset at or below its ${cap} kbps cap`, async () => {
+      const outputPath = join(ceilingDir, `ceiling-${preset}.m4a`);
+      await transcoder.transcode(hardSource, outputPath, preset);
+
+      const measured = await streamBitrateKbps(outputPath);
+      expect(measured).toBeLessThanOrEqual(Math.round(cap * headroom(encoder)));
+    });
+  }
+
+  it('spends more bits on a higher preset than a lower one', async () => {
+    // The ceiling must not be honoured by simply under-encoding everything:
+    // the presets still have to be ordered.
+    const lowPath = join(ceilingDir, 'ordering-low.m4a');
+    const highPath = join(ceilingDir, 'ordering-high.m4a');
+    await transcoder.transcode(hardSource, lowPath, 'low');
+    await transcoder.transcode(hardSource, highPath, 'high');
+
+    expect(await streamBitrateKbps(highPath)).toBeGreaterThan(await streamBitrateKbps(lowPath));
+  });
+
+  it('honours a planner-reduced target below the preset cap', async () => {
+    // ADR-023 §3: a resolved EncoderConfig target is a ceiling in its own
+    // right — a preserve/convert reduction must not come out at the preset.
+    const outputPath = join(ceilingDir, 'ceiling-reduced.m4a');
+    await transcoder.transcode(hardSource, outputPath, {
+      bitrateKbps: 96,
+      encoding: 'vbr',
+      quality: AAC_PRESETS.high.quality,
+    });
+
+    expect(await streamBitrateKbps(outputPath)).toBeLessThanOrEqual(
+      Math.round(96 * headroom(encoder))
+    );
   });
 });

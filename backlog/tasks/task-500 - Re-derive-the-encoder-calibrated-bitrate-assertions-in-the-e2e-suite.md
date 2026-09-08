@@ -4,6 +4,7 @@ title: Re-derive the encoder-calibrated bitrate assertions in the e2e suite
 status: To Do
 assignee: []
 created_date: '2026-09-08 18:20'
+updated_date: '2026-09-08 21:43'
 labels:
   - testing
 dependencies:
@@ -45,3 +46,19 @@ Catalogued while diagnosing the `upgrades.test.ts` failure during task-495. Seve
 - [ ] #3 The measured-vs-measured inequalities at preset-change.test.ts:763 and upgrades.test.ts:1056 still express a real contract after task-499, or are replaced
 - [ ] #4 A decision is recorded on whether encoder-calibrated assertions must declare the encoder they assume
 <!-- AC:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: Claude Opus 5
+created: 2026-09-08 21:43
+---
+task-499 landed. `bun run test:e2e` is 37/37 on the Linux dev host with the fix in, and the fix moves most of the assertions catalogued here in the *right* direction rather than breaking them:
+
+- `lossy-preserve-efficiency.test.ts:158` — the premise is now true by construction. Preserve (171) and convert (128) previously issued the byte-identical `-c:a aac -q:a 5`; they now issue `-b:a 171k` and `-b:a 128k`, so `preserveBitrate > convertBitrate` measures two different requests instead of encoder noise. Worth re-reading against AC #1 before closing it, but the noise is gone.
+- `preset-change.test.ts:531,632` — a `quality=low` re-encode now lands at ~128 rather than 187, so `< 170` holds with real margin instead of resting on a simple fixture. The threshold is still an `aac_at` number and should still be re-derived per AC #2.
+- `preset-change.test.ts:763` / `upgrades.test.ts:1056` — `lifted > reduced` is now 256-cap vs 128-cap rather than 230 vs 187. Wider, not narrower.
+
+So this task is no longer urgent, but it is not done: the thresholds still encode `aac_at` calibrations nobody has re-derived, and AC #4 (whether an encoder-calibrated assertion must declare its encoder) is untouched. One data point for it — task-499's new ceiling suite in `ffmpeg.integration.test.ts` does branch on the resolved encoder and says why in a comment, which is a workable shape for that convention.
+---
+<!-- COMMENTS:END -->

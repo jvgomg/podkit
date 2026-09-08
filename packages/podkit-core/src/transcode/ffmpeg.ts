@@ -88,14 +88,23 @@ export interface FFmpegTranscoderConfig {
 }
 
 /**
- * Build FFmpeg arguments for VBR encoding
+ * Build FFmpeg arguments for VBR encoding.
+ *
+ * Every branch is driven by `targetKbps` — the effective cap the planner
+ * resolved — because ADR-023 §2 makes the preset's bitrate a hard ceiling
+ * rather than a hint. `quality` is only a fallback for callers that have no
+ * target to give.
  */
 export function buildVbrArgs(encoder: string, quality: number, targetKbps?: number): string[] {
   switch (encoder) {
-    case 'libfdk_aac':
-      // libfdk_aac uses -vbr 1-5 scale
-      // Also set cutoff to preserve high frequencies
-      return ['-vbr', String(quality), '-cutoff', '18000'];
+    case 'libfdk_aac': {
+      // libfdk_aac uses a -vbr 1-5 scale whose levels have documented bitrate
+      // bands; pick the richest band that still fits under the target.
+      // Also set cutoff to preserve high frequencies.
+      const vbr =
+        targetKbps !== undefined ? libfdkVbrFromBitrate(targetKbps) : clampLibfdkVbr(quality);
+      return ['-vbr', String(vbr), '-cutoff', '18000'];
+    }
     case 'aac_at':
       // aac_at uses -q:a 0-14 scale where 0 = highest quality, 14 = lowest.
       // Map target bitrate to aac_at quality (empirically measured):
@@ -111,9 +120,66 @@ export function buildVbrArgs(encoder: string, quality: number, targetKbps?: numb
       return ['-q:a', String(aacAtQuality)];
     case 'aac':
     default:
-      // Native AAC uses -q:a 0.1-5 scale (5 = highest quality)
-      return ['-q:a', String(quality)];
+      // FFmpeg's native `aac` encoder has no VBR mode worth targeting a
+      // bitrate with: `-q:a` sets `global_quality`, an axis with no bitrate
+      // meaning that saturates around 240 kbps and is not even monotonic
+      // (measured on stereo pink noise: q=3 → 247 kbps, q=5 → 216 kbps).
+      // Reusing libfdk's 1-5 quality number there put `low` at ~190 kbps and
+      // `medium` at ~230 kbps — silently above the ceilings ADR-023 §2
+      // promises (TASK-499).
+      //
+      // Its ABR rate control, by contrast, tracks `-b:a` to within a kbps
+      // even on incompressible content and never exceeds it, so that is what
+      // the ceiling is enforced with on hosts that have no `aac_at` or
+      // `libfdk_aac` — which is every stock Linux host and CI runner.
+      return ['-b:a', `${nativeAacBitrate(quality, targetKbps)}k`];
   }
+}
+
+/**
+ * Pick the libfdk_aac `-vbr` level whose bitrate band fits under a target.
+ *
+ * Bands are the documented AAC-LC figures for 44.1/48 kHz, per channel,
+ * doubled for stereo (podkit always outputs stereo):
+ *   vbr 1 → 64-80 · vbr 2 → 80-96 · vbr 3 → 96-112 · vbr 4 → 128-144 ·
+ *   vbr 5 → 192-224
+ *
+ * The *top* of the band is compared, not its midpoint, so the level chosen
+ * cannot average above the cap. This is what puts the presets at
+ * high → 5, medium → 4, low → 3.
+ */
+function libfdkVbrFromBitrate(targetKbps: number): number {
+  // Highest quality first; take the first band that fits entirely under the cap.
+  const bands: Array<[number, number]> = [
+    [224, 5],
+    [144, 4],
+    [112, 3],
+    [96, 2],
+    [80, 1],
+  ];
+  for (const [bandTopKbps, vbr] of bands) {
+    if (targetKbps >= bandTopKbps) return vbr;
+  }
+  // Below libfdk's lowest band there is nothing quieter to pick.
+  return 1;
+}
+
+/** Clamp our internal 1-5 quality level into libfdk's 1-5 VBR range. */
+function clampLibfdkVbr(quality: number): number {
+  return Math.max(1, Math.min(5, Math.round(quality)));
+}
+
+/**
+ * Resolve the bitrate native `aac` is asked for.
+ *
+ * The planner's target wins. Without one, our internal 1-5 quality level maps
+ * onto the preset bitrates it stands for (5 → 256, 4 → 192, 2 → 128), with a
+ * linear fallback on the same scale for levels no preset uses.
+ */
+function nativeAacBitrate(quality: number, targetKbps?: number): number {
+  if (targetKbps !== undefined) return Math.round(targetKbps);
+  const byLevel: Record<number, number> = { 5: 256, 4: 192, 3: 160, 2: 128, 1: 96 };
+  return byLevel[quality] ?? Math.max(64, Math.min(320, Math.round(quality * 51.2)));
 }
 
 /**

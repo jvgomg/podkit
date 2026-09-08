@@ -24,15 +24,31 @@ import { AAC_PRESETS } from './types.js';
 import { parseFFmpegProgressLine } from './progress.js';
 
 describe('buildVbrArgs', () => {
+  // The contract these pin is ADR-023 §2: the preset's bitrate is a hard
+  // ceiling. What each encoder is *asked for* has to express that ceiling —
+  // the measured proof that it holds lives in ffmpeg.integration.test.ts
+  // ("quality preset bitrate ceiling").
   describe('native aac encoder', () => {
-    it('generates -q:a argument for quality 5', () => {
-      const args = buildVbrArgs('aac', 5);
-      expect(args).toEqual(['-q:a', '5']);
+    it('asks for the target bitrate rather than a quality index', () => {
+      expect(buildVbrArgs('aac', 5, 256)).toEqual(['-b:a', '256k']);
+      expect(buildVbrArgs('aac', 4, 192)).toEqual(['-b:a', '192k']);
+      expect(buildVbrArgs('aac', 2, 128)).toEqual(['-b:a', '128k']);
     });
 
-    it('generates -q:a argument for quality 2', () => {
-      const args = buildVbrArgs('aac', 2);
-      expect(args).toEqual(['-q:a', '2']);
+    it('is driven by the target bitrate, not by the quality level', () => {
+      // Native aac's -q:a is global_quality, an axis with no bitrate meaning.
+      // Two different quality levels at one target must produce one request.
+      expect(buildVbrArgs('aac', 5, 128)).toEqual(buildVbrArgs('aac', 2, 128));
+    });
+
+    it('tracks a changing target bitrate', () => {
+      expect(buildVbrArgs('aac', 5, 128)).not.toEqual(buildVbrArgs('aac', 5, 256));
+    });
+
+    it('falls back to the level nominal bitrate when no target is supplied', () => {
+      expect(buildVbrArgs('aac', 5)).toEqual(['-b:a', '256k']);
+      expect(buildVbrArgs('aac', 4)).toEqual(['-b:a', '192k']);
+      expect(buildVbrArgs('aac', 2)).toEqual(['-b:a', '128k']);
     });
   });
 
@@ -42,9 +58,22 @@ describe('buildVbrArgs', () => {
       expect(args).toEqual(['-vbr', '5', '-cutoff', '18000']);
     });
 
-    it('preserves quality level directly', () => {
+    it('preserves quality level directly when no target is supplied', () => {
       const args = buildVbrArgs('libfdk_aac', 3);
       expect(args).toEqual(['-vbr', '3', '-cutoff', '18000']);
+    });
+
+    it('picks the VBR level whose band fits under the target bitrate', () => {
+      // Stereo bands: 5 → 192-224, 4 → 128-144, 3 → 96-112, 2 → 80-96.
+      expect(buildVbrArgs('libfdk_aac', 5, 256)).toEqual(['-vbr', '5', '-cutoff', '18000']);
+      expect(buildVbrArgs('libfdk_aac', 4, 192)).toEqual(['-vbr', '4', '-cutoff', '18000']);
+      expect(buildVbrArgs('libfdk_aac', 2, 128)).toEqual(['-vbr', '3', '-cutoff', '18000']);
+    });
+
+    it('follows a planner-reduced target below the preset', () => {
+      // The old code returned the preset's own -vbr 5 (~208 kbps) here, more
+      // than double the reduced target it was handed.
+      expect(buildVbrArgs('libfdk_aac', 5, 96)).toEqual(['-vbr', '2', '-cutoff', '18000']);
     });
   });
 
@@ -80,8 +109,8 @@ describe('buildVbrArgs', () => {
 
   describe('unknown encoder', () => {
     it('defaults to native aac behavior', () => {
-      const args = buildVbrArgs('unknown_encoder', 5);
-      expect(args).toEqual(['-q:a', '5']);
+      const args = buildVbrArgs('unknown_encoder', 5, 256);
+      expect(args).toEqual(['-b:a', '256k']);
     });
   });
 });
@@ -98,8 +127,8 @@ describe('buildTranscodeArgs', () => {
       expect(args).toContain(input);
       expect(args).toContain('-c:a');
       expect(args).toContain('aac');
-      expect(args).toContain('-q:a');
-      expect(args).toContain('5');
+      expect(args).toContain('-b:a');
+      expect(args).toContain('256k');
       expect(args).toContain('-ar');
       expect(args).toContain('44100');
       expect(args).toContain('-map_metadata');
@@ -113,23 +142,36 @@ describe('buildTranscodeArgs', () => {
     it('generates correct arguments for medium preset (VBR)', () => {
       const args = buildTranscodeArgs(input, output, 'aac', 'medium');
 
-      expect(args).toContain('-q:a');
-      expect(args).toContain('4');
+      expect(args).toContain('-b:a');
+      expect(args).toContain('192k');
     });
 
     it('generates correct arguments for low preset (VBR)', () => {
       const args = buildTranscodeArgs(input, output, 'aac', 'low');
 
-      expect(args).toContain('-q:a');
-      expect(args).toContain('2');
+      expect(args).toContain('-b:a');
+      expect(args).toContain('128k');
     });
 
-    it('resolves max preset to high VBR (quality 5, 256 kbps target)', () => {
+    it('resolves max preset to high VBR (256 kbps target)', () => {
       const args = buildTranscodeArgs(input, output, 'aac', 'max');
 
       // max resolves to high internally
-      expect(args).toContain('-q:a');
-      expect(args).toContain('5');
+      expect(args).toContain('-b:a');
+      expect(args).toContain('256k');
+    });
+
+    it('never asks native aac for more than the preset cap', () => {
+      // ADR-023 §2 — the preset bitrate is a ceiling, not a hint.
+      for (const [preset, cap] of [
+        ['high', 256],
+        ['medium', 192],
+        ['low', 128],
+      ] as const) {
+        const args = buildTranscodeArgs(input, output, 'aac', preset);
+        const requested = args[args.indexOf('-b:a') + 1];
+        expect(parseInt(requested!, 10)).toBeLessThanOrEqual(cap);
+      }
     });
   });
 
@@ -161,17 +203,19 @@ describe('buildTranscodeArgs', () => {
   });
 
   describe('VBR via EncoderConfig', () => {
-    it('uses VBR arguments with quality and bitrate', () => {
+    it('carries the resolved target bitrate through to native aac', () => {
       const config: EncoderConfig = {
-        bitrateKbps: 256,
+        bitrateKbps: 171,
         encoding: 'vbr',
         quality: 5,
       };
       const args = buildTranscodeArgs(input, output, 'aac', config);
 
-      expect(args).toContain('-q:a');
-      expect(args).toContain('5');
-      expect(args).not.toContain('-b:a');
+      // The planner's reduced target, not the preset's quality level, is what
+      // native aac must be asked for (ADR-023 §3).
+      expect(args).toContain('-b:a');
+      expect(args).toContain('171k');
+      expect(args).not.toContain('-q:a');
     });
 
     it('passes targetKbps to VBR args for aac_at encoder', () => {
@@ -1081,8 +1125,8 @@ describe('buildTranscodeArgs codec dispatch', () => {
 
     expect(args).toContain('-c:a');
     expect(args).toContain('aac');
-    expect(args).toContain('-q:a');
-    expect(args).toContain('5');
+    expect(args).toContain('-b:a');
+    expect(args).toContain('256k');
     expect(args).toContain('-f');
     expect(args).toContain('ipod');
   });

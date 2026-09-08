@@ -28,7 +28,7 @@ This lets you use a single `quality` setting for simplicity, or fine-tune audio 
 | `medium` | ~192 kbps | Excellent quality |
 | `low` | ~128 kbps | Good quality, space-efficient |
 
-All presets use VBR encoding by default. Set `encoding = "cbr"` globally or per device for constant bitrate encoding. Bitrate targets are codec-aware -- the same preset delivers perceptually equivalent quality regardless of which codec the [preference stack](/user-guide/transcoding/codec-preferences) resolves. See [Audio Transcoding](/user-guide/transcoding/audio) for full details.
+All presets use VBR encoding by default. Set `encoding = "cbr"` globally or per device for constant bitrate encoding. (On FFmpeg's native `aac` encoder the two are the same request -- see [Encoder Mapping](#encoder-mapping).) Bitrate targets are codec-aware -- the same preset delivers perceptually equivalent quality regardless of which codec the [preference stack](/user-guide/transcoding/codec-preferences) resolves. See [Audio Transcoding](/user-guide/transcoding/audio) for full details.
 
 ### The `max` Preset
 
@@ -58,21 +58,25 @@ VBR file sizes vary based on content complexity. CBR sizes are exact.
 | **VBR** (default) | Variable bitrate — adapts to content complexity. Better quality-per-MB. |
 | **CBR** | Constant bitrate — predictable file sizes. More reliable preset change detection. |
 
-VBR is recommended for most uses. VBR AAC works correctly for seeking on iPods. Use `encoding = "cbr"` if you want predictable file sizes or guaranteed detection of preset changes between adjacent tiers.
+VBR is recommended for most uses. VBR AAC works correctly for seeking on iPods. Whichever you pick, the preset's bitrate is a **ceiling**: podkit never produces a file above it. Use `encoding = "cbr"` if you want predictable file sizes or guaranteed detection of preset changes between adjacent tiers.
 
 ### Encoder Mapping
 
-FFmpeg encoder settings by preset:
+podkit picks the best AAC encoder your FFmpeg offers -- `aac_at` (macOS AudioToolbox), then `libfdk_aac`, then FFmpeg's native `aac`. Each has its own quality dial, and podkit derives the setting from the preset's bitrate so the ceiling holds on all three:
 
-| Preset | Native AAC (`-q:a`) | libfdk_aac (`-vbr`) | aac_at (`-q:a`) |
+| Preset | Native AAC (`-b:a`) | libfdk_aac (`-vbr`) | aac_at (`-q:a`) |
 |--------|---------------------|---------------------|-----------------|
-| high (and max AAC fallback) | 5 | 5 | 2 |
-| medium | 4 | 4 | 4 |
-| low | 2 | 3 | 6 |
+| high (and max AAC fallback) | 256k | 5 | 2 |
+| medium | 192k | 4 | 4 |
+| low | 128k | 3 | 6 |
 
 When `max` resolves to ALAC (on capable devices with lossless sources), the ALAC encoder is used instead. When `max` falls back to AAC, it uses the same encoder settings as `high`.
 
-Note: The `aac_at` encoder (macOS AudioToolbox) uses an inverted quality scale where 0 is highest quality and 14 is lowest. The native `aac` and `libfdk_aac` encoders use a scale where higher values mean higher quality. podkit maps target bitrates to the correct `aac_at` quality value automatically.
+Notes:
+
+- FFmpeg's native `aac` encoder has no bitrate-targeting VBR mode -- its `-q:a` dial is a quality index with no relationship to a bitrate, and it saturates around 240 kbps. podkit therefore drives it in **average-bitrate (ABR)** mode at the preset's bitrate, which is the only way to keep the preset a real ceiling on a host without `aac_at` or `libfdk_aac`. Output still varies frame to frame; only the average is pinned.
+- `libfdk_aac`'s `-vbr` levels have published bitrate bands. podkit picks the richest level whose band fits entirely under the preset bitrate.
+- The `aac_at` encoder uses an inverted quality scale where 0 is highest quality and 14 is lowest. podkit maps target bitrates to the closest `aac_at` quality value.
 
 ## Video Presets
 
