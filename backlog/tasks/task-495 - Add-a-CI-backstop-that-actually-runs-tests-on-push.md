@@ -4,7 +4,7 @@ title: Add a CI backstop that actually runs tests on push
 status: In Progress
 assignee: []
 created_date: '2026-09-07 23:36'
-updated_date: '2026-09-08 21:04'
+updated_date: '2026-09-08 21:22'
 labels:
   - testing
   - ci
@@ -153,4 +153,22 @@ Build, unit and integration replay in a second each. The e2e steps still ran bec
 **Still open: AC #8**, the concurrency tuning pass. Deliberately not attempted yet: task-501 (FFmpeg exit 254, ~33% of runs that reach `test:e2e`) has to be understood first, because raising `TEST_CONCURRENCY` while an unexplained concurrency-shaped flake is live would confound both. Tune after 501.
 
 **Not merged with #70:** the heartbeat flake fix and the task-496/501 updates missed the merge by one commit; they are PR #71.
+
+**Wrapped up (2026-09-08).** Everything is on `main` across PR #70 (rebase-merged) and PR #71. Working tree clean, `ci.yml` present, `pr-checks.yml` gone.
+
+**One caveat found while verifying the cache, worth knowing before anyone trusts it blindly.** Only one turbo cache entry exists — `turbo-Linux-X64-34270021092`, written by the *failed* first main run. The successful main run's save reported step conclusion `success` but wrote nothing:
+
+```
+[command] tar --posix -cf cache.tzst ... --use-compress-program zstdmt
+Sent 0 of 145094509 (0.0%), 0.0 MBs/sec        (× many)
+##[warning] uploadCacheArchiveSDK: internal error uploading cache archive: The server is busy.
+##[warning] Failed to save: The server is busy.
+##[warning] Cache save failed.
+```
+
+Transient GitHub cache-service congestion, not a design fault — the bun cache uploaded fine seconds later at 136 MB/s in the same job. But the general point stands: **`actions/cache/save` reports failures as warnings, so the step still shows green.** The turbo cache can silently stop refreshing and nothing signals it. Symptom to watch for is CI wall-clock creeping back toward cold-run times while every step stays green; the check is `gh api repos/jvgomg/podkit/actions/caches` and looking at the newest `turbo-` key's date.
+
+Not worth failing the job over — a cache miss should never break a build — but worth knowing the failure mode is invisible.
+
+**Final state: 9 of 10 ACs.** Only #8 (the concurrency tuning pass) remains, and it is deliberately blocked on task-501: tuning `TEST_CONCURRENCY` while an unexplained, concurrency-shaped flake is live would confound both results. This task stays In Progress rather than being marked Done on an unchecked criterion — if it is preferred closed, AC #8 should move onto task-501, which is where the work actually belongs now.
 <!-- SECTION:NOTES:END -->
