@@ -30,8 +30,10 @@ Thumbs.db
 # Prebuild artifacts
 static-deps/
 .prebuild-work/
-# Staged native addon for bun compile (created by scripts/compile.sh)
+# Staged native addons + concurrency lock for bun compile (scripts/compile.sh)
 gpod_binding.node
+usb_native.node
+.compile.lock/
 
 # Test coverage
 coverage/

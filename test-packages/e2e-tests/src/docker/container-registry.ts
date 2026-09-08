@@ -1,47 +1,16 @@
 /**
- * Registry for tracking active Docker containers started by tests.
+ * Registry for tracking active containers started by tests.
  *
  * This is a process-global singleton that enables cleanup on interruption.
  */
 
-import { spawn } from 'node:child_process';
+import { runContainerCommand } from './runtime.js';
 
 interface RegisteredContainer {
   id: string;
   name: string;
   startedAt: Date;
   source: string; // e.g., 'subsonic', 'future-source'
-}
-
-/**
- * Run a docker command and return stdout
- */
-function runDockerCommand(args: string[]): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const proc = spawn('docker', args, { stdio: ['ignore', 'pipe', 'pipe'] });
-    let stdout = '';
-    let stderr = '';
-
-    proc.stdout.on('data', (data) => {
-      stdout += data.toString();
-    });
-
-    proc.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
-
-    proc.on('close', (code) => {
-      if (code === 0) {
-        resolve(stdout);
-      } else {
-        reject(new Error(`Docker command failed (exit ${code}): ${stderr || stdout}`));
-      }
-    });
-
-    proc.on('error', (err) => {
-      reject(err);
-    });
-  });
 }
 
 class ContainerRegistry {
@@ -85,13 +54,13 @@ class ContainerRegistry {
     await Promise.allSettled(
       containers.map(async (container) => {
         try {
-          await runDockerCommand(['stop', container.id]);
+          await runContainerCommand(['stop', container.id]);
           this.unregister(container.id);
           console.log(`[docker-cleanup] Stopped: ${container.name} (${container.source})`);
         } catch (err) {
           // Try force kill if stop fails
           try {
-            await runDockerCommand(['kill', container.id]);
+            await runContainerCommand(['kill', container.id]);
             this.unregister(container.id);
             console.log(`[docker-cleanup] Killed: ${container.name} (${container.source})`);
           } catch {

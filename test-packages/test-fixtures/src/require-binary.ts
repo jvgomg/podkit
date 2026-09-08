@@ -73,7 +73,7 @@ export function requireFfprobe(): void {
  * Tests that read or write FLAC artwork/comment tags need metaflac.
  */
 export function requireMetaflac(): void {
-  requireBinary('metaflac', 'brew install flac (macOS) or apt install flac (Linux)');
+  requireBinary('metaflac', "run 'mise install' (pinned as conda:libflac in mise.toml)");
 }
 
 /**

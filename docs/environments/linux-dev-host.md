@@ -48,6 +48,12 @@ Ansible: `ansible.builtin.apt`, `state: present`.
 user namespace at all. `slirp4netns` is required by step 4; `passt` ships the
 default backend Podman probes for.
 
+FFmpeg and `metaflac` are **not** apt packages here — both are pinned project
+tools (`conda:ffmpeg` and `conda:libflac` in `mise.toml`) and arrive with
+`mise install`. Note the two are separate entries even though the conda ffmpeg
+build physically contains `metaflac`: it exposes only `ffmpeg`, `ffplay` and
+`ffprobe`, so the binary is present but unreachable without `conda:libflac`.
+
 ### 2. Reallocate subuid/subgid inside the container's own namespace
 
 **This is the step that is easy to get wrong, and it is not Podman-specific —
@@ -172,3 +178,12 @@ Note `-p 4533`, **not** `-p 0:4533`. Docker reads host port `0` as "pick a free
 port"; Podman rejects it (`port numbers must be between 1 and 65535 (inclusive),
 got 0`). The bare container-port form means "publish to a random host port" in
 both runtimes and is the portable spelling — see task-492.
+
+Image references must also be registry-qualified (`docker.io/deluan/navidrome@…`
+rather than `deluan/navidrome@…`): Docker infers the registry for a short name,
+Podman refuses to without `unqualified-search-registries` configured. The repo
+now qualifies them, so no host `registries.conf` is needed.
+
+Select the runtime with `PODKIT_CONTAINER_RUNTIME=podman`. It is declared in
+`turbo.json`'s `globalPassThroughEnv`, so it survives Turbo's environment
+filtering and reaches the test tasks.

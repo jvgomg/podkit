@@ -15,7 +15,8 @@ import { randomUUID } from 'node:crypto';
 import { getStaticFixturesRoot } from '@podkit/test-fixtures';
 import type { TestSource } from '@podkit/e2e-shared';
 import {
-  runDockerCommand,
+  containerRuntime,
+  runContainerCommand,
   startNavidromeContainer,
   type NavidromeContainer,
 } from '../docker/index.js';
@@ -108,7 +109,7 @@ export class SubsonicTestSource implements TestSource {
 
   async setup(): Promise<void> {
     if (!(await this.isAvailable())) {
-      throw new Error('Docker is not available');
+      throw new Error(`Container runtime '${containerRuntime()}' is not available`);
     }
 
     await mkdir(this.musicDir_, { recursive: true });
@@ -198,7 +199,7 @@ export class SubsonicTestSource implements TestSource {
  */
 export async function isDockerAvailable(): Promise<boolean> {
   try {
-    await runDockerCommand(['version']);
+    await runContainerCommand(['version']);
     return true;
   } catch {
     return false;

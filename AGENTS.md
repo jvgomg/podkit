@@ -75,6 +75,7 @@ bun run test:perf                # Run *.perf.test.ts performance benchmarks (ma
 bun run test:e2e                 # Run E2E tests (dummy iPod, no Docker)
 bun run test:e2e:docker              # Run Docker-gated E2E tests (Subsonic / Navidrome)
 bun run test --filter podkit-core # Run tests for specific package
+bun run lint                     # oxlint + CLI stderr conventions + shellcheck
 bun run quality                  # Full quality gate (single turbo DAG): lint+typecheck+build → test → test:e2e → test:e2e:docker → test:vm
 bun run quality --force          # Same, but invalidate turbo caches first (flags pass through)
 bun run quality -- --concurrency=4   # Pass flags to underlying scripts after `--`
@@ -133,6 +134,11 @@ podkit device music --format json       # List music on device
 Dependency *kinds* are defined in [CONTEXT.md](CONTEXT.md). A **prebuild library** is statically linked into a native artifact and absent from the shipped result; a **prebuild tool** produces that artifact but is linked into nothing; a **runtime dependency** is shelled out to at run time and no prebuilt artifact removes it.
 
 FFmpeg is pinned in `mise.toml` (`"conda:ffmpeg"`) because `@podkit/test-fixtures` asserts on a specific encoder set that stock Homebrew FFmpeg does not satisfy. Prefer `mise install` over a system FFmpeg when developing.
+
+Two contributor-only tools are pinned there too, so `mise install` is the single setup step on any platform:
+
+- **`metaflac`** (`"conda:libflac"`) — FLAC tag assertions in `@podkit/test-fixtures` and the suites calling `requireMetaflac()`. Pinned separately from FFmpeg even though the conda FFmpeg build *contains* `metaflac`: that build exposes only `ffmpeg`, `ffplay` and `ffprobe`, so the binary is present but unreachable.
+- **`shellcheck`** — `bun run lint:shell` (part of `bun run lint`). The repo has ~29 shell scripts, several privileged or artifact-producing, and four already carried `# shellcheck` directives before the tool was pinned. Errors and warnings gate the lint; notes are printed but do not fail. The tree is clean at every severity, so any output is new — keep it that way. Suppress a deliberate exception with a per-line `# shellcheck disable=<code>` **and a reason**, never a global rule: the common case is SC2016 (`$` inside single quotes), which is correct wherever a string must expand inside a guest (`limactl shell … bash -c '…'`) but is a genuine bug in host context.
 
 See [packages/docs-site/src/content/docs/developers/development.md](packages/docs-site/src/content/docs/developers/development.md) for full setup instructions.
 

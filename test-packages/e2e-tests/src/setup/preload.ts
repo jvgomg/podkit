@@ -26,6 +26,6 @@ process.on('exit', () => {
   // This is just a safety check to log if containers are still registered.
   if (!containerRegistry.isEmpty()) {
     console.warn('[docker-cleanup] Warning: Process exiting with registered containers');
-    console.warn('[docker-cleanup] Run "bun run cleanup:docker --force" to clean up');
+    console.warn('[docker-cleanup] Run "bun run cleanup:force" to clean up');
   }
 });

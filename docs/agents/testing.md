@@ -324,8 +324,12 @@ own command — so don't combine them expecting both to be turbo flags (e.g.
 `--force -- --dry=text` runs a real build, since `--dry=text` is no longer
 turbo's dry-run flag).
 
-Both are **local-only** (never run in GitHub CI) and require **Docker Desktop**
-plus the **Lima harness VM** (`bun run harness:status`). `quality:rc`
+Both are **local-only** (never run in GitHub CI) and require a **container
+runtime** plus the **device substrate** (`bun run harness:status`). Neither is
+mandatory to *run* the gate: surfaces whose capability is missing skip
+themselves, the gate prints a capability report naming what it could not cover,
+and it exits `2` (`EXIT_INCOMPLETE`) rather than reporting a pass — see
+[ADR-028](../adr/adr-028-substrate-agnostic-device-harness.md) §5. `quality:rc`
 additionally requires an authenticated **`gh`** (it discovers the
 release-candidate build and downloads its artefacts).
 
@@ -337,6 +341,12 @@ through turbo via `globalPassThroughEnv`):
 | `PODKIT_CLI_BINARY` | local `bin/podkit` (host e2e runs the real compiled binary) | fetched mac arm64 binary |
 | `PODKIT_LINUX_BINARY` | unset (VM builds from local musl-builder) | fetched glibc arm64 binary |
 | `PODKIT_DOCKER_DIST_IMAGE` | unset (both docker surfaces build locally) | `ghcr.io/jvgomg/podkit:rc` (both surfaces pull it) |
+
+One further variable is environmental rather than asset-selecting:
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `PODKIT_CONTAINER_RUNTIME` | `docker` | Container binary the e2e suites shell out to. Set to `podman` on hosts without Docker — the `docker-source` surface is verified against rootless Podman (see [docs/environments/linux-dev-host.md](../environments/linux-dev-host.md)). |
 
 ### `quality:rc` specifics
 
@@ -451,7 +461,7 @@ All exported from `@podkit/test-fixtures` (and re-exported through `@podkit/e2e-
 | --- | --- | --- |
 | `requireFFmpeg()` | `ffmpeg -version` runs cleanly. | `brew install ffmpeg` / `apt install ffmpeg` |
 | `requireFfprobe()` | `ffprobe -version` runs cleanly. | Ships with ffmpeg — install ffmpeg. |
-| `requireMetaflac()` | `metaflac --version` runs cleanly. | `brew install flac` / `apt install flac` |
+| `requireMetaflac()` | `metaflac --version` runs cleanly. | `mise install` (pinned as `conda:libflac`) |
 | `requireGpodTool()` | `gpod-tool --version` runs cleanly. | `mise run tools:build` |
 | `requireBinary(name, hint, [versionArgs])` | Generic — used by the wrappers above. Reach for it only when a test needs a tool that doesn't have its own wrapper yet. | Caller-supplied. |
 | `ensureFixturesExist(set)` | A `@podkit/test-fixtures` static set (`'multi-format'` / `'goldberg-selections'` / `'synthetic-tests'` / `'video'`) has been generated. | `bun run --filter @podkit/test-fixtures generate-static-fixtures` |
@@ -1172,7 +1182,9 @@ bun run --filter @podkit/e2e-tests cleanup:force # Force remove all
 **Adding a new Docker test:**
 
 1. Add the test file under `test-packages/e2e-tests/src/docker-source/` as a bare `*.test.ts` (the directory is the Surface gate — no filename suffix needed).
-2. At the top: `requireBinary`/`requireFFmpeg`/`requireMetaflac` for tools your test execs, `ensureFixturesExist(...)` for fixture sets, and a `beforeAll` that calls `isDockerAvailable()` and throws if `false`. See `test-packages/e2e-tests/src/docker-source/compilation-subsonic.test.ts` for the template.
+2. At the top: `requireBinary`/`requireFFmpeg`/`requireMetaflac` for tools your test execs, and `ensureFixturesExist(...)` for fixture sets — these *throw*, because a missing fixture toolchain is a broken checkout. For the container runtime, declare the suite with `describeContainerSuite(...)` from `../docker/availability.js` and guard any shared `beforeAll` with `if (!isContainerRuntimeAvailable()) return;` — that *skips*, because a machine with no runtime has not broken anything (ADR-028 §5). See `test-packages/e2e-tests/src/docker-source/compilation-subsonic.test.ts` for the template.
+
+   The distinction is the point: **throw for a broken checkout, skip for absent infrastructure.** Do not add a `beforeAll` that throws on `isDockerAvailable()` — that pattern made a Linux dev host report four false failures.
 3. Spawn containers via `startContainer({...})` from `../docker/index.js` — they're auto-registered for cleanup:
 
    ```ts

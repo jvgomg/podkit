@@ -22,7 +22,8 @@
 
 import { ensureFixturesExist } from '@podkit/e2e-shared';
 
-import { SubsonicTestSource, isDockerAvailable } from '../sources/subsonic';
+import { SubsonicTestSource } from '../sources/subsonic';
+import { describeContainerSuite, isContainerRuntimeAvailable } from '../docker/availability.js';
 import { createSubsonicConfig } from '../helpers/subsonic-config';
 import { withTarget } from '../targets';
 import { defineMatrix } from '../matrix/harness';
@@ -68,38 +69,40 @@ async function runPass(checkArtwork: boolean): Promise<Map<string, ChangeObserve
   return merged;
 }
 
-defineMatrix({
-  title: 'artwork change detection — subsonic adapter',
-  cells: changeCells(),
-  cellKey: changeCellKey,
-  cellLabel: changeCellLabel,
-  passes: [false, true],
-  passLabel: (pass) => `--check-artwork ${pass ? 'on' : 'off'}`,
-  predict: predictSubsonicChange,
-  runPass,
-  // Two transitions × four syncs/transition × Navidrome restart overhead.
-  // Doubled vs the static docker matrix to absorb container-restart variance
-  // on busy CI hosts.
-  timeoutMs: 3000000,
-  setup: async () => {
-    if (!(await isDockerAvailable())) {
-      throw new Error(
-        'Docker is not available — required for the art-matrix-change subsonic suite.'
-      );
-    }
-    // populate: false — the change test places its own minimal fixture set
-    // (one album) via mutateLibrary; auto-copying the full audio tree would
-    // pad the library for no benefit and lengthen scans.
-    source = new SubsonicTestSource({ writable: true, populate: false });
-    console.log('Starting Navidrome container for art-change matrix...');
-    await source.setup();
-    console.log(`Navidrome ready at ${source.serverUrl}`);
-  },
-  teardown: async () => {
-    if (source) {
-      console.log('Stopping Navidrome container...');
-      await source.teardown();
-      source = null;
-    }
-  },
-});
+// Skip the whole matrix rather than failing when no container runtime exists
+// (ADR-028 §5). defineMatrix registers its suites at module scope, so the
+// guard has to sit here rather than inside `setup`.
+const containerRuntimeReady = isContainerRuntimeAvailable();
+if (!containerRuntimeReady)
+  describeContainerSuite('artwork change matrix — subsonic adapter', () => {});
+if (containerRuntimeReady)
+  defineMatrix({
+    title: 'artwork change detection — subsonic adapter',
+    cells: changeCells(),
+    cellKey: changeCellKey,
+    cellLabel: changeCellLabel,
+    passes: [false, true],
+    passLabel: (pass) => `--check-artwork ${pass ? 'on' : 'off'}`,
+    predict: predictSubsonicChange,
+    runPass,
+    // Two transitions × four syncs/transition × Navidrome restart overhead.
+    // Doubled vs the static docker matrix to absorb container-restart variance
+    // on busy CI hosts.
+    timeoutMs: 3000000,
+    setup: async () => {
+      // populate: false — the change test places its own minimal fixture set
+      // (one album) via mutateLibrary; auto-copying the full audio tree would
+      // pad the library for no benefit and lengthen scans.
+      source = new SubsonicTestSource({ writable: true, populate: false });
+      console.log('Starting Navidrome container for art-change matrix...');
+      await source.setup();
+      console.log(`Navidrome ready at ${source.serverUrl}`);
+    },
+    teardown: async () => {
+      if (source) {
+        console.log('Stopping Navidrome container...');
+        await source.teardown();
+        source = null;
+      }
+    },
+  });

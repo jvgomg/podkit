@@ -15,7 +15,8 @@
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 import { runCli, runCliJson, cleanupTempConfig, ensureFixturesExist } from '@podkit/e2e-shared';
 import { withTarget } from '../targets/index.js';
-import { SubsonicTestSource, isDockerAvailable } from '../sources/subsonic.js';
+import { SubsonicTestSource } from '../sources/subsonic.js';
+import { describeContainerSuite, isContainerRuntimeAvailable } from '../docker/availability.js';
 import { createSubsonicConfig } from '../helpers/subsonic-config.js';
 
 import type { SyncOutput } from 'podkit/types';
@@ -32,10 +33,11 @@ beforeAll(async () => {
   // Docker is mandatory for this entire package. Fail loudly if it's missing
   // instead of silently passing every test — the old SUBSONIC_E2E gate would
   // skip the suite quietly, which hid real coverage gaps.
-  const dockerAvailable = await isDockerAvailable();
-  if (!dockerAvailable) {
-    throw new Error('Docker is not available — required for @podkit/e2e-tests docker suite.');
-  }
+  // Skip, don't fail: an environment with no container runtime has not broken
+  // anything, it just cannot cover this surface (ADR-028 §5). The suite bodies
+  // are skipped via describeContainerSuite; this guard keeps the shared setup
+  // from running for a suite that will not execute.
+  if (!isContainerRuntimeAvailable()) return;
 
   source = new SubsonicTestSource();
   console.log('Starting Navidrome container...');
@@ -55,7 +57,7 @@ afterAll(async () => {
 // Fresh Sync Tests
 // =============================================================================
 
-describe('Subsonic sync workflow', () => {
+describeContainerSuite('Subsonic sync workflow', () => {
   describe('fresh sync', () => {
     it('syncs all tracks from Subsonic to empty iPod', async () => {
       await withTarget(async (target) => {
@@ -210,15 +212,12 @@ describe('Subsonic sync workflow', () => {
 // Infrastructure Tests (no Docker required)
 // =============================================================================
 
-describe('Subsonic test infrastructure', () => {
-  it('can check Docker availability', async () => {
-    // This test file lives in docker-source/: it only runs when the docker
-    // e2e suite is selected, and the test:e2e:docker harness gates the entire
-    // run on Docker actually being available. So the check must return true
-    // — a false would mean the harness ran us with no Docker, which is the
-    // exact regression this assertion protects against.
-    const available = await isDockerAvailable();
-    expect(available).toBe(true);
+describeContainerSuite('Subsonic test infrastructure', () => {
+  it('runs only when a container runtime is available', () => {
+    // Reaching this line means describeContainerSuite decided the runtime was
+    // available. Re-asserting it catches the one failure this design could
+    // still have: a skip predicate that says "available" while nothing is.
+    expect(isContainerRuntimeAvailable()).toBe(true);
   });
 
   it('source factory creates SubsonicTestSource', () => {

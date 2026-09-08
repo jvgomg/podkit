@@ -42,6 +42,8 @@ detect_package_manager() {
 enable_nonfree_debian() {
     # Check if we're on Debian (not Ubuntu)
     if [[ -f /etc/os-release ]]; then
+        # /etc/os-release is a runtime file on the target machine, not in this repo.
+        # shellcheck source=/dev/null
         source /etc/os-release
         if [[ "$ID" == "debian" ]]; then
             info "Enabling non-free repository for Debian..."
