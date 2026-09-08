@@ -8,7 +8,9 @@
     "PODKIT_DAEMON_LINUX_BINARY",
     "PODKIT_DAEMON_LINUX_MUSL_BINARY",
     "PODKIT_CLI_BINARY",
-    "PODKIT_CONTAINER_RUNTIME"
+    "PODKIT_CONTAINER_RUNTIME",
+    "TEST_CONCURRENCY",
+    "TEST_TIMEOUT"
   ],
   "tasks": {
     "build": {
@@ -473,7 +475,17 @@
         "**/*.jsx",
         "**/*.mjs",
         "**/*.cjs",
-        "oxlint.json"
+        "**/*.sh",
+        "oxlint.json",
+        "scripts/check-cli-stderr-writes.mjs",
+        "scripts/lint-shell.mjs",
+        "!**/node_modules/**",
+        "!**/dist/**",
+        "!**/build/**",
+        "!**/bin/**",
+        "!**/.turbo/**",
+        "!**/.astro/**",
+        "!graphify-out/**"
       ],
       "outputs": []
     },
