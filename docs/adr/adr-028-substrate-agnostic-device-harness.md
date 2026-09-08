@@ -229,8 +229,14 @@ concurrent substrate to remove the phase-2 serialisation in `run-mirror-body.ts`
 Renaming the pre-existing `SubprocessRunner`/`registerRunner` overload — recorded
 in CONTEXT.md instead.
 
-**Unverified assumption.** Rootless Podman is expected to work on the LXC via
-native overlay-in-userns: user namespaces are enabled, `/etc/subuid` is
-populated and `overlay` is in `/proc/filesystems`, but `/dev/fuse` is absent so
-fuse-overlayfs is unavailable. This must be proven before §4's local
-`docker-source` cell is relied upon.
+**Assumption verified (2026-09-07).** Rootless Podman 5.4.2 runs the real
+digest-pinned Navidrome workload on the unprivileged LXC. The absence of
+`/dev/fuse` does not matter: kernel 6.17 mounts native overlay inside a user
+namespace, so no fuse-overlayfs is needed. Two Docker/Podman differences surfaced
+and are recorded on task-492: Podman rejects `-p 0:<port>` (use `-p <port>`,
+which means "random host port" in both runtimes), and `restart` fails under the
+default `pasta` rootless network backend because the outgoing process has not
+released the host port (use `slirp4netns`, or stop-then-recreate). Separately,
+Proxmox's default `/etc/subuid` allocates IDs outside an unprivileged LXC's own
+user namespace and must be reallocated inside it — a machine-setup step for
+Linux contributors, not repo work.

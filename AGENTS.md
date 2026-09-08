@@ -53,6 +53,7 @@ docs/                # Internal documentation (agents + contributors; not publis
 ├── architecture/    # How subsystems are wired, plus cross-cutting conventions.md
 ├── principles/      # Behavioural promises podkit makes to a user's library
 ├── formats/         # iPod database/format reference (generations, iTunesSD/BDHS)
+├── environments/    # Dev/test machine provisioning change logs (Ansible-ready)
 └── sysinfo-captures/ # Captured SysInfoExtended XML from real hardware
 ```
 
