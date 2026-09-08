@@ -179,11 +179,40 @@ claim ownership of cross-compiled Linux binaries (those belong to
 
 ### 4.3 E2E task wiring
 
-`@podkit/e2e-tests#test:e2e`, `@podkit/e2e-tests#test:e2e:docker`, and
-`@podkit/e2e-vm-tests#test:vm` declare `podkit#compile` AND
-`podkit#compile:debug` as `dependsOn`, so both binaries exist before
-any e2e test starts. Most tests use the production binary (the
-default); the few that need test seams opt in (§5).
+`@podkit/e2e-tests#test:e2e` and `@podkit/e2e-tests#test:e2e:docker`
+declare `podkit#compile` as `dependsOn` — but **not**
+`podkit#compile:debug`. The host e2e suites never select the debug
+build: `runCli` defaults to `'production'`, and no file under
+`test-packages/e2e-tests/src/` passes `binary: 'debug'`. Building
+`bin/podkit-debug` for them was pure waste: the two compile tasks stage
+to the same fixed paths and so serialise behind the `compile.sh` mutex
+(§4.2), putting a second `bun --compile` back-to-back with the first on
+the critical path before any test could start.
+
+Size the win honestly before you go hunting for more of them. The
+`--compile` step itself is ~1 s on a warm tree (both tasks share the
+same `^build` closure, so dropping one removes no upstream build work);
+measured on a 4-core Linux host, a forced `test:e2e` went 4:58.4 → 4:52.7.
+The dependency was wrong in principle and the serialisation was real,
+but this was never the minutes-scale saving the shape of the problem
+suggests — that run is dominated by `art-matrix.test.ts` at ~215 s.
+
+`podkit#compile` **does** stay, and not because the default resolves to
+it. Under `bun run quality` the root script exports
+`PODKIT_CLI_BINARY=$PWD/packages/podkit-cli/bin/podkit`, which redirects
+the `'production'` build at the compiled binary so the gate exercises
+the real shipping artefact. Turbo cannot make a `dependsOn` conditional
+on an env var, so the dependency is declared unconditionally and the
+plain `bun run test:e2e` path pays for a binary it then ignores in
+favour of `dist/main.js`.
+
+`@podkit/e2e-vm-tests#test:vm` and `#test:e2e:docker-dist` still declare
+both, which is what keeps the `compile:debug` task alive. Note those two
+are themselves questionable: the debug binary those suites actually
+exercise is the *Linux* one (`bin/podkit-debug-linux-*`, built in-VM by
+`@podkit/device-testing#build:linux-binary` and resolved through
+`resolveDefaultPodkitDebugBinary()`), not the host `bin/podkit-debug`
+that `podkit#compile:debug` produces. See §8.
 
 ---
 
@@ -331,6 +360,16 @@ What it does NOT catch:
   production-mode `compile.sh` inside Lima. If a VM e2e ever needs
   the hook, add a `build:linux-binary:debug` companion task that
   passes `PODKIT_DEV_HOOKS=1` through to the in-VM build.
+
+  Corollary, still open: the host `podkit#compile:debug` dependency on
+  `@podkit/e2e-vm-tests#test:vm` and `#test:e2e:docker-dist` looks like
+  dead weight for the same reason the host e2e one was (§4.3) — the only
+  debug binary those suites touch is the Linux one, probed via
+  `resolveDefaultPodkitDebugBinary()` (`bin/podkit-debug-linux-*`) and
+  installed to `/usr/local/bin/podkit-debug` by `vm:install`. Dropping it
+  would remove a serialised `bun --compile` from every VM run too, but it
+  was left in place pending verification on a host that actually has the
+  device substrate.
 - **Smoke test for the debug binary.** Today the smoke test only
   pins the production side (the strings must be absent). A symmetric
   test (the strings must be present in `bin/podkit-debug`) would

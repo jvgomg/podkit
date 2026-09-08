@@ -61,8 +61,13 @@ export interface CliOptions {
    * Which CLI build to run. Default `'production'`. See {@link CliBinary}.
    *
    * When `'debug'`, the test is responsible for ensuring `bin/podkit-debug`
-   * has been built — the turbo `test:e2e` / `test:vm` tasks declare a
-   * `podkit#compile:debug` dependency so this is satisfied in CI.
+   * has been built. The host e2e tasks (`@podkit/e2e-tests#test:e2e` /
+   * `#test:e2e:docker`) deliberately do **not** depend on
+   * `podkit#compile:debug` — no host e2e selects this build, and the two
+   * compile tasks serialise behind a shared mutex, so declaring it cost
+   * every run a full extra `bun --compile` for nothing. The first host
+   * test to opt in must add that `dependsOn` back (or build the binary
+   * itself). The VM tasks still declare it.
    */
   binary?: CliBinary;
 }
@@ -263,8 +268,10 @@ export async function runCliJson<T>(
  * Check whether the CLI binary has been built.
  *
  * Used by the preflight checks. Tests should not call this themselves —
- * turbo wires `^build` (and `podkit#compile:debug` for the debug binary)
- * so the CLI exists by the time tests run.
+ * turbo wires `^build` (and `podkit#compile`, which `bun run quality`
+ * points `PODKIT_CLI_BINARY` at) so the CLI exists by the time tests run.
+ * The debug binary is not wired into the host e2e tasks; see
+ * {@link CliOptions.binary}.
  */
 export async function isCliAvailable(binary: CliBinary = 'production'): Promise<boolean> {
   try {
