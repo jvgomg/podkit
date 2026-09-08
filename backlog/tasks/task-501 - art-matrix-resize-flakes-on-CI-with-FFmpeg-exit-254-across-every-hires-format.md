@@ -4,7 +4,7 @@ title: art-matrix suites flake with FFmpeg exit 254 across every hires format
 status: In Progress
 assignee: []
 created_date: '2026-09-08 19:35'
-updated_date: '2026-09-08 22:00'
+updated_date: '2026-09-08 22:14'
 labels:
   - testing
   - ci
@@ -185,4 +185,10 @@ Separately: a transcode that fails with ENOENT on its own scratch dir is not ret
 ## AC #4 is deliberately left open
 
 It asks for validation across consecutive CI runs, which cannot be done from here — it needs runs after this merges. The deterministic reproductions above are stronger evidence than a run count, but they are not the thing the AC asks for, so the task stays In Progress until CI has actually been watched. Suggested bar: 6 consecutive green `test:e2e` runs on `main`, which at the observed ~33% would be a 1-in-730 fluke.
+
+## Post-review correction
+
+`/code-review` flagged that `firstFFmpegDiagnostic` duplicated a pre-existing `extractFFmpegError` in `video/transcode.ts` — same job, divergent keyword sets, same base message string, two extractors in core that would drift. Both paths now share `transcode/ffmpeg-error.ts`, whose keyword set is the union (it picks up video's `does not contain any stream`, which the audio version would have missed). Video's message shape changes with it, from a bare diagnostic to `FFmpeg exited with code N: <diagnostic>` — nothing pinned the old shape.
+
+Also tightened the integration test: `runSiblingSweep` collected warnings it never asserted on; it now returns them and the test requires the sweep to be silent, not merely ineffective.
 <!-- SECTION:NOTES:END -->

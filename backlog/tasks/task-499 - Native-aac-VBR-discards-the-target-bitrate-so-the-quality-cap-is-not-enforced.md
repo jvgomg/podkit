@@ -4,7 +4,7 @@ title: 'Native aac VBR discards the target bitrate, so the quality cap is not en
 status: Done
 assignee: []
 created_date: '2026-09-08 18:20'
-updated_date: '2026-09-08 21:43'
+updated_date: '2026-09-08 22:14'
 labels:
   - transcoding
   - correctness
@@ -127,6 +127,18 @@ Verified red-before-green with the fix stashed: `medium` 244/192, `low` 231/128,
 - `packages/podkit-core` integration: 12 files pass, including the new ceiling suite
 - `bun run test:e2e`: 37/37 pass
 - lint, typecheck, prettier clean
+
+## Post-review corrections
+
+A `/code-review` pass over the commit found three things worth fixing, all now done:
+
+1. **The libfdk band table was wrong at the bottom two levels.** FFmpeg's published per-channel figures are 20-32 / 32-40 / 48-56 / 64-72 / 96-112, so the stereo tops are 64 / 80 / 112 / 144 / 224 — not the 80 / 96 / … originally written. Only targets between 64 and 96 kbps were affected (one level off); every preset and the reduced-96 case are unchanged. Table now spelled out in the doc comment rather than described in prose.
+2. **The docs overclaimed.** "podkit never produces a file above it" is true on native `aac` and `libfdk_aac` but not on `aac_at`, whose coarse quality index can land a few percent over — the integration test's own 15% allowance for that encoder contradicted the sentence. `quality-presets.md` now says podkit *asks for* no more than the preset and names `aac_at` as the one encoder where the figure is a target rather than a hard cap; `user-guide/transcoding/audio.md` gained a matching note.
+3. **The changeset understated the libfdk change.** It described libfdk only as fixing planner-reduced targets, but the bitrate-derived mapping also moves `low` from `-vbr 2` to `-vbr 3` on that encoder — a file-size *increase* for libfdk users, because `low` had been landing near 64-80 kbps against a 128 kbps preset. Now spelled out.
+
+Also: the native-`aac` fallback for a caller that supplies no `targetKbps` had an invented linear formula (`quality * 51.2`) that no caller could reach; replaced with a total map over the clamped 1-5 level, shared with the libfdk fallback. And the integration test's headroom is now an explicit `ceilingFor(encoder, cap)` — native `aac` gets `cap + 1`, the one kbps being ffprobe's rounding rather than encoder slack, which removes a plausible future 1-kbps flake without softening the cap.
+
+**Residual on AC #2, recorded honestly:** the measured proof is at the encoder (transcode to a temp file, ffprobe the stream), not through the CLI onto a dummy iPod as the description's evidence table was. The on-device path is still covered — `upgrades.test.ts:1527` asserts an on-device bitrate `<= HIGH_CAP_KBPS` and the whole e2e suite is 37/37 — but nobody has re-run the description's three-row table end to end.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

@@ -30,8 +30,12 @@ import type { Warning, WarningSink } from './types.js';
 
 requireFFmpeg();
 
-/** Stand-in for the sibling process's sweep, pointed at our fake tmp root. */
-async function runSiblingSweep(hostTmp: string, mount: string): Promise<void> {
+/**
+ * Stand-in for the sibling process's sweep, pointed at our fake tmp root.
+ * Returns whatever the pre-flight warned about, so the caller can assert the
+ * sweep was quiet rather than merely ineffective.
+ */
+async function runSiblingSweep(hostTmp: string, mount: string): Promise<Warning[]> {
   const warnings: Warning[] = [];
   const sink: WarningSink = { emit: (w) => warnings.push(w) };
   const preliminaries = await runPreSyncSweep({
@@ -40,6 +44,7 @@ async function runSiblingSweep(hostTmp: string, mount: string): Promise<void> {
     tmpDirOverride: hostTmp,
   });
   await runPreliminariesPreFlight(preliminaries, { dryRun: false, warningSink: sink });
+  return warnings;
 }
 
 async function makeSource(path: string): Promise<void> {
@@ -59,7 +64,9 @@ async function makeSource(path: string): Promise<void> {
     let err = '';
     proc.stderr.on('data', (d: Buffer) => (err += d.toString()));
     proc.on('error', reject);
-    proc.on('close', (code) => (code === 0 ? resolve() : reject(new Error(err))));
+    proc.on('close', (code) =>
+      code === 0 ? resolve() : reject(new Error(`ffmpeg exited ${code}: ${err}`))
+    );
   });
 }
 
@@ -78,7 +85,8 @@ describe('pre-sync sweep vs. a live transcode', () => {
       await writeFile(join(scratch, 'earlier-track.m4a'), 'already transcoded');
 
       // Sibling sync sweeps in that window.
-      await runSiblingSweep(hostTmp, mount);
+      const warnings = await runSiblingSweep(hostTmp, mount);
+      expect(warnings).toEqual([]);
 
       // The scratch dir and everything already written into it must survive.
       expect(existsSync(scratch)).toBe(true);

@@ -26,6 +26,7 @@ import type { TranscodeTargetCodec } from './codecs.js';
 import { getCodecMetadata } from './codecs.js';
 import { parseFFmpegProgressLine } from './progress.js';
 import { buildArtworkScaleFilter } from '../artwork/resize.js';
+import { describeFFmpegFailure } from './ffmpeg-error.js';
 
 /**
  * Error thrown when FFmpeg is not available
@@ -49,40 +50,6 @@ export class TranscodeError extends Error {
     super(message);
     this.name = 'TranscodeError';
   }
-}
-
-/**
- * Build the message for a non-zero FFmpeg exit.
- *
- * FFmpeg's exit codes are errno negated into a byte — 254 is `-ENOENT` and
- * covers both "cannot read the input" and "cannot write the output", which
- * is exactly the distinction a caller needs and cannot recover from the
- * number. Its stderr says which, so the first diagnostic line is folded into
- * the message rather than left in the `stderr` field where the sync layer's
- * error report never reaches it (TASK-501).
- *
- * The `[component @ 0xADDRESS]` prefix is stripped: it varies run to run, so
- * leaving it in would make otherwise-identical failures look distinct.
- */
-export function describeFFmpegFailure(code: number | null, stderr: string): string {
-  const base = `FFmpeg exited with code ${code}`;
-  const diagnostic = firstFFmpegDiagnostic(stderr);
-  return diagnostic === null ? base : `${base}: ${diagnostic}`;
-}
-
-/** Longest diagnostic we will append; anything beyond is elided. */
-const MAX_DIAGNOSTIC_CHARS = 200;
-
-function firstFFmpegDiagnostic(stderr: string): string | null {
-  for (const raw of stderr.split('\n')) {
-    const line = raw.replace(/^\[[^\]]*\]\s*/, '').trim();
-    if (line === '') continue;
-    if (!/error|invalid|no such file|failed|denied|permission|not permitted/i.test(line)) continue;
-    return line.length > MAX_DIAGNOSTIC_CHARS
-      ? `${line.slice(0, MAX_DIAGNOSTIC_CHARS)}\u2026`
-      : line;
-  }
-  return null;
 }
 
 /**
@@ -136,7 +103,7 @@ export function buildVbrArgs(encoder: string, quality: number, targetKbps?: numb
       // bands; pick the richest band that still fits under the target.
       // Also set cutoff to preserve high frequencies.
       const vbr =
-        targetKbps !== undefined ? libfdkVbrFromBitrate(targetKbps) : clampLibfdkVbr(quality);
+        targetKbps !== undefined ? libfdkVbrFromBitrate(targetKbps) : clampQualityLevel(quality);
       return ['-vbr', String(vbr), '-cutoff', '18000'];
     }
     case 'aac_at':
@@ -171,12 +138,30 @@ export function buildVbrArgs(encoder: string, quality: number, targetKbps?: numb
 }
 
 /**
+ * Our internal 1-5 VBR quality level, clamped into range.
+ *
+ * `buildVbrArgs` takes `targetKbps` optionally, so both encoder mappings need
+ * something to fall back on when a caller has a quality level and no target.
+ */
+type QualityLevel = 1 | 2 | 3 | 4 | 5;
+
+function clampQualityLevel(quality: number): QualityLevel {
+  return Math.max(1, Math.min(5, Math.round(quality))) as QualityLevel;
+}
+
+/**
  * Pick the libfdk_aac `-vbr` level whose bitrate band fits under a target.
  *
- * Bands are the documented AAC-LC figures for 44.1/48 kHz, per channel,
- * doubled for stereo (podkit always outputs stereo):
- *   vbr 1 → 64-80 · vbr 2 → 80-96 · vbr 3 → 96-112 · vbr 4 → 128-144 ·
- *   vbr 5 → 192-224
+ * Bands are FFmpeg's documented AAC-LC figures for 44.1/48 kHz, per channel,
+ * doubled for the stereo podkit always outputs:
+ *
+ * | `-vbr` | kbps/channel | stereo |
+ * |---|---|---|
+ * | 1 | 20-32 | 40-64 |
+ * | 2 | 32-40 | 64-80 |
+ * | 3 | 48-56 | 96-112 |
+ * | 4 | 64-72 | 128-144 |
+ * | 5 | 96-112 | 192-224 |
  *
  * The *top* of the band is compared, not its midpoint, so the level chosen
  * cannot average above the cap. This is what puts the presets at
@@ -184,36 +169,30 @@ export function buildVbrArgs(encoder: string, quality: number, targetKbps?: numb
  */
 function libfdkVbrFromBitrate(targetKbps: number): number {
   // Highest quality first; take the first band that fits entirely under the cap.
-  const bands: Array<[number, number]> = [
+  const bandTops: Array<[number, number]> = [
     [224, 5],
     [144, 4],
     [112, 3],
-    [96, 2],
-    [80, 1],
+    [80, 2],
+    [64, 1],
   ];
-  for (const [bandTopKbps, vbr] of bands) {
+  for (const [bandTopKbps, vbr] of bandTops) {
     if (targetKbps >= bandTopKbps) return vbr;
   }
   // Below libfdk's lowest band there is nothing quieter to pick.
   return 1;
 }
 
-/** Clamp our internal 1-5 quality level into libfdk's 1-5 VBR range. */
-function clampLibfdkVbr(quality: number): number {
-  return Math.max(1, Math.min(5, Math.round(quality)));
-}
-
 /**
  * Resolve the bitrate native `aac` is asked for.
  *
- * The planner's target wins. Without one, our internal 1-5 quality level maps
- * onto the preset bitrates it stands for (5 → 256, 4 → 192, 2 → 128), with a
- * linear fallback on the same scale for levels no preset uses.
+ * The planner's target wins. Without one, our 1-5 quality level maps onto the
+ * preset bitrates it stands for (5 → 256, 4 → 192, 2 → 128).
  */
 function nativeAacBitrate(quality: number, targetKbps?: number): number {
   if (targetKbps !== undefined) return Math.round(targetKbps);
-  const byLevel: Record<number, number> = { 5: 256, 4: 192, 3: 160, 2: 128, 1: 96 };
-  return byLevel[quality] ?? Math.max(64, Math.min(320, Math.round(quality * 51.2)));
+  const byLevel: Record<QualityLevel, number> = { 1: 96, 2: 128, 3: 160, 4: 192, 5: 256 };
+  return byLevel[clampQualityLevel(quality)];
 }
 
 /**

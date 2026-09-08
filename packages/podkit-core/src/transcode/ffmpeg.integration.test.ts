@@ -692,6 +692,21 @@ describe('isFFmpegAvailable', () => {
 // Quality preset bitrate ceiling (ADR-023 §2, TASK-499)
 // =============================================================================
 
+/** Run a command to completion, resolving its stdout and rejecting on non-zero. */
+async function capture(bin: string, args: string[]): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    const proc = spawn(bin, args);
+    let out = '';
+    let err = '';
+    proc.stdout.on('data', (d: Buffer) => (out += d.toString()));
+    proc.stderr.on('data', (d: Buffer) => (err += d.toString()));
+    proc.on('error', reject);
+    proc.on('close', (code) =>
+      code === 0 ? resolve(out) : reject(new Error(`${bin} exited ${code}: ${err}`))
+    );
+  });
+}
+
 /**
  * Read the *audio stream* bitrate of a file, in kbps.
  *
@@ -701,27 +716,17 @@ describe('isFFmpegAvailable', () => {
  * so the stream is what it has to measure.
  */
 async function streamBitrateKbps(file: string): Promise<number> {
-  const stdout = await new Promise<string>((resolve, reject) => {
-    const proc = spawn('ffprobe', [
-      '-v',
-      'error',
-      '-select_streams',
-      'a:0',
-      '-show_entries',
-      'stream=bit_rate',
-      '-of',
-      'csv=p=0',
-      file,
-    ]);
-    let out = '';
-    let err = '';
-    proc.stdout.on('data', (d: Buffer) => (out += d.toString()));
-    proc.stderr.on('data', (d: Buffer) => (err += d.toString()));
-    proc.on('error', reject);
-    proc.on('close', (code) =>
-      code === 0 ? resolve(out) : reject(new Error(`ffprobe failed: ${err}`))
-    );
-  });
+  const stdout = await capture('ffprobe', [
+    '-v',
+    'error',
+    '-select_streams',
+    'a:0',
+    '-show_entries',
+    'stream=bit_rate',
+    '-of',
+    'csv=p=0',
+    file,
+  ]);
 
   const parsed = parseInt(stdout.trim(), 10);
   if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -746,26 +751,18 @@ describe('quality preset bitrate ceiling', () => {
     // any cap and prove nothing — the original bug (native aac reusing
     // libfdk's 1-5 quality number) hid for exactly that reason.
     hardSource = join(ceilingDir, 'hard-source.flac');
-    await new Promise<void>((resolve, reject) => {
-      const proc = spawn('ffmpeg', [
-        '-f',
-        'lavfi',
-        '-i',
-        'anoisesrc=color=pink:sample_rate=44100:duration=10:amplitude=0.8:seed=499',
-        '-ac',
-        '2',
-        '-c:a',
-        'flac',
-        '-y',
-        hardSource,
-      ]);
-      let err = '';
-      proc.stderr.on('data', (d: Buffer) => (err += d.toString()));
-      proc.on('error', reject);
-      proc.on('close', (code) =>
-        code === 0 ? resolve() : reject(new Error(`FFmpeg failed: ${err}`))
-      );
-    });
+    await capture('ffmpeg', [
+      '-f',
+      'lavfi',
+      '-i',
+      'anoisesrc=color=pink:sample_rate=44100:duration=10:amplitude=0.8:seed=499',
+      '-ac',
+      '2',
+      '-c:a',
+      'flac',
+      '-y',
+      hardSource,
+    ]);
   });
 
   afterAll(async () => {
@@ -775,11 +772,12 @@ describe('quality preset bitrate ceiling', () => {
   });
 
   /**
-   * Headroom allowed above the cap, as a fraction of it.
+   * The highest measured bitrate a given cap tolerates, in kbps.
    *
-   * Native `aac` gets none: podkit drives it with `-b:a`, whose rate control
-   * tracks the request to within a kbps even on noise, so the ceiling is
-   * enforceable exactly.
+   * Native `aac` gets the cap itself plus a single kbps of measurement slack:
+   * podkit drives it with `-b:a`, whose rate control tracks the request to
+   * within a kbps even on noise, and the one kbps is for ffprobe's own
+   * rounding rather than for the encoder.
    *
    * `aac_at` and `libfdk_aac` expose only a quality index — podkit picks the
    * index nearest the target and the encoder decides the rest, so on content
@@ -787,7 +785,8 @@ describe('quality preset bitrate ceiling', () => {
    * those encoders' VBR surface, not of the preset resolution, and it is not
    * what TASK-499 fixed.
    */
-  const headroom = (enc: string): number => (enc === 'aac' ? 1 : 1.15);
+  const ceilingFor = (enc: string, capKbps: number): number =>
+    enc === 'aac' ? capKbps + 1 : Math.round(capKbps * 1.15);
 
   for (const preset of ['high', 'medium', 'low'] as const) {
     const cap = AAC_PRESETS[preset].targetKbps;
@@ -797,7 +796,7 @@ describe('quality preset bitrate ceiling', () => {
       await transcoder.transcode(hardSource, outputPath, preset);
 
       const measured = await streamBitrateKbps(outputPath);
-      expect(measured).toBeLessThanOrEqual(Math.round(cap * headroom(encoder)));
+      expect(measured).toBeLessThanOrEqual(ceilingFor(encoder, cap));
     });
   }
 
@@ -822,8 +821,6 @@ describe('quality preset bitrate ceiling', () => {
       quality: AAC_PRESETS.high.quality,
     });
 
-    expect(await streamBitrateKbps(outputPath)).toBeLessThanOrEqual(
-      Math.round(96 * headroom(encoder))
-    );
+    expect(await streamBitrateKbps(outputPath)).toBeLessThanOrEqual(ceilingFor(encoder, 96));
   });
 });

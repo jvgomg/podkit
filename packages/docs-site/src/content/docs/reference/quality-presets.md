@@ -58,11 +58,11 @@ VBR file sizes vary based on content complexity. CBR sizes are exact.
 | **VBR** (default) | Variable bitrate — adapts to content complexity. Better quality-per-MB. |
 | **CBR** | Constant bitrate — predictable file sizes. More reliable preset change detection. |
 
-VBR is recommended for most uses. VBR AAC works correctly for seeking on iPods. Whichever you pick, the preset's bitrate is a **ceiling**: podkit never produces a file above it. Use `encoding = "cbr"` if you want predictable file sizes or guaranteed detection of preset changes between adjacent tiers.
+VBR is recommended for most uses. VBR AAC works correctly for seeking on iPods. Whichever you pick, the preset's bitrate is a **ceiling** rather than a nominal figure: podkit asks for no more than it, and on the native `aac` and `libfdk_aac` encoders the output stays under it. Use `encoding = "cbr"` if you want predictable file sizes or guaranteed detection of preset changes between adjacent tiers.
 
 ### Encoder Mapping
 
-podkit picks the best AAC encoder your FFmpeg offers -- `aac_at` (macOS AudioToolbox), then `libfdk_aac`, then FFmpeg's native `aac`. Each has its own quality dial, and podkit derives the setting from the preset's bitrate so the ceiling holds on all three:
+podkit picks the best AAC encoder your FFmpeg offers -- `aac_at` (macOS AudioToolbox), then `libfdk_aac`, then FFmpeg's native `aac`. Each has its own quality dial, and podkit derives the setting from the preset's bitrate rather than hard-coding it:
 
 | Preset | Native AAC (`-b:a`) | libfdk_aac (`-vbr`) | aac_at (`-q:a`) |
 |--------|---------------------|---------------------|-----------------|
@@ -76,7 +76,7 @@ Notes:
 
 - FFmpeg's native `aac` encoder has no bitrate-targeting VBR mode -- its `-q:a` dial is a quality index with no relationship to a bitrate, and it saturates around 240 kbps. podkit therefore drives it in **average-bitrate (ABR)** mode at the preset's bitrate, which is the only way to keep the preset a real ceiling on a host without `aac_at` or `libfdk_aac`. Output still varies frame to frame; only the average is pinned.
 - `libfdk_aac`'s `-vbr` levels have published bitrate bands. podkit picks the richest level whose band fits entirely under the preset bitrate.
-- The `aac_at` encoder uses an inverted quality scale where 0 is highest quality and 14 is lowest. podkit maps target bitrates to the closest `aac_at` quality value.
+- The `aac_at` encoder uses an inverted quality scale where 0 is highest quality and 14 is lowest. podkit maps target bitrates to the closest `aac_at` quality value. Because that scale is coarse and the encoder decides the rest, `aac_at` output can sit a few percent either side of the preset bitrate on demanding material -- it is the one encoder where the figure is a target rather than a hard cap.
 
 ## Video Presets
 

@@ -107,6 +107,8 @@ encoding = "cbr"  # per device
 
 **Note:** VBR AAC works correctly for seeking on iPods (unlike VBR MP3). podkit defaults to VBR for better quality efficiency.
 
+**Note:** which of these you get also depends on the AAC encoder your FFmpeg offers. FFmpeg's native `aac` encoder has no bitrate-targeting VBR mode, so podkit drives it at an average bitrate instead. Either way podkit asks for no more than the preset's bitrate — see [Encoder Mapping](/reference/quality-presets#encoder-mapping).
+
 ### Incompatible Lossy Bitrate Capping
 
 When transcoding incompatible lossy sources (OGG, Opus), the effective bitrate is capped at the source file's bitrate to avoid creating a larger file with no quality benefit. For example, a 128 kbps OGG file transcoded with the `high` preset (256 kbps target) will be transcoded at 128 kbps, not 256 kbps.

@@ -11,6 +11,7 @@ import { spawn } from 'node:child_process';
 import type { VideoTranscodeSettings, VideoProfile } from './types.js';
 import type { TranscodeProgress } from '../transcode/types.js';
 import { parseFFmpegProgress } from '../transcode/progress.js';
+import { describeFFmpegFailure } from '../transcode/ffmpeg-error.js';
 
 // =============================================================================
 // Constants
@@ -513,7 +514,7 @@ export async function transcodeVideo(
 
       if (code !== 0) {
         // Extract a meaningful error message from stderr
-        const errorMessage = extractFFmpegError(stderr) || `FFmpeg exited with code ${code}`;
+        const errorMessage = describeFFmpegFailure(code, stderr);
         reject(new VideoTranscodeError(errorMessage, code ?? undefined, stderr));
         return;
       }
@@ -521,27 +522,4 @@ export async function transcodeVideo(
       resolve();
     });
   });
-}
-
-/**
- * Extract a meaningful error message from FFmpeg stderr
- */
-function extractFFmpegError(stderr: string): string | null {
-  // Look for common error patterns
-  const patterns = [
-    /Error.*: (.+)/i,
-    /Invalid (.+)/i,
-    /No such file or directory/i,
-    /does not contain any stream/i,
-    /Conversion failed/i,
-  ];
-
-  for (const pattern of patterns) {
-    const match = stderr.match(pattern);
-    if (match) {
-      return match[0];
-    }
-  }
-
-  return null;
 }
