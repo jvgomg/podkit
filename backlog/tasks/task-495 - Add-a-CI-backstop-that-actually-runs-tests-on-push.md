@@ -4,7 +4,7 @@ title: Add a CI backstop that actually runs tests on push
 status: In Progress
 assignee: []
 created_date: '2026-09-07 23:36'
-updated_date: '2026-09-08 19:11'
+updated_date: '2026-09-08 21:04'
 labels:
   - testing
   - ci
@@ -41,7 +41,7 @@ This is a backstop, not the primary gate — rapid local loops remain the point,
 - [x] #1 A CI job runs unit and integration tests on pull requests
 - [x] #2 A CI job runs the host-binary · local-dir · dir E2E surface
 - [x] #3 A CI job runs the docker-sidecar surface
-- [ ] #4 Turbo caching is configured so the job is not rebuilding everything from scratch each run
+- [x] #4 Turbo caching is configured so the job is not rebuilding everything from scratch each run
 - [x] #5 The docs-only path filter on pr-checks.yml does not cause the test job to be skipped on code-only PRs
 - [x] #6 pr-checks.yml is deleted and the docs-site build is still covered on PRs, via turbo rather than a path filter
 - [x] #7 //#lint hashes shell scripts and excludes node_modules/dist/build, closing the cached-green shellcheck hole
@@ -123,4 +123,34 @@ AC #4 and #8 deliberately left unchecked:
 Runs 1, 2 and 4 were latent bugs no machine in the project could have found, which is precisely the ADR-028 §6 argument.
 
 **Unresolved, raised with the owner:** `@types/bun` is `"latest"` in 21 manifests. A dist-tag is re-resolved against the registry on every install, so `--frozen-lockfile` will break again on the next upstream publish — on somebody else's unrelated PR. Options are pin-to-range, drop `--frozen-lockfile` on CI, or refresh reactively. Not decided.
+
+**Merged, and AC #4 proven on main (2026-09-08).** PR #70 merged by rebase; `ci.yml` is on `main`.
+
+Cross-run turbo caching verified with real evidence rather than assumed. Main run 34270045074 logged:
+
+```
+key:          turbo-Linux-X64-34270045074
+restore-keys: turbo-Linux-X64-
+Cache hit for restore-key: turbo-Linux-X64-34270021092
+```
+
+The deliberate-primary-miss design works: the `github.run_id` key never hits, and `restore-keys` returns the newest entry in scope. The saved cache is 138 MB on `refs/heads/main`.
+
+It also vindicates the `if: always()` on the save step — run 34270021092 **failed** at `test:e2e` and still saved, which is the only reason the next run had anything to restore. A success-only save would have left the cache empty after a red run, exactly when the next run most needs it.
+
+Effect, warm vs cold on main:
+
+| step | cold (34270021092) | warm (34270045074) |
+|---|---|---|
+| Lint, typecheck, build | — | **1s** |
+| Unit + integration | — | **1s** |
+| E2E local-dir | — | 201s |
+| E2E docker-sidecar | not reached | 59s |
+| **job total** | 444s | **339s** |
+
+Build, unit and integration replay in a second each. The e2e steps still ran because run 1 failed at `test:e2e` and so never wrote a cache entry for either e2e task — not a caching defect.
+
+**Still open: AC #8**, the concurrency tuning pass. Deliberately not attempted yet: task-501 (FFmpeg exit 254, ~33% of runs that reach `test:e2e`) has to be understood first, because raising `TEST_CONCURRENCY` while an unexplained concurrency-shaped flake is live would confound both. Tune after 501.
+
+**Not merged with #70:** the heartbeat flake fix and the task-496/501 updates missed the merge by one commit; they are PR #71.
 <!-- SECTION:NOTES:END -->

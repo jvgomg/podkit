@@ -4,7 +4,7 @@ title: art-matrix suites flake with FFmpeg exit 254 across every hires format
 status: To Do
 assignee: []
 created_date: '2026-09-08 19:35'
-updated_date: '2026-09-08 21:02'
+updated_date: '2026-09-08 21:12'
 labels:
   - testing
   - ci
@@ -93,4 +93,16 @@ So the original framing was wrong in a way that matters: it is not one test raci
 Still never reproduced on the Linux dev host (`bun run test:e2e` 37/37) or on macOS, so it is specific to the CI runner — 4 vCPU, `TEST_CONCURRENCY=2`, rootful Docker, mise-pinned conda FFmpeg 9.0.1.
 
 A promising next step is to stop inferring from exit codes and capture the actual FFmpeg stderr: the sync layer reports only `FFmpeg exited with code 254`, and the argv-shim technique used while diagnosing task-499 (a logging wrapper ahead of ffmpeg on `PATH`) would show both the command and its diagnostics.
+
+**Leading hypothesis from the repo owner: `TEST_CONCURRENCY` is implicated.** Worth treating as the first thing to test rather than one item on a list.
+
+What makes it plausible:
+
+- The flake has **only ever been seen on CI**, which is the only environment running `TEST_CONCURRENCY=2`. The Linux dev host and macOS both run the default of 4 and have never reproduced it — so the correlation, such as it is, points at the *lower* setting, not the higher one. That is counter-intuitive enough to be worth understanding before assuming "less parallelism is safer".
+- Both observed failures were in the **art-matrix family**, whose files are the longest-running in the suite. Which files end up running *concurrently* is a function of the concurrency setting and of file ordering, so a different setting reshuffles which pairs overlap. A pairwise interaction would look exactly like this: stable for several runs, then a specific pairing lands and six transcodes fail at once.
+- All six formats failing simultaneously, `bytesTransferred: 0`, `duration: 7.56` — consistent with a shared resource being unavailable for the whole pass rather than per-track bad luck.
+
+Concrete way to test it: run `test:e2e` on CI at `TEST_CONCURRENCY` 1, 2 and 4 several times each via `workflow_dispatch`, and record failure rate per setting. If 1 is clean, that is strong evidence for a cross-file interaction and narrows the search to whatever the art-matrix files share — a temp path, the fixture root, or the artwork cache.
+
+This also blocks task-495 AC #8: the concurrency tuning pass must not be attempted until this is understood, or the two changes confound each other and neither result means anything.
 <!-- SECTION:NOTES:END -->
