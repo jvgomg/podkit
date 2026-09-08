@@ -1,9 +1,10 @@
 ---
 id: TASK-501
-title: art-matrix-resize flakes on CI with FFmpeg exit 254 across every hires format
+title: art-matrix suites flake with FFmpeg exit 254 across every hires format
 status: To Do
 assignee: []
 created_date: '2026-09-08 19:35'
+updated_date: '2026-09-08 21:02'
 labels:
   - testing
   - ci
@@ -11,7 +12,7 @@ dependencies: []
 references:
   - test-packages/e2e-tests/src/features/art-matrix-resize.test.ts
   - test-packages/e2e-tests/src/matrix/artwork-rules.ts
-priority: medium
+priority: high
 type: bug
 ordinal: 280000
 ---
@@ -67,3 +68,29 @@ Since the inputs were present, suspicion falls on the **output** path — a temp
 - [ ] #3 The race is fixed, or the test made robust to it, without weakening what it asserts about resize behaviour
 - [ ] #4 The fix is validated across enough consecutive CI runs to be meaningfully better than 1-in-4
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+**Rescoped and re-prioritised (2026-09-08): this is not resize-specific.** The first CI run on `main` after task-495 merged (run 34270021092) failed with the identical signature — 14 × `FFmpeg exited with code 254`, `category: "transcode"`, every hires format — but in **`art-matrix-transfer.test.ts`**, not `art-matrix-resize.test.ts`.
+
+So the original framing was wrong in a way that matters: it is not one test racing its own temp dir, it is something in the shared art-matrix path. Whatever the cause, it can hit any file in that family, which also rules out the "only this file consumes the hires set" reasoning in the description above — that was true of resize but is not the boundary of the bug.
+
+**Revised rate: 2 failures in 6 CI runs that reached `test:e2e`.**
+
+| run | reached e2e | result |
+|---|---|---|
+| 34264912360 | yes | pass |
+| 34266500844 | yes | pass |
+| 34268183681 attempt 1 | yes | **fail — art-matrix-resize** |
+| 34268183681 attempt 2 | yes | pass |
+| 34269928947 | no (died earlier on the heartbeat flake) | — |
+| 34270021092 (main) | yes | **fail — art-matrix-transfer** |
+| 34270045074 (main) | yes | pass |
+
+~33% is not a rare flake, and it is now failing on `main`, not just on a PR branch. Raised to High: at this rate the backstop cannot be made a required check, which defeats the point of task-495.
+
+Still never reproduced on the Linux dev host (`bun run test:e2e` 37/37) or on macOS, so it is specific to the CI runner — 4 vCPU, `TEST_CONCURRENCY=2`, rootful Docker, mise-pinned conda FFmpeg 9.0.1.
+
+A promising next step is to stop inferring from exit codes and capture the actual FFmpeg stderr: the sync layer reports only `FFmpeg exited with code 254`, and the argv-shim technique used while diagnosing task-499 (a logging wrapper ahead of ffmpeg on `PATH`) would show both the command and its diagnostics.
+<!-- SECTION:NOTES:END -->

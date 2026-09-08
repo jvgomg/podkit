@@ -38,14 +38,24 @@ describe('startHeartbeat', () => {
       report: (line) => lines.push(line),
       intervalMs: 10,
     });
-    await Bun.sleep(35);
+    // Wait for two ticks rather than sleeping a fixed span and hoping. A fixed
+    // sleep races the scheduler: on a loaded CI runner timer callbacks coalesce,
+    // so `intervalMs: 10` does not reliably fire twice inside 35ms of wall clock
+    // and the test fails for reasons that have nothing to do with the heartbeat.
+    // The ceiling still fails a genuinely broken interval, just not a slow host.
+    const deadline = Date.now() + 5_000;
+    while (lines.length < 2 && Date.now() < deadline) {
+      await Bun.sleep(5);
+    }
     beat.stop();
     const seen = lines.length;
     expect(seen).toBeGreaterThanOrEqual(2);
     expect(lines[0]).toMatch(/^still waiting on `limactl stop podkit-device` \(\d+s elapsed\)$/);
 
-    // stop() really stops: no further lines after the handle is released.
-    await Bun.sleep(30);
+    // stop() really stops: no further lines after the handle is released. Sleep
+    // well past the interval so a *failure* to stop is actually observed — at
+    // 3x the interval a slow tick could otherwise read as a clean stop.
+    await Bun.sleep(200);
     expect(lines).toHaveLength(seen);
   });
 
