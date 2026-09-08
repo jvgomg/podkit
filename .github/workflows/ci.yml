@@ -1,0 +1,221 @@
+name: CI
+
+# The test backstop (ADR-028 §6, task-495). Until this existed, no workflow ran
+# a single test: the entire quality gate was `bun run quality` on one
+# developer's machine, so a machine that could not run the suite meant the
+# suite did not run.
+#
+# This is a backstop, not the primary gate — the rapid local loop is still the
+# point. CI's job is to catch what an unavailable machine would otherwise
+# silently skip. It runs the surfaces a GitHub runner can actually reach:
+# Unit, Integration, host-binary·local-dir·dir and host-binary·docker-sidecar·dir.
+# Not test:vm — there is no device substrate here, and usb-synth on CI is
+# deliberately deferred by ADR-028 §6.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# PR runs supersede each other. Main runs do not: a main run is the only writer
+# of the turbo cache, and cancelling one drops the save.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  DEBIAN_FRONTEND: noninteractive
+  TURBO_TELEMETRY_DISABLED: 1
+  ASTRO_TELEMETRY_DISABLED: 1
+  DO_NOT_TRACK: 1
+
+  # Exercise the compiled binary, not the bun bundle. ADR-025 defines
+  # `host-binary` as the compiled binary, and `bun run quality` sets this same
+  # variable locally. Without it, cli-runner.ts's 'production' path runs
+  # dist/main.js under bun — a different surface than this job claims to cover.
+  PODKIT_CLI_BINARY: ${{ github.workspace }}/packages/podkit-cli/bin/podkit
+
+  # 4-vCPU runner. gpod-tests-parallel spawns one `bun test` per file and each
+  # of those spawns podkit; turbo additionally runs the three integration
+  # packages concurrently, so the local default of 4 becomes 12 test processes
+  # here. Starting conservative — the failure mode oversubscription produces is
+  # the runCli 90s timeout (docs/agents/testing.md), which reads as a flake
+  # rather than as starvation. Raise stepwise once a green baseline exists.
+  # Both names must stay in turbo.json's globalPassThroughEnv or envMode:
+  # strict strips them and this block silently does nothing.
+  TEST_CONCURRENCY: 2
+  TEST_TIMEOUT: 120000
+
+jobs:
+  quality:
+    name: Quality (ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # libgpod is a prebuild library (CONTEXT.md): node-gyp and gpod-tool link
+      # against it, and nothing needs it at run time. noble/universe carries
+      # libgpod-dev 0.8.3-19.1ubuntu4, so unlike build-platform.yml and
+      # prebuild.yml there is no static build to do here — those build it from
+      # source because the *shipped* binary must have no dynamic deps, which is
+      # not a constraint this job has.
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            build-essential pkg-config \
+            libgpod-dev libglib2.0-dev libplist-dev libgdk-pixbuf-2.0-dev
+
+      # bun, node (node-gyp's shebang and has-prebuild.cjs need it), the pinned
+      # conda ffmpeg/metaflac that @podkit/test-fixtures' encoder guard asserts
+      # on, and shellcheck for lint:shell.
+      #
+      # install_args keeps mise.toml's dev-only tools off the runner — a bare
+      # `mise install` would fetch a Rust toolchain, Lima and the LSP servers to
+      # run some tests. The action caches ~/.local/share/mise itself (the conda
+      # backend's installs and package cache both live under that dir) and
+      # folds install_args into its cache key.
+      - name: Set up toolchain
+        uses: jdx/mise-action@v4
+        with:
+          install_args: bun node shellcheck conda:ffmpeg conda:libflac
+
+      # Content-keyed on the lockfile, so this entry never rolls and never
+      # grows — unlike the turbo cache below it is safe to write from any ref.
+      # Caching bun's global cache rather than node_modules deliberately: the
+      # link layout interacts with --ignore-scripts in ways not worth the risk.
+      - name: Cache bun install cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      # restore-keys does all the work here. The primary key is a deliberate
+      # miss: a run cannot restore a cache it has not written yet. (A github.sha
+      # key behaves identically — it just looks like it should hit, which is
+      # what makes it confusing.) The newest matching entry visible to this ref
+      # wins; on a PR that is main's cache, since GitHub lets any branch read
+      # the default branch's caches.
+      #
+      # `linux` in the key is load-bearing: turbo's hash is platform-blind, so a
+      # macOS runner sharing this prefix would restore Mach-O .node files here.
+      - name: Restore turbo cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-${{ runner.arch }}-${{ github.run_id }}
+          restore-keys: turbo-${{ runner.os }}-${{ runner.arch }}-
+
+      # gpod-tool is one C file outside turbo's graph — ~1s to compile, less
+      # than a cache round-trip, and it links against apt's libgpod, so a cached
+      # binary outliving an apt bump would fail at dlopen instead of at compile.
+      # bin/ on PATH is what @podkit/gpod-testing#generate-templates looks for;
+      # mise.toml's `_.path` does the same locally. Set explicitly rather than
+      # relying on the action propagating that across steps.
+      - name: Build gpod-tool
+        run: |
+          mise run tools:build
+          echo "$PWD/bin" >> "$GITHUB_PATH"
+
+      # Load-bearing, not defensive polish. docker/availability.ts uses
+      # describe.skipIf, so a missing container runtime yields a GREEN run with
+      # all 8 docker-source files skipped — a backstop that can silently test
+      # nothing is worse than no backstop (CONTEXT.md, "Backstop").
+      #
+      # docs/agents/testing.md's rule is "throw for a broken checkout, skip for
+      # absent infrastructure". On a runner the infrastructure is guaranteed, so
+      # its absence is a broken image and belongs in the throw case.
+      - name: Pre-flight
+        run: |
+          status=0
+          for tool in docker gpod-tool ffmpeg ffprobe metaflac node bun; do
+            if command -v "$tool" >/dev/null 2>&1; then
+              echo "ok: $tool -> $(command -v "$tool")"
+            else
+              echo "::error::missing required tool: $tool"
+              status=1
+            fi
+          done
+          # The CLI being present but the daemon being down must read as
+          # unavailable — `version` is the exact probe availability.ts uses.
+          if ! docker version >/dev/null 2>&1; then
+            echo "::error::docker is installed but the daemon is not responding"
+            status=1
+          fi
+          exit $status
+
+      # `bun run quality` is deliberately NOT used: it returns EXIT_INCOMPLETE
+      # (2) whenever a cell was skipped, and usb-synth is always skipped on a
+      # runner, so it would fail every run. Swallowing exit 2 would also swallow
+      # a genuinely-missing docker-sidecar cell. task-497 is the proper fix.
+      #
+      # The four steps mirror turbo.json's own qa:* tiering, which keeps the two
+      # e2e suites from overlapping on 4 vCPUs and gives per-tier timings in the
+      # UI. `build` is listed explicitly because it is otherwise pulled in only
+      # implicitly — docs-site has no test script, but turbo still materialises
+      # the task node and runs its `build` dependency, which is what covers the
+      # docs site here and let pr-checks.yml be deleted.
+      - name: Lint, typecheck, build
+        run: bunx turbo run lint typecheck build
+
+      - name: Unit + integration tests
+        run: bunx turbo run test:unit test:integration
+
+      - name: E2E — host-binary · local-dir · dir
+        run: bunx turbo run test:e2e
+
+      - name: E2E — host-binary · docker-sidecar · dir
+        run: bunx turbo run test:e2e:docker
+
+      # Each save is a superset of the entry it restored, so without a trim the
+      # blob grows every main push until it evicts build-platform.yml's and
+      # prebuild.yml's entries from the shared 10 GB repo quota — and long
+      # before that, restoring it costs more than it saves. Entries are regular
+      # triples, so dropping whole hashes is safe; a dropped entry is simply
+      # recomputed. `ls -t` rather than `find`: mtime order is the whole point,
+      # and the filenames are turbo hashes, so the usual ls-parsing hazard does
+      # not apply. If extraction has not preserved mtimes the trim keeps an
+      # arbitrary 150 entries — still bounded, still correct.
+      - name: Trim turbo cache
+        if: always() && github.event_name == 'push'
+        run: |
+          cd .turbo/cache || exit 0
+          ls -t ./*.tar.zst 2>/dev/null | tail -n +151 | sed 's/\.tar\.zst$//' \
+            | xargs -r -I{} rm -f {}.tar.zst {}-meta.json {}-manifest.json
+
+      # Main only: GitHub scopes caches by ref, so a cache written from a PR run
+      # is invisible to every other PR and to main. It would cost a ~500 MB
+      # write against the quota to benefit one branch. always() so a run that
+      # fails at e2e still contributes the builds it did.
+      - name: Save turbo cache
+        if: always() && github.event_name == 'push'
+        uses: actions/cache/save@v4
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-${{ runner.arch }}-${{ github.run_id }}
+
+  # Single stable name for branch protection to bind to, mirroring
+  # verify-release.yml's release-ci-passed. Exists from the start so the check
+  # can be made required later without renaming anything.
+  ci-passed:
+    name: CI Status
+    needs: [quality]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check results
+        run: |
+          if [[ "${{ needs.quality.result }}" != "success" ]]; then
+            echo "::error::Quality job result: ${{ needs.quality.result }}"
+            exit 1
+          fi
+          echo "All CI checks passed"

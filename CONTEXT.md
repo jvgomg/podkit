@@ -75,6 +75,14 @@ The device-testing machinery that synthesises USB gadgets *inside* a substrate �
 personas, backing files, the FunctionFS daemon, `apply-state.sh`. Distinct from
 the substrate it runs on.
 
+**Backstop**:
+A test run that exists to catch what an unavailable machine would otherwise
+silently skip. A backstop is deliberately *not* the primary gate — the rapid
+local loop is — so it is judged on what it stops from escaping, never on being
+the place work gets verified. Its corollary: a backstop that reports success
+without having run the cells it owns is worse than none.
+_Avoid_: "the CI gate", "the build" — both imply a primacy it does not have.
+
 **Known overload — "runner"**:
 `SubprocessRunner` is a *product* type (`@podkit/device-types`) injected into the
 testing layer, while `registerRunner` and `TestRuntime` are testing concepts. Both

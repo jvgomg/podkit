@@ -1,5 +1,12 @@
 [tools]
 bun = "1.3.13"
+
+# Node. Not used to run anything, but node-gyp's shebang is `#!/usr/bin/env
+# node` and @podkit/libgpod-node's build shells `node scripts/has-prebuild.cjs`
+# before deciding whether to compile. Unpinned, a box provisioned purely from
+# `mise install` fails at the native build with `node: command not found`.
+node = "22"
+
 lima = "2.1.1"
 rust = "latest"
 python = "3.12"
