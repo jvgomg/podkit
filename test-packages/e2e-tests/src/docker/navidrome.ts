@@ -123,6 +123,10 @@ export async function startNavidromeContainer(opts: NavidromeOptions): Promise<N
     // means the same thing to both.
     ports: [`${NAVIDROME_PORT}`],
     volumes: [musicVolume, `${opts.dataDir}:/data`],
+    // Navidrome writes its SQLite DB into the bind-mounted data dir, and
+    // `restart()` below wipes that dir from the host. Under a rootful runtime
+    // those files land root-owned and the wipe fails with EACCES.
+    runAsHostUser: true,
     env: [
       `ND_DEVAUTOCREATEADMINPASSWORD=${password}`,
       'ND_MUSICFOLDER=/music',
