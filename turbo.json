@@ -201,6 +201,18 @@
       "inputs": ["src/**", "__tests__/**", "!src/**/*.integration.test.ts"],
       "outputs": []
     },
+    "@podkit/ipod-web#test:unit": {
+      "dependsOn": ["build", "^build", "@podkit/ipod-db#generate-fixtures"],
+      "inputs": [
+        "src/**",
+        "!src/**/*.integration.test.ts",
+        "!src/**/*.perf.test.ts",
+        "!src/**/*.e2e.test.ts",
+        "bunfig.toml",
+        "package.json"
+      ],
+      "outputs": []
+    },
     "@podkit/ipod-db#test:integration": {
       "dependsOn": ["build", "generate-fixtures", "@podkit/gpod-testing#generate-templates"],
       "inputs": ["src/**", "__tests__/**"],
