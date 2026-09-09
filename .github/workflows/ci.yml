@@ -42,9 +42,25 @@ env:
   # 4-vCPU runner. gpod-tests-parallel spawns one `bun test` per file and each
   # of those spawns podkit; turbo additionally runs the three integration
   # packages concurrently, so the local default of 4 becomes 12 test processes
-  # here. Starting conservative — the failure mode oversubscription produces is
-  # the runCli 90s timeout (docs/agents/testing.md), which reads as a flake
-  # rather than as starvation. Raise stepwise once a green baseline exists.
+  # here. The failure mode oversubscription produces is the runCli timeout
+  # (docs/agents/testing.md), which reads as a flake rather than as starvation.
+  #
+  # **2 is measured, not conservative (task-495 AC #8).** Swept 2 / 4 / 6 via
+  # e2e-stress.yml, 12 samples each, `test:e2e` wall-clock in seconds:
+  #
+  #   | concurrency | min | median | mean | max |  sd | reds |
+  #   |-------------|-----|--------|------|-----|-----|------|
+  #   |           2 | 186 |    311 |  292 | 319 |  39 |    0 |
+  #   |           4 | 269 |    301 |  297 | 303 |   9 |    0 |
+  #   |           6 | 254 |    321 |  306 | 327 |  30 |    0 |
+  #
+  # All 36 samples green, and the medians sit inside each other's noise with 6
+  # the worst. There is no throughput to win: podkit is CPU-bound on FFmpeg, so
+  # 2 already saturates 4 vCPUs and raising the number only adds context
+  # switching. Don't raise this hoping for speed — the measurement says there
+  # isn't any. (4's variance is notably tighter, sd 9 vs 39; if run-to-run
+  # predictability ever matters more than the median, that is the case for it.)
+  #
   # Both names must stay in turbo.json's globalPassThroughEnv or envMode:
   # strict strips them and this block silently does nothing.
   TEST_CONCURRENCY: 2

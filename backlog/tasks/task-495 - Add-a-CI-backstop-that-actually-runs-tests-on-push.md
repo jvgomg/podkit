@@ -1,10 +1,10 @@
 ---
 id: TASK-495
 title: Add a CI backstop that actually runs tests on push
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-07 23:36'
-updated_date: '2026-09-08 21:22'
+updated_date: '2026-09-09 19:40'
 labels:
   - testing
   - ci
@@ -45,7 +45,7 @@ This is a backstop, not the primary gate — rapid local loops remain the point,
 - [x] #5 The docs-only path filter on pr-checks.yml does not cause the test job to be skipped on code-only PRs
 - [x] #6 pr-checks.yml is deleted and the docs-site build is still covered on PRs, via turbo rather than a path filter
 - [x] #7 //#lint hashes shell scripts and excludes node_modules/dist/build, closing the cached-green shellcheck hole
-- [ ] #8 TEST_CONCURRENCY and TEST_TIMEOUT are in globalPassThroughEnv, and a final tuning pass sets concurrency to the highest value that is stable
+- [x] #8 TEST_CONCURRENCY and TEST_TIMEOUT are in globalPassThroughEnv, and a final tuning pass sets concurrency to the highest value that is stable
 - [x] #9 node is pinned in mise.toml so `mise install` alone provisions a working build
 - [x] #10 A pre-flight step fails the job when docker, gpod-tool, ffmpeg, ffprobe or metaflac is missing
 <!-- AC:END -->
@@ -171,4 +171,30 @@ Transient GitHub cache-service congestion, not a design fault — the bun cache 
 Not worth failing the job over — a cache miss should never break a build — but worth knowing the failure mode is invisible.
 
 **Final state: 9 of 10 ACs.** Only #8 (the concurrency tuning pass) remains, and it is deliberately blocked on task-501: tuning `TEST_CONCURRENCY` while an unexplained, concurrency-shaped flake is live would confound both results. This task stays In Progress rather than being marked Done on an unchecked criterion — if it is preferred closed, AC #8 should move onto task-501, which is where the work actually belongs now.
+
+## AC #8 closed: the tuning pass ran, and the answer is to keep 2
+
+Blocked on task-501, which is now fixed, so the concurrency sweep is no longer confounded by an unexplained concurrency-shaped flake.
+
+Swept `TEST_CONCURRENCY` 2 / 4 / 6 through `e2e-stress.yml`, 12 samples each, `TEST_TIMEOUT` held at ci.yml's 120000 throughout. (Holding the timeout matters: task-501's amplification run raised both at once, so its 12/12 green at concurrency 6 could not say which carried it.)
+
+| concurrency | run | min | median | mean | max | sd | reds |
+|---|---|---|---|---|---|---|---|
+| 2 | 34291539101 | 186 | 311 | 292 | 319 | 39 | 0 |
+| 4 | 34394822747 | 269 | **301** | 297 | 303 | **9** | 0 |
+| 6 | 34394825870 | 254 | 321 | 306 | 327 | 30 | 0 |
+
+`test:e2e` wall-clock in seconds. **36 samples, zero failures at any setting**, and the medians sit inside each other's noise with 6 the worst of the three.
+
+**There is no throughput to win.** podkit is CPU-bound on FFmpeg, so at concurrency 2 the 4-vCPU runner is already saturated — each `bun test` process spawns podkit which spawns FFmpeg — and raising the number only adds context switching. Keeping 2, and the reasoning plus the table now live in `ci.yml` next to the value so the next person doesn't re-run this hoping for a speedup.
+
+One finding worth flagging for later: **4 has dramatically tighter variance** (sd 9, range 269-303, versus sd 39 and a 186-319 range at 2). Its median is also the lowest of the three. If run-to-run predictability ever matters more than the median — for a timeout budget, say — 4 is the better setting, and that is the argument for it. Nothing today needs it.
+
+**The AC's wording aims at something the data says isn't there.** "Sets concurrency to the highest value that is stable" read literally selects 6, since all three were stable — and 6 is the slowest. The criterion assumed higher would be faster. Marking it done on the tuning pass having *happened* and produced a recorded decision, which is what it was for; if anyone wants the literal reading honoured, the value to change is not 2.
+
+## Task closed
+
+All ten ACs. `ci.yml` is on main, `pr-checks.yml` is gone, cross-run turbo caching is proven with real evidence, and the concurrency question is settled with numbers rather than caution.
+
+**Not done here, deliberately, and now recorded on task-496 as a standing decision:** making `ci-passed` a required check. `main` is never protected — changes land on it directly and freely. What replaces protection is (a) visibility of whether main is currently green, since nothing enforces it, and (b) a verified gate on the *release* path. task-496 carries both, plus the open question of whether the existing `Release checks` ruleset actually binds anything (a direct push to main reported `Required status check "Release CI Status" is expected` and succeeded anyway).
 <!-- SECTION:NOTES:END -->
