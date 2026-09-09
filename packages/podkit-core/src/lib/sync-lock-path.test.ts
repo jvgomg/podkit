@@ -67,6 +67,11 @@ interface SpawnResult {
  * `resolveSyncLockPath` + `acquireLock` against `mountPath`, holds for
  * `holdMs` ms, then releases.
  *
+ * `holdMs` is a legitimate fixed sleep: it is a *hold*, not a wait. The
+ * parent does not bet on it — it gates the contender on `waitForLockFile`
+ * first — so the hold only has to outlast a child spawn, and a slow host
+ * makes the winner's grip longer, never shorter.
+ *
  * On `LockHeldError` / `LockContestedError` the child prints a tag to
  * stderr + exits 4 (matching the CLI's `LOCK_HELD` exit code). On any
  * other error it prints a tag + exits 5 so the parent can tell the

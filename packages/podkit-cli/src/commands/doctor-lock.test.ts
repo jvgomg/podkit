@@ -170,8 +170,12 @@ describe('withDeviceWriteLock — contention (LOCK_HELD)', () => {
       const work = async (): Promise<string> => {
         return withDeviceWriteLock(mount, false, core, async () => {
           ran += 1;
-          // Hold long enough that any concurrent attempt actually
-          // probes our live lock.
+          // Legitimate fixed sleep: this is a *hold*, not a wait. Both racers
+          // are launched together and the loser fails inside acquire(), so
+          // there is no observable "the other side has tried yet" signal to
+          // wait for — the winner simply has to keep the lock live long enough
+          // for the contention to be real. 50ms against two in-process
+          // acquires that are already in flight is generous.
           await new Promise((r) => setTimeout(r, 50));
           return 'done';
         });
@@ -258,6 +262,9 @@ describe('withDeviceWriteLock — dry-run skips lock', () => {
           core,
           async () => {
             ranCount += 1;
+            // Legitimate fixed sleep: overlaps the two dry-run bodies so
+            // "neither blocks the other" is actually exercised. Both are
+            // expected to succeed, so a slow host cannot turn this red.
             await new Promise((r) => setTimeout(r, 20));
             return 'done';
           },

@@ -2783,6 +2783,9 @@ function createMockStreamAdapter(options?: {
         getStream: async () => {
           const startTime = Date.now();
           if (options?.downloadDelayMs) {
+            // Legitimate fixed sleep: this *is* the simulated download, i.e.
+            // the work whose duration the prefetch-overlap assertion is about.
+            // It stands in for no observable condition.
             await new Promise((r) => setTimeout(r, options.downloadDelayMs));
           }
           const endTime = Date.now();
@@ -2856,7 +2859,11 @@ describe('MusicPipeline - prefetch pipeline (ADR-011)', () => {
     const transcodeLog: Array<{ trackId: string; startTime: number; endTime: number }> = [];
     transcoder.transcode = mock(async (input: string, output: string) => {
       const startTime = Date.now();
-      await new Promise((r) => setTimeout(r, 30)); // Simulate transcoding work
+      // Legitimate fixed sleep: simulated transcoding work, not a stand-in for
+      // a condition. The assertion below compares recorded timestamps, and
+      // scheduler delay stretches download and transcode alike, so it does not
+      // invert the overlap being asserted.
+      await new Promise((r) => setTimeout(r, 30));
       const endTime = Date.now();
       transcodeLog.push({ trackId: input, startTime, endTime });
       writeFileSync(output, '');
@@ -3071,9 +3078,17 @@ describe('MusicPipeline - prefetch pipeline (ADR-011)', () => {
   it('cleans up prefetched files on abort', async () => {
     const { adapter } = createMockStreamAdapter({ downloadDelayMs: 5 });
 
-    // Slow transcoding so abort happens during pipeline
+    const controller = new AbortController();
+    let transcodesStarted = 0;
+
+    // Abort from inside the first transcode, so the abort is guaranteed to land
+    // mid-pipeline. The previous version armed a 30ms timer against 3 × 50ms of
+    // simulated transcoding and hoped the two lined up — under load that timer
+    // can fire after the whole plan has already completed, and the test then
+    // asserts nothing at all.
     transcoder.transcode = mock(async (_input: string, output: string) => {
-      await new Promise((r) => setTimeout(r, 50));
+      transcodesStarted += 1;
+      controller.abort();
       writeFileSync(output, '');
       return { outputPath: output, size: 5000000, duration: 1000, bitrate: 256 };
     });
@@ -3104,11 +3119,7 @@ describe('MusicPipeline - prefetch pipeline (ADR-011)', () => {
     const deps = createDependencies(db, transcoder);
     const executor = new MusicPipeline(deps);
 
-    const controller = new AbortController();
-
-    // Abort after a short delay
-    setTimeout(() => controller.abort(), 30);
-
+    let caught: unknown;
     try {
       for await (const _p of executor.execute(plan, {
         adapter,
@@ -3118,11 +3129,16 @@ describe('MusicPipeline - prefetch pipeline (ADR-011)', () => {
         // consume
       }
     } catch (error) {
-      expect(error).toBeInstanceOf(AbortError);
+      caught = error;
     }
 
-    // Pipeline should have been aborted — not all operations completed
-    // (exact count depends on timing, but should not be all 3)
+    // The abort must actually surface — previously this test tolerated the
+    // pipeline running to completion, which made it unable to fail.
+    expect(caught).toBeInstanceOf(AbortError);
+    // ...and it must stop the pipeline: the plan has 3 operations, and the
+    // abort fires during the first transcode.
+    expect(transcodesStarted).toBeLessThan(3);
+    expect(db.addTrack).not.toHaveBeenCalledTimes(3);
   });
 });
 

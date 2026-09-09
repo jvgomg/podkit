@@ -14,6 +14,26 @@ import type { ChildProcess } from 'node:child_process';
 // Helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Wait until `predicate` holds, or fail loudly naming what was awaited.
+ *
+ * Every state transition in this file (mount → dry-run → sync) is reachable
+ * by observation, so waiting for it beats sleeping a fixed span and hoping:
+ * under load timer callbacks coalesce, and a `setTimeout(10)` that usually
+ * covers "the orchestrator got as far as the sync step" stops covering it on
+ * a loaded runner. The ceiling means a genuinely stuck orchestrator still
+ * fails — with a message saying what it never reached — rather than hanging
+ * to the suite timeout.
+ */
+async function waitFor(what: string, predicate: () => boolean, timeoutMs = 5_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await new Promise((r) => setTimeout(r, 2));
+  }
+  throw new Error(`Timed out after ${timeoutMs}ms waiting for ${what}`);
+}
+
 function makeDevice(overrides?: Partial<DetectedDevice>): DetectedDevice {
   return {
     name: 'sdb1',
@@ -186,8 +206,12 @@ describe('SyncOrchestrator', () => {
     // Start first sync (will block on the actual sync step)
     const firstSync = orchestrator.handleDeviceAppeared(makeDevice({ name: 'sdb1' }));
 
-    // Wait a tick for the mount + dry-run to complete before the sync blocks
-    await new Promise((r) => setTimeout(r, 10));
+    // Wait for the real sync step to be reached and blocked, not for a fixed
+    // 10ms — the mount and dry-run in front of it are async, and how long they
+    // take is the runner's business, not this test's.
+    await waitFor('the first device to reach the blocking sync step', () =>
+      calls.includes('sync:execute:start')
+    );
 
     expect(orchestrator.isSyncing).toBe(true);
 
@@ -204,8 +228,11 @@ describe('SyncOrchestrator', () => {
     resolveSync!();
     await firstSync;
 
-    // Allow the queued sync to complete
-    await new Promise((r) => setTimeout(r, 50));
+    // Wait for the queued sync to actually run rather than allotting it 50ms.
+    await waitFor(
+      'the queued device (sdc1) to be mounted by the follow-on sync',
+      () => calls.filter((c) => c.startsWith('mount:')).length === 2
+    );
 
     // Both devices should have been mounted at unique paths
     const allMounts = calls.filter((c) => c.startsWith('mount:'));
@@ -234,7 +261,7 @@ describe('SyncOrchestrator', () => {
     });
 
     const firstSync = orchestrator.handleDeviceAppeared(makeDevice({ name: 'sdb1' }));
-    await new Promise((r) => setTimeout(r, 10));
+    await waitFor('the orchestrator to enter its sync cycle', () => orchestrator.isSyncing);
 
     // Queue sdc1 twice — second should be a no-op
     await orchestrator.handleDeviceAppeared(makeDevice({ name: 'sdc1' }));
@@ -243,7 +270,11 @@ describe('SyncOrchestrator', () => {
 
     resolveSync!();
     await firstSync;
-    await new Promise((r) => setTimeout(r, 50));
+    // Drain the follow-on sync so it does not run on past the end of the test.
+    await waitFor(
+      'the orchestrator to drain its queue and go idle',
+      () => !orchestrator.isSyncing && orchestrator.queue.length === 0
+    );
   });
 
   it('handles eject failure without crashing', async () => {
@@ -331,7 +362,7 @@ describe('SyncOrchestrator', () => {
     });
 
     const firstSync = orchestrator.handleDeviceAppeared(makeDevice({ name: 'sdb1' }));
-    await new Promise((r) => setTimeout(r, 10));
+    await waitFor('the orchestrator to enter its sync cycle', () => orchestrator.isSyncing);
 
     // Queue a second device, then remove it before first sync completes
     await orchestrator.handleDeviceAppeared(makeDevice({ name: 'sdc1' }));
@@ -371,7 +402,7 @@ describe('SyncOrchestrator', () => {
 
     // Start sync (will block at the sync step)
     const syncDone = orchestrator.handleDeviceAppeared(device);
-    await new Promise((r) => setTimeout(r, 10));
+    await waitFor('the orchestrator to enter its sync cycle', () => orchestrator.isSyncing);
 
     expect(orchestrator.isSyncing).toBe(true);
     expect(orchestrator.deviceDisconnected).toBe(false);
@@ -416,7 +447,7 @@ describe('SyncOrchestrator', () => {
 
     // Start sync on sdb1
     const syncDone = orchestrator.handleDeviceAppeared(syncingDevice);
-    await new Promise((r) => setTimeout(r, 10));
+    await waitFor('the orchestrator to enter its sync cycle', () => orchestrator.isSyncing);
 
     // Different device disappears — should NOT set disconnected flag
     orchestrator.handleDeviceDisappeared(otherDevice);
@@ -440,10 +471,11 @@ describe('SyncOrchestrator', () => {
       },
     } as unknown as ChildProcess;
 
-    const spawnSync = (_device: string): AbortableCliResult<SyncOutput> => ({
-      result: resultPromise,
-      child: mockChild,
-    });
+    let childSpawned = false;
+    const spawnSync = (_device: string): AbortableCliResult<SyncOutput> => {
+      childSpawned = true;
+      return { result: resultPromise, child: mockChild };
+    };
 
     const orchestrator = new SyncOrchestrator({
       runMount: async (_disk, target) =>
@@ -460,7 +492,11 @@ describe('SyncOrchestrator', () => {
 
     // Start sync — will block on the spawnSync result promise
     const syncDone = orchestrator.handleDeviceAppeared(makeDevice());
-    await new Promise((r) => setTimeout(r, 10));
+    // `isSyncing` flips before the mount/dry-run steps, so it is the wrong
+    // thing to wait for here — abort() only has a child to signal once
+    // spawnSync has been called. (The fixed 10ms sleep this replaces was
+    // covering that gap by accident.)
+    await waitFor('the sync child to be spawned', () => childSpawned);
 
     expect(orchestrator.isSyncing).toBe(true);
 
@@ -509,7 +545,7 @@ describe('SyncOrchestrator', () => {
 
     // Start first sync, queue a second device
     const firstSync = orchestrator.handleDeviceAppeared(makeDevice({ name: 'sdb1' }));
-    await new Promise((r) => setTimeout(r, 10));
+    await waitFor('the orchestrator to enter its sync cycle', () => orchestrator.isSyncing);
     await orchestrator.handleDeviceAppeared(makeDevice({ name: 'sdc1' }));
     expect(orchestrator.queue).toHaveLength(1);
 
@@ -520,7 +556,12 @@ describe('SyncOrchestrator', () => {
     // Release the first sync
     resolveSync!();
     await firstSync;
-    await new Promise((r) => setTimeout(r, 50));
+    // Deliberate fixed sleep: this is a negative assertion — nothing should
+    // happen after the abort, and there is no event to wait for. The only way
+    // to observe "no follow-on sync started" is to give one room to start and
+    // find that it did not, so the sleep is generous relative to the work a
+    // rogue mount would take (all deps here resolve immediately).
+    await new Promise((r) => setTimeout(r, 200));
 
     // Only the first device should have been mounted — queued device was cleared
     const mountCalls = calls.filter((c) => c.startsWith('mount:'));

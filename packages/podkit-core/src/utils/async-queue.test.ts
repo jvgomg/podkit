@@ -1,6 +1,14 @@
 import { describe, it, expect } from 'bun:test';
 import { AsyncQueue } from './async-queue';
 
+// Every fixed sleep in this file is a legitimate negative assertion: "pop is
+// still blocked", "push is still blocked", "the waiter is parked". There is no
+// condition to wait for — the whole claim is that nothing happened — so a wait
+// loop has nothing to loop on. They are also immune to timer coalescing in the
+// direction that matters: a queue that failed to block would settle its
+// promise on the very next microtask, long inside 10ms of wall clock, so a
+// loaded runner makes these slower but never wrong.
+
 describe('AsyncQueue', () => {
   describe('constructor', () => {
     it('creates queue with default max size of 3', async () => {

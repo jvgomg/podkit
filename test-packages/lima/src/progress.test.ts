@@ -8,6 +8,27 @@ import { describe, it, expect } from 'bun:test';
 
 import { formatElapsed, startHeartbeat, DEFAULT_HEARTBEAT_MS } from './progress.js';
 
+/**
+ * Wait for the heartbeat to have reported `count` lines, or fail loudly.
+ *
+ * Sleeping a fixed span and then asserting a tick count races the scheduler:
+ * under load timer callbacks coalesce, so an interval does not reliably fire
+ * N times inside N × interval of wall clock. The ceiling keeps a heartbeat
+ * that never ticks failing — and saying what it was waiting for — rather than
+ * hanging to the suite timeout.
+ */
+async function waitForLines(lines: string[], count: number, timeoutMs = 5_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (lines.length < count && Date.now() < deadline) {
+    await Bun.sleep(5);
+  }
+  if (lines.length < count) {
+    throw new Error(
+      `Timed out after ${timeoutMs}ms waiting for ${count} heartbeat line(s); saw ${lines.length}`
+    );
+  }
+}
+
 describe('formatElapsed', () => {
   it('renders sub-minute durations in seconds', () => {
     expect(formatElapsed(0)).toBe('0s');
@@ -38,15 +59,9 @@ describe('startHeartbeat', () => {
       report: (line) => lines.push(line),
       intervalMs: 10,
     });
-    // Wait for two ticks rather than sleeping a fixed span and hoping. A fixed
-    // sleep races the scheduler: on a loaded CI runner timer callbacks coalesce,
-    // so `intervalMs: 10` does not reliably fire twice inside 35ms of wall clock
-    // and the test fails for reasons that have nothing to do with the heartbeat.
-    // The ceiling still fails a genuinely broken interval, just not a slow host.
-    const deadline = Date.now() + 5_000;
-    while (lines.length < 2 && Date.now() < deadline) {
-      await Bun.sleep(5);
-    }
+    // Wait for two ticks rather than sleeping a fixed span and hoping — see
+    // waitForLines above for why.
+    await waitForLines(lines, 2);
     beat.stop();
     const seen = lines.length;
     expect(seen).toBeGreaterThanOrEqual(2);
@@ -59,7 +74,7 @@ describe('startHeartbeat', () => {
     expect(lines).toHaveLength(seen);
   });
 
-  it('adds time-since-last-output when the caller can observe activity', () => {
+  it('adds time-since-last-output when the caller can observe activity', async () => {
     const lines: string[] = [];
     let clock = 1_000_000;
     const beat = startHeartbeat({
@@ -70,16 +85,17 @@ describe('startHeartbeat', () => {
       lastActivityAt: () => clock - 230_000,
     });
     clock += 252_000;
-    // Force one tick deterministically rather than racing the interval.
-    return Bun.sleep(5).then(() => {
-      beat.stop();
-      expect(lines[0]).toBe(
-        'still waiting on `limactl start podkit-device` (4m12s elapsed, 3m50s since last output)'
-      );
-    });
+    // The *clock* is deterministic (injected `now`), but the tick still is not:
+    // waiting a fixed 5ms for a 1ms interval is the same bet a6964fcd removed
+    // from the test above, just with more margin. Wait for the line instead.
+    await waitForLines(lines, 1);
+    beat.stop();
+    expect(lines[0]).toBe(
+      'still waiting on `limactl start podkit-device` (4m12s elapsed, 3m50s since last output)'
+    );
   });
 
-  it('omits the idle clause when there is no activity signal to report', () => {
+  it('omits the idle clause when there is no activity signal to report', async () => {
     const lines: string[] = [];
     let clock = 0;
     const beat = startHeartbeat({
@@ -89,13 +105,12 @@ describe('startHeartbeat', () => {
       now: () => clock,
     });
     clock += 90_000;
-    return Bun.sleep(5).then(() => {
-      beat.stop();
-      expect(lines[0]).toBe(
-        'still waiting on `limactl delete --force podkit-device` (1m30s elapsed)'
-      );
-      expect(lines[0]).not.toContain('since last output');
-    });
+    await waitForLines(lines, 1);
+    beat.stop();
+    expect(lines[0]).toBe(
+      'still waiting on `limactl delete --force podkit-device` (1m30s elapsed)'
+    );
+    expect(lines[0]).not.toContain('since last output');
   });
 
   it('starts no timer at all when the interval is non-positive', async () => {
@@ -105,6 +120,10 @@ describe('startHeartbeat', () => {
       report: (line) => lines.push(line),
       intervalMs: 0,
     });
+    // Legitimate fixed sleep: negative assertion — the guarantee is that no
+    // timer exists, so there is no event to wait for. A timer created with a
+    // non-positive interval would be clamped to ~1ms and would have fired many
+    // times over by now, so 20ms is ample room for the failure to show itself.
     await Bun.sleep(20);
     beat.stop();
     expect(lines).toEqual([]);

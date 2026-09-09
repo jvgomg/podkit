@@ -129,6 +129,9 @@ describe('runWithContext (AsyncLocalStorage scope)', () => {
     const ctxA: CliContext = { ...mockContext, config: { ...mockConfig, quality: 'low' } };
     const ctxB: CliContext = { ...mockContext, config: { ...mockConfig, quality: 'high' } };
 
+    // Legitimate fixed delays: they exist to interleave the two scopes, and
+    // the assertions are on *which context each scope observes*, not on
+    // ordering or elapsed time. Coalescing the timers cannot change the answer.
     const observe = (ctx: CliContext, delay: number) =>
       new Promise<string>((resolve) => {
         runWithContext(ctx, () => {
@@ -144,6 +147,7 @@ describe('runWithContext (AsyncLocalStorage scope)', () => {
   it('propagates context across awaits', async () => {
     await runWithContext(mockContext, async () => {
       await Promise.resolve();
+      // Legitimate: a macrotask boundary to cross, not a duration to wait out.
       await new Promise((r) => setTimeout(r, 1));
       expect(getContext()).toBe(mockContext);
     });

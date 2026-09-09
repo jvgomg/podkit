@@ -111,6 +111,10 @@ describe('runWithConcurrency', () => {
     const tasks = Array.from({ length: 50 }, () => async () => {
       inFlight++;
       peak = Math.max(peak, inFlight);
+      // Legitimate fixed sleep: the simulated work that keeps tasks in flight
+      // long enough for `peak` to mean anything. The assertion is an upper
+      // bound (`<= 4`), which a slow or coalesced timer can only make easier
+      // to satisfy, never harder — so this cannot flake red.
       await new Promise((r) => setTimeout(r, 5));
       inFlight--;
       return 1;

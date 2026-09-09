@@ -142,12 +142,20 @@ describe('isAlive', () => {
   it('returns true for a freshly-spawned live child', async () => {
     const child = spawnLongRunning();
     try {
-      // Give the child a brief moment to register in /proc on Linux.
-      await new Promise((r) => setTimeout(r, 50));
+      // Wait for the child to register in /proc rather than allotting it 50ms:
+      // "the kernel has published the process" is a condition, and on a loaded
+      // host a fixed grace period is a bet on scheduling. The ceiling keeps a
+      // child that never registers (or an isAlive() that never says yes)
+      // failing on the assertion below rather than hanging.
+      const deadline = Date.now() + 5_000;
       // We don't know the child's exact startTimeMs, so probe with a value
       // close to now — the ±2s tolerance should cover the spawn delay.
-      const entry = { pid: child.pid, startTimeMs: Date.now() };
       // Both Linux and macOS resolve the start time within seconds of now.
+      while (Date.now() < deadline) {
+        if (await isAlive({ pid: child.pid, startTimeMs: Date.now() })) break;
+        await new Promise((r) => setTimeout(r, 10));
+      }
+      const entry = { pid: child.pid, startTimeMs: Date.now() };
       expect(await isAlive(entry)).toBe(true);
     } finally {
       child.kill();

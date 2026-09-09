@@ -700,6 +700,72 @@ zero call sites. Don't introduce it without team agreement; the existing
 hand-rolled `toContain` / `toMatchObject` patterns make failures
 self-documenting in PR review.
 
+## Sleeps in tests: legitimate vs racing
+
+A fixed-duration sleep (`Bun.sleep(35)`, `await new Promise(r => setTimeout(r, 10))`)
+is either the thing under test or a bug waiting for a loaded CI runner. There
+is no third case. Decide which before you write one.
+
+**A sleep is legitimate when the passage of time IS what is asserted:**
+
+- **Negative assertions.** "Prove `stop()` really stopped, by observing that
+  nothing happened for a while." There is no condition to wait for — the claim
+  is that no event occurs — so a wait loop has nothing to loop on. Make these
+  *generous*: at 3× an interval a merely-slow tick reads as a clean stop, which
+  is exactly the wrong answer in exactly the conditions that break everything
+  else. `a6964fcd` *lengthened* one of these (30ms → 200ms) rather than removing it.
+- **Holds.** The winner of a lock race keeps the lock live long enough for the
+  contention to be real; a mock transcode "takes" 30ms so a pipelining
+  assertion has something to overlap. A slow host makes the hold longer, never
+  shorter, so it cannot flake red.
+- **Real resolution boundaries.** libgpod stores `time_modified` at second
+  resolution, so proving an update bumps it means waiting >1s. Nothing else will do.
+- **Debounce windows**, and one-tick yields whose only job is to cross a
+  macrotask boundary.
+
+**A sleep is a bug when it stands in for a condition you could observe
+directly:** sleep-then-assert-a-tick-count, sleep-then-assert-a-file-exists,
+sleep-then-assert-a-callback-fired, sleep-then-assert-a-state-flag.
+
+The mechanism is **timer coalescing**, not slowness in general: under load a
+10ms interval does not fire 3 times in 35ms even though 35 > 30. These tests
+pass on every dev machine and fail on a 4-vCPU CI runner.
+
+Convert those to wait-for-condition:
+
+```ts
+async function waitFor(what: string, predicate: () => boolean, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await new Promise((r) => setTimeout(r, 5));
+  }
+  throw new Error(`Timed out after ${timeoutMs}ms waiting for ${what}`);
+}
+```
+
+Rules for a converted wait:
+
+1. **Always a ceiling**, and the ceiling must fail loudly with a message naming
+   what was being waited for. An unbounded loop hangs to the suite timeout and
+   tells you nothing.
+2. **Wait for the right thing.** Pick the narrowest observable that actually
+   implies the precondition. In `sync-orchestrator.test.ts` a fixed 10ms sleep
+   was standing in for "the sync child has been spawned"; `isSyncing` flips
+   several `await`s earlier, so waiting on it — the obvious flag — silently
+   moved the assertion *ahead* of the behaviour it was checking.
+3. **The test must still fail when the product breaks.** A wait loop that
+   exits on a condition nothing sets, followed by an assertion inside a
+   `catch` that never runs, is a test that cannot go red. Verify by breaking
+   the production code on purpose and watching it fail.
+4. **Leave a comment on the legitimate ones**, saying which of the categories
+   above they are, so the next sweep does not re-litigate them.
+
+Local `waitFor` helpers live in the test file that needs them — the packages
+here do not share a test-utils dependency, and copying ten lines is cheaper
+than a new cross-package edge. See `packages/podkit-daemon/src/sync-orchestrator.test.ts`,
+`test-packages/lima/src/progress.test.ts`, and TASK-505 for the repo-wide triage.
+
 ## Canonical fake builders
 
 Three sources of test data exist; pick one deliberately rather than

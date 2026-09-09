@@ -30,6 +30,24 @@ function collector(): { sink: (chunk: string) => void; text: () => string } {
   return { sink: (chunk) => chunks.push(chunk), text: () => chunks.join('') };
 }
 
+/**
+ * Wait until `predicate` holds, or throw naming what was awaited.
+ *
+ * Used wherever the assertion is about a *count of heartbeat ticks*. A fixed
+ * sleep there races the scheduler: under load timer callbacks coalesce, so N
+ * ticks inside N × interval of wall clock is a bet, not a guarantee (see
+ * `a6964fcd`). The ceiling means a heartbeat that never ticks still fails, and
+ * fails saying so, rather than hanging to the suite timeout.
+ */
+async function waitFor(what: string, predicate: () => boolean, timeoutMs = 5_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await Bun.sleep(5);
+  }
+  throw new Error(`Timed out after ${timeoutMs}ms waiting for ${what}`);
+}
+
 describe('createStreamingSubprocessRunner', () => {
   it('echoes output to the sink AND returns it', async () => {
     const { sink, text } = collector();
@@ -107,6 +125,10 @@ describe('createStreamingSubprocessRunner', () => {
           { timeoutMs: 50 }
         )
       ).rejects.toThrow(/timed out/);
+      // Legitimate fixed sleep: a negative assertion has no condition to wait
+      // for. The child would write the marker at t≈1s if the SIGKILL
+      // escalation (due at t≈200ms) failed, so waiting 1.4s gives the failure
+      // mode room to show itself before we conclude it did not happen.
       await Bun.sleep(1_400);
       expect(fs.existsSync(marker)).toBe(false);
     } finally {
@@ -195,17 +217,36 @@ describe('createVmProvisioningRunner', () => {
   it('reports progress for a buffered call — the silent-stop case', async () => {
     // A `limactl stop` that hangs produces no output of its own; without a
     // heartbeat the operator sees nothing at all while it runs.
+    //
+    // The child is held open by a marker file rather than by a fixed
+    // `sleep 0.2`, because the assertion is a tick count: a child that exits
+    // on a wall-clock schedule takes the heartbeat down with it, so on a
+    // loaded runner "0.2s at 15ms should be plenty of ticks" is a bet. Holding
+    // it open until two ticks have actually been seen is not.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lima-heartbeat-'));
+    const release = path.join(dir, 'release');
+    // The `i` bound is a backstop so a failed release cannot leave a child
+    // spinning past the end of the suite.
+    const script = `i=0; while [ ! -f ${release} ] && [ $i -lt 2000 ]; do sleep 0.01; i=$((i+1)); done`;
     const lines: string[] = [];
     const runner = createVmProvisioningRunner({
       sink: () => {},
       report: (line) => lines.push(line),
       heartbeatMs: 15,
     });
-    await runner.run('sh', ['-c', 'sleep 0.2']);
-    expect(lines.length).toBeGreaterThanOrEqual(2);
-    expect(lines[0]).toContain('still waiting on `sh -c sleep 0.2`');
-    // No output stream to observe for a buffered call, so no idle clause.
-    expect(lines[0]).not.toContain('since last output');
+    try {
+      const running = runner.run('sh', ['-c', script]);
+      await waitFor('two heartbeat lines from the buffered call', () => lines.length >= 2);
+      fs.writeFileSync(release, '');
+      await running;
+      expect(lines.length).toBeGreaterThanOrEqual(2);
+      expect(lines[0]).toContain(`still waiting on \`sh -c ${script}\``);
+      // No output stream to observe for a buffered call, so no idle clause.
+      expect(lines[0]).not.toContain('since last output');
+    } finally {
+      fs.writeFileSync(release, '');
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('stops reporting once the call completes', async () => {
@@ -217,7 +258,11 @@ describe('createVmProvisioningRunner', () => {
     });
     await runner.run('sh', ['-c', 'sleep 0.1']);
     const seen = lines.length;
-    await Bun.sleep(60);
+    // Legitimate fixed sleep: negative assertion — nothing should be reported
+    // after the call settles, and there is no event to wait for. Well past the
+    // 15ms heartbeat, so a timer that merely ticked late still gets caught
+    // instead of reading as a clean stop.
+    await Bun.sleep(300);
     expect(lines).toHaveLength(seen);
   });
 
