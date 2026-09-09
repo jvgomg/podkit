@@ -4,6 +4,7 @@ title: Decide one retry policy across the 18 bunfig.toml files
 status: To Do
 assignee: []
 created_date: '2026-09-09 20:25'
+updated_date: '2026-09-09 22:22'
 labels:
   - testing
   - flakiness
@@ -11,6 +12,7 @@ dependencies:
   - TASK-500
   - TASK-504
   - TASK-505
+  - TASK-507
 references:
   - docs/agents/testing.md
   - docs/architecture/testing/taxonomy.md
@@ -64,3 +66,28 @@ Also worth settling: whether a retried-then-passed test should be **visible**. T
 - [ ] #4 A decision is recorded on whether a retried-then-passed test must be visible in CI output, and if so it is made visible
 - [ ] #5 The two documented failure modes (retry masking a deterministic failure; retry cascading leaked state into a different error) are captured in the guidance so the next reader does not rediscover them from commit messages
 <!-- AC:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: Claude Opus 5
+created: 2026-09-09 22:22
+---
+**Evidence gathered before deciding: retry is load-bearing today, and that is the argument for fixing rather than keeping it.**
+
+Grepped the job logs of the three most recent green `main` CI runs (`34406697529`, `34402727980`, `34401036068`) for attempt markers. Retry fires on **every one of them**:
+
+- `templates.integration.test.ts` — `createTestIpod() ... uses fast path` at **attempt 2**, logged at 47ms against a `< 50ms` bound.
+- `device.integration.test.ts` — `shows track count correctly` at **attempt 3**, i.e. it failed twice.
+
+So the answer to "is retry doing anything?" is yes, and switching it off today turns CI red immediately. Both are now **task-507**, which this task depends on.
+
+Two things that sharpen the decision:
+
+1. **The flakes are in *integration*, not e2e.** The 12 e2e stress samples run under task-501 had zero retry firings. The packages where retry is actually firing are the ones with the weakest case for having it — by the repo's own taxonomy, unit and integration are in-process with no external deps, so nondeterminism there is a defect rather than a fact of life.
+
+2. **The escalation path is the real cost, not the hiding.** `de6e5bf8` is what happens when retry *fails* to absorb something: the response was `describe.skipIf`, and `lossy-preserve-efficiency`'s assertion then ran on no Linux host and no CI run at all until task-500 found it. Retry normalises "tests sometimes fail"; skip is the next step when retry is not enough. Each step is locally reasonable and the sequence ends with no coverage.
+
+Suggested shape for the decision, given the above: `retry = 0` for unit and integration (16 of 18 packages) once task-507 lands; a considered value only where genuinely nondeterministic infrastructure is involved, with a bounded wait at the flaky *step* preferred over a re-run of the whole test — which is what task-505 did across 15 files and what `d14e9d0d` did correctly by retrying at the apt level rather than the test level.
+---
+<!-- COMMENTS:END -->
