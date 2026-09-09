@@ -4,7 +4,7 @@ title: 'Native aac VBR discards the target bitrate, so the quality cap is not en
 status: Done
 assignee: []
 created_date: '2026-09-08 18:20'
-updated_date: '2026-09-08 22:14'
+updated_date: '2026-09-09 21:23'
 labels:
   - transcoding
   - correctness
@@ -139,6 +139,18 @@ A `/code-review` pass over the commit found three things worth fixing, all now d
 Also: the native-`aac` fallback for a caller that supplies no `targetKbps` had an invented linear formula (`quality * 51.2`) that no caller could reach; replaced with a total map over the clamped 1-5 level, shared with the libfdk fallback. And the integration test's headroom is now an explicit `ceilingFor(encoder, cap)` — native `aac` gets `cap + 1`, the one kbps being ffprobe's rounding rather than encoder slack, which removes a plausible future 1-kbps flake without softening the cap.
 
 **Residual on AC #2, recorded honestly:** the measured proof is at the encoder (transcode to a temp file, ffprobe the stream), not through the CLI onto a dummy iPod as the description's evidence table was. The on-device path is still covered — `upgrades.test.ts:1527` asserts an on-device bitrate `<= HIGH_CAP_KBPS` and the whole e2e suite is 37/37 — but nobody has re-run the description's three-row table end to end.
+
+## Correction: the "tracks the request exactly" claim was stereo-only
+
+The notes above say `-b:a` on native `aac` "tracks the request exactly, including on noise", with a table of measurements. Every row in that table was **stereo** — the fixtures are 2-channel and the pink noise was generated `-ac 2`. I did not qualify the claim, and it does not hold in mono.
+
+Surfaced while doing task-500: on dense **mono** content (pink noise carried through a 320k MP3), native `aac` ABR overshoots — `-b:a 192k` measured **210 kbps**, about 9% over. In stereo the same encoder tracks to within 1%.
+
+So the ceiling this task installed is a real ceiling on stereo and an approximate one on mono. That does not undo the fix — the failure it replaced was 46% over on `low`, not 9% — but "the preset is a hard ceiling" is now known to have a content-shaped exception that nobody has characterised.
+
+Related, from the same investigation: libopus *undershoots* `-b:a` badly on noise (a nominally 128k Opus source probes at ~69 kbps), which is why absolute bitrate comparisons across codecs are meaningless even where a ratio holds.
+
+Both are recorded on **task-502**, which is the task that will re-derive these numbers against a real corpus. Flagged here so the claim in these notes is not read as broader than the evidence behind it.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
