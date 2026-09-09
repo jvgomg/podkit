@@ -1,10 +1,10 @@
 ---
 id: TASK-501
 title: art-matrix suites flake with FFmpeg exit 254 across every hires format
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-08 19:35'
-updated_date: '2026-09-08 23:54'
+updated_date: '2026-09-09 19:23'
 labels:
   - testing
   - ci
@@ -237,3 +237,15 @@ This also walks back something asserted earlier in these notes. I called the rep
 
 Branches `stress/task-501-control`, `stress/task-501-control-c6` carry a DO-NOT-MERGE revert of the walker fix and exist only to make the control falsifiable. The waves' logs outlive them, so the branches can be deleted once read. `e2e-stress.yml` itself is worth keeping: it turns "is this flaky?" from weeks of organic pushes into one wave, and it now carries the negative result.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+A concurrent `podkit sync`'s debris sweep was deleting another sync's live transcode scratch directory, and every transcode after that wrote into a path that no longer existed — FFmpeg exit 254 on all of them at once, `bytesTransferred: 0`. A production concurrency bug in `@podkit/core`, not a test bug; the e2e suite was simply the only thing in the repo running two syncs at once on a host loaded enough to widen the window.
+
+`sync/music/pipeline.ts` creates the scratch dir and only then stamps `.owner`, and `walkAbandonedTranscodeDirs` treated any unmarked `podkit-transcode-*` dir as debris. The code comment there claimed the window "only leaks an empty dir, harmless" — but the dir is the victim's *output directory for the rest of its run*, which is why the fix had gone unwritten. An unmarked dir is now left alone until it has gone 60s untouched; a dead *owner* is still reaped on sight, so SIGKILL leftovers and the daemon's self-reaping are unaffected.
+
+Transcode failures also now carry FFmpeg's own diagnostic. 254 is `-ENOENT` and covers both an unreadable input and an unwritable output, so the bare exit code could not distinguish them — the first CI reproduction after the fix named its own missing path in one line, where the original took four runs to not identify.
+
+Guarded by three deterministic reproductions, all of which fail on the unfixed walker and all of which run in CI's unit+integration step on every push. Validated on CI by a purpose-built 12-sample stress matrix: the fixed tree 12/12 green, a control tree with the fix reverted red with the exact signature. Also produced one negative result worth keeping — raising `TEST_CONCURRENCY` does not amplify this race (1/12 failures at 2, 0/12 at 6, identical hardware and unfixed trees), so the obvious lever for making it reproducible does not work and shouldn't be tried again without a mechanism.
+<!-- SECTION:FINAL_SUMMARY:END -->
