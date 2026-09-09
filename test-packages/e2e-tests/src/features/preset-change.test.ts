@@ -14,12 +14,18 @@ import { mkdtemp, rm, copyFile, writeFile, readdir, rename } from 'node:fs/promi
 import { tmpdir } from 'node:os';
 import { join, extname } from 'node:path';
 import { execSync } from 'node:child_process';
-import { ensureFixturesExist, requireFFmpeg } from '@podkit/e2e-shared';
+import {
+  aacCeilingKbps,
+  ensureFixturesExist,
+  probeAudioStreamBitrateKbps,
+  requireFFmpeg,
+} from '@podkit/e2e-shared';
 import { gpodTool } from '@podkit/gpod-testing';
 import { runCliJson } from '../helpers/cli-runner';
 import { withTarget, withMassStorageTarget } from '../targets';
 import { getTrackPath, Tracks, type AlbumDir } from '../helpers/fixtures';
 import { getMultiFormatEmbeddedFixturesDir } from '@podkit/test-fixtures';
+import { QUALITY_CAP_KBPS } from '../matrix/reference-model';
 
 ensureFixturesExist('goldberg-selections');
 
@@ -66,6 +72,52 @@ music = "default"
 
   await writeFile(configPath, content);
   return configPath;
+}
+
+/**
+ * lavfi input for a lossy fixture whose *re-encoded* bitrate a test measures.
+ *
+ * Pink noise rather than the 440 Hz sine the other fixtures here use: a sine
+ * gives the AAC encoder almost nothing to spend bits on, so its output is
+ * limited by the content and lands under any cap no matter what podkit asked
+ * for. A cap assertion on a sine cannot fail. Noise is incompressible, so the
+ * target is what stops the encoder — which is the thing under test.
+ *
+ * Always paired with `-ac 2`. FFmpeg's native `aac` ABR overshoots `-b:a` on a
+ * *mono* stream (measured on FFmpeg 9.0.1, mono pink noise through a 320 kbps
+ * MP3: `-b:a 192k` → 210 kbps, 9.6% over) while tracking it to within 1% in
+ * stereo at every target from 96 to 256 kbps. A mono fixture would break a cap
+ * assertion for a reason that has nothing to do with podkit — and podkit's
+ * real inputs are stereo.
+ */
+const MEASURABLE_NOISE_INPUT =
+  'anoisesrc=color=pink:sample_rate=44100:duration=2:amplitude=0.8:seed=500';
+
+/** Extensions the mass-storage walkers treat as audio. */
+const AUDIO_EXTENSIONS = new Set(['.m4a', '.mp3', '.flac', '.ogg', '.opus', '.aac', '.wav']);
+
+/**
+ * Measured bitrate of the one audio file on a mass-storage target, in kbps.
+ *
+ * Reads the *audio stream*, not `ffprobe`'s `format.bit_rate` that
+ * `MassStorageTarget.getTracks()` reports. On the two-second fixtures these
+ * tests use, the MP4 container's `moov` atom and tags are worth ~9 kbps of
+ * the container figure — a file encoded exactly at the 128 kbps `low` cap
+ * measures 137 there. That overhead is not the encoder's and must not be
+ * charged against a cap assertion.
+ */
+async function soleDeviceStreamBitrateKbps(musicRoot: string): Promise<number> {
+  const files: string[] = [];
+  const walk = async (dir: string): Promise<void> => {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) await walk(full);
+      else if (AUDIO_EXTENSIONS.has(extname(entry.name).toLowerCase())) files.push(full);
+    }
+  };
+  await walk(musicRoot);
+  expect(files).toHaveLength(1);
+  return probeAudioStreamBitrateKbps(files[0]!);
 }
 
 // =============================================================================
@@ -452,7 +504,7 @@ device = "${stanza?.name ?? ''}"
           // A 192 kbps MP3 — compatible-lossy on the generic preset (aac/mp3/flac),
           // so it is copied as-is at the high cap.
           execSync(
-            `ffmpeg -f lavfi -i "sine=frequency=440:sample_rate=44100:duration=2" ` +
+            `ffmpeg -f lavfi -i "${MEASURABLE_NOISE_INPUT}" -ac 2 ` +
               `-metadata title="Cap Test" -metadata artist="Cap Artist" -metadata album="Cap Album" ` +
               `-b:a 192k -y "${join(collectionDir, 'track.mp3')}"`,
             { stdio: 'ignore' }
@@ -523,12 +575,17 @@ device = "${stanza?.name ?? ''}"
           expect(result3.exitCode).toBe(0);
           expect(json3?.result?.completed).toBe(1);
 
-          // The on-device track is now re-encoded — its measured bitrate dropped
-          // from ~192 toward the 128 cap (track count unchanged).
+          // The on-device track is now re-encoded and honours the `low` cap
+          // (track count unchanged). The source is pink noise so the cap
+          // actually binds: on a 440 Hz sine the encoder runs out of signal
+          // long before the cap and the assertion would hold no matter what
+          // podkit asked for. Measured on FFmpeg 9.0.1 native `aac`: 128 kbps
+          // against a 128 kbps cap.
           const tracks = await target.getTracks();
           expect(tracks.length).toBe(1);
-          expect(tracks[0]!.bitrate).toBeGreaterThan(0);
-          expect(tracks[0]!.bitrate).toBeLessThan(170);
+          const capped = await soleDeviceStreamBitrateKbps(target.musicRoot());
+          expect(capped).toBeGreaterThan(0);
+          expect(capped).toBeLessThanOrEqual(aacCeilingKbps(QUALITY_CAP_KBPS.low));
 
           // Step 4: Re-sync at low — idempotent (recorded bitrate now equals the cap).
           const { json: json4 } = await runCliJson<SyncOutput>([
@@ -569,7 +626,7 @@ device = "${stanza?.name ?? ''}"
           // A 320 kbps MP3 — compatible-lossy on the generic preset (aac/mp3/flac)
           // and well above the quality=low cap (128).
           execSync(
-            `ffmpeg -f lavfi -i "sine=frequency=440:sample_rate=44100:duration=2" ` +
+            `ffmpeg -f lavfi -i "${MEASURABLE_NOISE_INPUT}" -ac 2 ` +
               `-metadata title="Cap Add" -metadata artist="Cap Artist" -metadata album="Cap Album" ` +
               `-b:a 320k -y "${join(collectionDir, 'track.mp3')}"`,
             { stdio: 'ignore' }
@@ -624,12 +681,16 @@ device = "${stanza?.name ?? ''}"
           expect(result1.exitCode).toBe(0);
           expect(json1?.result?.completed).toBe(1);
 
-          // The on-device track is AAC at the cap — its measured bitrate sits well
-          // below the 320 kbps source (proof it was re-encoded, not copied).
+          // The on-device track is AAC at the cap — far below the 320 kbps
+          // source, so it was re-encoded and not copied. Same pink-noise
+          // reasoning as the cap-down test above: the cap has to be what stops
+          // the encoder, not the content. Measured on FFmpeg 9.0.1 native
+          // `aac`: 128 kbps against a 128 kbps cap.
           const tracks = await target.getTracks();
           expect(tracks.length).toBe(1);
-          expect(tracks[0]!.bitrate).toBeGreaterThan(0);
-          expect(tracks[0]!.bitrate).toBeLessThan(170);
+          const capped = await soleDeviceStreamBitrateKbps(target.musicRoot());
+          expect(capped).toBeGreaterThan(0);
+          expect(capped).toBeLessThanOrEqual(aacCeilingKbps(QUALITY_CAP_KBPS.low));
 
           // Step 3: Re-sync — idempotent in a single pass (no second-sync cap-down).
           const { json: convergeJson } = await runCliJson<SyncOutput>([
@@ -665,12 +726,14 @@ device = "${stanza?.name ?? ''}"
         const configDir = await mkdtemp(join(tmpdir(), 'podkit-belowcap-ms-'));
         const collectionDir = await mkdtemp(join(tmpdir(), 'podkit-belowcap-src-'));
         try {
-          // A 200 kbps MP3 — above the quality=low cap (128) so convert reduces it,
-          // and below the high cap (256) so the forced lift is source-bounded.
+          // A 192 kbps MP3 — above the quality=low cap (128) so convert reduces
+          // it, and below the high cap (256) so the forced lift is
+          // source-bounded. (192 rather than a rounder 200 because 200 is not
+          // an MPEG-1 Layer III bitrate and lame silently snaps it to 192.)
           execSync(
-            `ffmpeg -f lavfi -i "sine=frequency=440:sample_rate=44100:duration=2" ` +
+            `ffmpeg -f lavfi -i "${MEASURABLE_NOISE_INPUT}" -ac 2 ` +
               `-metadata title="Below Cap" -metadata artist="Cap Artist" -metadata album="Cap Album" ` +
-              `-b:a 200k -y "${join(collectionDir, 'track.mp3')}"`,
+              `-b:a 192k -y "${join(collectionDir, 'track.mp3')}"`,
             { stdio: 'ignore' }
           );
 
@@ -709,8 +772,8 @@ device = "${stanza?.name ?? ''}"
           expect(addResult.exitCode).toBe(0);
           const reducedTracks = await target.getTracks();
           expect(reducedTracks.length).toBe(1);
-          const reducedBitrate = reducedTracks[0]!.bitrate;
-          expect(reducedBitrate).toBeGreaterThan(0);
+          const reducedBitrate = await soleDeviceStreamBitrateKbps(target.musicRoot());
+          expect(reducedBitrate).toBeLessThanOrEqual(aacCeilingKbps(QUALITY_CAP_KBPS.low));
 
           // Step 2: Dry-run at quality=high (cap 256). The recorded low/128 now sits
           // below the raised cap, but down-only reduction never re-lifts it: it is
@@ -760,7 +823,16 @@ device = "${stanza?.name ?? ''}"
           expect(forceJson?.result?.completed).toBe(1);
           const liftedTracks = await target.getTracks();
           expect(liftedTracks.length).toBe(1);
-          expect(liftedTracks[0]!.bitrate).toBeGreaterThan(reducedBitrate);
+          // Two different requests, not encoder noise: the reduced copy was
+          // encoded at the `low` cap (128) and the lift at the source-bounded
+          // high target (min(192, 256) = 192). Since TASK-499 every AAC encoder
+          // podkit drives is given that target, so the gap is structural rather
+          // than a byproduct of how the encoder felt about the content.
+          // Measured on FFmpeg 9.0.1 native `aac`: 128 → 192 kbps, i.e. each
+          // run lands exactly on the target the seam resolved.
+          const liftedBitrate = await soleDeviceStreamBitrateKbps(target.musicRoot());
+          expect(liftedBitrate).toBeGreaterThan(reducedBitrate);
+          expect(liftedBitrate).toBeLessThanOrEqual(aacCeilingKbps(QUALITY_CAP_KBPS.high));
 
           const { json: convergeJson } = await runCliJson<SyncOutput>([
             '--config',

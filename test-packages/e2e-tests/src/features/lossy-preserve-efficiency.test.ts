@@ -17,12 +17,15 @@
  * level (`lossy-reduction.test.ts`, `handler.test.ts`); this test proves the path
  * is wired end-to-end through config → classifier → seam → transcoder → device.
  *
- * That assertion was once described here as encoder-agnostic. It is not, and
- * task-499 is why: `buildVbrArgs` discards `targetKbps` on FFmpeg's native `aac`
- * encoder, so both runs emit a byte-identical `-c:a aac -q:a 5` and the two
- * bitrates differ only by encoder noise. Observed on CI failing `> 231` with
- * `231` — on both attempts, so `bunfig.toml`'s `retry = 1` did not mask it.
- * The test is therefore gated on an encoder that actually honours the target.
+ * That assertion was once *not* true by construction. Before TASK-499,
+ * `buildVbrArgs` discarded `targetKbps` on FFmpeg's native `aac` encoder, so
+ * both runs emitted a byte-identical `-c:a aac -q:a 5` and the two bitrates
+ * differed only by encoder noise — observed failing `> 231` with `231`, on both
+ * attempts, so `bunfig.toml`'s `retry = 1` did not mask it. The test was gated
+ * off on hosts with only native `aac` while that stood. TASK-499 made all three
+ * AAC encoders take the seam's target (native `aac` via `-b:a`, `libfdk_aac`
+ * and `aac_at` via their quality indices), so the two runs now issue different
+ * requests everywhere and the gate is gone (TASK-500).
  *
  * @module
  */
@@ -34,7 +37,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
 import { readdir } from 'node:fs/promises';
-import { requireFFmpeg } from '@podkit/e2e-shared';
+import { aacCeilingKbps, requireFFmpeg } from '@podkit/e2e-shared';
 import { runCliJson } from '../helpers/cli-runner';
 import { withTarget } from '../targets';
 
@@ -42,39 +45,8 @@ import type { SyncOutput } from 'podkit/types';
 
 requireFFmpeg();
 
-/**
- * Does this host's ffmpeg have an AAC encoder that honours a target bitrate?
- *
- * `aac_at` (macOS AudioToolbox) and `libfdk_aac` both map the seam's target onto
- * their own quality scale. FFmpeg's native `aac` does not — see task-499 — so on
- * a host with only `aac` every target collapses to the same `-q:a` and any
- * assertion comparing two targets measures noise.
- *
- * Local to this file on purpose: it gates one test, and whether encoder-calibrated
- * assertions should declare their encoder generally is task-500's call.
- */
-function hasTargetAwareAacEncoder(): boolean {
-  try {
-    const out = execSync('ffmpeg -hide_banner -encoders', {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    });
-    return /\baac_at\b/.test(out) || /\blibfdk_aac\b/.test(out);
-  } catch {
-    return false;
-  }
-}
-
-const TARGET_AWARE_AAC = hasTargetAwareAacEncoder();
-
-if (!TARGET_AWARE_AAC) {
-  // Skip loudly, per docs/agents/testing.md: absent capability is a skip with a
-  // stated reason, never a silent pass.
-  console.log(
-    '[skip] lossy-preserve-efficiency: ffmpeg has neither aac_at nor libfdk_aac, ' +
-      'so the seam target never reaches the encoder (task-499). Re-enable when it lands.'
-  );
-}
+/** Bitrate cap of the `high` quality preset, in kbps (`AAC_PRESETS.high`). */
+const HIGH_CAP_KBPS = 256;
 
 /**
  * Generate an Opus file from pink noise at a target bitrate. Noise is
@@ -83,7 +55,7 @@ if (!TARGET_AWARE_AAC) {
  */
 function generateOpus(outputPath: string, bitrateKbps: number): void {
   execSync(
-    `ffmpeg -f lavfi -i "anoisesrc=color=pink:sample_rate=48000:duration=4" ` +
+    `ffmpeg -f lavfi -i "anoisesrc=color=pink:sample_rate=48000:duration=4" -ac 2 ` +
       `-metadata title="Preserve Efficiency" ` +
       `-metadata artist="Codec Artist" ` +
       `-metadata album="Codec Album" ` +
@@ -131,10 +103,12 @@ async function syncOpusAndReadBitrate(reduceMode: 'never' | 'always'): Promise<n
     const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
     const collectionDir = await mkdtemp(join(tmpdir(), 'podkit-preserve-eff-'));
     try {
-      // 128 kbps Opus, quality=high (cap 256). preserve target = round(128 / 0.75)
-      // = 171 (below the cap — not clamped); convert target = min(128, 256) = 128.
-      // The two land in different AAC encoder quality buckets, so the on-device
-      // bitrate differs observably.
+      // Opus asked for 128 kbps, quality=high (cap 256). What matters is the
+      // bitrate podkit *probes* off the file — libopus undershoots `-b:a`
+      // heavily on pink noise, so the file comes out around 69 kbps. preserve
+      // then targets round(probed / 0.75), convert targets min(probed, 256) =
+      // probed. Both sit below the cap, so neither is clamped and the two
+      // targets stand a third apart.
       generateOpus(join(collectionDir, 'track.opus'), 128);
       const configPath = await createConfig(configDir, collectionDir);
 
@@ -186,23 +160,33 @@ async function syncOpusAndReadBitrate(reduceMode: 'never' | 'always'): Promise<n
   });
 }
 
-describe.skipIf(!TARGET_AWARE_AAC)(
-  'forced transcode (incompatible codec): preserve is efficiency-matched and cap-bounded',
-  () => {
-    it('preserve targets a higher AAC bitrate than convert for the same Opus source', async () => {
-      const preserveBitrate = await syncOpusAndReadBitrate('never');
-      const convertBitrate = await syncOpusAndReadBitrate('always');
+describe('forced transcode (incompatible codec): preserve is efficiency-matched and cap-bounded', () => {
+  it('preserve targets a higher AAC bitrate than convert for the same Opus source', async () => {
+    const preserveBitrate = await syncOpusAndReadBitrate('never');
+    const convertBitrate = await syncOpusAndReadBitrate('always');
 
-      // The efficiency-matched preserve target (source ÷ 0.75 = 171) is higher than
-      // the convert target (min(source, cap) = 128). Same encoder, same content —
-      // the only difference is the seam's target — so the on-device AAC bitrate is
-      // strictly higher under preserve. This is the end-to-end fingerprint of the
-      // codec-efficiency path that a naive min(source, cap) would not produce.
-      expect(preserveBitrate).toBeGreaterThan(convertBitrate);
+    // The efficiency-matched preserve target (source ÷ 0.75) is a third higher
+    // than the convert target (min(source, cap) = source). Same encoder, same
+    // content — the only difference is the seam's target, and since TASK-499
+    // every AAC encoder podkit drives is handed that target. So the two runs
+    // ask for two different bitrates by construction, rather than differing by
+    // whatever the encoder felt like on the day.
+    //
+    // Measured on FFmpeg 9.0.1 native `aac`: preserve 93 kbps, convert 69 —
+    // a ratio of 1.35 against the 1.33 the efficiency table asks for. (Both
+    // sit below their nominal 171/128 because libopus undershoots `-b:a`
+    // heavily on pink noise, so the source bitrate podkit probes off the file
+    // is ~69 rather than 128. That scales both targets equally and does not
+    // touch the relationship under test — see TASK-502 for re-deriving these
+    // against real music.)
+    expect(preserveBitrate).toBeGreaterThan(convertBitrate);
 
-      // Cap-bounded: even the efficiency-lifted preserve target stays at or below
-      // the quality preset's cap (256) — the hard ceiling is honoured end-to-end.
-      expect(preserveBitrate).toBeLessThanOrEqual(256);
-    }, 240000);
-  }
-);
+    // Cap-bounded: the efficiency-lifted preserve target stays at or below the
+    // quality preset's cap — the hard ceiling of ADR-023 §2 is honoured
+    // end-to-end. A guard rather than a proof: making the *clamp* fire needs a
+    // source whose lifted target crosses 256, which on this fixture depends on
+    // how libopus rate-controls noise. The clamp itself is pinned at the unit
+    // level in `lossy-reduction.test.ts`; see TASK-502 for making it bind here.
+    expect(preserveBitrate).toBeLessThanOrEqual(aacCeilingKbps(HIGH_CAP_KBPS));
+  }, 240000);
+});

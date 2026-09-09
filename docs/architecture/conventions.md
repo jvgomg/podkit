@@ -147,6 +147,52 @@ should be intentionally rewritten to pin the new contract, not
 See [feedback_test_quality_visible_bugs] for the deferred-bug
 visibility rules.
 
+### 6a. An encoder-calibrated assertion declares the encoder it assumes
+
+A test that asserts on a **measured** bitrate — anything read back off a file
+an encoder produced, rather than a value podkit configured — must derive its
+bound from the encoder it will actually run against, not hard-code a number
+someone once observed on their own machine.
+
+podkit picks one of three AAC encoders (`aac_at` > `libfdk_aac` > `aac`,
+`ENCODER_PRIORITY` in `packages/podkit-core/src/transcode/ffmpeg.ts`) and only
+native `aac` is *asked* for a bitrate; the other two are handed a quality index
+and decide the rest, so the same cap admits materially different results. A
+single hard-coded threshold therefore has to be the loosest of the three, and
+nothing records which one it was calibrated against — which is how
+`expect(bitrate).toBeLessThan(170)` came to guard a **128 kbps** cap (TASK-500).
+Nothing in the repo requires or detects `aac_at`/`libfdk_aac`: the e2e
+preflight's `checkFfmpeg` is a bare `ffmpeg -version` probe and the encoder gate
+in `test-packages/test-fixtures/scripts/check-ffmpeg.ts` lists only
+`flac, libmp3lame, aac, libvorbis, libopus, mjpeg`. So the assumption is never
+stated anywhere and never checked.
+
+**The rule.** Resolve the encoder and compute the bound from it:
+
+- e2e and other black-box suites use `aacCeilingKbps(cap)` from
+  `@podkit/e2e-shared` (`test-packages/e2e-shared/src/audio-probe.ts`).
+- `packages/podkit-core/src/transcode/ffmpeg.integration.test.ts` has the
+  in-package equivalent, `ceilingFor(encoder, cap)`. The two are deliberate
+  duplicates — core does not depend on a test package — and must move together.
+
+**Skipping is not the answer.** Gating the test off on hosts whose encoder
+cannot express the contract (as `lossy-preserve-efficiency.test.ts` did between
+TASK-495 and TASK-499) means the assertion never runs on Linux or CI, which is
+every host that matters. Bound it per encoder and let it run.
+
+**Two corollaries, both learned the hard way:**
+
+- **Measure the stream, not the container.** `ffprobe`'s `format.bit_rate`
+  charges the MP4 `moov` atom and tags to the audio — ~9 kbps on the two-second
+  e2e fixtures, enough to fail a correct cap assertion. Use
+  `probeAudioStreamBitrateKbps`.
+- **A cap assertion needs a fixture that makes the cap bind.** On a 440 Hz sine
+  the encoder runs out of signal long before any cap, so `measured <= cap`
+  passes whatever podkit asked for. Encode stereo pink noise
+  (`anoisesrc=color=pink … -ac 2`); it is incompressible, so the target is what
+  stops the encoder. Stereo matters on its own: native `aac` ABR overshoots
+  `-b:a` by ~10% on a mono stream and tracks it to within 1% on a stereo one.
+
 ---
 
 ## 7. Documentation lives in three places, not one

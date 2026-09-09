@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-09 19:22'
+updated_date: '2026-09-09 21:15'
 labels:
   - transcoding
   - testing
@@ -64,3 +65,34 @@ The corpus choice, the licensing, whether the cross-machine inconsistency is a b
 - [ ] #7 quality-presets.md documents the per-encoder and per-version caveats, replacing any wording that implies uniform behaviour
 - [ ] #8 A human has reviewed and signed off the corpus, the measured caps, and the cross-machine decision
 <!-- AC:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: Claude Opus 5
+created: 2026-09-09 21:15
+---
+Findings from task-500 that belong here rather than there.
+
+**The 15% allowance now has two copies.** task-500 added `aacCeilingKbps(cap, encoder)` to `test-packages/e2e-shared/src/audio-probe.ts` so the e2e suite can bound a measured bitrate per encoder instead of hard-coding `< 170` against a 128 kbps cap. It deliberately mirrors `ceilingFor()` in `ffmpeg.integration.test.ts`, including the unmeasured `cap * 1.15` for `aac_at`/`libfdk_aac`. AC #3 must replace **both**; they are documented as deliberate duplicates (core cannot depend on a test package).
+
+**Native `aac` ABR overshoots `-b:a` on mono, and that is not in the record anywhere.** Measured on the mise-pinned conda FFmpeg 9.0.1, pink noise decoded from a 320 kbps MP3, ffprobe stream bitrate:
+
+| `-b:a` | mono | stereo |
+|---|---|---|
+| 96 | 97 | 95 |
+| 128 | 125 | 128 |
+| 160 | 160 | 159 |
+| 192 | **210** | 192 |
+| 200 | **215** | 199 |
+| 256 | 228 | 233 |
+
+So mono can land ~10% over the request while stereo tracks it to within 1%. task-500 dealt with this by making every e2e fixture stereo, which is right for the e2e suite but means the `cap + 1` native-`aac` ceiling is only established for stereo. Real music is stereo, but a user's mono rip is not, and nothing warns them. Worth a row in the corpus per AC #1 and a decision on whether mono needs its own ceiling.
+
+**libopus undershoots `-b:a` on synthetic noise badly enough to distort a test's premise.** `lossy-preserve-efficiency.test.ts` generates a '128 kbps' Opus source; podkit probes it at ~69 kbps, so both the preserve and convert targets come out about half their nominal values. The *ratio* survives (measured 93/69 = 1.35 against the efficiency table's 1.33), which is all that test asserts, but any absolute number taken off that fixture is meaningless. Another argument for AC #1's real corpus.
+
+**One e2e cap assertion still does not bind.** `lossy-preserve-efficiency.test.ts` asserts the efficiency-lifted preserve target stays under the `high` cap, but on this fixture the lifted target never reaches 256, so the clamp never fires and the assertion cannot fail. Making it bind needs a source whose lifted target crosses the cap, which on synthetic noise depends entirely on how libopus rate-controls it — i.e. it needs the real corpus. The clamp itself is covered at the unit level in `lossy-reduction.test.ts`; this is about the e2e path.
+
+**AC #6 cross-reference.** task-500 settled the encoder half of that question — see `docs/architecture/conventions.md` §6a, which now requires an encoder-calibrated assertion to derive its bound from the resolved encoder. The FFmpeg *version* half is untouched and remains this task's.
+---
+<!-- COMMENTS:END -->

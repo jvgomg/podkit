@@ -640,10 +640,25 @@ describe('self-healing sync: format upgrade (MP3 → FLAC)', () => {
 function generateMp3AtBitrate(
   outputPath: string,
   metadata: { title: string; artist: string; album: string },
-  bitrateKbps: number
+  bitrateKbps: number,
+  options: { content?: 'tone' | 'noise' } = {}
 ): void {
+  // CBR MP3 hits its nominal bitrate whatever the content, so the default tone
+  // is fine for every test that only reads the *source* bitrate back. Pass
+  // `content: 'noise'` when the test measures what the AAC encoder then
+  // produced: a 440 Hz sine gives the encoder almost nothing to spend bits on,
+  // so its output is limited by the content rather than by the target podkit
+  // asked for, and any assertion about that output is measuring the fixture.
+  //
+  // Stereo either way (`-ac 2`): FFmpeg's native `aac` ABR overshoots `-b:a` on
+  // a mono stream (mono pink noise via a 320 kbps MP3, FFmpeg 9.0.1:
+  // `-b:a 192k` → 210 kbps) while tracking it to within 1% in stereo.
+  const input =
+    options.content === 'noise'
+      ? 'anoisesrc=color=pink:sample_rate=44100:duration=2:amplitude=0.8:seed=500'
+      : 'sine=frequency=440:sample_rate=44100:duration=2';
   execSync(
-    `ffmpeg -f lavfi -i "sine=frequency=440:sample_rate=44100:duration=2" ` +
+    `ffmpeg -f lavfi -i "${input}" -ac 2 ` +
       `-metadata title="${metadata.title}" ` +
       `-metadata artist="${metadata.artist}" ` +
       `-metadata album="${metadata.album}" ` +
@@ -969,7 +984,11 @@ describe('self-healing sync: below a raised cap (report-only, --force-transcode 
         };
 
         // A 320 kbps MP3 source — plenty of headroom above any preset cap.
-        generateMp3AtBitrate(join(collectionDir, 'track.mp3'), trackMeta, 320);
+        // Pink noise, because step 4 compares two measured AAC bitrates and
+        // needs the *target* to be what limits each of them.
+        generateMp3AtBitrate(join(collectionDir, 'track.mp3'), trackMeta, 320, {
+          content: 'noise',
+        });
         // Convert (`reduce = always`) so the over-cap source is reduced on add.
         const configPath = await createConfigFile(configDir, {
           source: collectionDir,
@@ -1039,6 +1058,18 @@ describe('self-healing sync: below a raised cap (report-only, --force-transcode 
         // Step 4: --force-transcode is the explicit lift — it re-encodes the track
         // up from the original 320 kbps source toward the raised cap, so the
         // on-device bitrate climbs above the reduced copy.
+        //
+        // Two different requests, not encoder noise: the reduced copy was
+        // encoded at the `low` cap (128) and the lift at the source-bounded
+        // high target (min(320, 256) = 256). Since TASK-499 every AAC encoder
+        // podkit drives is handed that target, so the gap is structural.
+        // Measured on FFmpeg 9.0.1 native `aac`: 134 → 241 kbps. Those are
+        // iTunesDB figures, which are container-inclusive — see
+        // `probeAudioStreamBitrateKbps` in `@podkit/e2e-shared` — and so sit a
+        // few kbps above the stream on these two-second fixtures. Only the
+        // ordering is asserted here; the cap itself is pinned against the
+        // stream in `preset-change.test.ts` and at the encoder in
+        // `ffmpeg.integration.test.ts`.
         const { json: forceJson } = await runCliJson<SyncOutput>([
           '--config',
           configPath,
@@ -1502,11 +1533,10 @@ describe('self-healing sync: reduction axis (convert/preserve) and preconditions
         // This deliberately does NOT assert `lossyBitrate < losslessBitrate`.
         // That comparison is not a property of the boundary re-encode: it
         // depends on how well the *lossless* codec happened to compress this
-        // particular input relative to the AAC encoder's VBR calibration. The
-        // fixture here is a 2 s 440 Hz sine, which ALAC squeezes to ~144 kbps —
-        // below what FFmpeg's native `aac` encoder emits at `-q:a 5` for any
-        // input (~228 kbps), so the comparison inverts on hosts without
-        // `aac_at`/`libfdk_aac` while the product behaves correctly. Codec +
+        // particular input relative to what the AAC target comes out at. The
+        // fixture here is a 2 s 440 Hz sine, which ALAC squeezes to ~144 kbps,
+        // well under the 256 kbps the high preset asks AAC for — so the
+        // comparison can invert while the product behaves correctly. Codec +
         // cap are the contract; their relative bitrates on a synthetic tone
         // are not.
         const { json: realJson } = await runCliJson<SyncOutput>([

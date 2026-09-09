@@ -54,3 +54,10 @@ export {
 } from './preflight.js';
 
 export { type SourceAvailabilityResult, type TestSource } from './test-source.js';
+
+export {
+  aacCeilingKbps,
+  probeAudioStreamBitrateKbps,
+  resolveAacEncoder,
+  type AacEncoder,
+} from './audio-probe.js';
