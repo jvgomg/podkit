@@ -1,6 +1,6 @@
 {
   "name": "@podkit/device-types",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Shared device capability and identity types for podkit",
   "type": "module",
   "main": "./dist/index.js",

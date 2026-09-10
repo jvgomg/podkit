@@ -1,6 +1,6 @@
 {
   "name": "@podkit/device-testing",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Device persona + system-state fixtures and test runtime harness for podkit's VM integration tests",
   "type": "module",
   "main": "./dist/index.js",

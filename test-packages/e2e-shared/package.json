@@ -1,6 +1,6 @@
 {
   "name": "@podkit/e2e-shared",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "Cross-cutting helpers for end-to-end test packages (host, docker, vm).",
   "type": "module",
   "private": true,
