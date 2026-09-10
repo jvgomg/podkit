@@ -60,6 +60,17 @@ export interface TestIpod {
   readonly name: string;
 
   /**
+   * Which construction path produced this iPod: `true` when it was copied
+   * from a pre-built template (the ~5 ms fast path), `false` when it was
+   * built by a `gpod-tool init` subprocess (the ~300 ms slow path).
+   *
+   * Reported rather than inferred so a test can assert on the path taken
+   * directly. Elapsed wall-clock cannot: a loaded runner makes a working
+   * template copy take as long as a subprocess spawn does on an idle one.
+   */
+  readonly usedTemplate: boolean;
+
+  /**
    * Clean up the test iPod (delete directory).
    * Safe to call multiple times.
    */

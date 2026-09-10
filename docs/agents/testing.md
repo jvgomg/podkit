@@ -766,6 +766,24 @@ here do not share a test-utils dependency, and copying ten lines is cheaper
 than a new cross-package edge. See `packages/podkit-daemon/src/sync-orchestrator.test.ts`,
 `test-packages/lima/src/progress.test.ts`, and TASK-505 for the repo-wide triage.
 
+### A duration is never a proxy for a code path
+
+The sibling failure mode to a racing sleep: asserting *how long* something took
+in order to establish *which branch* ran. `expect(ms).toBeLessThan(50)` because
+"the fast path is 5 ms and the slow path is 300 ms" reads as a safe 10× margin
+and is not one — the two paths are only separated on an idle host, and CI is
+never idle. The bound then fails while the behaviour is correct, which is the
+worst kind of failure: it trains everyone to raise the number.
+
+Assert the branch. If the code cannot say which path it took, give it a way to
+say so — a returned flag, a spawn count, an injectable seam — and assert on
+that. `TestIpod.usedTemplate` is the worked example (TASK-507). Add a companion
+test that drives the *other* branch too, so the flag has to be able to report
+both and cannot quietly become a constant.
+
+This holds for anything measured rather than declared: bitrates get the same
+treatment in [conventions §6a](../architecture/conventions.md).
+
 ## Canonical fake builders
 
 Three sources of test data exist; pick one deliberately rather than
@@ -833,6 +851,31 @@ TEST_CONCURRENCY=1 bun run test:integration   # serial — for diagnosing conten
 TEST_TIMEOUT=60000 bun run test:integration   # bump if tests are CPU-starved
 ```
 
+### `TEST_TIMEOUT` is the per-test watchdog for every integration suite
+
+`TEST_TIMEOUT` (default `30000`, `120000` in CI) becomes `bun test --timeout`.
+`gpod-tests-parallel` has always passed it; the three packages that call
+`bun test` directly for integration (`podkit`, `@podkit/gpod-testing`,
+`@podkit/ipod-archive`) now do too, via `${TEST_TIMEOUT:-30000}` in their
+`test:integration` script. Before TASK-507 they silently inherited bun's
+**5000 ms default** — a value calibrated for pure-JS unit tests, not for a test
+that copies a template, spawns `gpod-tool`, and opens a database through the
+native binding.
+
+That mattered because of how bun reports the overrun. When a test is abandoned,
+bun kills every subprocess it still has running (`killed 1 dangling process`),
+so the `gpod-tool` child dies on SIGTERM with empty stdout and the helper throws
+a *parse* error, not a timeout — and because the rejection can land after the
+test was abandoned, bun attributes it to whichever test is reporting next
+(`# Unhandled error between tests`). The observable failure is therefore an
+unrelated test failing with `gpod-tool add-tracks … killed by SIGTERM`. Read
+that message as "something overran its timeout", never as a database problem.
+
+Measured (TASK-507, 4 cores, ~7× oversubscribed): these testcases run at ~0.2 s
+median, with observed outliers of 3 s, 4.9 s, 13.4 s and 35 s. 5000 ms sits
+inside that tail; 30000/120000 does not. A watchdog only has to catch a true
+hang — do not tighten it to "typical + margin".
+
 ### Adding multiple tracks: use `addTracks`, not a loop of `addTrack`
 
 Each call to `ipod.addTrack(...)` spawns a `gpod-tool` subprocess (~150ms). For tests that need more than one track of setup state, use the bulk helper:
@@ -862,6 +905,14 @@ Internally this is one `gpod-tool add-tracks` invocation that reads a TSV stream
 `createTestIpod()` is internally backed by pre-built iPod database templates. When a test calls it with default arguments, it copies a template directory (~5ms) instead of spawning `gpod-tool init` (~300ms). This delivers a ~3.3× speedup on `test:integration` (111s → 34s on the maintainer's machine).
 
 **Transparent to test authors** — no API change. Use `createTestIpod()` and `withTestIpod()` exactly as before.
+
+**Asserting the path taken:** the returned `TestIpod` carries `usedTemplate`
+(`true` = template copy, `false` = `gpod-tool init` subprocess). Assert on that,
+never on elapsed time. The original fast-path test used
+`expect(ms).toBeLessThan(50)` as a stand-in for "no subprocess ran"; on a loaded
+4-vCPU runner a *working* template copy measured 68 ms, so the proxy failed
+while the behaviour it stood for was correct — every CI run, hidden by `retry`
+(TASK-507). A duration is evidence about the host, not about which branch ran.
 
 **When the fast path is used:** all of the following must be true:
 - `model` is in `TEMPLATE_MODELS` (MA147, MA002, MA146, MA477, MB565, MC293, MC027)

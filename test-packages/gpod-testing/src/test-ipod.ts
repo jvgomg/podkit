@@ -143,6 +143,7 @@ export async function createTestIpod(
     path: ipodPath,
     model,
     name,
+    usedTemplate: useTemplate,
     cleanup,
 
     // Helper methods

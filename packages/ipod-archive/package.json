@@ -19,7 +19,7 @@
     "build:types": "tsc -p tsconfig.build.json --emitDeclarationOnly --outDir dist",
     "test": "true",
     "test:unit": "bun test --pass-with-no-tests",
-    "test:integration": "bun test --pass-with-no-tests --path-ignore-patterns= .integration.",
+    "test:integration": "bun test --timeout ${TEST_TIMEOUT:-30000} --pass-with-no-tests --path-ignore-patterns= .integration.",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
   },

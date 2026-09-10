@@ -20,7 +20,7 @@
     "dev": "bun run src/main.ts",
     "test": "bats test/",
     "test:unit": "bun test --pass-with-no-tests",
-    "test:integration": "bun test --pass-with-no-tests --path-ignore-patterns= .integration.",
+    "test:integration": "bun test --timeout ${TEST_TIMEOUT:-30000} --pass-with-no-tests --path-ignore-patterns= .integration.",
     "compile": "bash scripts/compile.sh",
     "compile:debug": "PODKIT_DEV_HOOKS=1 bash scripts/compile.sh",
     "install:dev": "bash scripts/install-dev.sh",

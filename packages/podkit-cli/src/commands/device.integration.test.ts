@@ -1,111 +1,31 @@
 /**
- * Integration tests for device subcommands that interact with iPod databases.
+ * Integration tests for the iPod database behaviour the `device` subcommands
+ * are built on: real iTunesDBs from gpod-testing, read and written through
+ * `IpodDatabase`.
+ *
+ * No command function is invoked here, so no CLI context is set up. Every test
+ * used to call a `createDeviceContext()` helper whose result nothing read and
+ * whose only effect was to leave a module-global context set between tests;
+ * TASK-507 established it was inert and removed it. If a test here ever does
+ * drive a command, set the context inside that test rather than reinstating a
+ * blanket one.
  *
  * These tests require:
  * - gpod-tool to be built (mise run tools:build)
- *
- * The tests use real iPod databases created by gpod-testing.
  */
-import { describe, expect, it, afterEach } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
 import * as fs from 'node:fs';
 import { withTestIpod, TestModels } from '@podkit/gpod-testing';
 import { requireGpodTool } from '@podkit/test-fixtures';
 import { requireLibgpodNode } from '@podkit/libgpod-node';
 import { IpodDatabase, MediaType, isMusicMediaType, isVideoMediaType } from '@podkit/core';
-import { setContext, clearContext } from '../context.js';
-import type { PodkitConfig, GlobalOptions, LoadConfigResult } from '../config/index.js';
-import { DEFAULT_TRANSFORMS_CONFIG, DEFAULT_VIDEO_TRANSFORMS_CONFIG } from '../config/index.js';
 
 requireGpodTool();
 requireLibgpodNode();
 
-// Test helpers
-
-/**
- * Create a minimal CLI context for testing
- */
-function createTestContext(
-  overrides: {
-    config?: Partial<PodkitConfig>;
-    globalOpts?: Partial<GlobalOptions>;
-    configPath?: string;
-  } = {}
-): void {
-  const config: PodkitConfig = {
-    quality: 'medium',
-    artwork: true,
-    tips: true,
-    transforms: DEFAULT_TRANSFORMS_CONFIG,
-    videoTransforms: DEFAULT_VIDEO_TRANSFORMS_CONFIG,
-    devices: {},
-    music: {},
-    video: {},
-    ...overrides.config,
-  };
-
-  const globalOpts: GlobalOptions = {
-    config: overrides.configPath,
-    device: undefined,
-    json: false,
-    quiet: false,
-    verbose: 0,
-    color: true,
-    tips: true,
-    tty: false,
-    ...overrides.globalOpts,
-  };
-
-  const configResult: LoadConfigResult = {
-    config,
-    configPath: overrides.configPath,
-    configFileExists: !!overrides.configPath,
-  };
-
-  setContext({ config, globalOpts, configResult });
-}
-
-/**
- * Create a test context with a device configured for a specific iPod path
- */
-function createDeviceContext(
-  devicePath: string,
-  options: {
-    deviceName?: string;
-    json?: boolean;
-    quiet?: boolean;
-  } = {}
-): void {
-  const deviceName = options.deviceName ?? 'test-ipod';
-
-  createTestContext({
-    config: {
-      devices: {
-        [deviceName]: {
-          volumeUuid: 'test-uuid-1234',
-          volumeName: 'TestiPod',
-        },
-      },
-      defaults: {
-        device: deviceName,
-      },
-    },
-    globalOpts: {
-      device: devicePath, // Use --device path directly for testing
-      json: options.json ?? false,
-      quiet: options.quiet ?? true, // Default quiet for tests
-    },
-  });
-}
-
 describe('device info integration', () => {
-  afterEach(() => {
-    clearContext();
-  });
-
   it('returns device info for valid iPod', async () => {
     await withTestIpod(async (ipod) => {
-      createDeviceContext(ipod.path, { json: true });
-
       const db = await IpodDatabase.open(ipod.path);
       try {
         const info = db.getInfo();
@@ -128,8 +48,6 @@ describe('device info integration', () => {
         { title: 'Song 3', artist: 'Artist 3' },
       ]);
 
-      createDeviceContext(ipod.path, { json: true });
-
       const db = await IpodDatabase.open(ipod.path);
       try {
         const info = db.getInfo();
@@ -142,8 +60,6 @@ describe('device info integration', () => {
 
   it('shows storage information', async () => {
     await withTestIpod(async (ipod) => {
-      createDeviceContext(ipod.path, { json: true });
-
       // Check filesystem storage info is accessible
       const stats = fs.statfsSync(ipod.path);
       expect(stats).toBeDefined();
@@ -162,8 +78,6 @@ describe('device info integration', () => {
   });
 
   it('handles unmounted device gracefully', async () => {
-    createDeviceContext('/nonexistent/path');
-
     // The IpodDatabase.open should fail for nonexistent path
     await expect(IpodDatabase.open('/nonexistent/path')).rejects.toThrow();
   });
@@ -172,8 +86,6 @@ describe('device info integration', () => {
     await withTestIpod(
       async (ipod) => {
         await ipod.addTrack({ title: 'Test Song', artist: 'Test Artist' });
-
-        createDeviceContext(ipod.path, { json: true });
 
         const db = await IpodDatabase.open(ipod.path);
         try {
@@ -197,18 +109,12 @@ describe('device info integration', () => {
 });
 
 describe('device music integration', () => {
-  afterEach(() => {
-    clearContext();
-  });
-
   it('lists music tracks on iPod', async () => {
     await withTestIpod(async (ipod) => {
       await ipod.addTracks([
         { title: 'Track 1', artist: 'Artist A', album: 'Album X' },
         { title: 'Track 2', artist: 'Artist B', album: 'Album Y' },
       ]);
-
-      createDeviceContext(ipod.path, { json: true });
 
       const db = await IpodDatabase.open(ipod.path);
       try {
@@ -233,8 +139,6 @@ describe('device music integration', () => {
 
   it('returns empty for iPod with no music', async () => {
     await withTestIpod(async (ipod) => {
-      createDeviceContext(ipod.path, { json: true });
-
       const db = await IpodDatabase.open(ipod.path);
       try {
         const tracks = db.getTracks();
@@ -255,8 +159,6 @@ describe('device music integration', () => {
         durationMs: 180000,
         bitrate: 256,
       });
-
-      createDeviceContext(ipod.path, { json: true });
 
       const db = await IpodDatabase.open(ipod.path);
       try {
@@ -282,8 +184,6 @@ describe('device music integration', () => {
         { title: 'Song C', artist: 'Same Artist', album: 'Album 2' },
       ]);
 
-      createDeviceContext(ipod.path, { json: true });
-
       const db = await IpodDatabase.open(ipod.path);
       try {
         const tracks = db.getTracks();
@@ -298,15 +198,10 @@ describe('device music integration', () => {
 });
 
 describe('device video integration', () => {
-  afterEach(() => {
-    clearContext();
-  });
-
   it('lists video tracks on iPod (empty by default)', async () => {
     await withTestIpod(
       async (ipod) => {
         // Fresh iPod should have no videos
-        createDeviceContext(ipod.path, { json: true });
 
         const db = await IpodDatabase.open(ipod.path);
         try {
@@ -333,8 +228,6 @@ describe('device video integration', () => {
         // Add only audio tracks
         await ipod.addTrack({ title: 'Audio Track', artist: 'Artist' });
 
-        createDeviceContext(ipod.path, { json: true });
-
         const db = await IpodDatabase.open(ipod.path);
         try {
           const tracks = db.getTracks();
@@ -353,8 +246,6 @@ describe('device video integration', () => {
   it('correctly identifies model supports video', async () => {
     await withTestIpod(
       async (ipod) => {
-        createDeviceContext(ipod.path, { json: true });
-
         const db = await IpodDatabase.open(ipod.path);
         try {
           const info = db.getInfo();
@@ -370,18 +261,12 @@ describe('device video integration', () => {
 });
 
 describe('device clear integration', () => {
-  afterEach(() => {
-    clearContext();
-  });
-
   it('removes all tracks with confirmation', async () => {
     await withTestIpod(async (ipod) => {
       await ipod.addTracks([
         { title: 'Song 1', artist: 'Artist 1' },
         { title: 'Song 2', artist: 'Artist 2' },
       ]);
-
-      createDeviceContext(ipod.path, { json: true, quiet: true });
 
       const db = await IpodDatabase.open(ipod.path);
       try {
@@ -408,8 +293,6 @@ describe('device clear integration', () => {
         { title: 'Song 3', artist: 'Artist 3' },
       ]);
 
-      createDeviceContext(ipod.path, { json: true, quiet: true });
-
       const db = await IpodDatabase.open(ipod.path);
       try {
         // Check track count for dry-run
@@ -428,8 +311,6 @@ describe('device clear integration', () => {
 
   it('handles empty iPod gracefully', async () => {
     await withTestIpod(async (ipod) => {
-      createDeviceContext(ipod.path, { json: true, quiet: true });
-
       const db = await IpodDatabase.open(ipod.path);
       try {
         // Fresh iPod has 0 tracks
@@ -455,8 +336,6 @@ describe('device clear integration', () => {
         { title: 'Track E', artist: 'Artist' },
       ]);
 
-      createDeviceContext(ipod.path, { json: true, quiet: true });
-
       const db = await IpodDatabase.open(ipod.path);
       try {
         const initialCount = db.trackCount;
@@ -477,8 +356,6 @@ describe('device clear integration', () => {
     await withTestIpod(async (ipod) => {
       await ipod.addTrack({ title: 'Test', artist: 'Artist' });
 
-      createDeviceContext(ipod.path, { json: true, quiet: true });
-
       const db = await IpodDatabase.open(ipod.path);
       try {
         // Remove tracks - gpod-testing creates dummy files, so deletion should work
@@ -494,10 +371,6 @@ describe('device clear integration', () => {
 });
 
 describe('device clear selective content-type integration', () => {
-  afterEach(() => {
-    clearContext();
-  });
-
   it('removes only music tracks when clearing music', async () => {
     await withTestIpod(
       async (ipod) => {
@@ -528,8 +401,6 @@ describe('device clear selective content-type integration', () => {
         } finally {
           db.close();
         }
-
-        createDeviceContext(ipod.path, { json: true, quiet: true });
 
         // Verify tracks were added
         let db2 = await IpodDatabase.open(ipod.path);
@@ -601,8 +472,6 @@ describe('device clear selective content-type integration', () => {
           db.close();
         }
 
-        createDeviceContext(ipod.path, { json: true, quiet: true });
-
         // Clear video tracks
         const db2 = await IpodDatabase.open(ipod.path);
         try {
@@ -650,8 +519,6 @@ describe('device clear selective content-type integration', () => {
           db.close();
         }
 
-        createDeviceContext(ipod.path, { json: true, quiet: true });
-
         // Try to clear video (should find nothing)
         const db2 = await IpodDatabase.open(ipod.path);
         try {
@@ -688,8 +555,6 @@ describe('device clear selective content-type integration', () => {
           db.close();
         }
 
-        createDeviceContext(ipod.path, { json: true, quiet: true });
-
         // Try to clear music (should find nothing)
         const db2 = await IpodDatabase.open(ipod.path);
         try {
@@ -725,8 +590,6 @@ describe('device clear selective content-type integration', () => {
         } finally {
           db.close();
         }
-
-        createDeviceContext(ipod.path, { json: true, quiet: true });
 
         // Clear music - should not remove podcasts
         const db2 = await IpodDatabase.open(ipod.path);
@@ -775,8 +638,6 @@ describe('device clear selective content-type integration', () => {
           db.close();
         }
 
-        createDeviceContext(ipod.path, { json: true, quiet: true });
-
         // Clear music - should not remove audiobooks
         const db2 = await IpodDatabase.open(ipod.path);
         try {
@@ -806,8 +667,6 @@ describe('device clear selective content-type integration', () => {
   it('handles empty iPod gracefully for selective clearing', async () => {
     await withTestIpod(
       async (ipod) => {
-        createDeviceContext(ipod.path, { json: true, quiet: true });
-
         const db = await IpodDatabase.open(ipod.path);
         try {
           expect(db.trackCount).toBe(0);
@@ -829,18 +688,12 @@ describe('device clear selective content-type integration', () => {
 });
 
 describe('device reset integration', () => {
-  afterEach(() => {
-    clearContext();
-  });
-
   it('removes all tracks with confirmation', async () => {
     await withTestIpod(async (ipod) => {
       await ipod.addTracks([
         { title: 'Song 1', artist: 'Artist 1' },
         { title: 'Song 2', artist: 'Artist 2' },
       ]);
-
-      createDeviceContext(ipod.path, { json: true, quiet: true });
 
       const db = await IpodDatabase.open(ipod.path);
       try {
@@ -860,8 +713,6 @@ describe('device reset integration', () => {
     await withTestIpod(async (ipod) => {
       await ipod.addTrack({ title: 'Song 1', artist: 'Artist 1' });
 
-      createDeviceContext(ipod.path, { json: true, quiet: true });
-
       const db = await IpodDatabase.open(ipod.path);
       try {
         // For dry-run, just verify we can read the count
@@ -875,8 +726,6 @@ describe('device reset integration', () => {
 
   it('handles empty iPod gracefully', async () => {
     await withTestIpod(async (ipod) => {
-      createDeviceContext(ipod.path, { json: true, quiet: true });
-
       const db = await IpodDatabase.open(ipod.path);
       try {
         expect(db.trackCount).toBe(0);
@@ -897,8 +746,6 @@ describe('device reset integration', () => {
         { title: 'C', artist: 'X' },
       ]);
 
-      createDeviceContext(ipod.path, { json: true, quiet: true });
-
       const db = await IpodDatabase.open(ipod.path);
       try {
         const result = db.removeAllTracks({ deleteFiles: true });
@@ -913,16 +760,10 @@ describe('device reset integration', () => {
 });
 
 describe('device operations across models', () => {
-  afterEach(() => {
-    clearContext();
-  });
-
   it('works with Video 60GB model', async () => {
     await withTestIpod(
       async (ipod) => {
         await ipod.addTrack({ title: 'Test', artist: 'Artist' });
-
-        createDeviceContext(ipod.path, { json: true });
 
         const db = await IpodDatabase.open(ipod.path);
         try {
@@ -942,8 +783,6 @@ describe('device operations across models', () => {
       async (ipod) => {
         await ipod.addTrack({ title: 'Test', artist: 'Artist' });
 
-        createDeviceContext(ipod.path, { json: true });
-
         const db = await IpodDatabase.open(ipod.path);
         try {
           const info = db.getInfo();
@@ -962,8 +801,6 @@ describe('device operations across models', () => {
       async (ipod) => {
         await ipod.addTrack({ title: 'Test', artist: 'Artist' });
 
-        createDeviceContext(ipod.path, { json: true });
-
         const db = await IpodDatabase.open(ipod.path);
         try {
           const info = db.getInfo();
@@ -979,15 +816,9 @@ describe('device operations across models', () => {
 });
 
 describe('database persistence', () => {
-  afterEach(() => {
-    clearContext();
-  });
-
   it('persists changes after save', async () => {
     await withTestIpod(async (ipod) => {
       await ipod.addTrack({ title: 'Persistent Track', artist: 'Artist' });
-
-      createDeviceContext(ipod.path, { json: true });
 
       // Open database, modify, save, close
       let db = await IpodDatabase.open(ipod.path);
@@ -1014,8 +845,6 @@ describe('database persistence', () => {
   it('changes are lost without save', async () => {
     await withTestIpod(async (ipod) => {
       await ipod.addTrack({ title: 'Track to Remove', artist: 'Artist' });
-
-      createDeviceContext(ipod.path, { json: true });
 
       // Open, remove tracks, but don't save
       let db = await IpodDatabase.open(ipod.path);

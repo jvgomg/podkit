@@ -33,6 +33,29 @@ export class GpodToolError extends Error {
 }
 
 /**
+ * Explain an exit that produced no parseable output.
+ *
+ * A gpod-tool child killed by a signal writes nothing, so the bare message
+ * ("Failed to parse gpod-tool output") describes the symptom and hides the
+ * cause. That is not hypothetical: `bun test` kills every subprocess still
+ * running when the test that spawned it is abandoned ("killed 1 dangling
+ * process"), so a test that overruns its timeout surfaces here as a SIGTERM
+ * with empty stdout — and TASK-507 spent its first hours reading that as an
+ * iTunesDB write-visibility bug. Name the signal so the next reader doesn't.
+ *
+ * @internal
+ */
+function explainNoOutput(exitCode: number, signalCode: string | null): string {
+  const signal = signalCode ?? (exitCode > 128 ? `signal ${exitCode - 128}` : null);
+  if (signal === null) return `exited ${exitCode} without parseable JSON output`;
+  return (
+    `was killed by ${signal} before writing output ` +
+    `(exit ${exitCode}) — the caller was most likely abandoned mid-run, ` +
+    `e.g. by a bun:test timeout reaping its dangling child`
+  );
+}
+
+/**
  * Run gpod-tool command and parse JSON response.
  * @internal
  */
@@ -50,7 +73,9 @@ async function runGpodTool<T>(args: string[], errorContext: string): Promise<T> 
     json = JSON.parse(jsonStr);
   } catch {
     throw new GpodToolError(
-      `Failed to parse gpod-tool output: ${errorContext}`,
+      // Bun's `$` reports no signal name, only the 128+N exit code, which
+      // explainNoOutput decodes.
+      `gpod-tool ${errorContext} ${explainNoOutput(result.exitCode, null)}`,
       command,
       result.exitCode,
       result.stderr.toString()
@@ -321,7 +346,7 @@ export async function addTracks(path: string, tracks: TrackInput[]): Promise<Add
     json = JSON.parse(jsonStart >= 0 ? stdout.slice(jsonStart) : stdout);
   } catch {
     throw new GpodToolError(
-      `Failed to parse gpod-tool output: add-tracks ${path}`,
+      `gpod-tool add-tracks ${path} ${explainNoOutput(exitCode, proc.signalCode)}`,
       `gpod-tool add-tracks ${path} --json`,
       exitCode,
       stderr
