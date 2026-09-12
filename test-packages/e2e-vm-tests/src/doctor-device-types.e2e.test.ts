@@ -296,23 +296,16 @@ describe('VM: doctor device-types', () => {
         //
         // Cleanup happens in afterAll (mount + daemon both torn down).
         try {
-          // 1. Start the daemon.
+          // 1. Start the daemon. Returns only once the gadget has
+          //    enumerated (USB, and /dev/sg* for a mass-storage persona),
+          //    so the sysfs walk below runs against a populated bus.
           const { startDaemonForPersona } = await import('@podkit/device-testing');
           await startDaemonForPersona({
             vmName: LIMA_DEVICE_HARNESS_VM_NAME,
-            personaId: echoMini.id,
+            persona: echoMini,
           });
 
-          // 2. Wait for /dev/sg* to enumerate (mass-storage personas).
-          //    Re-use the helper that withPersona uses internally.
-          const { waitForScsiGenericEnumeration } = await import('@podkit/device-testing');
-          await waitForScsiGenericEnumeration({
-            vmName: LIMA_DEVICE_HARNESS_VM_NAME,
-            personaId: echoMini.id,
-            timeoutMs: 5_000,
-          });
-
-          // 3. Find the /dev/sd* node backing the echo-mini gadget. The
+          // 2. Find the /dev/sd* node backing the echo-mini gadget. The
           //    echo-mini persona uses vendorId 0x071b and productId 0x3203.
           const findScript = [
             'for sg in /sys/class/scsi_generic/sg*; do',

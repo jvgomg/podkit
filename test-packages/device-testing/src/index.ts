@@ -239,12 +239,12 @@ export {
 } from './vm/vm-runtime-setup.js';
 
 export type { WithPersonaOpts, CliInvocation } from './vm/persona-fixture.js';
-export {
-  withPersona,
-  waitForScsiGenericEnumeration,
-  waitForUsbEnumeration,
-  runJsonCommand,
-} from './vm/persona-fixture.js';
+export { withPersona, runJsonCommand } from './vm/persona-fixture.js';
+
+// The enumeration waits are deliberately NOT re-exported. `startDaemonForPersona`
+// performs them, and a caller able to reach past it is a caller able to get a
+// started daemon on an empty bus — the silent failure TASK-504 closed.
+export { ENUMERATION_TIMEOUT_MS } from './runners/lima-enumeration.js';
 
 export type {
   MountPersonaOpts,

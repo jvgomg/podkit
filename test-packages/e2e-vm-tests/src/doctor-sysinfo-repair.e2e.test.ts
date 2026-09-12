@@ -119,9 +119,7 @@ describe('VM: doctor SysInfoExtended output + readiness', () => {
       beforeAll(async () => {
         try {
           await mountPersona({
-            personaId: PERSONA.id,
-            vendorId: PERSONA.usbDescriptor.vendorId,
-            productId: PERSONA.usbDescriptor.productId,
+            persona: PERSONA,
             mountPoint: VM_MOUNT_POINT,
           });
 

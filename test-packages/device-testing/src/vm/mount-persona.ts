@@ -50,8 +50,8 @@ import {
   stopDaemon,
   limaTestVmRunner,
 } from '../runners/lima-test-vm.js';
-import { waitForScsiGenericEnumeration } from './persona-fixture.js';
 import { VM_WARM_TIMEOUT_MS } from './vm-runtime-setup.js';
+import type { DevicePersona } from '../personas/types.js';
 
 // ---------------------------------------------------------------------------
 // SCSI-generic discovery
@@ -161,8 +161,8 @@ export interface ResolvePersonaDeviceNodesOpts {
  * the vendor ID. Callers MUST pass the persona's PID.
  *
  * The daemon for the persona must already be started and `/dev/sg*` enumerated
- * (i.e. call after {@link mountPersona} or `startDaemonForPersona` +
- * `waitForScsiGenericEnumeration`).
+ * (i.e. call after {@link mountPersona} or `startDaemonForPersona`, which
+ * returns only once the gadget has enumerated).
  *
  * Throws if no matching device is found or the script cannot read busnum/devnum.
  */
@@ -237,12 +237,13 @@ async function preflightReset(opts: {
 
 /** Options for {@link mountPersona}. */
 export interface MountPersonaOpts {
-  /** Persona id — used as the systemd instance specifier. */
-  personaId: string;
-  /** Persona's USB vendor ID, used to disambiguate the `/dev/sd<x>` node. */
-  vendorId: number;
-  /** Persona's USB product ID, used to disambiguate the `/dev/sd<x>` node. */
-  productId: number;
+  /**
+   * The persona to mount. Supplies the systemd instance specifier and the
+   * `vid:pid` used to disambiguate the `/dev/sd<x>` node — previously three
+   * separate fields every call site re-derived from this same object, which
+   * let the ids drift from the persona they claimed to describe.
+   */
+  persona: DevicePersona;
   /** Absolute path inside the VM where the FAT32 backing will be mounted. */
   mountPoint: string;
   /** Lima instance name. Defaults to {@link LIMA_DEVICE_HARNESS_VM_NAME}. */
@@ -250,7 +251,7 @@ export interface MountPersonaOpts {
 }
 
 /**
- * Start the daemon for `opts.personaId`, find its `/dev/sd<x>` node, and
+ * Start the daemon for `opts.persona`, find its `/dev/sd<x>` node, and
  * mount the FAT32 backing at `opts.mountPoint` with `uid/gid` set to the
  * current Lima user. After this returns, podkit invocations targeting
  * `-d <opts.mountPoint>` see a `ready`-readiness iPod backing file.
@@ -277,22 +278,23 @@ export async function mountPersona(opts: MountPersonaOpts): Promise<void> {
   // Pre-flight: reset any stale state from a prior (possibly crashed) run so
   // the daemon start below re-binds a fresh gadget rather than reusing a stale
   // one. Best-effort — every step is a no-op when nothing is bound.
-  await preflightReset({ vmName, personaId: opts.personaId, mountPoint: opts.mountPoint });
+  await preflightReset({ vmName, personaId: opts.persona.id, mountPoint: opts.mountPoint });
 
-  await startDaemonForPersona({ vmName, personaId: opts.personaId });
-  await waitForScsiGenericEnumeration({
-    vmName,
-    personaId: opts.personaId,
-    timeoutMs: 5_000,
-  });
+  // Returns with the gadget enumerated — both USB and, for a mass-storage
+  // persona like this one, /dev/sg*. The discovery walk below therefore runs
+  // against a populated bus rather than racing it.
+  await startDaemonForPersona({ vmName, persona: opts.persona });
 
-  const findScript = buildScsiSdDiscoveryScript(opts.vendorId, opts.productId);
+  const findScript = buildScsiSdDiscoveryScript(
+    opts.persona.usbDescriptor.vendorId,
+    opts.persona.usbDescriptor.productId
+  );
   const find = await limaTestVmRunner.run(`sh -c '${findScript.replace(/'/g, `'\\''`)}'`, {
     timeoutMs: VM_WARM_TIMEOUT_MS,
   });
   if (find.exitCode !== 0 || !find.stdout.trim()) {
     throw new Error(
-      `mountPersona: failed to find ${opts.personaId} /dev/sd* node ` +
+      `mountPersona: failed to find ${opts.persona.id} /dev/sd* node ` +
         `(exit=${find.exitCode}, stdout="${find.stdout}")`
     );
   }

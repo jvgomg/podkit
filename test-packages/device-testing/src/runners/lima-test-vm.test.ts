@@ -887,12 +887,58 @@ describe('resetBackingFile', () => {
 // startDaemonForPersona + stopDaemon
 // ---------------------------------------------------------------------------
 
+/**
+ * A runner that answers by call *content* rather than by position, so the
+ * enumeration poll loops can spin for as many iterations as they need.
+ * `respond` returns a result for each call; anything it does not recognise
+ * gets an empty success.
+ */
+function makeEnumerationRunner(respond: (call: ScriptedCall) => SubprocessRunResult | undefined): {
+  runner: SubprocessRunner;
+  calls: ScriptedCall[];
+} {
+  const calls: ScriptedCall[] = [];
+  return {
+    calls,
+    runner: {
+      async run(command, args, opts) {
+        const call: ScriptedCall = { command, args, opts };
+        calls.push(call);
+        return respond(call) ?? ok();
+      },
+    },
+  };
+}
+
+const isSystemctlStart = (c: ScriptedCall): boolean =>
+  c.args.includes('systemctl') && c.args.includes('start');
+/** The sysfs walk that waits for the persona's vid:pid to appear. */
+const isUsbProbe = (c: ScriptedCall): boolean => c.args.some((a) => a.includes('idVendor'));
+/** The poll that waits for a SCSI generic node. */
+const isScsiProbe = (c: ScriptedCall): boolean => c.args.some((a) => a.includes('/dev/sg*'));
+
+/** Mass-storage persona — gets both the USB and the SCSI wait. */
+const massStoragePersona = {
+  id: 'echo-mini',
+  usbDescriptor: { vendorId: 0x071b, productId: 0x3203 },
+  massStorageBackingFile: { path: 'backing.img' },
+} as unknown as DevicePersona;
+
+/** FunctionFS-only persona — no backing file, so no SCSI node to wait for. */
+const functionFsPersona = {
+  id: 'ipod-nano-3g-black',
+  usbDescriptor: { vendorId: 0x05ac, productId: 0x1260 },
+  massStorageBackingFile: null,
+} as unknown as DevicePersona;
+
 describe('startDaemonForPersona', () => {
   it('issues `sudo systemctl start dummy-hcd-daemon@<id>.service`', async () => {
-    const { runner, calls } = makeScriptedRunner([ok()]);
+    const { runner, calls } = makeEnumerationRunner((c) =>
+      isUsbProbe(c) ? ok('MATCH\n') : undefined
+    );
     await startDaemonForPersona({
       vmName: LIMA_DEVICE_HARNESS_VM_NAME,
-      personaId: 'ipod-video-5g-iflash-1tb',
+      persona: functionFsPersona,
       subprocess: runner,
     });
     expect(calls[0]!.args).toEqual([
@@ -902,7 +948,7 @@ describe('startDaemonForPersona', () => {
       'sudo',
       'systemctl',
       'start',
-      'dummy-hcd-daemon@ipod-video-5g-iflash-1tb.service',
+      'dummy-hcd-daemon@ipod-nano-3g-black.service',
     ]);
   });
 
@@ -911,19 +957,19 @@ describe('startDaemonForPersona', () => {
     await expect(
       startDaemonForPersona({
         vmName: LIMA_DEVICE_HARNESS_VM_NAME,
-        personaId: 'foo',
+        persona: functionFsPersona,
         subprocess: runner,
       })
-    ).rejects.toThrow(/failed to start dummy-hcd-daemon@foo\.service/);
+    ).rejects.toThrow(/failed to start dummy-hcd-daemon@ipod-nano-3g-black\.service/);
   });
 
-  it('requires vmName and personaId', async () => {
-    await expect(startDaemonForPersona({ vmName: '', personaId: 'foo' })).rejects.toThrow(
+  it('requires vmName and persona', async () => {
+    await expect(startDaemonForPersona({ vmName: '', persona: functionFsPersona })).rejects.toThrow(
       /vmName is required/
     );
-    await expect(startDaemonForPersona({ vmName: 'x', personaId: '' })).rejects.toThrow(
-      /personaId is required/
-    );
+    await expect(
+      startDaemonForPersona({ vmName: 'x', persona: undefined as unknown as DevicePersona })
+    ).rejects.toThrow(/persona is required/);
   });
 
   it('bounds the invocation so a wedged shell cannot stall the test hook', async () => {
@@ -931,13 +977,125 @@ describe('startDaemonForPersona', () => {
     // completes its handshake blocks the caller's hook indefinitely — the
     // failure then shows up as a hook that ran for minutes with nothing to
     // say about what it was waiting on.
-    const { runner, calls } = makeScriptedRunner([ok()]);
+    const { runner, calls } = makeEnumerationRunner((c) =>
+      isUsbProbe(c) ? ok('MATCH\n') : undefined
+    );
     await startDaemonForPersona({
       vmName: LIMA_DEVICE_HARNESS_VM_NAME,
-      personaId: 'echo-mini',
+      persona: functionFsPersona,
       subprocess: runner,
     });
     expect(calls[0]!.opts?.timeoutMs).toBe(DAEMON_LIFECYCLE_TIMEOUT_MS);
+  });
+
+  // -------------------------------------------------------------------------
+  // The enumeration guarantee (TASK-504)
+  //
+  // `systemctl start` is Type=simple: it returns at daemon exec(), 2-3s before
+  // the kernel enumerates the gadget. A caller handed a daemon on an empty bus
+  // sees `podkit device scan` return zero devices, which reads as a legitimate
+  // result rather than an error — so the wait belongs here, where it cannot be
+  // skipped, rather than at each call site. These tests pin that it does not
+  // return early; they are the reason the guarantee does not depend on running
+  // the VM.
+  // -------------------------------------------------------------------------
+
+  it('does not return until the persona vid:pid appears on the bus', async () => {
+    // Enumeration lags the start: the first two probes see an empty bus.
+    let usbProbes = 0;
+    const { runner, calls } = makeEnumerationRunner((c) => {
+      if (!isUsbProbe(c)) return undefined;
+      usbProbes += 1;
+      return usbProbes < 3 ? ok('') : ok('MATCH\n');
+    });
+
+    await startDaemonForPersona({
+      vmName: LIMA_DEVICE_HARNESS_VM_NAME,
+      persona: functionFsPersona,
+      subprocess: runner,
+    });
+
+    // Returning at all means it kept polling rather than trusting systemctl.
+    expect(usbProbes).toBe(3);
+    // And it polled for *this* persona, not merely for any USB device.
+    const probe = calls.find(isUsbProbe)!.args.join(' ');
+    expect(probe).toContain("= '05ac'");
+    expect(probe).toContain("= '1260'");
+  });
+
+  it('waits for the gadget before returning, not merely after systemctl exits', async () => {
+    const { runner, calls } = makeEnumerationRunner((c) =>
+      isUsbProbe(c) ? ok('MATCH\n') : undefined
+    );
+    await startDaemonForPersona({
+      vmName: LIMA_DEVICE_HARNESS_VM_NAME,
+      persona: functionFsPersona,
+      subprocess: runner,
+    });
+    // Order matters: start first, then probe. A probe that ran before the
+    // start would be reporting on the previous persona's gadget.
+    expect(calls.findIndex(isSystemctlStart)).toBe(0);
+    expect(calls.findIndex(isUsbProbe)).toBeGreaterThan(0);
+  });
+
+  it('also waits for /dev/sg* when the persona carries a mass-storage backing file', async () => {
+    let scsiProbes = 0;
+    const { runner, calls } = makeEnumerationRunner((c) => {
+      if (isUsbProbe(c)) return ok('MATCH\n');
+      if (isScsiProbe(c)) {
+        scsiProbes += 1;
+        return scsiProbes < 2 ? ok('') : ok('/dev/sg0\n');
+      }
+      return undefined;
+    });
+
+    await startDaemonForPersona({
+      vmName: LIMA_DEVICE_HARNESS_VM_NAME,
+      persona: massStoragePersona,
+      subprocess: runner,
+    });
+
+    expect(scsiProbes).toBe(2);
+    // SCSI enumeration lags the USB bind, so the waits must run in that order.
+    expect(calls.findIndex(isScsiProbe)).toBeGreaterThan(calls.findIndex(isUsbProbe));
+  });
+
+  it('skips the /dev/sg* wait for a persona with no mass-storage backing file', async () => {
+    // A pure-FunctionFS persona never produces a SCSI node; waiting for one
+    // would time out every single time.
+    const { runner, calls } = makeEnumerationRunner((c) =>
+      isUsbProbe(c) ? ok('MATCH\n') : undefined
+    );
+    await startDaemonForPersona({
+      vmName: LIMA_DEVICE_HARNESS_VM_NAME,
+      persona: functionFsPersona,
+      subprocess: runner,
+    });
+    expect(calls.some(isScsiProbe)).toBe(false);
+  });
+
+  it('fails loudly with the daemon journal when the gadget never enumerates', async () => {
+    // The whole point of waiting: a synthesis failure must surface as itself,
+    // not as an empty `device scan` downstream.
+    const { runner } = makeEnumerationRunner((c) => {
+      if (isUsbProbe(c)) return ok(''); // never enumerates
+      if (c.args.includes('journalctl')) return ok('dummy-hcd-daemon: UDC bind failed');
+      return undefined;
+    });
+
+    const err = await startDaemonForPersona({
+      vmName: LIMA_DEVICE_HARNESS_VM_NAME,
+      persona: functionFsPersona,
+      subprocess: runner,
+      enumerationTimeoutMs: 200,
+    }).catch((e: Error) => e);
+
+    expect(err).toBeInstanceOf(Error);
+    const message = (err as Error).message;
+    expect(message).toContain('startDaemonForPersona');
+    expect(message).toContain('05ac:1260');
+    expect(message).toContain('ipod-nano-3g-black');
+    expect(message).toContain('UDC bind failed');
   });
 });
 

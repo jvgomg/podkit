@@ -176,21 +176,20 @@ describe('VM: dual-daemon lifecycle', () => {
       const baselineSgCount = await countScsiGenericNodes();
 
       try {
-        // 1. Start both units. startDaemonForPersona issues `systemctl start`;
-        //    Type=simple means the call returns once the daemon is forked, not
-        //    once it's done binding — `waitForBothUnitsActive` covers the gap.
+        // 1. Start both units. startDaemonForPersona returns only once each
+        //    persona's gadget has enumerated, so the assertions below are not
+        //    racing the daemon's UDC bind.
         await startDaemonForPersona({
           vmName: LIMA_DEVICE_HARNESS_VM_NAME,
-          personaId: PERSONA_A.id,
+          persona: PERSONA_A,
         });
         await startDaemonForPersona({
           vmName: LIMA_DEVICE_HARNESS_VM_NAME,
-          personaId: PERSONA_B.id,
+          persona: PERSONA_B,
         });
 
-        // 2. Both units report active. Sets the precondition for the gadget
-        //    + /dev/sg* assertions below; without this we'd race the daemon's
-        //    UDC bind on the first probe.
+        // 2. Both units report active — a distinct property from "enumerated",
+        //    and the one this lifecycle test is about.
         await waitForBothUnitsActive(PERSONA_A.id, PERSONA_B.id, VM_WARM_TIMEOUT_MS);
 
         // 3. Distinct configfs gadgets exist. The test of the per-persona

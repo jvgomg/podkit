@@ -52,7 +52,6 @@ import {
   echoMini,
   startDaemonForPersona,
   stopDaemon,
-  waitForScsiGenericEnumeration,
   resolveDefaultPodkitDebugBinary,
   LIMA_DEVICE_HARNESS_VM_NAME,
 } from '@podkit/device-testing';
@@ -419,12 +418,7 @@ describe('VM: pre-sync sweep SIGKILL round-trip', () => {
     // its backing file once and reuse for every scenario.
     await startDaemonForPersona({
       vmName: LIMA_DEVICE_HARNESS_VM_NAME,
-      personaId: echoMini.id,
-    });
-    await waitForScsiGenericEnumeration({
-      vmName: LIMA_DEVICE_HARNESS_VM_NAME,
-      personaId: echoMini.id,
-      timeoutMs: 5_000,
+      persona: echoMini,
     });
     await mountEchoMini();
   }, VM_COLD_TIMEOUT_MS);

@@ -217,9 +217,7 @@ describe('VM: Docker dist image e2e (musl image + synthesized USB iPod)', () => 
     beforeAll(async () => {
       try {
         await mountPersona({
-          personaId: PERSONA.id,
-          vendorId: VID,
-          productId: PID,
+          persona: PERSONA,
           mountPoint: VM_MOUNT_POINT,
         });
 

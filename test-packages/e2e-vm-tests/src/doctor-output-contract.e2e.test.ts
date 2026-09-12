@@ -529,22 +529,16 @@ describe('VM: doctor output contract', () => {
 
       beforeAll(async () => {
         try {
-          // 1. Start the daemon (long-lived for the test group).
+          // 1. Start the daemon (long-lived for the test group). Returns
+          //    only once the gadget has enumerated, so the walk below is
+          //    not racing the kernel.
           const { startDaemonForPersona } = await import('@podkit/device-testing');
           await startDaemonForPersona({
             vmName: LIMA_DEVICE_HARNESS_VM_NAME,
-            personaId: echoMini.id,
+            persona: echoMini,
           });
 
-          // 2. Wait for /dev/sg* enumeration.
-          const { waitForScsiGenericEnumeration } = await import('@podkit/device-testing');
-          await waitForScsiGenericEnumeration({
-            vmName: LIMA_DEVICE_HARNESS_VM_NAME,
-            personaId: echoMini.id,
-            timeoutMs: 5_000,
-          });
-
-          // 3. Find the /dev/sd* node by walking sysfs for the echo-mini
+          // 2. Find the /dev/sd* node by walking sysfs for the echo-mini
           //    USB descriptors (vendor 0x071b, product 0x3203).
           const findScript = [
             'for sg in /sys/class/scsi_generic/sg*; do',

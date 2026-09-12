@@ -50,6 +50,7 @@ import type { RunOpts, RunResult, RunnerId, TestRuntime } from '../runtime.js';
 import { transferBinary, transferGpodTool } from './lima-test-vm-binary.js';
 import { applyState as applyStateRaw } from './lima-test-vm-state.js';
 import { limactlError, runLimactl, shellQuote } from './lima-limactl.js';
+import { waitForScsiGenericEnumeration, waitForUsbEnumeration } from './lima-enumeration.js';
 import { transferSystemdUnit } from './lima-test-vm-systemd.js';
 import { ensureBackingFilesForPersonas } from './lima-test-vm-backing-files.js';
 import {
@@ -379,9 +380,22 @@ export const DAEMON_LIFECYCLE_TIMEOUT_MS = 45_000;
 /** Options for {@link startDaemonForPersona}. */
 export interface StartDaemonOpts {
   vmName: string;
-  /** Persona id — used as the systemd instance specifier. */
-  personaId: string;
+  /**
+   * The persona to start. Taken as the whole object rather than an id
+   * because the primitive waits for *this* persona's gadget to enumerate,
+   * which needs its `vid:pid` and whether it carries a mass-storage backing
+   * file. A caller that cannot name the persona cannot be given a daemon
+   * whose readiness we are able to establish.
+   */
+  persona: DevicePersona;
   subprocess?: SubprocessRunner;
+  /**
+   * Budget for each enumeration wait. Defaults to
+   * {@link ENUMERATION_TIMEOUT_MS}; production callers leave it unset. It is
+   * a seam so the never-enumerates path can be unit-tested in milliseconds
+   * rather than by waiting out the real budget.
+   */
+  enumerationTimeoutMs?: number;
 }
 
 /** Options for {@link stopDaemon}. */
@@ -392,13 +406,31 @@ export interface StopDaemonOpts {
   subprocess?: SubprocessRunner;
 }
 
-/** Start `dummy-hcd-daemon@<personaId>.service` inside the VM. */
+/**
+ * Start `dummy-hcd-daemon@<persona.id>.service` inside the VM and wait until
+ * the persona's gadget has enumerated.
+ *
+ * The wait is not optional and there is no un-waited variant. The unit is
+ * `Type=simple`, so `systemctl start` returns at daemon `exec()` — 2-3 seconds
+ * before the kernel finishes enumerating the gadget — and the resulting
+ * failure is silent rather than loud: `podkit device scan` against an empty
+ * bus returns zero devices, which reads as a legitimate result. A test
+ * asserting "no unsupported device appears" would pass for the wrong reason.
+ *
+ * Every persona gets the USB wait; personas carrying a mass-storage backing
+ * file additionally wait for `/dev/sg*`, which the kernel creates after the
+ * USB bind. Both waits fail loudly with the daemon journal and the UDC slot
+ * budget attached, so a genuine synthesis failure still surfaces as itself.
+ *
+ * Callers that previously paired this with their own `waitFor*` call no
+ * longer need one (TASK-504).
+ */
 export async function startDaemonForPersona(opts: StartDaemonOpts): Promise<void> {
   const subprocess = opts.subprocess ?? defaultSubprocessRunner;
   if (!opts.vmName) throw new Error('startDaemonForPersona: vmName is required.');
-  if (!opts.personaId) throw new Error('startDaemonForPersona: personaId is required.');
+  if (!opts.persona?.id) throw new Error('startDaemonForPersona: persona is required.');
 
-  const unit = `dummy-hcd-daemon@${opts.personaId}.service`;
+  const unit = `dummy-hcd-daemon@${opts.persona.id}.service`;
   const result = await runLimactl(
     subprocess,
     ['shell', opts.vmName, '--', 'sudo', 'systemctl', 'start', unit],
@@ -406,6 +438,23 @@ export async function startDaemonForPersona(opts: StartDaemonOpts): Promise<void
   );
   if (result.exitCode !== 0) {
     throw limactlError(`failed to start ${unit} in ${opts.vmName}`, result);
+  }
+
+  const timeoutMs = opts.enumerationTimeoutMs;
+  await waitForUsbEnumeration({
+    vmName: opts.vmName,
+    persona: opts.persona,
+    subprocess,
+    timeoutMs,
+  });
+
+  if (opts.persona.massStorageBackingFile !== null) {
+    await waitForScsiGenericEnumeration({
+      vmName: opts.vmName,
+      personaId: opts.persona.id,
+      subprocess,
+      timeoutMs,
+    });
   }
 }
 

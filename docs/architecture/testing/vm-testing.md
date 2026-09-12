@@ -109,8 +109,9 @@ owns the VM-side primitives:
 Daemon-only lifecycle wrapper
 (`test-packages/device-testing/src/vm/persona-fixture.ts:69`):
 
-- start `dummy-hcd-daemon@<personaId>.service`
-- wait for `/dev/sg*` enumeration (mass-storage personas only)
+- start `dummy-hcd-daemon@<persona.id>.service` via
+  `startDaemonForPersona`, which returns only once the gadget has
+  enumerated
 - run `body`
 - stop the daemon (best-effort)
 
@@ -121,7 +122,7 @@ Use this when the test only inspects the USB / SCSI inquiry surface.
 Mount-and-uid lifecycle wrapper
 (`test-packages/device-testing/src/vm/mount-persona.ts`):
 
-- start the daemon (via `startDaemonForPersona`)
+- start the daemon (via `startDaemonForPersona`, enumeration included)
 - find the matching `/dev/sd<x>` by walking
   `/sys/class/scsi_generic/sg*` and filtering by vendor / product ID
 - mount with `-o uid=$(id -u),gid=$(id -g)` so podkit's
@@ -130,6 +131,27 @@ Mount-and-uid lifecycle wrapper
 
 Use this when the test invokes a podkit command that reads or writes
 the FAT32 backing — doctor, sync, repair, anything `-d <path>`.
+
+### Enumeration is the primitive's job, not the caller's
+
+`startDaemonForPersona` does not return until the persona's gadget is on
+the bus: it waits for the persona's `vid:pid` in sysfs, and for
+`/dev/sg*` as well when the persona carries a mass-storage backing file.
+There is no un-waited variant and the waits are not exported.
+
+This is not a convenience. The unit is `Type=simple`, so `systemctl
+start` returns at daemon `exec()` — 2-3s before the kernel finishes
+enumerating — and the resulting failure is silent rather than loud:
+`podkit device scan` against an empty bus returns zero devices, which
+reads as a legitimate result. A test asserting "no unsupported device
+appears" passes for the wrong reason. Waiting at each call site fixes
+one caller and leaves the next one to rediscover it, which is what
+happened before TASK-504.
+
+A gadget that never enumerates fails with the daemon journal and the UDC
+slot budget attached, so a genuine synthesis failure still surfaces as
+itself. The waits live in
+`test-packages/device-testing/src/runners/lima-enumeration.ts`.
 
 ### `runJsonCommand(runtime, command, timeoutMs)`
 

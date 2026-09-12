@@ -346,9 +346,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
     beforeAll(async () => {
       try {
         await mountPersona({
-          personaId: PERSONA.id,
-          vendorId: VID,
-          productId: PID,
+          persona: PERSONA,
           mountPoint: VM_MOUNT_POINT,
         });
 
@@ -529,9 +527,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
         // that mount only to seed the iTunesDB, then unmount so the container's
         // daemon can mount the partition itself.
         await mountPersona({
-          personaId: PERSONA.id,
-          vendorId: VID,
-          productId: PID,
+          persona: PERSONA,
           mountPoint: VM_MOUNT_POINT,
         });
         ({ blockDevice, usbNode } = await resolvePersonaDeviceNodes({
@@ -834,9 +830,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
     beforeAll(async () => {
       try {
         await mountPersona({
-          personaId: PERSONA.id,
-          vendorId: VID,
-          productId: PID,
+          persona: PERSONA,
           mountPoint: VM_MOUNT_POINT,
         });
         ({ blockDevice, usbNode } = await resolvePersonaDeviceNodes({

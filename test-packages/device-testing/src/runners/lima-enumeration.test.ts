@@ -16,7 +16,7 @@
 
 import { describe, it, expect } from 'bun:test';
 
-import { waitForScsiGenericEnumeration, waitForUsbEnumeration } from './persona-fixture.js';
+import { waitForScsiGenericEnumeration, waitForUsbEnumeration } from './lima-enumeration.js';
 import type { DevicePersona } from '../personas/types.js';
 import type { SubprocessRunner, SubprocessRunOpts, SubprocessRunResult } from '../subprocess.js';
 
