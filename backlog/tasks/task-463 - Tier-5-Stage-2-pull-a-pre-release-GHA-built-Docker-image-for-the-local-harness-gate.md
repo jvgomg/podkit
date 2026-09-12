@@ -3,10 +3,10 @@ id: TASK-463
 title: >-
   vm-docker-image e2e Stage 2: pull a pre-release GHA-built Docker image for the
   local harness gate
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-07-11 15:27'
-updated_date: '2026-08-06 09:52'
+updated_date: '2026-09-12 00:29'
 labels:
   - docker
   - testing

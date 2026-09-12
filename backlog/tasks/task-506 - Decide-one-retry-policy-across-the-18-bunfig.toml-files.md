@@ -4,7 +4,7 @@ title: Decide one retry policy across the 18 bunfig.toml files
 status: To Do
 assignee: []
 created_date: '2026-09-09 20:25'
-updated_date: '2026-09-09 22:22'
+updated_date: '2026-09-12 13:48'
 labels:
   - testing
   - flakiness
@@ -13,6 +13,7 @@ dependencies:
   - TASK-504
   - TASK-505
   - TASK-507
+  - TASK-508
 references:
   - docs/agents/testing.md
   - docs/architecture/testing/taxonomy.md
@@ -89,5 +90,17 @@ Two things that sharpen the decision:
 2. **The escalation path is the real cost, not the hiding.** `de6e5bf8` is what happens when retry *fails* to absorb something: the response was `describe.skipIf`, and `lossy-preserve-efficiency`'s assertion then ran on no Linux host and no CI run at all until task-500 found it. Retry normalises "tests sometimes fail"; skip is the next step when retry is not enough. Each step is locally reasonable and the sequence ends with no coverage.
 
 Suggested shape for the decision, given the above: `retry = 0` for unit and integration (16 of 18 packages) once task-507 lands; a considered value only where genuinely nondeterministic infrastructure is involved, with a bounded wait at the flaky *step* preferred over a re-run of the whole test — which is what task-505 did across 15 files and what `d14e9d0d` did correctly by retrying at the apt level rather than the test level.
+---
+
+author: Claude Opus 5
+created: 2026-09-12 13:48
+---
+**Dependency added: TASK-508.**
+
+TASK-504 has landed and is Done, so its half of the sequencing is satisfied. But its VM-side confirmation could not be run on the Linux dev box (no `/dev/kvm`; the device VM is `vmType: 'vz'`, macOS-only) and was split out into TASK-508.
+
+Adding TASK-508 here rather than treating TASK-504/Done as sufficient, because this task's own sequencing note asks for the real causes to have *landed* before retry changes — and for the VM surface, "landed" is not yet "shown to hold". Turning `retry = 0` on while the VM suite's enumeration guarantee is unconfirmed would change the failure surface and the evidence at the same time, which is the thing the sequencing note exists to prevent.
+
+Everything else this task was waiting on is now done: 500, 505 and 507 are complete, and 507's notes record that neither of the two integration flakes needed retry to be green.
 ---
 <!-- COMMENTS:END -->
