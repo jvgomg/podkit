@@ -4,17 +4,24 @@ title: Introduce SubstrateLink and decouple the device harness from Lima
 status: To Do
 assignee: []
 created_date: '2026-09-07 23:35'
+updated_date: '2026-09-13 18:34'
 labels:
   - testing
   - infrastructure
   - refactor
+  - ready-for-agent
+milestone: m-20
 dependencies:
   - TASK-493
+  - TASK-513
 references:
   - docs/adr/adr-028-substrate-agnostic-device-harness.md
   - docs/adr/adr-027-lima-vm-substrate-consolidation.md
   - docs/architecture/testing/taxonomy.md
   - CONTEXT.md
+  - >-
+    backlog/docs/doc-060 -
+    Portable-device-substrate-—-contract-provisioners-and-arch-decoupled-builds.md
 priority: high
 type: enhancement
 ordinal: 273000
@@ -71,3 +78,18 @@ Introduce `SubstrateLink` — `exec(cmd)`, `copyIn(host, guest)`, `spawn(cmd) �
 - [ ] #10 docker-loopback runs on the substrate
 - [ ] #11 taxonomy.md's vm-binary definition is updated to say 'device substrate'
 <!-- AC:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: claude
+created: 2026-09-13 18:34
+---
+Specced in doc-060 as slice 3; scope unchanged. Two adjustments from that spec:
+
+- The registry and the SubstrateLink now land in `@podkit/substrate` (TASK-513), not in `@podkit/lima` — added as a dependency. AC #8's "registry carries a provisioner discriminator" is satisfied by 513; this task consumes it.
+- Connection detail is an ssh_config `Host` alias name held in the registry, with the machine's hostname/user/key in the developer's own ssh config — not the env var ADR-028 §3 assumed. The repo must contain no hostname.
+
+Sequenced before build decoupling (TASK-514) deliberately: this task's ACs are already written and it is the largest de-risking step, and it can be developed against Lima on macOS exactly as today.
+---
+<!-- COMMENTS:END -->
