@@ -6,7 +6,7 @@
     },
     "graphify": {
       "command": "mise",
-      "args": ["exec", "--", "graphify-mcp", "--graph", "graphify-out/graph.json"]
+      "args": ["exec", "pipx:graphifyy", "--", "graphify-mcp", "--graph", "graphify-out/graph.json"]
     }
   }
 }

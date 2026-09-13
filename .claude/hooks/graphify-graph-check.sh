@@ -32,15 +32,18 @@ head=$(git -C "$cwd" rev-parse HEAD 2>/dev/null || true)
 
 mv -f "$graph" "$cwd/graphify-out/graph.stale.json" 2>/dev/null || true
 
-# Probe by running it, not with `command -v`: graphify is pinned in mise.toml,
-# so the mise shim is on PATH but errors with "No version is set for shim" in a
-# checkout whose mise.toml predates the pin.
-if graphify --version >/dev/null 2>&1; then
+# graphify is a project tool (mise.toml), deliberately not installed globally,
+# so go through `mise exec` — a hook's environment does not carry this
+# directory's mise activation. Probe by running it, not with `command -v`: the
+# pin is absent in a checkout whose mise.toml predates it, and `mise exec` then
+# fails rather than resolving to nothing.
+GFY="mise exec -- graphify"
+if $GFY --version >/dev/null 2>&1; then
   # Log rather than discard: a silent background failure would leave the
   # checkout with no graph and no explanation.
   log="${HOME}/.cache/graphify-rebuild.log"
   mkdir -p "$(dirname "$log")" 2>/dev/null || true
-  ( cd "$cwd" && nohup graphify update . >>"$log" 2>&1 & ) >/dev/null 2>&1
+  ( cd "$cwd" && nohup mise exec -- graphify update . >>"$log" 2>&1 & ) >/dev/null 2>&1
   echo "graphify: graph was built at ${built:0:8} but this checkout is at ${head:0:8}. Retired it and started a background rebuild (~45s, log: $log) — use grep until it lands."
 else
   echo "graphify: graph was built at ${built:0:8} but this checkout is at ${head:0:8}. Retired it; run 'mise run graph:build' for a current one."

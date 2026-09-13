@@ -65,33 +65,23 @@ Only when the path is one or more `https://github.com/...` URLs, or several loca
 ### Step 1 - Ensure graphify is installed
 
 ```bash
-# Detect the correct Python interpreter (handles uv tool, pipx, venv, system installs)
-PYTHON=""
-GRAPHIFY_BIN=$(which graphify 2>/dev/null)
-# 1. uv tool installs — most reliable on modern Mac/Linux
-if [ -z "$PYTHON" ] && command -v uv >/dev/null 2>&1; then
-    _UV_PY=$(uv tool run --from graphifyy python -c "import sys; print(sys.executable)" 2>/dev/null)
-    if [ -n "$_UV_PY" ]; then PYTHON="$_UV_PY"; fi
+# PORTABILITY (podkit): graphify is a project tool pinned in mise.toml and is
+# deliberately NOT installed globally, so the upstream detection ladder (uv
+# tool / pip / --break-system-packages) is replaced here: every one of those
+# branches would create a user-level install that shadows the pin. Resolve the
+# pinned interpreter through mise instead, and never install behind the user's
+# back.
+#
+# NOTE: re-running `graphify install --platform claude` regenerates this file
+# and reverts this block. Re-apply it afterwards.
+PYTHON="$(mise where pipx:graphifyy 2>/dev/null)/graphifyy/bin/python"
+if [ ! -x "$PYTHON" ] || ! "$PYTHON" -c "import graphify" 2>/dev/null; then
+    mise install "pipx:graphifyy" >&2 || true
+    PYTHON="$(mise where pipx:graphifyy 2>/dev/null)/graphifyy/bin/python"
 fi
-# 2. Read shebang from graphify binary (pipx and direct pip installs)
-if [ -z "$PYTHON" ] && [ -n "$GRAPHIFY_BIN" ]; then
-    _SHEBANG=$(head -1 "$GRAPHIFY_BIN" | tr -d '#!')
-    case "$_SHEBANG" in
-        *[!a-zA-Z0-9/_.@-]*) ;;
-        *) "$_SHEBANG" -c "import graphify" 2>/dev/null && PYTHON="$_SHEBANG" ;;
-    esac
-fi
-# 3. Fall back to python3
-if [ -z "$PYTHON" ]; then PYTHON="python3"; fi
-if ! "$PYTHON" -c "import graphify" 2>/dev/null; then
-    if command -v uv >/dev/null 2>&1; then
-        uv tool install --upgrade graphifyy -q 2>&1 | tail -3
-        _UV_PY=$(uv tool run --from graphifyy python -c "import sys; print(sys.executable)" 2>/dev/null)
-        if [ -n "$_UV_PY" ]; then PYTHON="$_UV_PY"; fi
-    else
-        "$PYTHON" -m pip install graphifyy -q 2>/dev/null \
-          || "$PYTHON" -m pip install graphifyy -q --break-system-packages 2>&1 | tail -3
-    fi
+if [ ! -x "$PYTHON" ] || ! "$PYTHON" -c "import graphify" 2>/dev/null; then
+    echo "graphify unavailable. Run 'mise install' in the repo root, then retry." >&2
+    exit 1
 fi
 # Write interpreter path for all subsequent steps (persists across invocations)
 mkdir -p graphify-out

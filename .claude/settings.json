@@ -9,7 +9,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "graphify hook-guard search"
+            "command": "mise exec -- graphify hook-guard search"
           }
         ]
       },
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "graphify hook-guard read"
+            "command": "mise exec -- graphify hook-guard read"
           }
         ]
       }
