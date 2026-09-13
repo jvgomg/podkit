@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-09-07 23:35'
-updated_date: '2026-09-13 19:38'
+updated_date: '2026-09-13 19:45'
 labels:
   - testing
   - infrastructure
@@ -120,5 +120,17 @@ AC #8 ticked: doctor passes on both substrates, negatives verified on the builde
 Playbook gained an operational section for two facts worth not losing: pin the address before writing an ssh alias (a DHCP lease is not an identity, and the alias outlives the lease), and leave `onboot` off with start/shutdown over ssh — which is most of what TASK-515 replaces.
 
 AC #5 is the only one left, and needs amd64 podkit + dummy-hcd-daemon + gpod-tool built and landed on the substrate.
+---
+
+author: claude
+created: 2026-09-13 19:45
+---
+AC #5 deferred until after TASK-514, deliberately.
+
+It needs amd64 `podkit`, `dummy-hcd-daemon` and `gpod-tool` on the substrate. Today that means building on otto — whose checkout is behind and carries unpushed work, so it needs reconciling first, and the result is thrown away the moment 514 lands. After 514 this Mac can build amd64 and land it directly, and AC #5 stops needing otto at all.
+
+The better reason to wait: proving a persona over SSH with binaries built on the *same* architecture as the substrate tests very little. Proving it with binaries cross-built from an arm64 host is the first real evidence that build decoupling works. AC #5 is worth more as 514's acceptance test than as a hand-run on otto.
+
+493 stays open at 10/11 rather than being closed with the AC moved: the substrate is proven, but 'a persona is observable over SSH with no limactl involved' is this task's actual thesis, and closing without it would record the thesis as proven when it is not.
 ---
 <!-- COMMENTS:END -->

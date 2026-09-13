@@ -72,10 +72,16 @@ On the PVE host, as root:
 
 ```bash
 PODKIT_PVE_POOL=podkit \
-PODKIT_PVE_STORAGE=local-lvm \
+PODKIT_PVE_STORAGE="local-lvm local" \
 PODKIT_PVE_BRIDGE=vmbr0 \
   bash pveum-recipe.sh
 ```
+
+`PODKIT_PVE_STORAGE` is a **list**, and naming only one is the most likely way to
+get this wrong. The layout below puts VM disks on LVM-thin but keeps the
+cloud-init snippet and the Debian qcow2 on the local directory storage; a token
+granted only the first cannot resolve `--cicustom` or import an image, and 403s
+on `Datastore.Audit` for the other.
 
 The script is `test-packages/device-testing/substrate/proxmox/pveum-recipe.sh`.
 It creates a dedicated user, a dedicated pool, three narrowly-scoped roles, and
@@ -86,17 +92,21 @@ so a token ACL'd only on `/pool/podkit` is confined to that pool even if its
 user were later granted more. Verify the confinement rather than trusting it:
 
 ```bash
-pveum user permissions podkit@pve --token automation
+pveum user permissions 'podkit@pve!automation'
 ```
+
+The token id goes in as the user id — `--token` is not an option on PVE 9, and
+the parse error it returns reads like a broken token.
 
 Nothing outside `/pool/<pool>`, `/storage/<storage>` and
 `/sdn/zones/localnetwork/<bridge>` should appear. **The token secret is printed
 once and cannot be retrieved again** — put it straight into the repo's gitignored
 env file.
 
-> PVE 8 requires `SDN.Use` on the bridge's zone path before a VM may attach a
-> NIC; PVE 6 and 7 did not. Omitting it produces a 403 at `qm create` time that
-> names nothing useful. The recipe grants it.
+> PVE 8+ requires `SDN.Use` on the bridge's zone path before a VM may attach a
+> NIC; PVE 6 and 7 did not. The recipe grants it, and NIC attach was verified
+> working with it on PVE 9.1.4. The 403 people actually hit at `qm create` time
+> is the storage one above, not this.
 
 ### 2. Render the cloud-init user-data
 
