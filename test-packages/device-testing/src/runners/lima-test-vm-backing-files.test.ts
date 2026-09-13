@@ -509,6 +509,32 @@ describe('ensureBackingFile', () => {
     ).rejects.toThrow(/non-sha256/);
   });
 
+  it('waits for the partscan partition node before formatting it', async () => {
+    // `losetup --partscan` asks the kernel to scan the table; udev creates
+    // `${LOOP}p1` asynchronously afterwards. Formatting straight away races it,
+    // and loses under load: `mkfs.vfat: unable to open /dev/loop0p1: No such
+    // file or directory`. The wait must be bounded and must fail naming the
+    // node, not spin.
+    const { runner, calls } = makeScriptedRunner([ok(sizeLine(64))]);
+    await ensureBackingFile({
+      vmName: 'podkit-device',
+      persona: makePersona({
+        massStorageBackingFile: {
+          synthesis: { sizeMiB: 64, filesystem: 'FAT32', label: 'ECHO_MINI', partitioned: true },
+          resetStrategy: 'copy',
+        },
+      }),
+      subprocess: runner,
+    });
+    const buildScript = calls[0]!.args.join(' ');
+    const waitAt = buildScript.indexOf('${LOOP}p1" ]');
+    const mkfsAt = buildScript.indexOf('mkfs.vfat');
+    expect(waitAt).toBeGreaterThan(-1);
+    // Ordering is the whole point: a wait after the format is decoration.
+    expect(waitAt).toBeLessThan(mkfsAt);
+    expect(buildScript).toContain('never appeared');
+  });
+
   it('does not discard sfdisk or mkfs stderr on the partitioned path', async () => {
     // Same reasoning as the whole-disk case, over the two commands the
     // partitioned build adds. This is the path that actually failed on a

@@ -767,6 +767,16 @@ async function synthesisePartitionedFat32BackingFile(
     // Attach a partscan loop so ${LOOP}p1 exists; detach on any exit.
     'LOOP=$(sudo losetup --find --show --partscan "$TMP")',
     'trap \'sudo losetup -d "$LOOP" 2>/dev/null || true\' EXIT',
+    // `losetup --partscan` asks the kernel to read the table; udev then creates
+    // `${LOOP}p1` asynchronously. Formatting immediately races that, and loses
+    // on a loaded host — `mkfs.vfat: unable to open /dev/loop0p1: No such file
+    // or directory`, which is a `beforeAll` failure and so is not something a
+    // test-level retry would ever have covered. A bounded wait at the step that
+    // is actually nondeterministic is the fix; see docs/agents/testing.md
+    // §Retries. 10s is ~100x the observed creation lag.
+    `i=0; while [ ! -e "${'$'}{LOOP}p1" ]; do i=$((i+1)); ` +
+      `[ "$i" -gt 100 ] && { echo "partition node ${'$'}{LOOP}p1 never appeared after 10s" >&2; exit 1; }; ` +
+      `sleep 0.1; done`,
     loudOnFailure(
       `sudo mkfs.vfat --invariant -F 32 -n ${shellQuote(opts.label)} -I "${'$'}{LOOP}p1"`,
       'mkfs.vfat'
