@@ -49,7 +49,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 
 import {
-  limaTestVmRunner,
+  deviceHarness,
   VM_COLD_TIMEOUT_MS,
   VM_WARM_TIMEOUT_MS,
   withPersona,
@@ -58,7 +58,6 @@ import {
   echoMini,
   ipodNano7gBlue,
   ipodNano7gSpaceGray,
-  LIMA_DEVICE_HARNESS_VM_NAME,
 } from '@podkit/device-testing';
 
 // ---------------------------------------------------------------------------
@@ -112,16 +111,16 @@ const hex = (n: number) => n.toString(16).padStart(4, '0');
 
 describe('VM: doctor device-types', () => {
   beforeAll(async () => {
-    await limaTestVmRunner.prepare();
+    await deviceHarness.prepare();
   }, VM_COLD_TIMEOUT_MS);
 
   afterAll(async () => {
-    await limaTestVmRunner.teardown();
+    await deviceHarness.teardown();
   }, VM_COLD_TIMEOUT_MS);
 
   describe(`SystemState: ${healthy.id}`, () => {
     beforeAll(async () => {
-      await limaTestVmRunner.applyState(healthy);
+      await deviceHarness.applyState(healthy);
     }, VM_COLD_TIMEOUT_MS);
 
     // ─────────────────────────────────────────────────────────────────────
@@ -135,7 +134,7 @@ describe('VM: doctor device-types', () => {
       async () => {
         const invocation = await withPersona({ persona: ipodNano7gSpaceGray }, () =>
           runJsonCommand(
-            limaTestVmRunner,
+            deviceHarness,
             '/usr/local/bin/podkit doctor --scope system --json',
             VM_WARM_TIMEOUT_MS
           )
@@ -174,7 +173,7 @@ describe('VM: doctor device-types', () => {
       async () => {
         const invocation = await withPersona({ persona: echoMini }, () =>
           runJsonCommand(
-            limaTestVmRunner,
+            deviceHarness,
             '/usr/local/bin/podkit doctor --scope system --json',
             VM_WARM_TIMEOUT_MS
           )
@@ -209,7 +208,7 @@ describe('VM: doctor device-types', () => {
       async () => {
         const invocation = await withPersona({ persona: ipodNano7gBlue }, () =>
           runJsonCommand(
-            limaTestVmRunner,
+            deviceHarness,
             '/usr/local/bin/podkit device scan --json',
             VM_WARM_TIMEOUT_MS
           )
@@ -243,7 +242,7 @@ describe('VM: doctor device-types', () => {
         // `assessIpodIdentity` + readiness gates — is also protected.
         const invocation = await withPersona({ persona: ipodNano7gBlue }, () =>
           runJsonCommand(
-            limaTestVmRunner,
+            deviceHarness,
             '/usr/local/bin/podkit device add -d hashab-nano --yes --json',
             VM_WARM_TIMEOUT_MS
           )
@@ -301,7 +300,6 @@ describe('VM: doctor device-types', () => {
           //    so the sysfs walk below runs against a populated bus.
           const { startDaemonForPersona } = await import('@podkit/device-testing');
           await startDaemonForPersona({
-            vmName: LIMA_DEVICE_HARNESS_VM_NAME,
             persona: echoMini,
           });
 
@@ -321,7 +319,7 @@ describe('VM: doctor device-types', () => {
             'done;',
             'exit 1',
           ].join(' ');
-          const find = await limaTestVmRunner.run(`sh -c '${findScript.replace(/'/g, `'\\''`)}'`, {
+          const find = await deviceHarness.run(`sh -c '${findScript.replace(/'/g, `'\\''`)}'`, {
             timeoutMs: VM_WARM_TIMEOUT_MS,
           });
           if (find.exitCode !== 0 || !find.stdout.trim()) {
@@ -335,16 +333,16 @@ describe('VM: doctor device-types', () => {
           //    single-partition FAT32 — mount /dev/sd<x> directly (not
           //    /dev/sd<x>1; the synthesised backing has no MBR partition
           //    table, just a raw FAT filesystem).
-          await limaTestVmRunner.run(`sudo mkdir -p ${VM_MOUNT_POINT}`, {
+          await deviceHarness.run(`sudo mkdir -p ${VM_MOUNT_POINT}`, {
             timeoutMs: VM_WARM_TIMEOUT_MS,
           });
-          const mount = await limaTestVmRunner.run(
+          const mount = await deviceHarness.run(
             `sudo mount -t vfat /dev/${scsiSd} ${VM_MOUNT_POINT}`,
             { timeoutMs: VM_WARM_TIMEOUT_MS }
           );
           if (mount.exitCode !== 0) {
             // Try with partition suffix (in case the backing is partitioned).
-            const mountP1 = await limaTestVmRunner.run(
+            const mountP1 = await deviceHarness.run(
               `sudo mount -t vfat /dev/${scsiSd}1 ${VM_MOUNT_POINT}`,
               { timeoutMs: VM_WARM_TIMEOUT_MS }
             );
@@ -366,20 +364,19 @@ describe('VM: doctor device-types', () => {
             `path = "${VM_MOUNT_POINT}"`,
             ``,
           ].join('\n');
-          await limaTestVmRunner.run(
+          await deviceHarness.run(
             `cat > ${VM_CONFIG_PATH} << '__CONFIG_EOF__'\n${configBody}\n__CONFIG_EOF__`,
             { timeoutMs: VM_WARM_TIMEOUT_MS }
           );
         } catch (err) {
           // On setup failure, attempt cleanup so the next test isn't poisoned.
-          await limaTestVmRunner
+          await deviceHarness
             .run(`sudo umount ${VM_MOUNT_POINT} 2>/dev/null || true`, {
               timeoutMs: VM_WARM_TIMEOUT_MS,
             })
             .catch(() => {});
           const { stopDaemon } = await import('@podkit/device-testing');
           await stopDaemon({
-            vmName: LIMA_DEVICE_HARNESS_VM_NAME,
             personaId: echoMini.id,
           }).catch(() => {});
           throw err;
@@ -388,19 +385,18 @@ describe('VM: doctor device-types', () => {
 
       afterAll(async () => {
         // Unmount + stop daemon. Both are best-effort.
-        await limaTestVmRunner
+        await deviceHarness
           .run(`sudo umount ${VM_MOUNT_POINT} 2>/dev/null || true`, {
             timeoutMs: VM_WARM_TIMEOUT_MS,
           })
           .catch(() => {});
-        await limaTestVmRunner
+        await deviceHarness
           .run(`rm -f ${VM_CONFIG_PATH} 2>/dev/null || true`, {
             timeoutMs: VM_WARM_TIMEOUT_MS,
           })
           .catch(() => {});
         const { stopDaemon } = await import('@podkit/device-testing');
         await stopDaemon({
-          vmName: LIMA_DEVICE_HARNESS_VM_NAME,
           personaId: echoMini.id,
         }).catch(() => {});
       }, VM_COLD_TIMEOUT_MS);
@@ -412,7 +408,7 @@ describe('VM: doctor device-types', () => {
           // before invoking podkit. If either is missing the doctor invocation
           // fails before producing any JSON; surface that here with a
           // descriptive message rather than the opaque "undefined.success".
-          const diag = await limaTestVmRunner.run(
+          const diag = await deviceHarness.run(
             `mount | grep -E '${VM_MOUNT_POINT}' || echo NOT_MOUNTED; ` +
               `ls -la ${VM_CONFIG_PATH} 2>&1 || echo NO_CONFIG; ` +
               `cat ${VM_CONFIG_PATH} 2>&1 || echo NO_CONFIG_CAT`,
@@ -421,7 +417,7 @@ describe('VM: doctor device-types', () => {
 
           // Invocation 1: by name (resolves via the config).
           const byName = await runJsonCommand(
-            limaTestVmRunner,
+            deviceHarness,
             `/usr/local/bin/podkit --config ${VM_CONFIG_PATH} -d echo doctor --no-system --json`,
             VM_WARM_TIMEOUT_MS
           );
@@ -431,7 +427,7 @@ describe('VM: doctor device-types', () => {
           // registered device name in the config, but `-d <path>` is
           // detected as a path and bypasses the name lookup.
           const byPath = await runJsonCommand(
-            limaTestVmRunner,
+            deviceHarness,
             `/usr/local/bin/podkit --config ${VM_CONFIG_PATH} -d ${VM_MOUNT_POINT} doctor --no-system --json`,
             VM_WARM_TIMEOUT_MS
           );
@@ -504,7 +500,7 @@ describe('VM: doctor device-types', () => {
           // device-side runs must therefore never carry inquiry-methods.
           // Asserts explicit absence rather than incidental omission.
           const invocation = await runJsonCommand(
-            limaTestVmRunner,
+            deviceHarness,
             `/usr/local/bin/podkit --config ${VM_CONFIG_PATH} -d echo doctor --scope device --json`,
             VM_WARM_TIMEOUT_MS
           );

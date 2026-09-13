@@ -20,6 +20,31 @@ import {
   probeUdcSlots,
 } from './lima-test-vm-udc-slots.js';
 import type { SubprocessRunner, SubprocessRunOpts, SubprocessRunResult } from '../subprocess.js';
+import { createLimactlLink } from '@podkit/lima';
+
+// ---------------------------------------------------------------------------
+// Substrate link over a scripted runner
+//
+// The harness talks to a `SubstrateLink`, never to `limactl` directly — so the
+// seam the assertions below record is the link's argv. Building a limactl link
+// over the scripted runner keeps those assertions pinning exactly what a real
+// Lima substrate receives, which is the point: they are what a second
+// implementation has to reproduce.
+// ---------------------------------------------------------------------------
+
+/**
+ * A runner that fails the test if anything reaches it. The default for cases
+ * whose whole point is that a host-side guard fires BEFORE the substrate is
+ * touched — "no runner in scope" would otherwise read as "no assertion".
+ */
+const neverReached: SubprocessRunner = {
+  async run(command, args) {
+    throw new Error(`unexpected substrate call: ${command} ${args.join(' ')}`);
+  },
+};
+
+const linkTo = (instanceName: string, subprocess: SubprocessRunner = neverReached) =>
+  createLimactlLink({ id: instanceName, instanceName }, { subprocess });
 
 // ---------------------------------------------------------------------------
 // Probe record-stream fixtures
@@ -213,7 +238,7 @@ function scriptedRunner(result: SubprocessRunResult | Error): {
 describe('probeUdcSlots', () => {
   it('reads the VM in a single bounded shell invocation', async () => {
     const { runner, calls } = scriptedRunner({ stdout: stream(), stderr: '', exitCode: 0 });
-    const report = await probeUdcSlots({ vmName: 'podkit-device', subprocess: runner });
+    const report = await probeUdcSlots({ link: linkTo('podkit-device', runner) });
 
     expect(calls).toHaveLength(1);
     expect(calls[0]?.args.slice(0, 4)).toEqual(['shell', 'podkit-device', '--', 'sh']);
@@ -223,15 +248,8 @@ describe('probeUdcSlots', () => {
 
   it('fails loudly when the probe itself cannot run', async () => {
     const { runner } = scriptedRunner({ stdout: '', stderr: 'boom', exitCode: 1 });
-    await expect(probeUdcSlots({ vmName: 'podkit-device', subprocess: runner })).rejects.toThrow(
-      /could not read UDC state in podkit-device.*boom/s
-    );
-  });
-
-  it('requires a VM name', async () => {
-    const { runner } = scriptedRunner({ stdout: '', stderr: '', exitCode: 0 });
-    await expect(probeUdcSlots({ vmName: '', subprocess: runner })).rejects.toThrow(
-      /vmName is required/
+    await expect(probeUdcSlots({ link: linkTo('podkit-device', runner) })).rejects.toThrow(
+      /could not read UDC state in.*podkit-device.*boom/s
     );
   });
 });

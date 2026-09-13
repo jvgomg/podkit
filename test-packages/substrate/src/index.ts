@@ -6,13 +6,15 @@
  * *provisioner* is whatever produced it — Lima on a developer's Mac, Proxmox
  * plus cloud-init on a hypervisor, or a human with a spare box. This package
  * owns everything that is true regardless of which one you have: the registry,
- * the provisioner discriminator, substrate selection, and the pinned image.
+ * the provisioner discriminator, substrate selection, the substrate link, and
+ * the pinned image.
  *
  * `@podkit/lima` is one provisioner and depends on this package; nothing here
  * may depend on it. The direction is the point — see ADR-029 §1, and the
  * vocabulary in `CONTEXT.md` §"Test environments".
  *
- * Deliberately dependency-free. It is imported by packages that bundle into
+ * Depends only on `@podkit/device-types` — the dependency root the
+ * `SubprocessRunner` seam lives in. It is imported by packages that bundle into
  * single-file binaries, so every path anchor it exposes is lazy; see the note
  * on `defineLimaVm` in `./registry.js`.
  *
@@ -41,6 +43,36 @@ export {
   LIMA_VM_IDS,
   LIMA_DEVICE_HARNESS_VM_NAME,
 } from './registry.js';
+
+// The substrate link — how commands and files reach a substrate
+export type {
+  SubstrateLink,
+  SubstrateCommand,
+  SubstrateExecOpts,
+  SubstrateExecResult,
+  SubstrateCopyOpts,
+  SubstrateSpawnOpts,
+  SubstrateProcess,
+  SubstrateExitStatus,
+} from './link.js';
+export {
+  SubstrateLinkError,
+  guestCommandError,
+  isSubstrateLinkError,
+  isTimeoutRejection,
+  looksLikeSshLinkFailure,
+  looksLikeLinkFailureResult,
+  shellQuote,
+  wrapGuestCommand,
+  resolveGuestArgv,
+  describeGuestCommand,
+} from './link.js';
+export type { HostSpawnFn } from './link-spawn.js';
+export { startHostLinkProcess } from './link-spawn.js';
+
+// The SSH link implementation (every substrate not reached through limactl)
+export type { CreateSshLinkOpts } from './link-ssh.js';
+export { createSshLink } from './link-ssh.js';
 
 // Substrate selection
 export type {

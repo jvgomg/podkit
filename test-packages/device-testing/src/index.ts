@@ -18,7 +18,7 @@
  */
 
 import { localLinuxRunner } from './runners/local-linux.js';
-import { limaTestVmRunner } from './runners/lima-test-vm.js';
+import { deviceHarness } from './runners/lima-test-vm.js';
 import { registerRunner } from './runners/registry.js';
 
 // Personas
@@ -93,7 +93,7 @@ export type { RunnerId, RunOpts, RunResult, TestRuntime } from './runtime.js';
 export { localLinuxRunner } from './runners/local-linux.js';
 export { registerRunner, getRunner, listRunners } from './runners/registry.js';
 
-// Lima test-VM binary transfer (TASK-322.03)
+// Host→substrate binary transfer
 export type { TransferBinaryOpts, TransferBinaryResult } from './runners/lima-test-vm-binary.js';
 export {
   transferBinary,
@@ -103,7 +103,7 @@ export {
   DEFAULT_GPOD_TOOL_VM_PATH,
 } from './runners/lima-test-vm-binary.js';
 
-// Lima test-VM systemd unit installer (TASK-322.04.01)
+// Host→substrate systemd unit installer
 export type {
   TransferSystemdUnitOpts,
   TransferSystemdUnitResult,
@@ -114,11 +114,11 @@ export {
   DEFAULT_DUMMY_HCD_DAEMON_UNIT_VM_PATH,
 } from './runners/lima-test-vm-systemd.js';
 
-// Lima test-VM state orchestration
+// Substrate state orchestration
 export type { ApplyStateOpts } from './runners/lima-test-vm-state.js';
 export { applyState } from './runners/lima-test-vm-state.js';
 
-// Lima test-VM USB device-controller slot accounting
+// USB device-controller slot accounting
 export type {
   ProbeUdcSlotsOpts,
   UdcClaim,
@@ -136,9 +136,10 @@ export {
   UDC_SLOT_PROBE_TIMEOUT_MS,
 } from './runners/lima-test-vm-udc-slots.js';
 
-// Lima test-VM TestRuntime (TASK-322.04)
+// The device harness (a TestRuntime over the selected substrate) + its
+// per-substrate primitives.
 export type {
-  CreateLimaTestVmRuntimeOpts,
+  CreateDeviceHarnessOpts,
   EnsurePersonaSidecarOpts,
   EnsurePersonaSidecarResult,
   StageBackingFileOpts,
@@ -147,8 +148,8 @@ export type {
   StopDaemonOpts,
 } from './runners/lima-test-vm.js';
 export {
-  limaTestVmRunner,
-  createLimaTestVmRuntime,
+  deviceHarness,
+  createDeviceHarness,
   ensurePersonaSidecar,
   stageBackingFile,
   resetBackingFile,
@@ -200,6 +201,33 @@ export {
 
 // local-linux runner constants (TASK-322.04)
 export { LOCAL_MUTATE_ENV } from './runners/local-linux.js';
+
+// The substrate link: which substrate this machine drives, how to reach it,
+// and how to tell "the substrate did not answer" from "the guest said no".
+export type {
+  SubstrateLink,
+  SubstrateCommand,
+  SubstrateExecOpts,
+  SubstrateExecResult,
+  SubstrateProcess,
+  SubstrateExitStatus,
+} from '@podkit/substrate';
+export { SubstrateLinkError, isSubstrateLinkError } from '@podkit/substrate';
+
+export type {
+  ResolvedSubstrate,
+  ResolveDeviceSubstrateOpts,
+  SubstrateNotice,
+  SubstrateReadiness,
+} from './runners/substrate.js';
+export {
+  createSubstrateLink,
+  deviceSubstrateLink,
+  ensureSubstrateReady,
+  probeSubstrate,
+  resolveDeviceSubstrate,
+  resetDeviceSubstrate,
+} from './runners/substrate.js';
 
 // Subprocess runner (re-exports for tests)
 export type { SubprocessRunner, SubprocessRunOpts, SubprocessRunResult } from './subprocess.js';
@@ -262,4 +290,4 @@ export {
 
 // Auto-register built-in runners on first import.
 registerRunner(localLinuxRunner);
-registerRunner(limaTestVmRunner);
+registerRunner(deviceHarness);

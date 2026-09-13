@@ -29,11 +29,15 @@
  * @module
  */
 
-import { getVm } from '@podkit/lima';
 import { personas as defaultPersonas } from '../src/personas/index.js';
 import { ensureBackingFile } from '../src/runners/lima-test-vm-backing-files.js';
+import { resolveDeviceSubstrate } from '../src/runners/substrate.js';
 
-const VM_NAME = process.env['PODKIT_DEVICE_HARNESS_VM_NAME'] ?? getVm('device').instanceName;
+// The substrate this machine has selected — see `PODKIT_SUBSTRATE` in
+// `.env.example`. This driver used to carry its own
+// `PODKIT_DEVICE_HARNESS_VM_NAME` override, a second selection mechanism
+// nothing else honoured.
+const { link } = resolveDeviceSubstrate({ notice: (line) => console.log(`==> ${line}`) });
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
@@ -71,7 +75,9 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  console.log(`==> building ${personasToBuild.length} backing image(s) inside ${VM_NAME}...`);
+  console.log(
+    `==> building ${personasToBuild.length} backing image(s) inside ${link.description}...`
+  );
   for (const persona of personasToBuild) {
     const synth = persona.massStorageBackingFile!.synthesis!;
     console.log(`    ${persona.id}: ${synth.sizeMiB} MiB FAT32 label='${synth.label}'`);
@@ -79,7 +85,7 @@ async function main(): Promise<void> {
     // 256 MiB image costs sixty times the build it verifies). This driver
     // exists to confirm the deterministic-bytes claim from the command line,
     // so it is exactly the caller that should pay for the digest.
-    const result = await ensureBackingFile({ vmName: VM_NAME, persona, computeSha256: true });
+    const result = await ensureBackingFile({ link, persona, computeSha256: true });
     const tag = result.wasAlreadyIdentical ? 'unchanged' : 'rebuilt';
     console.log(`      → ${result.vmPath} sha256=${result.sha256?.slice(0, 16)}… (${tag})`);
   }

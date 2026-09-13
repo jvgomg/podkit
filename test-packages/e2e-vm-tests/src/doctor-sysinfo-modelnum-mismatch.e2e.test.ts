@@ -35,7 +35,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 
 import {
-  limaTestVmRunner,
+  deviceHarness,
   VM_COLD_TIMEOUT_MS,
   VM_WARM_TIMEOUT_MS,
   mountPersona,
@@ -81,11 +81,11 @@ interface RepairOutput {
 
 describe('VM: doctor sysinfo-modelnum-mismatch', () => {
   beforeAll(async () => {
-    await limaTestVmRunner.prepare();
+    await deviceHarness.prepare();
   }, VM_COLD_TIMEOUT_MS);
 
   afterAll(async () => {
-    await limaTestVmRunner.teardown();
+    await deviceHarness.teardown();
   }, VM_COLD_TIMEOUT_MS);
 
   describe(`SystemState: ${healthy.id}`, () => {
@@ -93,7 +93,7 @@ describe('VM: doctor sysinfo-modelnum-mismatch', () => {
     const PERSONA = ipod5gModelnumMismatch;
 
     beforeAll(async () => {
-      await limaTestVmRunner.applyState(healthy);
+      await deviceHarness.applyState(healthy);
     }, VM_COLD_TIMEOUT_MS);
 
     // Daemon + mount + DB bootstrap are shared across the cycle: detect,
@@ -115,7 +115,7 @@ describe('VM: doctor sysinfo-modelnum-mismatch', () => {
         // independent setup tool — libgpod-node reads what gpod-tool
         // writes, so a libgpod-node read/write asymmetry can't false-pass
         // the test.
-        const init = await limaTestVmRunner.run(`gpod-tool init ${VM_MOUNT_POINT} --model MA446`, {
+        const init = await deviceHarness.run(`gpod-tool init ${VM_MOUNT_POINT} --model MA446`, {
           timeoutMs: VM_WARM_TIMEOUT_MS,
         });
         if (init.exitCode !== 0) {
@@ -129,7 +129,7 @@ describe('VM: doctor sysinfo-modelnum-mismatch', () => {
         // case: classic SysInfo was rewritten (manually or copied from
         // another iPod) and now points at the wrong model number for the
         // device's firmware identity.
-        const seed = await limaTestVmRunner.run(
+        const seed = await deviceHarness.run(
           `sh -c 'printf "ModelNumStr: MA147\\n" > ${VM_MOUNT_POINT}/iPod_Control/Device/SysInfo'`,
           { timeoutMs: VM_WARM_TIMEOUT_MS }
         );
@@ -152,7 +152,7 @@ describe('VM: doctor sysinfo-modelnum-mismatch', () => {
       'detect → repair → re-detect: MA147 SysInfo warns, repair rewrites, re-run passes',
       async () => {
         // Diagnostic: surface mount state if doctor produces no parseable JSON.
-        const diag = await limaTestVmRunner.run(
+        const diag = await deviceHarness.run(
           `mount | grep -E '${VM_MOUNT_POINT}' || echo NOT_MOUNTED; ` +
             `ls -la ${VM_MOUNT_POINT}/iPod_Control/Device 2>&1 || echo NO_DEVICE_DIR; ` +
             `cat ${VM_MOUNT_POINT}/iPod_Control/Device/SysInfo 2>&1 || echo NO_SYSINFO`,
@@ -162,7 +162,7 @@ describe('VM: doctor sysinfo-modelnum-mismatch', () => {
         // 1. Detect — sysinfo-modelnum-mismatch present with warn + structured
         //    details exposing the disagreement.
         const detect = await runJsonCommand(
-          limaTestVmRunner,
+          deviceHarness,
           `/usr/local/bin/podkit -d ${VM_MOUNT_POINT} doctor --scope device --json`,
           VM_WARM_TIMEOUT_MS
         );
@@ -203,7 +203,7 @@ describe('VM: doctor sysinfo-modelnum-mismatch', () => {
         //    semantics (backup written, ModelNumStr rewritten) are unit-
         //    pinned; here we pin only the envelope contract.
         const repair = await runJsonCommand(
-          limaTestVmRunner,
+          deviceHarness,
           `/usr/local/bin/podkit -d ${VM_MOUNT_POINT} doctor --repair sysinfo-modelnum-mismatch --json`,
           VM_WARM_TIMEOUT_MS
         );
@@ -219,7 +219,7 @@ describe('VM: doctor sysinfo-modelnum-mismatch', () => {
         //    This is the end-to-end proof that repair mutated the
         //    filesystem and the next read sees the change.
         const recheck = await runJsonCommand(
-          limaTestVmRunner,
+          deviceHarness,
           `/usr/local/bin/podkit -d ${VM_MOUNT_POINT} doctor --scope device --json`,
           VM_WARM_TIMEOUT_MS
         );

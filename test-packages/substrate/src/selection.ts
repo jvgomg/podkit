@@ -53,6 +53,18 @@ import { listVms, type VmDefinition } from './registry.js';
  */
 export const SUBSTRATE_ENV_VAR = 'PODKIT_SUBSTRATE';
 
+/**
+ * The retired override. It used to name a Lima instance for two of the
+ * harness's driver scripts and for nothing else — a second selection mechanism
+ * that only part of the repo honoured.
+ *
+ * It is refused rather than ignored because ignoring it is the failure this
+ * module exists to prevent, wearing a different hat: a developer who still has
+ * it exported would be silently retargeted onto the default box and read the
+ * result as if it came from the one they named.
+ */
+const RETIRED_VM_NAME_ENV_VAR = 'PODKIT_DEVICE_HARNESS_VM_NAME';
+
 /** Where the selection came from. */
 export type SubstrateSelectionSource =
   /** `PODKIT_SUBSTRATE` named it explicitly. */
@@ -207,6 +219,16 @@ export function selectSubstrate(
   env: Readonly<Record<string, string | undefined>> = process.env,
   substrates: readonly VmDefinition[] = listVms()
 ): SubstrateSelection {
+  const retired = env[RETIRED_VM_NAME_ENV_VAR]?.trim();
+  if (retired) {
+    throw new SubstrateSelectionError(
+      `${RETIRED_VM_NAME_ENV_VAR}='${retired}' is set, and nothing reads it any more. ` +
+        `Substrate selection now goes through ${SUBSTRATE_ENV_VAR} alone. ` +
+        `Unset ${RETIRED_VM_NAME_ENV_VAR} and set ${SUBSTRATE_ENV_VAR} instead ` +
+        `(see .env.example) — leaving it set would quietly run against a different ` +
+        `substrate from the one it names.`
+    );
+  }
   return resolveSubstrateSelection({
     env,
     substrates,

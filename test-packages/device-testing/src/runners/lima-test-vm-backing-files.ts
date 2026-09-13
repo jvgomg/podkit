@@ -68,20 +68,26 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { FILE_COPY_TIMEOUT_MS } from '@podkit/lima';
+import {
+  guestCommandError,
+  shellQuote,
+  type SubstrateExecResult,
+  type SubstrateLink,
+} from '@podkit/substrate';
 
 import type { DevicePersona } from '../personas/types.js';
-import { defaultSubprocessRunner, type SubprocessRunner } from '../subprocess.js';
 import { writeMbrWrappedHfsplusImage } from './hfsplus-image-writer.js';
-import { limactlError, runLimactl, shellQuote } from './lima-limactl.js';
+import { deviceSubstrateLink, SUBSTRATE_ROUND_TRIP_TIMEOUT_MS } from './substrate.js';
+import { installIntoSubstrate } from './substrate-install.js';
 import { devTestingPackageRoot } from './paths.js';
 
-/** In-VM directory where the runner stages synthesised backing files. */
+/** In-substrate directory where the harness stages synthesised backing files. */
 export const BACKING_FILES_VM_DIR = '/var/device-testing/backing-files';
 
 // ---------------------------------------------------------------------------
 // Wall-clock bounds
 //
-// Every `limactl` call in this module now carries one, and they come in two
+// Every link call in this module now carries one, and they come in two
 // shapes because the calls do two different kinds of thing.
 //
 //   - Calls that touch NO image bytes (`mkdir -p`, `rm -f`, staging-dir
@@ -92,11 +98,11 @@ export const BACKING_FILES_VM_DIR = '/var/device-testing/backing-files';
 //     script, the HFS+ `install`) take a bound derived from `sizeMiB` via
 //     {@link imageWorkTimeoutMs}.
 //
-// `limactl copy` is the substrate's own primitive and keeps the substrate's own
+// `copyIn` is the substrate's own primitive and keeps the substrate's own
 // bound, `FILE_COPY_TIMEOUT_MS`, rather than a second derivation of the same
 // thing here.
 //
-// Both shapes go through `runLimactl`, which owns the descriptive
+// Both shapes go through the link, which owns the descriptive
 // `timed out after Nms` message. A bound that fires anonymously as execFile's
 // generic "killed" is most of the way back to having no bound at all — which is
 // what an unbounded `sha256sum` in this module produced when it ran for 20
@@ -106,15 +112,15 @@ export const BACKING_FILES_VM_DIR = '/var/device-testing/backing-files';
 // ---------------------------------------------------------------------------
 
 /**
- * Bound for an in-VM command that does no work proportional to the image, and
- * the additive headroom underneath every size-derived bound below.
+ * Bound for a substrate command that does no work proportional to the image,
+ * and the additive headroom underneath every size-derived bound below.
  *
- * Nothing here can legitimately take anywhere near this long: `mkdir -p` and
- * `rm -f` are syscalls. The budget is the SSH round trip on a host deep in swap
- * with a contended channel — the same figure, for the same reason, as the
- * daemon lifecycle bound in `./lima-test-vm.js`.
+ * One round trip — see {@link SUBSTRATE_ROUND_TRIP_TIMEOUT_MS}, which is where
+ * the figure and its reasoning live. Re-exported under this name because the
+ * size-derived bounds below are expressed as "a round trip plus the image", and
+ * spelling that out locally is what makes them readable.
  */
-export const VM_ROUND_TRIP_TIMEOUT_MS = 45_000;
+export const VM_ROUND_TRIP_TIMEOUT_MS = SUBSTRATE_ROUND_TRIP_TIMEOUT_MS;
 
 /**
  * Throughput floor, in MiB/s, used to size the bounds on operations that read
@@ -186,7 +192,11 @@ export interface EnsureBackingFileResult {
 
 /** Options for {@link ensureBackingFile}. */
 export interface EnsureBackingFileOpts {
-  vmName: string;
+  /**
+   * Link to the substrate the image is synthesised in. Defaults to the
+   * selected device substrate; tests inject a link over a scripted runner.
+   */
+  link?: SubstrateLink;
   persona: DevicePersona;
   /**
    * Also hash the finished image (and the pre-existing one, to populate
@@ -201,7 +211,6 @@ export interface EnsureBackingFileOpts {
    * out-of-band `build:backing-file` driver — ask for it.
    */
   computeSha256?: boolean;
-  subprocess?: SubprocessRunner;
 }
 
 /**
@@ -220,8 +229,7 @@ export interface EnsureBackingFileOpts {
 export async function ensureBackingFile(
   opts: EnsureBackingFileOpts
 ): Promise<EnsureBackingFileResult> {
-  const subprocess = opts.subprocess ?? defaultSubprocessRunner;
-  if (!opts.vmName) throw new Error('ensureBackingFile: vmName is required.');
+  const link = opts.link ?? deviceSubstrateLink();
   const backing = opts.persona.massStorageBackingFile;
   if (!backing) {
     throw new Error(
@@ -276,11 +284,10 @@ export async function ensureBackingFile(
   // magic provides on its own — no real mkfs is required.
   if (filesystem === 'HFS+') {
     return synthesiseHfsplusBackingFile({
-      vmName: opts.vmName,
+      link,
       personaId: opts.persona.id,
       vmPath,
       sizeMiB,
-      subprocess,
     });
   }
 
@@ -304,13 +311,12 @@ export async function ensureBackingFile(
       );
     }
     return synthesisePartitionedFat32BackingFile({
-      vmName: opts.vmName,
+      link,
       personaId: opts.persona.id,
       vmPath,
       sizeMiB,
       label,
       computeSha256,
-      subprocess,
     });
   }
 
@@ -320,12 +326,7 @@ export async function ensureBackingFile(
   // trailing `rm -rf` cleans up on success; the `finally` below covers
   // the failure path (the script's `set -e` aborts before the rm).
   const stageDir = `/tmp/initial-content/${opts.persona.id}`;
-  await stageSeedFixtures({
-    vmName: opts.vmName,
-    stageDir,
-    entries: seedEntries,
-    subprocess,
-  });
+  await stageSeedFixtures({ link, stageDir, entries: seedEntries });
 
   // Build the synthesis command. `truncate` makes a sparse file at the
   // exact size; `mkfs.vfat --invariant` writes a deterministic header. The
@@ -392,21 +393,14 @@ export async function ensureBackingFile(
   // can report whether the rebuild changed anything. Skipped unless the caller
   // asked for a digest — on a 256 MiB image this single call costs 60x the
   // build it is asking about.
-  const existingSha = computeSha256
-    ? await probeExistingSha256({
-        vmName: opts.vmName,
-        vmPath,
-        sizeMiB,
-        subprocess,
-      })
-    : null;
+  const existingSha = computeSha256 ? await probeExistingSha256({ link, vmPath, sizeMiB }) : null;
 
   // Build (or rebuild) the image. The script writes a deterministic image, so
   // a stale image at `vmPath` — including one a previous run's tests wrote
   // through the gadget — is safe to overwrite.
-  let build;
+  let build: SubstrateExecResult;
   try {
-    build = await runLimactl(subprocess, ['shell', opts.vmName, '--', 'sh', '-c', buildScript], {
+    build = await link.exec(['sh', '-c', buildScript], {
       timeoutMs: imageWorkTimeoutMs(sizeMiB),
     });
   } finally {
@@ -414,16 +408,16 @@ export async function ensureBackingFile(
     // earlier on failure). Always sweep the stage dir on the way out so a
     // partial-build failure does not leave fixtures behind for later runs.
     if (seedEntries.length > 0) {
-      await runLimactl(
-        subprocess,
-        ['shell', opts.vmName, '--', 'sh', '-c', `rm -rf ${shellQuote(stageDir)}`],
-        { timeoutMs: VM_ROUND_TRIP_TIMEOUT_MS }
-      ).catch(() => undefined);
+      await link
+        .exec(['sh', '-c', `rm -rf ${shellQuote(stageDir)}`], {
+          timeoutMs: VM_ROUND_TRIP_TIMEOUT_MS,
+        })
+        .catch(() => undefined);
     }
   }
   if (build.exitCode !== 0) {
-    throw limactlError(
-      `failed to synthesise backing file for persona '${opts.persona.id}' in ${opts.vmName}`,
+    throw guestCommandError(
+      `failed to synthesise backing file for persona '${opts.persona.id}' in ${link.description}`,
       build
     );
   }
@@ -445,10 +439,9 @@ export async function ensureBackingFile(
 
 /** Options for {@link probeExistingSha256}. */
 interface ProbeExistingSha256Opts {
-  vmName: string;
+  link: SubstrateLink;
   vmPath: string;
   sizeMiB: number;
-  subprocess: SubprocessRunner;
 }
 
 /**
@@ -461,12 +454,8 @@ interface ProbeExistingSha256Opts {
  * `Command failed: …` at the end of it.
  */
 async function probeExistingSha256(opts: ProbeExistingSha256Opts): Promise<string> {
-  const probe = await runLimactl(
-    opts.subprocess,
+  const probe = await opts.link.exec(
     [
-      'shell',
-      opts.vmName,
-      '--',
       'sh',
       '-c',
       `if [ -f ${shellQuote(opts.vmPath)} ]; then sha256sum ${shellQuote(opts.vmPath)} | awk '{print $1}'; else echo absent; fi`,
@@ -474,7 +463,13 @@ async function probeExistingSha256(opts: ProbeExistingSha256Opts): Promise<strin
     { timeoutMs: imageWorkTimeoutMs(opts.sizeMiB) }
   );
   if (probe.exitCode !== 0) {
-    throw limactlError(`failed to probe backing file at ${opts.vmName}:${opts.vmPath}`, probe);
+    // The substrate answered and the probe script failed — a missing file is
+    // NOT this branch (the script prints `absent` and exits 0). An unreachable
+    // substrate is not this branch either: `exec` throws for that.
+    throw guestCommandError(
+      `failed to probe backing file at ${opts.link.description}:${opts.vmPath}`,
+      probe
+    );
   }
   return probe.stdout.trim();
 }
@@ -568,11 +563,10 @@ function parseBuildReport(opts: {
  * caller did not ask for a digest.
  */
 interface SynthesiseHfsplusBackingFileOpts {
-  vmName: string;
+  link: SubstrateLink;
   personaId: string;
   vmPath: string;
   sizeMiB: number;
-  subprocess: SubprocessRunner;
 }
 
 async function synthesiseHfsplusBackingFile(
@@ -587,13 +581,12 @@ async function synthesiseHfsplusBackingFile(
     const sha256 = sha256HostFile(hostTmp);
     const sizeBytes = opts.sizeMiB * 1024 * 1024;
 
-    // Probe — skip the limactl copy if the VM already has a byte-identical
+    // Probe — skip the transfer if the substrate already has a byte-identical
     // image. Without skip, every `prepare()` re-uploads the full sizeMiB.
     const existingSha = await probeExistingSha256({
-      vmName: opts.vmName,
+      link: opts.link,
       vmPath: opts.vmPath,
       sizeMiB: opts.sizeMiB,
-      subprocess: opts.subprocess,
     });
     const wasAlreadyIdentical = existingSha === sha256;
     if (wasAlreadyIdentical) {
@@ -606,49 +599,36 @@ async function synthesiseHfsplusBackingFile(
       };
     }
 
-    // Ensure target directory exists. `mkdir -p` is idempotent.
-    const ensureDir = await runLimactl(
-      opts.subprocess,
-      ['shell', opts.vmName, '--', 'sudo', 'mkdir', '-p', BACKING_FILES_VM_DIR],
-      { timeoutMs: VM_ROUND_TRIP_TIMEOUT_MS }
-    );
+    // Ensure target directory exists. `mkdir -p` is idempotent. `install -D`
+    // below would create it too, but only for the final component's parent —
+    // doing it explicitly keeps the failure ("cannot create /var/...") about
+    // the directory rather than about the image.
+    const ensureDir = await opts.link.exec(['sudo', 'mkdir', '-p', BACKING_FILES_VM_DIR], {
+      timeoutMs: VM_ROUND_TRIP_TIMEOUT_MS,
+    });
     if (ensureDir.exitCode !== 0) {
-      throw limactlError(`failed to ensure ${BACKING_FILES_VM_DIR} in ${opts.vmName}`, ensureDir);
+      throw guestCommandError(
+        `failed to ensure ${BACKING_FILES_VM_DIR} in ${opts.link.description}`,
+        ensureDir
+      );
     }
 
-    // limactl copy into /tmp (no sudo needed; tmpfs), then `sudo install`
-    // to the canonical path. `install -D -m 0644` is atomic (rename within
-    // the same fs) and sets mode in one step.
-    const vmTmp = `/tmp/hfsplus-${randomUUID()}.img`;
-    const copy = await runLimactl(opts.subprocess, ['copy', hostTmp, `${opts.vmName}:${vmTmp}`], {
-      timeoutMs: FILE_COPY_TIMEOUT_MS,
+    // Copy into /tmp (no sudo needed; tmpfs), then `sudo install` to the
+    // canonical path. The install copies the whole image between two
+    // substrate-local filesystems, so it gets the size-derived bound rather
+    // than the flat round-trip one — and the copy keeps the substrate's own
+    // single-file bound.
+    await installIntoSubstrate({
+      link: opts.link,
+      hostPath: hostTmp,
+      guestPath: opts.vmPath,
+      stagePath: `/tmp/hfsplus-${randomUUID()}.img`,
+      mode: '0644',
+      createParents: true,
+      label: 'HFS+ backing image',
+      copyTimeoutMs: FILE_COPY_TIMEOUT_MS,
+      installTimeoutMs: imageWorkTimeoutMs(opts.sizeMiB),
     });
-    if (copy.exitCode !== 0) {
-      throw limactlError(
-        `limactl copy failed sending HFS+ backing image to ${opts.vmName}:${vmTmp}`,
-        copy
-      );
-    }
-    // `install` copies the whole image between two VM-local filesystems, so it
-    // gets the size-derived bound rather than the flat round-trip one.
-    const install = await runLimactl(
-      opts.subprocess,
-      ['shell', opts.vmName, '--', 'sudo', 'install', '-D', '-m', '0644', vmTmp, opts.vmPath],
-      { timeoutMs: imageWorkTimeoutMs(opts.sizeMiB) }
-    );
-    if (install.exitCode !== 0) {
-      // Best-effort cleanup of the staging file before propagating.
-      await runLimactl(opts.subprocess, ['shell', opts.vmName, '--', 'rm', '-f', vmTmp], {
-        timeoutMs: VM_ROUND_TRIP_TIMEOUT_MS,
-      }).catch(() => undefined);
-      throw limactlError(
-        `sudo install failed promoting ${vmTmp} → ${opts.vmPath} in ${opts.vmName}`,
-        install
-      );
-    }
-    await runLimactl(opts.subprocess, ['shell', opts.vmName, '--', 'rm', '-f', vmTmp], {
-      timeoutMs: VM_ROUND_TRIP_TIMEOUT_MS,
-    }).catch(() => undefined);
 
     return {
       personaId: opts.personaId,
@@ -703,13 +683,12 @@ export function loudOnFailure(command: string, label: string): string {
 
 /** Options for {@link synthesisePartitionedFat32BackingFile}. */
 interface SynthesisePartitionedFat32Opts {
-  vmName: string;
+  link: SubstrateLink;
   personaId: string;
   vmPath: string;
   sizeMiB: number;
   label: string;
   computeSha256: boolean;
-  subprocess: SubprocessRunner;
 }
 
 /**
@@ -743,10 +722,9 @@ async function synthesisePartitionedFat32BackingFile(
   // the caller asked for a digest — see the note on `computeSha256`.
   const existingSha = opts.computeSha256
     ? await probeExistingSha256({
-        vmName: opts.vmName,
+        link: opts.link,
         vmPath: opts.vmPath,
         sizeMiB: opts.sizeMiB,
-        subprocess: opts.subprocess,
       })
     : null;
 
@@ -787,14 +765,13 @@ async function synthesisePartitionedFat32BackingFile(
     ...buildReportCommands({ vmPath: opts.vmPath, computeSha256: opts.computeSha256 }),
   ].join('; ');
 
-  const build = await runLimactl(
-    opts.subprocess,
-    ['shell', opts.vmName, '--', 'sh', '-c', buildScript],
-    { timeoutMs: imageWorkTimeoutMs(opts.sizeMiB) }
-  );
+  const build = await opts.link.exec(['sh', '-c', buildScript], {
+    timeoutMs: imageWorkTimeoutMs(opts.sizeMiB),
+  });
   if (build.exitCode !== 0) {
-    throw limactlError(
-      `failed to synthesise partitioned FAT32 backing file for persona '${opts.personaId}' in ${opts.vmName}`,
+    throw guestCommandError(
+      `failed to synthesise partitioned FAT32 backing file for persona '${opts.personaId}' in ` +
+        `${opts.link.description}`,
       build
     );
   }
@@ -836,10 +813,13 @@ function sha256HostFile(filePath: string): string {
 
 /** Options for {@link ensureBackingFilesForPersonas}. */
 export interface EnsureBackingFilesForPersonasOpts {
-  vmName: string;
+  /**
+   * Link to the substrate the images are synthesised in. Defaults to the
+   * selected device substrate.
+   */
+  link?: SubstrateLink;
   /** Iterable of personas; only those with a `synthesis` recipe are synthesised. */
   personas: Iterable<DevicePersona>;
-  subprocess?: SubprocessRunner;
 }
 
 /**
@@ -869,16 +849,13 @@ export interface EnsureBackingFilesForPersonasOpts {
 export async function ensureBackingFilesForPersonas(
   opts: EnsureBackingFilesForPersonasOpts
 ): Promise<Map<string, string>> {
+  const link = opts.link ?? deviceSubstrateLink();
   const out = new Map<string, string>();
   for (const persona of opts.personas) {
     const backing = persona.massStorageBackingFile;
     if (!backing) continue;
     if (!backing.synthesis) continue; // imagePath case — caller handles
-    const result = await ensureBackingFile({
-      vmName: opts.vmName,
-      persona,
-      subprocess: opts.subprocess,
-    });
+    const result = await ensureBackingFile({ link, persona });
     out.set(persona.id, result.vmPath);
   }
   return out;
@@ -1010,48 +987,38 @@ function resolveSeedEntries(persona: DevicePersona): ResolvedSeedEntry[] {
 
 /** Options for {@link stageSeedFixtures}. */
 interface StageSeedFixturesOpts {
-  vmName: string;
-  /** Per-persona scratch directory inside the VM (e.g. `/tmp/initial-content/<id>`). */
+  link: SubstrateLink;
+  /** Per-persona scratch directory in the substrate (e.g. `/tmp/initial-content/<id>`). */
   stageDir: string;
   /** Already-resolved + validated seed entries. Empty array short-circuits. */
   entries: ResolvedSeedEntry[];
-  subprocess: SubprocessRunner;
 }
 
 /**
- * `limactl copy` each resolved seed fixture into the VM scratch dir. No-op
- * when `entries` is empty.
+ * Copy each resolved seed fixture into the substrate's scratch dir. No-op when
+ * `entries` is empty.
  */
 async function stageSeedFixtures(opts: StageSeedFixturesOpts): Promise<void> {
   if (opts.entries.length === 0) return;
 
   // Create the per-persona scratch dir (idempotent). /tmp is tmpfs, no sudo
   // needed; the trailing `rm -rf` in the build script cleans it up.
-  const mkdir = await runLimactl(
-    opts.subprocess,
-    [
-      'shell',
-      opts.vmName,
-      '--',
-      'sh',
-      '-c',
-      `rm -rf ${shellQuote(opts.stageDir)} && mkdir -p ${shellQuote(opts.stageDir)}`,
-    ],
+  const mkdir = await opts.link.exec(
+    ['sh', '-c', `rm -rf ${shellQuote(opts.stageDir)} && mkdir -p ${shellQuote(opts.stageDir)}`],
     { timeoutMs: VM_ROUND_TRIP_TIMEOUT_MS }
   );
   if (mkdir.exitCode !== 0) {
-    throw limactlError(`failed to prepare seed stage dir ${opts.vmName}:${opts.stageDir}`, mkdir);
+    throw guestCommandError(
+      `failed to prepare seed stage dir ${opts.link.description}:${opts.stageDir}`,
+      mkdir
+    );
   }
 
   for (const entry of opts.entries) {
-    const dest = `${opts.vmName}:${opts.stageDir}/${entry.stagedBasename}`;
     // Single-file transfer — the substrate's own primitive and its own bound.
-    const copy = await runLimactl(opts.subprocess, ['copy', entry.hostPath, dest], {
+    await opts.link.copyIn(entry.hostPath, `${opts.stageDir}/${entry.stagedBasename}`, {
       timeoutMs: FILE_COPY_TIMEOUT_MS,
     });
-    if (copy.exitCode !== 0) {
-      throw limactlError(`failed to copy seed fixture ${entry.hostPath} → ${dest}`, copy);
-    }
   }
 }
 

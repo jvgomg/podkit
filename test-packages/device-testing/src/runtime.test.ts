@@ -20,11 +20,11 @@ describe('@podkit/device-testing scaffold', () => {
     expect(listRunners().map((r) => r.id)).toContain('local-linux');
   });
 
-  it('auto-registers the lima-test-vm runner', () => {
-    const runner = getRunner('lima-test-vm');
+  it('auto-registers the device-substrate runtime', () => {
+    const runner = getRunner('device-substrate');
     expect(runner).toBeDefined();
-    expect(runner?.id).toBe('lima-test-vm');
-    expect(listRunners().map((r) => r.id)).toContain('lima-test-vm');
+    expect(runner?.id).toBe('device-substrate');
+    expect(listRunners().map((r) => r.id)).toContain('device-substrate');
   });
 
   it('getRunner returns undefined for an unregistered id', () => {

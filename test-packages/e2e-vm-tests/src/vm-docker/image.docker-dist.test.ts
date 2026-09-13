@@ -75,7 +75,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 
 import {
-  limaTestVmRunner,
+  deviceHarness,
   VM_COLD_TIMEOUT_MS,
   VM_WARM_TIMEOUT_MS,
   DEFAULT_PODKIT_IMAGE_TAG,
@@ -189,16 +189,16 @@ let IMAGE = DEFAULT_PODKIT_IMAGE_TAG;
 
 describe('VM: Docker dist image e2e (musl image + synthesized USB iPod)', () => {
   beforeAll(async () => {
-    await limaTestVmRunner.prepare();
+    await deviceHarness.prepare();
     // Resolve the docker-dist image once for the whole suite: build in-VM from
     // the current musl binaries (`force` guarantees a fresh image, not a stale
     // cached tag), or pull the pre-built artifact when the env switch is set.
     IMAGE = await ensurePodkitImageInVm({ force: true });
-    await limaTestVmRunner.applyState(healthy);
+    await deviceHarness.applyState(healthy);
   }, IMAGE_BUILD_TIMEOUT_MS);
 
   afterAll(async () => {
-    await limaTestVmRunner.teardown();
+    await deviceHarness.teardown();
   }, VM_COLD_TIMEOUT_MS);
 
   describe(`SystemState: ${healthy.id}`, () => {
@@ -233,7 +233,7 @@ describe('VM: Docker dist image e2e (musl image + synthesized USB iPod)', () => 
         // seeding (gpod-tool init, SIE wipe, ADD-phase config) lives in the test
         // body, NOT here, so a retry re-establishes a clean pre-add state — the
         // SIE-write proof needs SysInfoExtended absent at the start of each try.
-        await limaTestVmRunner.run(`mkdir -p ${VM_CONFIG_DIR}`, {
+        await deviceHarness.run(`mkdir -p ${VM_CONFIG_DIR}`, {
           timeoutMs: VM_WARM_TIMEOUT_MS,
         });
 
@@ -252,7 +252,7 @@ describe('VM: Docker dist image e2e (musl image + synthesized USB iPod)', () => 
           makeFlac('track-01.flac', 440, 'Docker Dist Track One', 1),
           makeFlac('track-02.flac', 660, 'Docker Dist Track Two', 2),
         ].join('\n');
-        const gen = await limaTestVmRunner.run(`bash -c ${sq(genScript)}`, {
+        const gen = await deviceHarness.run(`bash -c ${sq(genScript)}`, {
           timeoutMs: VM_WARM_TIMEOUT_MS,
         });
         if (gen.exitCode !== 0) {
@@ -261,7 +261,7 @@ describe('VM: Docker dist image e2e (musl image + synthesized USB iPod)', () => 
           );
         }
       } catch (err) {
-        await limaTestVmRunner
+        await deviceHarness
           .run(`rm -rf ${VM_CONFIG_DIR} ${VM_MUSIC_DIR} 2>/dev/null || true`, {
             timeoutMs: VM_WARM_TIMEOUT_MS,
           })
@@ -272,7 +272,7 @@ describe('VM: Docker dist image e2e (musl image + synthesized USB iPod)', () => 
     }, VM_COLD_TIMEOUT_MS);
 
     afterAll(async () => {
-      await limaTestVmRunner
+      await deviceHarness
         .run(`rm -rf ${VM_CONFIG_DIR} ${VM_MUSIC_DIR} 2>/dev/null || true`, {
           timeoutMs: VM_WARM_TIMEOUT_MS,
         })
@@ -293,7 +293,7 @@ describe('VM: Docker dist image e2e (musl image + synthesized USB iPod)', () => 
         // Empty FAT backing → seed a valid iPod filesystem + empty iTunesDB
         // (MA147 → iPod 5G Video) so `sync` has a database to write into. Writes
         // a classic SysInfo, but NOT a SysInfoExtended.
-        const init = await limaTestVmRunner.run(`gpod-tool init ${VM_MOUNT_POINT} --model MA147`, {
+        const init = await deviceHarness.run(`gpod-tool init ${VM_MOUNT_POINT} --model MA147`, {
           timeoutMs: VM_WARM_TIMEOUT_MS,
         });
         if (init.exitCode !== 0) {
@@ -305,12 +305,12 @@ describe('VM: Docker dist image e2e (musl image + synthesized USB iPod)', () => 
         // fresh from the live USB inquiry — the write the first assertion proves.
         // The classic SysInfo gpod-tool wrote and the USB inquiry both resolve to
         // the 5G Video, so add verifies (no IDENTITY_MISMATCH).
-        await limaTestVmRunner.run(`rm -f ${VM_MOUNT_POINT}/iPod_Control/Device/SysInfoExtended`, {
+        await deviceHarness.run(`rm -f ${VM_MOUNT_POINT}/iPod_Control/Device/SysInfoExtended`, {
           timeoutMs: VM_WARM_TIMEOUT_MS,
         });
         // ADD phase: device-less config, so `device add` creates the entry
         // (proving the SIE write). Pre-declaring it would fail DEVICE_EXISTS.
-        await limaTestVmRunner.run(
+        await deviceHarness.run(
           `printf '%s' ${sq(ADD_CONFIG_TOML)} > ${VM_CONFIG_DIR}/config.toml`,
           { timeoutMs: VM_WARM_TIMEOUT_MS }
         );
@@ -330,7 +330,7 @@ describe('VM: Docker dist image e2e (musl image + synthesized USB iPod)', () => 
         // Prove the USB-inquiry SIE write: absent pre-add (wiped above), now a
         // non-trivial plist (>1 KiB).
         const siePath = `${VM_MOUNT_POINT}/iPod_Control/Device/SysInfoExtended`;
-        const stat = await limaTestVmRunner.run(
+        const stat = await deviceHarness.run(
           `[ -f ${sq(siePath)} ] && wc -c < ${sq(siePath)} || echo MISSING`,
           { timeoutMs: VM_WARM_TIMEOUT_MS }
         );
@@ -343,7 +343,7 @@ describe('VM: Docker dist image e2e (musl image + synthesized USB iPod)', () => 
         // `device add` persisted a volumeUuid-keyed entry, unusable in-container
         // (DEVICE_PATH_UNRESOLVED). Overwrite with the PATH-based config so sync
         // resolves `-d dockeripod` by path.
-        await limaTestVmRunner.run(
+        await deviceHarness.run(
           `printf '%s' ${sq(PATH_CONFIG_TOML)} > ${VM_CONFIG_DIR}/config.toml`,
           { timeoutMs: VM_WARM_TIMEOUT_MS }
         );

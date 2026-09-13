@@ -31,7 +31,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 
 import {
-  limaTestVmRunner,
+  deviceHarness,
   VM_COLD_TIMEOUT_MS,
   VM_WARM_TIMEOUT_MS,
   runJsonCommand,
@@ -63,21 +63,21 @@ function inquiryCheck(parsed: unknown): SystemDoctorJson['checks'][number] | und
 
 describe('VM: firmware inquiry — USB transport down', () => {
   beforeAll(async () => {
-    await limaTestVmRunner.prepare();
-    await limaTestVmRunner.applyState(healthy);
+    await deviceHarness.prepare();
+    await deviceHarness.applyState(healthy);
     // Plant the decoy AFTER the state is applied. `: > file` truncates to
     // zero bytes; a zero-byte `libudev.so.1` fails ELF validation at
     // dlopen, which is what we want.
-    await limaTestVmRunner.run(`mkdir -p ${DECOY_DIR} && : > ${DECOY_DIR}/libudev.so.1`, {
+    await deviceHarness.run(`mkdir -p ${DECOY_DIR} && : > ${DECOY_DIR}/libudev.so.1`, {
       timeoutMs: VM_WARM_TIMEOUT_MS,
     });
   }, VM_COLD_TIMEOUT_MS);
 
   afterAll(async () => {
-    await limaTestVmRunner
+    await deviceHarness
       .run(`rm -rf ${DECOY_DIR}`, { timeoutMs: VM_WARM_TIMEOUT_MS })
       .catch(() => {});
-    await limaTestVmRunner.teardown();
+    await deviceHarness.teardown();
   }, VM_COLD_TIMEOUT_MS);
 
   // Control: the same doctor command WITHOUT the LD_LIBRARY_PATH prefix
@@ -88,7 +88,7 @@ describe('VM: firmware inquiry — USB transport down', () => {
   it(
     'control: with USB intact, inquiry-methods passes and doctor exits 0',
     async () => {
-      const invocation = await runJsonCommand(limaTestVmRunner, DOCTOR_JSON, VM_WARM_TIMEOUT_MS);
+      const invocation = await runJsonCommand(deviceHarness, DOCTOR_JSON, VM_WARM_TIMEOUT_MS);
       expect(invocation.parseError).toBeUndefined();
       expect(invocation.exitCode).toBe(0);
       expect(inquiryCheck(invocation.parsed)?.status).toBe('pass');
@@ -104,7 +104,7 @@ describe('VM: firmware inquiry — USB transport down', () => {
     'shadowing libudev.so.1 fails the USB load → inquiry-methods warns, doctor exits 2',
     async () => {
       const invocation = await runJsonCommand(
-        limaTestVmRunner,
+        deviceHarness,
         DOCTOR_JSON_USB_DOWN,
         VM_WARM_TIMEOUT_MS
       );

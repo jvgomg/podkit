@@ -63,7 +63,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 
 import {
-  limaTestVmRunner,
+  deviceHarness,
   VM_COLD_TIMEOUT_MS,
   VM_WARM_TIMEOUT_MS,
   withPersona,
@@ -72,7 +72,6 @@ import {
   ipodNano3gBlack,
   startDaemonForPersona,
   stopDaemon,
-  LIMA_DEVICE_HARNESS_VM_NAME,
 } from '@podkit/device-testing';
 
 interface ScanDevice {
@@ -94,16 +93,16 @@ const hex = (n: number) => n.toString(16).padStart(4, '0');
 
 describe('VM: discovery reconciliation', () => {
   beforeAll(async () => {
-    await limaTestVmRunner.prepare();
+    await deviceHarness.prepare();
   }, VM_COLD_TIMEOUT_MS);
 
   afterAll(async () => {
-    await limaTestVmRunner.teardown();
+    await deviceHarness.teardown();
   }, VM_COLD_TIMEOUT_MS);
 
   describe(`SystemState: ${healthy.id}`, () => {
     beforeAll(async () => {
-      await limaTestVmRunner.applyState(healthy);
+      await deviceHarness.applyState(healthy);
     }, VM_COLD_TIMEOUT_MS);
 
     it(
@@ -111,7 +110,7 @@ describe('VM: discovery reconciliation', () => {
       async () => {
         const invocation = await withPersona({ persona: ipodNano3gBlack }, () =>
           runJsonCommand(
-            limaTestVmRunner,
+            deviceHarness,
             '/usr/local/bin/podkit device scan --json',
             VM_WARM_TIMEOUT_MS
           )
@@ -157,12 +156,11 @@ describe('VM: discovery reconciliation', () => {
           // would return before the kernel enumerates it, and the scan
           // below would read an empty USB tree each cycle.
           await startDaemonForPersona({
-            vmName: LIMA_DEVICE_HARNESS_VM_NAME,
             persona: ipodNano3gBlack,
           });
           try {
             const invocation = await runJsonCommand(
-              limaTestVmRunner,
+              deviceHarness,
               '/usr/local/bin/podkit device scan --json',
               VM_WARM_TIMEOUT_MS
             );
@@ -178,7 +176,6 @@ describe('VM: discovery reconciliation', () => {
             );
           } finally {
             await stopDaemon({
-              vmName: LIMA_DEVICE_HARNESS_VM_NAME,
               personaId: ipodNano3gBlack.id,
             }).catch(() => undefined);
           }

@@ -10,7 +10,8 @@
  * system-states, the FunctionFS daemon-gadget, the runtime factory) stay in
  * `@podkit/device-testing`, which consumes this package. And everything true of
  * a substrate regardless of who provisioned it — the registry, the provisioner
- * discriminator, substrate selection, the pinned image — lives in
+ * discriminator, substrate selection, the link interface + its SSH
+ * implementation, and the pinned image — lives in
  * `@podkit/substrate`, which this package consumes. Lima is one provisioner,
  * not the substrate itself; conflating the two is what tied the harness to
  * macOS (ADR-029 §1).
@@ -52,6 +53,13 @@ export {
   LIMA_VM_IDS,
   LIMA_DEVICE_HARNESS_VM_NAME,
 } from '@podkit/substrate';
+
+// The limactl substrate link. The interface, the SSH implementation and the
+// selection resolver belong to `@podkit/substrate`; what lives here is the one
+// thing that is genuinely Lima's — how to reach a box Lima provisioned
+// (ADR-028 §3).
+export type { LimaSubstrateTarget, CreateLimactlLinkOpts } from './link.js';
+export { createLimactlLink } from './link.js';
 
 // Instance status
 export type { InstanceStatus } from './instance-status.js';

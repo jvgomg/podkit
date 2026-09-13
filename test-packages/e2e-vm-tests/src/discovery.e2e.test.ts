@@ -56,7 +56,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 
 import {
-  limaTestVmRunner,
+  deviceHarness,
   VM_COLD_TIMEOUT_MS,
   VM_WARM_TIMEOUT_MS,
   withPersona,
@@ -97,16 +97,16 @@ const hex = (n: number) => n.toString(16).padStart(4, '0');
 
 describe('VM: discovery + identification', () => {
   beforeAll(async () => {
-    await limaTestVmRunner.prepare();
+    await deviceHarness.prepare();
   }, VM_COLD_TIMEOUT_MS);
 
   afterAll(async () => {
-    await limaTestVmRunner.teardown();
+    await deviceHarness.teardown();
   }, VM_COLD_TIMEOUT_MS);
 
   describe(`SystemState: ${healthy.id}`, () => {
     beforeAll(async () => {
-      await limaTestVmRunner.applyState(healthy);
+      await deviceHarness.applyState(healthy);
     }, VM_COLD_TIMEOUT_MS);
 
     // ────────────────────────────────────────────────────────────────────────
@@ -118,7 +118,7 @@ describe('VM: discovery + identification', () => {
       async () => {
         const invocation = await withPersona({ persona: ipodVideo5gIflash1tb }, () =>
           runJsonCommand(
-            limaTestVmRunner,
+            deviceHarness,
             '/usr/local/bin/podkit device scan --json',
             VM_WARM_TIMEOUT_MS
           )
@@ -155,7 +155,7 @@ describe('VM: discovery + identification', () => {
       async () => {
         const invocation = await withPersona({ persona: ipodVideo5gIflash1tb }, () =>
           runJsonCommand(
-            limaTestVmRunner,
+            deviceHarness,
             '/usr/local/bin/podkit device scan --json',
             VM_WARM_TIMEOUT_MS
           )
@@ -198,7 +198,7 @@ describe('VM: discovery + identification', () => {
       async () => {
         const invocation = await withPersona({ persona: echoMini }, () =>
           runJsonCommand(
-            limaTestVmRunner,
+            deviceHarness,
             '/usr/local/bin/podkit device scan --json',
             VM_WARM_TIMEOUT_MS
           )

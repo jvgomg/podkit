@@ -33,7 +33,7 @@ import * as path from 'node:path';
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 
-import { LIMA_DEVICE_HARNESS_VM_NAME, limaTestVmRunner } from '../runners/lima-test-vm.js';
+import { deviceHarness } from '../runners/lima-test-vm.js';
 import { ensureBackingFile, personasRoot } from '../runners/lima-test-vm-backing-files.js';
 import { echoMiniPopulated, ipodVideo5gCorruptDb } from '../personas/index.js';
 import type { DevicePersona } from '../personas/types.js';
@@ -43,8 +43,6 @@ import { VM_COLD_TIMEOUT_MS, VM_WARM_TIMEOUT_MS } from './vm-runtime-setup.js';
 // Helpers
 // ---------------------------------------------------------------------------
 
-const VM_NAME = LIMA_DEVICE_HARNESS_VM_NAME;
-
 interface VmResult {
   stdout: string;
   stderr: string;
@@ -52,7 +50,7 @@ interface VmResult {
 }
 
 async function vm(cmd: string, timeoutMs: number = VM_WARM_TIMEOUT_MS): Promise<VmResult> {
-  return limaTestVmRunner.run(cmd, { timeoutMs });
+  return deviceHarness.run(cmd, { timeoutMs });
 }
 
 /** POSIX single-quote a string for safe shell embedding. */
@@ -136,11 +134,11 @@ const EXPECTATIONS: SeedExpectation[] = [
 describe('VM: initialContent seeding for FAT32 backing files', () => {
   beforeAll(async () => {
     // Boot the VM + transfer binaries. Idempotent.
-    await limaTestVmRunner.prepare();
+    await deviceHarness.prepare();
   }, VM_COLD_TIMEOUT_MS);
 
   afterAll(async () => {
-    await limaTestVmRunner.teardown();
+    await deviceHarness.teardown();
   }, VM_COLD_TIMEOUT_MS);
 
   for (const expectation of EXPECTATIONS) {
@@ -150,7 +148,6 @@ describe('VM: initialContent seeding for FAT32 backing files', () => {
       `seeds ${persona.id} backing image with declared initialContent`,
       async () => {
         const result = await ensureBackingFile({
-          vmName: VM_NAME,
           persona,
           computeSha256: true,
         });
@@ -182,7 +179,6 @@ describe('VM: initialContent seeding for FAT32 backing files', () => {
     'produces byte-identical sha256 across two synthesise+seed runs (determinism)',
     async () => {
       const first = await ensureBackingFile({
-        vmName: VM_NAME,
         persona: echoMiniPopulated,
         computeSha256: true,
       });
@@ -191,7 +187,6 @@ describe('VM: initialContent seeding for FAT32 backing files', () => {
       // If determinism were broken, the second sha would differ from the first.
       await new Promise<void>((resolve) => setTimeout(resolve, 2500));
       const second = await ensureBackingFile({
-        vmName: VM_NAME,
         persona: echoMiniPopulated,
         computeSha256: true,
       });

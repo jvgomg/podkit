@@ -1,8 +1,8 @@
 /**
- * lima-test-vm-state — stage and run apply-state.sh in the VM.
+ * Stage and run apply-state.sh inside the substrate.
  *
- * Single-path implementation: copy `apply-state.sh` into the VM, make it
- * executable, and run it with `sudo`. There is no snapshot fast-path — the
+ * Single-path implementation: copy `apply-state.sh` in, make it executable,
+ * and run it with `sudo`. There is no snapshot fast-path — the
  * `vz` driver used by Lima 2.x on Apple Silicon never implemented snapshots,
  * and the apply-state.sh-every-time path is ~800ms per state, which is
  * negligible across the current 6-state matrix.
@@ -17,9 +17,11 @@
  */
 
 import * as path from 'node:path';
+
+import { guestCommandError, type SubstrateLink } from '@podkit/substrate';
+
 import type { SystemStateId } from '../system-states/types.js';
-import { defaultSubprocessRunner, type SubprocessRunner } from '../subprocess.js';
-import { limactlError, runLimactl } from './lima-limactl.js';
+import { deviceSubstrateLink } from './substrate.js';
 import { devTestingPackageRoot } from './paths.js';
 
 // ---------------------------------------------------------------------------
@@ -28,15 +30,13 @@ import { devTestingPackageRoot } from './paths.js';
 
 /** Options for {@link applyState}. */
 export interface ApplyStateOpts {
-  /** Lima instance name (e.g. `podkit-device`). */
-  vmName: string;
+  /**
+   * Link to the substrate to bring to `stateId`. Defaults to the selected
+   * device substrate; tests inject a link over a scripted runner.
+   */
+  link?: SubstrateLink;
   /** SystemState id to apply (one of the 6 registered states). */
   stateId: SystemStateId;
-  /**
-   * Subprocess runner for `limactl` invocations. Production callers should
-   * leave this unset — tests inject a scripted runner.
-   */
-  subprocess?: SubprocessRunner;
   /**
    * Override the host path to `apply-state.sh`. Default resolves to
    * `test-packages/device-testing/scripts/apply-state.sh` relative to this
@@ -51,21 +51,22 @@ export interface ApplyStateOpts {
 // ---------------------------------------------------------------------------
 
 /**
- * Bring `vmName` to the system state identified by `stateId` by staging and
- * running `apply-state.sh` inside the VM.
+ * Bring the substrate to the system state identified by `stateId` by staging
+ * and running `apply-state.sh` inside it.
  *
  * Steps:
- *   1. `limactl copy <hostPath> <vmName>:/tmp/apply-state.sh`
- *   2. `limactl shell <vmName> -- sudo chmod 0755 /tmp/apply-state.sh`
- *   3. `limactl shell <vmName> -- sudo /tmp/apply-state.sh <stateId>`
+ *   1. copy `<hostPath>` → `/tmp/apply-state.sh`
+ *   2. `sudo chmod 0755 /tmp/apply-state.sh`
+ *   3. `sudo /tmp/apply-state.sh <stateId>`
  *
- * Errors from any sub-step propagate with descriptive messages that include
- * the underlying `limactl` stderr.
+ * A guest step that fails propagates with a descriptive message including the
+ * guest's own stderr; a substrate that could not be reached throws
+ * `SubstrateLinkError` instead.
  */
 /**
  * Bound for one `apply-state.sh` run.
  *
- * The script mutates the VM to match a `SystemState` — moving binaries aside,
+ * The script mutates the substrate to match a `SystemState` — moving binaries aside,
  * changing permissions, remounting. It is a per-group cost measured in
  * seconds, so this is deliberately loose: it exists to catch a wedged transport
  * rather than to police the script's own runtime.
@@ -76,12 +77,9 @@ export const APPLY_STATE_TIMEOUT_MS = 5 * 60_000;
 const STAGE_TIMEOUT_MS = 60_000;
 
 export async function applyState(opts: ApplyStateOpts): Promise<void> {
-  const { vmName, stateId } = opts;
-  const subprocess = opts.subprocess ?? defaultSubprocessRunner;
+  const { stateId } = opts;
+  const link = opts.link ?? deviceSubstrateLink();
 
-  if (!vmName) {
-    throw new Error('applyState: vmName is required.');
-  }
   if (!stateId) {
     throw new Error('applyState: stateId is required.');
   }
@@ -89,33 +87,24 @@ export async function applyState(opts: ApplyStateOpts): Promise<void> {
   const scriptHostPath = opts.applyStateScript ?? defaultApplyStateScriptPath();
   const scriptVmPath = '/tmp/apply-state.sh';
 
-  // ── Stage apply-state.sh inside the VM ─────────────────────────────────────
-  const copyResult = await runLimactl(
-    subprocess,
-    ['copy', scriptHostPath, `${vmName}:${scriptVmPath}`],
-    { timeoutMs: STAGE_TIMEOUT_MS }
-  );
-  if (copyResult.exitCode !== 0) {
-    throw limactlError(`failed to copy apply-state.sh to ${vmName}:${scriptVmPath}`, copyResult);
-  }
+  // ── Stage apply-state.sh inside the substrate ──────────────────────────────
+  // Straight into /tmp rather than through `installIntoSubstrate`: this file's
+  // destination IS the staging area, so there is nothing to promote.
+  await link.copyIn(scriptHostPath, scriptVmPath, { timeoutMs: STAGE_TIMEOUT_MS });
 
   // ── Make script executable + invoke under sudo ─────────────────────────────
-  const chmodResult = await runLimactl(
-    subprocess,
-    ['shell', vmName, '--', 'sudo', 'chmod', '0755', scriptVmPath],
-    { timeoutMs: STAGE_TIMEOUT_MS }
-  );
+  const chmodResult = await link.exec(['sudo', 'chmod', '0755', scriptVmPath], {
+    timeoutMs: STAGE_TIMEOUT_MS,
+  });
   if (chmodResult.exitCode !== 0) {
-    throw limactlError(`failed to chmod ${scriptVmPath} in ${vmName}`, chmodResult);
+    throw guestCommandError(`failed to chmod ${scriptVmPath} in ${link.description}`, chmodResult);
   }
 
-  const applyResult = await runLimactl(
-    subprocess,
-    ['shell', vmName, '--', 'sudo', scriptVmPath, stateId],
-    { timeoutMs: APPLY_STATE_TIMEOUT_MS }
-  );
+  const applyResult = await link.exec(['sudo', scriptVmPath, stateId], {
+    timeoutMs: APPLY_STATE_TIMEOUT_MS,
+  });
   if (applyResult.exitCode !== 0) {
-    throw limactlError(`apply-state.sh ${stateId} failed in ${vmName}`, applyResult);
+    throw guestCommandError(`apply-state.sh ${stateId} failed in ${link.description}`, applyResult);
   }
 }
 

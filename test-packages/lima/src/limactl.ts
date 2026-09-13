@@ -11,6 +11,12 @@
  */
 
 import type { SubprocessRunner } from '@podkit/device-types';
+import { guestCommandError, isTimeoutRejection, shellQuote } from '@podkit/substrate';
+
+// POSIX shell quoting is not a Lima concern — it belongs to the substrate link
+// layer, which is where it now lives. Re-exported here so the many callers that
+// reach for it alongside `runLimactl` keep one import.
+export { shellQuote };
 
 /** Captured outcome of one `limactl` invocation. */
 export interface LimactlResult {
@@ -83,41 +89,13 @@ export async function runLimactl(
 }
 
 /**
- * Recognise the rejection `child_process.execFile` produces when its
- * `timeout` option fires: the child is killed by a signal, so `killed` is
- * `true` and/or the error carries a `SIGTERM`/`SIGKILL` signal rather than a
- * numeric exit code.
- */
-function isTimeoutRejection(err: unknown): boolean {
-  if (typeof err !== 'object' || err === null) return false;
-  const candidate = err as { killed?: boolean; signal?: string | null; message?: string };
-  if (candidate.killed === true) return true;
-  if (candidate.signal === 'SIGTERM' || candidate.signal === 'SIGKILL') return true;
-  // The streaming runner settles on its own timer rather than on the child's
-  // `close` (a grandchild holding the pipes open would otherwise defer the
-  // rejection past the deadline), so its rejection is a plain `Error` with
-  // neither `killed` nor `signal` set. Recognise it by the vocabulary it
-  // produces, so both runners reach the same descriptive message.
-  return typeof candidate.message === 'string' && /timed out after \d+ms/.test(candidate.message);
-}
-
-/**
- * Wrap a non-zero `limactl` exit into a descriptive `Error`. Prefers
- * `stderr` for the trailing detail; falls back to `stdout` then to an
- * `(exit=N)` placeholder.
+ * Wrap a non-zero `limactl` exit into a descriptive `Error`.
+ *
+ * The rendering belongs to the substrate layer — a failed guest command reads
+ * the same however it was carried — so this is an alias that keeps the Lima
+ * callers' vocabulary rather than a second implementation of the same three
+ * lines.
  */
 export function limactlError(prefix: string, result: LimactlResult): Error {
-  const stderr = result.stderr.trim();
-  const stdout = result.stdout.trim();
-  const tail = stderr || stdout || `(no output, exit=${result.exitCode})`;
-  return new Error(`${prefix}: exit=${result.exitCode}: ${tail}`);
-}
-
-/**
- * Minimal POSIX shell quoting — wraps the value in single quotes and escapes
- * embedded single quotes. Used so paths with spaces or special chars survive
- * the `sh -c '…'` body that the runner passes through `limactl shell`.
- */
-export function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`;
+  return guestCommandError(prefix, result);
 }

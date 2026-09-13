@@ -42,7 +42,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 
-import { limaTestVmRunner } from '../runners/lima-test-vm.js';
+import { deviceHarness } from '../runners/lima-test-vm.js';
 import {
   VM_COLD_TIMEOUT_MS,
   VM_WARM_TIMEOUT_MS,
@@ -66,13 +66,13 @@ describe('VM: starter personas', () => {
     // runner's prepare() is idempotent; running it from inside the test
     // suite means a fresh checkout's first invocation works without manual
     // setup. Cold-start budget: 60s.
-    await limaTestVmRunner.prepare();
+    await deviceHarness.prepare();
   }, VM_COLD_TIMEOUT_MS);
 
   afterAll(async () => {
     // Restore base-healthy on the way out; do not shut down the VM (boot
     // dominates per-test cost).
-    await limaTestVmRunner.teardown();
+    await deviceHarness.teardown();
   }, VM_COLD_TIMEOUT_MS);
 
   // ── One describe per group → one applyState() per group ────────────────────
@@ -81,7 +81,7 @@ describe('VM: starter personas', () => {
       beforeAll(async () => {
         // Snapshot restore — fast path is <1s; cold path (first build of
         // this state) hits the 60s budget once and amortises forever.
-        await limaTestVmRunner.applyState(group.state);
+        await deviceHarness.applyState(group.state);
       }, VM_COLD_TIMEOUT_MS);
 
       for (const persona of group.personas) {
@@ -98,7 +98,7 @@ describe('VM: starter personas', () => {
             async () => {
               const invocation = await withPersona({ persona }, () =>
                 runJsonCommand(
-                  limaTestVmRunner,
+                  deviceHarness,
                   '/usr/local/bin/podkit device scan --json',
                   VM_WARM_TIMEOUT_MS
                 )
@@ -173,7 +173,7 @@ describe('VM: starter personas', () => {
               // USB-first and reports `pass` at baseline regardless, but
               // keeping the call device-free preserves the intent.)
               const invocation = await runJsonCommand(
-                limaTestVmRunner,
+                deviceHarness,
                 '/usr/local/bin/podkit doctor --scope system --json',
                 VM_WARM_TIMEOUT_MS
               );

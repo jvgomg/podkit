@@ -9,7 +9,7 @@
  * statuses, exit-code shifts) is invisible until a human happens to look.
  *
  * For every entry in `systemStates`, this test:
- *   1. Applies the state via `limaTestVmRunner.applyState(state)`.
+ *   1. Applies the state via `deviceHarness.applyState(state)`.
  *   2. Runs `podkit doctor --scope system --json` inside the VM.
  *   3. Parses the JSON envelope.
  *   4. Asserts the parsed `checks[]` ids + statuses match the fixture
@@ -53,7 +53,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 
 import {
-  limaTestVmRunner,
+  deviceHarness,
   VM_COLD_TIMEOUT_MS,
   VM_WARM_TIMEOUT_MS,
   runJsonCommand,
@@ -108,7 +108,7 @@ function summariseChecks(checks: ReadonlyArray<{ id: string; status: string }>):
 
 describe('VM: SystemState cross-check', () => {
   beforeAll(async () => {
-    await limaTestVmRunner.prepare();
+    await deviceHarness.prepare();
     // Sweep any abandoned `podkit-transcode-<uuid>/` scratch dirs left in
     // `/tmp` by prior suites (pre-sync-sweep.e2e.test.ts SIGKILLs syncs to
     // synthesise debris). The `debris-transcode-tmp` doctor check walks
@@ -116,7 +116,7 @@ describe('VM: SystemState cross-check', () => {
     // from another suite would flip our fixture's `pass` assertion to
     // `warn` with no real signal. Best-effort: failures here are non-fatal
     // (the cross-check assertion will catch any residual debris loudly).
-    await limaTestVmRunner
+    await deviceHarness
       .run('rm -rf /tmp/podkit-transcode-* 2>/dev/null || true', {
         timeoutMs: VM_WARM_TIMEOUT_MS,
       })
@@ -126,8 +126,8 @@ describe('VM: SystemState cross-check', () => {
   afterAll(async () => {
     // Leave the VM in `healthy` so subsequent suites have a known
     // baseline rather than inheriting whichever state ran last.
-    await limaTestVmRunner.applyState(healthy).catch(() => {});
-    await limaTestVmRunner.teardown();
+    await deviceHarness.applyState(healthy).catch(() => {});
+    await deviceHarness.teardown();
   }, VM_COLD_TIMEOUT_MS);
 
   // One `describe` per state so per-state failures localise in the
@@ -147,11 +147,11 @@ function runStateAssertions(state: SystemState): void {
       // 1. Apply the state. apply-state.sh is idempotent — re-application
       //    of the same state is a no-op, so back-to-back state transitions
       //    are safe to chain.
-      await limaTestVmRunner.applyState(state);
+      await deviceHarness.applyState(state);
 
       // 2. Run doctor inside the VM and parse the envelope.
       const invocation = await runJsonCommand(
-        limaTestVmRunner,
+        deviceHarness,
         '/usr/local/bin/podkit doctor --scope system --json',
         VM_WARM_TIMEOUT_MS
       );
@@ -170,7 +170,7 @@ function runStateAssertions(state: SystemState): void {
       // clean baseline. apply-state.sh's `healthy` action is
       // idempotent + tears down any loopback-mount provisioning the
       // failing state may have left behind.
-      await limaTestVmRunner.applyState(healthy).catch(() => {});
+      await deviceHarness.applyState(healthy).catch(() => {});
     }, VM_COLD_TIMEOUT_MS);
 
     it(

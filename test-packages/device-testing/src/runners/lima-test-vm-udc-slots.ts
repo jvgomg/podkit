@@ -38,10 +38,11 @@
  * @module
  */
 
-import { runLimactl, shellQuote } from './lima-limactl.js';
-import { defaultSubprocessRunner, type SubprocessRunner } from '../subprocess.js';
+import { guestCommandError, shellQuote, type SubstrateLink } from '@podkit/substrate';
 
-/** configfs directory holding the synthesised USB gadgets inside the VM. */
+import { deviceSubstrateLink } from './substrate.js';
+
+/** configfs directory holding the synthesised USB gadgets inside the substrate. */
 export const CONFIGFS_GADGET_ROOT = '/sys/kernel/config/usb_gadget';
 
 /**
@@ -84,13 +85,16 @@ export interface UdcSlotReport {
 
 /** Options for {@link probeUdcSlots}. */
 export interface ProbeUdcSlotsOpts {
-  vmName: string;
-  subprocess?: SubprocessRunner;
+  /**
+   * Link to the substrate to read controller state from. Defaults to the
+   * selected device substrate; tests inject a link over a scripted runner.
+   */
+  link?: SubstrateLink;
   timeoutMs?: number;
 }
 
 /**
- * Shell program run inside the VM. Emits one `key value…` record per line so
+ * Shell program run inside the substrate. Emits one `key value…` record per line so
  * the host side does no positional parsing of `systemctl` table output:
  *
  *   udc <name>                     — one per controller the kernel exposes
@@ -98,10 +102,10 @@ export interface ProbeUdcSlotsOpts {
  *   claim <gadget> <udc>           — a gadget whose UDC file is non-empty
  *   active <persona-id>            — a running dummy-hcd-daemon instance
  *
- * Every step is failure-tolerant: a VM with no gadgets, no modprobe config, or
- * no matching units simply emits fewer lines. The probe never exits non-zero
- * for an empty answer, so the caller can treat non-zero as "the probe itself
- * failed" rather than "nothing to report".
+ * Every step is failure-tolerant: a substrate with no gadgets, no modprobe
+ * config, or no matching units simply emits fewer lines. The probe never exits
+ * non-zero for an empty answer, so the caller can treat non-zero as "the probe
+ * itself failed" rather than "nothing to report".
  */
 const PROBE_SCRIPT = [
   'for u in /sys/class/udc/*; do [ -e "$u" ] && echo "udc $(basename "$u")"; done',
@@ -117,24 +121,23 @@ const PROBE_SCRIPT = [
 ].join('\n');
 
 /**
- * Read controller availability out of the VM. One `limactl shell` round trip.
+ * Read controller availability out of the substrate. One link round trip.
  *
- * Throws only when the probe itself could not run — an empty VM (no gadgets,
- * no daemons) is a perfectly good report with everything free.
+ * Throws only when the probe itself could not run — an empty substrate (no
+ * gadgets, no daemons) is a perfectly good report with everything free. An
+ * unreachable substrate throws `SubstrateLinkError`, which callers treat as
+ * "cannot say" rather than as a controller fault.
  */
 export async function probeUdcSlots(opts: ProbeUdcSlotsOpts): Promise<UdcSlotReport> {
-  const subprocess = opts.subprocess ?? defaultSubprocessRunner;
-  if (!opts.vmName) throw new Error('probeUdcSlots: vmName is required.');
+  const link = opts.link ?? deviceSubstrateLink();
 
-  const result = await runLimactl(
-    subprocess,
-    ['shell', opts.vmName, '--', 'sh', '-c', PROBE_SCRIPT],
-    { timeoutMs: opts.timeoutMs ?? UDC_SLOT_PROBE_TIMEOUT_MS }
-  );
+  const result = await link.exec(['sh', '-c', PROBE_SCRIPT], {
+    timeoutMs: opts.timeoutMs ?? UDC_SLOT_PROBE_TIMEOUT_MS,
+  });
   if (result.exitCode !== 0) {
-    throw new Error(
-      `probeUdcSlots: could not read UDC state in ${opts.vmName}: exit=${result.exitCode}: ` +
-        (result.stderr.trim() || result.stdout.trim() || '(no output)')
+    throw guestCommandError(
+      `probeUdcSlots: could not read UDC state in ${link.description}`,
+      result
     );
   }
   return parseUdcSlotProbe(result.stdout);

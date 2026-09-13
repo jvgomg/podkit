@@ -8,11 +8,13 @@
  * the box. This module is what carries them there and runs them.
  *
  * Both provisioners end up here with the same two steps: copy the scripts in,
- * execute them as root. Lima goes through `limactl copy` / `limactl shell`
- * today; an SSH substrate reaches the identical scripts through `scp` / `ssh`.
- * That symmetry is deliberate — it is what stops the Lima path and the
- * Proxmox path from being two separately-correct implementations, which is
- * the failure mode ADR-028 diagnoses about the harness generally.
+ * execute them as root — and they reach them through the same code, because
+ * this module talks to a {@link SubstrateLink} rather than to a provisioner's
+ * CLI. Lima's link spells those steps `limactl copy` / `limactl shell`; an SSH
+ * substrate's spells them `scp` / `ssh`. That symmetry is deliberate: it is
+ * what stops the Lima path and the Proxmox path from being two
+ * separately-correct implementations, which is the failure mode ADR-028
+ * diagnoses about the harness generally.
  *
  * Lima cannot reference an external file from a `provision:` block (its entries
  * take an inline `script` or inline `content`), so provisioning runs post-boot
@@ -24,10 +26,11 @@
 
 import * as path from 'node:path';
 
-import { repoRoot, runLimactl } from '@podkit/lima';
-import type { SubprocessRunner } from '@podkit/device-types';
+import { repoRoot } from '@podkit/lima';
+import { guestCommandError, type SubstrateLink } from '@podkit/substrate';
 
-import { defaultSubprocessRunner } from '../subprocess.js';
+import { deviceSubstrateLink } from './substrate.js';
+import { installIntoSubstrate } from './substrate-install.js';
 
 /**
  * Directory the contract scripts are installed into inside a substrate.
@@ -59,10 +62,12 @@ export function substrateScriptVmPath(script: (typeof SUBSTRATE_SCRIPTS)[number]
 }
 
 export interface SubstrateContractOpts {
-  /** Lima instance the scripts are carried to. */
-  vmName: string;
-  /** Injected for tests; defaults to the real execFile runner. */
-  subprocess?: SubprocessRunner;
+  /**
+   * Link to the substrate the scripts are carried to. Defaults to the selected
+   * device substrate; tests inject a link over a recording runner, which is
+   * what pins the two-step shape a second provisioner has to reproduce.
+   */
+  link?: SubstrateLink;
 }
 
 /**
@@ -86,53 +91,40 @@ const DOCTOR_TIMEOUT_MS = 60_000;
  * {@link SUBSTRATE_SCRIPT_DIR}.
  *
  * Files land in `/tmp` first and are then `sudo install`ed into place, rather
- * than being copied to their destination directly: `limactl copy` runs as the
+ * than being copied to their destination directly: every link copies as the
  * unprivileged guest user and cannot write under `/usr/local/lib`.
  */
 export async function copySubstrateScripts(opts: SubstrateContractOpts): Promise<void> {
-  const { vmName, subprocess = defaultSubprocessRunner } = opts;
+  const link = opts.link ?? deviceSubstrateLink();
   const hostDir = substrateScriptDir();
 
-  const mkdir = await runLimactl(
-    subprocess,
-    ['shell', vmName, '--', 'sudo', 'install', '-d', '-m', '0755', SUBSTRATE_SCRIPT_DIR],
-    { timeoutMs: COPY_TIMEOUT_MS }
-  );
+  const mkdir = await link.exec(['sudo', 'install', '-d', '-m', '0755', SUBSTRATE_SCRIPT_DIR], {
+    timeoutMs: COPY_TIMEOUT_MS,
+  });
   if (mkdir.exitCode !== 0) {
-    throw new Error(
-      `failed to create ${SUBSTRATE_SCRIPT_DIR} in \`${vmName}\`: ${mkdir.stderr.trim()}`
+    throw guestCommandError(
+      `failed to create ${SUBSTRATE_SCRIPT_DIR} in \`${link.description}\``,
+      mkdir
     );
   }
 
   for (const script of SUBSTRATE_SCRIPTS) {
-    const stagedPath = path.posix.join('/tmp', script);
-    const copy = await runLimactl(
-      subprocess,
-      ['copy', path.join(hostDir, script), `${vmName}:${stagedPath}`],
-      { timeoutMs: COPY_TIMEOUT_MS }
-    );
-    if (copy.exitCode !== 0) {
-      throw new Error(`failed to copy ${script} to \`${vmName}\`: ${copy.stderr.trim()}`);
-    }
-
-    const install = await runLimactl(
-      subprocess,
-      [
-        'shell',
-        vmName,
-        '--',
-        'sudo',
-        'install',
-        '-m',
-        '0755',
-        stagedPath,
-        substrateScriptVmPath(script),
-      ],
-      { timeoutMs: COPY_TIMEOUT_MS }
-    );
-    if (install.exitCode !== 0) {
-      throw new Error(`failed to install ${script} in \`${vmName}\`: ${install.stderr.trim()}`);
-    }
+    // The shared installer rather than a local copy/install pair: it is the
+    // same three steps, and it is the one that also sweeps the staged copy out
+    // of `/tmp` afterwards. The explicit `install -d` above stays rather than
+    // being folded into the installer's `createParents`, because a directory
+    // this provisioning owns should fail as itself rather than as "could not
+    // install substrate-contract.sh".
+    await installIntoSubstrate({
+      link,
+      hostPath: path.join(hostDir, script),
+      guestPath: substrateScriptVmPath(script),
+      stagePath: path.posix.join('/tmp', script),
+      mode: '0755',
+      label: script,
+      copyTimeoutMs: COPY_TIMEOUT_MS,
+      installTimeoutMs: COPY_TIMEOUT_MS,
+    });
   }
 }
 
@@ -145,17 +137,16 @@ export async function copySubstrateScripts(opts: SubstrateContractOpts): Promise
  * substrate regardless of what provisioned it.
  */
 export async function provisionSubstrate(opts: SubstrateContractOpts): Promise<void> {
-  const { vmName, subprocess = defaultSubprocessRunner } = opts;
-  await copySubstrateScripts(opts);
+  const link = opts.link ?? deviceSubstrateLink();
+  await copySubstrateScripts({ link });
 
-  const result = await runLimactl(
-    subprocess,
-    ['shell', vmName, '--', 'sudo', 'bash', substrateScriptVmPath('provision-substrate.sh')],
+  const result = await link.exec(
+    ['sudo', 'bash', substrateScriptVmPath('provision-substrate.sh')],
     { timeoutMs: PROVISION_TIMEOUT_MS }
   );
   if (result.exitCode !== 0) {
     throw new Error(
-      `provision-substrate.sh failed in \`${vmName}\` (exit ${result.exitCode}):\n` +
+      `provision-substrate.sh failed in \`${link.description}\` (exit ${result.exitCode}):\n` +
         `${result.stderr.trim() || result.stdout.trim()}`
     );
   }
@@ -197,19 +188,13 @@ export interface SubstrateDoctorOpts extends SubstrateContractOpts {
 export async function runSubstrateDoctor(
   opts: SubstrateDoctorOpts
 ): Promise<SubstrateDoctorResult> {
-  const { vmName, subprocess = defaultSubprocessRunner, strict = false, skipCopy = false } = opts;
-  if (!skipCopy) await copySubstrateScripts(opts);
+  const { strict = false, skipCopy = false } = opts;
+  const link = opts.link ?? deviceSubstrateLink();
+  if (!skipCopy) await copySubstrateScripts({ link });
 
-  const args = [
-    'shell',
-    vmName,
-    '--',
-    'sudo',
-    'bash',
-    substrateScriptVmPath('substrate-doctor.sh'),
-  ];
-  if (strict) args.push('--strict');
+  const argv = ['sudo', 'bash', substrateScriptVmPath('substrate-doctor.sh')];
+  if (strict) argv.push('--strict');
 
-  const result = await runLimactl(subprocess, args, { timeoutMs: DOCTOR_TIMEOUT_MS });
+  const result = await link.exec(argv, { timeoutMs: DOCTOR_TIMEOUT_MS });
   return { ok: result.exitCode === 0, stdout: result.stdout, stderr: result.stderr };
 }

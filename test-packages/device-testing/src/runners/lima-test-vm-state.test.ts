@@ -13,6 +13,31 @@ import { describe, it, expect } from 'bun:test';
 import { applyState } from './lima-test-vm-state.js';
 import type { SubprocessRunner, SubprocessRunOpts, SubprocessRunResult } from '../subprocess.js';
 import type { SystemStateId } from '../system-states/types.js';
+import { createLimactlLink } from '@podkit/lima';
+
+// ---------------------------------------------------------------------------
+// Substrate link over a scripted runner
+//
+// The harness talks to a `SubstrateLink`, never to `limactl` directly — so the
+// seam the assertions below record is the link's argv. Building a limactl link
+// over the scripted runner keeps those assertions pinning exactly what a real
+// Lima substrate receives, which is the point: they are what a second
+// implementation has to reproduce.
+// ---------------------------------------------------------------------------
+
+/**
+ * A runner that fails the test if anything reaches it. The default for cases
+ * whose whole point is that a host-side guard fires BEFORE the substrate is
+ * touched — "no runner in scope" would otherwise read as "no assertion".
+ */
+const neverReached: SubprocessRunner = {
+  async run(command, args) {
+    throw new Error(`unexpected substrate call: ${command} ${args.join(' ')}`);
+  },
+};
+
+const linkTo = (instanceName: string, subprocess: SubprocessRunner = neverReached) =>
+  createLimactlLink({ id: instanceName, instanceName }, { subprocess });
 
 // ---------------------------------------------------------------------------
 // Scripted SubprocessRunner
@@ -80,9 +105,8 @@ describe('applyState: copy → chmod → exec sequence', () => {
     ]);
 
     await applyState({
-      vmName: 'podkit-device',
+      link: linkTo('podkit-device', runner),
       stateId: 'no-ffmpeg',
-      subprocess: runner,
       applyStateScript: SCRIPT_PATH,
     });
 
@@ -115,9 +139,8 @@ describe('applyState: copy → chmod → exec sequence', () => {
   it('returns void (no snapshot metadata in the result)', async () => {
     const { runner } = makeScriptedRunner([ok(), ok(), ok()]);
     const result = await applyState({
-      vmName: 'podkit-device',
+      link: linkTo('podkit-device', runner),
       stateId: 'healthy',
-      subprocess: runner,
       applyStateScript: SCRIPT_PATH,
     });
     expect(result).toBeUndefined();
@@ -150,9 +173,8 @@ describe('applyState: every SystemState id is supported', () => {
       ]);
 
       await applyState({
-        vmName: 'podkit-device',
+        link: linkTo('podkit-device', runner),
         stateId,
-        subprocess: runner,
         applyStateScript: SCRIPT_PATH,
       });
 
@@ -176,16 +198,16 @@ describe('applyState: error propagation', () => {
     let caught: Error | undefined;
     try {
       await applyState({
-        vmName: 'podkit-device',
+        link: linkTo('podkit-device', runner),
         stateId: 'no-ffmpeg',
-        subprocess: runner,
         applyStateScript: SCRIPT_PATH,
       });
     } catch (err) {
       caught = err as Error;
     }
     expect(caught).toBeDefined();
-    expect(caught!.message).toContain('failed to copy apply-state.sh');
+    expect(caught!.message).toContain('failed to copy');
+    expect(caught!.message).toContain('/tmp/apply-state.sh');
     expect(caught!.message).toContain('permission denied');
   });
 
@@ -197,9 +219,8 @@ describe('applyState: error propagation', () => {
     let caught: Error | undefined;
     try {
       await applyState({
-        vmName: 'podkit-device',
+        link: linkTo('podkit-device', runner),
         stateId: 'no-ffmpeg',
-        subprocess: runner,
         applyStateScript: SCRIPT_PATH,
       });
     } catch (err) {
@@ -219,9 +240,8 @@ describe('applyState: error propagation', () => {
     let caught: Error | undefined;
     try {
       await applyState({
-        vmName: 'podkit-device',
+        link: linkTo('podkit-device', runner),
         stateId: 'no-ffmpeg',
-        subprocess: runner,
         applyStateScript: SCRIPT_PATH,
       });
     } catch (err) {
@@ -232,17 +252,10 @@ describe('applyState: error propagation', () => {
     expect(caught!.message).toContain('must be run as root');
   });
 
-  it('requires vmName and stateId', async () => {
+  it('requires a stateId', async () => {
     await expect(
       applyState({
-        vmName: '',
-        stateId: 'healthy',
-      })
-    ).rejects.toThrow(/vmName is required/);
-
-    await expect(
-      applyState({
-        vmName: 'vm',
+        link: linkTo('vm'),
         // @ts-expect-error — deliberately invalid stateId
         stateId: '',
       })

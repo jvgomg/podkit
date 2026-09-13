@@ -53,7 +53,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 
 import {
-  limaTestVmRunner,
+  deviceHarness,
   VM_COLD_TIMEOUT_MS,
   VM_WARM_TIMEOUT_MS,
   runJsonCommand,
@@ -62,22 +62,22 @@ import {
 
 describe('VM: udev rule USB scope', () => {
   beforeAll(async () => {
-    await limaTestVmRunner.prepare();
+    await deviceHarness.prepare();
   }, VM_COLD_TIMEOUT_MS);
 
   afterAll(async () => {
-    await limaTestVmRunner.teardown();
+    await deviceHarness.teardown();
   }, VM_COLD_TIMEOUT_MS);
 
   describe(`SystemState: ${healthy.id}`, () => {
     beforeAll(async () => {
-      await limaTestVmRunner.applyState(healthy);
+      await deviceHarness.applyState(healthy);
     }, VM_COLD_TIMEOUT_MS);
 
     it(
       'installed udev rule covers both scsi_generic AND usb subsystems for Apple vendor 05ac',
       async () => {
-        const result = await limaTestVmRunner.run('cat /etc/udev/rules.d/91-podkit-ipod.rules', {
+        const result = await deviceHarness.run('cat /etc/udev/rules.d/91-podkit-ipod.rules', {
           timeoutMs: VM_WARM_TIMEOUT_MS,
         });
         expect(result.exitCode).toBe(0);
@@ -119,7 +119,7 @@ describe('VM: udev rule USB scope', () => {
         // A correctly-provisioned VM only has the new name; the legacy
         // file must NOT be loaded by udev alongside it (would cause
         // duplicate rule processing).
-        const result = await limaTestVmRunner.run(
+        const result = await deviceHarness.run(
           'ls /etc/udev/rules.d/91-podkit-ipod-scsi.rules 2>/dev/null || echo "absent"',
           { timeoutMs: VM_WARM_TIMEOUT_MS }
         );
@@ -145,7 +145,7 @@ describe('VM: udev rule USB scope', () => {
         // exit 2 (some check warns/fails), so the assertion stays robust if
         // the environment later gains a warning check.
         const invocation = await runJsonCommand(
-          limaTestVmRunner,
+          deviceHarness,
           '/usr/local/bin/podkit doctor --scope system --json',
           VM_WARM_TIMEOUT_MS
         );

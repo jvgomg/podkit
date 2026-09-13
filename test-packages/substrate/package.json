@@ -17,12 +17,15 @@
     "src"
   ],
   "scripts": {
-    "build": "bun build src/index.ts --outdir dist --target node && bun run build:types",
+    "build": "bun build src/index.ts --outdir dist --target node --external @podkit/device-types && bun run build:types",
     "build:types": "tsc -p tsconfig.build.json --emitDeclarationOnly --outDir dist",
     "test": "true",
     "test:unit": "bun test --pass-with-no-tests",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@podkit/device-types": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "^1.4.2",

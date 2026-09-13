@@ -17,7 +17,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import {
-  createLimaTestVmRuntime,
+  createDeviceHarness,
   ensurePersonaSidecar,
   stageBackingFile,
   resetBackingFile,
@@ -33,6 +33,31 @@ import { healthy, noFfmpeg } from '../system-states/index.js';
 import { parseSidecar } from '../personas/sidecar.js';
 import type { DevicePersona } from '../personas/types.js';
 import type { SubprocessRunner, SubprocessRunOpts, SubprocessRunResult } from '../subprocess.js';
+import { createLimactlLink, deviceVm } from '@podkit/lima';
+
+// ---------------------------------------------------------------------------
+// Substrate link over a scripted runner
+//
+// The harness talks to a `SubstrateLink`, never to `limactl` directly — so the
+// seam the assertions below record is the link's argv. Building a limactl link
+// over the scripted runner keeps those assertions pinning exactly what a real
+// Lima substrate receives, which is the point: they are what a second
+// implementation has to reproduce.
+// ---------------------------------------------------------------------------
+
+/**
+ * A runner that fails the test if anything reaches it. The default for cases
+ * whose whole point is that a host-side guard fires BEFORE the substrate is
+ * touched — "no runner in scope" would otherwise read as "no assertion".
+ */
+const neverReached: SubprocessRunner = {
+  async run(command, args) {
+    throw new Error(`unexpected substrate call: ${command} ${args.join(' ')}`);
+  },
+};
+
+const linkTo = (instanceName: string, subprocess: SubprocessRunner = neverReached) =>
+  createLimactlLink({ id: instanceName, instanceName }, { subprocess });
 
 // ---------------------------------------------------------------------------
 // Scripted SubprocessRunner — same shape as the sibling test files
@@ -204,7 +229,7 @@ describe('runtime.run timeout reporting', () => {
         throw err;
       },
     };
-    const runtime = createLimaTestVmRuntime({ subprocess: timedOut });
+    const runtime = createDeviceHarness({ substrate: deviceVm(), subprocess: timedOut });
     await expect(runtime.run('sleep 30', { timeoutMs: 2_000 })).rejects.toThrow(
       /timed out after 2000ms/
     );
@@ -216,7 +241,7 @@ describe('runtime.run timeout reporting', () => {
         throw new Error('spawn limactl ENOENT');
       },
     };
-    const runtime = createLimaTestVmRuntime({ subprocess: missing });
+    const runtime = createDeviceHarness({ substrate: deviceVm(), subprocess: missing });
     await expect(runtime.run('true')).rejects.toThrow(/brew install lima/);
   });
 });
@@ -228,19 +253,19 @@ describe('runtime.run timeout reporting', () => {
 describe('runtime.isAvailable', () => {
   it('returns true when the instance exists', async () => {
     const { runner } = makeScriptedRunner([listJsonRunning()]);
-    const runtime = createLimaTestVmRuntime({ subprocess: runner });
+    const runtime = createDeviceHarness({ substrate: deviceVm(), subprocess: runner });
     expect(await runtime.isAvailable()).toBe(true);
   });
 
   it('returns false when the instance is missing', async () => {
     const { runner } = makeScriptedRunner([listJsonMissing()]);
-    const runtime = createLimaTestVmRuntime({ subprocess: runner });
+    const runtime = createDeviceHarness({ substrate: deviceVm(), subprocess: runner });
     expect(await runtime.isAvailable()).toBe(false);
   });
 
   it('returns false when limactl is absent (does not throw)', async () => {
     const { runner } = makeScriptedRunner([new Error('spawn limactl ENOENT')]);
-    const runtime = createLimaTestVmRuntime({ subprocess: runner });
+    const runtime = createDeviceHarness({ substrate: deviceVm(), subprocess: runner });
     expect(await runtime.isAvailable()).toBe(false);
   });
 });
@@ -269,7 +294,8 @@ describe('runtime.prepare', () => {
       ok(), // rm temp
     ]);
 
-    const runtime = createLimaTestVmRuntime({
+    const runtime = createDeviceHarness({
+      substrate: deviceVm(),
       subprocess: runner,
       resolvePodkitBinary: () => podkitBinary,
       resolveDummyHcdDaemonBinary: () => path.join(tmpRoot, 'no-such-daemon'), // not present → skip
@@ -307,7 +333,8 @@ describe('runtime.prepare', () => {
       ok(), // rm temp
     ]);
 
-    const runtime = createLimaTestVmRuntime({
+    const runtime = createDeviceHarness({
+      substrate: deviceVm(),
       subprocess: runner,
       resolvePodkitBinary: () => podkitBinary,
       resolveDummyHcdDaemonBinary: () => path.join(tmpRoot, 'no-such-daemon'),
@@ -325,7 +352,8 @@ describe('runtime.prepare', () => {
 
   it('throws a clear error when the instance is missing entirely', async () => {
     const { runner } = makeScriptedRunner([listJsonMissing()]);
-    const runtime = createLimaTestVmRuntime({
+    const runtime = createDeviceHarness({
+      substrate: deviceVm(),
       subprocess: runner,
       resolvePodkitBinary: () => podkitBinary,
       resolveDummyHcdDaemonBinary: () => path.join(tmpRoot, 'no-such-daemon'),
@@ -341,7 +369,8 @@ describe('runtime.prepare', () => {
       caught = err as Error;
     }
     expect(caught).toBeDefined();
-    expect(caught!.message).toContain('is not registered with Lima');
+    expect(caught!.message).toContain('is not registered');
+    expect(caught!.message).toContain('harness:setup');
     expect(caught!.message).toContain('harness:setup');
   });
 
@@ -361,7 +390,8 @@ describe('runtime.prepare', () => {
       ok(), // sidecar cleanup
     ]);
 
-    const runtime = createLimaTestVmRuntime({
+    const runtime = createDeviceHarness({
+      substrate: deviceVm(),
       subprocess: runner,
       resolvePodkitBinary: () => podkitBinary,
       resolveDummyHcdDaemonBinary: () => daemonBinary,
@@ -392,7 +422,8 @@ describe('runtime.prepare', () => {
       // BEFORE issuing any limactl call.
     ]);
 
-    const runtime = createLimaTestVmRuntime({
+    const runtime = createDeviceHarness({
+      substrate: deviceVm(),
       subprocess: runner,
       resolvePodkitBinary: () => podkitBinary,
       resolveDummyHcdDaemonBinary: () => path.join(tmpRoot, 'no-such-daemon'),
@@ -414,7 +445,8 @@ describe('runtime.prepare', () => {
 
   it('fails loudly when the podkit binary is missing', async () => {
     const { runner } = makeScriptedRunner([listJsonRunning()]);
-    const runtime = createLimaTestVmRuntime({
+    const runtime = createDeviceHarness({
+      substrate: deviceVm(),
       subprocess: runner,
       resolvePodkitBinary: () => path.join(tmpRoot, 'no-such-podkit'),
       resolveDummyHcdDaemonBinary: () => path.join(tmpRoot, 'no-such-daemon'),
@@ -450,7 +482,8 @@ describe('runtime.prepare', () => {
       ok(), // sidecar cleanup
     ]);
 
-    const runtime = createLimaTestVmRuntime({
+    const runtime = createDeviceHarness({
+      substrate: deviceVm(),
       subprocess: runner,
       resolvePodkitBinary: () => podkitBinary,
       resolveDummyHcdDaemonBinary: () => path.join(tmpRoot, 'no-such-daemon'),
@@ -492,7 +525,7 @@ describe('runtime.applyState', () => {
       ok('[apply-state] applied: no-ffmpeg\n'), // exec
     ]);
 
-    const runtime = createLimaTestVmRuntime({ subprocess: runner });
+    const runtime = createDeviceHarness({ substrate: deviceVm(), subprocess: runner });
     await runtime.applyState(noFfmpeg);
 
     expect(calls).toHaveLength(3);
@@ -506,7 +539,7 @@ describe('runtime.applyState', () => {
     const { runner } = makeScriptedRunner([
       fail(1, 'permission denied'), // copy fails
     ]);
-    const runtime = createLimaTestVmRuntime({ subprocess: runner });
+    const runtime = createDeviceHarness({ substrate: deviceVm(), subprocess: runner });
 
     let caught: Error | undefined;
     try {
@@ -515,7 +548,8 @@ describe('runtime.applyState', () => {
       caught = err as Error;
     }
     expect(caught).toBeDefined();
-    expect(caught!.message).toContain('failed to copy apply-state.sh');
+    expect(caught!.message).toContain('failed to copy');
+    expect(caught!.message).toContain('/tmp/apply-state.sh');
     expect(caught!.message).toContain('permission denied');
   });
 });
@@ -527,7 +561,7 @@ describe('runtime.applyState', () => {
 describe('runtime.run', () => {
   it('shells into the VM with `limactl shell <vm> -- sh -c <wrapped>` and captures output', async () => {
     const { runner, calls } = makeScriptedRunner([ok('hello world\n')]);
-    const runtime = createLimaTestVmRuntime({ subprocess: runner });
+    const runtime = createDeviceHarness({ substrate: deviceVm(), subprocess: runner });
 
     const result = await runtime.run('echo hello world');
 
@@ -547,21 +581,21 @@ describe('runtime.run', () => {
 
   it('honours opts.cwd via `cd` prefix', async () => {
     const { runner, calls } = makeScriptedRunner([ok('')]);
-    const runtime = createLimaTestVmRuntime({ subprocess: runner });
+    const runtime = createDeviceHarness({ substrate: deviceVm(), subprocess: runner });
     await runtime.run('pwd', { cwd: '/var/device-testing' });
     expect(calls[0]!.args[5]).toBe(`cd '/var/device-testing'; pwd`);
   });
 
   it('honours opts.env via export prefix', async () => {
     const { runner, calls } = makeScriptedRunner([ok('')]);
-    const runtime = createLimaTestVmRuntime({ subprocess: runner });
+    const runtime = createDeviceHarness({ substrate: deviceVm(), subprocess: runner });
     await runtime.run('env | grep FOO', { env: { FOO: 'bar baz' } });
     expect(calls[0]!.args[5]).toBe(`export FOO='bar baz'; env | grep FOO`);
   });
 
   it('rejects an env key with an invalid shell name', async () => {
     const { runner } = makeScriptedRunner([]);
-    const runtime = createLimaTestVmRuntime({ subprocess: runner });
+    const runtime = createDeviceHarness({ substrate: deviceVm(), subprocess: runner });
     await expect(runtime.run('true', { env: { 'BAD-KEY': 'x' } })).rejects.toThrow(
       /invalid variable name/
     );
@@ -569,14 +603,14 @@ describe('runtime.run', () => {
 
   it('passes opts.timeoutMs through to the underlying subprocess runner', async () => {
     const { runner, calls } = makeScriptedRunner([ok('')]);
-    const runtime = createLimaTestVmRuntime({ subprocess: runner });
+    const runtime = createDeviceHarness({ substrate: deviceVm(), subprocess: runner });
     await runtime.run('sleep 60', { timeoutMs: 1000 });
     expect(calls[0]!.opts?.timeoutMs).toBe(1000);
   });
 
   it('surfaces a non-zero exit code without throwing', async () => {
     const { runner } = makeScriptedRunner([fail(2, 'whoops')]);
-    const runtime = createLimaTestVmRuntime({ subprocess: runner });
+    const runtime = createDeviceHarness({ substrate: deviceVm(), subprocess: runner });
     const result = await runtime.run('false');
     expect(result.exitCode).toBe(2);
     expect(result.stderr).toBe('whoops');
@@ -584,7 +618,7 @@ describe('runtime.run', () => {
 
   it('wraps a transport-level ENOENT in a clear error', async () => {
     const { runner } = makeScriptedRunner([new Error('spawn limactl ENOENT')]);
-    const runtime = createLimaTestVmRuntime({ subprocess: runner });
+    const runtime = createDeviceHarness({ substrate: deviceVm(), subprocess: runner });
     let caught: Error | undefined;
     try {
       await runtime.run('true');
@@ -603,14 +637,14 @@ describe('runtime.run', () => {
 describe('runtime.teardown', () => {
   it('is a no-op (issues no limactl calls)', async () => {
     const { runner, calls } = makeScriptedRunner([]);
-    const runtime = createLimaTestVmRuntime({ subprocess: runner });
+    const runtime = createDeviceHarness({ substrate: deviceVm(), subprocess: runner });
     await runtime.teardown();
     expect(calls).toHaveLength(0);
   });
 
   it('does not shut down the VM', async () => {
     const { runner, calls } = makeScriptedRunner([]);
-    const runtime = createLimaTestVmRuntime({ subprocess: runner });
+    const runtime = createDeviceHarness({ substrate: deviceVm(), subprocess: runner });
     await runtime.teardown();
     const hasStop = calls.some((c) => c.args[0] === 'stop' || c.args.includes('shutdown'));
     expect(hasStop).toBe(false);
@@ -679,9 +713,8 @@ describe('ensurePersonaSidecar', () => {
     ]);
 
     const result = await ensurePersonaSidecar({
-      vmName: LIMA_DEVICE_HARNESS_VM_NAME,
+      link: linkTo(LIMA_DEVICE_HARNESS_VM_NAME, runner),
       personas: [fakePersona],
-      subprocess: runner,
     });
 
     expect(result.vmPath).toBe(SIDECAR_VM_PATH);
@@ -712,9 +745,8 @@ describe('ensurePersonaSidecar', () => {
     let caught: Error | undefined;
     try {
       await ensurePersonaSidecar({
-        vmName: LIMA_DEVICE_HARNESS_VM_NAME,
+        link: linkTo(LIMA_DEVICE_HARNESS_VM_NAME, runner),
         personas: [fakePersona],
-        subprocess: runner,
       });
     } catch (err) {
       caught = err as Error;
@@ -740,9 +772,8 @@ describe('ensurePersonaSidecar', () => {
     ]);
 
     await ensurePersonaSidecar({
-      vmName: LIMA_DEVICE_HARNESS_VM_NAME,
+      link: linkTo(LIMA_DEVICE_HARNESS_VM_NAME, runner),
       personas: [fakePersona],
-      subprocess: runner,
     });
 
     expect(capturedJson).toBeDefined();
@@ -750,12 +781,6 @@ describe('ensurePersonaSidecar', () => {
     expect(parsed.schemaVersion).toBe(1);
     expect(parsed.personas['fake-persona']).toBeDefined();
     expect(parsed.personas['fake-persona']!.usbDescriptor.vendorId).toBe('0x05ac');
-  });
-
-  it('requires vmName', async () => {
-    await expect(ensurePersonaSidecar({ vmName: '', personas: [fakePersona] })).rejects.toThrow(
-      /vmName is required/
-    );
   });
 });
 
@@ -776,10 +801,9 @@ describe('stageBackingFile', () => {
   it('skips copy + install when the VM already has the same sha256', async () => {
     const { runner, calls } = makeScriptedRunner([ok(imgSha + '\n')]);
     await stageBackingFile({
-      vmName: LIMA_DEVICE_HARNESS_VM_NAME,
+      link: linkTo(LIMA_DEVICE_HARNESS_VM_NAME, runner),
       hostImagePath: imgPath,
       vmPath: '/var/device-testing/backing.img',
-      subprocess: runner,
     });
     expect(calls).toHaveLength(1);
     expect(calls[0]!.args.join(' ')).toContain('sha256sum');
@@ -793,10 +817,9 @@ describe('stageBackingFile', () => {
       ok(), // rm temp
     ]);
     await stageBackingFile({
-      vmName: LIMA_DEVICE_HARNESS_VM_NAME,
+      link: linkTo(LIMA_DEVICE_HARNESS_VM_NAME, runner),
       hostImagePath: imgPath,
       vmPath: '/var/device-testing/backing.img',
-      subprocess: runner,
     });
     expect(calls).toHaveLength(4);
     expect(calls[1]!.args[0]).toBe('copy');
@@ -816,10 +839,9 @@ describe('stageBackingFile', () => {
     const { runner } = makeScriptedRunner([]);
     await expect(
       stageBackingFile({
-        vmName: LIMA_DEVICE_HARNESS_VM_NAME,
+        link: linkTo(LIMA_DEVICE_HARNESS_VM_NAME, runner),
         hostImagePath: path.join(tmpRoot, 'no-such-image'),
         vmPath: '/var/device-testing/backing.img',
-        subprocess: runner,
       })
     ).rejects.toThrow(/cannot read host image/);
   });
@@ -840,11 +862,10 @@ describe('resetBackingFile', () => {
       ok(), // rm temp
     ]);
     await resetBackingFile({
-      vmName: LIMA_DEVICE_HARNESS_VM_NAME,
+      link: linkTo(LIMA_DEVICE_HARNESS_VM_NAME, runner),
       hostImagePath: imgPath,
       vmPath: '/var/device-testing/backing.img',
       strategy: 'copy',
-      subprocess: runner,
     });
     expect(calls[2]!.args).toContain('/var/device-testing/backing.img');
   });
@@ -858,11 +879,10 @@ describe('resetBackingFile', () => {
       ok(), // sudo cp .ref → vmPath
     ]);
     await resetBackingFile({
-      vmName: LIMA_DEVICE_HARNESS_VM_NAME,
+      link: linkTo(LIMA_DEVICE_HARNESS_VM_NAME, runner),
       hostImagePath: imgPath,
       vmPath: '/var/device-testing/backing.img',
       strategy: 'swap',
-      subprocess: runner,
     });
     const lastCall = calls[calls.length - 1]!;
     expect(lastCall.args).toEqual([
@@ -937,9 +957,8 @@ describe('startDaemonForPersona', () => {
       isUsbProbe(c) ? ok('MATCH\n') : undefined
     );
     await startDaemonForPersona({
-      vmName: LIMA_DEVICE_HARNESS_VM_NAME,
+      link: linkTo(LIMA_DEVICE_HARNESS_VM_NAME, runner),
       persona: functionFsPersona,
-      subprocess: runner,
     });
     expect(calls[0]!.args).toEqual([
       'shell',
@@ -956,19 +975,18 @@ describe('startDaemonForPersona', () => {
     const { runner } = makeScriptedRunner([fail(1, 'Unit dummy-hcd-daemon@foo.service not found')]);
     await expect(
       startDaemonForPersona({
-        vmName: LIMA_DEVICE_HARNESS_VM_NAME,
+        link: linkTo(LIMA_DEVICE_HARNESS_VM_NAME, runner),
         persona: functionFsPersona,
-        subprocess: runner,
       })
     ).rejects.toThrow(/failed to start dummy-hcd-daemon@ipod-nano-3g-black\.service/);
   });
 
-  it('requires vmName and persona', async () => {
-    await expect(startDaemonForPersona({ vmName: '', persona: functionFsPersona })).rejects.toThrow(
-      /vmName is required/
-    );
+  it('requires a persona', async () => {
     await expect(
-      startDaemonForPersona({ vmName: 'x', persona: undefined as unknown as DevicePersona })
+      startDaemonForPersona({
+        link: linkTo(LIMA_DEVICE_HARNESS_VM_NAME),
+        persona: undefined as unknown as DevicePersona,
+      })
     ).rejects.toThrow(/persona is required/);
   });
 
@@ -981,9 +999,8 @@ describe('startDaemonForPersona', () => {
       isUsbProbe(c) ? ok('MATCH\n') : undefined
     );
     await startDaemonForPersona({
-      vmName: LIMA_DEVICE_HARNESS_VM_NAME,
+      link: linkTo(LIMA_DEVICE_HARNESS_VM_NAME, runner),
       persona: functionFsPersona,
-      subprocess: runner,
     });
     expect(calls[0]!.opts?.timeoutMs).toBe(DAEMON_LIFECYCLE_TIMEOUT_MS);
   });
@@ -1010,9 +1027,8 @@ describe('startDaemonForPersona', () => {
     });
 
     await startDaemonForPersona({
-      vmName: LIMA_DEVICE_HARNESS_VM_NAME,
+      link: linkTo(LIMA_DEVICE_HARNESS_VM_NAME, runner),
       persona: functionFsPersona,
-      subprocess: runner,
     });
 
     // Returning at all means it kept polling rather than trusting systemctl.
@@ -1028,9 +1044,8 @@ describe('startDaemonForPersona', () => {
       isUsbProbe(c) ? ok('MATCH\n') : undefined
     );
     await startDaemonForPersona({
-      vmName: LIMA_DEVICE_HARNESS_VM_NAME,
+      link: linkTo(LIMA_DEVICE_HARNESS_VM_NAME, runner),
       persona: functionFsPersona,
-      subprocess: runner,
     });
     // Order matters: start first, then probe. A probe that ran before the
     // start would be reporting on the previous persona's gadget.
@@ -1050,9 +1065,8 @@ describe('startDaemonForPersona', () => {
     });
 
     await startDaemonForPersona({
-      vmName: LIMA_DEVICE_HARNESS_VM_NAME,
+      link: linkTo(LIMA_DEVICE_HARNESS_VM_NAME, runner),
       persona: massStoragePersona,
-      subprocess: runner,
     });
 
     expect(scsiProbes).toBe(2);
@@ -1067,9 +1081,8 @@ describe('startDaemonForPersona', () => {
       isUsbProbe(c) ? ok('MATCH\n') : undefined
     );
     await startDaemonForPersona({
-      vmName: LIMA_DEVICE_HARNESS_VM_NAME,
+      link: linkTo(LIMA_DEVICE_HARNESS_VM_NAME, runner),
       persona: functionFsPersona,
-      subprocess: runner,
     });
     expect(calls.some(isScsiProbe)).toBe(false);
   });
@@ -1084,9 +1097,8 @@ describe('startDaemonForPersona', () => {
     });
 
     const err = await startDaemonForPersona({
-      vmName: LIMA_DEVICE_HARNESS_VM_NAME,
+      link: linkTo(LIMA_DEVICE_HARNESS_VM_NAME, runner),
       persona: functionFsPersona,
-      subprocess: runner,
       enumerationTimeoutMs: 200,
     }).catch((e: Error) => e);
 
@@ -1103,22 +1115,21 @@ describe('stopDaemon', () => {
   it('stops a specific persona instance when personaId is set', async () => {
     const { runner, calls } = makeScriptedRunner([ok()]);
     await stopDaemon({
-      vmName: LIMA_DEVICE_HARNESS_VM_NAME,
+      link: linkTo(LIMA_DEVICE_HARNESS_VM_NAME, runner),
       personaId: 'echo-mini',
-      subprocess: runner,
     });
     expect(calls[0]!.args).toContain('dummy-hcd-daemon@echo-mini.service');
   });
 
   it('stops all instances when personaId is omitted', async () => {
     const { runner, calls } = makeScriptedRunner([ok()]);
-    await stopDaemon({ vmName: LIMA_DEVICE_HARNESS_VM_NAME, subprocess: runner });
+    await stopDaemon({ link: linkTo(LIMA_DEVICE_HARNESS_VM_NAME, runner) });
     expect(calls[0]!.args).toContain('dummy-hcd-daemon@*.service');
   });
 
   it('bounds the invocation so a wedged shell cannot stall teardown', async () => {
     const { runner, calls } = makeScriptedRunner([ok()]);
-    await stopDaemon({ vmName: LIMA_DEVICE_HARNESS_VM_NAME, subprocess: runner });
+    await stopDaemon({ link: linkTo(LIMA_DEVICE_HARNESS_VM_NAME, runner) });
     expect(calls[0]!.opts?.timeoutMs).toBe(DAEMON_LIFECYCLE_TIMEOUT_MS);
   });
 
@@ -1126,14 +1137,14 @@ describe('stopDaemon', () => {
     // systemctl exits 5 when the unit isn't loaded / not running. VM
     // teardown calls `stopDaemon` unconditionally; this case must not throw.
     const { runner } = makeScriptedRunner([fail(5, 'Unit dummy-hcd-daemon@*.service not loaded.')]);
-    await stopDaemon({ vmName: LIMA_DEVICE_HARNESS_VM_NAME, subprocess: runner });
+    await stopDaemon({ link: linkTo(LIMA_DEVICE_HARNESS_VM_NAME, runner) });
   });
 
   it('propagates other non-zero systemctl exits', async () => {
     const { runner } = makeScriptedRunner([fail(1, 'Failed to stop unit: connection refused')]);
     let caught: Error | undefined;
     try {
-      await stopDaemon({ vmName: LIMA_DEVICE_HARNESS_VM_NAME, subprocess: runner });
+      await stopDaemon({ link: linkTo(LIMA_DEVICE_HARNESS_VM_NAME, runner) });
     } catch (err) {
       caught = err as Error;
     }
@@ -1149,18 +1160,18 @@ describe('stopDaemon', () => {
 describe('integration: index exports', () => {
   it('exposes a default singleton and a factory', async () => {
     const mod = await import('../index.js');
-    expect(mod.limaTestVmRunner.id).toBe('lima-test-vm');
-    expect(typeof mod.createLimaTestVmRuntime).toBe('function');
+    expect(mod.deviceHarness.id).toBe('device-substrate');
+    expect(typeof mod.createDeviceHarness).toBe('function');
     // The runtime is registered alongside local-linux.
     const ids = mod.listRunners().map((r) => r.id);
-    expect(ids).toContain('lima-test-vm');
+    expect(ids).toContain('device-substrate');
     expect(ids).toContain('local-linux');
   });
 
   it('applyState delegate on the registered singleton accepts a SystemState', async () => {
     // Just verify the signature plumbing — no real call.
     const mod = await import('../index.js');
-    expect(typeof mod.limaTestVmRunner.applyState).toBe('function');
+    expect(typeof mod.deviceHarness.applyState).toBe('function');
     // It accepts a SystemState; calling it would hit real limactl, so we don't.
     expect(healthy.id).toBe('healthy');
   });

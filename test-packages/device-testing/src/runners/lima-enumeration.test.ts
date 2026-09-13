@@ -19,6 +19,31 @@ import { describe, it, expect } from 'bun:test';
 import { waitForScsiGenericEnumeration, waitForUsbEnumeration } from './lima-enumeration.js';
 import type { DevicePersona } from '../personas/types.js';
 import type { SubprocessRunner, SubprocessRunOpts, SubprocessRunResult } from '../subprocess.js';
+import { createLimactlLink } from '@podkit/lima';
+
+// ---------------------------------------------------------------------------
+// Substrate link over a scripted runner
+//
+// The harness talks to a `SubstrateLink`, never to `limactl` directly — so the
+// seam the assertions below record is the link's argv. Building a limactl link
+// over the scripted runner keeps those assertions pinning exactly what a real
+// Lima substrate receives, which is the point: they are what a second
+// implementation has to reproduce.
+// ---------------------------------------------------------------------------
+
+/**
+ * A runner that fails the test if anything reaches it. The default for cases
+ * whose whole point is that a host-side guard fires BEFORE the substrate is
+ * touched — "no runner in scope" would otherwise read as "no assertion".
+ */
+const neverReached: SubprocessRunner = {
+  async run(command, args) {
+    throw new Error(`unexpected substrate call: ${command} ${args.join(' ')}`);
+  },
+};
+
+const linkTo = (instanceName: string, subprocess: SubprocessRunner = neverReached) =>
+  createLimactlLink({ id: instanceName, instanceName }, { subprocess });
 
 // ---------------------------------------------------------------------------
 // Scripted runner
@@ -75,9 +100,8 @@ describe('waitForScsiGenericEnumeration', () => {
   it('returns as soon as a node appears', async () => {
     const { runner, calls } = makeRunner(() => ({ ...EMPTY, stdout: '/dev/sg0\n' }));
     await waitForScsiGenericEnumeration({
-      vmName: 'podkit-device',
+      link: linkTo('podkit-device', runner),
       personaId: 'echo-mini',
-      subprocess: runner,
     });
     expect(calls).toHaveLength(1);
   });
@@ -86,9 +110,8 @@ describe('waitForScsiGenericEnumeration', () => {
     const { runner, calls } = makeRunner((call) => (isScsiProbe(call) ? EMPTY : EMPTY));
     await expect(
       waitForScsiGenericEnumeration({
-        vmName: 'podkit-device',
+        link: linkTo('podkit-device', runner),
         personaId: 'echo-mini',
-        subprocess: runner,
         timeoutMs: 300,
       })
     ).rejects.toThrow(/timed out after 300ms/);
@@ -109,9 +132,8 @@ describe('waitForScsiGenericEnumeration', () => {
     });
     await expect(
       waitForScsiGenericEnumeration({
-        vmName: 'podkit-device',
+        link: linkTo('podkit-device', runner),
         personaId: 'echo-mini',
-        subprocess: runner,
         timeoutMs: 200,
       })
     ).rejects.toThrow(/timed out after 200ms waiting for \/dev\/sg\*/);
@@ -138,9 +160,8 @@ describe('waitForScsiGenericEnumeration', () => {
     });
 
     const err = await waitForScsiGenericEnumeration({
-      vmName: 'podkit-device',
+      link: linkTo('podkit-device', runner),
       personaId: 'echo-mini',
-      subprocess: runner,
       timeoutMs: 200,
     }).catch((e: Error) => e);
 
@@ -159,7 +180,7 @@ describe('waitForUsbEnumeration', () => {
     const { runner, calls } = makeRunner((call) =>
       isUsbProbe(call) ? { ...EMPTY, stdout: 'MATCH\n' } : EMPTY
     );
-    await waitForUsbEnumeration({ vmName: 'podkit-device', persona, subprocess: runner });
+    await waitForUsbEnumeration({ link: linkTo('podkit-device', runner), persona });
     expect(calls[0]?.args.join(' ')).toContain("= '05ac'");
     expect(calls[0]?.args.join(' ')).toContain("= '1209'");
   });
@@ -168,9 +189,8 @@ describe('waitForUsbEnumeration', () => {
     const { runner, calls } = makeRunner(() => EMPTY);
     await expect(
       waitForUsbEnumeration({
-        vmName: 'podkit-device',
+        link: linkTo('podkit-device', runner),
         persona,
-        subprocess: runner,
         timeoutMs: 300,
       })
     ).rejects.toThrow(/timed out after 300ms/);
@@ -184,9 +204,8 @@ describe('waitForUsbEnumeration', () => {
   it('names the persona and the vid:pid it was waiting for', async () => {
     const { runner } = makeRunner(() => EMPTY);
     const err = await waitForUsbEnumeration({
-      vmName: 'podkit-device',
+      link: linkTo('podkit-device', runner),
       persona,
-      subprocess: runner,
       timeoutMs: 200,
     }).catch((e: Error) => e);
     expect((err as Error).message).toContain('05ac:1209');

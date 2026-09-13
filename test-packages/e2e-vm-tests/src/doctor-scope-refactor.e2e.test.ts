@@ -36,7 +36,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 
 import {
-  limaTestVmRunner,
+  deviceHarness,
   VM_COLD_TIMEOUT_MS,
   VM_WARM_TIMEOUT_MS,
   withPersona,
@@ -77,23 +77,23 @@ interface DeviceScanJson {
 
 describe('VM: doctor scope refactor + JSON shape', () => {
   beforeAll(async () => {
-    await limaTestVmRunner.prepare();
+    await deviceHarness.prepare();
   }, VM_COLD_TIMEOUT_MS);
 
   afterAll(async () => {
-    await limaTestVmRunner.teardown();
+    await deviceHarness.teardown();
   }, VM_COLD_TIMEOUT_MS);
 
   describe(`SystemState: ${healthy.id}`, () => {
     beforeAll(async () => {
-      await limaTestVmRunner.applyState(healthy);
+      await deviceHarness.applyState(healthy);
     }, VM_COLD_TIMEOUT_MS);
 
     it(
       'exits DEVICE_REQUIRED when --scope device is requested with no -d',
       async () => {
         const invocation = await runJsonCommand(
-          limaTestVmRunner,
+          deviceHarness,
           '/usr/local/bin/podkit doctor --scope device --json',
           VM_WARM_TIMEOUT_MS
         );
@@ -126,7 +126,7 @@ describe('VM: doctor scope refactor + JSON shape', () => {
         // declare its 3-way scope and must NOT carry the additive `category`
         // field 667d66b removed).
         const invocation = await runJsonCommand(
-          limaTestVmRunner,
+          deviceHarness,
           '/usr/local/bin/podkit doctor --scope system --json',
           VM_WARM_TIMEOUT_MS
         );
@@ -168,7 +168,7 @@ describe('VM: doctor scope refactor + JSON shape', () => {
         // `details.unsupported` must carry the discriminated payload.
         const invocation = await withPersona({ persona: ipodNano7gBlue }, () =>
           runJsonCommand(
-            limaTestVmRunner,
+            deviceHarness,
             '/usr/local/bin/podkit device scan --json',
             VM_WARM_TIMEOUT_MS
           )

@@ -30,9 +30,10 @@
  * @module
  */
 
+import type { SubstrateLink } from '@podkit/substrate';
+
 import type { DevicePersona } from '../personas/types.js';
-import { defaultSubprocessRunner, type SubprocessRunner } from '../subprocess.js';
-import { runLimactl } from './lima-limactl.js';
+import { deviceSubstrateLink } from './substrate.js';
 import {
   formatUdcSlotSummary,
   formatUdcSlotFailure,
@@ -44,11 +45,11 @@ import {
 // ---------------------------------------------------------------------------
 
 /**
- * Bound for a single `limactl shell` probe issued from inside a polling loop.
+ * Bound for a single link probe issued from inside a polling loop.
  *
  * A poll loop that checks its deadline *between* iterations is not bounded at
- * all if one iteration never returns — and `limactl shell` opens an SSH
- * session, which can hang indefinitely when the VM is starved. Each probe is
+ * all if one iteration never returns — and every link opens an SSH session,
+ * which can hang indefinitely when the substrate is starved. Each probe is
  * therefore given the time remaining on the caller's deadline, floored at this
  * value so a probe issued near the deadline still gets a fair chance to answer
  * on a loaded host rather than being cut off mid-handshake.
@@ -95,37 +96,37 @@ function probeTimeout(deadline: number): number {
  * @internal exported for tests
  */
 export async function waitForScsiGenericEnumeration(opts: {
-  vmName: string;
+  link?: SubstrateLink;
   personaId: string;
-  subprocess?: SubprocessRunner;
   timeoutMs?: number;
 }): Promise<void> {
-  const subprocess = opts.subprocess ?? defaultSubprocessRunner;
+  const link = opts.link ?? deviceSubstrateLink();
   const timeoutMs = opts.timeoutMs ?? ENUMERATION_TIMEOUT_MS;
   const deadline = Date.now() + timeoutMs;
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    const probe = await runLimactl(
-      subprocess,
-      [
-        'shell',
-        opts.vmName,
-        '--',
-        'sh',
-        '-c',
-        // `ls /dev/sg* 2>/dev/null | head -n1` outputs the first match or
-        // nothing. We branch on whether stdout is non-empty.
-        'ls /dev/sg* 2>/dev/null | head -n1',
-      ],
-      { timeoutMs: probeTimeout(deadline) }
-    ).catch(() => ({ exitCode: 1, stdout: '', stderr: '' }));
+    const probe = await link
+      .exec(
+        [
+          'sh',
+          '-c',
+          // `ls /dev/sg* 2>/dev/null | head -n1` outputs the first match or
+          // nothing. We branch on whether stdout is non-empty.
+          'ls /dev/sg* 2>/dev/null | head -n1',
+        ],
+        { timeoutMs: probeTimeout(deadline) }
+      )
+      // A link failure mid-poll is absorbed rather than propagated: the
+      // substrate may simply be busy binding a gadget, and the deadline below
+      // is what decides whether the wait has actually failed.
+      .catch(() => ({ exitCode: 1, stdout: '', stderr: '' }));
     if (probe.exitCode === 0 && probe.stdout.trim().length > 0) return;
     if (Date.now() >= deadline) {
-      const slotSuffix = await udcSlotSuffix(subprocess, opts.vmName);
-      const logSuffix = await daemonLogSuffix(subprocess, opts.vmName, opts.personaId);
+      const slotSuffix = await udcSlotSuffix(link);
+      const logSuffix = await daemonLogSuffix(link, opts.personaId);
       throw new Error(
         `startDaemonForPersona: timed out after ${timeoutMs}ms waiting for /dev/sg* to ` +
-          `appear in ${opts.vmName} for persona '${opts.personaId}'. ` +
+          `appear in ${link.description} for persona '${opts.personaId}'. ` +
           `Is the dummy-hcd-daemon binding mass-storage correctly?` +
           `${slotSuffix}${logSuffix}`
       );
@@ -148,12 +149,11 @@ export async function waitForScsiGenericEnumeration(opts: {
  * @internal exported for tests
  */
 export async function waitForUsbEnumeration(opts: {
-  vmName: string;
+  link?: SubstrateLink;
   persona: DevicePersona;
-  subprocess?: SubprocessRunner;
   timeoutMs?: number;
 }): Promise<void> {
-  const subprocess = opts.subprocess ?? defaultSubprocessRunner;
+  const link = opts.link ?? deviceSubstrateLink();
   const timeoutMs = opts.timeoutMs ?? ENUMERATION_TIMEOUT_MS;
   const vid = opts.persona.usbDescriptor.vendorId.toString(16).padStart(4, '0');
   const pid = opts.persona.usbDescriptor.productId.toString(16).padStart(4, '0');
@@ -161,33 +161,33 @@ export async function waitForUsbEnumeration(opts: {
   const deadline = Date.now() + timeoutMs;
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    const probe = await runLimactl(
-      subprocess,
-      [
-        'shell',
-        opts.vmName,
-        '--',
-        'sh',
-        '-c',
-        // Match on sysfs — the same source podkit's Linux USB walk reads — not
-        // `lsusb`, which is NOT installed on the harness VM. sysfs
-        // idVendor/idProduct are lower-case 4-hex with no `0x` prefix, exactly
-        // our `vid`/`pid`. Prints `MATCH` when the enumerated device appears.
-        `for dir in /sys/bus/usb/devices/*; do ` +
-          `[ "$(cat "$dir/idVendor" 2>/dev/null)" = '${vid}' ] || continue; ` +
-          `[ "$(cat "$dir/idProduct" 2>/dev/null)" = '${pid}' ] || continue; ` +
-          `echo MATCH; break; ` +
-          `done`,
-      ],
-      { timeoutMs: probeTimeout(deadline) }
-    ).catch(() => ({ exitCode: 1, stdout: '', stderr: '' }));
+    const probe = await link
+      .exec(
+        [
+          'sh',
+          '-c',
+          // Match on sysfs — the same source podkit's Linux USB walk reads — not
+          // `lsusb`, which is NOT installed on the substrate. sysfs
+          // idVendor/idProduct are lower-case 4-hex with no `0x` prefix,
+          // exactly our `vid`/`pid`. Prints `MATCH` when the device appears.
+          `for dir in /sys/bus/usb/devices/*; do ` +
+            `[ "$(cat "$dir/idVendor" 2>/dev/null)" = '${vid}' ] || continue; ` +
+            `[ "$(cat "$dir/idProduct" 2>/dev/null)" = '${pid}' ] || continue; ` +
+            `echo MATCH; break; ` +
+            `done`,
+        ],
+        { timeoutMs: probeTimeout(deadline) }
+      )
+      // See the sibling wait: a link failure mid-poll is the deadline's
+      // business, not this iteration's.
+      .catch(() => ({ exitCode: 1, stdout: '', stderr: '' }));
     if (probe.exitCode === 0 && probe.stdout.includes('MATCH')) return;
     if (Date.now() >= deadline) {
-      const slotSuffix = await udcSlotSuffix(subprocess, opts.vmName);
-      const logSuffix = await daemonLogSuffix(subprocess, opts.vmName, opts.persona.id);
+      const slotSuffix = await udcSlotSuffix(link);
+      const logSuffix = await daemonLogSuffix(link, opts.persona.id);
       throw new Error(
         `startDaemonForPersona: timed out after ${timeoutMs}ms waiting for USB device ` +
-          `${idPair} to enumerate in ${opts.vmName} for persona ` +
+          `${idPair} to enumerate in ${link.description} for persona ` +
           `'${opts.persona.id}'. The daemon may bind a UDC but never publish ` +
           `FunctionFS descriptors — is the gadget enumerating?` +
           `${slotSuffix}${logSuffix}`
@@ -210,13 +210,9 @@ export async function waitForUsbEnumeration(opts: {
  * budget at the point of failure is the difference between "some test timed
  * out" and "there was nowhere left to bind". Returns '' on any error.
  */
-async function udcSlotSuffix(subprocess: SubprocessRunner, vmName: string): Promise<string> {
+async function udcSlotSuffix(link: SubstrateLink): Promise<string> {
   try {
-    const report = await probeUdcSlots({
-      vmName,
-      subprocess,
-      timeoutMs: DAEMON_LOG_TIMEOUT_MS,
-    });
+    const report = await probeUdcSlots({ link, timeoutMs: DAEMON_LOG_TIMEOUT_MS });
     const failure = formatUdcSlotFailure(report);
     return `\n--- ${formatUdcSlotSummary(report)}${failure ? `\n${failure}` : ''}`;
   } catch {
@@ -231,19 +227,11 @@ async function udcSlotSuffix(subprocess: SubprocessRunner, vmName: string): Prom
  * self-diagnosing. Returns '' on any error — the timeout message stands on
  * its own.
  */
-async function daemonLogSuffix(
-  subprocess: SubprocessRunner,
-  vmName: string,
-  personaId: string
-): Promise<string> {
+async function daemonLogSuffix(link: SubstrateLink, personaId: string): Promise<string> {
   let daemonLog = '';
   try {
-    const log = await runLimactl(
-      subprocess,
+    const log = await link.exec(
       [
-        'shell',
-        vmName,
-        '--',
         'sudo',
         'journalctl',
         '-u',

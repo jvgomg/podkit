@@ -81,7 +81,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 
 import {
-  limaTestVmRunner,
+  deviceHarness,
   VM_COLD_TIMEOUT_MS,
   VM_WARM_TIMEOUT_MS,
   DEFAULT_PODKIT_IMAGE_TAG,
@@ -157,29 +157,29 @@ const APPRISE_MOCK_PY = [
 ].join('\n');
 
 async function startMockApprise(): Promise<void> {
-  await limaTestVmRunner.run(`printf '%s' ${sq(APPRISE_MOCK_PY)} > ${APPRISE_MOCK}`, {
+  await deviceHarness.run(`printf '%s' ${sq(APPRISE_MOCK_PY)} > ${APPRISE_MOCK}`, {
     timeoutMs: VM_WARM_TIMEOUT_MS,
   });
-  await limaTestVmRunner.run(`pkill -f ${APPRISE_MOCK} 2>/dev/null || true`, {
+  await deviceHarness.run(`pkill -f ${APPRISE_MOCK} 2>/dev/null || true`, {
     timeoutMs: VM_WARM_TIMEOUT_MS,
   });
   // `setsid` detaches the server into its OWN session so it survives after this
   // run()'s SSH session closes — a plain backgrounded job is torn down with the
   // session (which is why a combined one-liner left nothing listening).
-  await limaTestVmRunner.run(`setsid python3 ${APPRISE_MOCK} >/dev/null 2>&1 < /dev/null &`, {
+  await deviceHarness.run(`setsid python3 ${APPRISE_MOCK} >/dev/null 2>&1 < /dev/null &`, {
     timeoutMs: VM_WARM_TIMEOUT_MS,
   });
-  await limaTestVmRunner.run('sleep 1', { timeoutMs: VM_WARM_TIMEOUT_MS });
+  await deviceHarness.run('sleep 1', { timeoutMs: VM_WARM_TIMEOUT_MS });
 }
 
 async function stopMockApprise(): Promise<void> {
-  await limaTestVmRunner
+  await deviceHarness
     .run(`pkill -f ${APPRISE_MOCK} 2>/dev/null || true`, { timeoutMs: VM_WARM_TIMEOUT_MS })
     .catch(() => {});
 }
 
 async function readAppriseCapture(): Promise<string> {
-  const r = await limaTestVmRunner.run(`cat ${APPRISE_CAPTURE} 2>/dev/null || echo __NONE__`, {
+  const r = await deviceHarness.run(`cat ${APPRISE_CAPTURE} 2>/dev/null || echo __NONE__`, {
     timeoutMs: VM_WARM_TIMEOUT_MS,
   });
   return r.stdout;
@@ -194,7 +194,7 @@ async function waitForDaemonLog(
   let logs = '';
   while (Date.now() < deadline) {
     logs = (
-      await limaTestVmRunner.run(`sudo nerdctl logs ${containerName} 2>&1`, {
+      await deviceHarness.run(`sudo nerdctl logs ${containerName} 2>&1`, {
         timeoutMs: VM_WARM_TIMEOUT_MS,
       })
     ).stdout;
@@ -205,7 +205,7 @@ async function waitForDaemonLog(
 }
 
 async function daemonContainerExitCode(containerName: string): Promise<number> {
-  const r = await limaTestVmRunner.run(
+  const r = await deviceHarness.run(
     `sudo nerdctl inspect -f '{{.State.ExitCode}}' ${containerName} 2>/dev/null || echo -1`,
     { timeoutMs: VM_WARM_TIMEOUT_MS }
   );
@@ -249,7 +249,7 @@ interface DeviceMusicJson {
 // the next run.
 // ---------------------------------------------------------------------------
 async function removeDaemonContainer(name: string): Promise<void> {
-  await limaTestVmRunner
+  await deviceHarness
     .run(
       `sudo nerdctl stop ${name} 2>/dev/null || true; ` +
         `sudo nerdctl rm ${name} 2>/dev/null || true`,
@@ -279,7 +279,7 @@ async function waitForDaemonSync(
   const deadline = Date.now() + SYNC_WAIT_TIMEOUT_MS;
   let logs = '';
   while (Date.now() < deadline) {
-    const result = await limaTestVmRunner.run(`sudo nerdctl logs ${containerName} 2>&1`, {
+    const result = await deviceHarness.run(`sudo nerdctl logs ${containerName} 2>&1`, {
       timeoutMs: VM_WARM_TIMEOUT_MS,
     });
     logs = result.stdout;
@@ -296,16 +296,16 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
   let IMAGE = DEFAULT_PODKIT_IMAGE_TAG;
 
   beforeAll(async () => {
-    await limaTestVmRunner.prepare();
+    await deviceHarness.prepare();
     // Resolve the docker-dist image once for the whole suite: build in-VM from
     // the current musl binaries (`force` guarantees a fresh image, not a stale
     // cached tag), or pull the pre-built artifact when the env switch is set.
     IMAGE = await ensurePodkitImageInVm({ force: true });
-    await limaTestVmRunner.applyState(healthy);
+    await deviceHarness.applyState(healthy);
   }, IMAGE_BUILD_TIMEOUT_MS);
 
   afterAll(async () => {
-    await limaTestVmRunner.teardown();
+    await deviceHarness.teardown();
   }, VM_COLD_TIMEOUT_MS);
 
   // --------------------------------------------------------------------------
@@ -318,7 +318,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
   it(
     'shipped image: `run <image> --version` routes to the CLI and exits 0',
     async () => {
-      const result = await limaTestVmRunner.run(`sudo nerdctl run --rm ${sq(IMAGE)} --version`, {
+      const result = await deviceHarness.run(`sudo nerdctl run --rm ${sq(IMAGE)} --version`, {
         timeoutMs: CONTAINER_STEP_TIMEOUT_MS,
       });
       expect(result.exitCode).toBe(0);
@@ -360,7 +360,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
         // to write into. No SIE wipe here: the daemon lane never runs `device
         // add`, so there is no USB-inquiry write to prove — it syncs an
         // already-set-up device by path.
-        const init = await limaTestVmRunner.run(`gpod-tool init ${VM_MOUNT_POINT} --model MA147`, {
+        const init = await deviceHarness.run(`gpod-tool init ${VM_MOUNT_POINT} --model MA147`, {
           timeoutMs: VM_WARM_TIMEOUT_MS,
         });
         if (init.exitCode !== 0) {
@@ -370,7 +370,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
         }
 
         // Write the path-based device config bind-mounted to /config.
-        await limaTestVmRunner.run(
+        await deviceHarness.run(
           `mkdir -p ${VM_CONFIG_DIR} && printf '%s' ${sq(PATH_CONFIG_TOML)} > ${VM_CONFIG_DIR}/config.toml`,
           { timeoutMs: VM_WARM_TIMEOUT_MS }
         );
@@ -389,7 +389,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
           makeFlac('track-01.flac', 440, 'Daemon Dist Track One', 1),
           makeFlac('track-02.flac', 660, 'Daemon Dist Track Two', 2),
         ].join('\n');
-        const gen = await limaTestVmRunner.run(`bash -c ${sq(genScript)}`, {
+        const gen = await deviceHarness.run(`bash -c ${sq(genScript)}`, {
           timeoutMs: VM_WARM_TIMEOUT_MS,
         });
         if (gen.exitCode !== 0) {
@@ -401,7 +401,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
         // Best-effort rollback so a failed setup doesn't leak a mount, temp
         // dirs, or (defensively) a same-named container.
         await removeDaemonContainer(MASS_STORAGE_DAEMON_CONTAINER);
-        await limaTestVmRunner
+        await deviceHarness
           .run(`rm -rf ${VM_CONFIG_DIR} ${VM_MUSIC_DIR} 2>/dev/null || true`, {
             timeoutMs: VM_WARM_TIMEOUT_MS,
           })
@@ -415,7 +415,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
       // Remove the detached daemon container FIRST — it holds a reference to the
       // /ipod bind-mount, so a lingering container would pin the unmount.
       await removeDaemonContainer(MASS_STORAGE_DAEMON_CONTAINER);
-      await limaTestVmRunner
+      await deviceHarness
         .run(`rm -rf ${VM_CONFIG_DIR} ${VM_MUSIC_DIR} 2>/dev/null || true`, {
           timeoutMs: VM_WARM_TIMEOUT_MS,
         })
@@ -439,7 +439,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
           `-e PUID=0 -e PGID=0 -e PODKIT_POLL_INTERVAL=2 -e PODKIT_MASS_STORAGE_PATHS=/ipod ` +
           `-v ${sq(`${VM_MOUNT_POINT}:/ipod`)} -v ${sq(`${VM_CONFIG_DIR}:/config`)} ` +
           `-v ${sq(`${VM_MUSIC_DIR}:/music:ro`)} ${sq(IMAGE)} daemon`;
-        const start = await limaTestVmRunner.run(startCmd, {
+        const start = await deviceHarness.run(startCmd, {
           timeoutMs: CONTAINER_STEP_TIMEOUT_MS,
         });
         if (start.exitCode !== 0) {
@@ -537,7 +537,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
 
         // Seed the empty FAT data partition with a valid iPod filesystem + empty
         // iTunesDB so the daemon's sync has a database to write into.
-        const init = await limaTestVmRunner.run(`gpod-tool init ${VM_MOUNT_POINT} --model MA147`, {
+        const init = await deviceHarness.run(`gpod-tool init ${VM_MOUNT_POINT} --model MA147`, {
           timeoutMs: VM_WARM_TIMEOUT_MS,
         });
         if (init.exitCode !== 0) {
@@ -550,7 +550,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
         // mount. `unmountAndStop` would also stop the gadget, which we still
         // need up — so unmount the point directly (lazy fallback) and leave the
         // persona daemon running.
-        await limaTestVmRunner
+        await deviceHarness
           .run(
             `sudo umount ${VM_MOUNT_POINT} 2>/dev/null || sudo umount -l ${VM_MOUNT_POINT} 2>/dev/null || true`,
             { timeoutMs: VM_WARM_TIMEOUT_MS }
@@ -570,7 +570,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
           'music = "main"',
           '',
         ].join('\n');
-        await limaTestVmRunner.run(
+        await deviceHarness.run(
           `mkdir -p ${VM_CONFIG_DIR} && printf '%s' ${sq(laneConfig)} > ${VM_CONFIG_DIR}/config.toml`,
           { timeoutMs: VM_WARM_TIMEOUT_MS }
         );
@@ -586,7 +586,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
           makeFlac('track-01.flac', 440, 'Daemon Lsblk Track One', 1),
           makeFlac('track-02.flac', 660, 'Daemon Lsblk Track Two', 2),
         ].join('\n');
-        const gen = await limaTestVmRunner.run(`bash -c ${sq(genScript)}`, {
+        const gen = await deviceHarness.run(`bash -c ${sq(genScript)}`, {
           timeoutMs: VM_WARM_TIMEOUT_MS,
         });
         if (gen.exitCode !== 0) {
@@ -596,7 +596,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
         }
       } catch (err) {
         await removeDaemonContainer(LSBLK_DAEMON_CONTAINER);
-        await limaTestVmRunner
+        await deviceHarness
           .run(`rm -rf ${VM_CONFIG_DIR} ${VM_MUSIC_DIR} 2>/dev/null || true`, {
             timeoutMs: VM_WARM_TIMEOUT_MS,
           })
@@ -608,7 +608,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
 
     afterAll(async () => {
       await removeDaemonContainer(LSBLK_DAEMON_CONTAINER);
-      await limaTestVmRunner
+      await deviceHarness
         .run(`rm -rf ${VM_CONFIG_DIR} ${VM_MUSIC_DIR} 2>/dev/null || true`, {
           timeoutMs: VM_WARM_TIMEOUT_MS,
         })
@@ -634,7 +634,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
           `-e PUID=0 -e PGID=0 -e PODKIT_POLL_INTERVAL=2 ` +
           `-v ${sq(`${VM_CONFIG_DIR}:/config`)} -v ${sq(`${VM_MUSIC_DIR}:/music:ro`)} ` +
           `${sq(IMAGE)} daemon`;
-        const start = await limaTestVmRunner.run(startCmd, {
+        const start = await deviceHarness.run(startCmd, {
           timeoutMs: CONTAINER_STEP_TIMEOUT_MS,
         });
         if (start.exitCode !== 0) {
@@ -674,7 +674,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
           'music = "main"',
           '',
         ].join('\n');
-        await limaTestVmRunner.run(
+        await deviceHarness.run(
           `printf '%s' ${sq(readConfig)} > ${VM_CONFIG_DIR}/config.toml && ` +
             `sudo mount -t vfat -o uid=$(id -u),gid=$(id -g) ${sq(partitionNode)} ${VM_MOUNT_POINT}`,
           { timeoutMs: VM_WARM_TIMEOUT_MS }
@@ -691,7 +691,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
           expect(musicJson.fileTypes?.AAC).toBe(2);
         } finally {
           // Release the read-back mount so afterAll's unmount is clean.
-          await limaTestVmRunner
+          await deviceHarness
             .run(
               `sudo umount ${VM_MOUNT_POINT} 2>/dev/null || sudo umount -l ${VM_MOUNT_POINT} 2>/dev/null || true`,
               { timeoutMs: VM_WARM_TIMEOUT_MS }
@@ -758,7 +758,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
      */
     const mountBacking = async (readOnly = false): Promise<void> => {
       const opt = readOnly ? '-o ro' : '-o uid=$(id -u),gid=$(id -g)';
-      await limaTestVmRunner.run(
+      await deviceHarness.run(
         `sudo mkdir -p ${VM_MOUNT_POINT}; ` +
           `sudo mount ${opt} ${sq(blockDevice)} ${VM_MOUNT_POINT} 2>/dev/null || ` +
           `sudo mount ${opt} ${sq(blockDevice)}1 ${VM_MOUNT_POINT} 2>/dev/null || true`,
@@ -766,7 +766,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
       );
     };
     const umountBacking = async (): Promise<void> => {
-      await limaTestVmRunner
+      await deviceHarness
         .run(
           `sudo umount ${VM_MOUNT_POINT} 2>/dev/null || sudo umount -l ${VM_MOUNT_POINT} 2>/dev/null || true`,
           { timeoutMs: VM_WARM_TIMEOUT_MS }
@@ -781,7 +781,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
      */
     const reinitDevice = async (): Promise<void> => {
       await mountBacking(false);
-      const init = await limaTestVmRunner.run(
+      const init = await deviceHarness.run(
         `sudo rm -rf ${VM_MOUNT_POINT}/iPod_Control && gpod-tool init ${VM_MOUNT_POINT} --model MA147`,
         { timeoutMs: VM_WARM_TIMEOUT_MS }
       );
@@ -808,7 +808,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
         `-e PODKIT_APPRISE_URL=http://127.0.0.1:${APPRISE_PORT}/notify ` +
         `-v ${sq(`${VM_CONFIG_DIR}:/config`)} -v ${sq(`${VM_MUSIC_DIR}:/music:ro`)} ` +
         `${sq(IMAGE)} daemon`;
-      const start = await limaTestVmRunner.run(startCmd, { timeoutMs: CONTAINER_STEP_TIMEOUT_MS });
+      const start = await deviceHarness.run(startCmd, { timeoutMs: CONTAINER_STEP_TIMEOUT_MS });
       if (start.exitCode !== 0) {
         throw new Error(
           `daemon start failed (exit=${start.exitCode}): ${start.stderr || start.stdout}`
@@ -819,7 +819,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
     /** Mount the backing read-only and count files under iPod_Control/Music. */
     const countMusicFiles = async (): Promise<number> => {
       await mountBacking(true);
-      const r = await limaTestVmRunner.run(
+      const r = await deviceHarness.run(
         `find ${VM_MOUNT_POINT}/iPod_Control/Music -type f 2>/dev/null | wc -l`,
         { timeoutMs: VM_WARM_TIMEOUT_MS }
       );
@@ -837,7 +837,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
           vendorId: VID,
           productId: PID,
         }));
-        await limaTestVmRunner.run(
+        await deviceHarness.run(
           `mkdir -p ${VM_CONFIG_DIR} && printf '%s' ${sq(DRAIN_MUSIC_CONFIG)} > ${VM_CONFIG_DIR}/config.toml`,
           { timeoutMs: VM_WARM_TIMEOUT_MS }
         );
@@ -852,7 +852,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
             `-c:a flac ${sq(VM_MUSIC_DIR)}/track-$i.flac >/dev/null 2>&1;`,
           'done',
         ].join('\n');
-        const gen = await limaTestVmRunner.run(`bash -c ${sq(genScript)}`, { timeoutMs: 180_000 });
+        const gen = await deviceHarness.run(`bash -c ${sq(genScript)}`, { timeoutMs: 180_000 });
         if (gen.exitCode !== 0) {
           throw new Error(`FLAC gen failed (exit=${gen.exitCode}): ${gen.stderr || gen.stdout}`);
         }
@@ -863,7 +863,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
       } catch (err) {
         await removeDaemonContainer(DRAIN_DAEMON_CONTAINER);
         await stopMockApprise();
-        await limaTestVmRunner
+        await deviceHarness
           .run(`rm -rf ${VM_CONFIG_DIR} ${VM_MUSIC_DIR} 2>/dev/null || true`, {
             timeoutMs: VM_WARM_TIMEOUT_MS,
           })
@@ -876,7 +876,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
     afterAll(async () => {
       await removeDaemonContainer(DRAIN_DAEMON_CONTAINER);
       await stopMockApprise();
-      await limaTestVmRunner
+      await deviceHarness
         .run(`rm -rf ${VM_CONFIG_DIR} ${VM_MUSIC_DIR} 2>/dev/null || true`, {
           timeoutMs: VM_WARM_TIMEOUT_MS,
         })
@@ -889,7 +889,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
       async () => {
         await removeDaemonContainer(DRAIN_DAEMON_CONTAINER);
         await reinitDevice();
-        await limaTestVmRunner.run(`rm -f ${APPRISE_CAPTURE}`, { timeoutMs: VM_WARM_TIMEOUT_MS });
+        await deviceHarness.run(`rm -f ${APPRISE_CAPTURE}`, { timeoutMs: VM_WARM_TIMEOUT_MS });
         await startDrainDaemon();
 
         const { matched, logs } = await waitForDaemonLog(
@@ -923,17 +923,17 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
           /Sync plan/
         );
         expect(matched, `daemon never reached the sync plan. Logs:\n${planLogs}`).toBe(true);
-        await limaTestVmRunner.run('sleep 4', { timeoutMs: VM_WARM_TIMEOUT_MS });
+        await deviceHarness.run('sleep 4', { timeoutMs: VM_WARM_TIMEOUT_MS });
 
         // `nerdctl stop` → SIGTERM (15s grace before SIGKILL). PID 1 is the
         // daemon (entrypoint `exec podkit-daemon`), so it receives the signal.
-        await limaTestVmRunner.run(`sudo nerdctl stop --time 15 ${DRAIN_DAEMON_CONTAINER}`, {
+        await deviceHarness.run(`sudo nerdctl stop --time 15 ${DRAIN_DAEMON_CONTAINER}`, {
           timeoutMs: 30_000,
         });
 
         const exit = await daemonContainerExitCode(DRAIN_DAEMON_CONTAINER);
         const logs = (
-          await limaTestVmRunner.run(`sudo nerdctl logs ${DRAIN_DAEMON_CONTAINER} 2>&1 || true`, {
+          await deviceHarness.run(`sudo nerdctl logs ${DRAIN_DAEMON_CONTAINER} 2>&1 || true`, {
             timeoutMs: VM_WARM_TIMEOUT_MS,
           })
         ).stdout;

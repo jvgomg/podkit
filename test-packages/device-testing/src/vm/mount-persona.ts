@@ -44,12 +44,7 @@
  * @module
  */
 
-import {
-  LIMA_DEVICE_HARNESS_VM_NAME,
-  startDaemonForPersona,
-  stopDaemon,
-  limaTestVmRunner,
-} from '../runners/lima-test-vm.js';
+import { deviceHarness, startDaemonForPersona, stopDaemon } from '../runners/lima-test-vm.js';
 import { VM_WARM_TIMEOUT_MS } from './vm-runtime-setup.js';
 import type { DevicePersona } from '../personas/types.js';
 
@@ -170,7 +165,7 @@ export async function resolvePersonaDeviceNodes(
   opts: ResolvePersonaDeviceNodesOpts
 ): Promise<PersonaDeviceNodes> {
   const script = buildDeviceNodeDiscoveryScript(opts.vendorId, opts.productId);
-  const result = await limaTestVmRunner.run(`sh -c '${script.replace(/'/g, `'\\''`)}'`, {
+  const result = await deviceHarness.run(`sh -c '${script.replace(/'/g, `'\\''`)}'`, {
     timeoutMs: VM_WARM_TIMEOUT_MS,
   });
   const lines = result.stdout
@@ -200,7 +195,7 @@ export async function resolvePersonaDeviceNodes(
  * the caller's own error path.
  */
 async function unmountBestEffort(mountPoint: string): Promise<void> {
-  await limaTestVmRunner
+  await deviceHarness
     .run(
       `sudo umount ${mountPoint} 2>/dev/null || sudo umount -l ${mountPoint} 2>/dev/null || true`,
       { timeoutMs: VM_WARM_TIMEOUT_MS }
@@ -223,16 +218,12 @@ async function unmountBestEffort(mountPoint: string): Promise<void> {
  * nothing is bound. Not exported: it is an internal precondition of
  * {@link mountPersona}, not a standalone lifecycle step.
  */
-async function preflightReset(opts: {
-  vmName: string;
-  personaId: string;
-  mountPoint: string;
-}): Promise<void> {
+async function preflightReset(opts: { personaId: string; mountPoint: string }): Promise<void> {
   await unmountBestEffort(opts.mountPoint);
   // Stop the daemon so the subsequent `systemctl start` re-binds a fresh
   // gadget. `stopDaemon` treats systemd's "no such unit / not running" exit 5
-  // as success, so this is a clean no-op on a clean VM.
-  await stopDaemon({ vmName: opts.vmName, personaId: opts.personaId }).catch(() => {});
+  // as success, so this is a clean no-op on a clean substrate.
+  await stopDaemon({ personaId: opts.personaId }).catch(() => {});
 }
 
 /** Options for {@link mountPersona}. */
@@ -244,16 +235,14 @@ export interface MountPersonaOpts {
    * let the ids drift from the persona they claimed to describe.
    */
   persona: DevicePersona;
-  /** Absolute path inside the VM where the FAT32 backing will be mounted. */
+  /** Absolute path inside the substrate where the FAT32 backing is mounted. */
   mountPoint: string;
-  /** Lima instance name. Defaults to {@link LIMA_DEVICE_HARNESS_VM_NAME}. */
-  vmName?: string;
 }
 
 /**
  * Start the daemon for `opts.persona`, find its `/dev/sd<x>` node, and
  * mount the FAT32 backing at `opts.mountPoint` with `uid/gid` set to the
- * current Lima user. After this returns, podkit invocations targeting
+ * current guest user. After this returns, podkit invocations targeting
  * `-d <opts.mountPoint>` see a `ready`-readiness iPod backing file.
  *
  * Idempotent from any prior state. Before staging, it defensively tears
@@ -273,23 +262,21 @@ export interface MountPersonaOpts {
  * diagnostic message clean.
  */
 export async function mountPersona(opts: MountPersonaOpts): Promise<void> {
-  const vmName = opts.vmName ?? LIMA_DEVICE_HARNESS_VM_NAME;
-
   // Pre-flight: reset any stale state from a prior (possibly crashed) run so
   // the daemon start below re-binds a fresh gadget rather than reusing a stale
   // one. Best-effort — every step is a no-op when nothing is bound.
-  await preflightReset({ vmName, personaId: opts.persona.id, mountPoint: opts.mountPoint });
+  await preflightReset({ personaId: opts.persona.id, mountPoint: opts.mountPoint });
 
   // Returns with the gadget enumerated — both USB and, for a mass-storage
   // persona like this one, /dev/sg*. The discovery walk below therefore runs
   // against a populated bus rather than racing it.
-  await startDaemonForPersona({ vmName, persona: opts.persona });
+  await startDaemonForPersona({ persona: opts.persona });
 
   const findScript = buildScsiSdDiscoveryScript(
     opts.persona.usbDescriptor.vendorId,
     opts.persona.usbDescriptor.productId
   );
-  const find = await limaTestVmRunner.run(`sh -c '${findScript.replace(/'/g, `'\\''`)}'`, {
+  const find = await deviceHarness.run(`sh -c '${findScript.replace(/'/g, `'\\''`)}'`, {
     timeoutMs: VM_WARM_TIMEOUT_MS,
   });
   if (find.exitCode !== 0 || !find.stdout.trim()) {
@@ -300,15 +287,15 @@ export async function mountPersona(opts: MountPersonaOpts): Promise<void> {
   }
   const scsiSd = find.stdout.trim();
 
-  await limaTestVmRunner.run(`sudo mkdir -p ${opts.mountPoint}`, {
+  await deviceHarness.run(`sudo mkdir -p ${opts.mountPoint}`, {
     timeoutMs: VM_WARM_TIMEOUT_MS,
   });
-  const mount = await limaTestVmRunner.run(
+  const mount = await deviceHarness.run(
     `sudo mount -t vfat -o uid=$(id -u),gid=$(id -g) /dev/${scsiSd} ${opts.mountPoint}`,
     { timeoutMs: VM_WARM_TIMEOUT_MS }
   );
   if (mount.exitCode !== 0) {
-    const mountP1 = await limaTestVmRunner.run(
+    const mountP1 = await deviceHarness.run(
       `sudo mount -t vfat -o uid=$(id -u),gid=$(id -g) /dev/${scsiSd}1 ${opts.mountPoint}`,
       { timeoutMs: VM_WARM_TIMEOUT_MS }
     );
@@ -325,7 +312,6 @@ export async function mountPersona(opts: MountPersonaOpts): Promise<void> {
 export interface UnmountAndStopOpts {
   personaId: string;
   mountPoint: string;
-  vmName?: string;
 }
 
 /**
@@ -337,12 +323,11 @@ export interface UnmountAndStopOpts {
  * catch and `afterAll`.
  */
 export async function unmountAndStop(opts: UnmountAndStopOpts): Promise<void> {
-  const vmName = opts.vmName ?? LIMA_DEVICE_HARNESS_VM_NAME;
   await unmountBestEffort(opts.mountPoint);
-  await limaTestVmRunner
+  await deviceHarness
     .run(`sudo rmdir ${opts.mountPoint} 2>/dev/null || true`, {
       timeoutMs: VM_WARM_TIMEOUT_MS,
     })
     .catch(() => {});
-  await stopDaemon({ vmName, personaId: opts.personaId }).catch(() => {});
+  await stopDaemon({ personaId: opts.personaId }).catch(() => {});
 }

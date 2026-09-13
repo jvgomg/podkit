@@ -59,8 +59,16 @@ An E2E test's Surface is a triple: **Runtime × Source × Device**.
   |---|---|
   | `host-binary` | the compiled binary on the dev/CI host |
   | `host-docker-image` | the shipped Docker **image** run as a container on the host |
-  | `vm-binary` | the binary inside the `podkit-device` Lima VM |
-  | `vm-docker-image` | the shipped Docker image run as a container **inside** the VM |
+  | `vm-binary` | the binary inside the **device substrate** |
+  | `vm-docker-image` | the shipped Docker image run as a container **inside the device substrate** |
+
+  Both values are **redefined, not renamed** ([ADR-028](../../adr/adr-028-substrate-agnostic-device-harness.md) §7).
+  The substrate is a Lima VM on macOS and an SSH-reachable Debian box
+  elsewhere; which one a given run used is a property of that machine's
+  configuration, not of the label. The `vm-` prefix stays because the labels
+  are accurate — the substrate is a virtual machine in every arrangement
+  anyone has built — and because renaming a Runtime value would churn every
+  cell in the grid below to say the same thing.
 - **Source** — where the music comes from:
   | Value | Meaning |
   |---|---|
@@ -98,7 +106,7 @@ call the interesting ones out.
 | `host-binary` | `docker-sidecar` | `dir` | `e2e-tests/src/docker-source/` | E2E |
 | `host-docker-image` | `local-dir` | `none` | `packages/podkit-docker/test/image-smoke.sh` | E2E |
 | `host-docker-image` | `local-dir` | `loopback-fat` | `e2e-tests/src/docker-loopback/` — **CLI** device ops (trust-disk verification, hard-error-on-generic — task-450) | E2E |
-| `vm-binary` | `local-dir` | `usb-synth` | `e2e-vm-tests/` (root) + `device-testing/src/vm/` (harness self-tests) | E2E |
+| `vm-binary` | `local-dir` | `usb-synth` | `e2e-vm-tests/` (root) + `device-testing/src/vm/` (harness self-tests) — reached over a `SubstrateLink`, so the same files run against a Lima VM or a remote Debian box | E2E |
 | `vm-docker-image` | `local-dir` | `usb-synth` | `e2e-vm-tests/src/vm-docker/` | E2E |
 
 Also classified here (not device E2E surfaces):

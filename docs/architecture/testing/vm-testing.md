@@ -87,20 +87,56 @@ must be imported, re-exported, AND added to the `personas` Map.
 Typed record at `test-packages/device-testing/src/system-states/types.ts`.
 Today the registry only ships `healthy` (every tool present, FAT32 supported,
 no environmental gotchas). The state is applied via
-`limaTestVmRunner.applyState(state)` which runs
+`deviceHarness.applyState(state)` which runs
 `test-packages/device-testing/scripts/apply-state.sh` inside the VM.
 
-### `limaTestVmRunner`
+### The substrate link
 
-A `TestRuntime` implementation at
-`test-packages/device-testing/src/runners/lima-test-vm.ts:711` that
-owns the VM-side primitives:
+Nothing in the harness names a provisioner. Every command and every file
+transfer goes through a **`SubstrateLink`** — `exec`, `copyIn`, `spawn` — with
+two implementations: `limactl` for a box Lima provisioned, and `ssh` for one a
+hypervisor, a cloud or a human produced. Which substrate a run drives is
+resolved once, from `PODKIT_SUBSTRATE` (see `.env.example`), falling back to
+Lima when `limactl` is on PATH and **announcing** that it did so. See
+[ADR-028](../../adr/adr-028-substrate-agnostic-device-harness.md) §1 and
+[ADR-029](../../adr/adr-029-portable-device-substrate.md) §2, and `CONTEXT.md`
+§"Test environments" for the vocabulary.
 
-- `prepare()` — boot VM, transfer binaries (`transferBinary`,
-  `transferGpodTool`, `transferDummyHcdDaemon`), publish persona
-  sidecar JSON.
-- `applyState(state)` — snapshot restore + run `apply-state.sh`.
-- `run(command, opts)` — `limactl shell` wrapper returning
+Two consequences a test author has to know:
+
+- **A link failure is a throw, a guest failure is a return.** `exec` raises
+  `SubstrateLinkError` when the substrate could not be reached and returns a
+  result — non-zero exit codes included — whenever the guest actually ran
+  something. That is what lets "the substrate is unavailable" be a skip and
+  "the command failed" be a failure.
+
+  The caveat a test author has to carry: **classification is a heuristic over
+  stderr, and it can miss.** Neither `limactl shell` nor `ssh` reports "I could
+  not connect" out of band, and the exit code belongs to the guest either way,
+  so the links match on the vocabulary each tool emits about itself. A wording
+  the patterns do not cover degrades one way only — the link failure arrives as
+  the guest's non-zero result, i.e. a failure rather than a skip — which is the
+  behaviour that existed before the link and is never unsafe. Write the test so
+  a substrate that vanished reads as a plausible failure, not as an assertion
+  about guest state that cannot be true. The patterns and their residual gap are
+  documented in `test-packages/substrate/src/link.ts` and
+  `test-packages/lima/src/link.ts`.
+- **`spawn` gives a handle, not a supervisor.** `kill()` tears down the
+  host-side link process; the guest process usually inherits the SIGHUP that
+  closing the channel sends, and "usually" is why a test needing deterministic
+  teardown kills the guest process by name through `exec`.
+
+### `deviceHarness`
+
+A `TestRuntime` implementation in
+`test-packages/device-testing/src/runners/lima-test-vm.ts` that owns the
+substrate-side primitives:
+
+- `prepare()` — bring the substrate up where this repo owns its provisioner,
+  transfer binaries (`transferBinary`, `transferGpodTool`,
+  `transferDummyHcdDaemon`), publish persona sidecar JSON.
+- `applyState(state)` — stage and run `apply-state.sh`.
+- `run(command, opts)` — runs the command in the substrate, returning
   `{stdout, stderr, exitCode}`.
 - `teardown()` — restore base state for the next group.
 
@@ -160,7 +196,7 @@ JSON regardless of exit code. Every podkit `--json` surface emits a
 failure envelope on non-zero exits; gating parse on `exitCode === 0`
 would hide every failure-path assertion. Tests that need to read the
 JSON envelope on a failure exit MUST use this helper, not raw
-`limaTestVmRunner.run()`.
+`deviceHarness.run()`.
 
 ---
 
@@ -234,7 +270,7 @@ paths (the "independent readers" pattern from
    ```typescript
    import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
    import {
-     limaTestVmRunner,
+     deviceHarness,
      VM_COLD_TIMEOUT_MS,
      VM_WARM_TIMEOUT_MS,
      mountPersona,
@@ -246,11 +282,11 @@ paths (the "independent readers" pattern from
 
    describe('VM: <feature>', () => {
      beforeAll(async () => {
-       await limaTestVmRunner.prepare();
+       await deviceHarness.prepare();
      }, VM_COLD_TIMEOUT_MS);
 
      afterAll(async () => {
-       await limaTestVmRunner.teardown();
+       await deviceHarness.teardown();
      }, VM_COLD_TIMEOUT_MS);
 
      describe(`SystemState: ${healthy.id}`, () => {
@@ -258,7 +294,7 @@ paths (the "independent readers" pattern from
        const PERSONA = myPersona;
 
        beforeAll(async () => {
-         await limaTestVmRunner.applyState(healthy);
+         await deviceHarness.applyState(healthy);
        }, VM_COLD_TIMEOUT_MS);
 
        beforeAll(async () => {
@@ -282,7 +318,7 @@ paths (the "independent readers" pattern from
 
        it('<behaviour>', async () => {
          const result = await runJsonCommand(
-           limaTestVmRunner,
+           deviceHarness,
            `/usr/local/bin/podkit -d ${VM_MOUNT_POINT} doctor --scope device --json`,
            VM_WARM_TIMEOUT_MS
          );
@@ -600,7 +636,7 @@ grows:
 - `test-packages/device-testing/src/personas/` — registry + per-persona dirs.
 - `test-packages/device-testing/src/personas/types.ts` — `DevicePersona`.
 - `test-packages/device-testing/src/system-states/` — system-state registry.
-- `test-packages/device-testing/src/runners/lima-test-vm.ts` — `limaTestVmRunner`.
+- `test-packages/device-testing/src/runners/lima-test-vm.ts` — `deviceHarness`.
 - `test-packages/device-testing/src/vm/persona-fixture.ts` — `withPersona`, `runJsonCommand`.
 - `test-packages/device-testing/src/vm/mount-persona.ts` — `mountPersona`, `unmountAndStop`.
 - `test-packages/device-testing/src/runners/lima-test-vm-backing-files.ts` — FAT32 synthesis (in-VM `mkfs.vfat`) + `initialContent` (FAT32-only) + HFS+ branch (host-side; delegates to the TS writer).

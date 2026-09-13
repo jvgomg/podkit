@@ -62,7 +62,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 
 import {
-  limaTestVmRunner,
+  deviceHarness,
   VM_COLD_TIMEOUT_MS,
   VM_WARM_TIMEOUT_MS,
   withPersona,
@@ -71,7 +71,6 @@ import {
   echoMini,
   ipodNano7gBlue,
   ipodNano7gSpaceGray,
-  LIMA_DEVICE_HARNESS_VM_NAME,
 } from '@podkit/device-testing';
 
 // ---------------------------------------------------------------------------
@@ -158,16 +157,16 @@ const ALLOWED_CHECK_SCOPES = new Set(['system', 'device-readiness', 'database-he
 
 describe('VM: doctor output contract', () => {
   beforeAll(async () => {
-    await limaTestVmRunner.prepare();
+    await deviceHarness.prepare();
   }, VM_COLD_TIMEOUT_MS);
 
   afterAll(async () => {
-    await limaTestVmRunner.teardown();
+    await deviceHarness.teardown();
   }, VM_COLD_TIMEOUT_MS);
 
   describe(`SystemState: ${healthy.id}`, () => {
     beforeAll(async () => {
-      await limaTestVmRunner.applyState(healthy);
+      await deviceHarness.applyState(healthy);
     }, VM_COLD_TIMEOUT_MS);
 
     // ─────────────────────────────────────────────────────────────────────
@@ -185,7 +184,7 @@ describe('VM: doctor output contract', () => {
         async () => {
           const invocation = await withPersona({ persona: ipodNano7gSpaceGray }, () =>
             runJsonCommand(
-              limaTestVmRunner,
+              deviceHarness,
               '/usr/local/bin/podkit doctor --scope system --json',
               VM_WARM_TIMEOUT_MS
             )
@@ -246,7 +245,7 @@ describe('VM: doctor output contract', () => {
           // — that's the structural cover for "stdout-only purity".
           const invocation = await withPersona({ persona: ipodNano7gSpaceGray }, () =>
             runJsonCommand(
-              limaTestVmRunner,
+              deviceHarness,
               '/usr/local/bin/podkit doctor --scope system --json',
               VM_WARM_TIMEOUT_MS
             )
@@ -278,14 +277,14 @@ describe('VM: doctor output contract', () => {
           // applyState() snapshot + withPersona() lifecycle.
           const run1 = await withPersona({ persona: ipodNano7gSpaceGray }, () =>
             runJsonCommand(
-              limaTestVmRunner,
+              deviceHarness,
               '/usr/local/bin/podkit doctor --scope system --json',
               VM_WARM_TIMEOUT_MS
             )
           );
           const run2 = await withPersona({ persona: ipodNano7gSpaceGray }, () =>
             runJsonCommand(
-              limaTestVmRunner,
+              deviceHarness,
               '/usr/local/bin/podkit doctor --scope system --json',
               VM_WARM_TIMEOUT_MS
             )
@@ -312,7 +311,7 @@ describe('VM: doctor output contract', () => {
         'doctor --scope device with no -d emits {success: false, code, error} envelope',
         async () => {
           const invocation = await runJsonCommand(
-            limaTestVmRunner,
+            deviceHarness,
             '/usr/local/bin/podkit doctor --scope device --json',
             VM_WARM_TIMEOUT_MS
           );
@@ -350,7 +349,7 @@ describe('VM: doctor output contract', () => {
         async () => {
           const invocation = await withPersona({ persona: ipodNano7gBlue }, () =>
             runJsonCommand(
-              limaTestVmRunner,
+              deviceHarness,
               '/usr/local/bin/podkit device scan --json',
               VM_WARM_TIMEOUT_MS
             )
@@ -394,7 +393,7 @@ describe('VM: doctor output contract', () => {
         'RepairOutput has { success: true, summary, checkId, dryRun } required + optional details',
         async () => {
           const invocation = await runJsonCommand(
-            limaTestVmRunner,
+            deviceHarness,
             '/usr/local/bin/podkit doctor --repair udev-rule --dry-run --json',
             VM_WARM_TIMEOUT_MS
           );
@@ -436,7 +435,7 @@ describe('VM: doctor output contract', () => {
           // emit either branch depending on the udev rule state, codec
           // probe, etc. We assert that *exactly one* of the two branches
           // appears and that pluralisation matches the count.
-          const result = await limaTestVmRunner.run('/usr/local/bin/podkit doctor --scope system', {
+          const result = await deviceHarness.run('/usr/local/bin/podkit doctor --scope system', {
             timeoutMs: VM_WARM_TIMEOUT_MS,
           });
           // Doctor exits 0 (healthy) or 2 (issues-found); never an error.
@@ -476,7 +475,7 @@ describe('VM: doctor output contract', () => {
           // an `Issues:` block. We assert structural conformance only
           // when the block is present — i.e. we don't require failures,
           // we require the *format* if/when they happen.
-          const result = await limaTestVmRunner.run('/usr/local/bin/podkit doctor --scope system', {
+          const result = await deviceHarness.run('/usr/local/bin/podkit doctor --scope system', {
             timeoutMs: VM_WARM_TIMEOUT_MS,
           });
           expect([0, 2]).toContain(result.exitCode);
@@ -534,7 +533,6 @@ describe('VM: doctor output contract', () => {
           //    not racing the kernel.
           const { startDaemonForPersona } = await import('@podkit/device-testing');
           await startDaemonForPersona({
-            vmName: LIMA_DEVICE_HARNESS_VM_NAME,
             persona: echoMini,
           });
 
@@ -554,7 +552,7 @@ describe('VM: doctor output contract', () => {
             'done;',
             'exit 1',
           ].join(' ');
-          const find = await limaTestVmRunner.run(`sh -c '${findScript.replace(/'/g, `'\\''`)}'`, {
+          const find = await deviceHarness.run(`sh -c '${findScript.replace(/'/g, `'\\''`)}'`, {
             timeoutMs: VM_WARM_TIMEOUT_MS,
           });
           if (find.exitCode !== 0 || !find.stdout.trim()) {
@@ -565,15 +563,15 @@ describe('VM: doctor output contract', () => {
           scsiSd = find.stdout.trim();
 
           // 4. Mount the FAT32 partition (raw FAT, no partition table).
-          await limaTestVmRunner.run(`sudo mkdir -p ${VM_MOUNT_POINT}`, {
+          await deviceHarness.run(`sudo mkdir -p ${VM_MOUNT_POINT}`, {
             timeoutMs: VM_WARM_TIMEOUT_MS,
           });
-          const mount = await limaTestVmRunner.run(
+          const mount = await deviceHarness.run(
             `sudo mount -t vfat /dev/${scsiSd} ${VM_MOUNT_POINT}`,
             { timeoutMs: VM_WARM_TIMEOUT_MS }
           );
           if (mount.exitCode !== 0) {
-            const mountP1 = await limaTestVmRunner.run(
+            const mountP1 = await deviceHarness.run(
               `sudo mount -t vfat /dev/${scsiSd}1 ${VM_MOUNT_POINT}`,
               { timeoutMs: VM_WARM_TIMEOUT_MS }
             );
@@ -594,19 +592,18 @@ describe('VM: doctor output contract', () => {
             `path = "${VM_MOUNT_POINT}"`,
             ``,
           ].join('\n');
-          await limaTestVmRunner.run(
+          await deviceHarness.run(
             `cat > ${VM_CONFIG_PATH} << '__CONFIG_EOF__'\n${configBody}\n__CONFIG_EOF__`,
             { timeoutMs: VM_WARM_TIMEOUT_MS }
           );
         } catch (err) {
-          await limaTestVmRunner
+          await deviceHarness
             .run(`sudo umount ${VM_MOUNT_POINT} 2>/dev/null || true`, {
               timeoutMs: VM_WARM_TIMEOUT_MS,
             })
             .catch(() => {});
           const { stopDaemon } = await import('@podkit/device-testing');
           await stopDaemon({
-            vmName: LIMA_DEVICE_HARNESS_VM_NAME,
             personaId: echoMini.id,
           }).catch(() => {});
           throw err;
@@ -614,19 +611,18 @@ describe('VM: doctor output contract', () => {
       }, VM_COLD_TIMEOUT_MS);
 
       afterAll(async () => {
-        await limaTestVmRunner
+        await deviceHarness
           .run(`sudo umount ${VM_MOUNT_POINT} 2>/dev/null || true`, {
             timeoutMs: VM_WARM_TIMEOUT_MS,
           })
           .catch(() => {});
-        await limaTestVmRunner
+        await deviceHarness
           .run(`rm -f ${VM_CONFIG_PATH} 2>/dev/null || true`, {
             timeoutMs: VM_WARM_TIMEOUT_MS,
           })
           .catch(() => {});
         const { stopDaemon } = await import('@podkit/device-testing');
         await stopDaemon({
-          vmName: LIMA_DEVICE_HARNESS_VM_NAME,
           personaId: echoMini.id,
         }).catch(() => {});
       }, VM_COLD_TIMEOUT_MS);
@@ -640,7 +636,7 @@ describe('VM: doctor output contract', () => {
           // an iPod for those; same applies to the mass-storage path).
           // The resulting envelope is the device-bound DoctorOutput.
           const invocation = await runJsonCommand(
-            limaTestVmRunner,
+            deviceHarness,
             `/usr/local/bin/podkit --config ${VM_CONFIG_PATH} -d echo doctor --no-system --json`,
             VM_WARM_TIMEOUT_MS
           );
@@ -694,7 +690,7 @@ describe('VM: doctor output contract', () => {
       it(
         'text-mode header line is "podkit doctor — Echo Mini at <path>"',
         async () => {
-          const result = await limaTestVmRunner.run(
+          const result = await deviceHarness.run(
             `/usr/local/bin/podkit --config ${VM_CONFIG_PATH} -d echo doctor --no-system`,
             { timeoutMs: VM_WARM_TIMEOUT_MS }
           );
@@ -717,7 +713,7 @@ describe('VM: doctor output contract', () => {
           // shell-quote path receives a value with NO whitespace or shell
           // metacharacters — the quote function returns it bare. We
           // assert the Fix line names the typed argument verbatim.
-          const result = await limaTestVmRunner.run(
+          const result = await deviceHarness.run(
             `/usr/local/bin/podkit --config ${VM_CONFIG_PATH} -d echo doctor --no-system`,
             { timeoutMs: VM_WARM_TIMEOUT_MS }
           );
@@ -753,7 +749,7 @@ describe('VM: doctor output contract', () => {
           // path. The mass-storage doctor renderer must also keep prose off
           // stdout in --json mode.
           const invocation = await runJsonCommand(
-            limaTestVmRunner,
+            deviceHarness,
             `/usr/local/bin/podkit --config ${VM_CONFIG_PATH} -d echo doctor --no-system --json`,
             VM_WARM_TIMEOUT_MS
           );
@@ -770,12 +766,12 @@ describe('VM: doctor output contract', () => {
         'byte-identical --json output across two runs (mass-storage path)',
         async () => {
           const r1 = await runJsonCommand(
-            limaTestVmRunner,
+            deviceHarness,
             `/usr/local/bin/podkit --config ${VM_CONFIG_PATH} -d echo doctor --no-system --json`,
             VM_WARM_TIMEOUT_MS
           );
           const r2 = await runJsonCommand(
-            limaTestVmRunner,
+            deviceHarness,
             `/usr/local/bin/podkit --config ${VM_CONFIG_PATH} -d echo doctor --no-system --json`,
             VM_WARM_TIMEOUT_MS
           );

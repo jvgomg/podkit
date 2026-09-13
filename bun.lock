@@ -274,6 +274,7 @@
         "@podkit/core": "workspace:*",
         "@podkit/device-types": "workspace:*",
         "@podkit/lima": "workspace:*",
+        "@podkit/substrate": "workspace:*",
       },
       "devDependencies": {
         "@podkit/ipod-db": "workspace:*",
@@ -374,6 +375,9 @@
     "test-packages/substrate": {
       "name": "@podkit/substrate",
       "version": "0.0.1",
+      "dependencies": {
+        "@podkit/device-types": "workspace:*",
+      },
       "devDependencies": {
         "@types/bun": "^1.4.2",
         "bun-types": "latest",

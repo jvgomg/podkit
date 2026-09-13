@@ -11,12 +11,12 @@
  * once rather than being copy-pasted into each file.
  *
  * Pure + I/O helpers only — no test state. `runContainerJson` is the single
- * point that shells into the VM via `limaTestVmRunner`.
+ * point that shells into the VM via `deviceHarness`.
  *
  * @module
  */
 
-import { limaTestVmRunner } from '@podkit/device-testing';
+import { deviceHarness } from '@podkit/device-testing';
 
 /** Single-quote-escape a value for interpolation into a VM shell command. */
 export function sq(value: string): string {
@@ -71,7 +71,7 @@ export async function runContainerJson(
   command: string,
   timeoutMs: number
 ): Promise<ContainerJsonResult> {
-  const result = await limaTestVmRunner.run(command, { timeoutMs });
+  const result = await deviceHarness.run(command, { timeoutMs });
   const { parsed, parseError } = parseTrailingJson(result.stdout);
   return {
     exitCode: result.exitCode,

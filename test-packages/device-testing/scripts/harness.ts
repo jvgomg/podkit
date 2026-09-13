@@ -26,14 +26,17 @@
  */
 
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 
 import { createVmProvisioningRunner, ensureRunning, getVm } from '@podkit/lima';
+import { shellQuote, type SubstrateLink } from '@podkit/substrate';
 
-import { runLimactl } from '../src/runners/lima-limactl.js';
-import { defaultSubprocessRunner } from '../src/subprocess.js';
+import { createSubstrateLink } from '../src/runners/substrate.js';
+import { installIntoSubstrate } from '../src/runners/substrate-install.js';
 import {
   computeBaselineHash,
   deviceBaselineFiles,
@@ -67,6 +70,14 @@ const PACKAGE_ROOT = path.resolve(SCRIPT_DIR, '..');
 const REPO_ROOT = path.resolve(PACKAGE_ROOT, '..', '..');
 const DEVICE_VM = getVm('device');
 const VM = LIMA_DEVICE_HARNESS_VM_NAME;
+
+// This script is the Lima half of the harness by definition — it lifecycles a
+// Lima instance, and `bun run vm:up device` is the remediation it prints. So it
+// links to the Lima device substrate explicitly rather than to whichever
+// substrate happens to be selected: running `harness:setup` and silently
+// provisioning a remote box would be a surprising thing for a command whose
+// own error messages talk about `limactl`.
+const link: SubstrateLink = createSubstrateLink(DEVICE_VM);
 
 const USAGE = `Usage: bun run scripts/harness.ts <subcommand>
 
@@ -102,19 +113,10 @@ function fmtLine(line: StatusLine): string {
 }
 
 async function probeVmFileExists(vmPath: string): Promise<boolean> {
-  const probe = await runLimactl(defaultSubprocessRunner, [
-    'shell',
-    VM,
-    '--',
-    'sh',
-    '-c',
-    `test -e ${shellQuote(vmPath)}`,
-  ]).catch(() => ({ exitCode: 1, stdout: '', stderr: '' }));
+  const probe = await link
+    .exec(['sh', '-c', `test -e ${shellQuote(vmPath)}`])
+    .catch(() => ({ exitCode: 1, stdout: '', stderr: '' }));
   return probe.exitCode === 0;
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 async function cmdStatus(): Promise<number> {
@@ -138,18 +140,15 @@ async function cmdStatus(): Promise<number> {
     return 0;
   }
 
-  // SSH probe — limactl shell <vm> -- /bin/true.
-  const sshProbe = await runLimactl(defaultSubprocessRunner, [
-    'shell',
-    VM,
-    '--',
-    '/bin/true',
-  ]).catch((err) => ({ exitCode: 1, stdout: '', stderr: String(err) }));
+  // Liveness probe — the substrate runs `/bin/true` or it does not.
+  const sshProbe = await link
+    .exec(['/bin/true'])
+    .catch((err: unknown) => ({ exitCode: 1, stdout: '', stderr: String(err) }));
   const sshOk = sshProbe.exitCode === 0;
   lines.push({
     ok: sshOk,
     label: 'SSH reachable',
-    detail: sshOk ? 'limactl shell answers' : `refused: ${sshProbe.stderr.trim() || 'no stderr'}`,
+    detail: sshOk ? 'the substrate answers' : `refused: ${sshProbe.stderr.trim() || 'no stderr'}`,
   });
 
   if (!sshOk) {
@@ -189,14 +188,13 @@ async function cmdStatus(): Promise<number> {
   });
 
   // Kernel modules — single lsmod probe.
-  const lsmod = await runLimactl(defaultSubprocessRunner, [
-    'shell',
-    VM,
-    '--',
-    'sh',
-    '-c',
-    'lsmod | grep -E "dummy_hcd|libcomposite|usb_f_mass_storage|usb_f_fs" || true',
-  ]).catch(() => ({ exitCode: 1, stdout: '', stderr: '' }));
+  const lsmod = await link
+    .exec([
+      'sh',
+      '-c',
+      'lsmod | grep -E "dummy_hcd|libcomposite|usb_f_mass_storage|usb_f_fs" || true',
+    ])
+    .catch(() => ({ exitCode: 1, stdout: '', stderr: '' }));
   const moduleNames = ['dummy_hcd', 'libcomposite', 'usb_f_mass_storage', 'usb_f_fs'];
   const loaded = new Set(
     lsmod.stdout
@@ -278,7 +276,7 @@ async function cmdInstall(): Promise<number> {
     return 1;
   }
   console.log(`[harness:install] transferring podkit binary → ${VM}:${DEFAULT_PODKIT_VM_PATH}`);
-  const podkitResult = await transferBinary({ vmName: VM, binaryPath: podkitPath });
+  const podkitResult = await transferBinary({ link, binaryPath: podkitPath });
   console.log(
     podkitResult.skipped
       ? `  skipped — sha256 matches (${podkitResult.hostSha256.slice(0, 12)}...)`
@@ -295,7 +293,7 @@ async function cmdInstall(): Promise<number> {
       `[harness:install] transferring podkit-debug binary → ${VM}:${DEFAULT_PODKIT_DEBUG_VM_PATH}`
     );
     const podkitDebugResult = await transferBinary({
-      vmName: VM,
+      link,
       binaryPath: podkitDebugPath,
       vmPath: DEFAULT_PODKIT_DEBUG_VM_PATH,
     });
@@ -324,7 +322,7 @@ async function cmdInstall(): Promise<number> {
     `[harness:install] transferring dummy-hcd-daemon → ${VM}:${DEFAULT_DUMMY_HCD_DAEMON_VM_PATH}`
   );
   const daemonResult = await transferBinary({
-    vmName: VM,
+    link,
     binaryPath: daemonPath,
     vmPath: DEFAULT_DUMMY_HCD_DAEMON_VM_PATH,
   });
@@ -344,7 +342,7 @@ async function cmdInstall(): Promise<number> {
     return 1;
   }
   console.log(`[harness:install] transferring gpod-tool → ${VM}:${DEFAULT_GPOD_TOOL_VM_PATH}`);
-  const gpodResult = await transferGpodTool({ vmName: VM, binaryPath: gpodToolPath });
+  const gpodResult = await transferGpodTool({ link, binaryPath: gpodToolPath });
   console.log(
     gpodResult.skipped
       ? `  skipped — sha256 matches (${gpodResult.hostSha256.slice(0, 12)}...)`
@@ -356,7 +354,7 @@ async function cmdInstall(): Promise<number> {
     `[harness:install] installing systemd unit → ${VM}:${DEFAULT_DUMMY_HCD_DAEMON_UNIT_VM_PATH}`
   );
   const unitResult = await transferSystemdUnit({
-    vmName: VM,
+    link,
     hostUnitPath: resolveDefaultDummyHcdDaemonUnit(),
   });
   console.log(
@@ -408,13 +406,13 @@ async function cmdSetup(): Promise<number> {
   // same two steps an SSH substrate runs, against the same three files.
   console.log('[harness:setup] applying the substrate contract...');
   try {
-    await provisionSubstrate({ vmName: VM });
+    await provisionSubstrate({ link });
   } catch (err) {
     console.error(`[harness:setup] ${err instanceof Error ? err.message : String(err)}`);
     return 1;
   }
 
-  const doctor = await runSubstrateDoctor({ vmName: VM });
+  const doctor = await runSubstrateDoctor({ link });
   process.stdout.write(doctor.stdout);
   if (!doctor.ok) {
     process.stderr.write(doctor.stderr);
@@ -443,45 +441,36 @@ async function sealBaselineHash(): Promise<number> {
   console.log(
     `[harness:setup] sealing baseline hash (${combinedSha.slice(0, 12)}...; ${files.length} files)`
   );
-  // `install -D -m 0644 /dev/stdin ${BASELINE_VM_HASH_PATH}` would be the
-  // POSIX-pure form, but limactl shell over ssh doesn't reliably forward
-  // stdin to a remote `install` invocation. printf into a /tmp file then
-  // sudo install is the same shape as the persona sidecar emission.
-  const mkdirResult = spawnSync(
-    'limactl',
-    [
-      'shell',
-      VM,
-      '--',
-      'sudo',
-      'install',
-      '-d',
-      '-m',
-      '0755',
-      path.posix.dirname(BASELINE_VM_HASH_PATH),
-    ],
-    { stdio: 'inherit' }
-  );
-  if ((mkdirResult.status ?? 1) !== 0) {
-    console.error('[harness:setup] failed to mkdir baseline-hash parent');
+  // The hash is BYTES, not a file, and the obvious shape — pipe it to a
+  // guest-side `tee` — is the one thing a link deliberately cannot do: a
+  // `limactl shell` does not reliably forward stdin, so an stdin channel would
+  // work over ssh and half-work over Lima. Writing a host temp file and
+  // sending it through the same install path every other artefact uses costs
+  // one file and behaves identically on both links.
+  const hostTmp = path.join(os.tmpdir(), `podkit-baseline-${randomUUID()}`);
+  fs.writeFileSync(hostTmp, `${combinedSha}\n`, 'utf8');
+  try {
+    await installIntoSubstrate({
+      link,
+      hostPath: hostTmp,
+      guestPath: BASELINE_VM_HASH_PATH,
+      stagePath: `/tmp/podkit-baseline-${randomUUID()}`,
+      mode: '0644',
+      createParents: true,
+      label: 'baseline hash',
+    });
+  } catch (err) {
+    console.error(
+      `[harness:setup] failed to write baseline-hash to ${BASELINE_VM_HASH_PATH}: ` +
+        (err instanceof Error ? err.message : String(err))
+    );
     return 1;
-  }
-
-  const writeResult = spawnSync(
-    'limactl',
-    [
-      'shell',
-      VM,
-      '--',
-      'sh',
-      '-c',
-      `echo ${combinedSha} | sudo tee ${BASELINE_VM_HASH_PATH} >/dev/null`,
-    ],
-    { stdio: 'inherit' }
-  );
-  if ((writeResult.status ?? 1) !== 0) {
-    console.error(`[harness:setup] failed to write baseline-hash to ${BASELINE_VM_HASH_PATH}`);
-    return 1;
+  } finally {
+    try {
+      fs.unlinkSync(hostTmp);
+    } catch {
+      // Best-effort: a stuck file in the host tmpdir does no harm.
+    }
   }
   return 0;
 }

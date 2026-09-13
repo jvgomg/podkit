@@ -50,7 +50,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 
 import {
-  limaTestVmRunner,
+  deviceHarness,
   VM_COLD_TIMEOUT_MS,
   VM_WARM_TIMEOUT_MS,
   withPersona,
@@ -107,16 +107,16 @@ const hex = (n: number) => n.toString(16).padStart(4, '0');
 
 describe('VM: HFS+-on-Linux filesystem refusal', () => {
   beforeAll(async () => {
-    await limaTestVmRunner.prepare();
+    await deviceHarness.prepare();
   }, VM_COLD_TIMEOUT_MS);
 
   afterAll(async () => {
-    await limaTestVmRunner.teardown();
+    await deviceHarness.teardown();
   }, VM_COLD_TIMEOUT_MS);
 
   describe(`SystemState: ${healthy.id}`, () => {
     beforeAll(async () => {
-      await limaTestVmRunner.applyState(healthy);
+      await deviceHarness.applyState(healthy);
     }, VM_COLD_TIMEOUT_MS);
 
     it(
@@ -124,7 +124,7 @@ describe('VM: HFS+-on-Linux filesystem refusal', () => {
       async () => {
         const invocation = await withPersona({ persona: ipodNano4gHfsplus }, () =>
           runJsonCommand(
-            limaTestVmRunner,
+            deviceHarness,
             '/usr/local/bin/podkit device scan --json',
             VM_WARM_TIMEOUT_MS
           )
@@ -179,7 +179,7 @@ describe('VM: HFS+-on-Linux filesystem refusal', () => {
       async () => {
         const invocation = await withPersona({ persona: ipodNano4gHfsplus }, () =>
           runJsonCommand(
-            limaTestVmRunner,
+            deviceHarness,
             '/usr/local/bin/podkit device add -d hfsplus-nano --yes --json',
             VM_WARM_TIMEOUT_MS
           )
@@ -218,7 +218,7 @@ describe('VM: HFS+-on-Linux filesystem refusal', () => {
         // refusal code.
         const invocation = await withPersona({ persona: ipodNano4gBlack }, () =>
           runJsonCommand(
-            limaTestVmRunner,
+            deviceHarness,
             '/usr/local/bin/podkit device add -d fat32-nano --yes --json',
             VM_WARM_TIMEOUT_MS
           )

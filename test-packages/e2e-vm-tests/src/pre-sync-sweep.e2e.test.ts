@@ -34,18 +34,17 @@
  *
  * The pause hook blocks the process; the test polls disk for the expected
  * tmp artefact (the rename's input file or the transcode dir) every 50ms
- * up to a 30s deadline. Once observed, the test SIGKILLs the process
- * group and proceeds. There is no resume signalling — by design (TASK-405).
+ * up to a 30s deadline. Once observed, the test SIGKILLs the in-guest process
+ * by name and proceeds. There is no resume signalling — by design.
  *
  * @module
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
-import { spawn } from 'node:child_process';
 import { access } from 'node:fs/promises';
 
 import {
-  limaTestVmRunner,
+  deviceHarness,
   VM_COLD_TIMEOUT_MS,
   VM_WARM_TIMEOUT_MS,
   healthy,
@@ -53,7 +52,8 @@ import {
   startDaemonForPersona,
   stopDaemon,
   resolveDefaultPodkitDebugBinary,
-  LIMA_DEVICE_HARNESS_VM_NAME,
+  deviceSubstrateLink,
+  type SubstrateProcess,
 } from '@podkit/device-testing';
 
 // ---------------------------------------------------------------------------
@@ -86,13 +86,13 @@ function sq(value: string): string {
 async function runVm(
   command: string
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
-  return limaTestVmRunner.run(command, { timeoutMs: VM_WARM_TIMEOUT_MS });
+  return deviceHarness.run(command, { timeoutMs: VM_WARM_TIMEOUT_MS });
 }
 
 async function runVmRoot(
   command: string
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
-  return limaTestVmRunner.run(`sudo sh -c ${sq(command)}`, { timeoutMs: VM_WARM_TIMEOUT_MS });
+  return deviceHarness.run(`sudo sh -c ${sq(command)}`, { timeoutMs: VM_WARM_TIMEOUT_MS });
 }
 
 /**
@@ -255,46 +255,39 @@ music = "default"
 // ---------------------------------------------------------------------------
 
 interface PausedSyncHandle {
-  /** Spawned `limactl shell` child on the host. */
-  child: ReturnType<typeof spawn>;
-  /** Host-side promise that resolves once the child exits. */
+  /** Handle on the guest process, through the substrate link. */
+  child: SubstrateProcess;
+  /** Host-side promise that resolves once the guest process exits. */
   done: Promise<{ exitCode: number | null; signal: NodeJS.Signals | null }>;
 }
 
 /**
- * Spawn the debug podkit binary inside the VM with the supplied
- * `PODKIT_DEV_PAUSE_KEY`. The returned handle's `child.kill('SIGKILL')`
- * cleanly tears down the host-side `limactl shell` wrapper; the in-VM
- * podkit-debug process inherits the SIGHUP that limactl sends on its
- * own teardown.
+ * Start the debug podkit binary inside the substrate with the supplied
+ * `PODKIT_DEV_PAUSE_KEY`, and hold a handle on it.
  *
- * For deterministic in-VM teardown, callers run `pkill -KILL -f podkit-debug`
- * after observing the tmp artefact appear (see {@link killPodkitDebugInVm}).
+ * This goes through the link's `spawn` rather than reaching for `limactl`
+ * directly — the whole reason `spawn` is on the interface. The handle's
+ * `kill()` tears down the host-side link process, and the guest process
+ * normally inherits the SIGHUP that closing the channel sends. "Normally" is
+ * the operative word and is why {@link killPodkitDebugInVm} exists: the link's
+ * teardown contract is explicit that a handle is not a supervisor, so a test
+ * that needs the guest process definitely gone kills it by name in-guest.
  */
 function spawnPausedSync(pauseKey: string): PausedSyncHandle {
   const inner =
     `PODKIT_DEV_PAUSE_KEY=${pauseKey} ` +
     `/usr/local/bin/podkit-debug --config ${VM_CONFIG_PATH} sync -d ${DEVICE_NAME}`;
-  // `setsid` ensures the in-VM podkit-debug runs in its own process group
-  // so `pkill` can target it cleanly without sweeping the limactl shell.
-  const child = spawn('limactl', ['shell', LIMA_DEVICE_HARNESS_VM_NAME, '--', 'sh', '-c', inner], {
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  const child = deviceSubstrateLink().spawn(inner);
   child.stdout?.resume();
   child.stderr?.resume();
-  const done = new Promise<{ exitCode: number | null; signal: NodeJS.Signals | null }>((res) => {
-    child.on('close', (code, signal) => {
-      res({ exitCode: code, signal });
-    });
-  });
-  return { child, done };
+  return { child, done: child.exited };
 }
 
 /**
- * SIGKILL the in-VM podkit-debug process by name. The host-side child
- * is the limactl shell, not podkit-debug itself; killing podkit-debug
- * in-VM is what we actually want (it severs the pause, leaves debris on
- * disk, and limactl exits when its inferior dies).
+ * SIGKILL the in-guest podkit-debug process by name. The handle above holds
+ * the host-side link process, not podkit-debug itself; killing podkit-debug
+ * in-guest is what we actually want (it severs the pause, leaves debris on
+ * disk, and the link process exits when its inferior dies).
  */
 async function killPodkitDebugInVm(): Promise<void> {
   // pkill exits 1 when no matches — treat as success since the process
@@ -408,8 +401,8 @@ describe('VM: pre-sync sweep SIGKILL round-trip', () => {
   let debugSkipReason: string | undefined;
 
   beforeAll(async () => {
-    await limaTestVmRunner.prepare();
-    await limaTestVmRunner.applyState(healthy);
+    await deviceHarness.prepare();
+    await deviceHarness.applyState(healthy);
     const probe = await debugBinaryAvailable();
     debugReady = probe.available;
     debugSkipReason = probe.reason;
@@ -417,7 +410,6 @@ describe('VM: pre-sync sweep SIGKILL round-trip', () => {
     // Echo-mini daemon stays running across the whole suite — we mount
     // its backing file once and reuse for every scenario.
     await startDaemonForPersona({
-      vmName: LIMA_DEVICE_HARNESS_VM_NAME,
       persona: echoMini,
     });
     await mountEchoMini();
@@ -429,10 +421,9 @@ describe('VM: pre-sync sweep SIGKILL round-trip', () => {
     await runVm(`rm -rf ${VM_SOURCE_DIR} ${VM_CONFIG_PATH}`).catch(() => {});
     await runVm('rm -rf /tmp/podkit-transcode-* 2>/dev/null || true').catch(() => {});
     await stopDaemon({
-      vmName: LIMA_DEVICE_HARNESS_VM_NAME,
       personaId: echoMini.id,
     }).catch(() => {});
-    await limaTestVmRunner.teardown();
+    await deviceHarness.teardown();
   }, VM_COLD_TIMEOUT_MS);
 
   // ─────────────────────────────────────────────────────────────────────────

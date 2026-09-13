@@ -1,36 +1,48 @@
 /**
- * lima-test-vm runner — VM `TestRuntime` backend for macOS dev hosts.
+ * The device harness — a `TestRuntime` over whichever substrate this machine
+ * drives.
  *
- * Stitches together the primitives landed in Phase 3a/3b/3c:
+ * Stitches the harness primitives together:
  *
- *   - `lima-test-vm-binary.ts` — host→VM binary transfer (idempotent, atomic)
- *   - `lima-test-vm-state.ts` — `applyState(stateId)`: stage + run apply-state.sh
+ *   - `lima-test-vm-binary.ts` — host→substrate binary transfer (idempotent,
+ *     atomic)
+ *   - `lima-test-vm-state.ts` — `applyState(stateId)`: stage + run
+ *     apply-state.sh
  *   - the FunctionFS daemon at `test-packages/device-testing-daemon/`
+ *
+ * Nothing below names a provisioner. Everything reaches the substrate through a
+ * {@link SubstrateLink}, and which link that is — `limactl` to a Lima VM, `ssh`
+ * to a box a hypervisor or a human produced — is resolved once in
+ * `./substrate.js`. That is the whole of ADR-028 §1: the harness was tied to
+ * macOS not by its logic but by a `vmName: string` threaded through every
+ * helper down to a hand-assembled `limactl shell`.
  *
  * Lifecycle (per ADR-016 §"VM"):
  *
- *   isAvailable() — returns true iff `limactl` is in PATH AND the
- *                   `podkit-device` instance exists. Never throws.
- *   prepare()     — boots the VM if stopped, transfers the podkit binary
- *                   (fatal if missing) and gpod-tool (fatal if missing —
- *                   produce one with `bun run harness:install`), transfers
- *                   the dummy-hcd-daemon (best-effort), emits the persona
- *                   sidecar at /var/device-testing/personas.json.
- *   applyState()  — delegates to applyState({ vmName, stateId }) from
- *                   lima-test-vm-state.ts. Stages and runs apply-state.sh every
- *                   time (~800ms). No snapshot fast-path (see ADR-016).
- *   run()         — `limactl shell podkit-device -- <command>`, honouring
+ *   isAvailable() — whether the selected substrate answers. Never throws, so an
+ *                   unavailable substrate is a skip rather than a suite error.
+ *   prepare()     — brings the substrate up where this repo owns its
+ *                   provisioner, transfers the podkit binary (fatal if
+ *                   missing) and gpod-tool (fatal if missing — produce one with
+ *                   `bun run harness:install`), transfers the dummy-hcd-daemon
+ *                   (best-effort), emits the persona sidecar at
+ *                   /var/device-testing/personas.json.
+ *   applyState()  — delegates to `applyState({ link, stateId })`. Stages and
+ *                   runs apply-state.sh every time (~800ms). No snapshot
+ *                   fast-path (see ADR-016).
+ *   run()         — runs the command in the substrate, honouring
  *                   cwd/env/timeout opts.
  *   teardown()    — no-op between groups; the next applyState() call restores
- *                   the VM to the required state. Does NOT shut down the VM.
+ *                   the substrate to the required state. Does NOT shut it down.
  *
  * Mass-storage backing files and the daemon's systemd lifecycle have separate
  * helpers (`stageBackingFile`, `resetBackingFile`, `startDaemonForPersona`,
- * `stopDaemon`) that the VM tests call between
- * `prepare()` and `run()`. The runner does not auto-start the daemon — tests
- * choose when, because the daemon is per-persona.
+ * `stopDaemon`) that the VM tests call between `prepare()` and `run()`. The
+ * harness does not auto-start the daemon — tests choose when, because the
+ * daemon is per-persona.
  *
  * @see docs/adr/adr-016-linux-vm-test-harness.md
+ * @see docs/adr/adr-028-substrate-agnostic-device-harness.md
  * @see test-packages/device-testing-daemon/README.md
  * @module
  */
@@ -40,23 +52,37 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import {
+  guestCommandError,
+  shellQuote,
+  type SubstrateLink,
+  type VmDefinition,
+} from '@podkit/substrate';
+
 import type { DevicePersona } from '../personas/types.js';
 import { personas as defaultPersonas } from '../personas/index.js';
 import { buildSidecar } from '../personas/sidecar-build.js';
 import { serializeSidecar } from '../personas/sidecar.js';
 import type { SystemState } from '../system-states/types.js';
-import { defaultSubprocessRunner, type SubprocessRunner } from '../subprocess.js';
 import type { RunOpts, RunResult, RunnerId, TestRuntime } from '../runtime.js';
+import type { SubprocessRunner } from '../subprocess.js';
 import { transferBinary, transferGpodTool } from './lima-test-vm-binary.js';
 import { applyState as applyStateRaw } from './lima-test-vm-state.js';
-import { limactlError, runLimactl, shellQuote } from './lima-limactl.js';
 import { waitForScsiGenericEnumeration, waitForUsbEnumeration } from './lima-enumeration.js';
 import { transferSystemdUnit } from './lima-test-vm-systemd.js';
 import { ensureBackingFilesForPersonas } from './lima-test-vm-backing-files.js';
+import { installIntoSubstrate } from './substrate-install.js';
+import {
+  createSubstrateLink,
+  deviceSubstrateLink,
+  ensureSubstrateReady,
+  probeSubstrate,
+  resolveDeviceSubstrate,
+  SUBSTRATE_ROUND_TRIP_TIMEOUT_MS,
+  type SubstrateOpts,
+} from './substrate.js';
 import {
   LIMA_DEVICE_HARNESS_VM_NAME,
-  ensureRunning,
-  getVm,
   instanceStatus,
   type VmLockOptions,
   resolveDefaultPodkitBinary,
@@ -68,9 +94,12 @@ import {
   resolveDefaultGpodToolBinary,
 } from '@podkit/lima';
 
-// The Lima substrate (instance name, status probe, host binary resolvers) now
-// lives in `@podkit/lima`. Re-export the symbols this module has historically
-// exported so existing import sites (`./runners/lima-test-vm.js`) keep resolving.
+// The Lima substrate (instance name, status probe, host binary resolvers) lives
+// in `@podkit/lima`. Re-export the symbols this module has historically
+// exported so existing import sites keep resolving. `LIMA_DEVICE_HARNESS_VM_NAME`
+// and `instanceStatus` are genuinely Lima-only and are used as such: by
+// `harness.ts`, which lifecycles the Lima instance, and by the VM suites that
+// name the instance for their own diagnostics.
 export {
   LIMA_DEVICE_HARNESS_VM_NAME,
   instanceStatus,
@@ -87,12 +116,12 @@ export {
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Sidecar destination inside the VM. */
+/** Sidecar destination inside the substrate. */
 export const SIDECAR_VM_PATH = '/var/device-testing/personas.json';
-/** Default destination inside the VM for the dummy-hcd-daemon binary. */
+/** Default destination inside the substrate for the dummy-hcd-daemon binary. */
 export const DEFAULT_DUMMY_HCD_DAEMON_VM_PATH = '/usr/local/bin/dummy-hcd-daemon';
 
-const ID: RunnerId = 'lima-test-vm';
+const ID: RunnerId = 'device-substrate';
 
 // ---------------------------------------------------------------------------
 // Persona sidecar emission
@@ -100,36 +129,37 @@ const ID: RunnerId = 'lima-test-vm';
 
 /** Options for {@link ensurePersonaSidecar}. */
 export interface EnsurePersonaSidecarOpts {
-  /** Lima instance name. */
-  vmName: string;
+  /**
+   * Link to the substrate the sidecar is written into. Defaults to the
+   * selected device substrate; tests inject a link over a scripted runner.
+   */
+  link?: SubstrateLink;
   /**
    * Personas to include. Defaults to the full registry. Tests may pass a
    * pruned list (e.g. one persona) to keep the payload tiny.
    */
   personas?: Iterable<DevicePersona>;
   /**
-   * Map of persona id → in-VM backing-file path. Optional; mass-storage
+   * Map of persona id → in-substrate backing-file path. Optional; mass-storage
    * personas without an entry here are emitted without a backing-file block.
    */
   backingFilePaths?: Map<string, string>;
-  /** DI seam for `limactl`. Tests inject a scripted runner. */
-  subprocess?: SubprocessRunner;
   /**
-   * In-VM destination. Defaults to {@link SIDECAR_VM_PATH}. The systemd unit
-   * `dummy-hcd-daemon@.service` hard-codes this path; overriding it is only
-   * useful in tests.
+   * In-substrate destination. Defaults to {@link SIDECAR_VM_PATH}. The systemd
+   * unit `dummy-hcd-daemon@.service` hard-codes this path; overriding it is
+   * only useful in tests.
    */
   vmPath?: string;
 }
 
 /** Result of {@link ensurePersonaSidecar}. */
 export interface EnsurePersonaSidecarResult {
-  /** Final destination inside the VM (matches `opts.vmPath`). */
+  /** Final destination inside the substrate (matches `opts.vmPath`). */
   vmPath: string;
 }
 
 /**
- * Build a sidecar payload from `opts.personas`, copy it into the VM, and
+ * Build a sidecar payload from `opts.personas`, copy it into the substrate, and
  * install it at `opts.vmPath`. Cleans up the host-side temp file.
  *
  * Idempotency: the sidecar is regenerated and copied every time. The
@@ -140,58 +170,34 @@ export interface EnsurePersonaSidecarResult {
 export async function ensurePersonaSidecar(
   opts: EnsurePersonaSidecarOpts
 ): Promise<EnsurePersonaSidecarResult> {
-  const subprocess = opts.subprocess ?? defaultSubprocessRunner;
+  const link = opts.link ?? deviceSubstrateLink();
   const vmPath = opts.vmPath ?? SIDECAR_VM_PATH;
   const personaSource = opts.personas ?? defaultPersonas.values();
-
-  if (!opts.vmName) {
-    throw new Error('ensurePersonaSidecar: vmName is required.');
-  }
 
   const payload = buildSidecar(personaSource, opts.backingFilePaths ?? new Map());
   const json = serializeSidecar(payload);
 
   // Write to a unique host-side temp file so concurrent test runs do not
-  // race on a shared path.
+  // race on a shared path. The bytes go through a file rather than through the
+  // link's stdin because there is no link stdin: see the note on
+  // `SubstrateLink` for why adding one would fork the two provisioners.
   const hostTmp = path.join(os.tmpdir(), `podkit-personas-${randomUUID()}.json`);
   fs.writeFileSync(hostTmp, json, 'utf8');
 
-  // VM-side staging path inside /tmp (tmpfs, no sudo to write).
-  const vmTmp = `/tmp/personas-${randomUUID()}.json`;
-
   try {
-    const copyResult = await runLimactl(subprocess, ['copy', hostTmp, `${opts.vmName}:${vmTmp}`]);
-    if (copyResult.exitCode !== 0) {
-      throw limactlError(`failed to copy personas.json to ${opts.vmName}:${vmTmp}`, copyResult);
-    }
-
-    // `install -D -m 0644 <src> <dst>` creates the parent dir and is atomic.
-    const installResult = await runLimactl(subprocess, [
-      'shell',
-      opts.vmName,
-      '--',
-      'sudo',
-      'install',
-      '-D',
-      '-m',
-      '0644',
-      vmTmp,
-      vmPath,
-    ]);
-    if (installResult.exitCode !== 0) {
-      throw limactlError(
-        `sudo install failed promoting ${vmTmp} → ${vmPath} in ${opts.vmName}`,
-        installResult
-      );
-    }
-
-    // Best-effort cleanup of the VM-side temp; /tmp is tmpfs so a leftover
-    // is harmless across reboots.
-    await runLimactl(subprocess, ['shell', opts.vmName, '--', 'rm', '-f', vmTmp]).catch(
-      () => undefined
-    );
+    // `install -D` creates `/var/device-testing` on a substrate that has never
+    // had a sidecar.
+    await installIntoSubstrate({
+      link,
+      hostPath: hostTmp,
+      guestPath: vmPath,
+      stagePath: `/tmp/personas-${randomUUID()}.json`,
+      mode: '0644',
+      createParents: true,
+      label: 'persona sidecar',
+    });
   } finally {
-    // Always clean up the host-side temp, even if a limactl step threw.
+    // Always clean up the host-side temp, even if a link step threw.
     try {
       fs.unlinkSync(hostTmp);
     } catch {
@@ -208,24 +214,26 @@ export async function ensurePersonaSidecar(
 
 /** Options for {@link stageBackingFile}. */
 export interface StageBackingFileOpts {
-  vmName: string;
+  /**
+   * Link to the substrate the image is staged into. Defaults to the selected
+   * device substrate.
+   */
+  link?: SubstrateLink;
   /** Absolute host path to the FAT32 image. */
   hostImagePath: string;
-  /** Absolute VM path where the daemon expects the image. */
+  /** Absolute in-substrate path where the daemon expects the image. */
   vmPath: string;
-  subprocess?: SubprocessRunner;
 }
 
 /**
- * Copy a backing-file image from the host into the VM. Idempotent on
- * sha256 match (skips the copy when the VM already has the right file).
+ * Copy a backing-file image from the host into the substrate. Idempotent on
+ * sha256 match (skips the copy when the substrate already has the right file).
  *
  * This is the "stage once" step. The companion {@link resetBackingFile}
  * resets the image between tests within a single persona group.
  */
 export async function stageBackingFile(opts: StageBackingFileOpts): Promise<void> {
-  const subprocess = opts.subprocess ?? defaultSubprocessRunner;
-  if (!opts.vmName) throw new Error('stageBackingFile: vmName is required.');
+  const link = opts.link ?? deviceSubstrateLink();
   if (!opts.hostImagePath) throw new Error('stageBackingFile: hostImagePath is required.');
   if (!opts.vmPath) throw new Error('stageBackingFile: vmPath is required.');
 
@@ -238,77 +246,55 @@ export async function stageBackingFile(opts: StageBackingFileOpts): Promise<void
   }
   const hostSha = createHash('sha256').update(hostBytes).digest('hex');
 
-  // Probe — same shape as the binary-transfer helper.
-  const probe = await runLimactl(subprocess, [
-    'shell',
-    opts.vmName,
-    '--',
+  // Probe — same shape as the binary-transfer helper. A missing file leaves
+  // the pipeline's exit code at `awk`'s zero with empty stdout, so non-zero
+  // here means the guest's probe itself failed; an unreachable substrate
+  // throws out of `exec` instead.
+  const probe = await link.exec([
     'sh',
     '-c',
     `sha256sum ${shellQuote(opts.vmPath)} 2>/dev/null | awk '{print $1}'`,
   ]);
   if (probe.exitCode !== 0) {
-    throw limactlError(`failed to probe backing file at ${opts.vmName}:${opts.vmPath}`, probe);
+    throw guestCommandError(
+      `failed to probe backing file at ${link.description}:${opts.vmPath}`,
+      probe
+    );
   }
   if (probe.stdout.trim() === hostSha) return;
 
-  const vmTmp = `/tmp/backing-${randomUUID()}.img`;
-  const copyResult = await runLimactl(subprocess, [
-    'copy',
-    opts.hostImagePath,
-    `${opts.vmName}:${vmTmp}`,
-  ]);
-  if (copyResult.exitCode !== 0) {
-    throw limactlError(
-      `limactl copy failed sending backing file to ${opts.vmName}:${vmTmp}`,
-      copyResult
-    );
-  }
-
-  const installResult = await runLimactl(subprocess, [
-    'shell',
-    opts.vmName,
-    '--',
-    'sudo',
-    'install',
-    '-D',
-    '-m',
-    '0644',
-    vmTmp,
-    opts.vmPath,
-  ]);
-  if (installResult.exitCode !== 0) {
-    await runLimactl(subprocess, ['shell', opts.vmName, '--', 'rm', '-f', vmTmp]).catch(
-      () => undefined
-    );
-    throw limactlError(
-      `sudo install failed promoting ${vmTmp} → ${opts.vmPath} in ${opts.vmName}`,
-      installResult
-    );
-  }
-  await runLimactl(subprocess, ['shell', opts.vmName, '--', 'rm', '-f', vmTmp]).catch(
-    () => undefined
-  );
+  await installIntoSubstrate({
+    link,
+    hostPath: opts.hostImagePath,
+    guestPath: opts.vmPath,
+    stagePath: `/tmp/backing-${randomUUID()}.img`,
+    mode: '0644',
+    createParents: true,
+    label: 'backing file',
+  });
 }
 
 /** Options for {@link resetBackingFile}. */
 export interface ResetBackingFileOpts {
-  vmName: string;
+  /**
+   * Link to the substrate holding the image. Defaults to the selected device
+   * substrate.
+   */
+  link?: SubstrateLink;
   /** Host-side reference image — source of truth for resets. */
   hostImagePath: string;
-  /** Active path inside the VM (what the daemon reads). */
+  /** Active path inside the substrate (what the daemon reads). */
   vmPath: string;
   /**
    * Reset strategy:
    *
-   * - `copy`: limactl-copy the host reference image to `vmPath` every reset.
+   * - `copy`: re-send the host reference image to `vmPath` every reset.
    *   Simple, slow for large images.
-   * - `swap`: limactl-copy the host reference image to `<vmPath>.ref` once
-   *   (idempotent on sha256), then `cp <vmPath>.ref <vmPath>` for each reset.
-   *   Fast for the common "many resets, one stage" path.
+   * - `swap`: send the host reference image to `<vmPath>.ref` once (idempotent
+   *   on sha256), then `cp <vmPath>.ref <vmPath>` for each reset. Fast for the
+   *   common "many resets, one stage" path.
    */
   strategy: 'copy' | 'swap';
-  subprocess?: SubprocessRunner;
 }
 
 /**
@@ -320,12 +306,12 @@ export interface ResetBackingFileOpts {
  *     `sudo cp <vmPath>.ref <vmPath>` for every reset.
  */
 export async function resetBackingFile(opts: ResetBackingFileOpts): Promise<void> {
+  const link = opts.link ?? deviceSubstrateLink();
   if (opts.strategy === 'copy') {
     await stageBackingFile({
-      vmName: opts.vmName,
+      link,
       hostImagePath: opts.hostImagePath,
       vmPath: opts.vmPath,
-      subprocess: opts.subprocess,
     });
     return;
   }
@@ -334,25 +320,14 @@ export async function resetBackingFile(opts: ResetBackingFileOpts): Promise<void
   const refPath = `${opts.vmPath}.ref`;
   // Stage the reference (idempotent). Then materialise the active copy.
   await stageBackingFile({
-    vmName: opts.vmName,
+    link,
     hostImagePath: opts.hostImagePath,
     vmPath: refPath,
-    subprocess: opts.subprocess,
   });
-  const subprocess = opts.subprocess ?? defaultSubprocessRunner;
-  const cpResult = await runLimactl(subprocess, [
-    'shell',
-    opts.vmName,
-    '--',
-    'sudo',
-    'cp',
-    '-f',
-    refPath,
-    opts.vmPath,
-  ]);
+  const cpResult = await link.exec(['sudo', 'cp', '-f', refPath, opts.vmPath]);
   if (cpResult.exitCode !== 0) {
-    throw limactlError(
-      `swap strategy: failed to refresh ${opts.vmPath} from ${refPath} in ${opts.vmName}`,
+    throw guestCommandError(
+      `swap strategy: failed to refresh ${opts.vmPath} from ${refPath} in ${link.description}`,
       cpResult
     );
   }
@@ -371,15 +346,19 @@ export async function resetBackingFile(opts: ResetBackingFileOpts): Promise<void
  * near this long — the headroom is for the SSH round trip on a loaded host,
  * not for the systemd operation itself.
  *
- * Without a bound, a wedged `limactl shell` here blocks the test's hook with
- * no upper limit at all, and the suite reports a hook that ran for minutes
- * with no indication of what it was waiting on.
+ * Without a bound, a wedged link here blocks the test's hook with no upper
+ * limit at all, and the suite reports a hook that ran for minutes with no
+ * indication of what it was waiting on.
  */
-export const DAEMON_LIFECYCLE_TIMEOUT_MS = 45_000;
+export const DAEMON_LIFECYCLE_TIMEOUT_MS = SUBSTRATE_ROUND_TRIP_TIMEOUT_MS;
 
 /** Options for {@link startDaemonForPersona}. */
 export interface StartDaemonOpts {
-  vmName: string;
+  /**
+   * Link to the substrate the daemon runs in. Defaults to the selected device
+   * substrate.
+   */
+  link?: SubstrateLink;
   /**
    * The persona to start. Taken as the whole object rather than an id
    * because the primitive waits for *this* persona's gadget to enumerate,
@@ -388,7 +367,6 @@ export interface StartDaemonOpts {
    * whose readiness we are able to establish.
    */
   persona: DevicePersona;
-  subprocess?: SubprocessRunner;
   /**
    * Budget for each enumeration wait. Defaults to
    * {@link ENUMERATION_TIMEOUT_MS}; production callers leave it unset. It is
@@ -400,10 +378,13 @@ export interface StartDaemonOpts {
 
 /** Options for {@link stopDaemon}. */
 export interface StopDaemonOpts {
-  vmName: string;
+  /**
+   * Link to the substrate the daemon runs in. Defaults to the selected device
+   * substrate.
+   */
+  link?: SubstrateLink;
   /** Persona id; if omitted, all instances of the template are stopped. */
   personaId?: string;
-  subprocess?: SubprocessRunner;
 }
 
 /**
@@ -426,68 +407,75 @@ export interface StopDaemonOpts {
  * longer need one (TASK-504).
  */
 export async function startDaemonForPersona(opts: StartDaemonOpts): Promise<void> {
-  const subprocess = opts.subprocess ?? defaultSubprocessRunner;
-  if (!opts.vmName) throw new Error('startDaemonForPersona: vmName is required.');
+  const link = opts.link ?? deviceSubstrateLink();
   if (!opts.persona?.id) throw new Error('startDaemonForPersona: persona is required.');
 
   const unit = `dummy-hcd-daemon@${opts.persona.id}.service`;
-  const result = await runLimactl(
-    subprocess,
-    ['shell', opts.vmName, '--', 'sudo', 'systemctl', 'start', unit],
-    { timeoutMs: DAEMON_LIFECYCLE_TIMEOUT_MS }
-  );
+  const result = await link.exec(['sudo', 'systemctl', 'start', unit], {
+    timeoutMs: DAEMON_LIFECYCLE_TIMEOUT_MS,
+  });
   if (result.exitCode !== 0) {
-    throw limactlError(`failed to start ${unit} in ${opts.vmName}`, result);
+    throw guestCommandError(`failed to start ${unit} in ${link.description}`, result);
   }
 
   const timeoutMs = opts.enumerationTimeoutMs;
   await waitForUsbEnumeration({
-    vmName: opts.vmName,
+    link,
     persona: opts.persona,
-    subprocess,
-    timeoutMs,
+    ...(timeoutMs !== undefined ? { timeoutMs } : {}),
   });
 
   if (opts.persona.massStorageBackingFile !== null) {
     await waitForScsiGenericEnumeration({
-      vmName: opts.vmName,
+      link,
       personaId: opts.persona.id,
-      subprocess,
-      timeoutMs,
+      ...(timeoutMs !== undefined ? { timeoutMs } : {}),
     });
   }
 }
 
 /** Stop the daemon for `opts.personaId` (or all instances if absent). */
 export async function stopDaemon(opts: StopDaemonOpts): Promise<void> {
-  const subprocess = opts.subprocess ?? defaultSubprocessRunner;
-  if (!opts.vmName) throw new Error('stopDaemon: vmName is required.');
+  const link = opts.link ?? deviceSubstrateLink();
 
   const unit = opts.personaId
     ? `dummy-hcd-daemon@${opts.personaId}.service`
     : 'dummy-hcd-daemon@*.service';
-  const result = await runLimactl(
-    subprocess,
-    ['shell', opts.vmName, '--', 'sudo', 'systemctl', 'stop', unit],
-    { timeoutMs: DAEMON_LIFECYCLE_TIMEOUT_MS }
-  );
+  const result = await link.exec(['sudo', 'systemctl', 'stop', unit], {
+    timeoutMs: DAEMON_LIFECYCLE_TIMEOUT_MS,
+  });
   // systemd exit 5 = "no such unit / not loaded / not running" — treat as
-  // success so callers (notably VM teardown) can `stopDaemon` blindly
-  // without first checking whether anything is running.
+  // success so callers (notably teardown) can `stopDaemon` blindly without
+  // first checking whether anything is running.
   if (result.exitCode !== 0 && result.exitCode !== 5) {
-    throw limactlError(`failed to stop ${unit} in ${opts.vmName}`, result);
+    throw guestCommandError(`failed to stop ${unit} in ${link.description}`, result);
   }
 }
 
 // ---------------------------------------------------------------------------
-// Runner construction
+// Harness construction
 // ---------------------------------------------------------------------------
 
-/** Options for {@link createLimaTestVmRuntime}. */
-export interface CreateLimaTestVmRuntimeOpts {
-  /** Lima instance name. Defaults to {@link LIMA_DEVICE_HARNESS_VM_NAME}. */
-  vmName?: string;
-  /** DI seam for limactl; production callers leave unset. */
+/** Options for {@link createDeviceHarness}. */
+export interface CreateDeviceHarnessOpts {
+  /**
+   * Registry entry of the substrate to drive. Production callers leave it unset
+   * and get the selected one, resolved lazily on first use; tests name one so a
+   * unit run never consults the machine's own configuration.
+   */
+  substrate?: VmDefinition;
+  /**
+   * Link to that substrate. Defaults to one dispatched from its provisioner —
+   * which is what tests want, since injecting {@link subprocess} then scripts
+   * the link's own invocations too.
+   */
+  link?: SubstrateLink;
+  /**
+   * DI seam for the PROVISIONER's host-side commands — `limactl list --json`,
+   * `limactl start`. Deliberately separate from the link: reading whether a
+   * Lima instance exists is a question about the host's Lima state, and a link
+   * into a guest cannot answer it. Production callers leave it unset.
+   */
   subprocess?: SubprocessRunner;
   /**
    * Resolver for the podkit binary path. Tests inject a synthetic path; the
@@ -517,21 +505,37 @@ export interface CreateLimaTestVmRuntimeOpts {
   /** Persona set to emit in the sidecar. Defaults to the full registry. */
   personas?: Iterable<DevicePersona>;
   /**
-   * Advisory-lock tuning for the VM boot. Production callers leave this unset
+   * Advisory-lock tuning for a Lima boot. Production callers leave this unset
    * (the real per-instance lock in the OS temp dir); tests point it at a temp
-   * directory so a unit run never contends with a real VM's lock.
+   * directory so a unit run never contends with a real VM's lock. Meaningless
+   * for a substrate this repo does not lifecycle.
    */
   lock?: VmLockOptions;
 }
 
 /**
- * Build a `lima-test-vm` runner. The default singleton is exported as
- * {@link limaTestVmRunner}; tests use this factory to inject a scripted
- * subprocess runner.
+ * Build a device harness over a substrate. The default singleton is exported as
+ * {@link deviceHarness}; tests use this factory to inject a link over a
+ * scripted subprocess runner.
+ *
+ * The link is resolved LAZILY. Constructing the singleton at module scope is
+ * what lets 29 test files import it by name, and resolving a substrate
+ * selection eagerly would make every one of those imports fail on a machine
+ * with nothing configured — including a pure unit run that never touches a
+ * substrate. See `./substrate.js`.
  */
-export function createLimaTestVmRuntime(opts: CreateLimaTestVmRuntimeOpts = {}): TestRuntime {
-  const vmName = opts.vmName ?? LIMA_DEVICE_HARNESS_VM_NAME;
-  const subprocess = opts.subprocess ?? defaultSubprocessRunner;
+export function createDeviceHarness(opts: CreateDeviceHarnessOpts = {}): TestRuntime {
+  const subOpts: SubstrateOpts = opts.subprocess ? { subprocess: opts.subprocess } : {};
+
+  let target: { definition: VmDefinition; link: SubstrateLink } | null = null;
+  /** The substrate and the link to it, resolved once and only when first used. */
+  const resolve = (): { definition: VmDefinition; link: SubstrateLink } => {
+    if (target) return target;
+    const definition = opts.substrate ?? resolveDeviceSubstrate(subOpts).definition;
+    target = { definition, link: opts.link ?? createSubstrateLink(definition, subOpts) };
+    return target;
+  };
+  const link = () => resolve().link;
   const resolvePodkitBinary = opts.resolvePodkitBinary ?? (() => resolveDefaultPodkitBinary());
   const resolveDummyHcdDaemonBinary =
     opts.resolveDummyHcdDaemonBinary ?? (() => resolveDefaultDummyHcdDaemonBinary());
@@ -543,45 +547,30 @@ export function createLimaTestVmRuntime(opts: CreateLimaTestVmRuntimeOpts = {}):
   return {
     id: ID,
     async isAvailable() {
-      const status = await instanceStatus(vmName, subprocess);
-      return status !== 'missing';
+      return (await probeSubstrate(resolve().definition, subOpts)) !== 'unreachable';
     },
     async prepare() {
-      // 1. Boot the VM if stopped, through the shared advisory lock so this
-      //    never races another starter. A MISSING instance is not created
-      //    here: an unprovisioned VM has no binaries, no systemd unit and no
-      //    sealed baseline, so silently conjuring one would trade a clear
-      //    error for a confusing mid-suite failure.
-      const status = await instanceStatus(vmName, subprocess);
-      if (status === 'missing') {
-        throw new Error(
-          `[lima-test-vm] instance '${vmName}' is not registered with Lima. ` +
-            'Create and provision it with: bun run harness:setup'
-        );
-      }
-      if (status === 'stopped') {
-        await ensureRunning(getVm(vmName), { subprocess, lock });
-      }
+      // 1. Bring the substrate up, where this repo owns its provisioner. A
+      //    Lima instance that is merely stopped is started through the shared
+      //    advisory lock so this never races another starter; anything else is
+      //    a descriptive error rather than a silent conjuring. See
+      //    `ensureSubstrateReady`.
+      await ensureSubstrateReady(resolve().definition, {
+        ...subOpts,
+        ...(lock ? { lock } : {}),
+      });
 
       // 2. Transfer the podkit binary. This is the only artefact whose
       //    absence should be fatal: tests can't run without it.
       const podkitPath = resolvePodkitBinary();
-      await transferBinary({
-        vmName,
-        binaryPath: podkitPath,
-        subprocess,
-      });
+      await transferBinary({ link: link(), binaryPath: podkitPath });
 
-      // 3. Transfer gpod-tool — REQUIRED. Tests inside the VM populate
+      // 3. Transfer gpod-tool — REQUIRED. Tests inside the substrate populate
       //    iPod databases via gpod-tool; a missing host binary is fatal.
       //    `bun run harness:install` produces the Linux build and stages it
       //    at the resolver's default path.
       const gpodToolPath = resolveGpodToolBinary();
-      await transferGpodTool({
-        vmName,
-        binaryPath: gpodToolPath,
-        subprocess,
-      });
+      await transferGpodTool({ link: link(), binaryPath: gpodToolPath });
 
       // 4. Transfer the dummy-hcd-daemon — best-effort. Persona tests need
       //    it; doctor-only tests don't.
@@ -589,22 +578,21 @@ export function createLimaTestVmRuntime(opts: CreateLimaTestVmRuntimeOpts = {}):
       if (fs.existsSync(daemonPath)) {
         try {
           await transferBinary({
-            vmName,
+            link: link(),
             binaryPath: daemonPath,
             vmPath: DEFAULT_DUMMY_HCD_DAEMON_VM_PATH,
-            subprocess,
           });
         } catch (err) {
           // eslint-disable-next-line no-console
           console.warn(
-            `[lima-test-vm] dummy-hcd-daemon transfer failed (continuing): ` +
+            `[device-harness] dummy-hcd-daemon transfer failed (continuing): ` +
               (err instanceof Error ? err.message : String(err))
           );
         }
       } else {
         // eslint-disable-next-line no-console
         console.warn(
-          `[lima-test-vm] dummy-hcd-daemon binary not found at ${daemonPath} ` +
+          `[device-harness] dummy-hcd-daemon binary not found at ${daemonPath} ` +
             `— run \`bun run --filter @podkit/device-testing-daemon build\` to produce one.`
         );
       }
@@ -616,13 +604,12 @@ export function createLimaTestVmRuntime(opts: CreateLimaTestVmRuntimeOpts = {}):
       //    `systemctl daemon-reload` when the contents actually change.
       const hostUnitPath = resolveDummyHcdDaemonUnit?.();
       await transferSystemdUnit({
-        vmName,
+        link: link(),
         ...(hostUnitPath !== undefined ? { hostUnitPath } : {}),
-        subprocess,
       });
 
       // 6. Synthesise mass-storage backing files for personas that declare a
-      //    `synthesis` recipe. The image is built inside the VM (no host
+      //    `synthesis` recipe. The image is built inside the substrate (no host
       //    roundtrip) via `truncate` + `mkfs.vfat --invariant`, producing
       //    byte-identical FAT32 every run. The returned map feeds step 7's
       //    sidecar so the daemon sees `massStorageBackingFile.vmPath` pointing
@@ -633,105 +620,50 @@ export function createLimaTestVmRuntime(opts: CreateLimaTestVmRuntimeOpts = {}):
       // single-use Map iterators).
       const personaList = Array.from(personaSource);
       const backingFilePaths = await ensureBackingFilesForPersonas({
-        vmName,
+        link: link(),
         personas: personaList,
-        subprocess,
       });
 
       // 7. Emit the persona sidecar. Idempotent: byte-identical payload for
       //    a fixed registry, so re-running prepare() is a no-op for the daemon.
       await ensurePersonaSidecar({
-        vmName,
+        link: link(),
         personas: personaList,
         backingFilePaths,
-        subprocess,
       });
     },
     async applyState(state: SystemState) {
-      await applyStateRaw({
-        vmName,
-        stateId: state.id,
-        subprocess,
-      });
+      await applyStateRaw({ link: link(), stateId: state.id });
     },
     async run(command: string, runOpts?: RunOpts) {
-      return runViaLimactl(subprocess, vmName, command, runOpts);
+      const result = await link().exec(command, runOpts ?? {});
+      return {
+        stdout: result.stdout,
+        stderr: result.stderr,
+        exitCode: result.exitCode,
+        // Always `null`: a link proxies through ssh and does not surface the
+        // guest's signal back to the host. A timeout that fires surfaces as a
+        // thrown `SubstrateLinkError` naming the bound.
+        signal: null,
+      } satisfies RunResult;
     },
     async teardown() {
       // No-op: the next applyState() call stages and runs apply-state.sh to
-      // bring the VM to the required state. There is no snapshot to restore.
-      // The VM is deliberately NOT shut down — per-group shutdown is too slow.
+      // bring the substrate to the required state. There is no snapshot to
+      // restore. The substrate is deliberately NOT shut down — per-group
+      // shutdown is too slow.
     },
   };
 }
 
 /**
- * Default singleton — used by the auto-register hook in `src/index.ts`.
- */
-export const limaTestVmRunner: TestRuntime = createLimaTestVmRuntime();
-
-// ---------------------------------------------------------------------------
-// `run` implementation
-// ---------------------------------------------------------------------------
-
-/**
- * Run a single shell command inside the VM via `limactl shell <vm> -- …`.
+ * Default singleton — used by the auto-register hook in `src/index.ts`, and
+ * imported by name from every VM test file.
  *
- * Argument shape: limactl forwards everything after `--` to the in-VM shell
- * as one literal argv vector. We honour `opts.cwd` and `opts.env` by
- * synthesising a small `sh -c` wrapper that exports the env, cds, and execs
- * the user's command. `opts.timeoutMs` is enforced via the host-side
- * `SubprocessRunner` shape's `timeoutMs` option (passed through directly).
- *
- * The `signal` field is always `null`: limactl proxies through ssh and does
- * not surface the in-VM signal back to the host. A timeout that fires
- * surfaces as `exitCode = 124` (the conventional `timeout(1)` exit code) via
- * the underlying subprocess runner.
+ * Named for what it is rather than for how it is reached. The previous name
+ * said "lima", which was accurate until the same object could be an SSH
+ * connection to a box on a hypervisor, at which point it became the kind of
+ * name that misleads the next reader (ADR-028 §7 records why "runner" was not
+ * an option either — the word already means two other things here).
  */
-async function runViaLimactl(
-  subprocess: SubprocessRunner,
-  vmName: string,
-  command: string,
-  opts: RunOpts = {}
-): Promise<RunResult> {
-  const wrapped = wrapCommand(command, opts);
-  // Route through runLimactl rather than spawning here. This is the primitive
-  // behind every VM test's `run()`, so it is the single most likely place to
-  // hit a bound — and a bound that fires as execFile's anonymous "killed",
-  // naming neither the timeout nor the VM, is most of the way back to having
-  // no bound at all. runLimactl owns that vocabulary; duplicating the spawn
-  // duplicated the install hint and silently dropped the timeout message.
-  const result = await runLimactl(
-    subprocess,
-    ['shell', vmName, '--', 'sh', '-c', wrapped],
-    typeof opts.timeoutMs === 'number' ? { timeoutMs: opts.timeoutMs } : {}
-  );
-  return {
-    stdout: result.stdout,
-    stderr: result.stderr,
-    exitCode: result.exitCode,
-    signal: null,
-  };
-}
-
-/**
- * Wrap a user command so the VM-side `sh -c` honours `cwd` and `env`. Env
- * vars are exported as `K='…'` (POSIX single-quote form; embedded single
- * quotes are escaped as `'\''` by `shellQuote`).
- */
-function wrapCommand(command: string, opts: RunOpts): string {
-  const segments: string[] = [];
-  if (opts.env) {
-    for (const [key, value] of Object.entries(opts.env)) {
-      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
-        throw new Error(`runOpts.env: invalid variable name '${key}'`);
-      }
-      segments.push(`export ${key}=${shellQuote(value)}`);
-    }
-  }
-  if (opts.cwd) {
-    segments.push(`cd ${shellQuote(opts.cwd)}`);
-  }
-  segments.push(command);
-  return segments.join('; ');
-}
+export const deviceHarness: TestRuntime = createDeviceHarness();

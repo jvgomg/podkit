@@ -40,7 +40,7 @@ import { mkdir, rm } from 'node:fs/promises';
 import { describe, beforeAll, afterAll } from 'bun:test';
 
 import {
-  limaTestVmRunner,
+  deviceHarness,
   VM_COLD_TIMEOUT_MS,
   VM_WARM_TIMEOUT_MS,
   deviceMountNearFull,
@@ -188,7 +188,7 @@ function sq(value: string): string {
 async function runScript(
   body: string
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
-  const result = await limaTestVmRunner.run(`bash -c ${sq(body)}`, {
+  const result = await deviceHarness.run(`bash -c ${sq(body)}`, {
     timeoutMs: VM_WARM_TIMEOUT_MS,
   });
   return { exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr };
@@ -197,7 +197,7 @@ async function runScript(
 async function runRoot(
   body: string
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
-  const result = await limaTestVmRunner.run(`sudo bash -c ${sq(body)}`, {
+  const result = await deviceHarness.run(`sudo bash -c ${sq(body)}`, {
     timeoutMs: VM_WARM_TIMEOUT_MS,
   });
   return { exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr };
@@ -757,7 +757,7 @@ async function runSync(cell: SaveFailCell): Promise<{
   const cfg = configPathFor(cell);
   const name = deviceNameFor(cell);
   const cmd = `/usr/local/bin/podkit --config ${sq(cfg)} sync -d ${sq(name)} -vv`;
-  const result = await limaTestVmRunner.run(cmd, { timeoutMs: VM_WARM_TIMEOUT_MS });
+  const result = await deviceHarness.run(cmd, { timeoutMs: VM_WARM_TIMEOUT_MS });
   return { stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode };
 }
 
@@ -765,7 +765,7 @@ async function runDryRun(cell: SaveFailCell): Promise<{ json: SyncJsonShape; exi
   const cfg = configPathFor(cell);
   const name = deviceNameFor(cell);
   const cmd = `/usr/local/bin/podkit --config ${sq(cfg)} sync -d ${sq(name)} --dry-run --json`;
-  const result = await limaTestVmRunner.run(cmd, { timeoutMs: VM_WARM_TIMEOUT_MS });
+  const result = await deviceHarness.run(cmd, { timeoutMs: VM_WARM_TIMEOUT_MS });
   let json: SyncJsonShape = {};
   try {
     json = JSON.parse(result.stdout) as SyncJsonShape;
@@ -789,7 +789,7 @@ async function runDoctor(cell: SaveFailCell): Promise<DoctorJsonShape> {
   let lastErr: unknown;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const result = await limaTestVmRunner.run(cmd, { timeoutMs: VM_COLD_TIMEOUT_MS });
+      const result = await deviceHarness.run(cmd, { timeoutMs: VM_COLD_TIMEOUT_MS });
       try {
         return JSON.parse(result.stdout) as DoctorJsonShape;
       } catch {
@@ -851,11 +851,11 @@ async function runPreseedFirstSync(cell: SaveFailCell): Promise<void> {
 async function observeCell(cell: SaveFailCell): Promise<SaveFailObserved> {
   // 1. Provision mount + source tree + config.
   if (cell.failureMode === 'enospc') {
-    await limaTestVmRunner.applyState(deviceMountNearFull);
+    await deviceHarness.applyState(deviceMountNearFull);
   } else if (cell.failureMode === 'enospc-post-sweep') {
-    await limaTestVmRunner.applyState(deviceMountFitsEstimateFailedSweep);
+    await deviceHarness.applyState(deviceMountFitsEstimateFailedSweep);
   } else if (cell.failureMode === 'enospc-estimate-drift') {
-    await limaTestVmRunner.applyState(deviceMountFitsEstimateSourceDrifts);
+    await deviceHarness.applyState(deviceMountFitsEstimateSourceDrifts);
   } else {
     await provisionMount(cell);
   }
@@ -916,7 +916,7 @@ async function observeCell(cell: SaveFailCell): Promise<SaveFailObserved> {
 
   // 4. Apply the fault.
   if (fault) {
-    await fault.apply(limaTestVmRunner, faultCtx);
+    await fault.apply(deviceHarness, faultCtx);
   }
 
   // 5. Run the sync (the failing one).
@@ -951,7 +951,7 @@ async function observeCell(cell: SaveFailCell): Promise<SaveFailObserved> {
 
   // 7. Cleanup fault BEFORE doctor + rescan.
   if (fault) {
-    await fault.cleanup(limaTestVmRunner, faultCtx);
+    await fault.cleanup(deviceHarness, faultCtx);
   }
 
   // 8. Doctor (best-effort — iPod cells without a parseable iTunesDB will
@@ -988,7 +988,7 @@ async function observeCell(cell: SaveFailCell): Promise<SaveFailObserved> {
     await runRoot(
       `umount ${sq(faultCtx.mountPoint)} 2>/dev/null || true; rm -f /tmp/podkit-savefail-clean.img`
     ).catch(() => {});
-    await limaTestVmRunner.applyState(healthy).catch(() => {});
+    await deviceHarness.applyState(healthy).catch(() => {});
   } else {
     await cleanupMount(cell);
   }
@@ -1029,7 +1029,7 @@ async function observeCell(cell: SaveFailCell): Promise<SaveFailObserved> {
 }
 
 async function remountClean(mount: string): Promise<void> {
-  await limaTestVmRunner.applyState(healthy).catch(() => {});
+  await deviceHarness.applyState(healthy).catch(() => {});
   const cmd =
     `mkdir -p ${sq(mount)} && ` +
     `truncate -s 5M /tmp/podkit-savefail-clean.img && ` +
@@ -1124,7 +1124,7 @@ describe('VM: save-failure matrix', () => {
   const resultsByCell = new Map<string, SaveFailObserved>();
 
   beforeAll(async () => {
-    await limaTestVmRunner.prepare();
+    await deviceHarness.prepare();
     for (const cell of SAVE_FAIL_CELLS) {
       if (skipForCell(cell) !== null) continue;
       try {
@@ -1150,8 +1150,8 @@ describe('VM: save-failure matrix', () => {
   }, OBSERVE_ALL_CELLS_TIMEOUT_MS);
 
   afterAll(async () => {
-    await limaTestVmRunner.applyState(healthy).catch(() => {});
-    await limaTestVmRunner.teardown();
+    await deviceHarness.applyState(healthy).catch(() => {});
+    await deviceHarness.teardown();
   }, VM_COLD_TIMEOUT_MS);
 
   defineMatrix<SaveFailCell, ReturnType<typeof predictSaveFail>, SaveFailObserved>({

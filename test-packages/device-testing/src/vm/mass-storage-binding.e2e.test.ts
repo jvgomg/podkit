@@ -58,7 +58,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 
-import { limaTestVmRunner } from '../runners/lima-test-vm.js';
+import { deviceHarness } from '../runners/lima-test-vm.js';
 import { VM_COLD_TIMEOUT_MS, VM_WARM_TIMEOUT_MS } from './vm-runtime-setup.js';
 
 // ---------------------------------------------------------------------------
@@ -107,7 +107,7 @@ const SIDECAR_JSON = JSON.stringify(
 );
 
 // ---------------------------------------------------------------------------
-// Helpers (shell out into the VM via `limaTestVmRunner.run`)
+// Helpers (shell out into the VM via `deviceHarness.run`)
 // ---------------------------------------------------------------------------
 
 interface VmResult {
@@ -117,7 +117,7 @@ interface VmResult {
 }
 
 async function vm(cmd: string, timeoutMs: number = VM_WARM_TIMEOUT_MS): Promise<VmResult> {
-  return limaTestVmRunner.run(cmd, { timeoutMs });
+  return deviceHarness.run(cmd, { timeoutMs });
 }
 
 /**
@@ -248,7 +248,7 @@ describe('VM: dummy-hcd mass-storage smoke', () => {
   beforeAll(async () => {
     // Boot the VM, transfer the daemon binary, etc. The runner's prepare()
     // is idempotent.
-    await limaTestVmRunner.prepare();
+    await deviceHarness.prepare();
     // Defensive: scrub any leftover state from a prior failed run.
     await purgeLingeringState();
   }, VM_COLD_TIMEOUT_MS);
@@ -257,7 +257,7 @@ describe('VM: dummy-hcd mass-storage smoke', () => {
     // Final scrub on the way out so we don't leave the VM in a half-bound
     // state for the next test session.
     await purgeLingeringState();
-    await limaTestVmRunner.teardown();
+    await deviceHarness.teardown();
   }, VM_COLD_TIMEOUT_MS);
 
   it(

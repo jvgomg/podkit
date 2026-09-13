@@ -2,14 +2,17 @@
 /**
  * Standalone driver for `transferBinary`. Pushes the latest
  * linux-x64/arm64 podkit binary (and the dummy-hcd-daemon, if a host build
- * exists) into the Lima test VM without running the rest of the install
+ * exists) into the device substrate without running the rest of the install
  * pipeline. Useful when iterating only on the podkit binary; for the full
  * install flow (podkit + daemon + gpod-tool + systemd unit) use
  * `bun run harness:install` instead.
  *
  * Resolution rules:
- *   - VM defaults to the registry's device instance (override via
- *     PODKIT_DEVICE_HARNESS_VM_NAME).
+ *   - The substrate is whichever one this machine has selected — see
+ *     `PODKIT_SUBSTRATE` in `.env.example`. This script used to carry its own
+ *     `PODKIT_DEVICE_HARNESS_VM_NAME` override, which was a second selection
+ *     mechanism nothing else honoured; a machine that had configured one and
+ *     not the other would push a binary to a box it was not testing.
  *   - Podkit binary resolved from `packages/podkit-cli/bin/podkit-linux-${arch}`
  *     where `${arch}` is `process.arch` mapped to `x64`/`arm64`. Override
  *     via PODKIT_LINUX_BINARY.
@@ -24,8 +27,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getVm } from '@podkit/lima';
 import { transferBinary } from '../src/runners/lima-test-vm-binary.js';
+import { resolveDeviceSubstrate } from '../src/runners/substrate.js';
 import {
   resolveDefaultDummyHcdDaemonBinary,
   DEFAULT_DUMMY_HCD_DAEMON_VM_PATH,
@@ -51,7 +54,8 @@ function resolvePodkitBinary(): string {
 }
 
 async function main(): Promise<void> {
-  const vmName = process.env['PODKIT_DEVICE_HARNESS_VM_NAME'] ?? getVm('device').instanceName;
+  const { link } = resolveDeviceSubstrate({ notice: (line) => console.log(`==> ${line}`) });
+  const vmName = link.description;
   const podkitPath = resolvePodkitBinary();
 
   if (!fs.existsSync(podkitPath)) {
@@ -66,7 +70,7 @@ async function main(): Promise<void> {
 
   console.log(`==> transferring podkit binary to ${vmName}...`);
   console.log(`    host: ${podkitPath}`);
-  const podkitResult = await transferBinary({ vmName, binaryPath: podkitPath });
+  const podkitResult = await transferBinary({ link, binaryPath: podkitPath });
   if (podkitResult.skipped) {
     console.log(
       `    skipped — ${vmName} already has matching sha256 (${podkitResult.hostSha256.slice(0, 12)}...)`
@@ -82,7 +86,7 @@ async function main(): Promise<void> {
     console.log(`==> transferring dummy-hcd-daemon to ${vmName}...`);
     console.log(`    host: ${daemonPath}`);
     const daemonResult = await transferBinary({
-      vmName,
+      link,
       binaryPath: daemonPath,
       vmPath: DEFAULT_DUMMY_HCD_DAEMON_VM_PATH,
     });

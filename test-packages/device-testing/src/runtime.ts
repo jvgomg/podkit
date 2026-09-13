@@ -4,8 +4,9 @@
  * Today's runners:
  *
  * - `local-linux` — spawns commands directly on a Linux host (or CI runner).
- * - `lima-test-vm` — proxies commands into a Lima VM with `dummy_hcd` + a
- *   FunctionFS daemon (ADR-016 VM on macOS dev hosts).
+ * - `device-substrate` — proxies commands into the substrate the device
+ *   harness drives (a kernel with `dummy_hcd` + configfs, reached over a
+ *   `SubstrateLink`), whatever provisioned it.
  *
  * New runners register themselves via `registerRunner()` (see `runners/registry.ts`)
  * without modifying this file.
@@ -18,10 +19,10 @@ import type { SystemState } from './system-states/types.js';
 
 /**
  * Identifier for a registered runner. The known set is `'local-linux'` and
- * `'lima-test-vm'`; the type also admits arbitrary string IDs so third-party
- * runners can register without forcing a union widening here.
+ * `'device-substrate'`; the type also admits arbitrary string IDs so
+ * third-party runners can register without forcing a union widening here.
  */
-export type RunnerId = 'local-linux' | 'lima-test-vm' | (string & {});
+export type RunnerId = 'local-linux' | 'device-substrate' | (string & {});
 
 /** Options accepted by `TestRuntime.run`. */
 export interface RunOpts {
@@ -53,7 +54,7 @@ export interface TestRuntime {
   prepare(): Promise<void>;
   /**
    * Bring the runtime to a known `SystemState` — stages and runs
-   * `apply-state.sh` inside the VM for `lima-test-vm`, shells out to
+   * `apply-state.sh` inside the substrate for `device-substrate`, shells out to
    * `apply-state.sh` for `local-linux` (gated behind
    * `PODKIT_DEVTEST_LOCAL_MUTATE=1` so a dev host is never mutated by
    * accident).

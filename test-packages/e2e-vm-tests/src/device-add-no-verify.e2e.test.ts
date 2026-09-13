@@ -35,7 +35,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 
 import {
-  limaTestVmRunner,
+  deviceHarness,
   VM_COLD_TIMEOUT_MS,
   VM_WARM_TIMEOUT_MS,
   mountPersona,
@@ -59,16 +59,16 @@ interface AddFailureJson {
 
 describe('VM: device add --no-verify (trust-disk)', () => {
   beforeAll(async () => {
-    await limaTestVmRunner.prepare();
+    await deviceHarness.prepare();
   }, VM_COLD_TIMEOUT_MS);
 
   afterAll(async () => {
-    await limaTestVmRunner.teardown();
+    await deviceHarness.teardown();
   }, VM_COLD_TIMEOUT_MS);
 
   describe(`SystemState: ${healthy.id}`, () => {
     beforeAll(async () => {
-      await limaTestVmRunner.applyState(healthy);
+      await deviceHarness.applyState(healthy);
     }, VM_COLD_TIMEOUT_MS);
 
     // ─────────────────────────────────────────────────────────────────────
@@ -91,17 +91,16 @@ describe('VM: device add --no-verify (trust-disk)', () => {
           // classic SysInfo (ModelNumStr) + a valid iTunesDB; it does NOT
           // write SysInfoExtended, but a non-checksum generation does not
           // require it, so the trust-disk add proceeds.
-          const init = await limaTestVmRunner.run(
-            `gpod-tool init ${VM_MOUNT_POINT} --model MA147`,
-            { timeoutMs: VM_WARM_TIMEOUT_MS }
-          );
+          const init = await deviceHarness.run(`gpod-tool init ${VM_MOUNT_POINT} --model MA147`, {
+            timeoutMs: VM_WARM_TIMEOUT_MS,
+          });
           if (init.exitCode !== 0) {
             throw new Error(
               `gpod-tool init failed (exit=${init.exitCode}): ${init.stderr.trim() || init.stdout.trim()}`
             );
           }
 
-          await limaTestVmRunner.run(`printf 'version = 2\\n' > ${VM_CONFIG_PATH}`, {
+          await deviceHarness.run(`printf 'version = 2\\n' > ${VM_CONFIG_PATH}`, {
             timeoutMs: VM_WARM_TIMEOUT_MS,
           });
         } catch (err) {
@@ -111,7 +110,7 @@ describe('VM: device add --no-verify (trust-disk)', () => {
       }, VM_COLD_TIMEOUT_MS);
 
       afterAll(async () => {
-        await limaTestVmRunner
+        await deviceHarness
           .run(`rm -f ${VM_CONFIG_PATH} 2>/dev/null || true`, { timeoutMs: VM_WARM_TIMEOUT_MS })
           .catch(() => {});
         await unmountAndStop({ personaId: PERSONA.id, mountPoint: VM_MOUNT_POINT });
@@ -121,7 +120,7 @@ describe('VM: device add --no-verify (trust-disk)', () => {
         'add --no-verify succeeds with verification: trusted-disk',
         async () => {
           const invocation = await runJsonCommand(
-            limaTestVmRunner,
+            deviceHarness,
             `/usr/local/bin/podkit --config ${VM_CONFIG_PATH} device add -d trustdisk ` +
               `--path ${VM_MOUNT_POINT} --no-verify --yes --json`,
             VM_WARM_TIMEOUT_MS
@@ -156,10 +155,9 @@ describe('VM: device add --no-verify (trust-disk)', () => {
           // SysInfo resolves a checksum generation, so the identity store
           // (SysInfoExtended) is REQUIRED — but gpod-tool init does not write
           // it, and we defensively remove any seeded copy below.
-          const init = await limaTestVmRunner.run(
-            `gpod-tool init ${VM_MOUNT_POINT} --model MB147`,
-            { timeoutMs: VM_WARM_TIMEOUT_MS }
-          );
+          const init = await deviceHarness.run(`gpod-tool init ${VM_MOUNT_POINT} --model MB147`, {
+            timeoutMs: VM_WARM_TIMEOUT_MS,
+          });
           if (init.exitCode !== 0) {
             throw new Error(
               `gpod-tool init failed (exit=${init.exitCode}): ${init.stderr.trim() || init.stdout.trim()}`
@@ -168,12 +166,11 @@ describe('VM: device add --no-verify (trust-disk)', () => {
 
           // Guarantee SysInfoExtended is absent so the identity store reads
           // as `missing` (trust-disk's required-but-missing branch).
-          await limaTestVmRunner.run(
-            `rm -f ${VM_MOUNT_POINT}/iPod_Control/Device/SysInfoExtended`,
-            { timeoutMs: VM_WARM_TIMEOUT_MS }
-          );
+          await deviceHarness.run(`rm -f ${VM_MOUNT_POINT}/iPod_Control/Device/SysInfoExtended`, {
+            timeoutMs: VM_WARM_TIMEOUT_MS,
+          });
 
-          await limaTestVmRunner.run(`printf 'version = 2\\n' > ${VM_CONFIG_PATH}`, {
+          await deviceHarness.run(`printf 'version = 2\\n' > ${VM_CONFIG_PATH}`, {
             timeoutMs: VM_WARM_TIMEOUT_MS,
           });
         } catch (err) {
@@ -183,7 +180,7 @@ describe('VM: device add --no-verify (trust-disk)', () => {
       }, VM_COLD_TIMEOUT_MS);
 
       afterAll(async () => {
-        await limaTestVmRunner
+        await deviceHarness
           .run(`rm -f ${VM_CONFIG_PATH} 2>/dev/null || true`, { timeoutMs: VM_WARM_TIMEOUT_MS })
           .catch(() => {});
         await unmountAndStop({ personaId: PERSONA.id, mountPoint: VM_MOUNT_POINT });
@@ -193,7 +190,7 @@ describe('VM: device add --no-verify (trust-disk)', () => {
         'add --no-verify errors with the run-doctor remediation hint',
         async () => {
           const invocation = await runJsonCommand(
-            limaTestVmRunner,
+            deviceHarness,
             `/usr/local/bin/podkit --config ${VM_CONFIG_PATH} device add -d nosie ` +
               `--path ${VM_MOUNT_POINT} --no-verify --yes --json`,
             VM_WARM_TIMEOUT_MS
@@ -205,7 +202,7 @@ describe('VM: device add --no-verify (trust-disk)', () => {
           // The remediation hint must point the user at `podkit doctor`.
           expect(parsed.error ?? '').toMatch(/podkit doctor/);
           // Config row must NOT have been written.
-          const config = await limaTestVmRunner.run(`cat ${VM_CONFIG_PATH}`, {
+          const config = await deviceHarness.run(`cat ${VM_CONFIG_PATH}`, {
             timeoutMs: VM_WARM_TIMEOUT_MS,
           });
           expect(config.stdout).not.toContain('[devices.nosie]');

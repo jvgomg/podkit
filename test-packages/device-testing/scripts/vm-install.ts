@@ -34,6 +34,9 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { getVm } from '@podkit/lima';
+
+import { createSubstrateLink } from '../src/runners/substrate.js';
 import {
   instanceStatus,
   LIMA_DEVICE_HARNESS_VM_NAME,
@@ -71,6 +74,10 @@ interface Summary {
 
 async function main(): Promise<number> {
   const vmName = LIMA_DEVICE_HARNESS_VM_NAME;
+  // The Lima device substrate specifically — this is the turbo task behind
+  // `harness:install`, whose cache marker and remediation both name the Lima
+  // instance.
+  const link = createSubstrateLink(getVm('device'));
 
   const status = await instanceStatus().catch(() => 'missing' as const);
   if (status === 'missing') {
@@ -103,7 +110,7 @@ async function main(): Promise<number> {
     );
     return 1;
   }
-  const podkitResult = await transferBinary({ vmName, binaryPath: podkitPath });
+  const podkitResult = await transferBinary({ link, binaryPath: podkitPath });
   process.stdout.write(
     `[vm:install] podkit → ${vmName}:${DEFAULT_PODKIT_VM_PATH}` +
       ` (${podkitResult.skipped ? 'skipped — sha256 matches' : 'installed'}; ` +
@@ -122,7 +129,7 @@ async function main(): Promise<number> {
   let podkitDebugSha: string | null = null;
   if (fs.existsSync(podkitDebugPath)) {
     const podkitDebugResult = await transferBinary({
-      vmName,
+      link,
       binaryPath: podkitDebugPath,
       vmPath: DEFAULT_PODKIT_DEBUG_VM_PATH,
     });
@@ -148,7 +155,7 @@ async function main(): Promise<number> {
     );
     return 1;
   }
-  const gpodResult = await transferGpodTool({ vmName, binaryPath: gpodToolPath });
+  const gpodResult = await transferGpodTool({ link, binaryPath: gpodToolPath });
   process.stdout.write(
     `[vm:install] gpod-tool → ${vmName}:${DEFAULT_GPOD_TOOL_VM_PATH}` +
       ` (${gpodResult.skipped ? 'skipped — sha256 matches' : 'installed'}; ` +
@@ -161,7 +168,7 @@ async function main(): Promise<number> {
   let daemonSha: string | null = null;
   if (fs.existsSync(daemonPath)) {
     const daemonResult = await transferBinary({
-      vmName,
+      link,
       binaryPath: daemonPath,
       vmPath: DEFAULT_DUMMY_HCD_DAEMON_VM_PATH,
     });
@@ -180,7 +187,7 @@ async function main(): Promise<number> {
 
   // 4. systemd unit — always run; helper sha256-skips when already current.
   const unitResult = await transferSystemdUnit({
-    vmName,
+    link,
     hostUnitPath: resolveDefaultDummyHcdDaemonUnit(),
   });
   process.stdout.write(

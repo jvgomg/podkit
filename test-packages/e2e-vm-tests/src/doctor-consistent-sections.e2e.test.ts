@@ -44,7 +44,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 
 import {
-  limaTestVmRunner,
+  deviceHarness,
   VM_COLD_TIMEOUT_MS,
   VM_WARM_TIMEOUT_MS,
   runJsonCommand,
@@ -53,16 +53,16 @@ import {
 
 describe('VM: doctor consistent sections', () => {
   beforeAll(async () => {
-    await limaTestVmRunner.prepare();
+    await deviceHarness.prepare();
   }, VM_COLD_TIMEOUT_MS);
 
   afterAll(async () => {
-    await limaTestVmRunner.teardown();
+    await deviceHarness.teardown();
   }, VM_COLD_TIMEOUT_MS);
 
   describe(`SystemState: ${healthy.id}`, () => {
     beforeAll(async () => {
-      await limaTestVmRunner.applyState(healthy);
+      await deviceHarness.applyState(healthy);
     }, VM_COLD_TIMEOUT_MS);
 
     it(
@@ -71,7 +71,7 @@ describe('VM: doctor consistent sections', () => {
         // Text-mode invocation — the text renderer is what the AC's
         // section-ordering contract speaks about. JSON envelope is asserted
         // in `doctor-scope-refactor.e2e.test.ts`.
-        const result = await limaTestVmRunner.run('/usr/local/bin/podkit doctor --scope system', {
+        const result = await deviceHarness.run('/usr/local/bin/podkit doctor --scope system', {
           timeoutMs: VM_WARM_TIMEOUT_MS,
         });
 
@@ -101,7 +101,7 @@ describe('VM: doctor consistent sections', () => {
         // deviceModel / readiness). The distinct envelope allows the renderer
         // to branch cleanly between system-only and device-bound output.
         const invocation = await runJsonCommand(
-          limaTestVmRunner,
+          deviceHarness,
           '/usr/local/bin/podkit doctor --scope system --json',
           VM_WARM_TIMEOUT_MS
         );
@@ -129,7 +129,7 @@ describe('VM: doctor consistent sections', () => {
       '--scope device with no -d exits DEVICE_REQUIRED (no fallback to system-only)',
       async () => {
         const invocation = await runJsonCommand(
-          limaTestVmRunner,
+          deviceHarness,
           '/usr/local/bin/podkit doctor --scope device --json',
           VM_WARM_TIMEOUT_MS
         );
@@ -158,7 +158,7 @@ describe('VM: doctor consistent sections', () => {
         // device sections without a device. Pins "--no-system doesn't silently
         // produce an empty report".
         const invocation = await runJsonCommand(
-          limaTestVmRunner,
+          deviceHarness,
           '/usr/local/bin/podkit doctor --no-system --json',
           VM_WARM_TIMEOUT_MS
         );
@@ -189,7 +189,7 @@ describe('VM: doctor consistent sections', () => {
         // it) is in the unit suite `doctor-grouped-render.test.ts` because
         // VM can't drive a mounted mass-storage `doctor -d` flow today.
         const invocation = await runJsonCommand(
-          limaTestVmRunner,
+          deviceHarness,
           '/usr/local/bin/podkit doctor --scope system --json',
           VM_WARM_TIMEOUT_MS
         );

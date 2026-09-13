@@ -43,7 +43,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 
 import {
-  limaTestVmRunner,
+  deviceHarness,
   VM_COLD_TIMEOUT_MS,
   VM_WARM_TIMEOUT_MS,
   mountPersona,
@@ -90,16 +90,16 @@ interface DeviceDoctorJson {
 
 describe('VM: doctor SysInfoExtended output + readiness', () => {
   beforeAll(async () => {
-    await limaTestVmRunner.prepare();
+    await deviceHarness.prepare();
   }, VM_COLD_TIMEOUT_MS);
 
   afterAll(async () => {
-    await limaTestVmRunner.teardown();
+    await deviceHarness.teardown();
   }, VM_COLD_TIMEOUT_MS);
 
   describe(`SystemState: ${healthy.id}`, () => {
     beforeAll(async () => {
-      await limaTestVmRunner.applyState(healthy);
+      await deviceHarness.applyState(healthy);
     }, VM_COLD_TIMEOUT_MS);
 
     // ─────────────────────────────────────────────────────────────────────
@@ -127,10 +127,9 @@ describe('VM: doctor SysInfoExtended output + readiness', () => {
           // stage of readiness passes (firmware identity resolves from
           // SysInfo alone; SIE parse failure is therefore an isolated
           // signal, not an "unknown device" cascade).
-          const init = await limaTestVmRunner.run(
-            `gpod-tool init ${VM_MOUNT_POINT} --model MA446`,
-            { timeoutMs: VM_WARM_TIMEOUT_MS }
-          );
+          const init = await deviceHarness.run(`gpod-tool init ${VM_MOUNT_POINT} --model MA446`, {
+            timeoutMs: VM_WARM_TIMEOUT_MS,
+          });
           if (init.exitCode !== 0) {
             throw new Error(
               `gpod-tool init failed (exit=${init.exitCode}): ${init.stderr.trim() || init.stdout.trim()}`
@@ -143,7 +142,7 @@ describe('VM: doctor SysInfoExtended output + readiness', () => {
           // AFTER gpod-tool init, since init does not touch SIE but a
           // future change might. 500 bytes lands mid-element on the SIE
           // XML — the exact failure shape the unit suite pins.
-          const truncate = await limaTestVmRunner.run(
+          const truncate = await deviceHarness.run(
             `truncate -s 500 ${VM_MOUNT_POINT}/iPod_Control/Device/SysInfoExtended`,
             { timeoutMs: VM_WARM_TIMEOUT_MS }
           );
@@ -166,7 +165,7 @@ describe('VM: doctor SysInfoExtended output + readiness', () => {
         'truncated on-disk SIE: readiness stage reports sysInfoExtendedUnparseable: true (preserves the present-but-unparseable signal)',
         async () => {
           const invocation = await runJsonCommand(
-            limaTestVmRunner,
+            deviceHarness,
             `/usr/local/bin/podkit -d ${VM_MOUNT_POINT} doctor --scope device --json`,
             VM_WARM_TIMEOUT_MS
           );
@@ -199,7 +198,7 @@ describe('VM: doctor SysInfoExtended output + readiness', () => {
       it(
         'truncated on-disk SIE: human output names SysInfoExtended; does NOT bleed artwork-database failure copy',
         async () => {
-          const result = await limaTestVmRunner.run(
+          const result = await deviceHarness.run(
             `/usr/local/bin/podkit -d ${VM_MOUNT_POINT} doctor --scope device`,
             { timeoutMs: VM_WARM_TIMEOUT_MS }
           );

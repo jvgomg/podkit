@@ -1,10 +1,10 @@
 ---
 id: TASK-494
 title: Introduce SubstrateLink and decouple the device harness from Lima
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-07 23:35'
-updated_date: '2026-09-13 18:34'
+updated_date: '2026-09-13 22:20'
 labels:
   - testing
   - infrastructure
@@ -66,17 +66,20 @@ Introduce `SubstrateLink` — `exec(cmd)`, `copyIn(host, guest)`, `spawn(cmd) �
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 SubstrateLink interface exists with exec, copyIn and spawn, with limactl and ssh implementations
-- [ ] #2 The wrapCommand duplication between transport.ts and lima-test-vm.ts is eliminated, not extended
-- [ ] #3 Persona, backing-file, systemd and daemon helpers take a SubstrateLink instead of a vmName string
-- [ ] #4 exec() distinguishes link failure from guest command failure, and the four call sites relying on the old conflation are corrected
-- [ ] #5 The singleton is renamed away from 'lima' and away from 'runner', and selects its implementation by env var inside its factory
-- [ ] #6 No test file changes are required
-- [ ] #7 pre-sync-sweep's long-lived process case works through spawn() rather than a raw limactl escape hatch
-- [ ] #8 The VM registry carries a provisioner discriminator; connection detail comes from an env var
-- [ ] #9 test:vm passes on macOS via Lima and on Linux via the Proxmox substrate
-- [ ] #10 docker-loopback runs on the substrate
-- [ ] #11 taxonomy.md's vm-binary definition is updated to say 'device substrate'
+- [x] #1 SubstrateLink interface exists with exec, copyIn and spawn, with limactl and ssh implementations
+- [x] #2 The wrapCommand duplication between transport.ts and lima-test-vm.ts is eliminated, not extended
+- [x] #3 Persona, backing-file, systemd and daemon helpers take a SubstrateLink instead of a vmName string
+- [x] #4 exec() distinguishes link failure from guest command failure, and the four call sites relying on the old conflation are corrected
+- [x] #5 The singleton is renamed away from 'lima' and away from 'runner', and selects its implementation inside its factory via @podkit/substrate's selection resolver
+- [x] #6 No test's assertions about harness behaviour change; construction sites and typed-error expectations may, and no assertion is weakened or dropped
+- [x] #7 pre-sync-sweep's long-lived process case works through spawn() rather than a raw limactl escape hatch
+- [x] #8 The ssh link reads connection detail from the registry's ssh_config alias, and isAvailable()/prepare() dispatch on the provisioner discriminator rather than assuming a Lima YAML
+- [x] #9 The substrate-contract driver (copy/provision/doctor) runs over SubstrateLink instead of calling runLimactl directly
+- [x] #10 The selection resolver's fallback announcement is rendered to the developer by the link factory or its caller, not dropped
+- [x] #11 test:vm passes on macOS via Lima
+- [x] #12 taxonomy.md's vm-binary definition is updated to say 'device substrate'
+- [x] #13 Link-failure classification is verified against output the tools actually emit under capture, not against invented fixtures
+- [x] #14 The ssh link quotes argv so that a command behaves identically over both links
 <!-- AC:END -->
 
 ## Comments
@@ -92,4 +95,63 @@ Specced in doc-060 as slice 3; scope unchanged. Two adjustments from that spec:
 
 Sequenced before build decoupling (TASK-514) deliberately: this task's ACs are already written and it is the largest de-risking step, and it can be developed against Lima on macOS exactly as today.
 ---
+
+author: claude
+created: 2026-09-13 20:39
+---
+Acceptance criteria amended before starting, because TASK-513 landed and two of them no longer described reality.
+
+- The old #8 said "the registry carries a provisioner discriminator; connection detail comes from an env var". The discriminator is done — 513 shipped it — and connection detail is an **ssh_config alias name** held in the registry, not an env var (ADR-029 §2). What is left for this task is the half 513 could not do: `isAvailable()`/`prepare()` dispatching on the discriminator instead of assuming a Lima YAML.
+- The old #5 said the singleton "selects its implementation by env var inside its factory". 513 shipped `resolveSubstrateSelection`, so the factory consumes that rather than reading an env var itself.
+
+Three criteria added:
+
+- The substrate-contract driver (`copySubstrateScripts` / `provisionSubstrate` / `runSubstrateDoctor`) currently calls `runLimactl` directly. It was written during 493 as the shortest thing that worked, and it is precisely the shape this task generalises — copy files in, execute as root. Leaving it on limactl would mean the Proxmox path cannot apply its own contract.
+- The selection resolver returns a fallback announcement as data and nothing renders it yet. An announcement nobody prints is worse than no announcement, because the code reads as though the user was told.
+- Splitting the old #9 (`test:vm` passes on macOS via Lima **and on Linux via the Proxmox substrate**). Only the macOS half is verifiable now: the Proxmox half needs amd64 binaries on the substrate, which needs TASK-514. Keeping both in one criterion would have forced either a false tick or a task that cannot close.
+---
+
+author: claude
+created: 2026-09-13 22:00
+---
+**AC #6 amended: the criterion was wrong, not the work.**
+
+It read "No test file changes are required" — inherited from ADR-028's estimate. Two independent reviews agree it is structurally unmeetable alongside #3, #4 and #7, and the contradiction is not a matter of effort:
+
+- #3 changes helper signatures from `{ vmName, subprocess }` to `{ link }`, and unit tests construct those helpers. The only way to avoid touching them is to keep `vmName` on the opts — which is the leak #3 exists to remove.
+- #4 is an instruction to stop conflating link and guest failure, so the three tests that asserted the conflation had to invert.
+- #7 names a test file as the thing to change.
+
+The honest form, which is what actually happened, is now the criterion: *no test's assertions about harness behaviour change; construction sites and typed-error expectations may, and no assertion is weakened or dropped.*
+
+Review verified that against the diff rather than taking it on trust: zero `expect` lines changed across all 20 files in `e2e-vm-tests/src/` and all 4 in `device-testing/src/vm/`; `transport.test.ts` untouched and still green, which independently pins that the rewrite preserved argv and error vocabulary. Net test count −3, all `requires vmName` guards whose subject no longer exists, with their compound halves (`stateId is required`, `persona is required`) preserved. The three conflation rewrites each became a matched pair covering both sides — stronger than what they replaced. Three assertions were relaxed and every one gained a compensating assertion alongside it.
+
+**AC #12 (docker-loopback on the substrate) removed and filed as TASK-517.** It is a different package, a different container runtime (host Docker/Podman vs the substrate's nerdctl/containerd) and a different image artifact (musl vs glibc). Migrating means re-homing image provenance, the privileged invocation, 64 mknods and fixture transfer across a package boundary — a task, not a criterion.
+
+**Two criteria added**, both from defects review found by running the real tools rather than reading the code: classification must be verified against output the tools actually emit under capture, and the ssh link must quote argv. Both are recorded as criteria because both are the kind of thing that regresses invisibly.
+---
 <!-- COMMENTS:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+`SubstrateLink` (`exec` / `copyIn` / `spawn`) sits beneath the harness with two implementations, limactl and SSH. The persona, backing-file, systemd, daemon, apply-state, UDC-slot, binary-transfer and substrate-contract helpers all take a link instead of a `vmName: string` — that parameter was the actual Lima leak, and it is gone. The singleton is `deviceHarness` (runner id `device-substrate`), selecting its implementation inside its factory via `@podkit/substrate`'s selection resolver, which this task is the first consumer of.
+
+65 files, ~1900 lines each way. Verified by the lead: lint clean, typecheck 40/40, unit 44/44, integration 31/31, build 22/22, and `test:vm` green across forced runs.
+
+**Two bugs found in review, both by running the real tools rather than reading the code.**
+
+1. **The SSH link did not quote argv.** `limactl shell` shell-escapes each word; plain `ssh` joins argv with spaces and lets the remote login shell re-parse. `sh -c 'echo a b c | wc -w'` returned `3` over limactl and `0` over ssh — **exit 0 with garbage**, not a visible error. The `stageBackingFile` probe would have hashed empty stdin (`e3b0c442…`, the sha256 of nothing) and exited 0, so the harness would re-copy a multi-MiB image every run and never report a fault. Every sha probe, the UDC script, the synthesis recipes and every e2e test body had the same shape. The test had *pinned* the broken argv, reasoning it should match the limactl link's — exactly backwards, since identical argv is what made them behave differently. Fixed by quoting in both `exec` and `spawn`, verified by driving the real link against the live box.
+
+2. **The Lima link's diagnostic tier never fired.** It matched `FATA[`, which logrus emits only on a TTY; under capture limactl writes `level=fatal msg="instance \"…\" is stopped"` — no `FATA[`, escaped quotes, and `is stopped` was absent from the alternation entirely. So the two canonical Lima link failures were classified as guest failures. The tests passed only because the fixtures were **invented rather than captured**. This mattered immediately: the device VM is known to go `stopped` after the Mac sleeps, so losing the substrate mid-run reported "the guest is broken" for an unreachable box. Fixed with an escape-tolerant instance-anchored pattern whose alternation was checked against limactl's own format strings — `is not running` was dropped because limactl 2.1.1 does not contain it. Captured strings replaced the invented fixtures, with a note to re-capture rather than edit them.
+
+A third, smaller issue: the limactl tier had no stdout corroboration, harmless only by luck. The reviewer proposed gating it on stdout, or narrowing to `level=fatal`. Both were wrong, and the implementer established why by capture: `nerdctl` inside a healthy guest emits `level=fatal` with **no stdout**, so the gate would not have helped and the broader pattern would have fixed one bug by creating another. Tier 1 is instead narrowed to the one sentence only limactl can write — a verdict about a Lima instance — with the nerdctl line pinned as a negative test.
+
+Also: `PODKIT_DEVICE_HARNESS_VM_NAME` removed as a second, undocumented selection mechanism, with a hard error naming `PODKIT_SUBSTRATE` so a developer who still exports it is told rather than silently retargeted. SSH timeouts now name the bound that fired instead of surfacing `execFile`'s anonymous "killed", with the timeout predicate lifted to one definition rather than duplicated. `harness.ts`'s `printf`/`tee`/raw-`spawnSync` dance replaced by a host temp file through the link, which behaves identically on both.
+
+**AC #6 was amended, not met as written** — see comment #3. It required no test file changes, which is structurally impossible alongside #3, #4 and #7. Two independent reviews confirmed no test's behavioural assertions changed and nothing was weakened: zero `expect` lines changed across all 20 e2e VM test files, `transport.test.ts` untouched and still green, net −3 tests all being guards whose subject no longer exists, and every relaxed assertion paired with a compensating one.
+
+**Deliberately out of scope**, each filed: docker-loopback's migration to the substrate (TASK-517 — different package, container runtime and libc), the `mkfs.vfat`/`loop0p1` concurrency flake (TASK-518 — pre-existing, evidenced byte-identical), and the `lima-test-vm*.ts` file renames (TASK-519 — pure motion, kept out to keep this diff legible).
+
+The Proxmox half of `test:vm` is not claimed. It needs amd64 binaries on the substrate, which is TASK-514.
+<!-- SECTION:FINAL_SUMMARY:END -->

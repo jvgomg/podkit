@@ -25,6 +25,32 @@ import {
   DEFAULT_GPOD_TOOL_VM_PATH,
 } from './lima-test-vm-binary.js';
 import type { SubprocessRunner, SubprocessRunOpts, SubprocessRunResult } from '../subprocess.js';
+import { createLimactlLink } from '@podkit/lima';
+import { isSubstrateLinkError } from '@podkit/substrate';
+
+// ---------------------------------------------------------------------------
+// Substrate link over a scripted runner
+//
+// The harness talks to a `SubstrateLink`, never to `limactl` directly — so the
+// seam the assertions below record is the link's argv. Building a limactl link
+// over the scripted runner keeps those assertions pinning exactly what a real
+// Lima substrate receives, which is the point: they are what a second
+// implementation has to reproduce.
+// ---------------------------------------------------------------------------
+
+/**
+ * A runner that fails the test if anything reaches it. The default for cases
+ * whose whole point is that a host-side guard fires BEFORE the substrate is
+ * touched — "no runner in scope" would otherwise read as "no assertion".
+ */
+const neverReached: SubprocessRunner = {
+  async run(command, args) {
+    throw new Error(`unexpected substrate call: ${command} ${args.join(' ')}`);
+  },
+};
+
+const linkTo = (instanceName: string, subprocess: SubprocessRunner = neverReached) =>
+  createLimactlLink({ id: instanceName, instanceName }, { subprocess });
 
 // ---------------------------------------------------------------------------
 // Scripted SubprocessRunner
@@ -77,6 +103,18 @@ const fail = (exitCode: number, stderr: string): SubprocessRunResult => ({
   exitCode,
 });
 
+/**
+ * limactl's refusal when the instance is not there, captured verbatim from
+ * `limactl shell … 2>&1 | cat` (limactl 2.1.1) rather than written from
+ * memory. The piped form is the only one the harness sees: limactl writes the
+ * bracketed `FATA[…]` logrus prefix only to a TTY. See the fixture note in
+ * `@podkit/lima`'s `link.test.ts`.
+ */
+const LIMACTL_MISSING_INSTANCE =
+  'time="2026-09-13T23:00:43+01:00" level=fatal ' +
+  'msg="instance \\"podkit-device\\" does not exist, run `limactl create podkit-device` ' +
+  'to create a new instance"';
+
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
@@ -112,14 +150,13 @@ describe('transferBinary (AC1: copy + install + cleanup atomically)', () => {
     ]);
 
     const result = await transferBinary({
-      vmName: 'podkit-device',
+      link: linkTo('podkit-device', runner),
       binaryPath: hostBinary,
-      subprocess: runner,
     });
 
     expect(result.skipped).toBe(false);
     expect(result.hostSha256).toBe(hostSha);
-    expect(result.vmName).toBe('podkit-device');
+    expect(result.substrate).toContain('podkit-device');
     expect(result.vmPath).toBe(DEFAULT_PODKIT_VM_PATH);
 
     expect(calls).toHaveLength(4);
@@ -154,10 +191,9 @@ describe('transferBinary (AC1: copy + install + cleanup atomically)', () => {
   it('respects a custom vmPath', async () => {
     const { runner, calls } = makeScriptedRunner([ok(''), ok(), ok(), ok()]);
     const result = await transferBinary({
-      vmName: 'podkit-device',
+      link: linkTo('podkit-device', runner),
       binaryPath: hostBinary,
       vmPath: '/opt/podkit/podkit',
-      subprocess: runner,
     });
     expect(result.vmPath).toBe('/opt/podkit/podkit');
     expect(calls[2]!.args).toContain('/opt/podkit/podkit');
@@ -173,9 +209,8 @@ describe('transferBinary (AC2: idempotent on sha256 match)', () => {
     const { runner, calls } = makeScriptedRunner([ok(hostSha + '\n')]);
 
     const result = await transferBinary({
-      vmName: 'podkit-device',
+      link: linkTo('podkit-device', runner),
       binaryPath: hostBinary,
-      subprocess: runner,
     });
 
     expect(result.skipped).toBe(true);
@@ -189,9 +224,8 @@ describe('transferBinary (AC2: idempotent on sha256 match)', () => {
     const { runner, calls } = makeScriptedRunner([ok(wrongSha + '\n'), ok(), ok(), ok()]);
 
     const result = await transferBinary({
-      vmName: 'podkit-device',
+      link: linkTo('podkit-device', runner),
       binaryPath: hostBinary,
-      subprocess: runner,
     });
 
     expect(result.skipped).toBe(false);
@@ -209,14 +243,12 @@ describe('transferBinary (AC3: atomicity)', () => {
     const probe2 = makeScriptedRunner([ok(''), ok(), ok(), ok()]);
 
     await transferBinary({
-      vmName: 'podkit-device',
+      link: linkTo('podkit-device', probe1.runner),
       binaryPath: hostBinary,
-      subprocess: probe1.runner,
     });
     await transferBinary({
-      vmName: 'podkit-device',
+      link: linkTo('podkit-device', probe2.runner),
       binaryPath: hostBinary,
-      subprocess: probe2.runner,
     });
 
     const tmpA = probe1.calls[1]!.args[2];
@@ -236,9 +268,8 @@ describe('transferBinary (AC3: atomicity)', () => {
     let caught: Error | undefined;
     try {
       await transferBinary({
-        vmName: 'podkit-device',
+        link: linkTo('podkit-device', runner),
         binaryPath: hostBinary,
-        subprocess: runner,
       });
     } catch (err) {
       caught = err as Error;
@@ -265,16 +296,15 @@ describe('transferBinary (AC3: atomicity)', () => {
     let caught: Error | undefined;
     try {
       await transferBinary({
-        vmName: 'podkit-device',
+        link: linkTo('podkit-device', runner),
         binaryPath: hostBinary,
-        subprocess: runner,
       });
     } catch (err) {
       caught = err as Error;
     }
 
     expect(caught).toBeDefined();
-    expect(caught!.message).toMatch(/limactl copy failed/);
+    expect(caught!.message).toMatch(/failed to copy podkit binary/);
     // Only probe + copy ran. No `install`, no premature `rm`.
     expect(calls).toHaveLength(2);
     expect(calls.some((c) => c.args.includes('install'))).toBe(false);
@@ -292,9 +322,8 @@ describe('transferBinary (AC4/AC5: error paths)', () => {
     let caught: Error | undefined;
     try {
       await transferBinary({
-        vmName: 'podkit-device',
+        link: linkTo('podkit-device', runner),
         binaryPath: ghost,
-        subprocess: runner,
       });
     } catch (err) {
       caught = err as Error;
@@ -313,9 +342,8 @@ describe('transferBinary (AC4/AC5: error paths)', () => {
     let caught: Error | undefined;
     try {
       await transferBinary({
-        vmName: 'podkit-device',
+        link: linkTo('podkit-device', runner),
         binaryPath: hostBinary,
-        subprocess: runner,
       });
     } catch (err) {
       caught = err as Error;
@@ -325,36 +353,40 @@ describe('transferBinary (AC4/AC5: error paths)', () => {
     expect(caught!.message).toContain('brew install lima');
   });
 
-  it('throws when limactl shell returns non-zero for the probe', async () => {
-    const { runner } = makeScriptedRunner([fail(1, 'instance "podkit-device" not found')]);
-    let caught: Error | undefined;
+  // An unreachable substrate and a failing guest command are different
+  // outcomes: the first is a reason to skip, the second a reason to fail. The
+  // exit code cannot tell them apart — it belongs to the guest either way — so
+  // the link raises a typed error for the first and returns for the second.
+  it('raises a typed link error when the substrate is not there to probe', async () => {
+    const { runner } = makeScriptedRunner([fail(1, LIMACTL_MISSING_INSTANCE)]);
+    let caught: unknown;
     try {
       await transferBinary({
-        vmName: 'podkit-device',
+        link: linkTo('podkit-device', runner),
         binaryPath: hostBinary,
-        subprocess: runner,
       });
     } catch (err) {
-      caught = err as Error;
+      caught = err;
     }
-    expect(caught).toBeDefined();
-    expect(caught!.message).toMatch(/failed to probe/);
-    expect(caught!.message).toContain('podkit-device');
-    expect(caught!.message).toContain('not found');
+    expect(isSubstrateLinkError(caught)).toBe(true);
+    expect((caught as Error).message).toContain('podkit-device');
+    expect((caught as Error).message).toContain('does not exist');
   });
 
-  it('requires vmName', async () => {
-    let caught: Error | undefined;
+  it('reports a probe that the substrate itself refused as a guest failure', async () => {
+    const { runner } = makeScriptedRunner([fail(127, 'sh: awk: not found')]);
+    let caught: unknown;
     try {
       await transferBinary({
-        vmName: '',
+        link: linkTo('podkit-device', runner),
         binaryPath: hostBinary,
       });
     } catch (err) {
-      caught = err as Error;
+      caught = err;
     }
-    expect(caught).toBeDefined();
-    expect(caught!.message).toContain('vmName is required');
+    expect(isSubstrateLinkError(caught)).toBe(false);
+    expect((caught as Error).message).toMatch(/failed to probe/);
+    expect((caught as Error).message).toContain('awk: not found');
   });
 });
 
@@ -366,9 +398,8 @@ describe('transferGpodTool', () => {
   it('defaults to /usr/local/bin/gpod-tool', async () => {
     const { runner, calls } = makeScriptedRunner([ok(''), ok(), ok(), ok()]);
     const result = await transferGpodTool({
-      vmName: 'podkit-device',
+      link: linkTo('podkit-device', runner),
       binaryPath: hostBinary,
-      subprocess: runner,
     });
     expect(result.vmPath).toBe(DEFAULT_GPOD_TOOL_VM_PATH);
     expect(calls[2]!.args).toContain(DEFAULT_GPOD_TOOL_VM_PATH);
@@ -379,7 +410,7 @@ describe('transferGpodTool', () => {
     let caught: Error | undefined;
     try {
       await transferGpodTool({
-        vmName: 'podkit-device',
+        link: linkTo('podkit-device'),
         binaryPath: ghost,
       });
     } catch (err) {
@@ -394,9 +425,8 @@ describe('transferGpodTool', () => {
   it('is idempotent on sha256 match (skips copy + install)', async () => {
     const { runner, calls } = makeScriptedRunner([ok(hostSha)]);
     const result = await transferGpodTool({
-      vmName: 'podkit-device',
+      link: linkTo('podkit-device', runner),
       binaryPath: hostBinary,
-      subprocess: runner,
     });
     expect(result.skipped).toBe(true);
     expect(calls).toHaveLength(1);

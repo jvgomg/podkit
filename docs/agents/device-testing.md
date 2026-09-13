@@ -175,7 +175,7 @@ See [`docs/persona-capture-playbook.md`](../persona-capture-playbook.md) for the
 
 ### Mass-storage backing files (FAT32 synthesis)
 
-Personas that drive `usb_f_mass_storage` (Echo Mini today; future Sony Walkman variants) declare a `massStorageBackingFile.synthesis` recipe instead of committing a multi-MiB binary fixture. The lima-test-vm runner synthesises the image inside the VM via `truncate` + `mkfs.vfat --invariant` — byte-deterministic and cheap (12 ms for a 256 MiB image; a whole-registry batch is ~2s, dominated by the limactl round-trip per persona).
+Personas that drive `usb_f_mass_storage` (Echo Mini today; future Sony Walkman variants) declare a `massStorageBackingFile.synthesis` recipe instead of committing a multi-MiB binary fixture. The device harness synthesises the image inside the VM via `truncate` + `mkfs.vfat --invariant` — byte-deterministic and cheap (12 ms for a 256 MiB image; a whole-registry batch is ~2s, dominated by the limactl round-trip per persona).
 
 Two seeding paths:
 
@@ -340,7 +340,7 @@ Reference implementation for harness self-tests: `test-packages/device-testing/s
 **Filename:** `*.e2e.test.ts` under the appropriate package's `src/` (harness self-tests stay under `src/vm/`; feature tests live at `src/` root of `@podkit/e2e-vm-tests`). The `bunfig.toml` `pathIgnorePatterns` in both packages excludes `*.e2e.test.ts` from the default `bun test` run; `bun run test:vm` opts them back in by passing the test directory explicitly.
 
 **Imports (podkit feature tests in `@podkit/e2e-vm-tests`):** Everything comes from `@podkit/device-testing`:
-- `limaTestVmRunner` — the `TestRuntime` implementation that executes commands inside `podkit-device`.
+- `deviceHarness` — the `TestRuntime` implementation that executes commands inside the device substrate (a Lima VM on macOS; an SSH-reachable Debian box where one is configured).
 - `groupPersonasByState`, `resolveStarterPersonas`, `VM_WARM_TIMEOUT_MS`, `VM_COLD_TIMEOUT_MS`.
 - `withPersona`, `runJsonCommand`.
 - Persona + `SystemState` named exports (`ipodVideo5gIflash1tb`, `echoMini`, `healthy`, etc.).
@@ -351,16 +351,16 @@ Reference implementation for harness self-tests: `test-packages/device-testing/s
 const groups = groupPersonasByState(resolveStarterPersonas());
 
 describe('my VM suite', () => {
-  beforeAll(() => limaTestVmRunner.prepare(),  VM_COLD_TIMEOUT_MS);
-  afterAll(()  => limaTestVmRunner.teardown(), VM_COLD_TIMEOUT_MS);
+  beforeAll(() => deviceHarness.prepare(),  VM_COLD_TIMEOUT_MS);
+  afterAll(()  => deviceHarness.teardown(), VM_COLD_TIMEOUT_MS);
 
   for (const group of groups) {
     describe(`SystemState: ${group.state.id}`, () => {
-      beforeAll(() => limaTestVmRunner.applyState(group.state), VM_COLD_TIMEOUT_MS);
+      beforeAll(() => deviceHarness.applyState(group.state), VM_COLD_TIMEOUT_MS);
       for (const persona of group.personas) {
         it('exercises X', async () => {
           const result = await withPersona({ persona }, () =>
-            runJsonCommand(limaTestVmRunner, '/usr/local/bin/podkit …', VM_WARM_TIMEOUT_MS)
+            runJsonCommand(deviceHarness, '/usr/local/bin/podkit …', VM_WARM_TIMEOUT_MS)
           );
           // assertions on result.parsed / result.exitCode
         }, VM_WARM_TIMEOUT_MS);

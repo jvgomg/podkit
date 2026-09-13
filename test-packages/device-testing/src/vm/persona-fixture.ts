@@ -26,12 +26,9 @@
 
 import type { DevicePersona } from '../personas/types.js';
 import type { TestRuntime } from '../runtime.js';
-import {
-  LIMA_DEVICE_HARNESS_VM_NAME,
-  startDaemonForPersona,
-  stopDaemon,
-} from '../runners/lima-test-vm.js';
-import { defaultSubprocessRunner, type SubprocessRunner } from '../subprocess.js';
+import type { SubstrateLink } from '@podkit/substrate';
+
+import { startDaemonForPersona, stopDaemon } from '../runners/lima-test-vm.js';
 
 // ---------------------------------------------------------------------------
 // Persona lifecycle
@@ -40,8 +37,11 @@ import { defaultSubprocessRunner, type SubprocessRunner } from '../subprocess.js
 /** Options for {@link withPersona}. */
 export interface WithPersonaOpts {
   persona: DevicePersona;
-  vmName?: string;
-  subprocess?: SubprocessRunner;
+  /**
+   * Link to the substrate the daemon runs in. Defaults to the selected device
+   * substrate.
+   */
+  link?: SubstrateLink;
 }
 
 /**
@@ -57,13 +57,11 @@ export interface WithPersonaOpts {
  * `runners/lima-enumeration.ts`.
  */
 export async function withPersona<T>(opts: WithPersonaOpts, body: () => Promise<T>): Promise<T> {
-  const vmName = opts.vmName ?? LIMA_DEVICE_HARNESS_VM_NAME;
-  const subprocess = opts.subprocess ?? defaultSubprocessRunner;
+  const link = opts.link;
 
   await startDaemonForPersona({
-    vmName,
+    ...(link ? { link } : {}),
     persona: opts.persona,
-    subprocess,
   });
 
   try {
@@ -71,9 +69,8 @@ export async function withPersona<T>(opts: WithPersonaOpts, body: () => Promise<
   } finally {
     try {
       await stopDaemon({
-        vmName,
+        ...(link ? { link } : {}),
         personaId: opts.persona.id,
-        subprocess,
       });
     } catch (err) {
       // Stop failure is non-fatal; surface to stderr but do not throw.

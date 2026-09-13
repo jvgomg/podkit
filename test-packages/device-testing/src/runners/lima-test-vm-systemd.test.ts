@@ -24,6 +24,32 @@ import {
   DEFAULT_DUMMY_HCD_DAEMON_UNIT_VM_PATH,
 } from './lima-test-vm-systemd.js';
 import type { SubprocessRunner, SubprocessRunOpts, SubprocessRunResult } from '../subprocess.js';
+import { createLimactlLink } from '@podkit/lima';
+import { isSubstrateLinkError } from '@podkit/substrate';
+
+// ---------------------------------------------------------------------------
+// Substrate link over a scripted runner
+//
+// The harness talks to a `SubstrateLink`, never to `limactl` directly — so the
+// seam the assertions below record is the link's argv. Building a limactl link
+// over the scripted runner keeps those assertions pinning exactly what a real
+// Lima substrate receives, which is the point: they are what a second
+// implementation has to reproduce.
+// ---------------------------------------------------------------------------
+
+/**
+ * A runner that fails the test if anything reaches it. The default for cases
+ * whose whole point is that a host-side guard fires BEFORE the substrate is
+ * touched — "no runner in scope" would otherwise read as "no assertion".
+ */
+const neverReached: SubprocessRunner = {
+  async run(command, args) {
+    throw new Error(`unexpected substrate call: ${command} ${args.join(' ')}`);
+  },
+};
+
+const linkTo = (instanceName: string, subprocess: SubprocessRunner = neverReached) =>
+  createLimactlLink({ id: instanceName, instanceName }, { subprocess });
 
 // ---------------------------------------------------------------------------
 // Scripted SubprocessRunner
@@ -76,6 +102,18 @@ const fail = (exitCode: number, stderr: string): SubprocessRunResult => ({
   exitCode,
 });
 
+/**
+ * limactl's refusal when the instance is not there, captured verbatim from
+ * `limactl shell … 2>&1 | cat` (limactl 2.1.1) rather than written from
+ * memory. The piped form is the only one the harness sees: limactl writes the
+ * bracketed `FATA[…]` logrus prefix only to a TTY. See the fixture note in
+ * `@podkit/lima`'s `link.test.ts`.
+ */
+const LIMACTL_MISSING_INSTANCE =
+  'time="2026-09-13T23:00:43+01:00" level=fatal ' +
+  'msg="instance \\"podkit-device\\" does not exist, run `limactl create podkit-device` ' +
+  'to create a new instance"';
+
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
@@ -114,15 +152,14 @@ describe('transferSystemdUnit (happy path)', () => {
     ]);
 
     const result = await transferSystemdUnit({
-      vmName: 'podkit-device',
+      link: linkTo('podkit-device', runner),
       hostUnitPath: hostUnit,
-      subprocess: runner,
     });
 
     expect(result.skipped).toBe(false);
     expect(result.reloaded).toBe(true);
     expect(result.hostSha256).toBe(hostSha);
-    expect(result.vmName).toBe('podkit-device');
+    expect(result.substrate).toContain('podkit-device');
     expect(result.vmUnitPath).toBe(DEFAULT_DUMMY_HCD_DAEMON_UNIT_VM_PATH);
 
     expect(calls).toHaveLength(5);
@@ -157,8 +194,14 @@ describe('transferSystemdUnit (happy path)', () => {
     expect(calls[2]!.args[7]).toBe(tmpVmPath);
     expect(calls[2]!.args[8]).toBe(DEFAULT_DUMMY_HCD_DAEMON_UNIT_VM_PATH);
 
-    // 4. daemon-reload
-    expect(calls[3]!.args).toEqual([
+    // 4. cleanup of the staging file, then 5. daemon-reload
+    expect(calls[3]!.args[0]).toBe('shell');
+    expect(calls[3]!.args).toContain('rm');
+    expect(calls[3]!.args).toContain('-f');
+    expect(tmpVmPath).toBeDefined();
+    expect(calls[3]!.args).toContain(tmpVmPath!);
+
+    expect(calls[4]!.args).toEqual([
       'shell',
       'podkit-device',
       '--',
@@ -166,23 +209,15 @@ describe('transferSystemdUnit (happy path)', () => {
       'systemctl',
       'daemon-reload',
     ]);
-
-    // 5. cleanup
-    expect(calls[4]!.args[0]).toBe('shell');
-    expect(calls[4]!.args).toContain('rm');
-    expect(calls[4]!.args).toContain('-f');
-    expect(tmpVmPath).toBeDefined();
-    expect(calls[4]!.args).toContain(tmpVmPath!);
   });
 
   it('respects a custom vmUnitPath', async () => {
     const { runner, calls } = makeScriptedRunner([ok(''), ok(), ok(), ok(), ok()]);
 
     const result = await transferSystemdUnit({
-      vmName: 'podkit-device',
+      link: linkTo('podkit-device', runner),
       hostUnitPath: hostUnit,
       vmUnitPath: '/etc/systemd/system/custom@.service',
-      subprocess: runner,
     });
 
     expect(result.vmUnitPath).toBe('/etc/systemd/system/custom@.service');
@@ -199,9 +234,8 @@ describe('transferSystemdUnit (idempotent on sha256 match)', () => {
     const { runner, calls } = makeScriptedRunner([ok(hostSha + '\n')]);
 
     const result = await transferSystemdUnit({
-      vmName: 'podkit-device',
+      link: linkTo('podkit-device', runner),
       hostUnitPath: hostUnit,
-      subprocess: runner,
     });
 
     expect(result.skipped).toBe(true);
@@ -222,9 +256,8 @@ describe('transferSystemdUnit (idempotent on sha256 match)', () => {
     ]);
 
     const result = await transferSystemdUnit({
-      vmName: 'podkit-device',
+      link: linkTo('podkit-device', runner),
       hostUnitPath: hostUnit,
-      subprocess: runner,
     });
 
     expect(result.skipped).toBe(false);
@@ -244,9 +277,8 @@ describe('transferSystemdUnit (error propagation)', () => {
     let caught: Error | undefined;
     try {
       await transferSystemdUnit({
-        vmName: 'podkit-device',
+        link: linkTo('podkit-device', runner),
         hostUnitPath: ghost,
-        subprocess: runner,
       });
     } catch (err) {
       caught = err as Error;
@@ -257,22 +289,40 @@ describe('transferSystemdUnit (error propagation)', () => {
     expect(calls).toHaveLength(0); // never reached limactl
   });
 
-  it('throws when the probe step fails (limactl shell non-zero)', async () => {
-    const { runner } = makeScriptedRunner([fail(1, 'instance "podkit-device" not found')]);
-    let caught: Error | undefined;
+  // "the substrate is not there" and "the probe the substrate ran failed" are
+  // different verdicts — one is a reason to skip, the other a reason to fail —
+  // and the exit code cannot separate them because it is the guest's either
+  // way. The link raises a typed error for the first and returns for the second.
+  it('raises a typed link error when the substrate is not there to probe', async () => {
+    const { runner } = makeScriptedRunner([fail(1, LIMACTL_MISSING_INSTANCE)]);
+    let caught: unknown;
     try {
       await transferSystemdUnit({
-        vmName: 'podkit-device',
+        link: linkTo('podkit-device', runner),
         hostUnitPath: hostUnit,
-        subprocess: runner,
       });
     } catch (err) {
-      caught = err as Error;
+      caught = err;
     }
-    expect(caught).toBeDefined();
-    expect(caught!.message).toMatch(/failed to probe systemd unit/);
-    expect(caught!.message).toContain('podkit-device');
-    expect(caught!.message).toContain('not found');
+    expect(isSubstrateLinkError(caught)).toBe(true);
+    expect((caught as Error).message).toContain('podkit-device');
+    expect((caught as Error).message).toContain('does not exist');
+  });
+
+  it('reports a probe the substrate itself refused as a guest failure', async () => {
+    const { runner } = makeScriptedRunner([fail(127, 'sh: awk: not found')]);
+    let caught: unknown;
+    try {
+      await transferSystemdUnit({
+        link: linkTo('podkit-device', runner),
+        hostUnitPath: hostUnit,
+      });
+    } catch (err) {
+      caught = err;
+    }
+    expect(isSubstrateLinkError(caught)).toBe(false);
+    expect((caught as Error).message).toMatch(/failed to probe systemd unit/);
+    expect((caught as Error).message).toContain('awk: not found');
   });
 
   it('throws when the copy step fails (and never proceeds to install)', async () => {
@@ -283,15 +333,14 @@ describe('transferSystemdUnit (error propagation)', () => {
     let caught: Error | undefined;
     try {
       await transferSystemdUnit({
-        vmName: 'podkit-device',
+        link: linkTo('podkit-device', runner),
         hostUnitPath: hostUnit,
-        subprocess: runner,
       });
     } catch (err) {
       caught = err as Error;
     }
     expect(caught).toBeDefined();
-    expect(caught!.message).toMatch(/limactl copy failed sending systemd unit/);
+    expect(caught!.message).toMatch(/failed to copy systemd unit/);
     expect(caught!.message).toContain('connection refused');
     // Only probe + copy ran; never `install`, never `daemon-reload`.
     expect(calls).toHaveLength(2);
@@ -310,9 +359,8 @@ describe('transferSystemdUnit (error propagation)', () => {
     let caught: Error | undefined;
     try {
       await transferSystemdUnit({
-        vmName: 'podkit-device',
+        link: linkTo('podkit-device', runner),
         hostUnitPath: hostUnit,
-        subprocess: runner,
       });
     } catch (err) {
       caught = err as Error;
@@ -332,21 +380,23 @@ describe('transferSystemdUnit (error propagation)', () => {
     expect(last.args).toContain('-f');
   });
 
-  it('throws when daemon-reload fails and still cleans up the temp file', async () => {
+  // The staging file is swept before the reload, so the reload's own failure
+  // cannot strand it — the assertion is that the sweep happened at all, not
+  // that it happened afterwards.
+  it('throws when daemon-reload fails, with the staging file already swept', async () => {
     const { runner, calls } = makeScriptedRunner([
       ok(''), // probe
       ok(), // copy
       ok(), // install
-      fail(1, 'systemctl: Failed to reload daemon: Connection refused'),
       ok(), // cleanup rm
+      fail(1, 'systemctl: Failed to reload daemon: Connection refused'),
     ]);
 
     let caught: Error | undefined;
     try {
       await transferSystemdUnit({
-        vmName: 'podkit-device',
+        link: linkTo('podkit-device', runner),
         hostUnitPath: hostUnit,
-        subprocess: runner,
       });
     } catch (err) {
       caught = err as Error;
@@ -357,20 +407,8 @@ describe('transferSystemdUnit (error propagation)', () => {
     expect(caught!.message).toContain('Connection refused');
 
     expect(calls).toHaveLength(5);
-    const last = calls[calls.length - 1]!;
-    expect(last.args).toContain('rm');
-    expect(last.args).toContain('-f');
-  });
-
-  it('requires vmName', async () => {
-    let caught: Error | undefined;
-    try {
-      await transferSystemdUnit({ vmName: '', hostUnitPath: hostUnit });
-    } catch (err) {
-      caught = err as Error;
-    }
-    expect(caught).toBeDefined();
-    expect(caught!.message).toContain('vmName is required');
+    expect(calls[3]!.args).toContain('rm');
+    expect(calls[3]!.args).toContain('-f');
   });
 });
 
@@ -384,14 +422,12 @@ describe('transferSystemdUnit (atomicity)', () => {
     const b = makeScriptedRunner([ok(''), ok(), ok(), ok(), ok()]);
 
     await transferSystemdUnit({
-      vmName: 'podkit-device',
+      link: linkTo('podkit-device', a.runner),
       hostUnitPath: hostUnit,
-      subprocess: a.runner,
     });
     await transferSystemdUnit({
-      vmName: 'podkit-device',
+      link: linkTo('podkit-device', b.runner),
       hostUnitPath: hostUnit,
-      subprocess: b.runner,
     });
 
     const tmpA = a.calls[1]!.args[2];

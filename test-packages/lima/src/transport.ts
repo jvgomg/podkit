@@ -19,7 +19,9 @@
  */
 
 import { defaultSubprocessRunner, type SubprocessRunner } from '@podkit/device-types';
-import { limactlError, runLimactl, shellQuote } from './limactl.js';
+import { shellQuote } from '@podkit/substrate';
+import { limactlError, runLimactl } from './limactl.js';
+import { createLimactlLink } from './link.js';
 
 // ---------------------------------------------------------------------------
 // Wall-clock bounds
@@ -83,10 +85,16 @@ export interface RunInVmResult {
 /**
  * Run a single shell command inside a VM via `limactl shell <vm> -- sh -c …`.
  *
- * `cwd`/`env` are realised by synthesising a small `sh -c` wrapper that exports
- * the env, cds, and execs the command. `timeoutMs` is enforced by the host-side
- * `SubprocessRunner`. A timeout surfaces as `exitCode = 124` (the conventional
- * `timeout(1)` exit code) via the underlying runner.
+ * A thin adapter over the limactl {@link SubstrateLink}: `cwd`/`env` are
+ * realised by the link's shared guest-command wrapper, and `timeoutMs` is
+ * enforced by the host-side `SubprocessRunner`. A timeout surfaces as a thrown
+ * `SubstrateLinkError` carrying the `timed out after Nms` message.
+ *
+ * Routing through the link rather than assembling `['shell', vm, '--', 'sh',
+ * '-c', …]` here is what leaves exactly ONE definition of the env/cwd wrapper
+ * in the repo. There used to be two, verbatim — this one and the device
+ * harness's — which is how two callers of the same primitive can drift on
+ * something as load-bearing as env quoting without anything noticing.
  */
 export async function runInVm(
   vmName: string,
@@ -94,19 +102,15 @@ export async function runInVm(
   opts: RunInVmOpts = {}
 ): Promise<RunInVmResult> {
   if (!vmName) throw new Error('runInVm: vmName is required.');
-  const subprocess = opts.subprocess ?? defaultSubprocessRunner;
-  const wrapped = wrapCommand(command, opts);
-  // Route through runLimactl rather than calling the runner directly: it owns
-  // the transport-level error vocabulary, including the explicit "timed out
-  // after Nms" message. Spawning here instead would bound the call but let the
-  // bound fire anonymously as execFile's generic "killed", which is most of
-  // the way back to having no bound at all.
-  const result = await runLimactl(
-    subprocess,
-    ['shell', vmName, '--', 'sh', '-c', wrapped],
-    typeof opts.timeoutMs === 'number' ? { timeoutMs: opts.timeoutMs } : {}
+  const link = createLimactlLink(
+    { id: vmName, instanceName: vmName },
+    opts.subprocess ? { subprocess: opts.subprocess } : {}
   );
-  return { stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode };
+  return link.exec(command, {
+    ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
+    ...(opts.env !== undefined ? { env: opts.env } : {}),
+    ...(typeof opts.timeoutMs === 'number' ? { timeoutMs: opts.timeoutMs } : {}),
+  });
 }
 
 /** Options for {@link copyOut}. */
@@ -274,26 +278,4 @@ export async function stageSourceTree(opts: StageSourceTreeOpts): Promise<void> 
   if (result.exitCode !== 0) {
     throw limactlError(`failed to stage source tree into ${opts.vmName}:${opts.vmDest}`, result);
   }
-}
-
-/**
- * Wrap a user command so the VM-side `sh -c` honours `cwd` and `env`. Env vars
- * are exported as `K='…'` (POSIX single-quote form; embedded single quotes are
- * escaped as `'\''` by {@link shellQuote}).
- */
-function wrapCommand(command: string, opts: RunInVmOpts): string {
-  const segments: string[] = [];
-  if (opts.env) {
-    for (const [key, value] of Object.entries(opts.env)) {
-      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
-        throw new Error(`runInVm.env: invalid variable name '${key}'`);
-      }
-      segments.push(`export ${key}=${shellQuote(value)}`);
-    }
-  }
-  if (opts.cwd) {
-    segments.push(`cd ${shellQuote(opts.cwd)}`);
-  }
-  segments.push(command);
-  return segments.join('; ');
 }

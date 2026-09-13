@@ -30,9 +30,10 @@
  * @module
  */
 
+import { getVm } from '@podkit/lima';
+
 import { instanceStatus, LIMA_DEVICE_HARNESS_VM_NAME } from '../src/runners/lima-test-vm.js';
-import { runLimactl } from '../src/runners/lima-limactl.js';
-import { defaultSubprocessRunner } from '../src/subprocess.js';
+import { createSubstrateLink } from '../src/runners/substrate.js';
 import {
   computeBaselineHash,
   deviceBaselineFiles,
@@ -90,14 +91,16 @@ async function main(): Promise<number> {
   //    was never sealed by `harness:setup`. (A pre-vm-doctor VM created
   //    before this orchestration landed falls into this bucket; the
   //    remediation is to rebuild via harness:setup so the hash is sealed.)
-  const probe = await runLimactl(defaultSubprocessRunner, [
-    'shell',
-    vmName,
-    '--',
-    'sh',
-    '-c',
-    `cat ${BASELINE_VM_HASH_PATH} 2>/dev/null || true`,
-  ]).catch((err) => ({ exitCode: 1, stdout: '', stderr: String(err) }));
+  // Linked to the LIMA device substrate specifically, not to whichever
+  // substrate is selected: the hash this doctor compares against is sealed
+  // from `podkit-device.yaml`, and ADR-029 records that drift detection has to
+  // move onto the contract scripts before a remote substrate can be tracked at
+  // all. Checking a remote box against a Lima-derived hash would report drift
+  // that means nothing.
+  const link = createSubstrateLink(getVm('device'));
+  const probe = await link
+    .exec(['sh', '-c', `cat ${BASELINE_VM_HASH_PATH} 2>/dev/null || true`])
+    .catch((err: unknown) => ({ exitCode: 1, stdout: '', stderr: String(err) }));
 
   if (probe.exitCode !== 0) {
     process.stderr.write(

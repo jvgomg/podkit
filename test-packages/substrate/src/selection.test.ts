@@ -221,4 +221,25 @@ describe('selectSubstrate', () => {
     // No PATH at all → no limactl → the onboarding error, on every platform.
     expect(() => selectSubstrate({ PATH: '' })).toThrow(SubstrateSelectionError);
   });
+
+  // The retired override named a Lima instance for two driver scripts and for
+  // nothing else. Ignoring a variable a developer still has exported is the
+  // silent-default failure this module exists to refuse, so it is refused
+  // loudly — and the message has to name the variable that replaced it, or the
+  // error is a dead end.
+  it('refuses to run when the retired VM-name override is still exported', () => {
+    let caught: unknown;
+    try {
+      selectSubstrate({
+        PODKIT_DEVICE_HARNESS_VM_NAME: 'podkit-device',
+        [SUBSTRATE_ENV_VAR]: 'device',
+        PATH: '',
+      });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(SubstrateSelectionError);
+    expect((caught as Error).message).toContain('PODKIT_DEVICE_HARNESS_VM_NAME');
+    expect((caught as Error).message).toContain(SUBSTRATE_ENV_VAR);
+  });
 });

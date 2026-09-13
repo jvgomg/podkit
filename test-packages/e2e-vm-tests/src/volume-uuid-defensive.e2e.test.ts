@@ -39,7 +39,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 
 import {
-  limaTestVmRunner,
+  deviceHarness,
   VM_COLD_TIMEOUT_MS,
   VM_WARM_TIMEOUT_MS,
   healthy,
@@ -53,20 +53,20 @@ const SCRATCH_BASE = '/tmp/podkit-volumeuuid-test';
 
 describe('VM: volumeUuid defensive refusal', () => {
   beforeAll(async () => {
-    await limaTestVmRunner.prepare();
+    await deviceHarness.prepare();
   }, VM_COLD_TIMEOUT_MS);
 
   afterAll(async () => {
     // Clean up scratch dirs on the way out so a re-run starts fresh.
-    await limaTestVmRunner
+    await deviceHarness
       .run(`rm -rf ${SCRATCH_BASE}*`, { timeoutMs: VM_WARM_TIMEOUT_MS })
       .catch(() => undefined);
-    await limaTestVmRunner.teardown();
+    await deviceHarness.teardown();
   }, VM_COLD_TIMEOUT_MS);
 
   describe(`SystemState: ${healthy.id}`, () => {
     beforeAll(async () => {
-      await limaTestVmRunner.applyState(healthy);
+      await deviceHarness.applyState(healthy);
     }, VM_COLD_TIMEOUT_MS);
 
     it(
@@ -74,7 +74,7 @@ describe('VM: volumeUuid defensive refusal', () => {
       async () => {
         const scratch = `${SCRATCH_BASE}-missing`;
         // Fresh dir on tmpfs — no filesystem UUID resolvable via lsblk.
-        const setup = await limaTestVmRunner.run(`rm -rf ${scratch} && mkdir -p ${scratch}`, {
+        const setup = await deviceHarness.run(`rm -rf ${scratch} && mkdir -p ${scratch}`, {
           timeoutMs: VM_WARM_TIMEOUT_MS,
         });
         expect(setup.exitCode).toBe(0);
@@ -83,7 +83,7 @@ describe('VM: volumeUuid defensive refusal', () => {
         // still reads the device and so still trips the no-UUID gate; `--yes`
         // skips interactive prompts (DB init, etc); `--json` so we can assert
         // on the structured error envelope.
-        const result = await limaTestVmRunner.run(
+        const result = await deviceHarness.run(
           `/usr/local/bin/podkit device add -d testdev --path ${scratch} ` +
             `--no-verify --yes --json`,
           { timeoutMs: VM_WARM_TIMEOUT_MS }
@@ -117,12 +117,12 @@ describe('VM: volumeUuid defensive refusal', () => {
         // failing while the refusal test above kept passing — surfacing the
         // break.
         const scratch = `${SCRATCH_BASE}-novalidate`;
-        const setup = await limaTestVmRunner.run(`rm -rf ${scratch} && mkdir -p ${scratch}`, {
+        const setup = await deviceHarness.run(`rm -rf ${scratch} && mkdir -p ${scratch}`, {
           timeoutMs: VM_WARM_TIMEOUT_MS,
         });
         expect(setup.exitCode).toBe(0);
 
-        const result = await limaTestVmRunner.run(
+        const result = await deviceHarness.run(
           `/usr/local/bin/podkit device add -d testdev-inject --path ${scratch} ` +
             `--type ipod --no-validate --volume-uuid vm-inject-uuid --yes --json`,
           { timeoutMs: VM_WARM_TIMEOUT_MS }
@@ -141,7 +141,7 @@ describe('VM: volumeUuid defensive refusal', () => {
 
         // Clean up the saved config entry so the rest of the suite isn't
         // polluted by stale state. `device remove` is idempotent.
-        await limaTestVmRunner.run(
+        await deviceHarness.run(
           `/usr/local/bin/podkit device remove -d testdev-inject --json 2>/dev/null || true`,
           { timeoutMs: VM_WARM_TIMEOUT_MS }
         );

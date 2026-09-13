@@ -45,12 +45,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 
-import {
-  LIMA_DEVICE_HARNESS_VM_NAME,
-  limaTestVmRunner,
-  startDaemonForPersona,
-  stopDaemon,
-} from '../runners/lima-test-vm.js';
+import { deviceHarness, startDaemonForPersona, stopDaemon } from '../runners/lima-test-vm.js';
 import { healthy } from '../system-states/index.js';
 import { echoMini, ipodVideo5gIflash1tb } from '../personas/index.js';
 import { VM_COLD_TIMEOUT_MS, VM_WARM_TIMEOUT_MS } from './vm-runtime-setup.js';
@@ -74,7 +69,7 @@ interface VmResult {
 }
 
 async function vm(cmd: string, timeoutMs: number = VM_WARM_TIMEOUT_MS): Promise<VmResult> {
-  return limaTestVmRunner.run(cmd, { timeoutMs });
+  return deviceHarness.run(cmd, { timeoutMs });
 }
 
 /** Count `/dev/sg*` nodes currently present in the VM. */
@@ -159,15 +154,15 @@ describe('VM: dual-daemon lifecycle', () => {
   beforeAll(async () => {
     // prepare() reinstalls the systemd template on any change (sha256-keyed),
     // so a fresh checkout with the per-persona ExecStart picks up automatically.
-    await limaTestVmRunner.prepare();
-    await limaTestVmRunner.applyState(healthy);
+    await deviceHarness.prepare();
+    await deviceHarness.applyState(healthy);
     // Defensive: scrub any stale dummy-hcd unit from a prior crashed run.
-    await stopDaemon({ vmName: LIMA_DEVICE_HARNESS_VM_NAME });
+    await stopDaemon({});
   }, VM_COLD_TIMEOUT_MS);
 
   afterAll(async () => {
-    await stopDaemon({ vmName: LIMA_DEVICE_HARNESS_VM_NAME });
-    await limaTestVmRunner.teardown();
+    await stopDaemon({});
+    await deviceHarness.teardown();
   }, VM_COLD_TIMEOUT_MS);
 
   it(
@@ -180,11 +175,9 @@ describe('VM: dual-daemon lifecycle', () => {
         //    persona's gadget has enumerated, so the assertions below are not
         //    racing the daemon's UDC bind.
         await startDaemonForPersona({
-          vmName: LIMA_DEVICE_HARNESS_VM_NAME,
           persona: PERSONA_A,
         });
         await startDaemonForPersona({
-          vmName: LIMA_DEVICE_HARNESS_VM_NAME,
           persona: PERSONA_B,
         });
 
@@ -220,12 +213,8 @@ describe('VM: dual-daemon lifecycle', () => {
       } finally {
         // Stop both regardless of outcome so a body-level failure doesn't
         // leave the VM with bound gadgets for the next test session.
-        await stopDaemon({ vmName: LIMA_DEVICE_HARNESS_VM_NAME, personaId: PERSONA_A.id }).catch(
-          () => {}
-        );
-        await stopDaemon({ vmName: LIMA_DEVICE_HARNESS_VM_NAME, personaId: PERSONA_B.id }).catch(
-          () => {}
-        );
+        await stopDaemon({ personaId: PERSONA_A.id }).catch(() => {});
+        await stopDaemon({ personaId: PERSONA_B.id }).catch(() => {});
       }
 
       // 5. Cleanup: no orphan configfs directories survive shutdown.

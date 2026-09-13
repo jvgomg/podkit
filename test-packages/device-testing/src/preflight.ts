@@ -1,15 +1,17 @@
 /**
- * Preflight probe for the Lima VM test harness. Wired into bunfig.toml as a
+ * Preflight probe for the device substrate. Wired into bunfig.toml as a
  * `[test].preload` so it runs once per `bun test` invocation in any package
- * that targets VM tests. Exits 0 when the VM is reachable AND answering shell
- * invocations; exits 1 with a multi-line remediation hint otherwise.
+ * that targets VM tests. Exits 0 when the substrate is reachable AND answering
+ * commands; exits 1 with a multi-line remediation hint otherwise.
  *
- * `instanceStatus()` only checks Lima's metadata (the instance exists +
- * Lima thinks it is running). That can be misleading: the VM can be in a
- * "running" state while the SSH daemon isn't accepting connections (just
- * after boot, after a hibernate, etc.). We do an extra `limactl shell ...
- * /bin/true` probe so a transient "connection refused" surfaces here
- * rather than tens of seconds into the suite.
+ * The readiness probe is not enough on its own. For a Lima substrate it reads
+ * Lima's metadata (the instance exists + Lima thinks it is running), and that
+ * can be misleading: the box can be "running" while its SSH daemon is not
+ * accepting connections (just after boot, after a hibernate). So a `/bin/true`
+ * is pushed through the link as well, and the two outcomes are told apart —
+ * a thrown `SubstrateLinkError` means the substrate did not answer, while a
+ * non-zero exit means it answered and could not run `/bin/true`, which is a
+ * different and much stranger fault.
  *
  * Intentionally fail-fast so VM test runs cannot silently no-op when the
  * harness isn't up — the developer either sees green or sees this message
@@ -49,8 +51,8 @@
  * @module
  */
 
-import { instanceStatus, LIMA_DEVICE_HARNESS_VM_NAME } from './runners/lima-test-vm.js';
-import { runLimactl } from './runners/lima-limactl.js';
+import { isSubstrateLinkError, type SubstrateLink, type VmDefinition } from '@podkit/substrate';
+
 import {
   formatUdcSlotFailure,
   formatUdcSlotShortfall,
@@ -58,10 +60,10 @@ import {
   formatUdcSlotWarning,
   probeUdcSlots,
 } from './runners/lima-test-vm-udc-slots.js';
-import { defaultSubprocessRunner } from './subprocess.js';
+import { probeSubstrate, resolveDeviceSubstrate } from './runners/substrate.js';
 
-/** Bound for the SSH liveness probe. `/bin/true` over a healthy link is instant. */
-const SSH_PROBE_TIMEOUT_MS = 30_000;
+/** Bound for the liveness probe. `/bin/true` over a healthy link is instant. */
+const LIVENESS_PROBE_TIMEOUT_MS = 30_000;
 
 function vmTestsTargeted(): boolean {
   // `test:e2e:docker-dist` is the local-only Docker Tier-5 run (the shipped
@@ -97,42 +99,74 @@ function vmTestsTargeted(): boolean {
 if (vmTestsTargeted()) {
   const REMEDIATION = [
     '',
-    'To bring the VM up:',
-    '  bun run vm:up device          (create or resume the VM)',
-    '  bun run harness:setup         (first-time setup: creates VM, builds + installs binaries)',
+    'To bring the substrate up:',
+    '  bun run vm:up device          (create or resume the Lima substrate)',
+    '  bun run harness:setup         (first-time setup: creates it, builds + installs binaries)',
     '  bun run harness:status        (see exactly what state things are in)',
     '',
     'Then re-run `bun run test:vm`.',
     '',
-    'VM tests refuse to silently skip — bring the VM up or invoke a different test script (`bun run test:unit`, `bun run test:integration`).',
+    'VM tests refuse to silently skip — bring the substrate up or invoke a different test script (`bun run test:unit`, `bun run test:integration`).',
     '',
   ].join('\n');
 
-  const bail = (headline: string): never => {
+  // The explicit type annotation on the CONST is what makes TypeScript treat a
+  // call to this as terminating control flow. Annotating only the arrow's
+  // return type does not: the compiler's never-returning-call analysis keys off
+  // the declared type of the variable. Without it, every `bail()` below would
+  // have to be followed by dead code to convince the checker.
+  const bail: (headline: string) => never = (headline) => {
     process.stderr.write(`[vm-preflight] ${headline}\n${REMEDIATION}`);
     process.exit(1);
   };
 
-  const status = await instanceStatus().catch(() => 'missing' as const);
-  if (status === 'missing') {
-    bail(`Lima instance \`${LIMA_DEVICE_HARNESS_VM_NAME}\` is not registered.`);
-  }
-  if (status === 'stopped') {
-    bail(`Lima instance \`${LIMA_DEVICE_HARNESS_VM_NAME}\` is stopped.`);
+  // Resolving the selection here is what renders the resolver's fallback
+  // announcement for a VM run: this preload is the first thing every VM suite
+  // executes and it owns a TTY, so it is where "you did not choose a substrate,
+  // so I used Lima" belongs. The harness singleton memoises the same
+  // resolution, so nothing says it twice.
+  let definition: VmDefinition;
+  let link: SubstrateLink;
+  try {
+    ({ definition, link } = resolveDeviceSubstrate({
+      notice: (line) => process.stderr.write(`[vm-preflight] ${line}\n`),
+    }));
+  } catch (err) {
+    // An unconfigured machine is an onboarding state, and the resolver's error
+    // message IS the onboarding instruction — pass it through rather than
+    // replacing it with a generic one.
+    bail(err instanceof Error ? err.message : String(err));
   }
 
-  // Status is 'running' — verify SSH actually answers. `limactl shell` returns
-  // non-zero with "Connection refused" / "Connection reset" when the daemon
-  // isn't accepting yet, which means the suite would fail in beforeAll.
-  const probe = await runLimactl(
-    defaultSubprocessRunner,
-    ['shell', LIMA_DEVICE_HARNESS_VM_NAME, '--', '/bin/true'],
-    { timeoutMs: SSH_PROBE_TIMEOUT_MS }
-  ).catch((err) => ({ exitCode: 1, stdout: '', stderr: String(err) }));
+  const readiness = await probeSubstrate(definition);
+  if (readiness === 'unreachable') {
+    bail(`substrate '${definition.id}' (${link.description}) is not reachable.`);
+  }
+  if (readiness === 'startable') {
+    bail(`substrate '${definition.id}' (${link.description}) exists but is not running.`);
+  }
 
-  if (probe.exitCode !== 0) {
+  // Readiness says the box is up; it does not say the box will run a command.
+  // A Lima instance reports `running` while its SSH daemon is still refusing
+  // connections just after boot, which would otherwise fail in `beforeAll`.
+  try {
+    const probe = await link.exec(['/bin/true'], { timeoutMs: LIVENESS_PROBE_TIMEOUT_MS });
+    if (probe.exitCode !== 0) {
+      // The substrate answered and `/bin/true` still failed. That is not a
+      // reachability problem — it is a broken userland, and saying "SSH is
+      // refusing" here (as this did before the link could tell the two apart)
+      // sent readers to look at the wrong thing.
+      bail(
+        `substrate '${definition.id}' (${link.description}) answered but could not run ` +
+          `/bin/true: exit=${probe.exitCode}: ${probe.stderr.trim() || '(no output)'}`
+      );
+    }
+  } catch (err) {
+    const why = err instanceof Error ? err.message : String(err);
     bail(
-      `Lima instance \`${LIMA_DEVICE_HARNESS_VM_NAME}\` is reachable to limactl but SSH is refusing: ${probe.stderr.trim()}`
+      isSubstrateLinkError(err)
+        ? `substrate '${definition.id}' did not answer: ${why}`
+        : `probing substrate '${definition.id}' failed: ${why}`
     );
   }
 
@@ -141,15 +175,13 @@ if (vmTestsTargeted()) {
   // timeout in whichever test happened to be running — a failure that says
   // nothing about controllers and takes a long time to say it. Counting them
   // here, before a single gadget is bound, turns that into one line.
-  const slots = await probeUdcSlots({ vmName: LIMA_DEVICE_HARNESS_VM_NAME }).catch(
-    (err: unknown) => {
-      process.stderr.write(
-        `[vm-preflight] could not read USB controller state (continuing): ` +
-          `${err instanceof Error ? err.message : String(err)}\n`
-      );
-      return null;
-    }
-  );
+  const slots = await probeUdcSlots({ link }).catch((err: unknown) => {
+    process.stderr.write(
+      `[vm-preflight] could not read USB controller state (continuing): ` +
+        `${err instanceof Error ? err.message : String(err)}\n`
+    );
+    return null;
+  });
 
   if (slots) {
     const shortfall = formatUdcSlotShortfall(slots);
@@ -159,7 +191,7 @@ if (vmTestsTargeted()) {
     if (failure) {
       process.stderr.write(
         `[vm-preflight] ${failure}\n\n` +
-          'To rebuild the VM from scratch:\n' +
+          'To rebuild a Lima substrate from scratch:\n' +
           '  bun run vm:recover device     (destroy → recreate → start)\n' +
           '  bun run harness:setup         (reinstall binaries + seal the baseline)\n\n' +
           'Then re-run `bun run test:vm`.\n'
@@ -172,7 +204,7 @@ if (vmTestsTargeted()) {
     process.stdout.write(`[vm-preflight] ${formatUdcSlotSummary(slots)}\n`);
   }
 
-  process.stdout.write('[vm-preflight] VM ready.\n');
+  process.stdout.write(`[vm-preflight] substrate '${definition.id}' ready.\n`);
 }
 // else: no VM tests in this invocation — module falls off the end here.
-// Unit/integration runs proceed without contacting Lima.
+// Unit/integration runs proceed without resolving or contacting a substrate.

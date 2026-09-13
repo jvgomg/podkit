@@ -20,6 +20,31 @@ import {
   runSubstrateDoctor,
   substrateScriptVmPath,
 } from './substrate-contract.js';
+import { createLimactlLink } from '@podkit/lima';
+
+// ---------------------------------------------------------------------------
+// Substrate link over a scripted runner
+//
+// The harness talks to a `SubstrateLink`, never to `limactl` directly — so the
+// seam the assertions below record is the link's argv. Building a limactl link
+// over the scripted runner keeps those assertions pinning exactly what a real
+// Lima substrate receives, which is the point: they are what a second
+// implementation has to reproduce.
+// ---------------------------------------------------------------------------
+
+/**
+ * A runner that fails the test if anything reaches it. The default for cases
+ * whose whole point is that a host-side guard fires BEFORE the substrate is
+ * touched — "no runner in scope" would otherwise read as "no assertion".
+ */
+const neverReached: SubprocessRunner = {
+  async run(command, args) {
+    throw new Error(`unexpected substrate call: ${command} ${args.join(' ')}`);
+  },
+};
+
+const linkTo = (instanceName: string, subprocess: SubprocessRunner = neverReached) =>
+  createLimactlLink({ id: instanceName, instanceName }, { subprocess });
 
 interface RecordedCall {
   command: string;
@@ -60,7 +85,7 @@ function failingOn(
 describe('copySubstrateScripts', () => {
   it('creates the script directory before copying anything into it', async () => {
     const { runner, calls } = recorder();
-    await copySubstrateScripts({ vmName: 'vm1', subprocess: runner });
+    await copySubstrateScripts({ link: linkTo('vm1', runner) });
 
     expect(calls[0]?.args).toEqual([
       'shell',
@@ -80,7 +105,7 @@ describe('copySubstrateScripts', () => {
   // doctor, so all three must travel together rather than on demand.
   it('carries every contract script, not just the executable ones', async () => {
     const { runner, calls } = recorder();
-    await copySubstrateScripts({ vmName: 'vm1', subprocess: runner });
+    await copySubstrateScripts({ link: linkTo('vm1', runner) });
 
     const copied = calls
       .filter((c) => c.args[0] === 'copy')
@@ -92,7 +117,7 @@ describe('copySubstrateScripts', () => {
   // /usr/local/lib is refused. Stage in /tmp, then sudo install into place.
   it('stages through /tmp and installs into place with an explicit mode', async () => {
     const { runner, calls } = recorder();
-    await copySubstrateScripts({ vmName: 'vm1', subprocess: runner });
+    await copySubstrateScripts({ link: linkTo('vm1', runner) });
 
     const copy = calls.find((c) => c.args[0] === 'copy');
     expect(copy?.args[2]).toBe('vm1:/tmp/substrate-contract.sh');
@@ -118,7 +143,7 @@ describe('copySubstrateScripts', () => {
       exitCode: 1,
     });
 
-    await expect(copySubstrateScripts({ vmName: 'vm1', subprocess: runner })).rejects.toThrow(
+    await expect(copySubstrateScripts({ link: linkTo('vm1', runner) })).rejects.toThrow(
       /substrate-contract\.sh.*no space left on device/s
     );
   });
@@ -127,7 +152,7 @@ describe('copySubstrateScripts', () => {
 describe('provisionSubstrate', () => {
   it('runs the provisioning script as root from its installed path', async () => {
     const { runner, calls } = recorder();
-    await provisionSubstrate({ vmName: 'vm1', subprocess: runner });
+    await provisionSubstrate({ link: linkTo('vm1', runner) });
 
     expect(calls.at(-1)?.args).toEqual([
       'shell',
@@ -151,7 +176,7 @@ describe('provisionSubstrate', () => {
       }
     );
 
-    await expect(provisionSubstrate({ vmName: 'vm1', subprocess: runner })).rejects.toThrow(
+    await expect(provisionSubstrate({ link: linkTo('vm1', runner) })).rejects.toThrow(
       /exit 100.*Unable to locate package libgpod4/s
     );
   });
@@ -171,24 +196,24 @@ describe('runSubstrateDoctor', () => {
       }
     );
 
-    const result = await runSubstrateDoctor({ vmName: 'vm1', subprocess: runner });
+    const result = await runSubstrateDoctor({ link: linkTo('vm1', runner) });
     expect(result.ok).toBe(false);
     expect(result.stdout).toContain('module sg is not loaded');
   });
 
   it('passes the verdict through on success', async () => {
     const { runner } = recorder(ok('substrate-doctor: PASS\n'));
-    const result = await runSubstrateDoctor({ vmName: 'vm1', subprocess: runner });
+    const result = await runSubstrateDoctor({ link: linkTo('vm1', runner) });
     expect(result.ok).toBe(true);
   });
 
   it('forwards --strict only when asked', async () => {
     const relaxed = recorder();
-    await runSubstrateDoctor({ vmName: 'vm1', subprocess: relaxed.runner });
+    await runSubstrateDoctor({ link: linkTo('vm1', relaxed.runner) });
     expect(relaxed.calls.at(-1)?.args).not.toContain('--strict');
 
     const strict = recorder();
-    await runSubstrateDoctor({ vmName: 'vm1', subprocess: strict.runner, strict: true });
+    await runSubstrateDoctor({ link: linkTo('vm1', strict.runner), strict: true });
     expect(strict.calls.at(-1)?.args.at(-1)).toBe('--strict');
   });
 
@@ -196,7 +221,7 @@ describe('runSubstrateDoctor', () => {
   // scripts from the host first would answer a different question.
   it('skips the copy when inspecting what is already installed', async () => {
     const { runner, calls } = recorder();
-    await runSubstrateDoctor({ vmName: 'vm1', subprocess: runner, skipCopy: true });
+    await runSubstrateDoctor({ link: linkTo('vm1', runner), skipCopy: true });
 
     expect(calls).toHaveLength(1);
     expect(calls[0]?.args).toContain(substrateScriptVmPath('substrate-doctor.sh'));
