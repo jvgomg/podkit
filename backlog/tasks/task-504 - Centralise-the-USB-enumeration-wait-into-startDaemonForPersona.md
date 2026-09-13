@@ -4,7 +4,7 @@ title: Centralise the USB-enumeration wait into startDaemonForPersona
 status: Done
 assignee: []
 created_date: '2026-09-09 20:25'
-updated_date: '2026-09-12 13:47'
+updated_date: '2026-09-13 15:20'
 labels:
   - testing
   - vm
@@ -201,4 +201,10 @@ This task is Done on the strength of everything that does not need the VM:
 the primitive is unbypassable by type, all call sites converged, and six unit
 tests with an injected `SubprocessRunner` pin that it polls rather than trusting
 `systemctl`. What remains is confirmation on hardware nobody has here.
+
+## AC #5 satisfied (2026-09-13, via TASK-508)
+
+The VM half ran on the macOS harness host. `bun run test:vm` green across three runs (one idle, two under host load — the harness VM had to be destroyed and reprovisioned first, it was wedged). The four converged files were confirmed individually by name with no skips among them, and `discovery-reconciliation`'s replug loop asserted exactly one device on each of its three cycles.
+
+No regression from this change. Two separate findings came out of the run and are filed rather than folded in here: TASK-509 (`waitForScsiGenericEnumeration` is not persona-specific, measured at ~1.5s of no protection for a second concurrent persona) and TASK-510 (an unrelated backing-file synthesis flake, 1 run in 3 under load). Full evidence is in TASK-508's notes.
 <!-- SECTION:NOTES:END -->
