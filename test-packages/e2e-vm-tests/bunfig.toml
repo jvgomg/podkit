@@ -9,7 +9,10 @@
 # Docker distribution image run inside the VM — distinct from `@podkit/e2e-tests`'s
 # `docker-source/`, which only uses Docker to host a source.)
 pathIgnorePatterns = ["**/*.integration.test.ts", "**/*.e2e.test.ts", "**/vm-docker/**"]
-retry = 1
+# retry = 0 is repo policy: a test that passes on the second attempt is a bug
+# report, not a pass. See docs/agents/testing.md §Retries for why, and for how to
+# grant an exception if you genuinely need one.
+retry = 0
 # Shared with @podkit/device-testing — self-gates on argv / npm_lifecycle_event
 # so non-VM runs do not require the Lima VM to be online. Resolved through
 # the workspace's `@podkit/device-testing` package export rather than a

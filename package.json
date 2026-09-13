@@ -34,7 +34,7 @@
     "harness:install": "bun run --cwd test-packages/device-testing harness:install",
     "harness:setup": "bun run --cwd test-packages/device-testing harness:setup",
     "test:e2e:real": "IPOD_TARGET=real turbo run test:e2e --filter=@podkit/e2e-tests",
-    "lint": "oxlint --config oxlint.json . && bun scripts/check-cli-stderr-writes.mjs && bun scripts/lint-shell.mjs",
+    "lint": "oxlint --config oxlint.json . && bun scripts/check-cli-stderr-writes.mjs && bun scripts/lint-shell.mjs && bun scripts/check-test-retry-policy.mjs",
     "lint:fix": "oxlint --config oxlint.json --fix .",
     "lint:conventions": "bun scripts/check-cli-stderr-writes.mjs",
     "lint:shell": "bun scripts/lint-shell.mjs",

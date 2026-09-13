@@ -3,7 +3,10 @@
 # personas. The VM-runner test harness opts back in via the `test:vm` script
 # (`bun test src/vm --path-ignore-patterns=`).
 pathIgnorePatterns = ["**/*.e2e.test.ts"]
-retry = 2
+# retry = 0 is repo policy: a test that passes on the second attempt is a bug
+# report, not a pass. See docs/agents/testing.md §Retries for why, and for how to
+# grant an exception if you genuinely need one.
+retry = 0
 # Self-gates on argv / npm_lifecycle_event — no-ops for non-VM runs so unit
 # tests do not require the Lima VM to be online. See the script's header.
 # Self-import via package export keeps symmetry with the e2e-vm-tests

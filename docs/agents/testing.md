@@ -410,7 +410,7 @@ The depths in the [Quick Reference](#quick-reference) are enforced by **bunfig.t
   - `packages/podkit-core/bunfig.toml` ignores `**/*.integration.test.ts` **and** `**/*.perf.test.ts` — so bare `bun test` runs only the fast unit depth.
   - `packages/podkit-cli`, `libgpod-node`, `gpod-testing` ignore `**/*.integration.test.ts`.
   - `test-packages/device-testing/bunfig.toml` ignores `**/*.e2e.test.ts` so stray runs don't try to spin up VM personas.
-  - Packages with no integration / perf / e2e files keep their bunfig minimal (just `retry = 2`) — nothing to gate.
+  - Packages with no integration / perf / e2e files keep their bunfig minimal (just `retry = 0`, see [Retries](#retries-there-are-none-and-that-is-the-policy)) — nothing to gate.
 - Each task script clears the ignore for the depth it wants and filters in:
   - `test:integration` → `gpod-tests-parallel` (default pattern `*.integration.test.ts`).
   - `test:perf` → `gpod-tests-parallel --pattern '*.perf.test.ts'`.
@@ -700,6 +700,126 @@ zero call sites. Don't introduce it without team agreement; the existing
 hand-rolled `toContain` / `toMatchObject` patterns make failures
 self-documenting in PR review.
 
+## Retries: there are none, and that is the policy
+
+**Every `bunfig.toml` in this repo sets `retry = 0`.** A test that passes on
+the second attempt is a bug report, not a pass, and the only thing a retry
+changes is whether you get to read it.
+
+This is a decision (TASK-506), not an accident. It replaced a spread of three
+different values across eighteen files — `retry = 2` in fourteen packages,
+`retry = 1` in the two e2e packages, and nothing at all in
+`test-packages/lima` — that read as considered and was not. Nothing recorded
+why any of the three was chosen.
+
+### What retry actually did here
+
+Three failures from this repo's history, each one a different way for a retry
+to make the diagnosis worse:
+
+- **It made a deterministic failure look flaky.** `47fae11c`: a unit test read
+  fixtures turbo never generated for `test:unit`, so it failed 100% of the time
+  on a fresh clone. `retry = 2` re-ran it twice and labelled it a flake. Someone
+  had to notice the failure was *identical* all three times to see that it
+  wasn't one.
+- **It manufactured a worse failure than the one it hid.** `cdee74e5`: RTL
+  renders leaked into happy-dom's process-global document, so a single flaky
+  failure became a guaranteed 3-for-3 cascade — `Found multiple elements with
+  the text …`, an error about the retry's own leaked state, pointing away from
+  the real cause.
+- **It did nothing for the failure that mattered most.** TASK-501's exit-254
+  failure happened at the sync level, beneath bun's retry, so `retry = 1` never
+  engaged.
+
+And `test-packages/lima` having no retry at all is why the heartbeat flake
+(`a6964fcd`) took a CI run down outright instead of being quietly absorbed —
+the right outcome, reached by accident. It now says `retry = 0` on purpose.
+
+### Retry does not cover the setup path, which is where the infrastructure flakes live
+
+The strongest case for keeping retry was the e2e/VM packages, on the grounds
+that container startup and USB enumeration are genuinely nondeterministic.
+That case does not survive contact with how bun applies retries.
+
+**A `beforeAll` failure is not retried.** Verified against bun 1.3.13: a suite
+whose `beforeAll` throws on its first call and would succeed on its second
+fails outright under `retry = 2`, reported as `(fail) <suite> > (unnamed)`.
+
+That is exactly the shape of the VM-lane failures. TASK-510's backing-file
+synthesis flake surfaced as `VM: starter personas > (unnamed)` in a package
+that had `retry = 2` set, and the retry did nothing — the work happens in
+`prepare()`, inside a hook. So retry in the e2e/VM packages was not the shock
+absorber it looked like; it covered the in-test assertions, which are the
+deterministic part, and not the infrastructure setup, which is the part that
+actually flakes.
+
+The shock absorber for nondeterministic infrastructure is **a bounded wait at
+the flaky step**, not a re-run of the whole test: `startDaemonForPersona`
+waiting for the gadget to enumerate (TASK-504), the fifteen sleep-to-wait
+conversions in TASK-505, `d14e9d0d` retrying at the apt level rather than the
+test level. Those fix the nondeterminism where it happens and fail loudly with
+a message naming what was being waited for. See
+[Sleeps in tests](#sleeps-in-tests-legitimate-vs-racing).
+
+### The escalation path is the real cost
+
+Retry normalises "tests sometimes fail". `de6e5bf8` shows the next step when
+retry is not enough: `describe.skipIf`, after which
+`lossy-preserve-efficiency`'s assertion ran on no Linux host and in no CI run
+at all until TASK-500 found it. Each step is locally reasonable and the
+sequence ends with no coverage.
+
+### Was retry load-bearing when this was decided?
+
+Yes, and that was the argument for fixing rather than keeping it. The three
+most recent green `main` runs at the time each had retry firing:
+`templates.integration.test.ts` passing at attempt 2, `device.integration.
+test.ts` passing at attempt 3. Both were **integration** tests — in-process,
+no external deps, where by this repo's own
+[taxonomy](../architecture/testing/taxonomy.md) nondeterminism is a defect
+rather than a fact of life. Both were fixed under TASK-507, whose notes record
+that neither needed retry to be green afterwards. The twelve e2e stress samples
+from TASK-501 had zero retry firings.
+
+### Visibility: a retried-then-passed test must never be silent
+
+Under `retry = 0` this cannot arise, which is the point. It is recorded here
+because the failure mode is invisible by default and anyone granting an
+exception needs to know it.
+
+Bun 1.3.13 prints **no attempt marker**. A test that fails twice and passes on
+the third dumps two full error blocks into the log and then ends the run with
+`2 pass / 0 fail`. In a CI log, that is a green summary with an error above it,
+and nobody reads upward from a green summary. Confirming the task-501 stress
+waves were clean meant grepping twelve job logs by hand, which is not a thing
+anyone will do routinely.
+
+The machine-readable escape hatch is the JUnit reporter, which records **every
+attempt as its own `<testcase>`**: a retried-then-passed test appears as
+duplicate `<testcase>` entries with `<failure>` children followed by a clean
+one, and the suite-level `tests=` / `failures=` counts exceed the real test
+count. So any exception granted below must be run with
+`--reporter=junit --reporter-outfile=…` and have those duplicates surfaced —
+an exception whose retries are invisible is not an exception, it is the old
+arrangement with a comment on it.
+
+### Granting an exception
+
+`bun scripts/check-test-retry-policy.mjs` (wired into `bun run lint`) fails on
+any `bunfig.toml` with a non-zero `retry`. To grant one, put a
+`# retry-exception:` comment with the reason directly above the setting:
+
+```toml
+[test]
+# retry-exception: <what is nondeterministic, why it cannot be a bounded wait
+# at the step, and how the retried-then-passed case is surfaced>
+retry = 1
+```
+
+Before writing one, check that the nondeterminism is in a place retry can even
+reach — if it is in `beforeAll`, `beforeEach` or a fixture, retry will not fire
+and the exception buys nothing.
+
 ## Sleeps in tests: legitimate vs racing
 
 A fixed-duration sleep (`Bun.sleep(35)`, `await new Promise(r => setTimeout(r, 10))`)
@@ -912,7 +1032,9 @@ never on elapsed time. The original fast-path test used
 `expect(ms).toBeLessThan(50)` as a stand-in for "no subprocess ran"; on a loaded
 4-vCPU runner a *working* template copy measured 68 ms, so the proxy failed
 while the behaviour it stood for was correct — every CI run, hidden by `retry`
-(TASK-507). A duration is evidence about the host, not about which branch ran.
+(TASK-507; retry is now [0 everywhere](#retries-there-are-none-and-that-is-the-policy),
+which is how that one surfaced). A duration is evidence about the host, not about
+which branch ran.
 
 **When the fast path is used:** all of the following must be true:
 - `model` is in `TEMPLATE_MODELS` (MA147, MA002, MA146, MA477, MB565, MC293, MC027)

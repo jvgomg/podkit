@@ -3,3 +3,7 @@
 # advisory-lock mutual-exclusion test spawns real child processes and waits out
 # a staleness window. It is run explicitly (`bun test src/lock.integration.test.ts`).
 pathIgnorePatterns = ["**/*.integration.test.ts"]
+# retry = 0 is repo policy: a test that passes on the second attempt is a bug
+# report, not a pass. See docs/agents/testing.md §Retries for why, and for how to
+# grant an exception if you genuinely need one.
+retry = 0

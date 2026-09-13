@@ -4,4 +4,7 @@
 # isn't reachable (the orphan check catches its own errors).
 [test]
 preload = ["./src/setup/preload.ts"]
-retry = 1
+# retry = 0 is repo policy: a test that passes on the second attempt is a bug
+# report, not a pass. See docs/agents/testing.md §Retries for why, and for how to
+# grant an exception if you genuinely need one.
+retry = 0

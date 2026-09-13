@@ -3,4 +3,7 @@
 # they write real files to tmp and may depend on system tooling. `bun run
 # test:integration` clears this with `--path-ignore-patterns=`.
 pathIgnorePatterns = ["**/*.integration.test.ts"]
-retry = 2
+# retry = 0 is repo policy: a test that passes on the second attempt is a bug
+# report, not a pass. See docs/agents/testing.md §Retries for why, and for how to
+# grant an exception if you genuinely need one.
+retry = 0
