@@ -370,14 +370,18 @@ export async function ensureBackingFile(
   // suffix-flag variants differ between BSD and GNU mktemp.)
   // mkfs.vfat: `--invariant` fixes the volume ID + creation timestamps, `-I`
   // suppresses the "you are formatting a whole block device" check, both
-  // stderr-noisy. Output deterministic across runs.
+  // stderr-noisy. Output deterministic across runs. The noise is held back by
+  // `loudOnFailure` rather than discarded, so a failed mkfs still says why.
   const buildScript = [
     'set -e',
     `sudo mkdir -p ${shellQuote(BACKING_FILES_VM_DIR)}`,
     `TMP=${shellQuote(`${vmPath}.tmp.`)}$$`,
     'sudo rm -f "$TMP"',
     `sudo truncate -s ${sizeMiB}M "$TMP"`,
-    `sudo mkfs.vfat --invariant -F 32 -n ${shellQuote(label)} -I "$TMP" >/dev/null 2>&1`,
+    loudOnFailure(
+      `sudo mkfs.vfat --invariant -F 32 -n ${shellQuote(label)} -I "$TMP"`,
+      'mkfs.vfat'
+    ),
     ...buildSeedCommands({ stageDir, tmpVar: '"$TMP"', entries: seedEntries }),
     `sudo mv "$TMP" ${shellQuote(vmPath)}`,
     `sudo rm -rf ${shellQuote(stageDir)}`,
@@ -671,6 +675,32 @@ async function synthesiseHfsplusBackingFile(
  */
 const PARTITIONED_MBR_DISK_ID = '0x1204d15c';
 
+/**
+ * Wrap a stderr-noisy build command so its output is discarded on success but
+ * reported on failure.
+ *
+ * `mkfs.vfat` and `sfdisk` write advisory notes to stderr on every successful
+ * run, and the build script's stdout is parsed by {@link parseBuildReport}, so
+ * both were silenced wholesale. That traded one kind of noise for a worse one:
+ * their only failure mode became unreadable. A synthesis failure on a loaded
+ * host surfaced as `failed to synthesise partitioned FAT32 backing file [...]
+ * (no output, exit=1)` — exit status and nothing else, for a script running
+ * five commands that can fail.
+ *
+ * Capturing stderr into a shell variable keeps stdout clean while letting the
+ * command explain itself when it fails. `2>&1 >/dev/null` is order-sensitive:
+ * stderr is redirected to the substitution first, then stdout to `/dev/null`.
+ * Writing the two the other way round sends both to the substitution and
+ * corrupts the build report.
+ *
+ * @internal exported so the redirection grammar can be executed in a unit test
+ * rather than asserted as a substring — the order is the whole point and a
+ * substring check cannot see it.
+ */
+export function loudOnFailure(command: string, label: string): string {
+  return `ERR=$(${command} 2>&1 >/dev/null) || { echo "${label} failed (exit $?): $ERR" >&2; exit 1; }`;
+}
+
 /** Options for {@link synthesisePartitionedFat32BackingFile}. */
 interface SynthesisePartitionedFat32Opts {
   vmName: string;
@@ -730,11 +760,17 @@ async function synthesisePartitionedFat32BackingFile(
     'sudo rm -f "$TMP"',
     `sudo truncate -s ${opts.sizeMiB}M "$TMP"`,
     // Deterministic MBR: fixed disk id + one FAT32-LBA partition at LBA 2048.
-    `printf 'label: dos\\nlabel-id: ${PARTITIONED_MBR_DISK_ID}\\n\\n2048,,c\\n' | sudo sfdisk "$TMP" >/dev/null 2>&1`,
+    loudOnFailure(
+      `printf 'label: dos\\nlabel-id: ${PARTITIONED_MBR_DISK_ID}\\n\\n2048,,c\\n' | sudo sfdisk "$TMP"`,
+      'sfdisk'
+    ),
     // Attach a partscan loop so ${LOOP}p1 exists; detach on any exit.
     'LOOP=$(sudo losetup --find --show --partscan "$TMP")',
     'trap \'sudo losetup -d "$LOOP" 2>/dev/null || true\' EXIT',
-    `sudo mkfs.vfat --invariant -F 32 -n ${shellQuote(opts.label)} -I "${'$'}{LOOP}p1" >/dev/null 2>&1`,
+    loudOnFailure(
+      `sudo mkfs.vfat --invariant -F 32 -n ${shellQuote(opts.label)} -I "${'$'}{LOOP}p1"`,
+      'mkfs.vfat'
+    ),
     'sudo losetup -d "$LOOP"',
     'trap - EXIT',
     `sudo mv "$TMP" ${shellQuote(opts.vmPath)}`,

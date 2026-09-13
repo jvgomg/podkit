@@ -10,6 +10,7 @@ import { describe, it, expect } from 'bun:test';
 
 import {
   ensureBackingFile,
+  loudOnFailure,
   ensureBackingFilesForPersonas,
   imageWorkTimeoutMs,
   vmPathForPersona,
@@ -453,6 +454,27 @@ describe('ensureBackingFile', () => {
     ).rejects.toThrow(/[A-Z0-9_-]/);
   });
 
+  it('does not discard build-command stderr — a synthesis failure must explain itself', async () => {
+    // `mkfs.vfat` is stderr-noisy on success, which is why its output was
+    // silenced. Silencing it wholesale made its one failure mode unreadable:
+    // the build exits 1 with both streams empty, so the thrown error says
+    // `(no output, exit=1)` and names nothing to act on. Keep stdout clean —
+    // `parseBuildReport` consumes it — but let the command speak on failure.
+    const { runner, calls } = makeScriptedRunner([ok(sizeLine(64))]);
+    await ensureBackingFile({
+      vmName: 'podkit-device',
+      persona: makePersona(),
+      subprocess: runner,
+    });
+    const buildScript = calls[0]!.args.join(' ');
+    // Order matters and a substring check cannot see it, so pin the exact
+    // redirection: `2>&1 >/dev/null` sends stderr to the capture and stdout to
+    // the bin. The reverse spelling captures both and empties the diagnostic.
+    expect(buildScript).toContain('2>&1 >/dev/null');
+    expect(buildScript).not.toContain('>/dev/null 2>&1');
+    expect(buildScript).toContain('mkfs.vfat failed');
+  });
+
   it('surfaces a descriptive error on a non-zero build exit', async () => {
     const { runner } = makeScriptedRunner([fail(1, 'mkfs.vfat: command not found')]);
     await expect(
@@ -485,6 +507,31 @@ describe('ensureBackingFile', () => {
         subprocess: runner,
       })
     ).rejects.toThrow(/non-sha256/);
+  });
+
+  it('does not discard sfdisk or mkfs stderr on the partitioned path', async () => {
+    // Same reasoning as the whole-disk case, over the two commands the
+    // partitioned build adds. This is the path that actually failed on a
+    // loaded host with nothing to show for it.
+    const { runner, calls } = makeScriptedRunner([ok(sizeLine(64))]);
+    await ensureBackingFile({
+      vmName: 'podkit-device',
+      persona: makePersona({
+        massStorageBackingFile: {
+          synthesis: { sizeMiB: 64, filesystem: 'FAT32', label: 'ECHO_MINI', partitioned: true },
+          resetStrategy: 'copy',
+        },
+      }),
+      subprocess: runner,
+    });
+    const buildScript = calls[0]!.args.join(' ');
+    expect(buildScript).toContain('sfdisk failed');
+    expect(buildScript).toContain('mkfs.vfat failed');
+    // Neither wrapped command may keep the old spelling, which discards the
+    // stderr this change exists to surface.
+    expect(buildScript).not.toContain('>/dev/null 2>&1');
+    // Two commands are wrapped on this path, so two captures.
+    expect(buildScript.split('2>&1 >/dev/null')).toHaveLength(3);
   });
 
   it('requires vmName', async () => {
@@ -564,5 +611,44 @@ describe('ensureBackingFilesForPersonas', () => {
     for (const call of calls) {
       expect(call.args.join(' ')).not.toContain('sha256sum');
     }
+  });
+});
+
+describe('loudOnFailure', () => {
+  // The unit under test is a string of shell, so these run it through a real
+  // `sh` rather than asserting on its spelling. The property that matters —
+  // the failing command's stderr reaches the operator — is invisible to a
+  // substring check: a wrapper with the redirections reversed contains all the
+  // same text and captures nothing.
+  function runFragment(fragment: string): { stdout: string; stderr: string; exitCode: number } {
+    const proc = Bun.spawnSync(['sh', '-c', `set -e; ${fragment}; echo REPORT`]);
+    return {
+      stdout: proc.stdout.toString().trim(),
+      stderr: proc.stderr.toString().trim(),
+      exitCode: proc.exitCode,
+    };
+  }
+
+  it("reports the failing command's stderr, its label and its exit status", () => {
+    const result = runFragment(
+      loudOnFailure(`sh -c 'echo banner-on-stdout; echo the-real-cause >&2; exit 3'`, 'mkfs.vfat')
+    );
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain('the-real-cause');
+    expect(result.stderr).toContain('mkfs.vfat failed');
+    // The wrapped command's own status, not the wrapper's.
+    expect(result.stderr).toContain('exit 3');
+    // The script stopped: nothing after the failure ran.
+    expect(result.stdout).not.toContain('REPORT');
+  });
+
+  it('discards the command output on success so the build report stays parseable', () => {
+    const result = runFragment(
+      loudOnFailure(`sh -c 'echo banner-on-stdout; echo advisory-note >&2; exit 0'`, 'mkfs.vfat')
+    );
+    expect(result.exitCode).toBe(0);
+    // `parseBuildReport` consumes this stdout — a stray banner would break it.
+    expect(result.stdout).toBe('REPORT');
+    expect(result.stderr).toBe('');
   });
 });
