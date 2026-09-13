@@ -13,10 +13,17 @@ import * as path from 'node:path';
 import { deviceBaselineFiles, computeBaselineHash } from './baseline-hash.js';
 
 describe('deviceBaselineFiles', () => {
-  it('tracks the device VM yaml first, then apply-state.sh', () => {
+  // The substrate contract scripts matter more to drift than the Lima YAML
+  // does: the YAML produces a plain Debian box, while these three are what make
+  // it a substrate. Dropping one here would leave the box provisionable from
+  // something the repo no longer says, with no drift reported.
+  it('tracks the device VM yaml, apply-state.sh and the substrate contract', () => {
     expect(deviceBaselineFiles().map((f) => f.label)).toEqual([
       'podkit-device.yaml',
       'apply-state.sh',
+      'substrate-contract.sh',
+      'provision-substrate.sh',
+      'substrate-doctor.sh',
     ]);
   });
 
@@ -25,6 +32,9 @@ describe('deviceBaselineFiles', () => {
 
     expect(fs.existsSync(yaml!.absPath)).toBe(true);
     expect(fs.existsSync(applyState!.absPath)).toBe(true);
+    for (const tracked of deviceBaselineFiles()) {
+      expect(fs.existsSync(tracked.absPath)).toBe(true);
+    }
     expect(path.basename(yaml!.absPath)).toBe('podkit-device.yaml');
     expect(path.basename(applyState!.absPath)).toBe('apply-state.sh');
     // The two inputs are owned by different packages — the reason this
@@ -36,6 +46,6 @@ describe('deviceBaselineFiles', () => {
   it('feeds the hashing primitive without throwing on a missing input', () => {
     const { combinedSha, files } = computeBaselineHash(deviceBaselineFiles());
     expect(combinedSha).toMatch(/^[0-9a-f]{64}$/);
-    expect(files).toHaveLength(2);
+    expect(files).toHaveLength(5);
   });
 });

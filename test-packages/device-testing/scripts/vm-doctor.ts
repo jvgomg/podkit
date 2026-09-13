@@ -43,11 +43,17 @@ function remediation(reason: string): string {
   return [
     `[vm:doctor] ${reason}`,
     '',
-    'To rebuild the VM from the current source-of-truth files:',
+    'To re-apply the current source-of-truth files and re-seal:',
+    '  bun run harness:setup',
+    '',
+    // Provisioning is post-boot and idempotent, so re-applying the contract is
+    // enough for a drifted box. A destroy is for a box that is wedged, not one
+    // that is merely out of date — it costs a full image boot to fix neither.
+    'If the VM is wedged rather than merely drifted, recreate it:',
     '  bun run vm:destroy device --yes && bun run harness:setup',
     '',
-    'Skipping this check leaves VM tests observing a VM whose provisioning',
-    'does not match the YAML / apply-state.sh on disk.',
+    'Skipping this check leaves VM tests observing a substrate whose',
+    'provisioning does not match the contract scripts on disk.',
     '',
   ].join('\n');
 }

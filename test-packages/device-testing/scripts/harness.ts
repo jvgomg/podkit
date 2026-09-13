@@ -5,7 +5,8 @@
  * Subcommands:
  *   status   — multi-line health check: VM state, SSH, podkit/daemon/gpod-tool/unit, kernel modules
  *   install  — turbo-build podkit + dummy-hcd-daemon, transfer everything, install systemd unit
- *   setup    — first-time onboarding: ensure the VM is up, install, seal the baseline
+ *   setup    — first-time onboarding: ensure the VM is up, apply + verify the
+ *              substrate contract, install, seal the baseline
  *
  * Generic VM lifecycle (create/start/stop/destroy/shell, for this VM and every
  * other) belongs to `podkit-vm` — the single advisory-lock chokepoint — and is
@@ -54,6 +55,7 @@ import {
   DEFAULT_PODKIT_DEBUG_VM_PATH,
   DEFAULT_GPOD_TOOL_VM_PATH,
 } from '../src/runners/lima-test-vm-binary.js';
+import { provisionSubstrate, runSubstrateDoctor } from '../src/runners/substrate-contract.js';
 import {
   transferSystemdUnit,
   resolveDefaultDummyHcdDaemonUnit,
@@ -71,7 +73,8 @@ const USAGE = `Usage: bun run scripts/harness.ts <subcommand>
 Subcommands:
   status            Health check: VM + binaries + systemd unit + kernel modules
   install           Build + transfer podkit, daemon, gpod-tool, systemd unit
-  setup             ensure the VM is up + install + seal baseline (first-time onboarding)
+  setup             ensure the VM is up + apply the substrate contract + install
+                    + seal baseline (first-time onboarding)
 
 Generic VM lifecycle lives in \`podkit-vm\`:
   bun run vm:up ${DEVICE_VM.id}        create/start this VM (or any registered VM)
@@ -396,6 +399,29 @@ async function cmdSetup(): Promise<number> {
   const status = await instanceStatus(VM).catch(() => 'missing' as const);
   if (status !== 'running') {
     console.error(`[harness:setup] \`${VM}\` is ${status} after ensure — cannot continue.`);
+    return 1;
+  }
+
+  // Provision the contract, then verify it. Lima cannot reference an external
+  // file from a `provision:` block, so the substrate invariants are applied
+  // post-boot from the shared scripts rather than inlined into the YAML — the
+  // same two steps an SSH substrate runs, against the same three files.
+  console.log('[harness:setup] applying the substrate contract...');
+  try {
+    await provisionSubstrate({ vmName: VM });
+  } catch (err) {
+    console.error(`[harness:setup] ${err instanceof Error ? err.message : String(err)}`);
+    return 1;
+  }
+
+  const doctor = await runSubstrateDoctor({ vmName: VM });
+  process.stdout.write(doctor.stdout);
+  if (!doctor.ok) {
+    process.stderr.write(doctor.stderr);
+    console.error(
+      '[harness:setup] the substrate does not satisfy the contract — see the named ' +
+        'failures above. Binaries are not installed onto a box that cannot run them.'
+    );
     return 1;
   }
 

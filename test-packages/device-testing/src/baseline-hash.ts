@@ -34,9 +34,17 @@ export { computeBaselineHash, BASELINE_VM_HASH_PATH } from '@podkit/lima';
  * host-only concern into a daemon startup crash.
  */
 export function deviceBaselineFiles(): readonly TrackedBaselineFile[] {
+  const scriptsDir = path.join(devTestingPackageRoot(), 'scripts');
   const tracked = [
     deviceVm().yamlPath,
-    path.join(devTestingPackageRoot(), 'scripts', 'apply-state.sh'),
+    path.join(scriptsDir, 'apply-state.sh'),
+    // The substrate contract. These matter more to drift than the Lima YAML
+    // does: the YAML now only produces a plain Debian box, while these three
+    // are what make it a substrate. A change to any of them means the running
+    // box was provisioned from something the repo no longer says.
+    path.join(scriptsDir, 'substrate-contract.sh'),
+    path.join(scriptsDir, 'provision-substrate.sh'),
+    path.join(scriptsDir, 'substrate-doctor.sh'),
   ];
   // Labels are basenames rather than repeated literals, so a file rename can
   // never leave the hash naming something that no longer exists. This relies

@@ -1,0 +1,53 @@
+#cloud-config
+#
+# Device substrate — Proxmox cloud-init user-data template.
+#
+# Deliberately minimal. This makes a plain Debian box with your key on it and
+# nothing else; what turns that box into a *substrate* is applied afterwards
+# over ssh by the shared contract scripts:
+#
+#   test-packages/device-testing/scripts/provision-substrate.sh
+#   test-packages/device-testing/scripts/substrate-doctor.sh
+#
+# The Lima path does exactly the same thing (see podkit-device.yaml), so the
+# gadget module stack, `dummy_hcd num=4`, configfs and the no-toolchain
+# assertion exist in one place rather than being re-encoded here. Anything
+# added to this file that a Lima substrate does not also get is a divergence
+# the doctor will not catch, because the doctor asserts the contract — not
+# whatever this template happens to say.
+#
+# Placeholders, substituted by hand for now (see
+# docs/environments/device-substrate-proxmox.md):
+#
+#   __HOSTNAME__    hostname for the substrate, e.g. podkit-substrate
+#   __SSH_PUBKEY__  the full public key line you will connect with
+#
+# Nothing machine-specific is committed: the rendered copy lives on your PVE
+# host's snippet storage, never in the repo.
+
+hostname: __HOSTNAME__
+
+# Password auth off, root login off, one unprivileged account reached by key.
+# NOPASSWD sudo is required rather than convenient: the harness runs
+# `sudo bash …` over a non-interactive ssh session, which has no tty to answer
+# a password prompt on.
+users:
+  - name: podkit
+    shell: /bin/bash
+    lock_passwd: true
+    sudo: 'ALL=(ALL) NOPASSWD:ALL'
+    ssh_authorized_keys:
+      - __SSH_PUBKEY__
+
+ssh_pwauth: false
+disable_root: true
+
+# qemu-guest-agent lets the PVE host see the guest's IP and shut it down
+# cleanly, which the lifecycle verbs will want. It is not part of the substrate
+# contract — a substrate provisioned any other way does not need it.
+package_update: true
+packages:
+  - qemu-guest-agent
+
+runcmd:
+  - [systemctl, enable, --now, qemu-guest-agent]

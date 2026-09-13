@@ -1,253 +1,74 @@
-# Lima VM: Device-testing harness (Debian 12.10 — minimal, binary-only)
+# Lima VM: device substrate (Debian 12 — minimal, binary-only)
 #
-# Role: run VM integration tests from ADR-016 against the statically-linked
-# podkit linux-x64 binary produced by the builder VM
-# (test-packages/lima/vms/podkit-builder-glibc.yaml). This VM is deliberately
-# stripped of all development tooling so that dev libraries on PATH cannot mask
-# binary linkage problems — the cornerstone of ADR-016's builder/harness split.
+# Role: provide a Linux kernel and userland the device-testing harness can
+# synthesise USB gadgets in, and run the statically-linked podkit linux binary
+# produced by the builder VM (test-packages/lima/vms/podkit-builder-glibc.yaml)
+# against them.
 #
 # Boots as Lima instance name: `podkit-device`.
 #
-# What this VM HAS:
-#   - Debian 12.10 (pinned via explicit cloud-image URL — same point release
-#     as podkit-builder-glibc.yaml and podkit-abi-verify.yaml; bump deliberately and in sync)
-#   - `ffmpeg` (apt) — the only system runtime dep podkit users install
-#   - `libgpod4` + `libgpod-common` + `libglib2.0-0` (apt, runtime-only) —
-#     required by the `gpod-tool` test helper. These are NOT -dev packages;
-#     they are the same shared libraries an end-user with libgpod-using
-#     applications would already have. ADR-016 §"Snapshot-based state
-#     layering" names `base-no-libgpod` as a snapshot, which implies libgpod
-#     IS in the base VM and is removed for that snapshot (see the snapshot setter
-#     in `lima-test-vm-state.ts`).
-#   - Kernel modules loaded at boot via /etc/modules-load.d/podkit-device-harness.conf:
-#     `dummy_hcd`, `libcomposite`, `usb_f_mass_storage`, `usb_f_fs`, `sg`
-#     (`sg` provides /dev/sg* SCSI generic device nodes that podkit's
-#     `inquiry-methods` doctor check requires)
-#   - configfs auto-mounted at /sys/kernel/config (kernel default on Debian 12;
-#     an explicit /etc/fstab line is added as a belt-and-braces measure)
-#   - /usr/local/bin/podkit — empty placeholder; populated by the binary
-#     transfer step (limactl copy from the host's turbo cache)
-#   - /usr/local/bin/gpod-tool — REQUIRED. Transferred unconditionally by
-#     `bun run harness:install` (which builds it via the
-#     `@podkit/gpod-testing#build:linux-binary` turbo task inside the
-#     podkit-builder-glibc VM). The legacy `/tmp/gpod-tool` provisioning
-#     step below remains for backwards-compat but is normally a no-op.
+# This file provisions NOTHING beyond a plain Debian box. That is deliberate.
+# What makes a box a *substrate* — the gadget module stack, `dummy_hcd num=4`,
+# configfs, the runtime-only package set, and the assertion that no toolchain
+# or `-dev` package is present — is declared once, as portable Debian bash, in:
 #
-# What this VM explicitly DOES NOT have:
-#   - NO Bun, NO Node, NO npm/npx
-#   - NO `mounts:` entry exposing the host source tree (mounts: [] below)
-#   - NO node_modules
-#   - NO build-essential, pkg-config, cmake, meson, ninja
-#   - NO `-dev` packages (no libgpod-dev, no libglib2.0-dev, no libplist-dev)
-#   - NO source tree visible inside the VM
+#   test-packages/device-testing/scripts/substrate-contract.sh    (the values)
+#   test-packages/device-testing/scripts/provision-substrate.sh   (apply them)
+#   test-packages/device-testing/scripts/substrate-doctor.sh      (assert them)
 #
-# libgpod runtime rationale: the podkit binary statically links libgpod, so
-# `ldd /usr/local/bin/podkit` must NOT reference any libgpod symbols. The
-# runtime libgpod present in this VM exists solely for gpod-tool (the test
-# helper that populates iPod databases). A linkage regression that makes the
-# podkit binary dynamically depend on libgpod will still surface here because
-# the runtime libgpod ABI in this VM is Debian 12.10's, not the static build's.
+# `bun run harness:setup` copies those in and runs them post-boot. A Proxmox
+# substrate reached over ssh runs the identical three files. Lima is a
+# provisioner here, not the substrate — its entire output is an SSH-reachable
+# Debian box (see ADR-028 and CONTEXT.md §Test environments).
+#
+# Provisioning runs post-boot rather than from a `provision:` block because
+# Lima's provision entries take an inline `script` or inline `content` and
+# cannot reference a file — so any in-YAML form would re-encode the scripts
+# here and drift from them.
 #
 # Usage (manual):
-#   limactl start test-packages/lima/vms/podkit-device.yaml --name podkit-device
-#   # The runner's transferBinary helper handles this in CI; manually for now:
-#   limactl copy packages/podkit-cli/bin/podkit-linux-* podkit-device:/tmp/podkit
-#   limactl shell podkit-device -- sudo install -m 0755 /tmp/podkit /usr/local/bin/podkit
-#   limactl shell podkit-device -- /usr/local/bin/podkit --version
-#   limactl stop podkit-device
+#   bun run vm:up device            # create/start
+#   bun run harness:setup           # apply the contract, verify it, install binaries
+#   bun run vm:shell device         # interactive shell
+#   bun run vm:down device          # stop
 #
-# Verifying the binary-only invariant:
-#   limactl shell podkit-device -- which bun node npm   # must return empty
-#   limactl shell podkit-device -- ls /workspaces /Users 2>/dev/null   # must be empty
-#   limactl shell podkit-device -- dpkg -l | grep -E '\-dev '         # must be empty
+# Verify the substrate contract at any time:
+#   limactl copy test-packages/device-testing/scripts/substrate-*.sh podkit-device:/tmp/
+#   limactl shell podkit-device -- sudo bash /tmp/substrate-doctor.sh
 
-# Pin the Apple Virtualization framework backend. `vz` boots ~5s vs ~30s
-# for `qemu` on aarch64 hosts, and the VM-test state-mutation path uses
-# `apply-state.sh` (sub-2-second per flip — see ADR-016 §"Test speed
-# strategy") rather than `limactl snapshot`, which is
-# QEMU-only in Lima 2.x. Explicit pinning prevents implicit reliance on
-# the user's default driver.
+# Pin the Apple Virtualization framework backend. `vz` boots ~5s vs ~30s for
+# `qemu` on aarch64 hosts, and the state-mutation path uses `apply-state.sh`
+# (sub-2-second per flip — see ADR-016 §"Test speed strategy") rather than
+# `limactl snapshot`, which is QEMU-only in Lima 2.x. Explicit pinning prevents
+# implicit reliance on the user's default driver.
 vmType: 'vz'
 
 images:
-  # Debian 12.10 point release. Pinned in sync with podkit-builder-glibc.yaml and
-  # podkit-abi-verify.yaml — bumping requires updating all three files plus a
-  # re-run of the ABI spike to confirm the static binary still loads.
+  # Debian 12.10 point release. Pinned in sync with podkit-builder-glibc.yaml
+  # and podkit-abi-verify.yaml — bumping requires updating all three files plus
+  # a re-run of the ABI spike to confirm the static binary still loads.
+  #
+  # substrate-doctor.sh asserts the Debian MAJOR version hard and reports a
+  # differing point release as drift rather than failing it: which image was
+  # booted is a provisioning input, while the running point release advances
+  # with any security update.
   - location: 'https://cloud.debian.org/images/cloud/bookworm/20250316-2053/debian-12-generic-arm64-20250316-2053.qcow2'
     arch: 'aarch64'
   - location: 'https://cloud.debian.org/images/cloud/bookworm/20250316-2053/debian-12-generic-amd64-20250316-2053.qcow2'
     arch: 'x86_64'
 
-# No host mount. The binary is delivered via `limactl copy`.
-# Lima's default $HOME mount would re-introduce dev-library shadowing risk
-# (the host's node_modules, libgpod-dev, Bun install, etc. would all become
-# visible). ADR-016 §"Builder/test VM split" forbids it.
+# No host mount. Binaries are delivered by explicit copy, and nothing else is.
+# Lima's default $HOME mount would make the host's node_modules, libgpod-dev and
+# Bun install visible inside the substrate — re-introducing exactly the
+# dev-library shadowing that the binary-only invariant exists to rule out.
+# ADR-016 §"Builder/test VM split" forbids it. It is also what makes an SSH
+# substrate a drop-in: there is no host filesystem to reproduce.
 mounts: []
 
-# Sizing — runs the compiled binaries plus, for the Tier-5 Docker tier,
-# builds and runs the podkit image in-VM (nerdctl/containerd). The disk needs
-# headroom for image layers + base-image pulls + build cache; a near-full 6GiB
-# root wedged an unclean-stop boot, so it is sized up here.
+# Sizing — runs the compiled binaries plus, for the Docker tier, builds and runs
+# the podkit image in-VM (nerdctl/containerd). The disk needs headroom for image
+# layers, base-image pulls and build cache; a near-full 6GiB root wedged an
+# unclean-stop boot, so it is sized up here.
 cpus: 2
 memory: '2GiB'
 disk: '20GiB'
-
-provision:
-  - mode: system
-    script: |
-      #!/usr/bin/env bash
-      set -eux
-
-      echo "=== Installing minimal runtime packages (no -dev, no toolchain) ==="
-      export DEBIAN_FRONTEND=noninteractive
-      apt-get update
-      # ffmpeg                — the one system runtime dep podkit users install
-      # libgpod4              — runtime-only libgpod (test helper gpod-tool needs it)
-      # libgpod-common        — udev rules + data files shipped with libgpod runtime
-      # libglib2.0-0          — runtime glib (depended on by libgpod4; explicit for clarity)
-      # ca-certificates       — boot-time TLS for apt + limactl ssh
-      # kmod                  — modprobe, lsmod, depmod (boot-time module loading)
-      # dosfstools            — mkfs.vfat for synthesising FAT32 backing images
-      #                         used by the VM-test mass-storage smoke test
-      #                         for the mass-storage smoke test. Runtime tool, not a -dev package.
-      # mtools                — mcopy/mmd for seeding files into FAT32 images without
-      #                         loop-mounting (no root, no kernel mount; deterministic
-      #                         output via SOURCE_DATE_EPOCH).
-      # NO build-essential, NO pkg-config, NO any -dev packages.
-      #
-      # NOTE: HFS+ backing images for the HFS+-on-Linux refusal Tier-3 tests are
-      # NOT generated in the VM. `hfsprogs` (which provides `mkfs.hfsplus`) is
-      # packaged for amd64 only in Debian bookworm — not arm64. The HFS+
-      # backing image is therefore built on the HOST via a pure-TS volume-
-      # header writer and limactl-copied into the VM. The VM only needs to
-      # READ the image, which kernel-side blkid does from the on-disk magic
-      # without any HFS+ userspace tools or `hfsplus.ko` kernel module.
-      # See `test-packages/device-testing/src/runners/hfsplus-image-writer.ts`
-      # and `docs/architecture/testing/vm-testing.md` §5.6.
-      apt-get install -y --no-install-recommends \
-        ffmpeg \
-        libgpod4 \
-        libgpod-common \
-        libglib2.0-0 \
-        ca-certificates \
-        kmod \
-        dosfstools \
-        mtools \
-        e2fsprogs
-
-      echo "=== Configuring kernel modules to load at boot ==="
-      # USB gadget stack: dummy_hcd provides a virtual USB host controller in
-      # the kernel; libcomposite + usb_f_mass_storage + usb_f_fs provide the
-      # gadget function modules that the FunctionFS daemon uses to synthesize
-      # iPod-shaped USB devices.
-      # `sg` (SCSI generic) provides the /dev/sg* device nodes that podkit's
-      # `inquiry-methods` doctor check probes when scanning for iPods — without
-      # it the `healthy` SystemState fixture cannot be satisfied.
-      install -d /etc/modules-load.d
-      # Write via printf — heredocs inside an indented YAML `|` block scalar
-      # would either need column-0 bodies (breaking yaml indent) or `<<-EOF`
-      # with tabs (mixed-style and error-prone). printf produces clean output
-      # with no leading whitespace; systemd-modules-load is whitespace-strict.
-      printf '%s\n' \
-        '# Loaded by systemd-modules-load.service at boot.' \
-        '# Required by the VM-test FunctionFS USB gadget daemon (ADR-016).' \
-        'dummy_hcd' \
-        'libcomposite' \
-        'usb_f_mass_storage' \
-        'usb_f_fs' \
-        'sg' \
-        > /etc/modules-load.d/podkit-device-harness.conf
-
-      # dummy_hcd ships with `num=1` by default — only one virtual UDC, which
-      # means only one gadget can be bound at a time. The VM-test harness needs
-      # at least two so two `dummy-hcd-daemon@<persona>.service` units can run
-      # side-by-side for multi-iPod scenarios. `options dummy_hcd num=4`
-      # makes the boot-time `systemd-modules-load` step bring up four UDCs
-      # (`dummy_udc.0` … `dummy_udc.3`). The exact count is arbitrary — four
-      # is well below the kernel's MAX_UDC_HOSTS (16) and gives headroom
-      # without a measurable boot-time cost.
-      install -d /etc/modprobe.d
-      printf '%s\n' \
-        '# VM-test harness needs multiple emulated UDCs for concurrent gadgets.' \
-        'options dummy_hcd num=4' \
-        > /etc/modprobe.d/podkit-device-harness-dummy-hcd.conf
-
-      # Best-effort modprobe during provisioning so the modules are available
-      # immediately without a reboot. The `|| echo` is what keeps `set -e` from
-      # aborting the script if a module fails to load (e.g. an image variant
-      # missing dummy_hcd); the boot-time loader catches the real run.
-      # Dummy_hcd gets an explicit `num=4` here because a stale instance
-      # already loaded with `num=1` would survive otherwise — `modprobe` is
-      # a no-op on an already-loaded module. We `rmmod` first (best-effort)
-      # so the options take effect on first boot too.
-      rmmod dummy_hcd 2>/dev/null || true
-      modprobe dummy_hcd num=4 || echo "WARN: modprobe dummy_hcd num=4 failed during provisioning"
-      for mod in libcomposite usb_f_mass_storage usb_f_fs sg; do
-        modprobe "$mod" || echo "WARN: modprobe $mod failed during provisioning; will retry on boot via modules-load.d"
-      done
-
-      echo "=== Ensuring configfs is mounted at /sys/kernel/config ==="
-      # configfs is enabled in Debian 12's stock kernel and is normally
-      # auto-mounted by systemd. Add an explicit fstab entry as a safety net
-      # so a regression in systemd's configfs.mount unit does not silently
-      # break the gadget setup.
-      if ! grep -q '/sys/kernel/config' /etc/fstab; then
-        # printf — see modules-load.d note above for why heredoc is avoided.
-        # mount -a rejects fstab lines with leading whitespace.
-        printf '%s\n' 'configfs /sys/kernel/config configfs defaults 0 0' \
-          >> /etc/fstab
-      fi
-      mkdir -p /sys/kernel/config
-      mountpoint -q /sys/kernel/config || mount -t configfs configfs /sys/kernel/config
-
-      echo "=== Verifying /usr/local/bin is writable for binary transfer ==="
-      # The runner limactl-copies the compiled podkit binary here.
-      install -d -m 0755 /usr/local/bin
-      test -w /usr/local/bin
-
-  - mode: system
-    script: |
-      #!/usr/bin/env bash
-      set -eux
-
-      # gpod-tool sourcing
-      #
-      # gpod-tool is a REQUIRED test-time dependency. The default source is
-      # `bun run harness:install`, which builds a Linux gpod-tool inside the
-      # podkit-builder-glibc VM and transfers it to /usr/local/bin/gpod-tool
-      # post-boot via the harness's transferBinary helper.
-      #
-      # This provisioning step is the legacy "stage before first boot" path:
-      # if a developer has manually placed a binary at /tmp/gpod-tool before
-      # boot (rare — easier to just `bun run harness:install`), pick it up.
-      # Normal flow leaves /tmp/gpod-tool absent and this branch is a no-op.
-      if [ -f /tmp/gpod-tool ]; then
-        install -m 0755 /tmp/gpod-tool /usr/local/bin/gpod-tool
-        echo "Installed gpod-tool from /tmp/gpod-tool"
-      else
-        echo "NOTE: no /tmp/gpod-tool staged at boot — expected; the harness " \
-             "transferBinary step will install it post-boot."
-      fi
-
-  - mode: system
-    script: |
-      #!/usr/bin/env bash
-      set -eux
-
-      echo "=== Verifying the binary-only invariant ==="
-      # Hard guards: if any of these fire, provisioning has regressed and the
-      # VM cannot be trusted to surface binary linkage problems.
-      ! command -v bun  >/dev/null 2>&1 || { echo "FATAL: bun present in test VM"; exit 1; }
-      ! command -v node >/dev/null 2>&1 || { echo "FATAL: node present in test VM"; exit 1; }
-      ! command -v npm  >/dev/null 2>&1 || { echo "FATAL: npm present in test VM"; exit 1; }
-
-      # No -dev packages of any kind. Match every installed package whose name
-      # ends in `-dev`, plus build-essential and pkg-config (toolchain meta).
-      DEV_PKGS=$(dpkg-query -W -f='${db:Status-Status} ${Package}\n' 2>/dev/null \
-        | awk '$1=="installed" && ($2 ~ /-dev$/ || $2=="build-essential" || $2=="pkg-config") {print $2}')
-      if [ -n "$DEV_PKGS" ]; then
-        echo "FATAL: dev package(s) found in test VM — provisioning regression:"
-        echo "$DEV_PKGS"
-        exit 1
-      fi
-      echo "OK: no Bun/Node/npm/dev packages present."
