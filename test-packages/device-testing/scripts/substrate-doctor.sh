@@ -111,6 +111,28 @@ else
   fail "configfs is not mounted at $SUBSTRATE_CONFIGFS_MOUNTPOINT"
 fi
 
+# A configfs line in fstab without `nofail` risks a box that boots once.
+# configfs is a module, so the generated sys-kernel-config.mount can run before
+# the module exists; the unit is RequiredBy=local-fs.target, so its failure
+# takes local-fs.target down and diverts the boot to emergency.target — where
+# sshd never starts and the substrate is unreachable.
+#
+# Whether it actually fires is environment-dependent: a Proxmox Debian 12
+# substrate went to emergency on its first reboot, while the arm64 Lima VM has
+# booted fine carrying the same line. Asserted rather than tolerated because the
+# failure mode is unreachable-with-no-diagnostic, and the fix costs nothing.
+#
+# Mounted-right-now and survives-a-reboot are different assertions, and only
+# this one catches the second.
+FSTAB_CONFIGFS="$(grep "[[:space:]]${SUBSTRATE_CONFIGFS_MOUNTPOINT}[[:space:]]" /etc/fstab 2>/dev/null || true)"
+if [ -z "$FSTAB_CONFIGFS" ]; then
+  pass "no configfs fstab entry (systemd mounts it)"
+elif printf '%s' "$FSTAB_CONFIGFS" | grep -q 'nofail'; then
+  pass "configfs fstab entry carries nofail"
+else
+  fail "configfs fstab entry lacks nofail — risks booting to emergency.target with no sshd: $FSTAB_CONFIGFS"
+fi
+
 # ---------------------------------------------------------------------------
 # Negative assertions
 # ---------------------------------------------------------------------------

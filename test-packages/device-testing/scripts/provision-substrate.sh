@@ -114,10 +114,33 @@ done
 # configfs is enabled in Debian's stock kernel and systemd normally mounts it.
 # The fstab entry is a safety net: a regression in systemd's configfs.mount
 # unit would otherwise break gadget setup silently.
+#
+# The mount options are the load-bearing part, and `defaults` is actively
+# dangerous here. configfs is a module, so /sys/kernel/config does not exist
+# until it is loaded — and the generated sys-kernel-config.mount runs before
+# systemd-modules-load.service has loaded it. With `defaults` the mount fails,
+# local-fs.target fails with it, the boot diverts to emergency.target, and
+# multi-user.target — and therefore sshd — never starts. Measured on a Proxmox
+# Debian 12 substrate: the box provisioned cleanly, then came back from its
+# first reboot unreachable. `nofail` keeps the failure from taking local-fs
+# down with it; x-systemd.after orders the retry behind the module load.
 log "ensuring configfs is mounted at $SUBSTRATE_CONFIGFS_MOUNTPOINT"
-if ! grep -q "$SUBSTRATE_CONFIGFS_MOUNTPOINT" /etc/fstab; then
+FSTAB_OPTS="nofail,x-systemd.after=systemd-modules-load.service"
+FSTAB_LINE="configfs $SUBSTRATE_CONFIGFS_MOUNTPOINT configfs $FSTAB_OPTS 0 0"
+if ! grep -qxF "$FSTAB_LINE" /etc/fstab; then
+  # Rewrite rather than append: a box provisioned by an earlier version of this
+  # script carries the `defaults` line, and leaving it in place would leave the
+  # box one reboot away from emergency.target.
+  # `|| true` because grep exits 1 when it selects no lines, which under
+  # `set -e` would abort mid-rewrite on an fstab that holds nothing else.
+  grep -v "[[:space:]]${SUBSTRATE_CONFIGFS_MOUNTPOINT}[[:space:]]" /etc/fstab \
+    > /etc/fstab.podkit-new || true
   # No leading whitespace — mount -a rejects fstab lines that carry any.
-  printf '%s\n' "configfs $SUBSTRATE_CONFIGFS_MOUNTPOINT configfs defaults 0 0" >> /etc/fstab
+  printf '%s\n' "$FSTAB_LINE" >> /etc/fstab.podkit-new
+  # install rather than mv: mv would hand /etc/fstab whatever mode the umask
+  # produced for the temp file. This one is worth being explicit about.
+  install -m 0644 -o root -g root /etc/fstab.podkit-new /etc/fstab
+  rm -f /etc/fstab.podkit-new
 fi
 mkdir -p "$SUBSTRATE_CONFIGFS_MOUNTPOINT"
 mountpoint -q "$SUBSTRATE_CONFIGFS_MOUNTPOINT" \
