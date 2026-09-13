@@ -71,13 +71,18 @@ export function resolveAacEncoder(): AacEncoder {
  *   incompressible content and never exceeds it, so the tolerance is the cap
  *   itself plus one kbps — and that one kbps is ffprobe's rounding, not
  *   encoder slack.
- * - **`aac_at`** (macOS AudioToolbox) and **`libfdk_aac`** expose only a
- *   quality index. podkit picks the index nearest (`aac_at`) or the richest
- *   band under (`libfdk_aac`) the target and the encoder decides the rest, so
- *   a measured result can land somewhat over. `aac_at`'s nine-point map puts
- *   `medium` (cap 192) at q=4 ≈ 200 kbps, ~4% over; 15% is the headroom
+ * - **`aac_at`** (macOS AudioToolbox) is driven in `abr` mode with `-b:a`
+ *   (TASK-511). Its long-term average tracks the request closely but not
+ *   exactly: measured 130/196/258 kbps for 128/192/256 on incompressible
+ *   stereo noise, so ~2% over at worst. 5% is that with room, and it is far
+ *   tighter than the 15% this encoder needed while podkit was choosing a
+ *   quality index for it — the nearest-index rounding put a 256 target at
+ *   q=2 ≈ 282 kbps.
+ * - **`libfdk_aac`** still exposes only a quality index. podkit picks the
+ *   richest band under the target and the encoder decides the rest, so a
+ *   measured result can land somewhat over; 15% is the headroom
  *   `packages/podkit-core/src/transcode/ffmpeg.integration.test.ts` settled on
- *   for that class of encoder, and this deliberately matches it.
+ *   for that, and this deliberately matches it.
  *
  * A single number covering all three would have to be the loosest of them,
  * which is how `< 170` against a 128 kbps cap came to exist: a bound nobody
@@ -88,7 +93,9 @@ export function resolveAacEncoder(): AacEncoder {
  * @param encoder - Override the resolved encoder; defaults to this host's.
  */
 export function aacCeilingKbps(capKbps: number, encoder: AacEncoder = resolveAacEncoder()): number {
-  return encoder === 'aac' ? capKbps + 1 : Math.round(capKbps * 1.15);
+  if (encoder === 'aac') return capKbps + 1;
+  if (encoder === 'aac_at') return Math.round(capKbps * 1.05);
+  return Math.round(capKbps * 1.15);
 }
 
 /**

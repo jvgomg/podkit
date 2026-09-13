@@ -746,18 +746,28 @@ describe('quality preset bitrate ceiling', () => {
     ceilingDir = await mkdtemp(join(tmpdir(), 'podkit-bitrate-ceiling-'));
     encoder = (await transcoder.detect()).preferredEncoder;
 
-    // Pink noise: incompressible by design, so the encoder spends every bit
-    // its rate control will let it. A sine or a quiet fixture would sail under
-    // any cap and prove nothing — the original bug (native aac reusing
-    // libfdk's 1-5 quality number) hid for exactly that reason.
+    // Noise: incompressible by design, so the encoder spends every bit its rate
+    // control will let it. A sine or a quiet fixture would sail under any cap
+    // and prove nothing — the original bug (native aac reusing libfdk's 1-5
+    // quality number) hid for exactly that reason.
+    //
+    // *White* noise in two *independent* channels, not `-ac 2` over one pink
+    // source. The earlier fixture duplicated one pink channel, which is much
+    // easier than it looks: joint stereo codes the redundant side channel for
+    // almost nothing, and pink noise puts little energy up top. Measured on
+    // aac_at, that fixture left `-q:a 2` at ~150 kbps — so while podkit picked
+    // a quality index for aac_at, these cap assertions sat 100 kbps clear of
+    // the line and could not have caught the rounding that put a 256 kbps
+    // target at 282 (TASK-511). Uncorrelated white noise reproduces that,
+    // which is what makes these tests load-bearing rather than decorative.
+    //
+    // Seeded per channel, so the fixture is the same on every host and run.
     hardSource = join(ceilingDir, 'hard-source.flac');
     await capture('ffmpeg', [
-      '-f',
-      'lavfi',
-      '-i',
-      'anoisesrc=color=pink:sample_rate=44100:duration=10:amplitude=0.8:seed=499',
-      '-ac',
-      '2',
+      '-filter_complex',
+      'anoisesrc=color=white:sample_rate=44100:duration=10:amplitude=0.8:seed=499[l];' +
+        'anoisesrc=color=white:sample_rate=44100:duration=10:amplitude=0.8:seed=1499[r];' +
+        '[l][r]join=inputs=2:channel_layout=stereo',
       '-c:a',
       'flac',
       '-y',
@@ -779,14 +789,20 @@ describe('quality preset bitrate ceiling', () => {
    * within a kbps even on noise, and the one kbps is for ffprobe's own
    * rounding rather than for the encoder.
    *
-   * `aac_at` and `libfdk_aac` expose only a quality index — podkit picks the
-   * index nearest the target and the encoder decides the rest, so on content
-   * this hard it can land somewhat over. That gap is a known limitation of
-   * those encoders' VBR surface, not of the preset resolution, and it is not
-   * what TASK-499 fixed.
+   * `aac_at` is driven in `abr` mode with `-b:a` (TASK-511), whose long-term
+   * average tracks the request within ~2% on content this hard — so it gets
+   * 5%, not the 15% it needed when podkit picked a quality index for it.
+   *
+   * `libfdk_aac` still exposes only a quality index — podkit picks the richest
+   * band under the target and the encoder decides the rest, so on content this
+   * hard it can land somewhat over. That gap is a known limitation of that
+   * encoder's VBR surface, not of the preset resolution.
    */
-  const ceilingFor = (enc: string, capKbps: number): number =>
-    enc === 'aac' ? capKbps + 1 : Math.round(capKbps * 1.15);
+  const ceilingFor = (enc: string, capKbps: number): number => {
+    if (enc === 'aac') return capKbps + 1;
+    if (enc === 'aac_at') return Math.round(capKbps * 1.05);
+    return Math.round(capKbps * 1.15);
+  };
 
   for (const preset of ['high', 'medium', 'low'] as const) {
     const cap = AAC_PRESETS[preset].targetKbps;

@@ -94,16 +94,73 @@ describe('buildVbrArgs', () => {
       expect(args).toEqual(['-q:a', '4']);
     });
 
-    it('maps targetKbps 256 → q=2 (high)', () => {
-      expect(buildVbrArgs('aac_at', 5, 256)).toEqual(['-q:a', '2']);
+    it('asks ABR for the target directly rather than picking a quality rung', () => {
+      expect(buildVbrArgs('aac_at', 5, 256)).toEqual(['-aac_at_mode', 'abr', '-b:a', '256k']);
+      expect(buildVbrArgs('aac_at', 4, 192)).toEqual(['-aac_at_mode', 'abr', '-b:a', '192k']);
+      expect(buildVbrArgs('aac_at', 2, 128)).toEqual(['-aac_at_mode', 'abr', '-b:a', '128k']);
     });
 
-    it('maps targetKbps 192 → q=4', () => {
-      expect(buildVbrArgs('aac_at', 4, 192)).toEqual(['-q:a', '4']);
+    it('distinguishes two targets that the old quality-rung map collapsed', () => {
+      // The rung map's nearest-point scale put everything below ~112 kbps on
+      // q=8, so an efficiency-lifted preserve target and a plain convert
+      // target for the same source produced byte-identical arguments and
+      // therefore identical output. That is the bug this replaced.
+      const preserve = buildVbrArgs('aac_at', 5, 92);
+      const convert = buildVbrArgs('aac_at', 5, 69);
+      expect(preserve).not.toEqual(convert);
+      // Both snap down to the encoder's ladder, and land on different rungs —
+      // which is what the old five-point map could not do.
+      expect(preserve).toEqual(['-aac_at_mode', 'abr', '-b:a', '80k']);
+      expect(convert).toEqual(['-aac_at_mode', 'abr', '-b:a', '64k']);
     });
 
-    it('maps targetKbps 128 → q=6', () => {
-      expect(buildVbrArgs('aac_at', 2, 128)).toEqual(['-q:a', '6']);
+    it('rounds an off-ladder target DOWN to a bitrate the encoder accepts', () => {
+      // AudioToolbox ABR accepts a discrete ladder and rounds anything else
+      // *up* — asking for 171k yields 192k, which is a ceiling breach, not a
+      // rounding detail. podkit therefore asks for the greatest ladder value
+      // that does not exceed the target.
+      expect(buildVbrArgs('aac_at', 5, 171)).toEqual(['-aac_at_mode', 'abr', '-b:a', '160k']);
+      expect(buildVbrArgs('aac_at', 5, 200)).toEqual(['-aac_at_mode', 'abr', '-b:a', '192k']);
+      expect(buildVbrArgs('aac_at', 5, 240)).toEqual(['-aac_at_mode', 'abr', '-b:a', '224k']);
+      expect(buildVbrArgs('aac_at', 5, 100)).toEqual(['-aac_at_mode', 'abr', '-b:a', '96k']);
+      expect(buildVbrArgs('aac_at', 5, 69)).toEqual(['-aac_at_mode', 'abr', '-b:a', '64k']);
+    });
+
+    it('passes an on-ladder target through untouched', () => {
+      for (const onLadder of [64, 72, 80, 96, 112, 128, 144, 160, 192, 224, 256, 288, 320]) {
+        expect(buildVbrArgs('aac_at', 5, onLadder)).toEqual([
+          '-aac_at_mode',
+          'abr',
+          '-b:a',
+          `${onLadder}k`,
+        ]);
+      }
+    });
+
+    it('clamps above the ladder and floors below it', () => {
+      // Above: the encoder would clamp down to 320 anyway; say so ourselves.
+      expect(buildVbrArgs('aac_at', 5, 400)).toEqual(['-aac_at_mode', 'abr', '-b:a', '320k']);
+      // Below: 64k is the lowest stereo rung, so a smaller target cannot be
+      // honoured by this encoder at all. Asking for the floor is the closest
+      // it can get — and is what it would round up to regardless.
+      expect(buildVbrArgs('aac_at', 5, 32)).toEqual(['-aac_at_mode', 'abr', '-b:a', '64k']);
+    });
+
+    it('emits an integer bitrate for a fractional target', () => {
+      const args = buildVbrArgs('aac_at', 5, 171.5);
+      expect(args[args.indexOf('-b:a') + 1]).toBe('160k');
+    });
+
+    it('never asks for more than the target, so the ceiling is not rounded upward', () => {
+      // The rung map rounded to the *nearest* point in either direction: a
+      // 256 kbps target picked q=2, which measures ~282 kbps on incompressible
+      // stereo — over a cap ADR-023 §2 calls hard. A request can now only be
+      // the target itself.
+      for (const target of [69, 92, 128, 160, 171, 192, 200, 256, 288, 320]) {
+        const args = buildVbrArgs('aac_at', 5, target);
+        const asked = Number.parseInt(args[args.indexOf('-b:a') + 1]!, 10);
+        expect(asked).toBeLessThanOrEqual(target);
+      }
     });
   });
 
@@ -226,9 +283,12 @@ describe('buildTranscodeArgs', () => {
       };
       const args = buildTranscodeArgs(input, output, 'aac_at', config);
 
-      // aac_at maps 192 kbps → q=4
-      expect(args).toContain('-q:a');
-      expect(args).toContain('4');
+      // aac_at is driven in ABR mode at the target itself
+      expect(args).toContain('-aac_at_mode');
+      expect(args).toContain('abr');
+      expect(args).toContain('-b:a');
+      expect(args).toContain('192k');
+      expect(args).not.toContain('-q:a');
     });
   });
 
@@ -249,9 +309,14 @@ describe('buildTranscodeArgs', () => {
       };
       const args = buildTranscodeArgs(input, output, 'aac_at', config);
 
-      // aac_at maps 200 kbps → q=4 (closest)
-      expect(args).toContain('-q:a');
-      expect(args).toContain('4');
+      // aac_at is driven in ABR mode. 200 is not a rate AudioToolbox accepts,
+      // and it rounds unsupported rates up, so podkit asks for the rung below.
+      expect(args).toContain('-aac_at_mode');
+      expect(args).toContain('abr');
+      expect(args).toContain('-b:a');
+      expect(args).toContain('192k');
+      expect(args).not.toContain('200k');
+      expect(args).not.toContain('-q:a');
     });
   });
 

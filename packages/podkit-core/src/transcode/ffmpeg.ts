@@ -107,18 +107,37 @@ export function buildVbrArgs(encoder: string, quality: number, targetKbps?: numb
       return ['-vbr', String(vbr), '-cutoff', '18000'];
     }
     case 'aac_at':
-      // aac_at uses -q:a 0-14 scale where 0 = highest quality, 14 = lowest.
-      // Map target bitrate to aac_at quality (empirically measured):
-      //   q=0  ~350 kbps (max)
-      //   q=2  ~265 kbps (high)
-      //   q=4  ~200 kbps (medium)
-      //   q=6  ~145 kbps (low)
-      //   q=8  ~107 kbps
-      const aacAtQuality =
-        targetKbps !== undefined
-          ? aacAtQualityFromBitrate(targetKbps)
-          : aacAtQualityFromLevel(quality);
-      return ['-q:a', String(aacAtQuality)];
+      // AudioToolbox exposes a rate-control mode, so when there is a target it
+      // is asked for directly rather than translated into a quality index.
+      //
+      // It used to be translated: a five-point map (320→q0, 256→q2, 192→q4,
+      // 128→q6, 96→q8) picking the *nearest* point. Two problems, both
+      // measured on this encoder (FFmpeg 9.0.1, stereo noise, TASK-511):
+      //
+      //   - `-q:a` is not a bitrate axis, so the map was only ever valid for
+      //     the content it was calibrated on. The table above was measured on
+      //     music; on incompressible stereo noise the same rungs produce
+      //     190/150/111/80/62 kbps rather than 350/265/200/145/107.
+      //   - Nearest-point rounding rounds *up*. A 256 kbps target picked q=2,
+      //     which measures 282 kbps on that noise — over a cap ADR-023 §2
+      //     calls hard. And every target below ~112 collapsed onto q=8, so
+      //     two materially different targets became one request.
+      //
+      // `abr` is the long-term-average mode: it tracks `-b:a` within ~2% on
+      // worst-case content (measured 130/196/258 for 128/192/256) and stays
+      // variable within that average, which is the same trade the native `aac`
+      // branch below settles on for the same reason. `cvbr` was measured too
+      // and overshoots badly at the top (292 kbps for a 256 request).
+      //
+      // The target is snapped down to a rate the encoder will actually accept
+      // — see {@link aacAtAbrBitrate}, which is the difference between a
+      // ceiling and a suggestion here.
+      if (targetKbps !== undefined) {
+        return ['-aac_at_mode', 'abr', '-b:a', `${aacAtAbrBitrate(targetKbps)}k`];
+      }
+      // No target: the caller has only a quality level, so the quality index
+      // is the right axis for it.
+      return ['-q:a', String(aacAtQualityFromLevel(quality))];
     case 'aac':
     default:
       // FFmpeg's native `aac` encoder has no VBR mode worth targeting a
@@ -196,36 +215,52 @@ function nativeAacBitrate(quality: number, targetKbps?: number): number {
 }
 
 /**
- * Map a target bitrate to the closest aac_at -q:a value.
+ * AudioToolbox's ABR bitrate ladder for stereo at 44.1 kHz, in kbps, ascending.
  *
- * Empirically measured scale (CHVRCHES, Foals, Mk.gee):
- *   q=0 ~350, q=1 ~290, q=2 ~265, q=3 ~220, q=4 ~200,
- *   q=5 ~155, q=6 ~145, q=7 ~121, q=8 ~107
+ * Measured by asking `aac_at` for each value and reading back what it said
+ * (FFmpeg 9.0.1, `Bitrate <n> not allowed; changing to <m>`). Mono accepts a
+ * finer set that includes all of these, so this ladder is safe for both — a
+ * mono encode may simply be asked for slightly less than it could have had.
  */
-function aacAtQualityFromBitrate(targetKbps: number): number {
-  // Ordered from highest quality (lowest q) to lowest
-  const scale: Array<[number, number]> = [
-    [320, 0],
-    [256, 2],
-    [192, 4],
-    [128, 6],
-    [96, 8],
-  ];
-  // Find the closest target
-  let best = scale[0]![1];
-  let bestDist = Math.abs(targetKbps - scale[0]![0]);
-  for (const [kbps, q] of scale) {
-    const dist = Math.abs(targetKbps - kbps);
-    if (dist < bestDist) {
-      bestDist = dist;
-      best = q;
-    }
+const AAC_AT_ABR_LADDER_KBPS = [64, 72, 80, 96, 112, 128, 144, 160, 192, 224, 256, 288, 320];
+
+/**
+ * The bitrate to ask `aac_at`'s ABR mode for, given a target: the greatest
+ * ladder value that does not exceed it.
+ *
+ * Rounding down is the whole point. Handed an off-ladder value the encoder
+ * rounds **up** to the next rung — a 171 kbps target becomes a 192 kbps
+ * request, measured at 198 kbps out, which breaks the ceiling ADR-023 §2 calls
+ * hard. Off-ladder targets are not exotic: the efficiency-matched preserve
+ * path divides a source bitrate by a codec ratio, and `customBitrate` accepts
+ * any integer in 64-320.
+ *
+ * Two edges, both of which the encoder would impose anyway:
+ *
+ * - Above 320 there is no higher rung, so the request is 320.
+ * - Below 64 there is no lower one. A target under the floor cannot be
+ *   honoured by this encoder at all; podkit asks for the floor, which is what
+ *   the encoder would round up to in any case. This is the one input where
+ *   `aac_at` cannot keep the ceiling, and it is a property of the encoder
+ *   rather than of the preset resolution.
+ */
+function aacAtAbrBitrate(targetKbps: number): number {
+  const floor = AAC_AT_ABR_LADDER_KBPS[0]!;
+  if (!Number.isFinite(targetKbps) || targetKbps <= floor) return floor;
+  let chosen = floor;
+  for (const rung of AAC_AT_ABR_LADDER_KBPS) {
+    if (rung <= targetKbps) chosen = rung;
+    else break;
   }
-  return best;
+  return chosen;
 }
 
 /**
- * Fallback: map our internal 1-5 quality level to aac_at scale.
+ * Map our internal 1-5 quality level to the aac_at `-q:a` scale.
+ *
+ * Only reached when the caller has no bitrate target. With a target, the
+ * encoder is asked for it directly — see the `aac_at` branch of
+ * {@link buildVbrArgs}.
  */
 function aacAtQualityFromLevel(quality: number): number {
   const map: Record<number, number> = { 5: 0, 4: 4, 3: 5, 2: 6, 1: 8 };
@@ -338,7 +373,8 @@ export function buildTranscodeArgs(
 
   // Apply quality settings based on encoding mode (VBR vs CBR)
   if (encoding === 'vbr' && quality !== undefined) {
-    // VBR mode — pass targetKbps so aac_at can pick the right quality level
+    // VBR mode — pass targetKbps so the encoder is asked for the resolved
+    // target rather than a preset-shaped approximation of it
     args.push(...buildVbrArgs(encoder, quality, bitrateKbps));
   } else {
     // CBR mode

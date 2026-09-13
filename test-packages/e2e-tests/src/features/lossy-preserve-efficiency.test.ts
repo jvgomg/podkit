@@ -23,9 +23,18 @@
  * differed only by encoder noise — observed failing `> 231` with `231`, on both
  * attempts, so `bunfig.toml`'s `retry = 1` did not mask it. The test was gated
  * off on hosts with only native `aac` while that stood. TASK-499 made all three
- * AAC encoders take the seam's target (native `aac` via `-b:a`, `libfdk_aac`
- * and `aac_at` via their quality indices), so the two runs now issue different
- * requests everywhere and the gate is gone (TASK-500).
+ * AAC encoders take the seam's target and the gate is gone (TASK-500).
+ *
+ * "Takes the target" meant something weaker on `aac_at` than it sounded.
+ * Native `aac` was handed `-b:a`, but `aac_at` and `libfdk_aac` were handed a
+ * quality index chosen from the target — and `aac_at`'s map had five points,
+ * nearest-wins, so every target below ~112 kbps landed on `-q:a 8`. Both of
+ * this test's targets (~92 preserve, ~69 convert) are under that, so on macOS
+ * the two runs issued byte-identical arguments and this assertion could not
+ * hold: measured 67 against 67, failing 12 runs out of 13. TASK-511 moved
+ * `aac_at` to ABR at the target itself, which is what makes the two requests
+ * differ here. `libfdk_aac` still picks a band, but a documented one, and its
+ * bands are far enough apart that these two targets do not share one.
  *
  * @module
  */

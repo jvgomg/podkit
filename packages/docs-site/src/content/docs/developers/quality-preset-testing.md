@@ -40,12 +40,25 @@ All videos are transcoded. `detectBitratePresetMismatch()` in `upgrades.ts` comp
 
 ## Observed Ranges
 
-### Audio (aac_at VBR on macOS)
+### Audio (aac_at on macOS)
+
+:::caution[These numbers predate the ABR change]
+The ranges below were measured while podkit mapped a preset's bitrate onto the
+nearest `aac_at` `-q:a` quality index. They are kept because they are what
+motivated the change: `high` is a 256 kbps ceiling, and the observed range runs
+to **305 kbps** — the nearest-index rounding went upward, and the quality index
+is not a bitrate axis, so the mapping only held for the material it was
+calibrated on.
+
+podkit now drives `aac_at` in ABR mode at the preset's bitrate, which tracks the
+request within about 2% on worst-case material. Re-measuring this table against
+the same 44 tracks is outstanding.
+:::
 
 Measured across CHVRCHES, Foals, and Mk.gee (44 tracks, diverse genres):
 
-| Preset | Target | aac_at `-q:a` | Observed range | Average |
-|--------|--------|---------------|---------------|---------|
+| Preset | Target | aac_at `-q:a` (historical) | Observed range | Average |
+|--------|--------|----------------------------|---------------|---------|
 | low | 128 kbps | 6 | 111-161 kbps | 139 kbps |
 | medium | 192 kbps | 4 | 154-225 kbps | 189 kbps |
 | high | 256 kbps | 2 | 212-305 kbps | 253 kbps |

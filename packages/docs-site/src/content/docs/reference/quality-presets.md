@@ -58,17 +58,17 @@ VBR file sizes vary based on content complexity. CBR sizes are exact.
 | **VBR** (default) | Variable bitrate — adapts to content complexity. Better quality-per-MB. |
 | **CBR** | Constant bitrate — predictable file sizes. More reliable preset change detection. |
 
-VBR is recommended for most uses. VBR AAC works correctly for seeking on iPods. Whichever you pick, the preset's bitrate is a **ceiling** rather than a nominal figure: podkit asks for no more than it, and on the native `aac` and `libfdk_aac` encoders the output stays under it. Use `encoding = "cbr"` if you want predictable file sizes or guaranteed detection of preset changes between adjacent tiers.
+VBR is recommended for most uses. VBR AAC works correctly for seeking on iPods. Whichever you pick, the preset's bitrate is a **ceiling** rather than a nominal figure: podkit never asks any encoder for more than it. Native `aac` holds that exactly. `aac_at` tracks it within about 2%. `libfdk_aac` chooses a quality band under the target and can land further over on demanding material. Use `encoding = "cbr"` if you want predictable file sizes or guaranteed detection of preset changes between adjacent tiers.
 
 ### Encoder Mapping
 
 podkit picks the best AAC encoder your FFmpeg offers -- `aac_at` (macOS AudioToolbox), then `libfdk_aac`, then FFmpeg's native `aac`. Each has its own quality dial, and podkit derives the setting from the preset's bitrate rather than hard-coding it:
 
-| Preset | Native AAC (`-b:a`) | libfdk_aac (`-vbr`) | aac_at (`-q:a`) |
-|--------|---------------------|---------------------|-----------------|
-| high (and max AAC fallback) | 256k | 5 | 2 |
-| medium | 192k | 4 | 4 |
-| low | 128k | 3 | 6 |
+| Preset | Native AAC (`-b:a`) | libfdk_aac (`-vbr`) | aac_at (`-b:a`, ABR) |
+|--------|---------------------|---------------------|----------------------|
+| high (and max AAC fallback) | 256k | 5 | 256k |
+| medium | 192k | 4 | 192k |
+| low | 128k | 3 | 128k |
 
 When `max` resolves to ALAC (on capable devices with lossless sources), the ALAC encoder is used instead. When `max` falls back to AAC, it uses the same encoder settings as `high`.
 
@@ -76,7 +76,11 @@ Notes:
 
 - FFmpeg's native `aac` encoder has no bitrate-targeting VBR mode -- its `-q:a` dial is a quality index with no relationship to a bitrate, and it saturates around 240 kbps. podkit therefore drives it in **average-bitrate (ABR)** mode at the preset's bitrate, which is the only way to keep the preset a real ceiling on a host without `aac_at` or `libfdk_aac`. Output still varies frame to frame; only the average is pinned.
 - `libfdk_aac`'s `-vbr` levels have published bitrate bands. podkit picks the richest level whose band fits entirely under the preset bitrate.
-- The `aac_at` encoder uses an inverted quality scale where 0 is highest quality and 14 is lowest. podkit maps target bitrates to the closest `aac_at` quality value. Because that scale is coarse and the encoder decides the rest, `aac_at` output can sit a few percent either side of the preset bitrate on demanding material -- it is the one encoder where the figure is a target rather than a hard cap.
+- The `aac_at` encoder (macOS AudioToolbox) is driven in **average-bitrate (ABR)** mode, like the native `aac` encoder. Its ABR mode accepts only a fixed ladder of rates (64, 72, 80, 96, 112, 128, 144, 160, 192, 224, 256, 288, 320 kbps for stereo) and rounds anything else *upward*, so podkit asks for the highest rung that does not exceed the target. A custom bitrate between rungs therefore encodes at the rung below it. Rate control then tracks that request within about 2%.
+
+  podkit used to map the target onto the nearest point of this encoder's quality scale (`-q:a`) instead. That scale is not a bitrate axis, so the mapping was only as good as the material it was calibrated on, and nearest-point rounding went upward as readily as downward — a 256 kbps preset could produce 305 kbps on demanding tracks.
+
+  One limit remains: 64 kbps is the lowest rate this encoder offers for stereo, so a target below that cannot be honoured on macOS.
 
 ## Video Presets
 
