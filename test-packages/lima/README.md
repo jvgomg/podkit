@@ -1,20 +1,26 @@
 # @podkit/lima
 
-The Lima **substrate**: one package that owns every Lima VM config in the repo,
-the idempotent lifecycle primitives, the single cross-process advisory lock that
-serialises VM starts, generic in-VM transport, and the `podkit-vm` CLI that
-shell scripts and mise tasks call.
+The Lima **provisioner**: one package that owns every Lima VM config in the
+repo, the idempotent lifecycle primitives, the single cross-process advisory
+lock that serialises VM starts, generic in-VM transport, and the `podkit-vm`
+CLI that shell scripts and mise tasks call.
 
-It is deliberately thin on domain knowledge. Device personas, `SystemState`
-fixtures, `apply-state.sh`, the FunctionFS gadget daemon and the runners that
-reference those types stay in
+Lima is *a* provisioner, not the substrate. Everything true of a substrate
+regardless of what produced it — the registry, the provisioner discriminator,
+substrate selection and the pinned Debian image — lives in
+[`@podkit/substrate`](../substrate), which this package consumes and re-exports
+from. The dependency never points the other way (ADR-029 §1).
+
+It is also deliberately thin on domain knowledge. Device personas,
+`SystemState` fixtures, `apply-state.sh`, the FunctionFS gadget daemon and the
+runners that reference those types stay in
 [`@podkit/device-testing`](../device-testing), which consumes this package. The
 dividing line: **anything that references a persona or a system state is domain;
-pure Lima mechanics are substrate.**
+pure Lima mechanics are the provisioner's.**
 
-Its only dependency is `@podkit/device-types` (for the `SubprocessRunner`
-interface) — never `@podkit/core`, so the substrate cannot drag native bindings
-or metadata libraries into a build script.
+Its only dependencies are `@podkit/device-types` (for the `SubprocessRunner`
+interface) and `@podkit/substrate` — never `@podkit/core`, so a build script
+cannot drag native bindings or metadata libraries in behind it.
 
 See [ADR-027](../../docs/adr/adr-027-lima-vm-substrate-consolidation.md) for why this
 package exists, and [ADR-016](../../docs/adr/adr-016-linux-vm-test-harness.md) for
@@ -24,10 +30,18 @@ why the builder, test and device VMs are physically separate machines.
 
 ## The VM registry
 
-`src/registry.ts` is the single source of truth for every Lima instance the repo
-manages. Each entry pairs a clean TypeScript `id` with the concrete Lima
-`instanceName`, a pointer to the declarative YAML under `vms/`, and a little
-metadata.
+The registry lives in **`@podkit/substrate`** (`test-packages/substrate/src/registry.ts`),
+not here. It describes every *substrate* the repo manages, and a substrate is
+not necessarily a Lima instance — an entry can equally be an SSH-reachable
+Debian box that some other provisioner produced (ADR-029 §1). A registry that
+can say that has no business living in a package named after one hypervisor
+driver. This package re-exports it so existing imports resolve unchanged; new
+code should import from `@podkit/substrate` directly.
+
+Each entry pairs a clean TypeScript `id` with the concrete name its provisioner
+knows the box by, plus whatever that provisioner needs to reach it: a pointer to
+the declarative YAML under this package's `vms/` for `lima` entries, and the
+*name* of an ssh_config `Host` alias — never a hostname — for `ssh` ones.
 
 | `id` | Lima instance | Category | Role |
 |------|---------------|----------|------|
@@ -38,6 +52,7 @@ metadata.
 | `testMusl` | `podkit-test-musl` | `test-runner` | Alpine 3.23; the same suite against musl (`mise run test:linux:alpine`). |
 | `virtualIpod` | `podkit-virtual-ipod` | `demo` | The virtual-iPod demo VM. Config only lives here; its lifecycle stays with the `vipod:*` mise tasks and the in-VM `@podkit/virtual-ipod-server`. |
 | `abiVerify` | `podkit-abi-verify` | `abi` | Stock Debian, no dev packages — a **manual, on-demand** check that a produced binary's `ldd` shows only stable system libraries. Wired into no CI job and no turbo task. |
+| `deviceRemote` | `podkit-device-remote` | `device` | The same device role over SSH rather than Lima, reached through the `podkit-substrate` alias in the developer's own `~/.ssh/config`. `podkit-vm` refuses to lifecycle it — that belongs to its own provisioner. |
 
 `category` and `archRelevance` are metadata, not mechanism: they let a caller
 filter the registry ("all builders") without string-matching instance names.
@@ -65,12 +80,14 @@ sites that need the device VM's name by value read it from the registry.
 
 1. Drop the Lima spec in `vms/podkit-<role>.yaml`. It stays native YAML —
    readable, `limactl validate`-able, no codegen.
-2. Add a `defineVm({ … })` entry to `REGISTRY` in `src/registry.ts` with a clean
-   `id`, the `podkit-`-prefixed instance name (the prefix avoids collisions with
-   a developer's other Lima instances), the repo-relative YAML path, a
-   `category`, an `archRelevance` and `trackedForBaseline`.
-3. Extend `src/registry.test.ts`, which pins ids, instance names and the
-   existence of every YAML on disk.
+2. Add a `defineLimaVm({ … })` entry to `REGISTRY` in
+   `test-packages/substrate/src/registry.ts` with a clean `id`, the
+   `podkit-`-prefixed instance name (the prefix avoids collisions with a
+   developer's other Lima instances), the repo-relative YAML path, a `category`,
+   an `archRelevance` and `trackedForBaseline`. Add the `id` to `LIMA_VM_IDS`
+   in the same file, or `getVm('<yourId>').yamlPath` will not type-check.
+3. Extend `test-packages/substrate/src/registry.test.ts`, which pins ids,
+   instance names and the existence of every YAML on disk.
 4. If a turbo task's cache should invalidate on that YAML, add it to the task's
    `inputs` **by filename** — never `vms/**`, which would make an unrelated
    demo-VM edit bust the whole VM suite's cache.
@@ -361,13 +378,14 @@ than share someone else's tree (the gpod-tool build stages
 
 ### 1. Never resolve a repo path at module load
 
-`paths.ts` anchors on the `test-packages/lima/` marker substring in
-`import.meta.url`, which works from both `src/*.ts` and the flattened
-`dist/index.js`. But **anything that calls `repoRoot()` at module-evaluation
-time crashes the compiled FunctionFS daemon.** That daemon is a single-file
-binary whose `import.meta.url` is `/$bunfs/root/…`, which carries no
-`test-packages/lima/` marker to anchor on, and it transitively imports this
-registry through the device-testing barrel.
+`@podkit/substrate`'s `paths.ts` anchors on the `test-packages/substrate/`
+marker substring in `import.meta.url`, and this package's `paths.ts` does the
+same with `test-packages/lima/`; both work from `src/*.ts` and from the
+flattened `dist/index.js`. But **anything that calls `repoRoot()` at
+module-evaluation time crashes the compiled FunctionFS daemon.** That daemon is
+a single-file binary whose `import.meta.url` is `/$bunfs/root/…`, which carries
+no marker to anchor on, and it transitively imports the registry through the
+device-testing barrel.
 
 So all path anchoring must stay **lazy, inside function bodies**. The registry's
 `yamlPath` is a getter for exactly this reason: reading `instanceName` is a plain

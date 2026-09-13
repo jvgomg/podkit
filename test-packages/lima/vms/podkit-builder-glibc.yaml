@@ -20,9 +20,9 @@
 #   tools/prebuild/build-static-deps.sh. There is no duplicate build logic
 #   between local and CI paths.
 #
-# Debian 12.10 is pinned via the explicit cloud image URLs below; bumping
-# the point release is an intentional act (update both URLs + the test VM
-# yaml + the CI base image if changed).
+# The Debian point release is pinned via the explicit cloud image URLs below.
+# Bumping it is an intentional act performed in @podkit/substrate — see the
+# comment on the images block.
 #
 # Usage (manual):
 #   limactl start test-packages/lima/vms/podkit-builder-glibc.yaml --name podkit-builder-glibc
@@ -39,8 +39,12 @@
 #   bun run harness:install
 
 images:
-  # Debian 12.10 point release. ADR-016 requires pinning to the exact point
-  # release to ensure reproducible kernel + glibc version. Bump deliberately.
+  # Pinned Debian point release — ADR-016 requires the exact point release so
+  # the kernel and glibc version are reproducible. The single source of truth
+  # for these URLs is `SUBSTRATE_DEBIAN_IMAGE_SERIAL` in @podkit/substrate
+  # (src/debian-image.ts); a YAML cannot read a TypeScript constant, so
+  # `debian-image.test.ts` reads this file back and fails if the two disagree.
+  # Bump there, then run that test and fix every file it names.
   - location: 'https://cloud.debian.org/images/cloud/bookworm/20250316-2053/debian-12-generic-arm64-20250316-2053.qcow2'
     arch: 'aarch64'
   - location: 'https://cloud.debian.org/images/cloud/bookworm/20250316-2053/debian-12-generic-amd64-20250316-2053.qcow2'

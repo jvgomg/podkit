@@ -18,7 +18,7 @@ import {
   findStagingCollision,
   type StagingArea,
 } from './staging.js';
-import { getVm } from './registry.js';
+import { getVm } from '@podkit/substrate';
 
 const area = (id: string, vm: string, dest: string): StagingArea => ({
   id,

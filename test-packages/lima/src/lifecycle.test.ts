@@ -23,7 +23,7 @@ import {
   DESTROY_TIMEOUT_MS,
   WARM_START_TIMEOUT_MS,
 } from './lifecycle.js';
-import { getVm } from './registry.js';
+import { getVm } from '@podkit/substrate';
 import { isVmLocked } from './lock.js';
 import { PROVISIONING_IDLE_TIMEOUT_MS } from './streaming-runner.js';
 import type {
@@ -94,6 +94,45 @@ describe('status', () => {
   it('maps the instance status probe', async () => {
     const { runner } = makeScriptedRunner([listStatus('running')]);
     expect(await status(DEF, opts(runner))).toBe('running');
+  });
+});
+
+describe('a provisioner mismatch (ssh-provisioned substrate)', () => {
+  // `getVm('deviceRemote')` is the registry's real ssh-provisioned entry, not
+  // an invented fixture — the point is that the shipped registry exercises
+  // this branch, not a stand-in nobody else will ever hit. `resolve()` is the
+  // one place in this module every exported verb passes through, so proving
+  // it here for `status` (no lock) and `ensureRunning` (lock-guarded) covers
+  // the shared gate rather than each verb's own copy of it — there isn't one.
+  const REMOTE = getVm('deviceRemote');
+
+  it('rejects before ever calling the subprocess runner', async () => {
+    const { runner, calls } = makeScriptedRunner([]); // any call here would be a real bug
+    await expect(status(REMOTE, opts(runner))).rejects.toThrow(/provisioned by 'ssh', not by Lima/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('rejects a lock-guarded verb before it ever takes the advisory lock', async () => {
+    // If this instead tried to acquire the lock, `limactl` does not know the
+    // instance exists (it is reached over SSH), so a caller retrying against
+    // a "wedged" lock would be chasing a substrate this provisioner was never
+    // going to be able to drive in the first place.
+    const { runner, calls } = makeScriptedRunner([]);
+    await expect(ensureRunning(REMOTE, opts(runner))).rejects.toThrow(
+      /provisioned by 'ssh', not by Lima/
+    );
+    expect(calls).toHaveLength(0);
+    expect(await isVmLocked(REMOTE.instanceName, { lockDir })).toBe(false);
+  });
+
+  it('also rejects by instance name or registry id, not only by definition object', async () => {
+    const { runner: byId, calls: idCalls } = makeScriptedRunner([]);
+    await expect(status(REMOTE.id, opts(byId))).rejects.toThrow(/provisioned by 'ssh'/);
+    expect(idCalls).toHaveLength(0);
+
+    const { runner: byName, calls: nameCalls } = makeScriptedRunner([]);
+    await expect(status(REMOTE.instanceName, opts(byName))).rejects.toThrow(/provisioned by 'ssh'/);
+    expect(nameCalls).toHaveLength(0);
   });
 });
 

@@ -32,7 +32,7 @@
 import * as readline from 'node:readline';
 import { spawnSync } from 'node:child_process';
 
-import { getVm, listVms, type VmDefinition } from './registry.js';
+import { getVm, listVms, type LimaVmDefinition, type VmDefinition } from '@podkit/substrate';
 import { instanceStatus } from './instance-status.js';
 import { ensureRunning, stop, destroy, recover, type LifecycleOpts } from './lifecycle.js';
 import { runInVm, stageSourceTree, DEFAULT_STAGE_EXCLUDES } from './transport.js';
@@ -75,7 +75,11 @@ Verbs:
 
 <instance> is a registry id or a Lima instance name. Known VMs:
 ${listVms()
-  .map((vm) => `  ${vm.id} (${vm.instanceName})`)
+  .map(
+    (vm) =>
+      `  ${vm.id} (${vm.instanceName})` +
+      (vm.provisioner === 'lima' ? '' : `  [${vm.provisioner}-provisioned — not lifecycled here]`)
+  )
   .join('\n')}
 `;
 
@@ -103,7 +107,7 @@ async function confirmPrompt(prompt: string): Promise<boolean> {
  * outcome of this CLI — it is the whole reason the bound exists — so it should
  * arrive with a next step attached.
  */
-function reportLifecycleFailure(def: VmDefinition, verb: string, err: unknown): number {
+function reportLifecycleFailure(def: LimaVmDefinition, verb: string, err: unknown): number {
   errorLog(`[podkit-vm] ${verb} failed: ${err instanceof Error ? err.message : String(err)}`);
   errorLog(
     `[podkit-vm] \`${def.instanceName}\` may now be in an inconsistent state. ` +
@@ -113,7 +117,7 @@ function reportLifecycleFailure(def: VmDefinition, verb: string, err: unknown): 
   return 1;
 }
 
-async function cmdEnsure(def: VmDefinition, opts: LifecycleOpts): Promise<number> {
+async function cmdEnsure(def: LimaVmDefinition, opts: LifecycleOpts): Promise<number> {
   log(`[podkit-vm] ensuring \`${def.instanceName}\` is running...`);
   try {
     await ensureRunning(def, opts);
@@ -137,7 +141,11 @@ async function cmdEnsure(def: VmDefinition, opts: LifecycleOpts): Promise<number
  * the shared exclude floor rather than replacing it, so a caller can only ever
  * prune MORE than the floor, never accidentally less.
  */
-async function cmdStage(def: VmDefinition, args: string[], opts: LifecycleOpts): Promise<number> {
+async function cmdStage(
+  def: LimaVmDefinition,
+  args: string[],
+  opts: LifecycleOpts
+): Promise<number> {
   let dest: string | undefined;
   let src: string | undefined;
   let sudo = false;
@@ -207,7 +215,7 @@ async function cmdStage(def: VmDefinition, args: string[], opts: LifecycleOpts):
  * how two `rsync --delete` runs ended up in one tree; routing them through the
  * area registry makes that collision a single-file, test-checkable property.
  */
-function cmdStagePath(def: VmDefinition, args: string[]): number {
+function cmdStagePath(def: LimaVmDefinition, args: string[]): number {
   let areaId: string | undefined;
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -231,13 +239,13 @@ function cmdStagePath(def: VmDefinition, args: string[]): number {
   return 0;
 }
 
-async function cmdStatus(def: VmDefinition, opts: LifecycleOpts): Promise<number> {
+async function cmdStatus(def: LimaVmDefinition, opts: LifecycleOpts): Promise<number> {
   const status = await instanceStatus(def.instanceName, opts.subprocess);
   log(status);
   return 0;
 }
 
-async function cmdStop(def: VmDefinition, opts: LifecycleOpts): Promise<number> {
+async function cmdStop(def: LimaVmDefinition, opts: LifecycleOpts): Promise<number> {
   try {
     await stop(def, opts);
   } catch (err) {
@@ -247,7 +255,11 @@ async function cmdStop(def: VmDefinition, opts: LifecycleOpts): Promise<number> 
   return 0;
 }
 
-async function cmdDestroy(def: VmDefinition, args: string[], opts: LifecycleOpts): Promise<number> {
+async function cmdDestroy(
+  def: LimaVmDefinition,
+  args: string[],
+  opts: LifecycleOpts
+): Promise<number> {
   const yes = args.includes('--yes');
   const status = await instanceStatus(def.instanceName, opts.subprocess);
   if (status === 'missing') {
@@ -278,7 +290,7 @@ async function cmdDestroy(def: VmDefinition, args: string[], opts: LifecycleOpts
   return 0;
 }
 
-async function cmdRecover(def: VmDefinition, opts: LifecycleOpts): Promise<number> {
+async function cmdRecover(def: LimaVmDefinition, opts: LifecycleOpts): Promise<number> {
   log(`[podkit-vm] recovering \`${def.instanceName}\` (destroy → recreate → start)...`);
   try {
     await recover(def, opts);
@@ -296,7 +308,7 @@ async function cmdRecover(def: VmDefinition, opts: LifecycleOpts): Promise<numbe
   return status === 'running' ? 0 : 1;
 }
 
-function cmdShell(def: VmDefinition): number {
+function cmdShell(def: LimaVmDefinition): number {
   const result = spawnSync('limactl', ['shell', def.instanceName], { stdio: 'inherit' });
   if (result.error) {
     errorLog(`[podkit-vm] failed to invoke limactl: ${result.error.message}`);
@@ -305,7 +317,7 @@ function cmdShell(def: VmDefinition): number {
   return result.status ?? 0;
 }
 
-async function cmdInstall(def: VmDefinition, opts: LifecycleOpts): Promise<number> {
+async function cmdInstall(def: LimaVmDefinition, opts: LifecycleOpts): Promise<number> {
   // Generic precondition only: make sure the VM is up. The device-specific
   // binary/unit staging stays in the device-testing harness.
   const code = await cmdEnsure(def, opts);
@@ -317,7 +329,7 @@ async function cmdInstall(def: VmDefinition, opts: LifecycleOpts): Promise<numbe
   return 0;
 }
 
-async function cmdDoctor(def: VmDefinition, opts: LifecycleOpts): Promise<number> {
+async function cmdDoctor(def: LimaVmDefinition, opts: LifecycleOpts): Promise<number> {
   if (!def.trackedForBaseline) {
     log(`[podkit-vm] \`${def.instanceName}\` is not baseline-tracked. Nothing to check.`);
     return 0;
@@ -376,13 +388,25 @@ export async function main(
     return 1;
   }
 
-  let def: VmDefinition;
+  let resolvedDef: VmDefinition;
   try {
-    def = getVm(instance);
+    resolvedDef = getVm(instance);
   } catch (err) {
     errorLog(`[podkit-vm] ${err instanceof Error ? err.message : String(err)}`);
     return 1;
   }
+  // Every verb below drives `limactl`. Refuse a substrate this provisioner did
+  // not create, here rather than deeper: `status` would otherwise ask Lima
+  // about a box Lima has never heard of and print `missing`, which is a
+  // confident wrong answer about a machine that may be running perfectly well.
+  if (resolvedDef.provisioner !== 'lima') {
+    errorLog(
+      `[podkit-vm] \`${resolvedDef.id}\` is provisioned by '${resolvedDef.provisioner}', ` +
+        'not by Lima, so podkit-vm cannot lifecycle it.'
+    );
+    return 1;
+  }
+  const def: LimaVmDefinition = resolvedDef;
 
   // A cold create runs for minutes; stream its provisioning log so the operator
   // can tell a slow VM from a wedged one. Probes stay buffered (see

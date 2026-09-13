@@ -17,7 +17,7 @@
 import { defaultSubprocessRunner, type SubprocessRunner } from '@podkit/device-types';
 import { limactlError, runLimactl } from './limactl.js';
 import { instanceStatus, type InstanceStatus } from './instance-status.js';
-import { getVm, type VmDefinition } from './registry.js';
+import { getVm, type LimaVmDefinition, type VmDefinition } from '@podkit/substrate';
 import { withVmLock, type VmLockOptions } from './lock.js';
 
 // ---------------------------------------------------------------------------
@@ -84,9 +84,27 @@ export interface LifecycleOpts {
   lock?: VmLockOptions;
 }
 
-/** Resolve a VM definition from an id, instance name, or definition object. */
-function resolve(vm: string | VmDefinition): VmDefinition {
-  return typeof vm === 'string' ? getVm(vm) : vm;
+/**
+ * Resolve a VM definition from an id, instance name, or definition object, and
+ * insist it is Lima-provisioned.
+ *
+ * This is the one place the provisioner discriminator is enforced for this
+ * package, because it is the one place every verb in it passes through. Nothing
+ * below can act on an `ssh` substrate: `limactl` does not know it exists, and a
+ * registry entry with no Lima YAML has no `yamlPath` to create it from. The
+ * alternative — letting it through and failing inside `limactl` — produces
+ * "instance not found", which reads as a missing VM rather than as a substrate
+ * this provisioner was never going to be able to drive.
+ */
+function resolve(vm: string | VmDefinition): LimaVmDefinition {
+  const def = typeof vm === 'string' ? getVm(vm) : vm;
+  if (def.provisioner !== 'lima') {
+    throw new Error(
+      `lima lifecycle: '${def.id}' is provisioned by '${def.provisioner}', not by Lima. ` +
+        'Lifecycle for that substrate belongs to its own provisioner.'
+    );
+  }
+  return def;
 }
 
 /**

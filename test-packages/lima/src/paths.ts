@@ -1,5 +1,5 @@
 /**
- * Path-resolution helpers for the Lima substrate. Locate this package on disk
+ * Path-resolution helpers for the Lima provisioner. Locate this package on disk
  * — and the repo above it — without assuming whether the caller is running
  * from TypeScript source (`src/*.ts`) or the bundled output (`dist/index.js`).
  *
@@ -7,11 +7,19 @@
  * mode but breaks in dist mode because `bun build` flattens the tree. Anchoring
  * on the `test-packages/lima/` marker substring works either way.
  *
+ * `repoRoot()` itself lives in `@podkit/substrate` — nothing about "where is
+ * the repo" is Lima-specific, and the substrate registry needs it — and is
+ * re-exported here so this package's existing callers are unaffected. Only
+ * `limaPackageRoot()` is genuinely local: it points at this package's `vms/`
+ * directory, which is the Lima provisioner's own asset.
+ *
  * @module
  */
 
 import { fileURLToPath } from 'node:url';
 import * as path from 'node:path';
+
+export { repoRoot } from '@podkit/substrate';
 
 /**
  * Absolute path of `<repo>/test-packages/lima/`. Throws if the module is loaded
@@ -29,9 +37,4 @@ export function limaPackageRoot(): string {
     );
   }
   return thisFile.slice(0, idx + marker.length - 1);
-}
-
-/** Absolute path of the repo root (the parent of `packages/`). */
-export function repoRoot(): string {
-  return path.resolve(limaPackageRoot(), '..', '..');
 }

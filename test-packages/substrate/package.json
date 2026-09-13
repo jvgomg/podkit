@@ -1,0 +1,31 @@
+{
+  "name": "@podkit/substrate",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Provisioner-agnostic substrate layer for podkit's device tests: the typed VM registry, the provisioner discriminator, substrate selection, and the pinned Debian image",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "bun build src/index.ts --outdir dist --target node && bun run build:types",
+    "build:types": "tsc -p tsconfig.build.json --emitDeclarationOnly --outDir dist",
+    "test": "true",
+    "test:unit": "bun test --pass-with-no-tests",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.2",
+    "bun-types": "latest"
+  }
+}

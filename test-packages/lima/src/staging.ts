@@ -30,7 +30,7 @@
  * @module
  */
 
-import { getVm } from './registry.js';
+import { getVm } from '@podkit/substrate';
 
 /** One VM-local staging destination with exactly one writer. */
 export interface StagingArea {

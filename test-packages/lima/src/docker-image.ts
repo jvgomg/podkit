@@ -29,7 +29,7 @@ import { defaultSubprocessRunner, type SubprocessRunner } from '@podkit/device-t
 import { limactlError, runLimactl, shellQuote } from './limactl.js';
 import { FILE_COPY_TIMEOUT_MS } from './transport.js';
 import { repoRoot } from './paths.js';
-import { LIMA_DEVICE_HARNESS_VM_NAME } from './registry.js';
+import { LIMA_DEVICE_HARNESS_VM_NAME } from '@podkit/substrate';
 import {
   resolveDefaultDaemonLinuxMuslBinary,
   resolveDefaultPodkitMuslBinary,

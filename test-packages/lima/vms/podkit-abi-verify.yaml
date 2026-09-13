@@ -30,6 +30,12 @@
 #   libtiff*
 
 images:
+  # Pinned Debian point release, and it must be the SAME one the builder VM and
+  # the device VM boot: an ABI claim made about a different userland than the
+  # one that runs the binary is not a claim about anything. The single source of
+  # truth for these URLs is `SUBSTRATE_DEBIAN_IMAGE_SERIAL` in @podkit/substrate
+  # (src/debian-image.ts); a YAML cannot read a TypeScript constant, so
+  # `debian-image.test.ts` reads this file back and fails if the two disagree.
   - location: 'https://cloud.debian.org/images/cloud/bookworm/20250316-2053/debian-12-generic-arm64-20250316-2053.qcow2'
     arch: 'aarch64'
   - location: 'https://cloud.debian.org/images/cloud/bookworm/20250316-2053/debian-12-generic-amd64-20250316-2053.qcow2'

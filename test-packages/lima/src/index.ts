@@ -1,15 +1,23 @@
 /**
- * @podkit/lima — the Lima VM substrate.
+ * @podkit/lima — the Lima provisioner.
  *
- * Owns the pure-Lima mechanics shared across the repo: the `limactl` wrapper, a
- * typed VM registry, idempotent lifecycle primitives, a single cross-process
- * advisory lock, generic in-VM transport, baseline-hash + drift, and the
- * in-VM docker-image build/pull. Domain concerns (personas, system-states, the
- * FunctionFS daemon-gadget, the runtime factory) stay in `@podkit/device-testing`,
- * which consumes this package.
+ * Owns the pure-Lima mechanics shared across the repo: the `limactl` wrapper,
+ * every Lima VM config, idempotent lifecycle primitives, a single cross-process
+ * advisory lock, generic in-VM transport, baseline-hash + drift, and the in-VM
+ * docker-image build/pull.
  *
- * Depends only on `@podkit/device-types` (never `@podkit/core`) so the substrate
- * never drags native bindings or metadata libraries.
+ * Two things are deliberately NOT here. Domain concerns (personas,
+ * system-states, the FunctionFS daemon-gadget, the runtime factory) stay in
+ * `@podkit/device-testing`, which consumes this package. And everything true of
+ * a substrate regardless of who provisioned it — the registry, the provisioner
+ * discriminator, substrate selection, the pinned image — lives in
+ * `@podkit/substrate`, which this package consumes. Lima is one provisioner,
+ * not the substrate itself; conflating the two is what tied the harness to
+ * macOS (ADR-029 §1).
+ *
+ * Depends only on `@podkit/device-types` and `@podkit/substrate` (never
+ * `@podkit/core`) so a build script never drags native bindings or metadata
+ * libraries in behind it.
  *
  * @module
  */
@@ -18,12 +26,32 @@
 export type { LimactlResult, RunLimactlOpts } from './limactl.js';
 export { runLimactl, limactlError, shellQuote } from './limactl.js';
 
-// Path anchoring
+// Path anchoring. `limaPackageRoot` is this package's own; `repoRoot` belongs
+// to `@podkit/substrate` and is re-exported through `./paths.js`.
 export { limaPackageRoot, repoRoot } from './paths.js';
 
-// VM registry
-export type { VmDefinition, VmCategory, VmArchRelevance } from './registry.js';
-export { listVms, getVm, deviceVm, LIMA_DEVICE_HARNESS_VM_NAME } from './registry.js';
+// VM registry. It lives in `@podkit/substrate` now — a registry that can
+// describe an SSH-reachable Debian box is not a Lima concern (ADR-029 §1) — and
+// is re-exported here so this package's existing consumers resolve unchanged.
+// New code should import it from `@podkit/substrate` directly.
+export type {
+  VmDefinition,
+  LimaVmDefinition,
+  SshVmDefinition,
+  VmCategory,
+  VmArchRelevance,
+  VmProvisioner,
+  LimaVmId,
+} from '@podkit/substrate';
+export {
+  listVms,
+  getVm,
+  deviceVm,
+  isLimaVm,
+  isSshVm,
+  LIMA_VM_IDS,
+  LIMA_DEVICE_HARNESS_VM_NAME,
+} from '@podkit/substrate';
 
 // Instance status
 export type { InstanceStatus } from './instance-status.js';

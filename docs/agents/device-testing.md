@@ -324,7 +324,7 @@ bunx turbo run @podkit/device-testing#build:linux-prebuild --dry-run=json | jq '
 
 Both build tasks hash `PODKIT_HOST_ARCH` into the cache key so a shared remote cache cannot surface a wrong-arch binary. `harness:install` sets it from `process.arch`; when invoking `bunx turbo` directly, `export PODKIT_HOST_ARCH=$(uname -m)` first.
 
-**Debian point-release drift.** `podkit-builder-glibc.yaml` and `podkit-abi-verify.yaml` both pin Debian 12.10 via explicit cloud-image URLs. If you bump one, bump both and re-run the manual ABI check.
+**Debian point-release drift.** `podkit-device.yaml`, `podkit-builder-glibc.yaml` and `podkit-abi-verify.yaml` all pin the same Debian point release via explicit cloud-image URLs, and `substrate-contract.sh` restates it for the doctor. The single source of truth is `SUBSTRATE_DEBIAN_IMAGE_SERIAL` in `test-packages/substrate/src/debian-image.ts`; `debian-image.test.ts` reads all four files back and fails if any disagrees. Bump the constant, run that test, fix what it names, and re-run the manual ABI check.
 
 **Builder VM wedged.** `bun run vm:recover builderGlibc`.
 

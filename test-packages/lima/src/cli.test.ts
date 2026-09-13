@@ -14,7 +14,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { main } from './cli.js';
-import { getVm } from './registry.js';
+import { getVm } from '@podkit/substrate';
 import { acquireVmLock, isVmLocked } from './lock.js';
 import { repoRoot } from './paths.js';
 import { BASELINE_VM_HASH_PATH } from './baseline-hash.js';
@@ -117,6 +117,33 @@ describe('verb and argument validation', () => {
     // A raw stack trace would include a "at <file>:<line>" frame; the CLI is
     // expected to print only the error's message, not its stack.
     expect(err).not.toMatch(/at .*\.(ts|js):\d+/);
+  });
+
+  // `deviceRemote` is the registry's real ssh-provisioned entry (not an
+  // invented fixture) — the whole point is that the shipped registry, not a
+  // synthetic stand-in, exercises this branch. Without this guard,
+  // `podkit-vm status deviceRemote` would ask `limactl` about an instance it
+  // has never heard of and print `missing`: a confident wrong answer about a
+  // substrate that may be running perfectly well over SSH (see the comment at
+  // the guard's call site in `main()`).
+  it('refuses to lifecycle the ssh-provisioned substrate, before touching limactl', async () => {
+    const remote = getVm('deviceRemote');
+    const { runner, calls } = makeScriptedRunner([]); // any call here would be a real bug
+    const code = await main(['status', remote.id], { subprocess: runner });
+    expect(code).toBe(1);
+    const err = stderrText();
+    expect(err).toContain(`\`${remote.id}\` is provisioned by 'ssh'`);
+    expect(err).toContain('podkit-vm cannot lifecycle it');
+    expect(calls).toHaveLength(0);
+  });
+
+  it('accepts the ssh-provisioned entry by its concrete instance name too', async () => {
+    const remote = getVm('deviceRemote');
+    const { runner, calls } = makeScriptedRunner([]);
+    const code = await main(['ensure', remote.instanceName], { subprocess: runner });
+    expect(code).toBe(1);
+    expect(stderrText()).toContain(`\`${remote.id}\` is provisioned by 'ssh'`);
+    expect(calls).toHaveLength(0);
   });
 });
 

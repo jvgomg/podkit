@@ -36,7 +36,8 @@ test-packages/             # Testing infrastructure (private, not published)
 ├── e2e-shared/            # Cross-cutting helpers shared by every e2e package (CLI runner, preflight, error assertions)
 ├── e2e-vm-tests/          # End-to-end podkit feature tests inside the Lima VM
 ├── gpod-testing/          # Test utilities for iPod environments (no hardware needed)
-├── lima/                  # Lima VM substrate — typed VM registry + all VM yamls, lifecycle, advisory lock, `podkit-vm` CLI
+├── lima/                  # The Lima provisioner — all VM yamls, lifecycle, staging, advisory lock, `podkit-vm` CLI
+├── substrate/             # Provisioner-agnostic substrate layer — typed VM registry + provisioner discriminator, substrate selection, pinned Debian image
 └── test-fixtures/         # Static + dynamic test fixtures (audio + video, lib + CLI generators)
 
 tools/
@@ -350,7 +351,10 @@ Key files to understand:
 | FunctionFS daemon | `test-packages/device-testing-daemon/src/main.ts` |
 | Lima VM configs (all VMs) | `test-packages/lima/vms/` |
 | Harness lifecycle script | `test-packages/device-testing/scripts/harness.ts` |
-| VM registry + `podkit-vm` CLI | `test-packages/lima/src/registry.ts`, `test-packages/lima/src/cli.ts` |
+| VM registry + provisioner discriminator | `test-packages/substrate/src/registry.ts` |
+| Substrate selection | `test-packages/substrate/src/selection.ts` |
+| Pinned Debian image | `test-packages/substrate/src/debian-image.ts` |
+| `podkit-vm` CLI | `test-packages/lima/src/cli.ts` |
 | apply-state.sh | `test-packages/device-testing/scripts/apply-state.sh` |
 | gpod-tool CLI | `tools/gpod-tool/gpod-tool.c` |
 | Demo build | `packages/demo/build.ts` |

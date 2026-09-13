@@ -7,7 +7,7 @@
 import { describe, it, expect } from 'bun:test';
 
 import { instanceStatus } from './instance-status.js';
-import { LIMA_DEVICE_HARNESS_VM_NAME } from './registry.js';
+import { LIMA_DEVICE_HARNESS_VM_NAME } from '@podkit/substrate';
 import type { SubprocessRunner, SubprocessRunResult } from '@podkit/device-types';
 
 function runnerReturning(result: SubprocessRunResult | (() => never)): SubprocessRunner {

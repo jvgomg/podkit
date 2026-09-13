@@ -44,9 +44,12 @@
 vmType: 'vz'
 
 images:
-  # Debian 12.10 point release. Pinned in sync with podkit-builder-glibc.yaml
-  # and podkit-abi-verify.yaml — bumping requires updating all three files plus
-  # a re-run of the ABI spike to confirm the static binary still loads.
+  # Pinned Debian point release. The single source of truth for these URLs is
+  # `SUBSTRATE_DEBIAN_IMAGE_SERIAL` in @podkit/substrate (src/debian-image.ts);
+  # a YAML cannot read a TypeScript constant, so `debian-image.test.ts` reads
+  # this file back and fails if the two disagree. Bump there, then run that test
+  # and fix every file it names — and re-run the manual ABI check, since the
+  # builder, the ABI VM and this VM are one experiment about one userland.
   #
   # substrate-doctor.sh asserts the Debian MAJOR version hard and reports a
   # differing point release as drift rather than failing it: which image was

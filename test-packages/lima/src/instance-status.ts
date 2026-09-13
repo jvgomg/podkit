@@ -8,7 +8,7 @@
  */
 
 import { defaultSubprocessRunner, type SubprocessRunner } from '@podkit/device-types';
-import { LIMA_DEVICE_HARNESS_VM_NAME } from './registry.js';
+import { LIMA_DEVICE_HARNESS_VM_NAME } from '@podkit/substrate';
 import type { LimactlResult } from './limactl.js';
 
 /** Tri-state Lima instance status. */

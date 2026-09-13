@@ -22,12 +22,20 @@
 
 # Debian major version the harness is built against. Asserted hard: the
 # module names, package names and gadget stack below are all bookworm's.
+# Kept in step with @podkit/substrate's `SUBSTRATE_DEBIAN_MAJOR` by
+# `debian-image.test.ts` — see the note on the point release below.
 SUBSTRATE_DEBIAN_MAJOR="12"
 
 # Point release the provisioning images pin. Reported as drift rather than
 # asserted: which qcow2 you booted is a provisioning input, while the running
 # point release moves under you with any security update. A box that has taken
 # an update is not a box that has broken the contract.
+#
+# This restates `SUBSTRATE_DEBIAN_POINT_RELEASE` from @podkit/substrate
+# (src/debian-image.ts) because a substrate has no TypeScript on it — and must
+# not: this very file forbids a toolchain on the box. The restatement is checked
+# rather than trusted: `debian-image.test.ts` reads this file and fails if the
+# two values disagree. Bump the TypeScript constant, then run that test.
 SUBSTRATE_DEBIAN_POINT_RELEASE="12.10"
 
 # Runtime packages the harness needs present. Deliberately runtime-only — see

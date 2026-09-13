@@ -2,7 +2,7 @@
   "name": "@podkit/lima",
   "version": "0.0.1",
   "private": true,
-  "description": "Lima VM substrate for podkit: typed VM registry, idempotent lifecycle, a single cross-process advisory lock, generic transport, and the podkit-vm CLI",
+  "description": "The Lima provisioner for podkit's test substrates: every Lima VM config, idempotent lifecycle, a single cross-process advisory lock, generic transport, and the podkit-vm CLI",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -21,15 +21,17 @@
     "vms"
   ],
   "scripts": {
-    "build": "bun build src/index.ts --outdir dist --target node --external @podkit/device-types --external proper-lockfile && bun run build:types",
+    "build": "bun build src/index.ts --outdir dist --target node --external @podkit/device-types --external @podkit/substrate --external proper-lockfile && bun run build:types",
     "build:types": "tsc -p tsconfig.build.json --emitDeclarationOnly --outDir dist",
     "test": "true",
     "test:unit": "bun test --pass-with-no-tests",
+    "test:integration": "bun test --timeout ${TEST_TIMEOUT:-30000} --pass-with-no-tests --path-ignore-patterns= .integration.",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
   },
   "dependencies": {
     "@podkit/device-types": "workspace:*",
+    "@podkit/substrate": "workspace:*",
     "proper-lockfile": "^4.1.2"
   },
   "devDependencies": {
