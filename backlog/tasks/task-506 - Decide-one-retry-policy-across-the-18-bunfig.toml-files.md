@@ -1,10 +1,10 @@
 ---
 id: TASK-506
 title: Decide one retry policy across the 18 bunfig.toml files
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-09 20:25'
-updated_date: '2026-09-12 13:48'
+updated_date: '2026-09-13 16:06'
 labels:
   - testing
   - flakiness
@@ -61,12 +61,81 @@ Also worth settling: whether a retried-then-passed test should be **visible**. T
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A single stated position on what retry is for in this repo, recorded in docs/agents/testing.md rather than only in bunfig files
-- [ ] #2 Every bunfig.toml either matches that policy or documents in-file why it is an exception
-- [ ] #3 test-packages/lima's absent retry is confirmed deliberate or corrected — it is currently the only package with no setting and nothing says whether that is intent
-- [ ] #4 A decision is recorded on whether a retried-then-passed test must be visible in CI output, and if so it is made visible
-- [ ] #5 The two documented failure modes (retry masking a deterministic failure; retry cascading leaked state into a different error) are captured in the guidance so the next reader does not rediscover them from commit messages
+- [x] #1 A single stated position on what retry is for in this repo, recorded in docs/agents/testing.md rather than only in bunfig files
+- [x] #2 Every bunfig.toml either matches that policy or documents in-file why it is an exception
+- [x] #3 test-packages/lima's absent retry is confirmed deliberate or corrected — it is currently the only package with no setting and nothing says whether that is intent
+- [x] #4 A decision is recorded on whether a retried-then-passed test must be visible in CI output, and if so it is made visible
+- [x] #5 The two documented failure modes (retry masking a deterministic failure; retry cascading leaked state into a different error) are captured in the guidance so the next reader does not rediscover them from commit messages
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Decision: `retry = 0` repo-wide, explicit in all 18 bunfig.toml files, with the reasoning and the exception process in docs/agents/testing.md, and a lint-wired guard so the spread cannot silently reassemble.
+
+1. Record the position in `docs/agents/testing.md` (new §Retries) — the three historical failure modes, the `beforeAll` finding, the visibility decision, how to grant an exception.
+2. `retry = 0` in all 18 files, each carrying a short pointer comment; `test-packages/lima`'s absent setting becomes explicit.
+3. `scripts/check-test-retry-policy.mjs`, wired into `bun run lint`: fails on any non-zero retry without a `# retry-exception: <reason>` comment, and on an absent setting.
+4. Verify with caches forced: unit + integration, host e2e, and the VM suite.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+## Decision
+
+**`retry = 0` in every `bunfig.toml`.** A test that passes on the second attempt is a bug report, not a pass. Recorded in `docs/agents/testing.md` §"Retries: there are none, and that is the policy" — the position, the three historical failure modes, the exception process, and the visibility finding.
+
+This went further than the shape suggested in comment #1 (`retry = 0` for unit + integration, a considered value for the e2e/VM packages). One finding killed the carve-out.
+
+## Why the e2e/VM carve-out did not survive
+
+**A `beforeAll` failure is not retried.** Verified against bun 1.3.13 with a suite whose `beforeAll` throws on its first call and would succeed on its second: under `retry = 2` it fails outright, reported as `(fail) <suite> > (unnamed)`.
+
+That is exactly where the VM lane's flakes live. TASK-510's synthesis flake surfaced as `VM: starter personas > (unnamed)` in a package that had `retry = 2` set, and the retry did nothing — the work happens in `prepare()`, inside a hook. So retry in the e2e/VM packages was never the shock absorber it looked like: it covered the in-test assertions, which are the deterministic part, and not the infrastructure setup, which is the part that actually flakes.
+
+The carve-out would have preserved a setting that cannot fire where it was wanted.
+
+## AC #4 — visibility
+
+Decision: a retried-then-passed test must never be silent, which under `retry = 0` cannot arise. The reasoning is recorded anyway because the failure mode is invisible by default and anyone granting an exception needs it.
+
+Measured: **bun 1.3.13 prints no attempt marker.** A test that fails twice then passes dumps two full error blocks into the log and ends with `2 pass / 0 fail` — a green summary with errors above it, and nobody reads upward from a green summary. This is worse than comment #1 assumed; the old CI logs' "attempt N" text is not something this bun version emits.
+
+The machine-readable escape hatch is the JUnit reporter, which records **every attempt as its own `<testcase>`**: the retried test appears as duplicate entries with `<failure>` children followed by a clean one, and the suite `tests=`/`failures=` counts exceed the real test count (measured: `tests="4" failures="2"` for 2 real tests, one retried twice). Any exception must be run that way and surface the duplicates.
+
+## AC #3 — `test-packages/lima`
+
+Corrected, not blessed. It now says `retry = 0` explicitly. Its absent setting was the only one in the repo and nothing recorded whether that was intent; the guard below now rejects an absent setting for that reason.
+
+## Enforcement
+
+`scripts/check-test-retry-policy.mjs`, wired into `bun run lint`. Fails on a non-zero `retry` without a `# retry-exception: <reason>` comment directly above it, and on an absent setting. Exceptions are reported by name on success so they stay visible rather than accumulating quietly.
+
+Verified in all four directions: the pre-change tree produced 18 violations; a reinstated `retry = 2` is rejected; a genuine `# retry-exception:` is accepted and named; and prose that merely contains the phrase (`# note: this is not a retry-exception: style comment`) is still rejected.
+
+## Verification, all with caches forced
+
+| Lane | Result |
+|------|--------|
+| `test:unit` + `test:integration` | 48/48 tasks, `Cached: 0` |
+| `bun run test` (full) | 65/65 tasks, `Cached: 0` |
+| `test:e2e` (host binary) | 36 passed, 1 failed — the failure is TASK-511, see below |
+| `test:vm` | 38 + 238 tests green ×3 (one idle, two under host load) |
+| `bun run lint` / `typecheck` | clean / 38–38 |
+
+## The one red test, and what it is not
+
+`test:e2e` has one failure on macOS: `lossy-preserve-efficiency.test.ts`, `expect(preserveBitrate).toBeGreaterThan(convertBitrate)` with both at 67.
+
+**It is not caused by this change and was not being hidden by retry.** It fails identically with the old `retry = 1` restored — 12 failures in 13 runs, deterministic at 67 vs 67. An early single observation of a pass led me to report the opposite for a few minutes; three runs on the stashed tree corrected it.
+
+The cause is in the product: on macOS `aac_at` is the top-priority encoder and `aacAtQualityFromBitrate` maps a target onto five rungs, so the test's two targets (~92 and ~69 kbps) both emit `-q:a 8` — identical encoder arguments, identical output. Filed as **TASK-511**, which also asks whether upward rung rounding can push output past a quality cap.
+
+## Also landed here
+
+TASK-510's cause, which this task's first forced VM run exposed once the enumeration lane was quiet: `mkfs.vfat: unable to open /dev/loop0p1: No such file or directory`. Fixed with a bounded wait for the partscan node — the "bounded wait at the flaky step" the new policy prescribes, and its first application.
+<!-- SECTION:NOTES:END -->
 
 ## Comments
 

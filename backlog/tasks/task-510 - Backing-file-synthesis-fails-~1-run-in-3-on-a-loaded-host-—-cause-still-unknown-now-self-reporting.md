@@ -1,11 +1,12 @@
 ---
 id: TASK-510
 title: >-
-  Backing-file synthesis fails ~1 run in 3 on a loaded host — cause still
-  unknown, now self-reporting
-status: To Do
+  Backing-file synthesis raced udev's partscan partition node, failing under
+  load
+status: Done
 assignee: []
 created_date: '2026-09-13 15:19'
+updated_date: '2026-09-13 16:05'
 labels:
   - testing
   - vm
@@ -68,9 +69,58 @@ Relevant to TASK-506: this is a genuine flake cause in the VM lane that retry is
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A reproduction is captured with the `loudOnFailure` message attached, naming which command failed and why
-- [ ] #2 The cause is identified rather than inferred — in particular, whether concurrent `prepare()` from the two test packages races on `losetup --find --show`
-- [ ] #3 The fix removes the race rather than widening a timeout or adding a sleep
-- [ ] #4 `bun run test:vm` runs green across at least 3 consecutive loaded runs on the macOS harness host
-- [ ] #5 TASK-506 is updated with whether this was a retry-hidden flake in the VM lane
+- [x] #1 A reproduction is captured with the `loudOnFailure` message attached, naming which command failed and why
+- [x] #2 The cause is identified rather than inferred — in particular, whether concurrent `prepare()` from the two test packages races on `losetup --find --show`
+- [x] #3 The fix removes the race rather than widening a timeout or adding a sleep
+- [x] #4 `bun run test:vm` runs green across at least 3 consecutive loaded runs on the macOS harness host
+- [x] #5 TASK-506 is updated with whether this was a retry-hidden flake in the VM lane
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+## Cause found, and it was not the one this task guessed
+
+The diagnosability fix worked as intended — the next occurrence named itself. First forced `test:vm` run after `retry = 0` landed:
+
+```
+failed to synthesise partitioned FAT32 backing file for persona
+  'ipod-5g-video-mbr-part' in podkit-device: exit=1:
+  mkfs.vfat failed (exit 1): mkfs.vfat: unable to open /dev/loop0p1:
+  No such file or directory
+```
+
+So it is **not** the `losetup --find` find-then-claim race this task proposed as the lead. It is the udev-async partition node: `losetup --partscan` asks the kernel to read the partition table, udev then creates `${LOOP}p1` asynchronously, and `mkfs.vfat` was formatting it immediately. On an idle VM the node is already there — measured **0 poll iterations** — which is exactly why 12 sequential builds, then 3 concurrent workers × 15 builds, idle and under host load, all failed to reproduce it. The window only opens when the VM is starved.
+
+## Fix
+
+A bounded wait at the step that is actually nondeterministic, which is what `docs/agents/testing.md` §Retries prescribes over a re-run:
+
+```sh
+i=0; while [ ! -e "${LOOP}p1" ]; do i=$((i+1));
+  [ "$i" -gt 100 ] && { echo "partition node ${LOOP}p1 never appeared after 10s" >&2; exit 1; };
+  sleep 0.1; done
+```
+
+10s ceiling, fails loudly naming the node, and the pre-existing `trap … EXIT` still detaches the loop device on that exit. Verified in the VM on both paths: the wait returns on iteration 0 when the node is present, and the timeout branch prints its message and exits 1.
+
+Pinned by a unit test that asserts the wait exists **and precedes** the `mkfs.vfat` call — a wait after the format is decoration, and the ordering is the whole property.
+
+## Note for TASK-506 (AC #5)
+
+This was never a retry-hidden flake, and could not have been: it happens in `prepare()`, inside `beforeAll`, and bun does not retry hook failures. The package it failed in had `retry = 2` set at the time and the run still went red. It is a data point *for* the retry decision rather than against it — the VM lane's real flakes live in setup, where retry has no reach.
+
+## Verification
+
+Three consecutive forced `test:vm` runs after the fix, all green, all `Cached: 0`:
+
+| Run | Host load | device-testing | e2e-vm-tests |
+|-----|-----------|----------------|--------------|
+| 1 | idle | 38 pass / 0 fail | 194 pass / 44 skip / 0 fail |
+| 2 | 6 busy loops / 12 cpus | 38 pass / 0 fail | 194 pass / 44 skip / 0 fail |
+| 3 | 6 busy loops / 12 cpus | 38 pass / 0 fail | 194 pass / 44 skip / 0 fail |
+
+The run that exposed the cause was itself a loaded forced run, so the failure window is reachable in this configuration — three clean passes through it is meaningful rather than vacuous.
+
+TASK-506's notes record the AC #5 answer: not a retry-hidden flake, and not reachable by retry at all.
+<!-- SECTION:NOTES:END -->
