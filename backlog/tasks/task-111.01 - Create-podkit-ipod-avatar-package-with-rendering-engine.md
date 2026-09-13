@@ -4,7 +4,7 @@ title: Create @podkit/ipod-avatar package with rendering engine
 status: To Do
 assignee: []
 created_date: '2026-03-11 15:19'
-updated_date: '2026-03-11 16:27'
+updated_date: '2026-09-13 17:56'
 labels:
   - feature
   - new-package
@@ -14,7 +14,7 @@ references:
 documentation:
   - backlog/documents/doc-002 - ASCII-iPod-Avatar-Feature-Design.md
 parent_task_id: TASK-111
-priority: high
+priority: low
 ---
 
 ## Description

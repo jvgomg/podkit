@@ -4,6 +4,7 @@ title: Extend config schema for avatar settings
 status: To Do
 assignee: []
 created_date: '2026-03-11 15:19'
+updated_date: '2026-09-13 17:56'
 labels:
   - feature
   - config
@@ -12,7 +13,7 @@ references:
   - packages/podkit-cli/src/config/types.ts
   - packages/podkit-cli/src/config/
 parent_task_id: TASK-111
-priority: high
+priority: low
 ---
 
 ## Description

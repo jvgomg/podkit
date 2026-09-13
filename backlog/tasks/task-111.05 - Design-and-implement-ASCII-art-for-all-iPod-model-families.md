@@ -4,7 +4,7 @@ title: Design and implement ASCII art for all iPod model families
 status: To Do
 assignee: []
 created_date: '2026-03-11 15:31'
-updated_date: '2026-03-11 15:34'
+updated_date: '2026-09-13 17:56'
 labels:
   - feature
   - design
@@ -16,7 +16,7 @@ references:
 documentation:
   - backlog/documents/doc-002 - ASCII-iPod-Avatar-Feature-Design.md
 parent_task_id: TASK-111
-priority: high
+priority: low
 ---
 
 ## Description
