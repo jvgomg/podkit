@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-09-07 23:35'
-updated_date: '2026-09-13 19:45'
+updated_date: '2026-09-14 23:29'
 labels:
   - testing
   - infrastructure
@@ -132,5 +132,21 @@ It needs amd64 `podkit`, `dummy-hcd-daemon` and `gpod-tool` on the substrate. To
 The better reason to wait: proving a persona over SSH with binaries built on the *same* architecture as the substrate tests very little. Proving it with binaries cross-built from an arm64 host is the first real evidence that build decoupling works. AC #5 is worth more as 514's acceptance test than as a hand-run on otto.
 
 493 stays open at 10/11 rather than being closed with the AC moved: the substrate is proven, but 'a persona is observable over SSH with no limactl involved' is this task's actual thesis, and closing without it would record the thesis as proven when it is not.
+---
+
+author: claude
+created: 2026-09-14 23:29
+---
+The SSH path is now proven from the macOS workstation, non-interactively: `scp` the three contract scripts, `ssh sudo substrate-doctor.sh`, PASS. Reaching that took an ssh-config fix worth recording, because the next person hits it too.
+
+The workstation routes all key material through the 1Password agent (`IdentityAgent` set globally). The substrate authorises a key that agent does not serve, so ssh offered the 1Password keys, fell back to the on-disk key, got `Server accepts key` — and then could not sign, because that key is passphrase-protected and a non-interactive session has nothing to prompt. Fixed with a host-scoped `IdentityAgent SSH_AUTH_SOCK`.
+
+The subtlety: adding that line changed nothing at first, because ssh config is **first-match-wins** and a `Host *` block preceded the specific one. The block had to move above the wildcard. `ssh -G <host>` is the way to tell — it prints the effective value rather than what you think you wrote.
+
+The general point for anyone provisioning a substrate: podkit's harness runs ssh non-interactively, so a key that only authenticates when something can prompt for a passphrase will never work for `test:vm`. Agent-served keys are a requirement here, not a convenience.
+
+**Observation on `--strict`.** The box passed `--strict` 22/22 when built on 2026-09-13 and fails it now, thirty-six hours later, on the single assertion `point release is 12.15, template pins 12.10`. cloud-init sets `package_update: true` and unattended-upgrades does the rest. Non-strict still passes.
+
+That vindicates making point-release drift a note rather than a failure — hard-failing would break the loop on the first security update. But it also means `--strict` is unusable for its stated purpose (template validation) within about a day of provisioning, which is not what its documentation implies. The pin describes *the image you boot*, not the box afterwards. If `--strict` is to stay meaningful it should compare against the image the box was created from rather than the running release — or be documented as valid only immediately post-provision. Not fixed here; flagged so the next reader does not take a strict failure as a real defect.
 ---
 <!-- COMMENTS:END -->
