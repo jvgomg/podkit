@@ -104,6 +104,32 @@ const ok = (stdout = ''): SubprocessRunResult => ({
   exitCode: 0,
 });
 
+/**
+ * The substrate's answer to a binary transfer's combined probe: machine type,
+ * then the digest of whatever sits at the destination. `transferBinary` refuses
+ * an artifact that cannot start on the substrate it is going to, so a scripted
+ * probe has to carry both facts for the transfer to get past it.
+ */
+const probedBinary = (vmSha: string, machine = 'aarch64'): SubprocessRunResult =>
+  ok(`${machine}\n${vmSha}\n`);
+
+/**
+ * A minimal aarch64 ELF64 header padded out to look like a binary. The
+ * transfers read two bytes of it; the substrate fixtures above answer
+ * `aarch64`, so these match.
+ */
+function fakeElf(salt: string): Buffer {
+  const bytes = Buffer.alloc(256);
+  bytes.set([0x7f, 0x45, 0x4c, 0x46], 0); // \x7fELF
+  bytes[4] = 2; // ELFCLASS64
+  bytes[5] = 1; // ELFDATA2LSB
+  bytes[6] = 1; // EV_CURRENT
+  bytes[16] = 2; // ET_EXEC
+  bytes[0x12] = 0xb7; // EM_AARCH64
+  bytes.write(salt, 64, 'utf8');
+  return bytes;
+}
+
 const fail = (exitCode: number, stderr: string): SubprocessRunResult => ({
   stdout: '',
   stderr,
@@ -136,13 +162,13 @@ let gpodToolSha: string;
 
 beforeEach(() => {
   tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'podkit-runner-'));
-  podkitBinary = path.join(tmpRoot, 'podkit-linux-x64');
-  const bytes = Buffer.from('fake-podkit-binary');
+  podkitBinary = path.join(tmpRoot, 'podkit-linux-arm64');
+  const bytes = fakeElf('fake-podkit-binary');
   fs.writeFileSync(podkitBinary, bytes);
   podkitSha = createHash('sha256').update(bytes).digest('hex');
 
   daemonBinary = path.join(tmpRoot, 'dummy-hcd-daemon');
-  fs.writeFileSync(daemonBinary, Buffer.from('fake-daemon-binary'));
+  fs.writeFileSync(daemonBinary, fakeElf('fake-daemon-binary'));
 
   daemonUnit = path.join(tmpRoot, 'dummy-hcd-daemon@.service');
   const unitBytes = Buffer.from('[Unit]\nDescription=fake-systemd-unit\n');
@@ -151,8 +177,8 @@ beforeEach(() => {
 
   // gpod-tool is REQUIRED by prepare(). Materialise a fake binary so the
   // sha256-probe path can be exercised without throwing on read.
-  gpodToolBinary = path.join(tmpRoot, 'gpod-tool-linux-x64');
-  const gpodBytes = Buffer.from('fake-gpod-tool-binary');
+  gpodToolBinary = path.join(tmpRoot, 'gpod-tool-linux-arm64');
+  const gpodBytes = fakeElf('fake-gpod-tool-binary');
   fs.writeFileSync(gpodToolBinary, gpodBytes);
   gpodToolSha = createHash('sha256').update(gpodBytes).digest('hex');
 });
@@ -286,8 +312,8 @@ describe('runtime.prepare', () => {
     //  7. ensurePersonaSidecar: rm -f temp
     const { runner, calls } = makeScriptedRunner([
       listJsonRunning(),
-      ok(podkitSha), // podkit sha match → skip
-      ok(gpodToolSha), // gpod-tool sha match → skip
+      probedBinary(podkitSha), // podkit sha match → skip
+      probedBinary(gpodToolSha), // gpod-tool sha match → skip
       ok(daemonUnitSha), // systemd unit sha match → skip
       ok(), // copy sidecar
       ok(), // install sidecar
@@ -325,8 +351,8 @@ describe('runtime.prepare', () => {
       // check-then-start decision is atomic across processes.
       listJsonStopped(),
       ok(), // limactl start
-      ok(podkitSha), // podkit sha match → skip
-      ok(gpodToolSha), // gpod-tool sha match → skip
+      probedBinary(podkitSha), // podkit sha match → skip
+      probedBinary(gpodToolSha), // gpod-tool sha match → skip
       ok(daemonUnitSha), // systemd unit sha match → skip
       ok(), // copy sidecar
       ok(), // install sidecar
@@ -379,11 +405,11 @@ describe('runtime.prepare', () => {
     // systemd unit probe, sidecar copy/install/cleanup.
     const { runner, calls } = makeScriptedRunner([
       listJsonRunning(),
-      ok(podkitSha), // podkit sha match → skip
-      ok(gpodToolSha), // gpod-tool sha match → skip
+      probedBinary(podkitSha), // podkit sha match → skip
+      probedBinary(gpodToolSha), // gpod-tool sha match → skip
       // dummy-hcd-daemon transfer: probe → match (use same fake sha) so we
       // skip copy. To make this deterministic, compute the daemon sha.
-      ok(createHash('sha256').update(fs.readFileSync(daemonBinary)).digest('hex')),
+      probedBinary(createHash('sha256').update(fs.readFileSync(daemonBinary)).digest('hex')),
       ok(daemonUnitSha), // systemd unit sha match → skip
       ok(), // sidecar copy
       ok(), // sidecar install
@@ -417,7 +443,7 @@ describe('runtime.prepare', () => {
 
     const { runner } = makeScriptedRunner([
       listJsonRunning(),
-      ok(podkitSha), // podkit skip
+      probedBinary(podkitSha), // podkit skip
       // gpod-tool transfer throws synchronously on the missing host file
       // BEFORE issuing any limactl call.
     ]);
@@ -470,8 +496,8 @@ describe('runtime.prepare', () => {
     // copy + install + daemon-reload + cleanup sequence.
     const { runner, calls } = makeScriptedRunner([
       listJsonRunning(),
-      ok(podkitSha), // podkit skip
-      ok(gpodToolSha), // gpod-tool skip
+      probedBinary(podkitSha), // podkit skip
+      probedBinary(gpodToolSha), // gpod-tool skip
       ok('deadbeef'), // systemd unit probe — wrong sha
       ok(), // limactl copy host → /tmp
       ok(), // sudo install -m 0644

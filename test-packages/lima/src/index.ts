@@ -65,9 +65,15 @@ export { createLimactlLink } from './link.js';
 export type { InstanceStatus } from './instance-status.js';
 export { instanceStatus } from './instance-status.js';
 
-// Host binary path resolvers
+// Host binary path resolvers. They moved to `@podkit/substrate` along with
+// the registry and for the same reason: the architecture in every one of these
+// filenames is a property of the substrate the artifact has to start on, not
+// of the provisioner that produced the box (ADR-029 §4). The `vmArch()` they
+// used to derive that suffix from `process.arch` is gone — `targetArch()`
+// replaces it, and is exported from `@podkit/substrate` directly. Re-exported
+// here so this package's existing consumers resolve unchanged; new code should
+// import from `@podkit/substrate`.
 export {
-  vmArch,
   resolveDefaultPodkitBinary,
   resolveDefaultPodkitDebugBinary,
   resolveDefaultDaemonLinuxBinary,
@@ -75,7 +81,7 @@ export {
   resolveDefaultDaemonLinuxMuslBinary,
   resolveDefaultDummyHcdDaemonBinary,
   resolveDefaultGpodToolBinary,
-} from './binary-paths.js';
+} from '@podkit/substrate';
 
 // Advisory lock
 export type { VmLockOptions, ReleaseFn } from './lock.js';

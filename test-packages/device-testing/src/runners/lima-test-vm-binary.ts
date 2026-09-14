@@ -12,6 +12,12 @@
  *
  * - **Idempotent.** Hashes the host binary (sha256) and asks the substrate for
  *   the sha256 of the file at `vmPath`. If they match, the transfer is skipped.
+ * - **Architecture-checked.** The same probe asks the substrate what machine it
+ *   is, and the artifact's ELF header has to agree before anything is copied.
+ *   This is the backstop for a wrong build-cache key (see `targetArch()` in
+ *   `@podkit/substrate`): a foreign-arch binary installs perfectly happily and
+ *   then fails with `exec format error` partway through a test run, attributed
+ *   to whichever test invoked it first.
  * - **Atomic.** Stages to a randomised `/tmp/podkit-<uuid>` path, then
  *   `sudo install -m 0755`. A partial transfer never leaves a broken binary at
  *   `vmPath`. See `./substrate-install.ts`.
@@ -30,7 +36,12 @@
 import { createHash, randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 
-import { guestCommandError, shellQuote, type SubstrateLink } from '@podkit/substrate';
+import {
+  assertArtifactArch,
+  guestCommandError,
+  shellQuote,
+  type SubstrateLink,
+} from '@podkit/substrate';
 
 import { deviceSubstrateLink } from './substrate.js';
 import { installIntoSubstrate } from './substrate-install.js';
@@ -151,15 +162,19 @@ async function transfer(opts: InternalTransferOpts): Promise<TransferBinaryResul
   }
   const hostSha256 = createHash('sha256').update(hostBytes).digest('hex');
 
-  // 2. Idempotency: ask the substrate for the sha256 of the existing file. The
-  //    fingerprint is the first 64 hex chars of `sha256sum`'s output. If the
-  //    file is absent, `sha256sum` exits non-zero — but the `sh -c` pipeline
-  //    ends in `awk`, so the GUEST still exits 0 with empty stdout. That is the
-  //    normal "needs install" path, not an error.
+  // 2. One probe, two facts. The transfer decision needs both what machine the
+  //    substrate is and the digest of whatever already sits at `vmPath`, and
+  //    they are asked for together rather than in two round trips — `uname -m`
+  //    on the first line, the digest (possibly empty) on the second.
+  //
+  //    The fingerprint is the first 64 hex chars of `sha256sum`'s output. If
+  //    the file is absent, `sha256sum` exits non-zero — but the `sh -c`
+  //    pipeline ends in `awk`, so the GUEST still exits 0 with empty stdout.
+  //    That is the normal "needs install" path, not an error.
   const probe = await link.exec([
     'sh',
     '-c',
-    `sha256sum ${shellQuote(vmPath)} 2>/dev/null | awk '{print $1}'`,
+    `uname -m; sha256sum ${shellQuote(vmPath)} 2>/dev/null | awk '{print $1}'`,
   ]);
   if (probe.exitCode !== 0) {
     // Reaching here means the substrate answered and the probe pipeline itself
@@ -169,12 +184,28 @@ async function transfer(opts: InternalTransferOpts): Promise<TransferBinaryResul
     // listing every possible cause.
     throw guestCommandError(`failed to probe ${label} at ${link.description}:${vmPath}`, probe);
   }
-  const vmSha256 = probe.stdout.trim();
+  const [substrateMachine = '', vmSha256Raw = ''] = probe.stdout.split('\n');
+  const vmSha256 = vmSha256Raw.trim();
+
+  // 3. Refuse a binary that cannot start here — BEFORE the idempotency check,
+  //    so a substrate that was swapped for one of the other architecture is
+  //    caught rather than sha-matched against bytes installed by a previous
+  //    host. `assertArtifactArch` throws `ArtifactArchMismatchError`, named so
+  //    the reader lands on the build that produced the bytes instead of on the
+  //    test that first tried to run them.
+  assertArtifactArch({
+    bytes: hostBytes,
+    artifactPath: binaryPath,
+    substrateMachine: substrateMachine.trim(),
+    substrateDescription: link.description,
+    label,
+  });
+
   if (vmSha256 && vmSha256 === hostSha256) {
     return { substrate: link.description, vmPath, hostSha256, skipped: true };
   }
 
-  // 3. Stage + atomically install.
+  // 4. Stage + atomically install.
   await installIntoSubstrate({
     link,
     hostPath: binaryPath,

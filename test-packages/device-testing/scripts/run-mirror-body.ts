@@ -42,15 +42,26 @@ import { probeCapabilities, formatCapabilityReport } from '../src/capabilities.j
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 /** Repo root: scripts/ → device-testing/ → test-packages/ → repo root. */
 const REPO_ROOT = path.resolve(SCRIPT_DIR, '..', '..', '..');
+/** The one turbo entry point that materialises the target architecture. */
+const TURBO_WRAPPER = path.resolve(REPO_ROOT, 'test-packages/substrate/scripts/turbo.ts');
 
 /** Phase 1 — the standard quality DAG (includes `test:vm`). */
 const PHASE_1_TASKS = ['qa'];
 /** Phase 2 — the two shipped-image surfaces, serialized after phase 1. */
 const PHASE_2_TASKS = ['test:e2e:docker-dist', 'test:e2e:docker-loopback'];
 
-/** Spawn `turbo run <tasks> <extraArgs>` from the repo root, inheriting stdio. */
+/**
+ * Spawn `turbo run <tasks> <extraArgs>` from the repo root, inheriting stdio.
+ *
+ * Goes through the substrate's turbo wrapper rather than `bunx turbo` so
+ * `PODKIT_TARGET_ARCH` is materialised into the environment turbo hashes.
+ * Phase 1 reaches every Linux-binary build task through `qa`, and an unset
+ * target architecture hashes the same on an arm64 host as on an amd64 one —
+ * which is a wrong cache key that produces a wrong binary rather than an
+ * error. See the wrapper's own note for why it resolves rather than probes.
+ */
 async function runTurbo(tasks: string[], extraArgs: string[]): Promise<number> {
-  const proc = Bun.spawn(['bunx', 'turbo', 'run', ...tasks, ...extraArgs], {
+  const proc = Bun.spawn(['bun', TURBO_WRAPPER, 'run', ...tasks, ...extraArgs], {
     cwd: REPO_ROOT,
     stdin: 'inherit',
     stdout: 'inherit',

@@ -18,6 +18,8 @@ set -euo pipefail
 
 VM_NAME="${BUILDER_VM_NAME:-podkit-builder-glibc}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=test-packages/device-testing/scripts/target-arch.sh
+. "$SCRIPT_DIR/target-arch.sh"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 GPOD_TESTING_BIN_DIR="$REPO_ROOT/test-packages/gpod-testing/bin"
 PODKIT_VM=(bun "$REPO_ROOT/test-packages/lima/src/cli.ts")
@@ -37,17 +39,14 @@ fi
 # arrive first, and refusing to create here used to abort the entire run.
 "${PODKIT_VM[@]}" ensure "$VM_NAME"
 
-# Match the arch suffix to the convention used by the sibling builds
-# (vmArch() in lima-test-vm.ts): arm64 / x64 — not aarch64 / x86_64.
+# Match the arch suffix to the convention used by the sibling builds and by
+# `targetArch()` in @podkit/substrate: arm64 / x64 — not aarch64 / x86_64.
 TARGET_ARCH="$(limactl shell "$VM_NAME" bash -c "uname -m")"
-case "$TARGET_ARCH" in
-  x86_64)  NODE_ARCH=x64 ;;
-  aarch64) NODE_ARCH=arm64 ;;
-  *)
-    echo "ERROR: unsupported builder arch '$TARGET_ARCH'." >&2
-    exit 1
-    ;;
-esac
+NODE_ARCH="$(podkit_normalize_arch "$TARGET_ARCH" 'builder arch')"
+# This builder is a Lima instance on this machine, so it produces its own
+# architecture and nothing else. Refuse loudly when the run targets another —
+# see scripts/target-arch.sh for why a silent success is the worse outcome.
+podkit_assert_target_arch "$NODE_ARCH" "$VM_NAME"
 
 # Build inside a VM-local copy of the source tree. A direct $REPO_ROOT build
 # would clobber host-side artefacts via Lima's $HOME mount; staging keeps the

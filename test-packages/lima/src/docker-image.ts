@@ -29,11 +29,12 @@ import { defaultSubprocessRunner, type SubprocessRunner } from '@podkit/device-t
 import { limactlError, runLimactl, shellQuote } from './limactl.js';
 import { FILE_COPY_TIMEOUT_MS } from './transport.js';
 import { repoRoot } from './paths.js';
-import { LIMA_DEVICE_HARNESS_VM_NAME } from '@podkit/substrate';
 import {
+  LIMA_DEVICE_HARNESS_VM_NAME,
   resolveDefaultDaemonLinuxMuslBinary,
   resolveDefaultPodkitMuslBinary,
-} from './binary-paths.js';
+  targetArch,
+} from '@podkit/substrate';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -287,13 +288,15 @@ export async function buildPodkitImageInVm(
 
   // Resolve host inputs. The image is Alpine/musl, so we ALWAYS stage the musl
   // binaries (glibc binaries can't start in the container). The musl resolvers
-  // honour env overrides for the host's native arch; for an explicit
-  // non-native imageArch we resolve the musl path by suffix.
-  const nativeArch = process.arch === 'arm64' ? 'arm64' : 'amd64';
+  // honour env overrides for the arch currently being targeted; for an
+  // explicit imageArch that differs from it we resolve the musl path by
+  // suffix instead, because an override naming one arch's binary must not be
+  // handed to a build for the other.
+  const builtArch = targetArch() === 'arm64' ? 'arm64' : 'amd64';
   const cliBinary =
-    imageArch === nativeArch ? resolveDefaultPodkitMuslBinary() : hostCliBinaryPath(imageArch);
+    imageArch === builtArch ? resolveDefaultPodkitMuslBinary() : hostCliBinaryPath(imageArch);
   const daemonBinary =
-    imageArch === nativeArch
+    imageArch === builtArch
       ? resolveDefaultDaemonLinuxMuslBinary()
       : hostDaemonBinaryPath(imageArch);
   const dockerfileHost = path.resolve(repoRoot(), DOCKERFILE_REL);

@@ -124,6 +124,41 @@ This supersedes ADR-028's Consequences note that "artifact caches must key on
 architecture" — necessary but not sufficient, because `binary-paths.ts` could not
 name a foreign target architecture at all.
 
+**The builder is a guest, not a second machine.** The reference build host is a
+**second Proxmox VM**, a sibling of the device substrate, provisioned from the
+same cloud-init family and reached over the same link. This matters for who can
+run the gate: a contributor needs somewhere to run an amd64 *guest*, not a
+second computer, and the Proxmox playbook they already follow for the substrate
+yields both.
+
+A builder carries the **inverse of the substrate contract**. The substrate's
+defining assertion is that no toolchain and no `-dev` packages are present —
+that is what lets it catch static-linkage regressions. A builder needs exactly
+those. So it is a second profile with its own provisioning and its own doctor,
+mirroring the substrate pair rather than extending it. Nothing about the two
+contracts should be merged: the day they share a definition is the day a
+toolchain can reach the box whose job is to prove one is not needed.
+
+The builder is **persistent but stopped when idle**. A substrate at 2 GiB and a
+builder at 4 GiB will not generally coexist on a modest hypervisor, so
+start-for-a-build / stop-after is the operating mode rather than an
+optimisation — which makes §3's API lifecycle a dependency of practical
+builds, not a convenience.
+
+**Decided fallback for a contributor with no hypervisor:** an **emulated Lima
+amd64 builder** on the arm64 host (`vmType: qemu`, `arch: x86_64`). ADR-028
+rejects emulation, and that rejection stands for the hot path of *running*
+tests. Producing the native prebuild is a different activity — occasional,
+cacheable, and measured in minutes — so emulation is acceptable there. Recorded
+now so it is not re-litigated; to be built when someone needs it. Because the
+builder is a role, adding it is a registry entry and a YAML, not a redesign.
+
+Cross-compilation is **not** the answer and should not be reached for: `bun
+build --compile` can target `bun-linux-x64`, but podkit statically links libgpod
+through a native addon, and that is a C build requiring a real linux-x64
+toolchain. The JavaScript half cross-compiles; the half that makes the binary
+worth testing does not.
+
 ### 5. Provisioning-level snapshots are in scope; per-test snapshots remain rejected
 
 ADR-028's Alternatives rejects "Proxmox snapshot/rollback instead of

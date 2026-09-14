@@ -4,7 +4,7 @@ title: Proxmox substrate lifecycle over a pool-scoped API token
 status: To Do
 assignee: []
 created_date: '2026-09-13 18:34'
-updated_date: '2026-09-13 19:59'
+updated_date: '2026-09-14 19:48'
 labels:
   - testing
   - infrastructure
@@ -18,7 +18,7 @@ references:
     Portable-device-substrate-—-contract-provisioners-and-arch-decoupled-builds.md
   - docs/adr/adr-028-substrate-agnostic-device-harness.md
   - test-packages/lima/src/cli.ts
-priority: medium
+priority: high
 type: feature
 ordinal: 275000
 ---
@@ -89,5 +89,15 @@ Also corrected a claim I had written from the docs rather than from a host: **`S
 **Untested, and therefore unproven for this task's ACs:** snapshot and rollback (AC #8 depends on them), clone, API console, and API-driven image import — the last being what would make playbook steps 3–4 automatable rather than manual. Clone likely also needs `Datastore.AllocateTemplate` on both storages for a template-based flow.
 
 The evidence tables live in the test report; the operative conclusions are all folded into `pveum-recipe.sh` and the playbook, which are the artefacts that get read.
+---
+
+author: claude
+created: 2026-09-14 19:48
+---
+Priority raised to High, and the reason has changed.
+
+515 was filed as a convenience — start/stop/recreate rather than opening the Proxmox UI. The builder-VM decision (ADR-029 §4, TASK-520) makes it closer to a dependency. A substrate at 2 GiB and a builder at 4 GiB will not generally coexist on a modest hypervisor, so the operating mode is start-for-a-build and stop-after. Without the API that is `qm start` / `qm shutdown` by hand around every build — friction on the hot path of the local loop, which is the thing ADR-028's decision drivers protect.
+
+Still blocked on the same thing: the token in `.env.local`. And the verification order now matters more than it did — snapshot and rollback remain unproven on the host, and AC #8 builds recover on top of them.
 ---
 <!-- COMMENTS:END -->

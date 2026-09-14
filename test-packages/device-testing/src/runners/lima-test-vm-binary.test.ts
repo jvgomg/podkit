@@ -4,6 +4,12 @@
  * Strategy: inject a fake `SubprocessRunner` that records every `limactl`
  * invocation and returns scripted results. No real `limactl`, no real VM.
  *
+ * The host-side fixture is a synthesised aarch64 ELF header rather than
+ * arbitrary bytes, and the scripted probe answers `aarch64` — the transfer
+ * refuses to install a binary that cannot start on the substrate it is going
+ * to, so both halves of that comparison have to be real for the happy paths to
+ * be happy. The mismatch itself gets its own section at the end.
+ *
  * Coverage targets the six TASK-322.03 acceptance criteria:
  *   AC1 — helper exists and performs limactl copy + install atomically
  *   AC2 — idempotent (skip on sha256 match)
@@ -26,7 +32,7 @@ import {
 } from './lima-test-vm-binary.js';
 import type { SubprocessRunner, SubprocessRunOpts, SubprocessRunResult } from '../subprocess.js';
 import { createLimactlLink } from '@podkit/lima';
-import { isSubstrateLinkError } from '@podkit/substrate';
+import { ArtifactArchMismatchError, isSubstrateLinkError } from '@podkit/substrate';
 
 // ---------------------------------------------------------------------------
 // Substrate link over a scripted runner
@@ -97,6 +103,35 @@ const ok = (stdout = ''): SubprocessRunResult => ({
   exitCode: 0,
 });
 
+/**
+ * The substrate's answer to the combined probe: its machine type on the first
+ * line, the digest of whatever sits at `vmPath` (empty when nothing does) on
+ * the second. One call, because the transfer needs both facts and a second
+ * round trip per artifact buys nothing.
+ */
+const probed = (machine: string, vmSha = ''): SubprocessRunResult => ok(`${machine}\n${vmSha}\n`);
+
+/**
+ * A minimal ELF64 header with the given `e_machine` (EM_AARCH64 / EM_X86_64),
+ * padded out so the file looks like a binary rather than a 64-byte oddity.
+ * Synthesised rather than checked in: the transfer reads two bytes of it.
+ */
+function fakeElf(eMachine: number, salt: string): Buffer {
+  const bytes = Buffer.alloc(256);
+  bytes.set([0x7f, 0x45, 0x4c, 0x46], 0); // \x7fELF
+  bytes[4] = 2; // ELFCLASS64
+  bytes[5] = 1; // ELFDATA2LSB
+  bytes[6] = 1; // EV_CURRENT
+  bytes[16] = 2; // ET_EXEC
+  bytes[0x12] = eMachine & 0xff;
+  bytes[0x13] = (eMachine >> 8) & 0xff;
+  bytes.write(salt, 64, 'utf8');
+  return bytes;
+}
+
+const EM_AARCH64 = 0xb7;
+const EM_X86_64 = 0x3e;
+
 const fail = (exitCode: number, stderr: string): SubprocessRunResult => ({
   stdout: '',
   stderr,
@@ -125,8 +160,8 @@ let hostSha: string;
 
 beforeEach(() => {
   tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'podkit-xfer-'));
-  hostBinary = path.join(tmpRoot, 'podkit-linux-x64');
-  const bytes = Buffer.from('fake-podkit-binary-contents-' + Math.random());
+  hostBinary = path.join(tmpRoot, 'podkit-linux-arm64');
+  const bytes = fakeElf(EM_AARCH64, `fake-podkit-binary-contents-${Math.random()}`);
   fs.writeFileSync(hostBinary, bytes);
   hostSha = createHash('sha256').update(bytes).digest('hex');
 });
@@ -143,7 +178,7 @@ describe('transferBinary (AC1: copy + install + cleanup atomically)', () => {
   it('runs probe → copy → install → cleanup when no existing VM binary', async () => {
     // probe finds nothing (empty stdout), then copy, install, cleanup all succeed.
     const { runner, calls } = makeScriptedRunner([
-      ok(''), // sha256sum (file absent → exit 0 with `awk` printing nothing)
+      probed('aarch64'), // uname -m + sha256sum (file absent → empty digest)
       ok(), // limactl copy
       ok(), // sudo install
       ok(), // cleanup rm
@@ -163,7 +198,10 @@ describe('transferBinary (AC1: copy + install + cleanup atomically)', () => {
     expect(calls[0]!.command).toBe('limactl');
     expect(calls[0]!.args[0]).toBe('shell');
     expect(calls[0]!.args).toContain('podkit-device');
+    // One probe carrying both facts the transfer decides on. Splitting it into
+    // two would double the round trips on a four-artifact install for nothing.
     expect(calls[0]!.args.join(' ')).toContain('sha256sum');
+    expect(calls[0]!.args.join(' ')).toContain('uname -m');
 
     // copy: <host> <vm>:<tmp>
     expect(calls[1]!.args[0]).toBe('copy');
@@ -189,7 +227,7 @@ describe('transferBinary (AC1: copy + install + cleanup atomically)', () => {
   });
 
   it('respects a custom vmPath', async () => {
-    const { runner, calls } = makeScriptedRunner([ok(''), ok(), ok(), ok()]);
+    const { runner, calls } = makeScriptedRunner([probed('aarch64'), ok(), ok(), ok()]);
     const result = await transferBinary({
       link: linkTo('podkit-device', runner),
       binaryPath: hostBinary,
@@ -206,7 +244,7 @@ describe('transferBinary (AC1: copy + install + cleanup atomically)', () => {
 
 describe('transferBinary (AC2: idempotent on sha256 match)', () => {
   it('skips copy + install when the VM already has the same sha256', async () => {
-    const { runner, calls } = makeScriptedRunner([ok(hostSha + '\n')]);
+    const { runner, calls } = makeScriptedRunner([probed('aarch64', hostSha)]);
 
     const result = await transferBinary({
       link: linkTo('podkit-device', runner),
@@ -221,7 +259,7 @@ describe('transferBinary (AC2: idempotent on sha256 match)', () => {
 
   it('does NOT skip when VM has a different sha256', async () => {
     const wrongSha = 'deadbeef'.repeat(8);
-    const { runner, calls } = makeScriptedRunner([ok(wrongSha + '\n'), ok(), ok(), ok()]);
+    const { runner, calls } = makeScriptedRunner([probed('aarch64', wrongSha), ok(), ok(), ok()]);
 
     const result = await transferBinary({
       link: linkTo('podkit-device', runner),
@@ -239,8 +277,8 @@ describe('transferBinary (AC2: idempotent on sha256 match)', () => {
 
 describe('transferBinary (AC3: atomicity)', () => {
   it('uses a unique /tmp/podkit-transfer-<uuid> path per invocation', async () => {
-    const probe1 = makeScriptedRunner([ok(''), ok(), ok(), ok()]);
-    const probe2 = makeScriptedRunner([ok(''), ok(), ok(), ok()]);
+    const probe1 = makeScriptedRunner([probed('aarch64'), ok(), ok(), ok()]);
+    const probe2 = makeScriptedRunner([probed('aarch64'), ok(), ok(), ok()]);
 
     await transferBinary({
       link: linkTo('podkit-device', probe1.runner),
@@ -259,7 +297,7 @@ describe('transferBinary (AC3: atomicity)', () => {
 
   it('cleans up the temp file when install fails (no dangling state)', async () => {
     const { runner, calls } = makeScriptedRunner([
-      ok(''), // probe: absent
+      probed('aarch64'), // probe: matching machine, no existing file
       ok(), // copy succeeds
       fail(1, 'install: cannot create regular file: Permission denied'), // install fails
       ok(), // cleanup rm
@@ -289,7 +327,7 @@ describe('transferBinary (AC3: atomicity)', () => {
 
   it('never touches vmPath when the copy step fails', async () => {
     const { runner, calls } = makeScriptedRunner([
-      ok(''), // probe
+      probed('aarch64'), // probe
       fail(1, 'failed to copy: connection refused'), // copy fails
     ]);
 
@@ -396,7 +434,7 @@ describe('transferBinary (AC4/AC5: error paths)', () => {
 
 describe('transferGpodTool', () => {
   it('defaults to /usr/local/bin/gpod-tool', async () => {
-    const { runner, calls } = makeScriptedRunner([ok(''), ok(), ok(), ok()]);
+    const { runner, calls } = makeScriptedRunner([probed('aarch64'), ok(), ok(), ok()]);
     const result = await transferGpodTool({
       link: linkTo('podkit-device', runner),
       binaryPath: hostBinary,
@@ -423,12 +461,91 @@ describe('transferGpodTool', () => {
   });
 
   it('is idempotent on sha256 match (skips copy + install)', async () => {
-    const { runner, calls } = makeScriptedRunner([ok(hostSha)]);
+    const { runner, calls } = makeScriptedRunner([probed('aarch64', hostSha)]);
     const result = await transferGpodTool({
       link: linkTo('podkit-device', runner),
       binaryPath: hostBinary,
     });
     expect(result.skipped).toBe(true);
     expect(calls).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Architecture: the artifact has to be able to start on the substrate
+//
+// This is the backstop for a build-cache key that is wrong anyway. Without it
+// the symptom is an `exec format error` partway through a test run, blamed on
+// whichever test invoked the binary first — which sends the reader hunting
+// through the test, the harness and the guest, everywhere except the build
+// that produced the bytes.
+//
+// Neither case below is reachable on a single machine by accident, which is
+// exactly why they are scripted: the substrate's machine type and the
+// artifact's ELF header are both inputs here.
+// ---------------------------------------------------------------------------
+
+describe('transferBinary (artifact arch vs substrate arch)', () => {
+  it('refuses a foreign-arch binary before anything is copied', async () => {
+    const foreign = path.join(tmpRoot, 'podkit-linux-x64');
+    fs.writeFileSync(foreign, fakeElf(EM_X86_64, 'built-for-the-other-machine'));
+    const { runner, calls } = makeScriptedRunner([probed('aarch64')]);
+
+    let caught: unknown;
+    try {
+      await transferBinary({ link: linkTo('podkit-device', runner), binaryPath: foreign });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(ArtifactArchMismatchError);
+    expect((caught as Error).message).toContain('linux-x64');
+    expect((caught as Error).message).toContain('aarch64');
+    // Probe only. No copy, no install — the substrate is left exactly as it
+    // was, which is the difference between a caught mistake and a broken box.
+    expect(calls).toHaveLength(1);
+  });
+
+  it('fires even when the substrate already holds bytes with the same digest', async () => {
+    // Ordering matters: a substrate swapped for one of the other architecture
+    // still has the previous host's binary at vmPath. Checking idempotency
+    // first would sha-match it and skip, leaving a binary that cannot start.
+    const foreign = path.join(tmpRoot, 'podkit-linux-x64');
+    const bytes = fakeElf(EM_X86_64, 'same-bytes-both-sides');
+    fs.writeFileSync(foreign, bytes);
+    const sha = createHash('sha256').update(bytes).digest('hex');
+    const { runner } = makeScriptedRunner([probed('aarch64', sha)]);
+
+    await expect(
+      transferBinary({ link: linkTo('podkit-device', runner), binaryPath: foreign })
+    ).rejects.toBeInstanceOf(ArtifactArchMismatchError);
+  });
+
+  it('refuses a host-native artifact that is not a Linux ELF at all', async () => {
+    // `bin/podkit` from a macOS `bun run compile` sitting where the linux
+    // artifact was expected — a Mach-O, correctly named, entirely unrunnable.
+    const machO = path.join(tmpRoot, 'podkit-linux-arm64-macho');
+    fs.writeFileSync(machO, Buffer.from([0xcf, 0xfa, 0xed, 0xfe, 0x0c, 0x00, 0x00, 0x01]));
+    const { runner } = makeScriptedRunner([probed('aarch64')]);
+
+    await expect(
+      transferBinary({ link: linkTo('podkit-device', runner), binaryPath: machO })
+    ).rejects.toBeInstanceOf(ArtifactArchMismatchError);
+  });
+
+  it('accepts an x86_64 artifact on an x86_64 substrate', async () => {
+    // The point of the slice: an arm64 macOS host naming, checking and
+    // installing an amd64 artifact is an ordinary transfer, not a special case.
+    const foreign = path.join(tmpRoot, 'podkit-linux-x64');
+    fs.writeFileSync(foreign, fakeElf(EM_X86_64, 'amd64-substrate'));
+    const { runner, calls } = makeScriptedRunner([probed('x86_64'), ok(), ok(), ok()]);
+
+    const result = await transferBinary({
+      link: linkTo('podkit-device', runner),
+      binaryPath: foreign,
+    });
+
+    expect(result.skipped).toBe(false);
+    expect(calls).toHaveLength(4);
   });
 });

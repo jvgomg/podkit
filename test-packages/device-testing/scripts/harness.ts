@@ -33,7 +33,7 @@ import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 
 import { createVmProvisioningRunner, ensureRunning, getVm } from '@podkit/lima';
-import { shellQuote, type SubstrateLink } from '@podkit/substrate';
+import { primeTargetArchFromSubstrate, shellQuote, type SubstrateLink } from '@podkit/substrate';
 
 import { createSubstrateLink } from '../src/runners/substrate.js';
 import { installIntoSubstrate } from '../src/runners/substrate-install.js';
@@ -241,11 +241,28 @@ async function cmdInstall(): Promise<number> {
     return 1;
   }
 
-  // 1. Turbo build. PODKIT_HOST_ARCH is hashed into the turbo cache key so a
-  //    shared cache from a different-arch host cannot deliver wrong-arch
-  //    binaries. Set it from process.arch (`arm64` → `arm64`, anything else
-  //    → `x86_64` — `uname -m` convention).
-  process.env['PODKIT_HOST_ARCH'] = process.arch === 'arm64' ? 'arm64' : 'x86_64';
+  // 1. Resolve the target architecture from the substrate itself, and publish
+  //    it. This is the async half of the bootstrapping boundary described in
+  //    `@podkit/substrate`'s `target-arch.ts`: this command already holds a
+  //    link to a running substrate, so it is the right place to pay for the
+  //    one `uname -m` round trip. Everything after this line — the artifact
+  //    path resolvers below, and the turbo child process — reads the answer
+  //    synchronously out of the environment.
+  //
+  //    It was previously derived from `process.arch`, which made host and
+  //    target the same value by construction and is exactly what ADR-029 §4
+  //    decouples. `PODKIT_TARGET_ARCH` is hashed into the cache key of every
+  //    task that produces a Linux binary, so a shared cache from a
+  //    different-arch host cannot deliver wrong-arch binaries.
+  let resolvedArch: string;
+  try {
+    resolvedArch = (await primeTargetArchFromSubstrate({ link })).arch;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[harness:install] could not resolve the target architecture: ${message}`);
+    return 1;
+  }
+  console.log(`[harness:install] target architecture: linux-${resolvedArch} (from ${VM})`);
   console.log('[harness:install] building linux binaries via turbo...');
   const turboResult = spawnSync(
     'bunx',

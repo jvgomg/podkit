@@ -322,7 +322,9 @@ Any `libgpod`, `libgdk_pixbuf`, `libglib` or `libplist` line is a regression in 
 bunx turbo run @podkit/device-testing#build:linux-prebuild --dry-run=json | jq '.tasks[].inputs'
 ```
 
-Both build tasks hash `PODKIT_HOST_ARCH` into the cache key so a shared remote cache cannot surface a wrong-arch binary. `harness:install` sets it from `process.arch`; when invoking `bunx turbo` directly, `export PODKIT_HOST_ARCH=$(uname -m)` first.
+Every task that produces a Linux binary hashes `PODKIT_TARGET_ARCH` into its cache key, so a shared remote cache cannot surface a wrong-arch binary. The variable names the architecture artifacts are built **for**, which is a property of the substrate rather than of the host — `targetArch()` in `@podkit/substrate` resolves it, and `harness:install` sets it by asking the substrate for `uname -m` before it spawns turbo. The root `test:vm` / `test:e2e:docker-dist` / `quality` entry points go through `test-packages/substrate/scripts/turbo.ts`, which materialises the value (configured, else this host's own) so an unset variable cannot hash identically on machines that build different architectures. When invoking `bunx turbo` directly, `export PODKIT_TARGET_ARCH=$(uname -m)` first — the `uname -m` spelling is accepted.
+
+The backstop for a cache key that is wrong anyway is in the transfer: `transferBinary` reads the artifact's ELF `e_machine` and the substrate's `uname -m` in the same probe and throws `ArtifactArchMismatchError` before copying anything. Without it the symptom is an `exec format error` partway through a test run, attributed to whichever test invoked the binary first.
 
 **Debian point-release drift.** `podkit-device.yaml`, `podkit-builder-glibc.yaml` and `podkit-abi-verify.yaml` all pin the same Debian point release via explicit cloud-image URLs, and `substrate-contract.sh` restates it for the doctor. The single source of truth is `SUBSTRATE_DEBIAN_IMAGE_SERIAL` in `test-packages/substrate/src/debian-image.ts`; `debian-image.test.ts` reads all four files back and fails if any disagrees. Bump the constant, run that test, fix what it names, and re-run the manual ABI check.
 

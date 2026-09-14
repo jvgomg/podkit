@@ -24,6 +24,8 @@ set -euo pipefail
 
 VM_NAME="${BUILDER_VM_NAME:-podkit-builder-glibc}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=test-packages/device-testing/scripts/target-arch.sh
+. "$SCRIPT_DIR/target-arch.sh"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 CLI_BIN_DIR="$REPO_ROOT/packages/podkit-cli/bin"
 PODKIT_VM=(bun "$REPO_ROOT/test-packages/lima/src/cli.ts")
@@ -46,14 +48,11 @@ fi
 # image on Intel — `compile.sh` picks the right prebuild from /podkit's
 # packages/libgpod-node/prebuilds based on `process.arch`.
 TARGET_ARCH="$(limactl shell "$VM_NAME" bash -c "uname -m")"
-case "$TARGET_ARCH" in
-  x86_64)  NODE_ARCH=x64 ;;
-  aarch64) NODE_ARCH=arm64 ;;
-  *)
-    echo "ERROR: unsupported builder arch '$TARGET_ARCH'." >&2
-    exit 1
-    ;;
-esac
+NODE_ARCH="$(podkit_normalize_arch "$TARGET_ARCH" 'builder arch')"
+# This builder is a Lima instance on this machine, so it produces its own
+# architecture and nothing else. Refuse loudly when the run targets another —
+# see scripts/target-arch.sh for why a silent success is the worse outcome.
+podkit_assert_target_arch "$NODE_ARCH" "$VM_NAME"
 
 # Build inside a VM-local copy of the source tree, NOT against the macOS-
 # mounted repo. An earlier version of this script ran `bun install` directly

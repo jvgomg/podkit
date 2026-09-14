@@ -180,8 +180,10 @@ This orchestration does **not** cover:
   invoked per-test by the runner; the drift check confirms the script
   shipped into the VM matches host, not that the right state is currently
   applied.
-- **Cross-arch caching.** `PODKIT_HOST_ARCH` is already hashed into the
-  build cache key by `build:linux-binary`; nothing else is needed here.
+- **Cross-arch caching.** `PODKIT_TARGET_ARCH` is hashed into the cache
+  key of every task that produces a Linux binary, and the artifact's ELF
+  header is checked against the substrate's `uname -m` at transfer time;
+  nothing else is needed here.
 
 ---
 

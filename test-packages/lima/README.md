@@ -468,8 +468,11 @@ bun run test:unit --filter @podkit/lima
 
 - `src/instance-status.ts` — `running` \| `stopped` \| `missing` from
   `limactl list`.
-- `src/binary-paths.ts` — host-side resolvers for the built podkit, daemon,
-  `gpod-tool` and musl binaries.
+- Host-side resolvers for the built podkit, daemon, `gpod-tool` and musl
+  binaries now live in `@podkit/substrate` (`src/binary-paths.ts` there) and are
+  re-exported from this package's index. The architecture in those filenames is
+  a property of the substrate an artifact has to start on, not of the
+  provisioner that made the box — see ADR-029 §4.
 - `src/streaming-runner.ts` — a `SubprocessRunner` that streams output live, so a
   multi-minute cold VM create shows its provisioning log and an operator can tell
   a slow VM from a wedged one. Also owns the no-output liveness watchdog and the

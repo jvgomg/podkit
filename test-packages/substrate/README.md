@@ -23,8 +23,50 @@ path at module load — see [Two traps](#two-traps) below.
 |--------|------|
 | `src/registry.ts` | The typed substrate registry and the `provisioner` discriminator. |
 | `src/selection.ts` | Which substrate *this machine* drives, resolved from configuration. |
+| `src/link.ts`, `src/link-ssh.ts` | The substrate link — how commands and files reach a substrate. |
 | `src/debian-image.ts` | The pinned Debian cloud image, as one constant. |
+| `src/target-arch.ts` | The architecture artifacts are built **for**, and the boundary between resolving one and asking a substrate for one. |
+| `src/artifact-arch.ts` | Whether a compiled artifact can actually start on a given substrate. |
+| `src/binary-paths.ts` | Host-side paths of the built Linux artifacts, named per target architecture. |
 | `src/paths.ts` | `repoRoot()` — the repo anchor the registry resolves YAML paths against. |
+| `scripts/turbo.ts` | `turbo`, with the target architecture materialised into the environment it hashes. |
+
+---
+
+## Target architecture
+
+Host architecture used to imply target architecture: one function mapped
+`process.arch` to a binary filename suffix and seven resolvers called it, so an
+arm64 macOS host could not *name* an amd64 artifact, let alone produce one.
+Target architecture is now resolved from the selected substrate, with host
+architecture only as the default when no substrate was consulted
+([ADR-029](../../docs/adr/adr-029-portable-device-substrate.md) §4).
+
+Resolving it has two halves, and they are kept apart on purpose:
+
+- **`targetArch()` is synchronous and never probes.** Every path resolver calls
+  it, several of them inside turbo tasks where no link exists, and one of them
+  runs before the command that *starts* the substrate. A hidden probe there
+  would turn "where would this binary be?" into a network round trip that fails
+  on a stopped box. It reads `PODKIT_TARGET_ARCH` and falls back to the host.
+- **`primeTargetArchFromSubstrate()` is asynchronous and does probe.** It is
+  called once, by an entry point that already holds a link, before any artifact
+  path is resolved or any build is spawned, and it publishes the answer into the
+  environment.
+
+The environment variable is the carrier rather than a private cache because the
+consumers are not all in this process: the turbo tasks that compile the binaries
+are child processes, and the same value has to reach them **and** be hashed into
+their cache key. `turbo.json` declares `PODKIT_TARGET_ARCH` as an input of every
+task producing a Linux binary — without which turbo would replay an arm64
+artifact into an amd64 run, and the artifact filenames already carrying the arch
+means nothing errors. The failure is a silently wrong binary.
+
+`assertArtifactArch()` is the backstop for that cache key being wrong anyway.
+The binary transfer reads the artifact's ELF `e_machine` and the substrate's
+`uname -m` in one probe and refuses the install, because the alternative symptom
+is an `exec format error` partway through a test run, blamed on whichever test
+invoked the binary first.
 
 ---
 
