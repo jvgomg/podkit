@@ -1,6 +1,6 @@
 {
   "name": "@podkit/device-testing-daemon",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "private": true,
   "description": "FunctionFS userspace daemon: synthesises iPod-shaped USB devices on Linux dummy_hcd for VM tests (ADR-016). Compiled to a single self-contained binary via `bun build --compile`; consumed by @podkit/device-testing's lima-test-vm runner.",
   "type": "module",
