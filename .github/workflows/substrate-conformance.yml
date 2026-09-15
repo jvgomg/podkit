@@ -1,0 +1,215 @@
+name: Substrate Conformance (backstop)
+
+# The conformance backstop for the device substrate contract (doc-060 slice 6,
+# task-516). It answers one question: is `substrate-doctor.sh` satisfiable by a
+# machine nobody in this project owns, or has the contract quietly become
+# "whatever one maintainer's box happens to be"?
+#
+# **This is a backstop, not the gate** (CONTEXT.md, "Backstop"). It is judged on
+# what it stops from escaping, never on being the place work gets verified —
+# ci.yml is the test backstop, `bun run quality` is the gate, and neither of
+# them depends on this workflow. It is deliberately absent from ci.yml's
+# `ci-passed` aggregate for that reason.
+#
+# ## The premise this workflow was written to test — and disproved
+#
+# ADR-028 §6 and task-516 both assert that "GitHub runners are full VMs that can
+# `modprobe dummy_hcd`", and therefore that a hosted runner plausibly satisfies
+# the contract as-is. **It does not.** Ubuntu does not enable
+# `CONFIG_USB_DUMMY_HCD` in any kernel flavour, so no `linux-modules-extra`
+# package carries the module and there is nothing to modprobe. A stock runner
+# additionally fails the contract on its base OS (Ubuntu, not Debian 12) and on
+# every negative assertion at once, since the runner image ships bun, node, npm
+# and several dozen `-dev` packages by design.
+#
+# That finding is not asserted from a changelog — the `premise` job below
+# measures it on every run and publishes the verdict, so it flips on its own if
+# GitHub ever ships the module. See docs/environments/device-substrate-ci.md.
+#
+# ## What conformance is therefore proven against
+#
+# A Debian 12 guest booted on the runner under QEMU/KVM, from the same pinned
+# cloud image the Lima and Proxmox substrates use, seeded by the same committed
+# cloud-init template, reached over plain ssh. Say plainly what that is and is
+# not: it is **not** "a hosted runner passes the contract", and the header of
+# any summary claiming otherwise would be wrong. It **is** a substrate on
+# hardware and a hypervisor this project does not own, provisioned by the same
+# two scripts the other two paths run, which is the drift this backstop exists
+# to catch. It also exercises `cloud-init.user-data.yaml`, which is otherwise
+# only ever rendered by hand on a PVE host.
+#
+# ## usb-synth on CI is still undecided
+#
+# Booting a guest that has `dummy_hcd` makes the `usb-synth` E2E cells newly
+# *possible* here. This workflow does not run one and does not decide the
+# question — ADR-028 §6 leaves it open deliberately, and task-516 is explicit
+# that it is not the task to close it. Adding a usb-synth cell to this workflow
+# is a decision with its own cost (a 3-10 minute floor per iteration, against an
+# explicit requirement for rapid local loops), not a natural extension of it.
+
+on:
+  # Paths-filtered rather than run on every push. The contract cannot drift
+  # without one of these files changing, and the job costs a 443 MB download
+  # plus a guest boot — too much to spend on a docs typo.
+  pull_request:
+    paths:
+      - 'test-packages/device-testing/scripts/substrate-contract.sh'
+      - 'test-packages/device-testing/scripts/provision-substrate.sh'
+      - 'test-packages/device-testing/scripts/substrate-doctor.sh'
+      - 'test-packages/device-testing/substrate/**'
+      - 'test-packages/substrate/src/debian-image.ts'
+      - '.github/workflows/substrate-conformance.yml'
+  # The contract can also rot without anyone touching it: Debian can pull the
+  # pinned image, a package can leave bookworm, GitHub can change the runner
+  # kernel. A weekly run is what turns "it worked when we wrote it" into a
+  # standing claim. Scheduled runs only fire on the default branch.
+  schedule:
+    - cron: '17 5 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: substrate-conformance-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  premise:
+    name: Premise (informational) — is a stock runner a substrate?
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Asked separately from the doctor because it is the specific claim
+      # ADR-028 §6 makes, and because the answer is a one-liner that survives
+      # being read by someone who does not want the full assertion dump.
+      - name: Probe the runner kernel for dummy_hcd
+        run: |
+          echo "kernel: $(uname -r)"
+          if modinfo dummy_hcd 2>/dev/null; then
+            echo "dummy_hcd: PRESENT"
+          else
+            echo "dummy_hcd: ABSENT — not built by this kernel flavour"
+          fi
+          echo "udc slots: $(find /sys/class/udc -mindepth 1 -maxdepth 1 2>/dev/null | wc -l)"
+
+      # Never fails the job. Its output IS the deliverable: an honest, current
+      # list of which contract assertions a hosted runner cannot satisfy, kept
+      # by a machine rather than by a comment somebody has to remember to
+      # update. `|| true` is the whole trick — the doctor exits 1 by design here.
+      - name: Run substrate-doctor.sh on the bare runner
+        run: |
+          {
+            echo '## Premise: can a stock `ubuntu-latest` runner be a substrate?'
+            echo
+            echo 'Informational. This job never fails — see the workflow header.'
+            echo
+            echo '```'
+            bash test-packages/device-testing/scripts/substrate-doctor.sh 2>&1 || true
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+  conformance:
+    name: Conformance backstop — Debian 12 guest on the runner
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      SUBSTRATE_WORK_DIR: ${{ runner.temp }}/podkit-ci-substrate
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # bun only. The image URL is resolved from `@podkit/substrate`'s
+      # `debian-image.ts` rather than restated in this file, which is the whole
+      # reason that module exists — the pin used to live in four places held
+      # together by comments. `debian-image.ts`'s only import is `import type`,
+      # so bun transpiles it away and no `bun install` is needed here.
+      - name: Set up toolchain
+        uses: jdx/mise-action@v4
+        with:
+          install_args: bun
+
+      - name: Resolve the pinned Debian cloud image
+        id: image
+        run: |
+          url="$(bun -e 'import { substrateDebianImageUrl } from "./test-packages/substrate/src/debian-image.ts"; console.log(substrateDebianImageUrl("amd64"))')"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "resolved: $url"
+
+      # Recommends are deliberately *not* stripped here, unlike everywhere else
+      # in this repo's apt calls. qemu-system-x86's firmware blobs move between
+      # Depends and Recommends across releases, and a QEMU that cannot find a
+      # BIOS fails at boot with a message that looks nothing like a missing
+      # package. The contract's no-extra-packages rule is about the substrate,
+      # not about the runner driving it.
+      - name: Install QEMU and cloud-image-utils
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq qemu-system-x86 qemu-utils cloud-image-utils
+
+      # Hosted runners expose /dev/kvm but do not put the runner user in the
+      # `kvm` group, and a group added with usermod does not apply to the
+      # already-running shell. The udev rule is the documented way round that.
+      - name: Grant access to /dev/kvm
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules > /dev/null
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm
+
+      # The image is downloaded fresh each run rather than cached. The qcow2 is
+      # ~443 MB and already compressed, so an entry would spend most of half a
+      # gigabyte of the repo's shared 10 GB cache quota — which ci.yml's turbo
+      # cache and the two prebuild workflows are already competing for — to save
+      # a download that takes seconds on a runner's network, in a workflow that
+      # runs weekly.
+      - name: Boot a Debian 12 substrate
+        env:
+          SUBSTRATE_IMAGE_URL: ${{ steps.image.outputs.url }}
+        run: test-packages/device-testing/substrate/ci/boot-substrate.sh
+
+      # The conformance claim lives in this step, not in the workflow's overall
+      # result: exit zero here means a Debian box provisioned by the shared
+      # contract scripts satisfies the doctor on hardware this project does not
+      # own. Everything before it is setup and everything after it is destructive.
+      - name: Provision and run the doctor (exit zero required)
+        run: test-packages/device-testing/substrate/ci/check-contract.sh
+
+      # Last, because it poisons the guest: a box that has had build-essential on
+      # it can no longer vouch for the linkage claims the substrate exists to
+      # make. Exercised at all because the doctor's negative half never fires in
+      # normal use — nobody installs gcc on a substrate on purpose — so it is the
+      # half most likely to have rotted unnoticed.
+      - name: Assert the doctor rejects a non-conforming box, by name
+        run: test-packages/device-testing/substrate/ci/assert-doctor-rejects.sh
+
+      - name: Record the verdict
+        if: always()
+        run: |
+          {
+            echo '## Conformance backstop'
+            echo
+            echo "Result: **${{ job.status }}**"
+            echo
+            echo 'Not the gate. This proves the substrate contract is satisfiable'
+            echo 'on a machine this project does not own — it does not verify any'
+            echo 'podkit behaviour, and nothing merges or fails to merge on it.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # The only evidence of a guest that never reached sshd. Named files rather
+      # than the directory: $SUBSTRATE_WORK_DIR also holds the ephemeral private
+      # key, and an artifact is a published thing.
+      - name: Upload guest console log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: substrate-guest-console
+          path: |
+            ${{ runner.temp }}/podkit-ci-substrate/console.log
+            ${{ runner.temp }}/podkit-ci-substrate/user-data.yaml
+          if-no-files-found: warn

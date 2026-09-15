@@ -161,6 +161,18 @@ where it should report skips.
 runners are full VMs that can `modprobe dummy_hcd` — and is deliberately left
 open rather than decided here.
 
+> **Corrected by measurement (2026-09-15):** the reason given above is wrong. A
+> hosted runner *is* a full VM and still cannot `modprobe dummy_hcd`: Ubuntu does
+> not enable `CONFIG_USB_DUMMY_HCD` in any kernel flavour, so no
+> `linux-modules-extra-*` package carries the module. A stock runner also fails
+> the contract on its base OS and on every negative assertion, since the runner
+> image ships bun, node, npm and dozens of `-dev` packages by design. The
+> decision — `usb-synth` on CI stays open — is unchanged, and `usb-synth`
+> *is* still reachable, but via a Debian guest booted on the runner rather than
+> on the runner itself, so the open question is cost rather than capability.
+> Measured continuously by `.github/workflows/substrate-conformance.yml`; see
+> [device-substrate-ci.md](../environments/device-substrate-ci.md).
+
 ### 7. Vocabulary
 
 **Substrate**, **provisioner**, **substrate link**, **harness** — defined in

@@ -11,6 +11,11 @@ name: CI
 # Unit, Integration, host-binary·local-dir·dir and host-binary·docker-sidecar·dir.
 # Not test:vm — there is no device substrate here, and usb-synth on CI is
 # deliberately deferred by ADR-028 §6.
+#
+# A *different* backstop lives in substrate-conformance.yml: it boots a Debian 12
+# substrate on a runner to prove the device substrate contract is satisfiable by
+# a machine nobody here owns. It verifies no podkit behaviour and is deliberately
+# not part of `ci-passed` below.
 
 on:
   pull_request:
