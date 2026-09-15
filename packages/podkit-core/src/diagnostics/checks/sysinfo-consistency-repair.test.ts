@@ -1,6 +1,6 @@
 /**
  * Repair-path unit tests for the SysInfoExtended consistency diagnostic
- * check (TASK-303 AC #14 / #15).
+ * check.
  *
  * The repair on `sysinfoConsistencyCheck` is shared verbatim with
  * `sysInfoExtendedCheck.repair` — it resolves a live USB device from the
@@ -16,17 +16,17 @@
  * over mock.module()") so this file does not touch Bun's process-global
  * module registry.
  *
- * AC mapping:
- *   - AC #14: non-dry-run calls `ensureSysInfoExtended` exactly once with
- *     the resolved USB fingerprint; subsequent `checkSysinfoConsistency`
+ * Behaviours pinned:
+ *   - non-dry-run calls `ensureSysInfoExtended` exactly once with the
+ *     resolved USB fingerprint; a subsequent `checkSysinfoConsistency`
  *     against the newly-written XML reports pass.
- *   - AC #15: dry-run returns a "Dry run:" summary, does NOT call
+ *   - dry-run returns a "Dry run:" summary, does NOT call
  *     `ensureSysInfoExtended`, and does NOT modify the simulated on-disk
  *     store.
  *
- * VM-test deferral: a real-USB end-to-end repair → re-check loop is
- * deferred to TASK-322.05.01's FunctionFS daemon. Unit coverage here
- * is sufficient to lock the repair-glue contract.
+ * VM-test deferral: a real-USB end-to-end repair → re-check loop is deferred
+ * until the FunctionFS gadget daemon can synthesise a device to repair.
+ * Unit coverage here is sufficient to lock the repair-glue contract.
  */
 
 import { describe, it, expect, mock, beforeEach } from 'bun:test';
@@ -125,9 +125,9 @@ beforeEach(() => {
   ensureSysInfoReturn = DEFAULT_ENSURE_RESULT;
 });
 
-// ── AC #14: repair overwrites file; subsequent check passes ──────────────────
+// ── Repair overwrites the file; the subsequent check passes ──────────────────
 
-describe('sysinfoConsistencyCheck.repair — overwrite path (AC #14)', () => {
+describe('sysinfoConsistencyCheck.repair — overwrite path', () => {
   it('calls ensureSysInfoExtended exactly once with the resolved USB fingerprint', async () => {
     const result = await runConsistencyRepair(makeRepairCtx());
 
@@ -163,8 +163,8 @@ describe('sysinfoConsistencyCheck.repair — overwrite path (AC #14)', () => {
     // Simulate the post-repair filesystem state by reading a real persona
     // XML (the captured TERAPOD SysInfoExtended) and feeding it back into
     // `checkSysinfoConsistency` via the injectable fsReader. This proves
-    // the end-to-end "repair → check passes" contract that AC #14 calls
-    // for, without touching the real filesystem.
+    // the end-to-end "repair → check passes" contract without touching the
+    // real filesystem.
     const repairResult = await runConsistencyRepair(makeRepairCtx());
     expect(repairResult.success).toBe(true);
 
@@ -221,9 +221,9 @@ describe('sysinfoConsistencyCheck.repair — overwrite path (AC #14)', () => {
   });
 });
 
-// ── AC #15: dry-run prints planned action without modifying ──────────────────
+// ── Dry-run prints the planned action without modifying anything ─────────────
 
-describe('sysinfoConsistencyCheck.repair — dry-run path (AC #15)', () => {
+describe('sysinfoConsistencyCheck.repair — dry-run path', () => {
   it('returns a Dry-run summary with the resolved USB bus + devnum', async () => {
     const result = await runConsistencyRepair(makeRepairCtx(), { dryRun: true });
 

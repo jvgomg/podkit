@@ -3,7 +3,7 @@
  *
  * The IpodDatabase interface is a minimal contract that the menu system
  * depends on. It will be implemented by IpodReader from @podkit/ipod-db
- * once that package exists (TASK-266).
+ * once that package exists.
  */
 
 // ---------------------------------------------------------------------------

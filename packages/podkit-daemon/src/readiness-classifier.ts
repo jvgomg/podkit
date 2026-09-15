@@ -8,7 +8,7 @@
  * result so the user gets an actionable notification instead of a generic
  * "sync failed".
  *
- * Because the CLI hard-errors on an unidentified iPod (TASK-440) and on an
+ * Because the CLI hard-errors on an unidentified iPod and on an
  * unsupported generation, the daemon inherits correct refusal behaviour for
  * free; this module turns those typed exit codes into clear guidance.
  *

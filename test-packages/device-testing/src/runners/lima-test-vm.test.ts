@@ -5,9 +5,11 @@
  * `limactl` invocation. No real `limactl`, no real VM. We assert the
  * sequence + shape of calls and the helper's return values + thrown errors.
  *
- * Covers ACs from TASK-322.04 — see the spec for the full list. AC #8 (live
- * VM smoke test) is exercised by the VM integration tests in
- * TASK-322.06, not here.
+ * Covers the runner's public surface: instance status, `runtime.prepare`
+ * (boot, binary + sidecar transfer), `runtime.run`, `runtime.teardown`,
+ * sidecar + backing-file staging, and the daemon lifecycle (start / wait
+ * for enumeration / stop). A live-VM smoke test is exercised by the VM
+ * integration tests, not here.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
@@ -1032,7 +1034,7 @@ describe('startDaemonForPersona', () => {
   });
 
   // -------------------------------------------------------------------------
-  // The enumeration guarantee (TASK-504)
+  // The enumeration guarantee
   //
   // `systemctl start` is Type=simple: it returns at daemon exec(), 2-3s before
   // the kernel enumerates the gadget. A caller handed a daemon on an empty bus

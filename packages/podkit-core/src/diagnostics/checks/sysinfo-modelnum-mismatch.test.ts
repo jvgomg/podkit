@@ -1,6 +1,6 @@
 /**
  * Unit tests for the SysInfo ModelNumStr vs firmware-serial consistency
- * check (TASK-317.04).
+ * check.
  *
  * Mirrors the test shape of `sysinfo-consistency.test.ts`: the check is
  * driven through an injected classic-SysInfo filesystem reader + injected
@@ -26,9 +26,8 @@
  *   - Repair refuses when ModelNumStr line is missing.
  *   - Repair short-circuits when on-disk value already matches firmware.
  *
- * Hardware verification (per the task ACs #6 and #7) is deferred to
- * TASK-319 — this unit coverage is sufficient for the check + repair
- * glue.
+ * Verification against real hardware is deferred — this unit coverage is
+ * sufficient for the check + repair glue, which is all that lives here.
  */
 
 import { describe, it, expect } from 'bun:test';

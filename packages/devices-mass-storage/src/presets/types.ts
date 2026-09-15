@@ -32,7 +32,8 @@ export interface ContentPaths {
  *
  * This is the canonical home for `DEFAULT_CONTENT_PATHS`. The copy in
  * `podkit-core/device/mass-storage-utils.ts` re-exports from here for
- * backward-compatibility and is scheduled for removal at m-8.
+ * backward-compatibility and is scheduled for future removal once callers
+ * no longer need the re-export.
  */
 export const DEFAULT_CONTENT_PATHS: ContentPaths = {
   musicDir: 'Music',

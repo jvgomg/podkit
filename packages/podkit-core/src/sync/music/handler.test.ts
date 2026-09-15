@@ -1635,7 +1635,7 @@ describe('MusicHandler', () => {
       };
     }
 
-    // Regression test for TASK-355.04: an MP3 source on a device that natively
+    // Regression: an MP3 source on a device that natively
     // plays MP3 is direct-copied by the classifier, not transcoded to the
     // resolvedLossyCodec. The pre-fix logic assumed any lossy source would be
     // transcoded with `resolvedLossyCodec` and fired a spurious `codec-changed`
@@ -1666,7 +1666,7 @@ describe('MusicHandler', () => {
       expect(codecChange).toBeUndefined();
     });
 
-    // Regression for TASK-395: iPod portable MP3 round-trip with quality=max
+    // Regression: iPod portable MP3 round-trip with quality=max
     // and the matrix's `prefer-copy` codec config (lossy=['aac'],
     // lossless=['source']). The second sync was re-firing upgrade-direct-copy
     // with reason 'codec-changed' despite an identical mp3 codec on both

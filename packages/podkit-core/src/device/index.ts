@@ -160,7 +160,7 @@ export {
   STAGE_DISPLAY_NAMES,
 } from './readiness.js';
 
-// Cross-platform filesystem policy (HFS+-on-Linux refusal — TASK-317.12)
+// Cross-platform filesystem policy (HFS+-on-Linux refusal)
 export {
   isFilesystemUnsupportedHere,
   formatHfsplusOnLinuxRefusal,

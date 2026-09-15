@@ -71,7 +71,7 @@ describe('assertKnownIpodModel', () => {
 });
 
 // =============================================================================
-// Remediation text (AC#2)
+// Remediation text — the error must name the commands that fix it
 // =============================================================================
 
 describe('UnknownIpodModelError remediation', () => {

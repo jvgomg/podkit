@@ -44,8 +44,8 @@ export const sonyNwHd5: DevicePersona = {
     productId: 0x0233,
     // No USB serial — `iSerialNumber = 0` (confirmed via `raw/ioreg.txt`).
     // v2 schema migrates from the v1 `''` workaround to explicit `null` —
-    // NW-HD5 is the canonical example for the nullable-serial gap Gap 3
-    // in TASK-332.
+    // NW-HD5 is the canonical example of a device with no USB serial at
+    // all, which the v1 workaround could not represent.
     deviceSerial: null,
     deviceClass: 0,
     deviceSubclass: 0,

@@ -111,7 +111,7 @@ run_tests() {
     # through to the test run.
     bun run --cwd packages/libgpod-node build:native
 
-    # Runtime smoke (TASK-472): compile the single-file binary and drive it
+    # Runtime smoke: compile the single-file binary and drive it
     # through the native libgpod path + the libudev-less firmware-inquiry
     # degrade — the same shared script CI runs, now on this VM's real libc.
     # Run it BEFORE the full suite so an unrelated flaky package test can't

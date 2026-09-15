@@ -169,7 +169,7 @@ function pushIpodRow(
   if (device.matchedBy === 'usb-only') {
     // USB-only iPod (no block-device representation).
     //
-    // Header label preference (TASK-317.03 sub-behaviour #4):
+    // Header label preference:
     //   1. resolved cascade model name (`iPod touch 5th generation`, …)
     //   2. friendly fallback for iOS-range PIDs not in IPOD_USB_IDS
     //      (modern iPhone/iPad PIDs that classify as "iOS device")

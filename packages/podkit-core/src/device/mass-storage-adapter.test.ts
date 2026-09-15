@@ -2294,7 +2294,7 @@ describe('MassStorageAdapter', () => {
     });
 
     test('copyTrackFile wraps raw fs errors as CopyError carrying errno', async () => {
-      // Pins TASK-412 estimate-drift contract: a raw fs error thrown out of
+      // Pins the error-wrapping contract: a raw fs error thrown out of
       // `MassStorageTrack.copyFile` (from a missing source path → ENOENT)
       // is wrapped at the adapter boundary so the executor's categorizer
       // reads `category: 'copy'` off the class instead of falling back to
@@ -2347,7 +2347,7 @@ describe('MassStorageAdapter', () => {
       // `save()` later threw ENOENT trying to write tags into a file that
       // didn't exist. Old behaviour masked it because `CopyError` retried
       // once via the `'copy'` category (1 retry under DEFAULT_RETRY_CONFIG)
-      // and the retry often succeeded. After TASK-416's ENOSPC override
+      // and the retry often succeeded. Now that the ENOSPC override
       // routes `CopyError` ENOSPC to `'space'` (0 retries), the second
       // ENOENT lands as a distinct noise error in `errors[]`. Pin the
       // rollback so the same path can't recur.
@@ -2816,7 +2816,7 @@ describe('MassStorageAdapter', () => {
   //   - The cover.jpg is registered in `managedFiles` so the manifest tracks
   //     it across sessions and a future doctor walk can recognise it as
   //     podkit-owned (rather than treating it as an unmanaged orphan).
-  describe('sidecar artwork writes (TASK-370)', () => {
+  describe('sidecar artwork writes (cover.jpg beside the audio, tracked in the manifest)', () => {
     const SIDECAR_CAPABILITIES: DeviceCapabilities = {
       artworkSources: ['sidecar', 'embedded'],
       artworkMaxResolution: 320,

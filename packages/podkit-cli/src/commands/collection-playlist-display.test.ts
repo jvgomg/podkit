@@ -1,5 +1,5 @@
 /**
- * Tests for playlist constraint display in collection commands (task-434.04).
+ * Tests for playlist constraint display in collection commands.
  *
  * Covers:
  *   - `collection list` table: PLAYLIST column shows name or '-'

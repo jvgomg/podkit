@@ -263,7 +263,7 @@ describe('runDeviceInfo: behaviour past openDevice', () => {
     ]);
   });
 
-  // ── settings block — TASK-317.09 redesign ───────────────────────────────
+  // ── settings block redesign ──────────────────────────────────────────────
   //
   // The new `settings` block at the top of the JSON envelope replaces the
   // legacy top-level `device.quality` / `device.audioQuality` /

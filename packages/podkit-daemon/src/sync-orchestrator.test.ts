@@ -783,7 +783,7 @@ describe('SyncOrchestrator with mass-storage no-op runners', () => {
 
       await orchestrator.handleDeviceAppeared(makeDevice());
 
-      // The daemon inherits the CLI's refusal (TASK-440) and turns it into a
+      // The daemon inherits the CLI's refusal and turns it into a
       // clear, actionable notification rather than a scary generic failure.
       expect(notifications.some((n) => n.title === 'Sync Error')).toBe(false);
       const guidance = notifications.find((n) => n.body.includes('device add'));

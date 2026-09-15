@@ -15,8 +15,7 @@
  * personas with `massStorageBackingFile: null`) lives in
  * `../usb-enumeration.ts` (`enumerateUsb`, which reads
  * `/sys/bus/usb/devices/` directly) and is composed with
- * `scan({ kinds: ['ipod'] })` by the `device scan` CLI runner. See TASK-334
- * for the rationale: the join
+ * `scan({ kinds: ['ipod'] })` by the `device scan` CLI runner. The join
  * happens at the scan layer so the same composition works on macOS, where
  * the USB walk reads `system_profiler` output.
  */
@@ -165,7 +164,7 @@ export function parseLsblkJson(jsonString: string): PlatformDeviceInfo[] {
   const devices: PlatformDeviceInfo[] = [];
 
   /**
-   * Build the discriminated mount-state union (TASK-340 schema v2). Returns
+   * Build the discriminated mount-state union. Returns
    * either `{ isMounted: true, mountPoint }` or `{ isMounted: false }` so
    * the caller cannot accidentally emit the mixed
    * `{ isMounted: true, mountPoint: undefined }` shape the old schema

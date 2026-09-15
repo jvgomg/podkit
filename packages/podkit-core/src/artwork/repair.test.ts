@@ -549,7 +549,7 @@ describe('rebuildArtworkDatabase', () => {
     });
   });
 
-  describe('adapter artwork fallback (TASK-142)', () => {
+  describe('adapter artwork fallback (adapter-supplied bytes when extraction finds no embedded picture)', () => {
     it('uses adapter.getArtwork() when extractArtwork returns null (e.g. directory sidecar)', async () => {
       const ipodTracks = [makeIpodTrack({ artist: 'Artist', title: 'Song', album: 'Album' })];
       const sourceTracks = [

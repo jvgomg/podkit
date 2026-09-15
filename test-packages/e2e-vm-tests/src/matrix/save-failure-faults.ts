@@ -130,7 +130,7 @@ async function shAsRootBestEffort(runtime: TestRuntime, body: string): Promise<v
 const TRACK_READONLY: FaultSpec = {
   id: 'track-readonly',
   description:
-    "chattr +i on the target audio file after first sync — second sync's in-place tag write hits EPERM. The ext4 immutable bit blocks unlink AND rename of the target inode (and rename-onto-target), so the tag-writer's tmp+rename atomic flow trips EPERM instead of the chmod 0444 EACCES it relied on before TASK-376's atomicWriteFileWithSync routing.",
+    "chattr +i on the target audio file after first sync — second sync's in-place tag write hits EPERM. The ext4 immutable bit blocks unlink AND rename of the target inode (and rename-onto-target), so the tag-writer's tmp+rename atomic flow trips EPERM instead of the chmod 0444 EACCES it relied on before the writer moved to atomic tmp+rename routing.",
   preseed: 'first-sync',
   async apply(runtime, ctx) {
     // The target file must exist before chattr — `preseed: 'first-sync'`
@@ -139,7 +139,7 @@ const TRACK_READONLY: FaultSpec = {
     // call this apply() to flip the immutable bit before the second sync.
     //
     // chmod 0444 USED to block tag writes (the writer opened the target
-    // file for write directly). After TASK-376, `TagLibTagWriter` reads the
+    // file for write directly). Since then, `TagLibTagWriter` reads the
     // file, mutates a buffer, writes a sibling `.podkit-tmp`, fsyncs it,
     // then `renameat()` over the target. `renameat()` honours parent-dir
     // permissions, not the source/target file perms — so chmod 0444 on the

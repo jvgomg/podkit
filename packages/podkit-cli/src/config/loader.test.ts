@@ -1108,7 +1108,7 @@ skipUpgrades = "yes"
       });
 
       // -----------------------------------------------------------------------
-      // DeviceConfig.unsupported — rich shape (TASK-317.03 follow-up)
+      // DeviceConfig.unsupported — rich shape
       // -----------------------------------------------------------------------
 
       it('parses device unsupported as a rich inline-table object', () => {

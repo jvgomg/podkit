@@ -24,9 +24,9 @@ export interface AudioNormalization {
   trackGain?: number;
   /** ReplayGain track peak, linear scale (e.g., 0.988) */
   trackPeak?: number;
-  /** ReplayGain album gain in dB — reserved for TASK-253 */
+  /** ReplayGain album gain in dB — parsed but not yet consumed by the pipeline */
   albumGain?: number;
-  /** ReplayGain album peak, linear scale — reserved for TASK-253 */
+  /** ReplayGain album peak, linear scale — parsed but not yet consumed by the pipeline */
   albumPeak?: number;
   /** iPod Sound Check integer (from iTunNORM or computed from ReplayGain) */
   soundcheckValue?: number;

@@ -9,8 +9,8 @@
  * - `scope: 'database-health'` → renders under "Database Health".
  *
  * `scope` is a required field on `DiagnosticCheck` — every check must declare
- * which section it renders into, with no default fallback (Approach A from
- * the TASK-317.08 follow-up).
+ * which section it renders into, with no default fallback — an unscoped
+ * check is a compile error, not a check that lands in a default section.
  *
  * Also enforces the iPod-only gating for `iPod Firmware Inquiry Methods`
  * so it doesn't surface on Echo Mini / other mass-storage devices where
@@ -76,7 +76,7 @@ const EXPECTATIONS: ReadonlyArray<Expectation> = [
     // Host-global: reaps abandoned `<tmpdir>/podkit-transcode-<uuid>/`
     // directories left behind by SIGKILLed syncs. Applies to both device
     // types because the residue is independent of which device is plugged
-    // in (added by TASK-397 + ADR-018 follow-up work).
+    // in (added alongside the ADR-018 follow-up work).
     check: debrisTranscodeTmpCheck,
     scope: 'system',
     applicableTo: ['ipod', 'mass-storage'],
@@ -86,7 +86,7 @@ const EXPECTATIONS: ReadonlyArray<Expectation> = [
   { check: artworkResetCheck, scope: 'database-health', applicableTo: ['ipod'] },
   { check: orphanFilesCheck, scope: 'database-health', applicableTo: ['ipod'] },
   {
-    // TASK-376: surfaces `.podkit-tmp` residue under `iPod_Control/`.
+    // Surfaces `.podkit-tmp` residue under `iPod_Control/`.
     // Split from `orphan-files` so debris (always podkit-owned) gets safe
     // non-interactive repair while orphans (user-owned) stay confirmation-gated.
     check: debrisFilesIpodCheck,
@@ -105,7 +105,7 @@ const EXPECTATIONS: ReadonlyArray<Expectation> = [
     applicableTo: ['mass-storage'],
   },
   {
-    // TASK-397: split from `orphan-files-mass-storage` so the orphan vs
+    // Split from `orphan-files-mass-storage` so the orphan vs
     // debris repair-confirmation gating could diverge — debris is always
     // podkit-owned (`.podkit-tmp`, `.Audio file`) so its repair runs
     // non-interactively, unlike orphans (potentially pre-podkit content).

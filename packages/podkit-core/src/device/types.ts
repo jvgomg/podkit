@@ -17,7 +17,7 @@ import type { DeviceAssessment } from './assessment.js';
  * VM-test personas with no backing image) flow through `IpodClassification`
  * separately and never become PDI values.
  *
- * **Schema v2 (TASK-340).** PDI is a sub-object record with a discriminated
+ * **Schema v2.** PDI is a sub-object record with a discriminated
  * mount state. Each cohesive group lives under its own sub-object so the
  * type system enforces co-presence:
  *
@@ -35,7 +35,7 @@ import type { DeviceAssessment } from './assessment.js';
  *   `reconcileDiscoveredDevices`.
  * - **Media type** (`mediaType?: string`) — top-level; populated by macOS only.
  *
- * **Migration note (v1 → v2, TASK-340).** Pre-v2 PDI had flat fields:
+ * **Migration note (v1 → v2).** Pre-v2 PDI had flat fields:
  *   - `size: number` → `storage.sizeBytes: number`
  *   - `blockSizeBytes?: number` → `storage.blockSizeBytes?: number`
  *   - `filesystem?: string` → `storage.filesystem?: string`
@@ -130,8 +130,7 @@ export interface PlatformDeviceStorage {
    * Partition layout of the whole disk this partition belongs to. Surfaced
    * from `lsblk -J` on Linux and `diskutil list -plist` on macOS during
    * device enumeration. Used by the readiness pipeline's partition-stage
-   * details to make single- vs dual-partition iPod layouts observable
-   * (TASK-338).
+   * details to make single- vs dual-partition iPod layouts observable.
    *
    * Cross-platform asymmetry: Linux populates `filesystem` from `fstype`;
    * macOS populates it from diskutil's "File System Personality". Consumers

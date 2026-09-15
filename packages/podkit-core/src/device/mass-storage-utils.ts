@@ -98,7 +98,7 @@ export const VIDEO_EXTENSIONS = new Set(['.m4v', '.mp4', '.mov', '.avi', '.mkv']
  * adapter-failure debris (separate from regular orphans, which are typically
  * user-placed files podkit didn't write).
  *
- * - `.Audio file` — legacy pre-TASK-358.01 debris (a `getFileTypeLabel`
+ * - `.Audio file` — legacy debris from an earlier bug (a `getFileTypeLabel`
  *   fallback that became a literal extension on aborted OGG/WAV/AIFF syncs).
  *   Now fixed at the source but historical devices still carry these.
  *   *False-positive risk:* a user could in principle create a file with this

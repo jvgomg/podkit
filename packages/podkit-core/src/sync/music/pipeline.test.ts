@@ -3771,7 +3771,8 @@ describe('optimized copy operations', () => {
 });
 
 // =============================================================================
-// Adapter artwork fallback (TASK-142)
+// Adapter artwork fallback — the executor asks the source adapter for bytes
+// when the audio body has no embedded picture
 // =============================================================================
 
 describe('adapter artwork fallback', () => {
@@ -4044,7 +4045,7 @@ describe('PipelineBusyError concurrent-execute guard', () => {
 // could leak the first call's options into the second if anything went wrong
 // with the assignment / clearing dance.
 //
-// After TASK-382 these fields live in an ExecutionContext built once at the
+// These fields now live in an ExecutionContext built once at the
 // top of execute() and threaded as a parameter through every private method.
 // This test proves the structural property: the second execute()'s behaviour
 // is purely a function of ITS options, with no residue from the first.
@@ -4120,8 +4121,9 @@ describe('ExecutionContext — sequential reuse with divergent options', () => {
     };
 
     const executor = new MusicPipeline(createDependencies(db, transcoder));
-    // After TASK-383 the dispatch lives on the MusicArtworkManager owned by the
-    // pipeline. Spy on the manager's method directly — same observable, new home.
+    // The dispatch lives on the MusicArtworkManager owned by the pipeline
+    // rather than on the pipeline itself. Spy on the manager's method
+    // directly — same observable, different home.
     const transferArtworkSpy = spyOn(executor.artwork, 'transferArtwork');
 
     // Run 1: artwork=true (default) — must enter transferArtwork.
@@ -4346,8 +4348,8 @@ describe('artworkSink: pipeline hands bytes to adapter.setTrackArtwork', () => {
       setCalled = true;
     });
 
-    // Source carries an artworkHash — pre-TASK-372 this would have been
-    // written to syncTag.artworkHash unconditionally. After the fix the
+    // Source carries an artworkHash — this used to be
+    // written to syncTag.artworkHash unconditionally. Now the
     // suppression guard skips the write because transferArtwork returned
     // undefined.
     const sourceWithHash = createCollectionTrack('Artist', 'Song', 'Album', 'wav', {

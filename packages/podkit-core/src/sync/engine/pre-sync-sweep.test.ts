@@ -333,7 +333,7 @@ describe('runPreSyncSweep', () => {
       });
     });
 
-    // TASK-501. A concurrent `podkit sync` mkdirs its scratch dir and only
+    // A concurrent `podkit sync` mkdirs its scratch dir and only
     // then writes `.owner`. A sibling sweeping in that window used to see a
     // `podkit-transcode-*` dir with no `.owner`, call it debris, and delete
     // it — taking the live session's output directory with it. Every

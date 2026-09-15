@@ -248,14 +248,14 @@ export type SyncOperation = MusicOperation | VideoOperation;
  * Sync orchestration (one `runSyncAction` call) may iterate multiple
  * collections — typically music then video — against a single device.
  * Some work is device-scoped, not collection-scoped: in particular the
- * pre-sync debris sweep (TASK-398) walks the device's content surface
+ * pre-sync debris sweep walks the device's content surface
  * once and reaps `.podkit-tmp` residue + phantom manifest entries before
  * any track op runs. The result attaches to the FIRST collection's plan
  * (so the executor consumes it once) and to nothing on subsequent plans.
  *
- * Future device-level pre-flight steps (e.g. a free-space probe rewrite
- * landing as part of TASK-378) plug into this same shape rather than
- * growing a new top-level type.
+ * Future device-level pre-flight steps (e.g. a planned free-space probe
+ * rewrite) plug into this same shape rather than growing a new top-level
+ * type.
  */
 export interface PlanPreliminaries {
   /**

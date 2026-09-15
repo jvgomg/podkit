@@ -40,8 +40,9 @@ export class GpodToolError extends Error {
  * cause. That is not hypothetical: `bun test` kills every subprocess still
  * running when the test that spawned it is abandoned ("killed 1 dangling
  * process"), so a test that overruns its timeout surfaces here as a SIGTERM
- * with empty stdout — and TASK-507 spent its first hours reading that as an
- * iTunesDB write-visibility bug. Name the signal so the next reader doesn't.
+ * with empty stdout — and an early debugging session spent hours reading
+ * that as an iTunesDB write-visibility bug. Name the signal so the next
+ * reader doesn't.
  *
  * @internal
  */

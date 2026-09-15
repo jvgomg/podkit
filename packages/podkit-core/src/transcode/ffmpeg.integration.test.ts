@@ -689,7 +689,8 @@ describe('isFFmpegAvailable', () => {
 });
 
 // =============================================================================
-// Quality preset bitrate ceiling (ADR-023 §2, TASK-499)
+// Quality preset bitrate ceiling (ADR-023 §2) — a preset's bitrate is a
+// ceiling the encoder may not exceed, not a suggestion
 // =============================================================================
 
 /** Run a command to completion, resolving its stdout and rejecting on non-zero. */
@@ -758,7 +759,7 @@ describe('quality preset bitrate ceiling', () => {
     // aac_at, that fixture left `-q:a 2` at ~150 kbps — so while podkit picked
     // a quality index for aac_at, these cap assertions sat 100 kbps clear of
     // the line and could not have caught the rounding that put a 256 kbps
-    // target at 282 (TASK-511). Uncorrelated white noise reproduces that,
+    // target at 282. Uncorrelated white noise reproduces that,
     // which is what makes these tests load-bearing rather than decorative.
     //
     // Seeded per channel, so the fixture is the same on every host and run.
@@ -789,7 +790,7 @@ describe('quality preset bitrate ceiling', () => {
    * within a kbps even on noise, and the one kbps is for ffprobe's own
    * rounding rather than for the encoder.
    *
-   * `aac_at` is driven in `abr` mode with `-b:a` (TASK-511), whose long-term
+   * `aac_at` is driven in `abr` mode with `-b:a`, whose long-term
    * average tracks the request within ~2% on content this hard — so it gets
    * 5%, not the 15% it needed when podkit picked a quality index for it.
    *

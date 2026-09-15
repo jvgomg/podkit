@@ -2,9 +2,9 @@
  * Unit tests for the iPod debris-files diagnostic check.
  *
  * Pins the walk surface — `.podkit-tmp` residue must surface no matter
- * which `iPod_Control/` directory it landed in. The original task spec
- * scoped this to `iPod_Control/Music/F**`; after TASK-376 retrofitted
- * atomic writes everywhere, that scope was too narrow.
+ * which `iPod_Control/` directory it landed in. The check originally scoped
+ * the walk to `iPod_Control/Music/F**`; once atomic writes were retrofitted
+ * everywhere, that scope was too narrow.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';

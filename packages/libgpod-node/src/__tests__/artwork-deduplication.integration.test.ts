@@ -1,5 +1,5 @@
 /**
- * Integration tests for libgpod album artwork deduplication behavior (TASK-037).
+ * Integration tests for libgpod album artwork deduplication behavior.
  *
  * Tests verify how libgpod handles artwork deduplication. Key findings:
  *
@@ -43,13 +43,13 @@ const COVER_ALBUM_B = join(getSyntheticTestsFixturesDir(), 'cover.jpg');
 // Image files are written into the per-test iPod directory (`ipod.path`) which
 // is created and cleaned up by withTestIpod. See sibling artwork.integration
 // .test.ts for the rationale on avoiding describe-scoped tempDir state.
-describe('libgpod artwork deduplication (TASK-037)', () => {
+describe('libgpod artwork deduplication', () => {
   // ============================================================================
   // Scenario 1: Single album with identical artwork on all tracks
   // ============================================================================
 
   describe('single album with identical artwork', () => {
-    // TODO(TASK-037): Re-enable once getUniqueArtworkIds is implemented.
+    // TODO: Re-enable once getUniqueArtworkIds is implemented.
     // Currently libgpod doesn't expose mhii_link deduplication info.
     it.skip('deduplicates identical artwork - all tracks share same mhii_link', async () => {
       await withTestIpod(async (ipod) => {
@@ -293,7 +293,7 @@ describe('libgpod artwork deduplication (TASK-037)', () => {
   // ============================================================================
 
   describe('same image across different albums', () => {
-    // TODO(TASK-037): Re-enable once getUniqueArtworkIds is implemented.
+    // TODO: Re-enable once getUniqueArtworkIds is implemented.
     // Currently libgpod doesn't expose mhii_link deduplication info.
     it.skip('same image on different albums shares artwork entry', async () => {
       await withTestIpod(async (ipod) => {
@@ -351,7 +351,7 @@ describe('libgpod artwork deduplication (TASK-037)', () => {
   // ============================================================================
 
   describe('artwork deduplication with image data buffers', () => {
-    // TODO(TASK-037): Re-enable once getUniqueArtworkIds is implemented.
+    // TODO: Re-enable once getUniqueArtworkIds is implemented.
     // Currently libgpod doesn't expose mhii_link deduplication info.
     it.skip('deduplicates when same buffer is used for multiple tracks', async () => {
       await withTestIpod(async (ipod) => {

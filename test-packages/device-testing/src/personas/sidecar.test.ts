@@ -109,7 +109,7 @@ describe('toSidecarPersona', () => {
   });
 
   it('omits the sidecar serial field when persona.deviceSerial is null', () => {
-    // TASK-332 v2 schema: Sony NW-HD5-style devices set deviceSerial=null
+    // v2 schema: Sony NW-HD5-style devices set deviceSerial=null
     // (iSerialNumber=0). The sidecar serialiser must omit the `serial`
     // field rather than writing `null` so the daemon's optional-string
     // default kicks in.

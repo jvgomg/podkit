@@ -402,8 +402,8 @@ export async function rebuildArtworkDatabase(
 
             // Consult the source adapter for non-embedded artwork (directory
             // sidecar / Subsonic getCoverArt) when the audio body has no embed.
-            // Mirrors the executor's transferArtwork fallback (TASK-142) so a
-            // full repair sees the same bytes the next sync would.
+            // Mirrors the executor's transferArtwork fallback so a full repair
+            // sees the same bytes the next sync would.
             const adapter = source.adapter;
             const adapterFallback = adapter.getArtwork
               ? () => adapter.getArtwork!(source.track)

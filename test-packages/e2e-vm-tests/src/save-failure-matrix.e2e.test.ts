@@ -248,7 +248,7 @@ async function writeSourceTrack(
   const albumArtist = seed.albumArtist ?? ALBUM_ARTIST_ORIGINAL;
   const rel = `${ARTIST}/${album}/${String(seed.trackNumber).padStart(2, '0')} ${seed.title}`;
   const ext = cell.sourceFormat === 'flac' ? 'flac' : cell.sourceFormat === 'mp3' ? 'mp3' : 'ogg';
-  // TASK-412 estimate-drift cell: force a high-bitrate, long-duration mp3
+  // ADR-018 estimate-drift cell: force a high-bitrate, long-duration mp3
   // so the actual file size exceeds estimateCopySize (typical-bitrate ×
   // duration → 256 kbps × 30s ≈ 960 KiB; actual at 320 kbps × 30s ≈ 1.2 MiB).
   const isDriftCell = cell.failureMode === 'enospc-estimate-drift';
@@ -806,12 +806,12 @@ async function runDoctor(cell: SaveFailCell): Promise<DoctorJsonShape> {
 }
 
 function doctorSeesPodkitTmp(doctor: DoctorJsonShape): boolean | null {
-  // `.podkit-tmp` debris lives in two device-typed checks after TASK-397:
+  // `.podkit-tmp` debris lives in two device-typed checks:
   //   - mass-storage devices → `debris-files-mass-storage` (split out of the
   //     legacy `orphan-files-mass-storage` so orphan vs debris confirmation
   //     gating could diverge).
-  //   - iPod devices → `debris-files-ipod` (added by TASK-376's atomic
-  //     tag-write that can leave residue anywhere under iPod_Control/).
+  //   - iPod devices → `debris-files-ipod` (added for the atomic tag-write
+  //     that can leave residue anywhere under iPod_Control/).
   //
   // For each cell, the doctor JSON includes whichever check matches the
   // device's `applicableTo` set; the other is absent. The helper picks
@@ -1059,7 +1059,7 @@ function isCanonicalCell(cell: SaveFailCell): boolean {
     );
   }
   if (cell.failureMode === 'enospc-post-sweep') {
-    // TASK-412: one canonical post-sweep cell (embedded × flac × prefer-copy).
+    // One canonical post-sweep cell (embedded × flac × prefer-copy).
     return (
       cell.shape === 'embedded' &&
       cell.sourceFormat === 'flac' &&
@@ -1067,7 +1067,7 @@ function isCanonicalCell(cell: SaveFailCell): boolean {
     );
   }
   if (cell.failureMode === 'enospc-estimate-drift') {
-    // TASK-412: one canonical drift cell (embedded × mp3 × prefer-copy) —
+    // One canonical drift cell (embedded × mp3 × prefer-copy) —
     // mp3 because the planner's typical-bitrate gap is most easily forced
     // with 320kbps mp3 vs 256kbps default.
     return (

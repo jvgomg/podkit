@@ -1,34 +1,36 @@
 /**
- * Stage-matrix coverage for the readiness pipeline (TASK-302).
+ * Stage-matrix coverage for the readiness pipeline.
  *
  * Single matrix file driving `checkReadiness()` and `determineLevel()` across
- * the 21 acceptance-criteria permutations laid out in
- * `backlog/tasks/task-302 - Readiness-pipeline-stage-coverage.md`.
+ * every stage permutation: each of the six stages passing and failing, the
+ * downstream-skip cascade, the derived readiness level, and text/JSON parity.
  *
  * Each `describe` block names the stage it owns. The downstream-skip cascade
- * is parameterised over a small fixture table to avoid copy-paste; format
- * parity (AC #21) walks both the text renderer (`formatReadinessSummaryLines`)
- * and the JSON shape returned by `checkReadiness()` directly.
+ * is parameterised over a small fixture table to avoid copy-paste; the
+ * format-parity block walks both the text renderer
+ * (`formatReadinessSummaryLines`) and the JSON shape returned by
+ * `checkReadiness()` directly.
  *
- * **Cross-package note.** The task spec references
- * `@podkit/device-testing` personas. `@podkit/device-testing` depends on
- * `@podkit/core`, so importing personas here would introduce a cycle. The
- * matrix synthesises persona-shaped inputs inline instead — every relevant
- * stage input is a thin object/file already produced by the persona builders.
- * Persona-driven equivalents land in VM tests once TASK-322.05.01 closes the
- * USB synthesis loop (per the task's own deps).
+ * **Cross-package note.** The natural inputs here are the
+ * `@podkit/device-testing` personas, but that package depends on
+ * `@podkit/core`, so importing them would introduce a cycle. The matrix
+ * synthesises persona-shaped inputs inline instead — every relevant stage
+ * input is a thin object/file already produced by the persona builders.
+ * Persona-driven equivalents land in VM tests once the FunctionFS gadget
+ * daemon closes the USB synthesis loop.
  *
- * **Findings (resolved by TASK-338, 2026-05-16):**
+ * **Stage-detail shapes pinned here** (they were widened once and JSON
+ * consumers depend on the wider shape):
  *
- * - AC #1 — usb-stage success path now echoes vendorId/productId/usbModel
- *   into `details`, mirroring the unsupported-path shape on
- *   `createUsbOnlyReadinessResult`. Tests below assert the richer shape.
- * - AC #4 — partition stage emits `{ partitionCount, partitions: [...] }`
+ * - The usb-stage success path echoes vendorId/productId/usbModel into
+ *   `details`, mirroring the unsupported-path shape on
+ *   `createUsbOnlyReadinessResult`.
+ * - The partition stage emits `{ partitionCount, partitions: [...] }`
  *   sourced from `PlatformDeviceInfo.partitionLayout` (populated by the
- *   `lsblk -J` / `diskutil list -plist` probes upstream). Single- vs
- *   dual-partition layouts are now distinguishable from inside the cascade.
- * - AC #5 — "no partition table at all" surfaces via
- *   `createUsbOnlyReadinessResult`, NOT the main cascade. Asserted there.
+ *   `lsblk -J` / `diskutil list -plist` probes upstream), so single- vs
+ *   dual-partition layouts are distinguishable from inside the cascade.
+ * - "No partition table at all" surfaces via `createUsbOnlyReadinessResult`,
+ *   NOT the main cascade, and is asserted there.
  *
  * @module
  */
@@ -186,7 +188,7 @@ function makeBlockIpod(
 
 // ── Stage 1 — usb ────────────────────────────────────────────────────────────
 
-describe('readiness pipeline — usb stage (ACs #1–#3)', () => {
+describe('readiness pipeline — usb stage', () => {
   let dir: string;
   beforeEach(() => {
     dir = tmpdir();
@@ -196,10 +198,10 @@ describe('readiness pipeline — usb stage (ACs #1–#3)', () => {
   });
   afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
 
-  it('#1 usb passes for a discovered device; details echo vendorId/productId/usbModel (TASK-338 — matching the unsupported-path shape)', async () => {
+  it('usb passes for a discovered device; details echo vendorId/productId/usbModel, matching the unsupported-path shape', async () => {
     // The usb stage always passes for any PlatformDeviceInfo that reaches
     // the pipeline (the device manager only surfaces partitioned devices).
-    // TASK-338: pass-path details now mirror the unsupported-path push —
+    // Pass-path details mirror the unsupported-path push —
     // identifier + vendorId + productId + usbModel — so JSON consumers see
     // the same information regardless of which branch fired.
     const usbModel = makeIpodModel();
@@ -220,7 +222,7 @@ describe('readiness pipeline — usb stage (ACs #1–#3)', () => {
     expect(result.usbModel).toEqual(usbModel);
   });
 
-  it('#1 usb pass-path details omit USB fields when no usbConnection/usbModel was threaded', async () => {
+  it('usb pass-path details omit USB fields when no usbConnection/usbModel was threaded', async () => {
     // Defensive: the pipeline accepts a `PlatformDeviceInfo` without any
     // upstream USB data (e.g. legacy callers, doctor running on a
     // mounted-only volume). Stage details should fall back to identifier-only
@@ -234,9 +236,9 @@ describe('readiness pipeline — usb stage (ACs #1–#3)', () => {
     expect(usb?.details).not.toHaveProperty('usbModel');
   });
 
-  it('#2 usb fails (and downstream stages skip) when USB classifier marks the device unsupported', async () => {
+  it('usb fails (and downstream stages skip) when USB classifier marks the device unsupported', async () => {
     // The pipeline does not probe USB itself — discovery happens upstream.
-    // The only failure path is the unsupported short-circuit (TASK-331).
+    // The only failure path is the unsupported short-circuit.
     const headline = 'iPod touch (5th generation) uses Apple’s proprietary sync protocol.';
     const result = await checkReadiness({
       device: makeBlockIpod(makeDevice({ mountPoint: dir }), {
@@ -256,7 +258,7 @@ describe('readiness pipeline — usb stage (ACs #1–#3)', () => {
     expect(result.level).toBe('unsupported');
   });
 
-  it('#3 usb skip — no platform device manager produces no PlatformDeviceInfo, so checkReadiness is not invoked', async () => {
+  it('usb skip — no platform device manager produces no PlatformDeviceInfo, so checkReadiness is not invoked', async () => {
     // The "unsupported platform" path is exercised at the device-manager
     // layer (no `PlatformDeviceManager` is registered for the OS). When
     // there is no device, there is no readiness call to run.
@@ -276,7 +278,7 @@ describe('readiness pipeline — usb stage (ACs #1–#3)', () => {
 
 // ── Stage 2 — partition ──────────────────────────────────────────────────────
 
-describe('readiness pipeline — partition stage (ACs #4–#5)', () => {
+describe('readiness pipeline — partition stage', () => {
   let dir: string;
   beforeEach(() => {
     dir = tmpdir();
@@ -285,7 +287,7 @@ describe('readiness pipeline — partition stage (ACs #4–#5)', () => {
   });
   afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
 
-  it('#4 partition passes for a single-partition iPod layout; details echo partitionCount=1 + per-partition filesystem/size (TASK-338)', async () => {
+  it('partition passes for a single-partition iPod layout; details echo partitionCount=1 + per-partition filesystem/size', async () => {
     // Single-partition layout (typical FAT32 iPod 5G / nano on macOS Win-style
     // formatting). The `partitionLayout` payload was populated by the
     // platform probe upstream; the partition stage threads it into details
@@ -327,7 +329,7 @@ describe('readiness pipeline — partition stage (ACs #4–#5)', () => {
     ]);
   });
 
-  it('#4 partition passes for a dual-partition iPod layout (firmware + FAT32) — both partitions visible in stage details', async () => {
+  it('partition passes for a dual-partition iPod layout (firmware + FAT32) — both partitions visible in stage details', async () => {
     // Dual-partition layout (iPod 5G Mac formatting: HFS-wrapped firmware
     // partition + main media partition). Both partitions are visible in
     // `partitionLayout.partitions` even though only the second has a UUID;
@@ -376,9 +378,9 @@ describe('readiness pipeline — partition stage (ACs #4–#5)', () => {
     });
   });
 
-  it('#4 partition pass-path falls back to identifier-only when no layout was captured by the probe (legacy/synthesised PlatformDeviceInfo)', async () => {
+  it('partition pass-path falls back to identifier-only when no layout was captured by the probe (legacy/synthesised PlatformDeviceInfo)', async () => {
     // Callers that synthesise a `PlatformDeviceInfo` outside `scan()`
-    // (e.g. older doctor flows, tests that pre-date TASK-338) won't carry a
+    // (e.g. older doctor flows, tests written before the widening) won't carry a
     // `partitionLayout` field. The pipeline preserves the historical
     // `{ identifier }` shape so existing JSON consumers don't see a sudden
     // schema break.
@@ -390,7 +392,7 @@ describe('readiness pipeline — partition stage (ACs #4–#5)', () => {
     expect(partition?.details).toEqual({ identifier: 'sda1' });
   });
 
-  it('#5 partition fails (and yields needs-partition) for USB-only iPods (no block) routed through the unified dispatch', async () => {
+  it('partition fails (and yields needs-partition) for USB-only iPods (no block) routed through the unified dispatch', async () => {
     // The "no partition table at all" path is the USB-only iPod arm —
     // device was visible on USB but never produced a disk. Post-T5 it
     // routes through the unified `checkReadiness` dispatch alongside the
@@ -404,7 +406,7 @@ describe('readiness pipeline — partition stage (ACs #4–#5)', () => {
 
 // ── Stage 3 — filesystem ─────────────────────────────────────────────────────
 
-describe('readiness pipeline — filesystem stage (ACs #6–#7)', () => {
+describe('readiness pipeline — filesystem stage', () => {
   let dir: string;
   beforeEach(() => {
     dir = tmpdir();
@@ -413,7 +415,7 @@ describe('readiness pipeline — filesystem stage (ACs #6–#7)', () => {
   });
   afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
 
-  it('#6 filesystem passes for FAT32 (volumeName "TERAPOD"); details echo the volume name', async () => {
+  it('filesystem passes for FAT32 (volumeName "TERAPOD"); details echo the volume name', async () => {
     const result = await checkReadiness({
       device: ipodFromBlock(makeDevice({ mountPoint: dir, volumeName: 'TERAPOD' })),
     });
@@ -423,14 +425,14 @@ describe('readiness pipeline — filesystem stage (ACs #6–#7)', () => {
     expect(fs1?.details?.volumeName).toBe('TERAPOD');
   });
 
-  it('#6 filesystem passes for HFS+ (volumeName "iPod")', async () => {
+  it('filesystem passes for HFS+ (volumeName "iPod")', async () => {
     const result = await checkReadiness({
       device: ipodFromBlock(makeDevice({ mountPoint: dir, volumeName: 'iPod' })),
     });
     expect(result.stages.find((s) => s.stage === 'filesystem')?.status).toBe('pass');
   });
 
-  it('#7 filesystem fails with needs-format level when no recognised filesystem (empty volumeName)', async () => {
+  it('filesystem fails with needs-format level when no recognised filesystem (empty volumeName)', async () => {
     const result = await checkReadiness({
       device: ipodFromBlock(makeDevice({ mountPoint: dir, volumeName: '' })),
     });
@@ -443,14 +445,14 @@ describe('readiness pipeline — filesystem stage (ACs #6–#7)', () => {
 
 // ── Stage 4 — mount ──────────────────────────────────────────────────────────
 
-describe('readiness pipeline — mount stage (ACs #8–#9)', () => {
+describe('readiness pipeline — mount stage', () => {
   let dir: string;
   beforeEach(() => {
     dir = tmpdir();
   });
   afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
 
-  it('#8 mount passes when iPod_Control directory is present at the mount point', async () => {
+  it('mount passes when iPod_Control directory is present at the mount point', async () => {
     createIpodStructure(dir);
     writeSysInfoExtended(dir, makeSysInfoExtendedXml());
     const result = await checkReadiness({ device: ipodFromBlock(makeDevice({ mountPoint: dir })) });
@@ -459,7 +461,7 @@ describe('readiness pipeline — mount stage (ACs #8–#9)', () => {
     expect(mount?.details?.mountPoint).toBe(dir);
   });
 
-  it('#9 mount fails with needs-init level when iPod_Control is missing', async () => {
+  it('mount fails with needs-init level when iPod_Control is missing', async () => {
     // tmp dir exists (mount live) but has no iPod_Control directory.
     const result = await checkReadiness({ device: ipodFromBlock(makeDevice({ mountPoint: dir })) });
     const mount = result.stages.find((s) => s.stage === 'mount');
@@ -471,7 +473,7 @@ describe('readiness pipeline — mount stage (ACs #8–#9)', () => {
 
 // ── Stage 5 — sysinfo ────────────────────────────────────────────────────────
 
-describe('readiness pipeline — sysinfo stage (ACs #10–#13)', () => {
+describe('readiness pipeline — sysinfo stage', () => {
   let dir: string;
   beforeEach(() => {
     dir = tmpdir();
@@ -479,7 +481,7 @@ describe('readiness pipeline — sysinfo stage (ACs #10–#13)', () => {
   });
   afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
 
-  it('#10 sysinfo passes when SysInfoExtended parses; details include usbModelName + resolved deviceModel', async () => {
+  it('sysinfo passes when SysInfoExtended parses; details include usbModelName + resolved deviceModel', async () => {
     writeSysInfoExtended(dir, makeSysInfoExtendedXml());
     const result = await checkReadiness({
       device: makeBlockIpod(makeDevice({ mountPoint: dir }), {
@@ -498,7 +500,7 @@ describe('readiness pipeline — sysinfo stage (ACs #10–#13)', () => {
     expect(result.deviceModel).toBeDefined();
   });
 
-  it('#11 sysinfo passes when SysInfo is missing but SysInfoExtended resolves a model', async () => {
+  it('sysinfo passes when SysInfo is missing but SysInfoExtended resolves a model', async () => {
     writeSysInfoExtended(dir, makeSysInfoExtendedXml());
     const result = await checkReadiness({ device: ipodFromBlock(makeDevice({ mountPoint: dir })) });
     const sysinfo = result.stages.find((s) => s.stage === 'sysinfo');
@@ -506,7 +508,7 @@ describe('readiness pipeline — sysinfo stage (ACs #10–#13)', () => {
     expect(sysinfo?.details?.sysInfoExtendedExists).toBe(true);
   });
 
-  it('#11 sysinfo passes when SysInfoExtended is missing but classic SysInfo resolves a no-checksum model', async () => {
+  it('sysinfo passes when SysInfoExtended is missing but classic SysInfo resolves a no-checksum model', async () => {
     // MA147 = video_5g, checksumType 'none'. Classic SysInfo alone is fine.
     writeSysInfo(dir, 'ModelNumStr: MA147\nFirewireGuid: 0001234');
     const result = await checkReadiness({ device: ipodFromBlock(makeDevice({ mountPoint: dir })) });
@@ -515,7 +517,7 @@ describe('readiness pipeline — sysinfo stage (ACs #10–#13)', () => {
     expect(sysinfo?.details?.modelName).toContain('iPod');
   });
 
-  it('#12 sysinfo fails with needs-repair level when both SysInfo and SysInfoExtended are missing', async () => {
+  it('sysinfo fails with needs-repair level when both SysInfo and SysInfoExtended are missing', async () => {
     writeITunesDb(dir);
     const result = await checkReadiness({ device: ipodFromBlock(makeDevice({ mountPoint: dir })) });
     const sysinfo = result.stages.find((s) => s.stage === 'sysinfo');
@@ -529,7 +531,7 @@ describe('readiness pipeline — sysinfo stage (ACs #10–#13)', () => {
     expect(result.level).toBe('needs-repair');
   });
 
-  it('#13 sysinfo fails when SysInfo exists but identify() cannot resolve a model from any field', async () => {
+  it('sysinfo fails when SysInfo exists but identify() cannot resolve a model from any field', async () => {
     // SysInfo with no ModelNumStr key at all — identify() has nothing to work with.
     writeSysInfo(dir, 'FirewireGuid: 0001234\nOther: stuff');
     writeITunesDb(dir);
@@ -542,7 +544,7 @@ describe('readiness pipeline — sysinfo stage (ACs #10–#13)', () => {
 
 // ── Stage 6 — database ───────────────────────────────────────────────────────
 
-describe('readiness pipeline — database stage (ACs #14–#16)', () => {
+describe('readiness pipeline — database stage', () => {
   let dir: string;
   beforeEach(() => {
     dir = tmpdir();
@@ -551,18 +553,17 @@ describe('readiness pipeline — database stage (ACs #14–#16)', () => {
   });
   afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
 
-  it('#14 database — pass-path lives in readiness.integration.test.ts (libgpod required)', () => {
-    // The libgpod-driven happy path is covered in
-    // packages/podkit-core/src/device/readiness.integration.test.ts —
-    // `checkDatabase` and `checkReadiness with pre-opened ipod` both
-    // assert trackCount + modelName on a freshly-created database.
-    // Asserting it here would re-cover the same surface in unit tests, and
-    // libgpod isn't available without the native build. Tracked in the
-    // task notes as cross-suite coverage rather than a unit-test duplicate.
-    expect(true).toBe(true);
-  });
+  // Declared as skipped rather than asserted. The libgpod-driven happy path is
+  // covered in device/readiness.integration.test.ts, where `checkDatabase` and
+  // `checkReadiness with pre-opened ipod` assert trackCount and modelName
+  // against a freshly-created database; libgpod is not available here without
+  // the native build. This entry exists so the stage matrix reads complete —
+  // but an `expect(true).toBe(true)` would report as a passing test while
+  // asserting nothing, quietly inflating the count. A skip says the same thing
+  // honestly.
+  it.skip('database — pass-path lives in readiness.integration.test.ts (libgpod required)', () => {});
 
-  it('#15 database fails with needs-init level when iTunesDB is missing', async () => {
+  it('database fails with needs-init level when iTunesDB is missing', async () => {
     const result = await checkReadiness({ device: ipodFromBlock(makeDevice({ mountPoint: dir })) });
     const db = result.stages.find((s) => s.stage === 'database');
     expect(db?.status).toBe('fail');
@@ -570,7 +571,7 @@ describe('readiness pipeline — database stage (ACs #14–#16)', () => {
     expect(result.level).toBe('needs-init');
   });
 
-  it('#16 database fails (needs-repair) when iTunesDB is present but corrupt', async () => {
+  it('database fails (needs-repair) when iTunesDB is present but corrupt', async () => {
     writeITunesDb(dir, 'not a valid iTunesDB binary');
     const result = await checkReadiness({ device: ipodFromBlock(makeDevice({ mountPoint: dir })) });
     const db = result.stages.find((s) => s.stage === 'database');
@@ -580,7 +581,7 @@ describe('readiness pipeline — database stage (ACs #14–#16)', () => {
   });
 });
 
-// ── Downstream skip cascade (ACs #17–#19) ────────────────────────────────────
+// ── Downstream skip cascade ──────────────────────────────────────────────────
 
 interface SkipFixture {
   label: string;
@@ -598,7 +599,7 @@ interface SkipFixture {
     | { input: Parameters<typeof checkReadiness>[0] };
 }
 
-describe('readiness pipeline — downstream skip cascade (ACs #17–#19)', () => {
+describe('readiness pipeline — downstream skip cascade', () => {
   let dir: string;
   beforeEach(() => {
     dir = tmpdir();
@@ -684,9 +685,9 @@ describe('readiness pipeline — downstream skip cascade (ACs #17–#19)', () =>
   }
 });
 
-// ── Derived level (AC #20) ───────────────────────────────────────────────────
+// ── Derived level ────────────────────────────────────────────────────────────
 
-describe('readiness pipeline — derived level (AC #20)', () => {
+describe('readiness pipeline — derived level', () => {
   let dir: string;
   beforeEach(() => {
     dir = tmpdir();
@@ -762,9 +763,9 @@ describe('readiness pipeline — derived level (AC #20)', () => {
   }
 });
 
-// ── Format parity (AC #21) ───────────────────────────────────────────────────
+// ── Format parity between the text renderer and the JSON shape ───────────────
 
-describe('readiness pipeline — format parity (AC #21)', () => {
+describe('readiness pipeline — text/JSON format parity', () => {
   let dir: string;
   beforeEach(() => {
     dir = tmpdir();
@@ -783,8 +784,8 @@ describe('readiness pipeline — format parity (AC #21)', () => {
    *
    * We don't snapshot the full string — the CLI renderer adds whitespace,
    * indentation, and SysInfoExtended sub-lines that aren't part of the
-   * core readiness contract. The structural check is what AC #21 actually
-   * cares about.
+   * core readiness contract. Structural parity is what matters: the two
+   * renderings must agree on stages, statuses and names.
    */
   function renderText(result: ReadinessResult): string[] {
     return result.stages.map((stage) => {

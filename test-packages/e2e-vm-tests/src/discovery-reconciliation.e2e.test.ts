@@ -18,7 +18,7 @@
  *
  * # Why "replug ×10" is paired down to start/stop ×3
  *
- * The AC spec says "Replug cycle (10×) → no phantom or duplicate entries".
+ * Ten replug cycles were specified, with no phantom or duplicate entries.
  * The dummy-hcd-daemon lifecycle (`systemctl stop`/`start`) is the closest
  * VM-replayable analogue to a physical USB unplug/replug. Each cycle takes
  * ~1.5–2s (start + kernel enumeration + scan + stop). Ten cycles per test
@@ -31,12 +31,11 @@
  *
  * # Scope limitations
  *
- *   - "Two iPods plugged in simultaneously" (2nd sub-scenario of the AC)
+ *   - "Two iPods plugged in simultaneously" (the second of the enumerated scenarios)
  *     is NOT verifiable today — see NB inside the suite for the
  *     FunctionFS single-mountpoint constraint.
  *
- *   - "USB-only iOS device alongside matched iPod" (4th sub-scenario of
- *     the AC) requires an iOS-class persona with a daemon payload AND
+ *   - "USB-only iOS device alongside matched iPod" (the fourth) requires an iOS-class persona with a daemon payload AND
  *     concurrent enumeration with a matched iPod persona. The starter
  *     `ipod-touch-5g-unsupported` persona has no daemon payload
  *     (`sysInfoExtendedXml: null`, `massStorageBackingFile: null`) so it

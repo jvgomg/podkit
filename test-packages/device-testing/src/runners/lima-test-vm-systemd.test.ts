@@ -5,7 +5,7 @@
  * `SubprocessRunner` that records `limactl` invocations and returns canned
  * results. No real `limactl`, no real VM.
  *
- * Covers TASK-322.04.01 ACs #2–#4:
+ * Covers:
  *   - happy path: probe → copy → install → daemon-reload → cleanup
  *   - idempotency: sha256 match → skip everything; `reloaded: false`
  *   - error propagation for each failure mode (probe / copy / install /

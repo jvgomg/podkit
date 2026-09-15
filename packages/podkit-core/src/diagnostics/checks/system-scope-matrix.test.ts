@@ -1,10 +1,11 @@
 /**
- * System-scope diagnostic check matrix (TASK-301, m-19 Phase 5b).
+ * System-scope diagnostic check matrix.
  *
  * Drives each of the four system-scope diagnostic checks against every
  * relevant SystemState permutation, verifying status / summary / details /
- * repairable. Per AC instruction these tests are per-check only — overall
- * doctor `healthy` and exit-code semantics belong to TASK-308.
+ * repairable. Deliberately per-check only: the overall doctor `healthy`
+ * verdict and the exit-code mapping are pinned by their own suites, so a
+ * change to the aggregation rules cannot silently rewrite these.
  *
  * Checks under test:
  *   - inquiry-methods (SCSI + USB transport availability)
@@ -16,7 +17,6 @@
  * injected fakes (ProbeFn, SubprocessRunner, TranscoderCapabilities). No real
  * subprocess, filesystem, or native binding is touched.
  *
- * @see backlog/tasks/task-301
  * @see docs/adr/adr-017-device-persona-fixtures.md
  */
 
@@ -155,12 +155,12 @@ const ENCODERS_NO_H264 = `Encoders:
 `;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Inquiry methods (AC #1..#4, plus AC #16 contribution)
+// Inquiry methods — SCSI/USB transport availability across host states
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('inquiry-methods — host environment matrix (TASK-301)', () => {
-  // AC #1: SCSI + USB available → pass
-  it('AC#1 pass when SCSI and libusb are both available (Linux, healthy)', async () => {
+describe('inquiry-methods — host environment matrix', () => {
+  // Both transports available → pass.
+  it('pass when SCSI and libusb are both available (Linux, healthy)', async () => {
     const probe = makeProbe(makeAvailability({ scsi: true, usb: true }));
     const result = await checkInquiryMethods(probe, 'linux');
 
@@ -176,7 +176,7 @@ describe('inquiry-methods — host environment matrix (TASK-301)', () => {
     expect(d['platform']).toBe('linux');
   });
 
-  it('AC#1 pass when SCSI and libusb are both available (macOS, healthy)', async () => {
+  it('pass when SCSI and libusb are both available (macOS, healthy)', async () => {
     const probe = makeProbe(makeAvailability({ scsi: true, usb: true }));
     const result = await checkInquiryMethods(probe, 'darwin');
 
@@ -186,9 +186,9 @@ describe('inquiry-methods — host environment matrix (TASK-301)', () => {
     expect(result.repairable).toBe(false);
   });
 
-  // AC #2: USB available, SCSI missing → pass (USB is preferred; SCSI is optional fallback).
+  // USB available, SCSI missing → pass (USB is preferred; SCSI is an optional fallback).
   // A Linux host without /dev/sg* but with working USB must not show warn.
-  it('AC#2 pass when USB available but SCSI unavailable — SCSI absence noted in summary', async () => {
+  it('pass when USB available but SCSI unavailable — SCSI absence noted in summary', async () => {
     const probe = makeProbe(
       makeAvailability({
         scsi: false,
@@ -206,8 +206,8 @@ describe('inquiry-methods — host environment matrix (TASK-301)', () => {
     expect(d['plan']).toBe('usb-only');
   });
 
-  // AC #3: neither transport available → warn, both surfaced in summary.
-  it('AC#3 SCSI absent + USB absent: warn with USB failure reason surfaced', async () => {
+  // Neither transport available → warn, with both failures surfaced in the summary.
+  it('SCSI absent + USB absent: warn with USB failure reason surfaced', async () => {
     const probe = makeProbe(
       makeAvailability({
         scsi: false,
@@ -226,8 +226,8 @@ describe('inquiry-methods — host environment matrix (TASK-301)', () => {
     expect(d['plan']).toBe('none');
   });
 
-  // AC #4a: Linux /dev/sg* present-but-unreadable, USB available → pass, SCSI note in summary.
-  it('AC#4a Linux /dev/sg* present-but-unreadable — pass (USB up), SCSI hint in summary', async () => {
+  // Linux /dev/sg* present-but-unreadable, USB available → pass, SCSI note in summary.
+  it('Linux /dev/sg* present-but-unreadable — pass (USB up), SCSI hint in summary', async () => {
     const probe = makeProbe(
       makeAvailability({
         scsi: false,
@@ -245,8 +245,8 @@ describe('inquiry-methods — host environment matrix (TASK-301)', () => {
     expect(result.repairable).toBe(false);
   });
 
-  // AC #4b: Linux /dev/sg* absent, USB available → pass, note sg* absent.
-  it('AC#4b Linux /dev/sg* absent — pass (USB up), sg* absence noted', async () => {
+  // Linux /dev/sg* absent, USB available → pass, with sg* absence noted.
+  it('Linux /dev/sg* absent — pass (USB up), sg* absence noted', async () => {
     const probe = makeProbe(
       makeAvailability({
         scsi: false,
@@ -263,7 +263,9 @@ describe('inquiry-methods — host environment matrix (TASK-301)', () => {
     expect(result.repairable).toBe(false);
   });
 
-  // SystemState fixture cross-reference: no-sg-perms maps to AC#4a; healthy maps to AC#1.
+  // The same two transport outcomes as above, reached through the named
+  // SystemState fixtures rather than hand-built availability objects:
+  // `no-sg-perms` is the present-but-unreadable case, `healthy` the both-up one.
   it('SystemState `no-sg-perms` + USB available: pass, summary surfaces sg* permission hint', async () => {
     const probe = makeProbe(
       makeAvailability({
@@ -283,13 +285,13 @@ describe('inquiry-methods — host environment matrix (TASK-301)', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Codec encoders (AC #5..#7, plus AC #16 contribution)
+// Codec encoders — FFmpeg audio encoder coverage
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('codec-encoders — host environment matrix (TASK-301)', () => {
-  // AC #5: pass when AAC, ALAC, and MP3 encoders (and the rest of the default
+describe('codec-encoders — host environment matrix', () => {
+  // Pass when AAC, ALAC, and MP3 encoders (and the rest of the default
   // stacks) are available. Asserts on the defaults — the `healthy` state.
-  it('AC#5 pass when AAC, ALAC, MP3 (and full default stack) are available', () => {
+  it('pass when AAC, ALAC, MP3 (and full default stack) are available', () => {
     const caps = makeCapabilities({
       aac: 'aac',
       opus: 'libopus',
@@ -308,12 +310,14 @@ describe('codec-encoders — host environment matrix (TASK-301)', () => {
     expect(checked).toContain('alac');
   });
 
-  // AC #6: fail when one or more configured codec encoders are missing.
+  // One or more configured codec encoders missing.
   //
-  // FINDING: the current implementation returns `warn` here, not `fail`.
-  // This test pins the *current behaviour* (warn) so any future tightening
-  // to fail will produce a clear, intentional break. See task notes.
-  it('AC#6 missing encoders surface as warn (current behaviour) with missing codecs listed', () => {
+  // Note the severity: the implementation returns `warn` here, not `fail`,
+  // because a missing encoder narrows what podkit can transcode to without
+  // making the host unusable. This test pins that *current* behaviour, so
+  // any future tightening to `fail` produces a clear, intentional break
+  // rather than a silent severity change.
+  it('missing encoders surface as warn (current behaviour) with missing codecs listed', () => {
     const caps = makeCapabilities({
       aac: 'aac',
       opus: 'libopus',
@@ -331,15 +335,15 @@ describe('codec-encoders — host environment matrix (TASK-301)', () => {
     expect(result.repairable).toBe(false);
   });
 
-  // AC #7: when ffmpeg itself isn't on PATH, the registered check returns
-  // `skip` (not `fail` — the dedicated ffmpeg check owns the hard signal).
+  // When ffmpeg itself isn't on PATH, the registered check returns `skip`
+  // (not `fail` — the dedicated ffmpeg check owns the hard signal).
   //
-  // FINDING: AC text says fail; the current implementation chains to the
-  // FFmpeg-presence check via skip, mirroring the no-ffmpeg SystemState
-  // fixture's `codec-encoders: fail` only because the SystemState fixture
-  // describes the *aggregate* expectation across multiple checks. Pin the
-  // current behaviour.
-  it('AC#7 ffmpeg not on PATH → registered check returns skip referencing the FFmpeg check', async () => {
+  // The no-ffmpeg SystemState fixture records `codec-encoders: fail`, which
+  // looks like a contradiction but is not: that fixture describes the
+  // *aggregate* expectation across several checks, and the hard failure it
+  // predicts comes from the FFmpeg-presence check this one chains to. What
+  // is pinned here is the single check's own verdict.
+  it('ffmpeg not on PATH → registered check returns skip referencing the FFmpeg check', async () => {
     const result = await codecEncodersCheck.check(stubCtx);
 
     // The check spawns ffmpeg internally; in CI environments where ffmpeg is
@@ -355,12 +359,12 @@ describe('codec-encoders — host environment matrix (TASK-301)', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Video encoder (AC #8..#10, plus AC #16 contribution)
+// Video encoder — H.264 encoder coverage
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('video-encoder — host environment matrix (TASK-301)', () => {
-  // AC #8: pass when libx264 is available (Linux baseline)
-  it('AC#8 pass on Linux when libx264 is available', async () => {
+describe('video-encoder — host environment matrix', () => {
+  // Pass when libx264 is available (Linux baseline).
+  it('pass on Linux when libx264 is available', async () => {
     const runner = makeFfmpegRunner(ENCODERS_LIBX264_ONLY);
     const result = await checkVideoEncoderForRunner(runner, 'linux');
 
@@ -373,7 +377,7 @@ describe('video-encoder — host environment matrix (TASK-301)', () => {
     expect(d['platform']).toBe('linux');
   });
 
-  it('AC#8 pass on macOS when libx264 + h264_videotoolbox are both available', async () => {
+  it('pass on macOS when libx264 + h264_videotoolbox are both available', async () => {
     const runner = makeFfmpegRunner(ENCODERS_WITH_LIBX264_AND_VTB);
     const result = await checkVideoEncoderForRunner(runner, 'darwin');
 
@@ -381,8 +385,8 @@ describe('video-encoder — host environment matrix (TASK-301)', () => {
     expect(result.summary).toBe('libx264 + h264_videotoolbox available');
   });
 
-  // AC #9: warn on macOS when only h264_videotoolbox is available
-  it('AC#9 warn on macOS when only h264_videotoolbox is available (no libx264)', async () => {
+  // Warn on macOS when only h264_videotoolbox is available.
+  it('warn on macOS when only h264_videotoolbox is available (no libx264)', async () => {
     const runner = makeFfmpegRunner(ENCODERS_VTB_ONLY);
     const result = await checkVideoEncoderForRunner(runner, 'darwin');
 
@@ -394,8 +398,8 @@ describe('video-encoder — host environment matrix (TASK-301)', () => {
     expect(advice).toContain('libx264');
   });
 
-  // AC #10: fail when no H.264 encoder is available at all
-  it('AC#10 fail on Linux when no H.264 encoder is available', async () => {
+  // Fail when no H.264 encoder is available at all.
+  it('fail on Linux when no H.264 encoder is available', async () => {
     const runner = makeFfmpegRunner(ENCODERS_NO_H264);
     const result = await checkVideoEncoderForRunner(runner, 'linux');
 
@@ -406,7 +410,7 @@ describe('video-encoder — host environment matrix (TASK-301)', () => {
     expect(advice).toContain('Install an H.264 encoder');
   });
 
-  it('AC#10 fail on macOS when neither libx264 nor h264_videotoolbox is present', async () => {
+  it('fail on macOS when neither libx264 nor h264_videotoolbox is present', async () => {
     const runner = makeFfmpegRunner(ENCODERS_NO_H264);
     const result = await checkVideoEncoderForRunner(runner, 'darwin');
 
@@ -426,12 +430,12 @@ describe('video-encoder — host environment matrix (TASK-301)', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// udev-rule (AC #11..#15, plus AC #16 contribution)
+// udev-rule — Linux udev rule presence, staleness and repair
 //
-// AC #11..#14 detection coverage landed in TASK-336 once `udevRuleCheck` got
-// rule-presence and staleness detection. Each AC is driven through the pure
-// `checkUdevRule()` function with an injectable `readFile` fake so the test
-// never touches the host filesystem. AC #14 (round-trip) drives the repair
+// Detection coverage became possible once `udevRuleCheck` grew rule-presence
+// and staleness detection. Every case is driven through the pure
+// `checkUdevRule()` function with an injectable `readFile` fake, so the test
+// never touches the host filesystem. The round-trip case drives the repair
 // against an in-memory FS, then re-runs `check()` against the same store.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -448,8 +452,8 @@ function readFileFromMap(map: Map<string, string>): ReadFileFn {
   };
 }
 
-describe('udev-rule — host environment matrix (TASK-301 ACs #11–#15, via TASK-336)', () => {
-  it('AC#11 Linux: rule present + content matches → pass', async () => {
+describe('udev-rule — host environment matrix', () => {
+  it('Linux: rule present + content matches → pass', async () => {
     const fs = new Map<string, string>([[TARGET_PATH, UDEV_RULE_CONTENT]]);
     const result = await checkUdevRule({
       platform: 'linux',
@@ -462,7 +466,7 @@ describe('udev-rule — host environment matrix (TASK-301 ACs #11–#15, via TAS
     expect(result.details?.['path']).toBe(TARGET_PATH);
   });
 
-  it('AC#12 Linux: rule absent → fail + repairable', async () => {
+  it('Linux: rule absent → fail + repairable', async () => {
     const fs = new Map<string, string>();
     const result = await checkUdevRule({
       platform: 'linux',
@@ -475,7 +479,7 @@ describe('udev-rule — host environment matrix (TASK-301 ACs #11–#15, via TAS
     expect(result.details?.['path']).toBe(TARGET_PATH);
   });
 
-  it('AC#13 Linux: rule present + content stale → warn + repairable', async () => {
+  it('Linux: rule present + content stale → warn + repairable', async () => {
     const stale = `# stale podkit udev rule (older vendor set)
 ACTION=="add", SUBSYSTEM=="scsi_generic", ATTRS{idVendor}=="05ac"
 `;
@@ -492,7 +496,7 @@ ACTION=="add", SUBSYSTEM=="scsi_generic", ATTRS{idVendor}=="05ac"
     expect(typeof result.details?.['diff']).toBe('string');
   });
 
-  it('AC#13 Linux: rule unreadable (EACCES) → fail (not repairable)', async () => {
+  it('Linux: rule unreadable (EACCES) → fail (not repairable)', async () => {
     const readFile: ReadFileFn = async (_p) => {
       const err = new Error('EACCES: permission denied') as NodeJS.ErrnoException;
       err.code = 'EACCES';
@@ -509,7 +513,7 @@ ACTION=="add", SUBSYSTEM=="scsi_generic", ATTRS{idVendor}=="05ac"
     expect(result.details?.['errno']).toBe('EACCES');
   });
 
-  it('AC#14 round-trip: repair installs the rule, then a second check() returns pass', async () => {
+  it('round-trip: repair installs the rule, then a second check() returns pass', async () => {
     // In-memory filesystem: starts empty (rule absent).
     const fs = new Map<string, string>();
     const readFile = readFileFromMap(fs);
@@ -560,7 +564,7 @@ ACTION=="add", SUBSYSTEM=="scsi_generic", ATTRS{idVendor}=="05ac"
     expect(after.repairable).toBe(false);
   });
 
-  it('AC#14 dry-run prints the action without writing the rule', async () => {
+  it('dry-run prints the action without writing the rule', async () => {
     const fs = new Map<string, string>();
     let writes = 0;
     const fsOps: FsOps = {
@@ -596,7 +600,7 @@ ACTION=="add", SUBSYSTEM=="scsi_generic", ATTRS{idVendor}=="05ac"
     expect(after.status).toBe('fail');
   });
 
-  it('AC#15 udev-rule check returns skip on macOS (not applicable to platform)', async () => {
+  it('udev-rule check returns skip on macOS (not applicable to platform)', async () => {
     let readCalls = 0;
     const result = await checkUdevRule({
       platform: 'darwin',
@@ -622,16 +626,16 @@ ACTION=="add", SUBSYSTEM=="scsi_generic", ATTRS{idVendor}=="05ac"
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Cross-cutting metadata (AC #16)
+// Cross-cutting metadata — scope declarations
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('AC#16 — every system-scope check declares scope: "system"', () => {
+describe('every system-scope check declares scope: "system"', () => {
   const SYSTEM_SCOPE_CHECKS = [
     inquiryMethodsCheck,
     codecEncodersCheck,
     videoEncoderCheck,
     udevRuleCheck,
-    // Added post-TASK-397: host-global walker for abandoned
+    // Host-global walker for abandoned
     // `podkit-transcode-<uuid>/` scratch dirs left by SIGKILLed syncs.
     debrisTranscodeTmpCheck,
   ] as const;

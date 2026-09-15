@@ -610,7 +610,8 @@ describe('IpodDeviceAdapter normalization round-trip', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Transfer-mode-aware on-disk tag writes (TASK-327)
+  // Transfer-mode-aware on-disk tag writes — the adapter only touches the
+  // on-disk file under transfer modes that promise it
   // ---------------------------------------------------------------------------
 
   /**
@@ -942,7 +943,7 @@ describe('IpodDeviceAdapter normalization round-trip', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Real on-disk taglib round-trips (TASK-327 follow-up)
+  // Real on-disk taglib round-trips
   //
   // The tests above use a mock TagWriter — they verify the adapter contract
   // (when to queue, when to flush, when to coalesce). These tests use the

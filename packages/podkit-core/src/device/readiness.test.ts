@@ -483,7 +483,7 @@ describe('checkReadiness', () => {
     });
   });
 
-  describe('HFS+ on Linux refusal (TASK-317.12)', () => {
+  describe('HFS+ on Linux refusal (readiness reports "unsupported", not a failure)', () => {
     it('returns level "unsupported" for HFS+ on Linux with the structured payload', async () => {
       const device = createDevice({
         mountPoint: tmpDir,

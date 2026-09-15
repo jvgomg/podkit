@@ -379,9 +379,9 @@ async function observeCodecTriplet(opts: {
           `  stderr: ${result.stderr.slice(0, 1500)}`
       );
     }
-    // Decision attribution layer: TASK-357 moved the resolved lossy codec
-    // from the top-level `json.codec` into `json.decisions.lossyCodec.value`,
-    // and added `json.decisions.lossyCodec.source` for provenance.
+    // Decision attribution layer: the resolved lossy codec moved from the
+    // top-level `json.codec` into `json.decisions.lossyCodec.value`, and
+    // gained `json.decisions.lossyCodec.source` for provenance.
     const resolvedCodec = json.decisions?.lossyCodec.value ?? null;
     const lossyCodecSource = (json.decisions?.lossyCodec.source ?? null) as DecisionSource | null;
 

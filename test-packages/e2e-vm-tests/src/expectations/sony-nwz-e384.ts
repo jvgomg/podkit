@@ -17,7 +17,7 @@ import type { ReadinessResult } from '@podkit/core';
 // embedded only).
 export const expectedCapabilities: DeviceCapabilities | null = null;
 
-// TASK-331 added `'unsupported'` to ReadinessLevel + threaded a structured
+// `'unsupported'` was added to ReadinessLevel, threading a structured
 // payload from the mass-storage classifier's vendor-recognised-but-no-preset
 // table (`packages/devices-mass-storage/src/unsupported.ts`). The headline
 // comes from the Sony entry's `reason(vendorId, productId)` template — keep

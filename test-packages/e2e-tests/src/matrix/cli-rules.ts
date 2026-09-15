@@ -7,7 +7,7 @@
  *
  * The pure-function precedence rules are unit-tested in
  * `sync-decisions.test.ts` (including the explicit-false trap that sonnet
- * caught during TASK-357). The wiring from commander → `deriveSettings()` →
+ * caught). The wiring from commander → `deriveSettings()` →
  * `buildSyncDecisions()` → JSON is *not* asserted end-to-end in the unit
  * tests. A commander option rename, a missing thread-through, or a default-
  * value collision would pass every unit test and still break `--flag`.

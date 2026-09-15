@@ -1,7 +1,7 @@
 /**
  * Unit tests for `classifyAsUnsupportedDevice`.
  *
- * Pins the vendor-recognised-but-no-preset path that TASK-331 added so
+ * Pins the vendor-recognised-but-no-preset path so
  * that the Sony Walkman (and future similar entries) surface as
  * `kind: 'unsupported'` rather than silently being dropped by the
  * classifier composer.

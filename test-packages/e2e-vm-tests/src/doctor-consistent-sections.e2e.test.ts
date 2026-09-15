@@ -20,7 +20,7 @@
  * # Scope limitations
  *
  * The "iPod doctor → 3 sections" and "Echo Mini doctor → 2 sections (no
- * empty Device Readiness)" scenarios from the AC require a fully-resolved
+ * empty Device Readiness)" scenarios require a fully-resolved
  * device with a mounted filesystem holding an iTunesDB. The persona-side
  * starter images are bare FAT32 — `podkit doctor -d <name>` against them
  * currently fails before reaching the grouped-section renderer. Wiring
@@ -68,7 +68,7 @@ describe('VM: doctor consistent sections', () => {
     it(
       '--scope system renders ONLY the System section (text mode)',
       async () => {
-        // Text-mode invocation — the text renderer is what the AC's
+        // Text-mode invocation — the text renderer is what the
         // section-ordering contract speaks about. JSON envelope is asserted
         // in `doctor-scope-refactor.e2e.test.ts`.
         const result = await deviceHarness.run('/usr/local/bin/podkit doctor --scope system', {

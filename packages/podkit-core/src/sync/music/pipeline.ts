@@ -403,7 +403,7 @@ function sleep(ms: number): Promise<void> {
  *
  * Historical context: the pipeline used to store per-execute state on `this`,
  * so overlapping calls would silently clobber each other. After the
- * ExecutionContext refactor (TASK-382) all per-execute state lives in a
+ * ExecutionContext refactor all per-execute state lives in a
  * parameter, and the pipeline is structurally safe for concurrent execution.
  *
  * This guard is now a **defensive net** rather than a correctness requirement
@@ -482,7 +482,7 @@ export class MusicPipeline implements SyncExecutor {
   readonly artwork: MusicArtworkManager;
   /**
    * Transfer operations — owns the `transferToIpod` / `transferUpgradeToIpod`
-   * dispatchers extracted by TASK-383. Constructed with the device adapter
+   * dispatchers. Constructed with the device adapter
    * and the artwork manager so all device writes (track add, file copy,
    * artwork transfer, sync-tag write) flow through one place.
    *
@@ -653,7 +653,7 @@ export class MusicPipeline implements SyncExecutor {
       // Optional method — adapters that never emit warnings can omit it.
       this.device.setWarningSink?.(this.warningSink);
 
-      // Pre-sync sweep pre-flight (TASK-398). When plan.preliminaries is set
+      // Pre-sync sweep pre-flight. When plan.preliminaries is set
       // (only the FIRST collection's plan against a given device carries
       // it), clean up debris before track ops run. No-op in dry-run; the
       // presenter renders the preliminaries from the plan directly.
@@ -667,7 +667,8 @@ export class MusicPipeline implements SyncExecutor {
           adapter: this.device,
         });
         if (!dryRun && preflight.debrisDeleted > 0) {
-          // Single log line per task spec §4.
+          // At most one summary line for the whole sweep — debris cleanup is
+          // background housekeeping and must not out-shout the sync itself.
           // Use the device adapter's stdout-equivalent if available, else
           // skip — the warnings accumulator already records failures.
           // (The orchestrator will surface the summary line via the
@@ -691,7 +692,7 @@ export class MusicPipeline implements SyncExecutor {
         // The dir is unmarked between these two lines, and a sibling
         // sweeping in that window used to reap it — which cost this
         // process its output directory, not just an empty dir, so every
-        // transcode after it failed with FFmpeg ENOENT (TASK-501). The
+        // transcode after it failed with FFmpeg ENOENT. The
         // walker now leaves a freshly-touched unmarked dir alone, so the
         // window is covered rather than merely narrow; see
         // `transcode-tmp-walker.ts` (`OWNERLESS_GRACE_MS`).

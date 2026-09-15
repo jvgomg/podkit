@@ -3,12 +3,12 @@
  *
  * Pins the end-to-end wiring of `defaultMusic` in `[devices.<name>]`:
  *
- * - AC#1 (must-have): when a device stanza names a *different* collection than
- *   the global default, a no-flag sync targets the DEVICE's collection, not the
- *   global one.
- * - AC#2 (false suppression): when the device stanza sets `defaultMusic = false`,
- *   a no-flag sync emits NO_COLLECTIONS (exit code 1) even though a global
- *   default music collection exists.
+ * - When a device stanza names a *different* collection than the global
+ *   default, a no-flag sync targets the DEVICE's collection, not the global
+ *   one.
+ * - When the device stanza sets `defaultMusic = false`, a no-flag sync emits
+ *   NO_COLLECTIONS (exit code 1) even though a global default music
+ *   collection exists.
  *
  * Uses a mass-storage (rockbox) target so no hardware or gpod-tool is needed —
  * the device is a temp directory. Dry-run keeps the test fast and side-effect
@@ -40,7 +40,7 @@ ensureFixturesExist('goldberg-selections');
 
 describe('feature: per-device default collection', () => {
   /**
-   * AC#1 — device default overrides global default.
+   * Device default overrides global default.
    *
    * Config layout:
    *   [music.globalcol]  path = <1-track dir>
@@ -141,7 +141,7 @@ describe('feature: per-device default collection', () => {
   }, 60000);
 
   /**
-   * AC#2 — `defaultMusic = false` suppresses music entirely.
+   * `defaultMusic = false` suppresses music entirely.
    *
    * Config layout:
    *   [music.globalcol]  path = <3-track dir>
@@ -180,7 +180,8 @@ describe('feature: per-device default collection', () => {
           );
 
           // Build TOML: global default = "globalcol", device explicitly suppresses music.
-          // Insert defaultMusic right after the [devices.<name>] header (see AC#1).
+          // Insert defaultMusic right after the [devices.<name>] header (see the
+          // "device default overrides global default" test above).
           const deviceToml = fragment.toml
             .trimEnd()
             .replace(/^(\[devices\.[^\]]+\]\n)/, '$1defaultMusic = false\n');

@@ -1,5 +1,5 @@
 /**
- * Smoke tests for the SyncTarget abstraction (TASK-356.03).
+ * Smoke tests for the SyncTarget abstraction.
  *
  * Proves both backends report sane capabilities and a normalised track
  * listing — the contract the device matrix axis (P4) will rely on. Does not

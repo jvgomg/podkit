@@ -145,10 +145,10 @@ describe('doctor --scope option', () => {
 
 // ── resolveDoctorScopes() matrix ───────────────────────────────────────────
 //
-// AC #6: cover {scope ∈ system|device|all} × {--no-system on|off} × {--json
-// on|off}. --json is purely an envelope toggle — it never affects which
-// checks run — so each cell asserts that property explicitly via a same-
-// outcome pair (json true/false ⇒ identical scopes).
+// This matrix covers {scope ∈ system|device|all} × {--no-system on|off} ×
+// {--json on|off}. --json is purely an envelope toggle — it never affects
+// which checks run — so each cell asserts that property explicitly via a
+// same-outcome pair (json true/false ⇒ identical scopes).
 
 describe('resolveDoctorScopes()', () => {
   // The user-facing `--scope` flag still accepts `system | device | all`.
@@ -404,7 +404,7 @@ describe('runSystemOnlyDoctor()', () => {
       }
     );
 
-    // warn counts as unhealthy — matches TASK-308 / existing doctor semantics
+    // warn counts as unhealthy — matches existing doctor semantics
     expect(exitSink.get()).toBe(2);
   });
 

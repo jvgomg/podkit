@@ -2,8 +2,8 @@
  * Unit tests for the `device info` runner.
  *
  * The richer end-to-end coverage (real iPod fixtures, full status block)
- * lives in `device.integration.test.ts`. These tests target the deps seam
- * added in TASK-315 — they confirm that:
+ * lives in `device.integration.test.ts`. These tests target the
+ * dependency-injection seam — they confirm that:
  *   - DEVICE_NOT_RESOLVED is thrown when no device can be resolved
  *   - the runner respects `deps.loadCore` (no real `@podkit/core` import)
  *   - the runner respects `deps.getDeviceManager` (no real USB walk)

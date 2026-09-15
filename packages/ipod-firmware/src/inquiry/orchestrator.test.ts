@@ -334,7 +334,7 @@ describe('inquireFirmwareDetailed', () => {
   });
 
   it('falls through to SCSI when USB hits EACCES (permission wall must not short-circuit the planned fallback)', async () => {
-    // TASK-317.14: a USB EACCES is a transport-layer error like any other;
+    // A USB EACCES is a transport-layer error like any other;
     // the orchestrator must keep going so the SCSI signal is collected. The
     // user later sees both transports named in the formatted failure message.
     // This guards against any future change that special-cases EACCES on

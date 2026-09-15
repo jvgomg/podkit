@@ -147,7 +147,7 @@ export interface InquiryDetailedResult {
  *
  * - `usb-then-scsi`: USB attempted first; if it throws, SCSI is tried as a
  *   fallback. USB-success is returned immediately — SCSI is _not_ called when
- *   USB returns parseable bytes (acceptance criterion #4).
+ *   USB returns parseable bytes.
  * - `usb-only` / `scsi-only`: only the available transport is invoked.
  * - `none`: returns `null` without calling any transport.
  *

@@ -20,7 +20,7 @@ const unsupported = {
 
 export const expectedCapabilities: DeviceCapabilities | null = null;
 
-// TASK-331: `level: 'unsupported'` carries the structured rejection payload on
+// `level: 'unsupported'` carries the structured rejection payload on
 // both the top-level `unsupported` field and the `usb` stage's
 // `details.unsupported`. Keep the headline identical to
 // `SHUFFLE_REASON` in `tables/unsupported.ts`.

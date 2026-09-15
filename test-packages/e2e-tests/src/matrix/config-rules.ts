@@ -19,7 +19,7 @@
  * that swallows one inheritance hop, mis-attributes a source, or silently
  * drops a CLI overlay flips at least one cell. Codec settings exercise the
  * `lossyCodecSource` / `losslessCodecSource` branches in `buildSyncDecisions` — the same path
- * sonnet caught mis-using "presence" vs "length" during TASK-357.
+ * sonnet caught mis-using "presence" vs "length".
  *
  * @module
  */
@@ -193,7 +193,7 @@ export function skipConfigCell(cell: ConfigCell): SkipDecision | null {
  * Catches two regression shapes the single-key source assertion misses:
  *   1. Intra-stack drift — `lossyCodec.source` and `lossyPreference.source`
  *      diverge despite both being driven by `lossyCodecSource` in sync.ts.
- *   2. Single-source contamination (the original TASK-367 bug) — one source
+ *   2. Single-source contamination (the original bug shape) — one source
  *      is stamped onto all four keys regardless of which level was pinned.
  */
 export interface CodecSources {
@@ -595,7 +595,7 @@ function cellCliArgs(cell: ConfigCell): string[] {
  * For codec settings, also returns a `codecSources` map of all four codec
  * keys' sources. This catches intra-stack drift (scalar vs preference for
  * the same stack) and single-source contamination (one source stamped onto
- * all four keys, the original TASK-367 bug shape).
+ * all four keys, the original bug shape).
  */
 function readDecisionForSetting(json: SyncOutput, setting: ConfigSetting): ConfigObserved {
   const decisions = json.decisions;

@@ -1,7 +1,6 @@
 /**
  * Unit tests for runDiagnostics runner — system-scope filter bypass and
- * db-open guard (originally TASK-335 Changes 1 & 2, updated for the 3-way
- * scope union refactor).
+ * db-open guard, as they stand after the 3-way scope union refactor.
  *
  * Strategy: use an injected `db` (or none) and verify the filter behaviour
  * and db-open guard without touching the real IpodDatabase or the filesystem.
@@ -203,7 +202,7 @@ describe('runDiagnostics — db-open guard', () => {
 });
 
 // ---------------------------------------------------------------------------
-// sysinfo-modelnum-mismatch: framework smoke (AC #3, TASK-342)
+// sysinfo-modelnum-mismatch: framework smoke
 //
 // Pins that runDiagnostics drives sysinfo-modelnum-mismatch when the
 // database-health scope is requested for an iPod device. The check is

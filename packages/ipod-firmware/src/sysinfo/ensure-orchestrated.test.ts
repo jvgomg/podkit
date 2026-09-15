@@ -123,7 +123,7 @@ describe('ensureSysInfoExtended → orchestrator integration', () => {
 
       expect(result.present).toBe(false);
       expect(result.source).toBe('unavailable');
-      // TASK-317.14: default output names every transport attempted, surfaces
+      // Default output names every transport attempted, surfaces
       // each per-transport reason on its own line, and includes the
       // re-run-with-verbose footer when verbose is not set.
       expect(result.error).toContain('Could not read device identity from USB or SCSI:');

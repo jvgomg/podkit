@@ -123,7 +123,7 @@ export interface ReadinessInput {
    */
   requiredAccess?: 'read' | 'write';
   /**
-   * Platform override for filesystem-policy checks (TASK-317.12). Defaults to
+   * Platform override for filesystem-policy checks. Defaults to
    * `process.platform`. Production code never sets this — it exists so tests
    * can exercise the HFS+-on-Linux refusal from a macOS or Linux runner
    * without mutating `process.platform`.

@@ -1,8 +1,9 @@
 /**
  * Unit tests for the `device music` and `device video` runners.
  *
- * Focused on the validation paths and the deps seam added in TASK-315.
- * The full-integration coverage (real iPod, openDevice, getTracks)
+ * Focused on the validation paths and the dependency-injection seam that lets
+ * these tests stub the device manager and core instead of touching real
+ * hardware. The full-integration coverage (real iPod, openDevice, getTracks)
  * lives in `device.integration.test.ts`.
  */
 

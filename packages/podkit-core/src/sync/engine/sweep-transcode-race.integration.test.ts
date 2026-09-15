@@ -1,6 +1,5 @@
 /**
- * End-to-end reproduction of the pre-sync sweep vs. live transcode race
- * (TASK-501).
+ * End-to-end reproduction of the pre-sync sweep vs. live transcode race.
  *
  * The music pipeline creates `<tmpdir>/podkit-transcode-<uuid>/` and only
  * then writes the `.owner` marker that tells the debris walker the dir is

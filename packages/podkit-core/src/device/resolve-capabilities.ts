@@ -161,9 +161,10 @@ export function resolveCapabilities(
  * hold an `IpodModel` directly (e.g. callers migrating from `createIpodCapabilities`
  * that now build the model via `identify({ from: 'sysinfo', modelNumStr })`).
  *
- * Keeps `devices-ipod.getCapabilities` inside this module as required by AC#7,
- * while avoiding unnecessary identity round-trips for callers that already
- * have a resolved model.
+ * `devices-ipod.getCapabilities` is deliberately called only from this
+ * module — capability resolution has exactly one entry point — while this
+ * overload avoids an unnecessary identity round-trip for callers that
+ * already have a resolved model.
  *
  * @param model - Resolved iPod model from `identify()`.
  * @param opts  - Optional firmware overlay.

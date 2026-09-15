@@ -1,8 +1,9 @@
 /**
  * Tests for the shared FFmpeg failure describer.
  *
- * A bare exit code is not a diagnosis. TASK-501 spent four CI runs inferring
- * ENOENT from `254` and still could not tell an unreadable input from an
+ * A bare exit code is not a diagnosis. Diagnosing one real failure cost four
+ * CI runs inferring ENOENT from `254`, and still could not tell an
+ * unreadable input from an
  * unwritable output, because the sync layer reported only the number. FFmpeg
  * says which on stderr; these pin that it is carried.
  */

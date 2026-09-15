@@ -137,7 +137,7 @@ const LSBLK_DAEMON_CONTAINER = 'podkit-daemon-dockerdist-lsblk';
 const DRAIN_DAEMON_CONTAINER = 'podkit-daemon-dockerdist-drain';
 
 // ---------------------------------------------------------------------------
-// Mock Apprise endpoint (AC3). A tiny python3 HTTP server on the VM HOST that
+// Mock Apprise endpoint. A tiny python3 HTTP server on the VM HOST that
 // appends every POST body to a capture file and replies 200. The daemon
 // container reaches it via `--network host` + PODKIT_APPRISE_URL=127.0.0.1.
 // ---------------------------------------------------------------------------
@@ -707,7 +707,8 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
   // SIGTERM graceful-drain + Apprise notification.
   //
   // Both are ORCHESTRATOR behaviors, but they run on the iPod lsblk lane (the
-  // same one AC1 uses) so the daemon owns the mount — a SIGTERM then exercises
+  // same one the primary-detection test above uses) so the daemon owns the
+  // mount — a SIGTERM then exercises
   // the real mount → sync → SIGINT-drain → eject unwind. `--privileged` +
   // `--device` (block + USB) + a device-LESS config (path-based fallback) match
   // the lane. A 60-track FLAC set makes the sync run several seconds so a SIGTERM

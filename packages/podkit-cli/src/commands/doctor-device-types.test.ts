@@ -162,8 +162,8 @@ function fakeManager(overrides: Partial<DeviceManager> = {}): DeviceManager {
 /**
  * Build a fake `@podkit/core`, with capture hooks so tests assert on the
  * arguments forwarded to `runDiagnostics`. Tests that need a real `runDiagnostics`
- * (the registry-filter ACs #1/#3) skip this fake and use the real one imported
- * from `@podkit/core` directly.
+ * (the checks that filter the registry by device type) skip this fake and use
+ * the real one imported from `@podkit/core` directly.
  */
 function makeFakeCore(opts: {
   capture?: FakeCoreCapture;
@@ -428,7 +428,7 @@ describe('iPod text output sections', () => {
     await runWithContext(ctx, () =>
       runAction(out, () =>
         runDoctorDiagnostics(
-          '/tmp/ipod-ac2',
+          '/tmp/ipod-text-sections',
           undefined,
           out,
           {},
@@ -455,7 +455,7 @@ describe('iPod text output sections', () => {
 
 describe('echo-mini text output sections (no readiness pipeline)', () => {
   it('renders grouped sections; omits "Device Readiness" because the iPod readiness pipeline does not run', async () => {
-    const tmpDevice = mkdtempSync(join(tmpdir(), 'podkit-doctor-ac4-'));
+    const tmpDevice = mkdtempSync(join(tmpdir(), 'podkit-doctor-echo-mini-text-'));
     try {
       const deviceConfig: DeviceConfig = { type: 'echo-mini', path: tmpDevice };
       const ctx = makeContext({
@@ -525,7 +525,7 @@ describe('echo-mini text output sections (no readiness pipeline)', () => {
 
 describe('generic mass-storage preset forwards default contentPaths', () => {
   it('runDiagnostics receives generic preset Music/Video/Movies + Video/Shows paths', async () => {
-    const tmpDevice = mkdtempSync(join(tmpdir(), 'podkit-doctor-ac5-'));
+    const tmpDevice = mkdtempSync(join(tmpdir(), 'podkit-doctor-generic-contentpaths-'));
     try {
       const deviceConfig: DeviceConfig = { type: 'generic', path: tmpDevice };
       const ctx = makeContext({
@@ -577,7 +577,7 @@ describe('generic mass-storage preset forwards default contentPaths', () => {
 
 describe('rockbox mass-storage preset forwards default contentPaths', () => {
   it('runDiagnostics receives rockbox preset Music + Video/Movies + Video/Shows paths', async () => {
-    const tmpDevice = mkdtempSync(join(tmpdir(), 'podkit-doctor-ac6-'));
+    const tmpDevice = mkdtempSync(join(tmpdir(), 'podkit-doctor-rockbox-contentpaths-'));
     try {
       const deviceConfig: DeviceConfig = { type: 'rockbox', path: tmpDevice };
       const ctx = makeContext({
@@ -613,7 +613,7 @@ describe('rockbox mass-storage preset forwards default contentPaths', () => {
   });
 
   it('echo-mini preset overrides musicDir to empty (device root)', async () => {
-    const tmpDevice = mkdtempSync(join(tmpdir(), 'podkit-doctor-ac6-echo-'));
+    const tmpDevice = mkdtempSync(join(tmpdir(), 'podkit-doctor-echo-mini-musicdir-'));
     try {
       const deviceConfig: DeviceConfig = { type: 'echo-mini', path: tmpDevice };
       const ctx = makeContext({
@@ -655,12 +655,12 @@ describe('rockbox mass-storage preset forwards default contentPaths', () => {
 
 describe('--repair iPod-only check on mass-storage device', () => {
   it('fails with INCOMPATIBLE_DEVICE_TYPE + exit 1 (artwork-rebuild with -c provided)', async () => {
-    const tmpDevice = mkdtempSync(join(tmpdir(), 'podkit-doctor-ac8-'));
+    const tmpDevice = mkdtempSync(join(tmpdir(), 'podkit-doctor-incompatible-repair-'));
     try {
       // Register the named music collection so the COLLECTION_REQUIRED gate
       // (which fires BEFORE device resolution) passes, and the action
-      // proceeds to device resolution + the applicable-types check that AC
-      // #8 exercises.
+      // proceeds to device resolution + the applicable-types check this
+      // test exercises.
       const ctx = makeContext({
         device: 'echo',
         devices: { echo: { type: 'echo-mini', path: tmpDevice } },
@@ -709,7 +709,7 @@ describe('--repair iPod-only check on mass-storage device', () => {
     // database; the only thing standing between this request and success
     // is the applicable-types gate. Pins that the gate works without any
     // adjacent validation noise.
-    const tmpDevice = mkdtempSync(join(tmpdir(), 'podkit-doctor-ac8-orph-'));
+    const tmpDevice = mkdtempSync(join(tmpdir(), 'podkit-doctor-incompatible-orphan-'));
     try {
       const ctx = makeContext({
         device: 'echo',
@@ -820,7 +820,7 @@ describe('deviceModel field rendering', () => {
     await runWithContext(ctx, () =>
       runAction(out, () =>
         runDoctorDiagnostics(
-          '/tmp/ipod-ac10',
+          '/tmp/ipod-device-model',
           undefined,
           out,
           {},
@@ -838,7 +838,7 @@ describe('deviceModel field rendering', () => {
   });
 
   it('mass-storage: deviceModel resolves to the preset display name (e.g. "Echo Mini")', async () => {
-    const tmpDevice = mkdtempSync(join(tmpdir(), 'podkit-doctor-ac10-ms-'));
+    const tmpDevice = mkdtempSync(join(tmpdir(), 'podkit-doctor-device-model-ms-'));
     try {
       const deviceConfig: DeviceConfig = { type: 'echo-mini', path: tmpDevice };
       const ctx = makeContext({
@@ -869,7 +869,7 @@ describe('deviceModel field rendering', () => {
   });
 
   it('mass-storage: rockbox preset deviceModel resolves to "Rockbox"', async () => {
-    const tmpDevice = mkdtempSync(join(tmpdir(), 'podkit-doctor-ac10-rb-'));
+    const tmpDevice = mkdtempSync(join(tmpdir(), 'podkit-doctor-device-model-rockbox-'));
     try {
       const deviceConfig: DeviceConfig = { type: 'rockbox', path: tmpDevice };
       const ctx = makeContext({
@@ -899,7 +899,7 @@ describe('deviceModel field rendering', () => {
   });
 
   it('mass-storage: generic preset deviceModel resolves to "Mass-storage device"', async () => {
-    const tmpDevice = mkdtempSync(join(tmpdir(), 'podkit-doctor-ac10-gen-'));
+    const tmpDevice = mkdtempSync(join(tmpdir(), 'podkit-doctor-device-model-generic-'));
     try {
       const deviceConfig: DeviceConfig = { type: 'generic', path: tmpDevice };
       const ctx = makeContext({

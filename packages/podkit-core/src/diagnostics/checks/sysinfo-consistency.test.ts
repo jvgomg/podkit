@@ -4,14 +4,15 @@
  * Uses an injected filesystem reader and a synthetic `liveIdentity` on
  * `DiagnosticContext` — no real filesystem, no hardware required.
  *
- * Test sections mirror TASK-303's 15 ACs:
- *   - #1 file absent (skip), #8 no-live-data (skip), #9 invalid XML,
- *     #10 missing fields, #11 I/O error (file-state matrix)
- *   - #2/#3/#4/#5/#6/#7 axis-fold matrix
- *   - #12 GUID comparison invariants (case + zero-pad)
- *   - #13 model granularity (USB-derived live carries only generation)
- *   - #14/#15 repair coverage lives in `sysinfo-consistency-repair.test.ts`
- *     where module mocks for USB resolution + ensureSysInfoExtended are
+ * Test sections:
+ *   - the file-state matrix: file absent (skip), no live data (skip),
+ *     invalid XML, missing fields, and I/O error on a present file
+ *   - the axis-fold matrix: how the GUID axis and the model axis combine
+ *     into one verdict when each passes or fails independently
+ *   - GUID comparison invariants (case + zero-pad)
+ *   - model granularity (USB-derived live identity carries only generation)
+ *   - repair coverage lives in `sysinfo-consistency-repair.test.ts`, where
+ *     module mocks for USB resolution + ensureSysInfoExtended must be
  *     declared before the module-under-test is imported.
  */
 
@@ -296,14 +297,14 @@ describe('checkSysinfoConsistency — no live identity', () => {
   });
 });
 
-// ── AC #11: I/O / permissions error on a present file ────────────────────────
+// ── I/O / permissions error on a present file ────────────────────────────────
 //
 // The file is present but `readFileSync` throws (e.g. EACCES). This is not
 // "missing" (skip) and not "unparseable" (parse-failure path). It's a real
 // I/O error and the check must surface the underlying message verbatim so
 // the user can see *why* the file is unreadable.
 
-describe('checkSysinfoConsistency — file present but unreadable (AC #11)', () => {
+describe('checkSysinfoConsistency — file present but unreadable', () => {
   it('returns fail + repairable when readFileSync throws (permissions error)', async () => {
     const ioError: SysinfFsReader = {
       existsSync: (p) => p === SYSINFO_PATH,
@@ -345,20 +346,20 @@ describe('checkSysinfoConsistency — file present but unreadable (AC #11)', () 
   });
 });
 
-// ── AC #2 / #5 / #6 strengthened: summary content + axes payload ─────────────
+// ── Summary content + axes payload ───────────────────────────────────────────
 //
-// Pin the parts of the existing happy/sad paths that the broader-stroke
-// fold tests didn't already cover:
-//   - #2: summary names BOTH verified axes when both pass.
-//   - #5: summary names the GUID mismatch with both values WHILE the model
-//         axis passes (independent-axes fold).
-//   - #6: summary names the model mismatch with both displayNames WHILE the
-//         GUID axis passes (the inverse partial-fail).
+// Pin the parts of the happy/sad paths that the broader-stroke fold tests
+// didn't already cover:
+//   - the summary names BOTH verified axes when both pass
+//   - the summary names the GUID mismatch with both values WHILE the model
+//     axis passes (independent-axes fold)
+//   - the summary names the model mismatch with both displayNames WHILE the
+//     GUID axis passes (the inverse partial-fail)
 
-describe('checkSysinfoConsistency — fold rules pinned (AC #2/#5/#6)', () => {
+describe('checkSysinfoConsistency — fold rules pinned', () => {
   const guid = '000A27001DCECFB5';
 
-  it('AC #2: both-axes pass → summary names firewireGuid + model verified', async () => {
+  it('both-axes pass → summary names firewireGuid + model verified', async () => {
     const result = await checkSysinfoConsistency(
       makeCtx({ firewireGuid: guid, model: NANO_2G_MODEL }),
       presentFs(makeSysinfoXml(guid, { modelNumber: 'MA477' }))
@@ -375,7 +376,7 @@ describe('checkSysinfoConsistency — fold rules pinned (AC #2/#5/#6)', () => {
     expect(axes.find((a) => a.name === 'model')?.status).toBe('pass');
   });
 
-  it('AC #5: GUID mismatch + model match → fail names GUID mismatch with both values', async () => {
+  it('GUID mismatch + model match → fail names GUID mismatch with both values', async () => {
     const live = 'DEADBEEF00001234';
     const result = await checkSysinfoConsistency(
       makeCtx({ firewireGuid: live, model: NANO_2G_MODEL }),
@@ -394,7 +395,7 @@ describe('checkSysinfoConsistency — fold rules pinned (AC #2/#5/#6)', () => {
     expect(axes.find((a) => a.name === 'model')?.status).toBe('pass');
   });
 
-  it('AC #6: GUID match + model mismatch → fail names model mismatch with both displayNames', async () => {
+  it('GUID match + model mismatch → fail names model mismatch with both displayNames', async () => {
     const result = await checkSysinfoConsistency(
       makeCtx({ firewireGuid: guid, model: NANO_3G_MODEL }),
       presentFs(makeSysinfoXml(guid, { modelNumber: 'MA477' }))
@@ -414,14 +415,14 @@ describe('checkSysinfoConsistency — fold rules pinned (AC #2/#5/#6)', () => {
   });
 });
 
-// ── AC #12: FireWireGUID comparator invariants ───────────────────────────────
+// ── FireWireGUID comparator invariants ───────────────────────────────────────
 //
 // `normaliseFireWireGuid` uppercases and left-pads to 16 chars; the on-disk
 // path is similarly normalised by `extractFromPlist`. Drive the comparator
 // with permutations and assert all pass-equivalent forms produce a GUID-axis
 // pass.
 
-describe('checkSysinfoConsistency — GUID comparator invariants (AC #12)', () => {
+describe('checkSysinfoConsistency — GUID comparator invariants', () => {
   // Canonical 16-char uppercase, used as on-disk in each permutation.
   const canonical = '000A27001DCECFB5';
 
@@ -472,7 +473,7 @@ describe('checkSysinfoConsistency — GUID comparator invariants (AC #12)', () =
   });
 });
 
-// ── AC #13: model comparison happens at generation granularity ───────────────
+// ── Model comparison happens at generation granularity ───────────────────────
 //
 // On-disk SysInfoExtended typically resolves to a *rich* IpodModel with
 // `capacityGb` + `color` (because `modelNumStr` or serial-suffix encodes
@@ -481,7 +482,7 @@ describe('checkSysinfoConsistency — GUID comparator invariants (AC #12)', () =
 // match at `generationId` granularity — anything finer would false-negative
 // on every real iPod.
 
-describe('checkSysinfoConsistency — model granularity (AC #13)', () => {
+describe('checkSysinfoConsistency — model granularity', () => {
   const guid = '000A27001DCECFB5';
 
   it('matches when on-disk has full model info (capacity + color) but live carries only generation', async () => {

@@ -7,7 +7,7 @@
  * - missing `.owner`, dir older than the grace window → reap (pre-`.owner`
  *   legacy debris OR crash before write)
  * - missing `.owner`, dir freshly touched → skip (a sibling between its
- *   `mkdir` and its `writeOwnership`; TASK-501)
+ *   `mkdir` and its `writeOwnership`)
  * - malformed `.owner` → same two cases as missing
  * - `.owner` PID is dead → reap immediately (SIGKILLed prior process)
  * - `.owner` start-time mismatch → reap (PID reuse guard)
@@ -97,7 +97,7 @@ describe('walkAbandonedTranscodeDirs', () => {
     });
   });
 
-  // TASK-501. `.owner` cannot be written in the same syscall as the mkdir
+  // `.owner` cannot be written in the same syscall as the mkdir
   // that precedes it, so there is always a window where a live scratch dir
   // has no owner marker. Reaping in that window deletes the output
   // directory of a running sync, and every transcode after it fails with

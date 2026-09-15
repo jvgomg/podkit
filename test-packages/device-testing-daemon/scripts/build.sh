@@ -9,7 +9,7 @@
 #
 # Cross-compile: Bun supports `--target=bun-linux-x64` and
 # `--target=bun-linux-arm64` from macOS hosts, so the same script works
-# inside the builder VM (TASK-322.03) and ad-hoc on a macOS dev host.
+# inside the builder VM and ad-hoc on a macOS dev host.
 #
 # Usage:
 #   bash scripts/build.sh                  # auto-detect target from Bun's host

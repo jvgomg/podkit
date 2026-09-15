@@ -1,7 +1,7 @@
 /**
  * Unit tests for `determineLevel()`'s `'unsupported'` short-circuit.
  *
- * Covers the cases TASK-331 added:
+ * Covers:
  *   - Apple PID that lives in the `tables/unsupported.ts` table (touch 5G)
  *     → `level: 'unsupported'`, canonical headline surfaced via the typed
  *     `unsupported` payload.

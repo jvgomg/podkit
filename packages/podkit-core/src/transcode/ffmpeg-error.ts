@@ -4,8 +4,8 @@
  * FFmpeg negates an errno into its exit byte, so `254` is `-ENOENT` and
  * covers both "cannot read the input" and "cannot write the output" — the one
  * distinction a caller actually needs, and the one the number cannot carry.
- * TASK-501 spent four CI runs inferring from the code what a single line of
- * stderr states outright.
+ * Diagnosing one real failure this way cost four CI runs inferring from the
+ * code what a single line of stderr states outright.
  *
  * Shared by the audio transcoder (`transcode/ffmpeg.ts`) and the video one
  * (`video/transcode.ts`) so the two cannot drift apart on which diagnostics

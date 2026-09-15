@@ -56,8 +56,8 @@ HEALTHY_MODULES="dummy_hcd libcomposite usb_f_mass_storage usb_f_fs sg"
 # avoids both rabbit holes; production posture is unaffected.
 SG_PERMS_RULE="/etc/udev/rules.d/40-podkit-sg-perms.rules"
 SG_PERMS_RULE_BODY='# Managed by test-packages/device-testing/scripts/apply-state.sh — DO NOT EDIT.
-# Grants world-readable access to /dev/sg* nodes for the Lima test VM
-# (TASK-348). See SG_PERMS_RULE comment in apply-state.sh for why mode 0664.
+# Grants world-readable access to /dev/sg* nodes for the Lima test VM.
+# See SG_PERMS_RULE comment in apply-state.sh for why mode 0664.
 KERNEL=="sg[0-9]*", MODE="0664"'
 
 # Path glob for libgpod-shipped udev rules. libgpod-common (Debian 12.10)
@@ -233,7 +233,7 @@ apply_healthy() {
   #    transition back to `healthy` must remove them or subsequent runs
   #    will inherit a near-full mount that doctor doesn't expect.
   tear_down_near_full
-  # 7b. TASK-412 ADR-018 / estimate-drift loopbacks — same teardown
+  # 7b. ADR-018 estimate-drift loopbacks — same teardown
   #     responsibility. The post-sweep loopback also carries
   #     chattr-immutable debris that MUST be cleared before unmount,
   #     else the image keeps inode-level immutability flags into the
@@ -272,7 +272,7 @@ TEST_VM_SG_OVERRIDE_BODY='# Managed by test-packages/device-testing/scripts/appl
 # Overrides 91-podkit-ipod.rules MODE=0660 with MODE=0664 for /dev/sg*
 # on the test VM. Allows the ssh-attached test user (not on a console
 # seat, so uaccess does not fire) to read SCSI generic nodes during
-# VM tests. TASK-348.
+# VM tests.
 KERNEL=="sg[0-9]*", MODE="0664"'
 
 ensure_test_vm_sg_override() {
@@ -388,7 +388,7 @@ apply_device_mount_near_full() {
   tear_down_near_full
 
   # 5 MiB image, ext4, filled so ~50 KiB free remains. Delegates to the
-  # shared helper for symmetry with the TASK-412 postsweep + drift states.
+  # shared helper for symmetry with the postsweep + drift states.
   provision_loopback_ext4 "$NEAR_FULL_IMG" "$NEAR_FULL_MNT" 5 "$NEAR_FULL_RESERVE_KIB"
 
   # Final state echo for diagnostics in CI logs.
@@ -397,7 +397,7 @@ apply_device_mount_near_full() {
 }
 
 # ---------------------------------------------------------------------------
-# Shared loopback ext4 helper (TASK-412)
+# Shared loopback ext4 helper
 #
 # Used by the post-sweep + drift SystemStates. Provisions a fresh ext4
 # loopback at the given mountpoint, sized to the requested total size,
@@ -446,7 +446,7 @@ provision_loopback_ext4() {
 }
 
 # ---------------------------------------------------------------------------
-# device-mount-fits-estimate-failed-sweep (TASK-412 ADR-018 post-sweep cell)
+# device-mount-fits-estimate-failed-sweep (ADR-018 post-sweep cell)
 #
 # Provisions a 1 MiB ext4 loopback with chattr-immutable debris under the
 # Music content path. The pre-sync sweep walks the debris (scanner reports
@@ -507,7 +507,7 @@ apply_device_mount_fits_estimate_failed_sweep() {
 }
 
 # ---------------------------------------------------------------------------
-# device-mount-fits-estimate-source-drifts (TASK-412 estimate-drift cell)
+# device-mount-fits-estimate-source-drifts (estimate-drift cell)
 #
 # Provisions a 2 MiB ext4 loopback sized to fit the planner's
 # estimateCopySize prediction for a 30s mp3 (~960 KiB at 256 kbps default)

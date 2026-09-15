@@ -1,7 +1,7 @@
 /**
  * Measuring encoded audio in e2e assertions, and bounding it per encoder.
  *
- * Two problems this solves, both learned from TASK-499 / TASK-500:
+ * Two problems this solves:
  *
  * 1. **Container overhead is not the encoder's.** `ffprobe`'s
  *    `format.bit_rate` is total-bytes ÷ duration, so an MP4's `moov` atom and
@@ -66,13 +66,13 @@ export function resolveAacEncoder(): AacEncoder {
  * ADR-023 §2 makes a quality preset's bitrate a hard ceiling, but only one of
  * the three AAC encoders podkit can pick is *asked* for a bitrate:
  *
- * - **`aac`** (FFmpeg native) is driven in ABR mode with `-b:a` (TASK-499).
+ * - **`aac`** (FFmpeg native) is driven in ABR mode with `-b:a`.
  *   Its rate control tracks the request to within a kbps even on
  *   incompressible content and never exceeds it, so the tolerance is the cap
  *   itself plus one kbps — and that one kbps is ffprobe's rounding, not
  *   encoder slack.
- * - **`aac_at`** (macOS AudioToolbox) is driven in `abr` mode with `-b:a`
- *   (TASK-511). Its long-term average tracks the request closely but not
+ * - **`aac_at`** (macOS AudioToolbox) is driven in `abr` mode with `-b:a`.
+ *   Its long-term average tracks the request closely but not
  *   exactly: measured 130/196/258 kbps for 128/192/256 on incompressible
  *   stereo noise, so ~2% over at worst. 5% is that with room, and it is far
  *   tighter than the 15% this encoder needed while podkit was choosing a

@@ -727,7 +727,7 @@ export async function runSync(
       },
     });
 
-  // ----- Unsupported-device gate (TASK-317.03) -----
+  // ----- Unsupported-device gate -----
   // Refuse cleanly before any heavy work (FFmpeg detect, DB open, planning)
   // when the cascade resolves to an unsupported generation. No track plan,
   // no DB open. Uses the same primitive (`assessIpodIdentity` →
@@ -1084,7 +1084,7 @@ export async function runSync(
       }
     }
 
-    // ----- Pre-sync debris sweep (TASK-398) -----
+    // ----- Pre-sync debris sweep -----
     //
     // Run once per device sync, before any track ops. The result is
     // attached to the FIRST collection's plan only (subsequent plans see

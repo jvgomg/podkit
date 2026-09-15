@@ -16,10 +16,10 @@ import type { ReadinessResult } from '@podkit/core';
 // (distinct PID, same family).
 export const expectedCapabilities: DeviceCapabilities | null = null;
 
-// TASK-331 added `'unsupported'` to ReadinessLevel + threaded the structured
+// `'unsupported'` was added to ReadinessLevel, threading the structured
 // payload from the mass-storage classifier's no-preset rejection path.
-// TASK-324 Phase 5 AC #5 sweeps this from the legacy `'unknown'` workaround
-// to the canonical `'unsupported'` shape.
+// This fixture reflects the canonical `'unsupported'` shape rather than the
+// legacy `'unknown'` workaround it superseded.
 export const expectedReadiness: ReadinessResult = {
   level: 'unsupported',
   unsupported: {

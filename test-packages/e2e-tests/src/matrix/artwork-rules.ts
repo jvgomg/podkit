@@ -82,8 +82,8 @@ import {
  * Devices the host artwork matrix sweeps (the source-side scenario × format
  * × pipeline matrix; the transfer-artwork and resize matrices each carry
  * their own device sweeps including rockbox). iPod (database artwork) and
- * two embedded-art mass-storage presets. Post-TASK-370 / TASK-372 every cell
- * asserts real behaviour with no `skipBug` fences.
+ * two embedded-art mass-storage presets. Every cell asserts real behaviour
+ * with no `skipBug` fences — none of them are working around a known bug.
  */
 export const ARTWORK_DEVICE_IDS: readonly DeviceId[] = ['ipod-MA147', 'ms-echo-mini', 'ms-generic'];
 
@@ -123,8 +123,8 @@ export interface StaticArtExpected extends CellExpectation {
    */
   checkArtworkSource: DecisionSource;
   /**
-   * Whether the sync emitted the `artwork-detection-disabled` plan warning
-   * (TASK-366). Subsonic adapter fires it iff `!checkArtwork`; directory
+   * Whether the sync emitted the `artwork-detection-disabled` plan warning.
+   * Subsonic adapter fires it iff `!checkArtwork`; directory
    * adapter never fires it. A correlation cell with `checkArtworkSource`
    * pins the warning ↔ resolved-value relationship — a regression in either
    * feature alone (warning silently dropped, or warning fires after
@@ -262,7 +262,7 @@ export function pipelineDeviceCellLabel(cell: PipelineDeviceCell): string {
 }
 
 /**
- * Post-TASK-370 / TASK-372 fence shape.
+ * Current fence shape, after sink dispatch collapsed the per-container matrix.
  *
  * Two layered primitives collapsed the old "embed via FFmpeg vs. taglib
  * OGG carve-out vs. setArtworkFromData no-op vs. nowhere-to-land" matrix
@@ -274,8 +274,8 @@ export function pipelineDeviceCellLabel(cell: PipelineDeviceCell): string {
  *     including non-OGG outputs that used to drop bytes. So
  *     `ms-echo-mini` and `ms-generic` now pass adapter-fallback bytes
  *     through to the device file regardless of format/scenario.
- *   - mass-storage sidecar primary   → `adapter.writeSidecar()` (TASK-370)
- *     writes a peer `cover.jpg` at `artworkMaxResolution`. Rockbox stays
+ *   - mass-storage sidecar primary   → `adapter.writeSidecar()` writes a
+ *     peer `cover.jpg` at `artworkMaxResolution`. Rockbox stays
  *     out of `ARTWORK_DEVICE_IDS` (that sweep is for the source-side
  *     scenario × format × pipeline product); the transfer-artwork and
  *     resize matrices each carry their own rockbox cells.
@@ -302,7 +302,7 @@ export function skipArtworkCell(_cell: PipelineDeviceCell): SkipDecision | null 
  * action and whether art reaches the device. Predictions key off
  * `target.capabilities`, never the device name.
  *
- * Post-TASK-372 the device-side dispatch is uniform across every embedded /
+ * The device-side dispatch is uniform across every embedded /
  * database sink: every non-A scenario lands art on the device because the
  * directory adapter's getArtwork fallback supplies sidecar / album-cover
  * bytes whenever the audio body lacks embed, and `track.artworkSink` picks
@@ -324,10 +324,10 @@ export function predictDirectory(
   const action = deviceAction(format, spec.capabilities, pipeline, spec.kind);
   const store = spec.kind === 'ipod' ? 'database-artwork' : 'embedded-artwork';
 
-  // The directory adapter's getArtwork fallback (TASK-142) closes the gap
+  // The directory adapter's getArtwork fallback closes the gap
   // between "source file embed" and "album has art" — the executor picks up
   // peer cover.jpg / folder.jpg bytes whenever the audio body lacks embed.
-  // TASK-372 then routes those bytes through the right write path for the
+  // Those bytes are then routed through the right write path for the
   // device's artworkSink, so every non-A album lands art on any device with
   // a non-empty artworkSources list.
   const albumHasArt = scenario !== 'A-none';
@@ -368,7 +368,7 @@ export function predictDirectory(
  * the adapter fetches each cover, filters Navidrome's placeholder, and writes
  * a syncTag hash that converges any genuine source/device mismatch.
  *
- * **Adapter-fallback path (TASK-142):** the executor now consults
+ * **Adapter-fallback path:** the executor now consults
  * `SubsonicAdapter.getArtwork(track)` whenever embedded extraction from the
  * downloaded audio body returns null. That call hits `getCoverArt`, filters
  * the placeholder (probed unconditionally at connect time), and returns API
@@ -380,13 +380,13 @@ export function predictDirectory(
  * **Device-axis coverage.** `ScenarioFormatCell` has no device axis — the
  * docker matrix runs through `withTarget` which creates an `IpodTarget` —
  * but the prediction's `deviceHasArtwork = albumHasArt` claim is now valid
- * for any device whose `artworkSink` writes (database / embedded). TASK-372
- * collapsed the per-container split: setArtworkFromData lands on iPod,
- * updateTrack({ embeddedPictureData }) lands on every mass-storage embedded
- * container via node-taglib-sharp. A future mass-storage Subsonic sweep
- * still needs to filter sidecar-primary devices (the writer is deferred to
- * TASK-370), but the iPod-only branching this predictor used to need is
- * gone.
+ * for any device whose `artworkSink` writes (database / embedded). Sink
+ * dispatch collapsed the per-container split: setArtworkFromData lands on
+ * iPod, updateTrack({ embeddedPictureData }) lands on every mass-storage
+ * embedded container via node-taglib-sharp. A future mass-storage Subsonic
+ * sweep still needs to filter sidecar-primary devices (there is no sidecar
+ * writer for Subsonic mass-storage devices yet), but the iPod-only
+ * branching this predictor used to need is gone.
  */
 export function predictSubsonic(
   cell: ScenarioFormatCell,
@@ -398,7 +398,7 @@ export function predictSubsonic(
   // cover.jpg via getCoverArt for C/D, the embedded picture for B, and the
   // placeholder (filtered) for A.
   const albumHasArt = scenario !== 'A-none';
-  // Device-side "the on-device file has art" — after TASK-142 the adapter
+  // Device-side "the on-device file has art" — the adapter
   // fallback closes the gap between "file body embed" and "album has art",
   // so every non-A album lands art on the device regardless of where it lived
   // in the source (embed vs sidecar vs API).
@@ -634,7 +634,7 @@ function classifyAnchorColor(sample: RgbColor): string | null {
  * - bare tracks → no own art, and the per-artist split denies them a sibling's
  *   cover → no art on device. (In a single-artist album they would inherit it.)
  *
- * This pins the current, deliberate `(artist, album)` keying (TASK-355.03): a
+ * This pins the current, deliberate `(artist, album)` keying: a
  * code change that started sharing art across a compilation's artists would
  * flip the bare cells; a coarser key that collided would flip `dbArtOwnColor`.
  */
@@ -662,7 +662,7 @@ export function predictCompilation(format: Format, checkArtwork: boolean): Compi
 /**
  * A transfer-mode × format × device cell.
  *
- * Pre-TASK-370 this was iPod-only (`TRANSFER_ART_DEVICE = 'ipod-MA147'`); the
+ * Originally this was iPod-only (`TRANSFER_ART_DEVICE = 'ipod-MA147'`); the
  * transfer-mode rules only made sense for a database-artwork device because
  * mass-storage's file body IS the artwork. With sidecar-primary devices
  * (rockbox) landing the peer cover, the matrix now sweeps device too:
@@ -1034,11 +1034,11 @@ export async function observeStaticArtwork(opts: {
     );
   }
 
-  // Decision attribution: TASK-357's --json `decisions.checkArtwork.source` is
+  // Decision attribution: the --json `decisions.checkArtwork.source` is
   // sync-wide, so we read it once and apply to every cell in this pass.
   const checkArtworkSource = (dryJson.decisions?.checkArtwork.source ??
     null) as DecisionSource | null;
-  // TASK-366's `artwork-detection-disabled` plan warning is also sync-wide
+  // The `artwork-detection-disabled` plan warning is also sync-wide
   // (one warning per dry-run). Same one-shot read.
   const artworkDetectionDisabledWarning =
     dryJson.warnings?.some((w) => w.phase === 'plan' && w.type === 'artwork-detection-disabled') ??

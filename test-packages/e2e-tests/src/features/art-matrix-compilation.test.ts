@@ -12,7 +12,7 @@
  * *split*, not a collision. Anchors therefore land with art; bare tracks land
  * without. (In a single-artist album the bare tracks would inherit the anchor's
  * cover — that's exactly what `art-matrix.test.ts` scenario B asserts.) This
- * pins the deliberate `(artist, album)` keying from TASK-355.03.
+ * pins the deliberate `(artist, album)` keying.
  *
  * iPod-only: the split lives in the cache/pipeline layer and is device-agnostic,
  * and iPod sidesteps the mass-storage OGG/Opus execution bugs (doc-039

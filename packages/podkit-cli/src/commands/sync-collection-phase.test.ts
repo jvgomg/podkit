@@ -125,7 +125,7 @@ const makeDeps = (syncOne: SyncOneStub, dryRun = false) => {
 // =============================================================================
 
 describe('runCollectionPhase', () => {
-  // ─── AC #7: empty collections ────────────────────────────────────────────
+  // ─── empty collections ────────────────────────────────────────────
   describe('empty collections', () => {
     it('no iterations, no save, accumulators all zero', async () => {
       let callCount = 0;
@@ -159,7 +159,7 @@ describe('runCollectionPhase', () => {
     });
   });
 
-  // ─── AC #7: single collection happy path ─────────────────────────────────
+  // ─── single collection happy path ─────────────────────────────────
   describe('happy path', () => {
     it('music: single collection, header suppressed (length===1)', async () => {
       const { deps, ctx } = makeDeps(async () =>
@@ -206,7 +206,7 @@ describe('runCollectionPhase', () => {
         deps
       );
 
-      // Byte-identical header pin: '=== Music: NAME ===' (AC #5).
+      // Byte-identical header pin: '=== Music: NAME ==='.
       expect(ctx.stdout.text()).toContain('=== Music: main ===');
       expect(ctx.stdout.text()).toContain('=== Music: archive ===');
     });
@@ -264,7 +264,7 @@ describe('runCollectionPhase', () => {
     });
   });
 
-  // ─── AC #7: interrupt mid-loop ───────────────────────────────────────────
+  // ─── interrupt mid-loop ───────────────────────────────────────────
   describe('interrupted mid-loop', () => {
     it('music: interrupt with priorPhaseCompleted+completed>0 triggers save with byte-identical suffix', async () => {
       let i = 0;
@@ -291,7 +291,7 @@ describe('runCollectionPhase', () => {
       expect(i).toBe(2); // Stopped before collection 'c'
       expect(result.interrupted).toBe(true);
       expect(adapter.saveCalls).toBe(1);
-      // Byte-identical interrupt suffix (AC #6): music = "Sync interrupted."
+      // Byte-identical interrupt suffix: music = "Sync interrupted."
       expect(ctx.stdout.text()).toContain('Saving device database...');
       expect(ctx.stdout.text()).toContain('Database saved. Sync interrupted.');
       expect(ctx.exitCode.get()).toBe(130);
@@ -489,7 +489,7 @@ describe('runCollectionPhase', () => {
     });
   });
 
-  // ─── AC #7: error accumulation ───────────────────────────────────────────
+  // ─── error accumulation ───────────────────────────────────────────
   describe('error accumulation', () => {
     it('two consecutive failures: anyError stays true, errors accrue', async () => {
       const { deps } = makeDeps(async () =>
@@ -570,7 +570,7 @@ describe('runCollectionPhase', () => {
     });
   });
 
-  // ─── AC #8: preliminaries one-shot ───────────────────────────────────────
+  // ─── preliminaries one-shot: the first collection's iteration receives the pre-sync preliminaries, later ones receive undefined ───
   describe('preliminaries one-shot', () => {
     it('first iteration receives preliminaries, second receives undefined', async () => {
       const received: Array<unknown> = [];

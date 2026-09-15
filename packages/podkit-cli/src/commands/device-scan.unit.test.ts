@@ -2,7 +2,7 @@
  * Unit tests for the `device scan` runner.
  *
  * Exercises the runner directly with a stubbed `@podkit/core` module so no
- * real USB walk happens (AC #2 of TASK-315). The fuller end-to-end coverage
+ * real USB walk happens. The fuller end-to-end coverage
  * lives in `device-scan.integration.test.ts`.
  */
 
@@ -211,8 +211,8 @@ describe('runDeviceScan', () => {
     expect(stdout.text()).toContain('test-1.2.3');
   });
 
-  it('emits USB-only iPods into the JSON devices array (TASK-334)', async () => {
-    // Regression for TASK-334: a USB-walk-only Apple device (no lsblk entry)
+  it('emits USB-only iPods into the JSON devices array', async () => {
+    // Regression: a USB-walk-only Apple device (no lsblk entry)
     // must surface in `--format json` output as a USB-only iPod entry so
     // downstream consumers (VM tests, automation) can assert on its
     // vendor/product descriptor without falling back to `lsusb` cross-checks.
@@ -299,7 +299,7 @@ describe('runDeviceScan', () => {
     expect(usbOnly.model?.source).toBe('usb');
   });
 
-  // ── Linka regression — TASK-317.11 #2 ─────────────────────────────────────
+  // ── Linka regression ───────────────────────────────────────────────────
   describe('linka double-entry regression', () => {
     /**
      * The linka repro (Linux nano 3G FAT32): both the block-device pipeline

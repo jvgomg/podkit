@@ -10,8 +10,8 @@
  * walks the bus and renders kind-supplied "you have an Echo Mini
  * attached — add it with…" hints.
  *
- * Post-TASK-427 the per-kind dispatcher (in `./discovery.ts`, sibling to
- * `displayFor`) replaces the old `DeviceProvider.describeAddIntent`
+ * The per-kind dispatcher (in `./discovery.ts`, sibling to `displayFor`)
+ * replaced the older `DeviceProvider.describeAddIntent`
  * provider-driven surface — adding a new device kind now means adding
  * one helper to that dispatcher, no provider registration required.
  *

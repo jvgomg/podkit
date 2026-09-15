@@ -1132,7 +1132,7 @@ function parseDevices(
 
     // Parse optional `unsupported` object — records the user's explicit
     // "add this device anyway" choice from `podkit device add` on a
-    // generation podkit does not officially support. See TASK-317.03.
+    // generation podkit does not officially support.
     //
     // Expected TOML shape (inline table):
     //   unsupported = { kind = "ios-device", confirmedAt = "2026-05-16T11:30:00.000Z" }

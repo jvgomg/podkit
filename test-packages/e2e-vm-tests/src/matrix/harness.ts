@@ -5,9 +5,8 @@
  * save-failure matrix here composes the same predict/observe/diff pattern as
  * the host matrices. Inlined (not imported from `@podkit/e2e-tests`) to avoid
  * pulling that package's full host-side dependency graph (podkit + gpod-testing
- * + targets) into the VM test package. TASK-380's spec defers the question of
- * whether to lift this into a shared package until after the matrix has
- * landed.
+ * + targets) into the VM test package. Whether to lift this into a shared
+ * package is deferred until after the matrix has landed.
  *
  * @module
  */

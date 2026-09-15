@@ -133,7 +133,7 @@ export async function runDeviceReset(
 
   // Step 1: open the existing database and read the current device name.
   // A device with no readable iTunesDB cannot be *re*-set — point the user to
-  // `device init` for first-time setup (AC#4).
+  // `device init` for first-time setup.
   const hasDb = await IpodDatabase.hasDatabase(devicePath);
   if (!hasDb) {
     throw notInitializedError(devicePath, options.name);
@@ -319,7 +319,7 @@ export async function runDeviceReset(
 }
 
 /**
- * Build the AC#4 "not initialised" error. Reset re-sets an already-initialised
+ * Build the "not initialised" error. Reset re-sets an already-initialised
  * device; first-time setup is `device init`. The suggested init command carries
  * `--name` through when the user supplied one.
  */

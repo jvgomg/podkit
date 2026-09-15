@@ -31,8 +31,7 @@
  * SysInfo is present) requires a synthetic iPod volume mounted in the
  * container. That is not wired into THIS (docker-sidecar) harness — it lands
  * in the sibling `loopback-fat` CLI surface (`src/docker-loopback/`), which
- * mounts a loopback FAT iPod volume in the container. Tracked by TASK-450,
- * which asserts:
+ * mounts a loopback FAT iPod volume in the container, and asserts:
  *   - `--no-verify` + SysInfo present → exit 0, verification = 'trusted-disk'
  *   - `--no-verify` + SysInfo absent  → exit 1, doctor hint in stderr
  *

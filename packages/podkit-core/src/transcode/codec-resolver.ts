@@ -23,8 +23,9 @@ import {
 /**
  * Abstraction over encoder availability.
  *
- * The concrete implementation will be provided by `TranscoderCapabilities`
- * (TASK-248.05), but the resolver only needs this minimal interface.
+ * The concrete implementation is provided by `TranscoderCapabilities`, which
+ * probes the host's FFmpeg build; the resolver only needs this minimal
+ * interface.
  */
 export interface EncoderAvailability {
   /** Check if an encoder for a given codec is available */

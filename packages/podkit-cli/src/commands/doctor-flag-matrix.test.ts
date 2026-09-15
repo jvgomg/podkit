@@ -1,18 +1,25 @@
 /**
- * Flag-matrix coverage for `podkit doctor` (TASK-307, m-19 Phase 5b).
+ * Flag-matrix coverage for `podkit doctor`.
  *
- * This file pins the 17 ACs from `task-307`. Each describe block names the AC
- * it covers. The runner extraction (`runDoctorAction` in `doctor.ts`) lets us
- * exercise the action's flag-validation logic in-process — no live CLI
- * subprocess, no real libgpod, no real FFmpeg invocation.
+ * This file pins the full set of behaviours doctor's flags must produce:
+ * device/collection requirements for `--repair`, unknown-check and
+ * not-repairable handling, device-type compatibility, dry-run and JSON
+ * repair-output shapes, `--no-system`/`--scope` scope filtering, `--format
+ * csv` rendering (escape rules and verbose groupings included), JSON vs.
+ * text output structure, and the `--scope`/`--system-only` cross-product.
+ * Each describe block names the behaviour it covers. The runner extraction
+ * (`runDoctorAction` in `doctor.ts`) lets us exercise the action's
+ * flag-validation logic in-process — no live CLI subprocess, no real
+ * libgpod, no real FFmpeg invocation.
  *
- * Cross-cut: where TASK-307's original wording predates TASK-308's
- * "warn → unhealthy → exit 2" decision (notably AC #4's exit-code semantics
- * for `--repair` validation), we pin against the locked-in decision recorded
- * in docs/agents/testing.md §"Doctor exit-code & overall-health semantics".
+ * Cross-cut: where the original flag-matrix wording predates the later
+ * "warn → unhealthy → exit 2" decision (notably the exit-code semantics for
+ * `--repair` validation, which stays exit 1 for every CliError regardless of
+ * warn/unhealthy status), we pin against the locked-in decision recorded in
+ * docs/agents/testing.md §"Doctor exit-code & overall-health semantics".
  *
- * @see backlog/tasks/task-307 - Doctor-CLI-flag-matrix.md
- * @see packages/podkit-cli/src/commands/doctor-exit-code.test.ts — TASK-308 sibling
+ * @see packages/podkit-cli/src/commands/doctor-exit-code.test.ts — companion
+ *   suite covering doctor's exit-code semantics
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
@@ -375,9 +382,9 @@ function makeNoRepairCheck(id: string): FakeCheckDefinition {
   });
 }
 
-// ── AC #1: --repair without -d fails with DEVICE_REQUIRED ──────────────────
+// ── --repair without -d fails with DEVICE_REQUIRED ──────────────────────────
 
-describe('AC #1: --repair without -d', () => {
+describe('--repair without -d', () => {
   it('fails with "Repair requires an explicit device" + exit 1', async () => {
     const ctx = makeContext({ device: undefined });
     const { out, stdout, exitCode } = makeOut();
@@ -397,9 +404,9 @@ describe('AC #1: --repair without -d', () => {
   });
 });
 
-// ── AC #2: --repair artwork-rebuild without -c → COLLECTION_REQUIRED ───────
+// ── --repair artwork-rebuild without -c → COLLECTION_REQUIRED ───────────────
 
-describe('AC #2: --repair artwork-rebuild without -c', () => {
+describe('--repair artwork-rebuild without -c', () => {
   it('fails with "requires a source collection" + lists available collections', async () => {
     const ctx = makeContext({ device: 'ipod', collections: ['main', 'extras'] });
     const { out, stdout, exitCode } = makeOut();
@@ -444,9 +451,9 @@ describe('AC #2: --repair artwork-rebuild without -c', () => {
   });
 });
 
-// ── AC #3: --repair with an unknown check ID → UNKNOWN_CHECK ───────────────
+// ── --repair with an unknown check ID → UNKNOWN_CHECK ────────────────────────
 
-describe('AC #3: --repair with an unknown check ID', () => {
+describe('--repair with an unknown check ID', () => {
   it('fails with "Unknown check ID" and lists all valid IDs', async () => {
     const ctx = makeContext({ device: 'ipod' });
     const { out, stdout, exitCode } = makeOut();
@@ -476,12 +483,12 @@ describe('AC #3: --repair with an unknown check ID', () => {
   });
 });
 
-// ── AC #4: --repair with check that has no auto-repair → CHECK_NOT_REPAIRABLE
-// Per TASK-308 the exit code for any CliError is 1 (REPAIR_FAILED is 1, all
-// repair-validation errors are 1). Warn-counts-as-unhealthy (exit 2) does not
-// apply to repair validation — that's the diagnostic path.
+// ── --repair with check that has no auto-repair → CHECK_NOT_REPAIRABLE ─────
+// Every CliError from repair validation exits with code 1 (REPAIR_FAILED and
+// every other repair-validation error alike). Warn-counts-as-unhealthy (exit
+// 2) does not apply to repair validation — that's the diagnostic path.
 
-describe('AC #4: --repair with check that does not support auto-repair', () => {
+describe('--repair with check that does not support auto-repair', () => {
   it('fails with "does not support automatic repair" + exit 1', async () => {
     const ctx = makeContext({ device: 'ipod' });
     const { out, stdout, exitCode } = makeOut();
@@ -501,16 +508,16 @@ describe('AC #4: --repair with check that does not support auto-repair', () => {
   });
 });
 
-// ── AC #5: --repair not applicable to device type → INCOMPATIBLE_DEVICE_TYPE
+// ── --repair not applicable to device type → INCOMPATIBLE_DEVICE_TYPE ──────
 
-describe('AC #5: --repair check not applicable to device type', () => {
+describe('--repair check not applicable to device type', () => {
   it('iPod-only repair on mass-storage device fails with INCOMPATIBLE_DEVICE_TYPE', async () => {
     // Set up the device manager stub. The config registers a named device
     // 'echo' pointing at a temp dir; parseCliDeviceArg + resolveEffectiveDevice
     // then resolve '-d echo' to that device (type=echo-mini), and
     // resolveDevice returns deviceConfig={type:'echo-mini'}. The action's
     // isMassStorage check then trips the INCOMPATIBLE_DEVICE_TYPE branch.
-    const tmpDevice = mkdtempSync(join(tmpdir(), 'podkit-doctor-ac5-'));
+    const tmpDevice = mkdtempSync(join(tmpdir(), 'podkit-doctor-incompatible-device-'));
     try {
       const ctx = makeContext({ device: 'echo' });
       ctx.config.devices = { echo: { type: 'echo-mini', path: tmpDevice } };
@@ -538,9 +545,9 @@ describe('AC #5: --repair check not applicable to device type', () => {
   });
 });
 
-// ── AC #6: --repair --dry-run → "Dry run:" + RepairOutput, no mutations ────
+// ── --repair --dry-run → "Dry run:" + RepairOutput, no mutations ───────────
 
-describe('AC #6: --repair --dry-run', () => {
+describe('--repair --dry-run', () => {
   it('routes through runSystemRepair with dryRun=true; no mutations performed', async () => {
     const ctx = makeContext({ json: false });
     const { out, stdout, stderr, exitCode } = makeOut('text');
@@ -575,9 +582,9 @@ describe('AC #6: --repair --dry-run', () => {
   });
 });
 
-// ── AC #7: --repair --json → only the RepairOutput JSON document on stdout ─
+// ── --repair --json → only the RepairOutput JSON document on stdout ────────
 
-describe('AC #7: --repair --json shape', () => {
+describe('--repair --json shape', () => {
   it('emits exactly one JSON document with success/summary/checkId/dryRun/details', async () => {
     const ctx = makeContext({ json: true });
     const { out, stdout, stderr } = makeOut('json');
@@ -640,9 +647,9 @@ describe('AC #7: --repair --json shape', () => {
   });
 });
 
-// ── AC #8: --no-system: system checks absent + no system probes fire ───────
+// ── --no-system: system checks absent + no system probes fire ──────────────
 
-describe('AC #8: --no-system skips system-scope checks and their probes', () => {
+describe('--no-system skips system-scope checks and their probes', () => {
   it('checks[] omits system-scope entries and the system probe spy is never called', async () => {
     const ctx = makeContext({ device: 'ipod' });
     const { out, stdout } = makeOut('json');
@@ -681,7 +688,7 @@ describe('AC #8: --no-system skips system-scope checks and their probes', () => 
     await runWithContext(ctx, () =>
       runAction(out, () =>
         runDoctorDiagnostics(
-          '/tmp/ipod-test-ac8',
+          '/tmp/ipod-test-no-system',
           undefined,
           out,
           { system: false },
@@ -700,9 +707,9 @@ describe('AC #8: --no-system skips system-scope checks and their probes', () => 
   });
 });
 
-// ── AC #9: strict subset of checks[] when --no-system is set ───────────────
+// ── strict subset of checks[] when --no-system is set ───────────────────────
 
-describe('AC #9: --no-system produces a strict subset of checks[]', () => {
+describe('--no-system produces a strict subset of checks[]', () => {
   function makeChecksFixture(): FakeCheckResult[] {
     return [
       {
@@ -746,7 +753,7 @@ describe('AC #9: --no-system produces a strict subset of checks[]', () => {
     await runWithContext(ctx1, () =>
       runAction(out1, () =>
         runDoctorDiagnostics(
-          '/tmp/ipod-test-ac9a',
+          '/tmp/ipod-test-no-system-full',
           undefined,
           out1,
           {},
@@ -766,7 +773,7 @@ describe('AC #9: --no-system produces a strict subset of checks[]', () => {
     await runWithContext(ctx2, () =>
       runAction(out2, () =>
         runDoctorDiagnostics(
-          '/tmp/ipod-test-ac9b',
+          '/tmp/ipod-test-no-system-filtered',
           undefined,
           out2,
           { system: false },
@@ -790,9 +797,9 @@ describe('AC #9: --no-system produces a strict subset of checks[]', () => {
   });
 });
 
-// ── AC #10: --format csv emits orphan list as CSV; respects --no-system ────
+// ── --format csv emits orphan list as CSV; respects --no-system ────────────
 
-describe('AC #10: --format csv on doctor (no --repair)', () => {
+describe('--format csv on doctor (no --repair)', () => {
   it('outputs orphan files as CSV (path,size + one row per orphan)', async () => {
     const ctx = makeContext({ device: 'ipod' });
     const { out, stdout } = makeOut('text');
@@ -823,7 +830,7 @@ describe('AC #10: --format csv on doctor (no --repair)', () => {
     await runWithContext(ctx, () =>
       runAction(out, () =>
         runDoctorDiagnostics(
-          '/tmp/ipod-test-ac10',
+          '/tmp/ipod-test-csv-orphans',
           undefined,
           out,
           { format: 'csv' },
@@ -881,7 +888,7 @@ describe('AC #10: --format csv on doctor (no --repair)', () => {
     await runWithContext(ctx, () =>
       runAction(out, () =>
         runDoctorDiagnostics(
-          '/tmp/ipod-test-ac10b',
+          '/tmp/ipod-test-csv-no-system',
           undefined,
           out,
           { format: 'csv', system: false },
@@ -900,9 +907,9 @@ describe('AC #10: --format csv on doctor (no --repair)', () => {
   });
 });
 
-// ── AC #11: --format csv with no orphans → empty (no error) ────────────────
+// ── --format csv with no orphans → empty (no error) ─────────────────────────
 
-describe('AC #11: --format csv with no orphans', () => {
+describe('--format csv with no orphans', () => {
   it('produces empty output (no header, no rows); does not error', async () => {
     const ctx = makeContext({ device: 'ipod' });
     const { out, stdout, exitCode } = makeOut('text');
@@ -928,7 +935,7 @@ describe('AC #11: --format csv with no orphans', () => {
     await runWithContext(ctx, () =>
       runAction(out, () =>
         runDoctorDiagnostics(
-          '/tmp/ipod-test-ac11',
+          '/tmp/ipod-test-csv-empty',
           undefined,
           out,
           { format: 'csv' },
@@ -945,7 +952,7 @@ describe('AC #11: --format csv with no orphans', () => {
   });
 });
 
-// ── Mass-storage CSV export (drift coverage, not part of TASK-307 ACs) ────
+// ── Mass-storage CSV export (drift coverage, not part of the original flag matrix) ────
 //
 // The original CSV handling was wired only to the iPod path: the mass-
 // storage branch in `runDoctorDiagnostics` returned early before the CSV
@@ -1052,7 +1059,8 @@ describe('--format csv on a mass-storage device (echo-mini)', () => {
         )
       );
 
-      // No header on an empty list — symmetrical with the iPod path's AC #11.
+      // No header on an empty list — symmetrical with the iPod path's
+      // empty-orphans CSV behaviour.
       expect(stdout.text()).toBe('');
       expect(exitCode.get()).toBeUndefined();
     } finally {
@@ -1061,9 +1069,9 @@ describe('--format csv on a mass-storage device (echo-mini)', () => {
   });
 });
 
-// ── AC #12: --json suppresses human text; stdout is exactly one JSON doc ───
+// ── --json suppresses human text; stdout is exactly one JSON doc ───────────
 
-describe('AC #12: --json output is exactly one JSON document', () => {
+describe('--json output is exactly one JSON document', () => {
   it('produces no plaintext "podkit doctor —" header on stdout', async () => {
     const ctx = makeContext({ device: 'ipod' });
     const { out, stdout } = makeOut('json');
@@ -1087,7 +1095,7 @@ describe('AC #12: --json output is exactly one JSON document', () => {
     await runWithContext(ctx, () =>
       runAction(out, () =>
         runDoctorDiagnostics(
-          '/tmp/ipod-test-ac12',
+          '/tmp/ipod-test-json-only',
           undefined,
           out,
           {},
@@ -1109,9 +1117,9 @@ describe('AC #12: --json output is exactly one JSON document', () => {
   });
 });
 
-// ── AC #13: text output structure ──────────────────────────────────────────
+// ── text output structure ───────────────────────────────────────────────────
 
-describe('AC #13: human-readable output structure', () => {
+describe('human-readable output structure', () => {
   it('contains header + readiness section + database section + summary line', async () => {
     const ctx = makeContext({ device: 'ipod', json: false });
     const { out, stdout } = makeOut('text');
@@ -1136,7 +1144,7 @@ describe('AC #13: human-readable output structure', () => {
     await runWithContext(ctx, () =>
       runAction(out, () =>
         runDoctorDiagnostics(
-          '/tmp/ipod-test-ac13',
+          '/tmp/ipod-test-text-structure',
           undefined,
           out,
           {},
@@ -1179,7 +1187,7 @@ describe('AC #13: human-readable output structure', () => {
     await runWithContext(ctx, () =>
       runAction(out, () =>
         runDoctorDiagnostics(
-          '/tmp/ipod-test-ac13b',
+          '/tmp/ipod-test-text-structure-issues',
           undefined,
           out,
           {},
@@ -1196,9 +1204,9 @@ describe('AC #13: human-readable output structure', () => {
   });
 });
 
-// ── AC #14: --repair sysinfo-extended runs without -c ──────────────────────
+// ── --repair sysinfo-extended runs without -c ───────────────────────────────
 
-describe('AC #14: --repair sysinfo-extended (writable-device only) without -c', () => {
+describe('--repair sysinfo-extended (writable-device only) without -c', () => {
   it('does not throw COLLECTION_REQUIRED — collection is not in requirements', async () => {
     const ctx = makeContext({ device: 'ipod', collections: [] });
     const { out, stdout } = makeOut();
@@ -1221,9 +1229,9 @@ describe('AC #14: --repair sysinfo-extended (writable-device only) without -c', 
   });
 });
 
-// ── AC #15: --repair udev-rule (system-scope) runs without -d ──────────────
+// ── --repair udev-rule (system-scope) runs without -d ───────────────────────
 
-describe('AC #15: --repair udev-rule routes through runSystemRepair without -d', () => {
+describe('--repair udev-rule routes through runSystemRepair without -d', () => {
   it('succeeds with no device argument; check.repair.run called once', async () => {
     const ctx = makeContext({ device: undefined });
     const { out, stdout, exitCode } = makeOut('json');
@@ -1250,14 +1258,14 @@ describe('AC #15: --repair udev-rule routes through runSystemRepair without -d',
   });
 });
 
-// ── AC #15b: --repair debris-transcode-tmp routes through runSystemRepair ──
+// ── --repair debris-transcode-tmp routes through runSystemRepair ───────────
 //
 // debris-transcode-tmp is the second public ID (alongside udev-rule) that
 // triggers the system-repair fast-path. Pin that the fast-path evaluation
 // (scope === 'system' && requirements.length === 0) reads cleanly from
 // the validation-time check returned by getRepairCheckForValidation.
 
-describe('AC #15b: --repair debris-transcode-tmp routes through runSystemRepair', () => {
+describe('--repair debris-transcode-tmp routes through runSystemRepair', () => {
   it('succeeds with no device argument; check.repair.run called once', async () => {
     const ctx = makeContext({ device: undefined });
     const { out, stdout, exitCode } = makeOut('json');
@@ -1287,7 +1295,7 @@ describe('AC #15b: --repair debris-transcode-tmp routes through runSystemRepair'
   });
 });
 
-// ── AC #16: --scope × --json × --no-system cross-product ──────────────────
+// ── --scope × --json × --no-system cross-product ────────────────────────────
 
 let sharedDevicePath: string;
 beforeAll(() => {
@@ -1338,7 +1346,7 @@ const matrixCases: MatrixCase[] = [
   { scope: 'all', json: false, noSystem: true, expected: DEVICE_INTERNAL, needsDevice: true },
 ];
 
-describe('AC #16: --scope × --json × --no-system cross-product', () => {
+describe('--scope × --json × --no-system cross-product', () => {
   for (const c of matrixCases) {
     const label = `scope=${c.scope}, json=${c.json}, noSystem=${c.noSystem} ⇒ scopes=[${c.expected.join(', ')}]`;
     it(label, async () => {
@@ -1393,9 +1401,9 @@ describe('AC #16: --scope × --json × --no-system cross-product', () => {
   }
 });
 
-// ── AC #17: --scope device requires -d; --scope system does not ────────────
+// ── --scope device requires -d; --scope system does not ────────────────────
 
-describe('AC #17: --scope device requires -d; --scope system runs without -d', () => {
+describe('--scope device requires -d; --scope system runs without -d', () => {
   it('--scope device without -d throws DEVICE_REQUIRED, exit 1', async () => {
     const ctx = makeContext({ device: undefined });
     const { out, stdout, exitCode } = makeOut('json');
@@ -1456,26 +1464,25 @@ describe('AC #17: --scope device requires -d; --scope system runs without -d', (
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TASK-305 — orphan-files (iPod) CLI rendering coverage
+// orphan-files (iPod) CLI rendering coverage
 //
 // The check-level matrix in `packages/podkit-core/src/diagnostics/checks/
-// orphans-matrix.test.ts` pins AC #1..#5, #10..#14. The CLI-rendering ACs
-// land here because the CSV escape branch and the verbose orphan summary
-// live in `commands/doctor.ts` (escapeCsvField, printOrphanSummary — both
-// internal; we drive them through the public `runDoctorDiagnostics`).
+// orphans-matrix.test.ts` pins orphan detection and repair itself. The
+// CLI-rendering behaviours land here because the CSV escape branch and the
+// verbose orphan summary live in `commands/doctor.ts` (escapeCsvField,
+// printOrphanSummary — both internal; we drive them through the public
+// `runDoctorDiagnostics`).
 //
-// AC mapping:
-//   AC #6  — CSV escape: commas + quotes
-//   AC #7  — verbose text groups orphans by F* directory
-//   AC #8  — verbose text groups orphans by extension
-//   AC #9  — verbose text lists the 10 largest orphans, descending
-//
-// @see backlog/tasks/task-305 - orphan-files-iPod-detection-and-repair-coverage.md
+// Behaviours covered:
+//   - CSV escape: commas + quotes
+//   - verbose text groups orphans by F* directory
+//   - verbose text groups orphans by extension
+//   - verbose text lists the 10 largest orphans, descending
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * Variant of `makeOut` that allows the verbose level to be set — needed for
- * AC #7..#9 where the orphan summary only renders at verbose1+.
+ * the verbose orphan-summary tests, which only render at verbose1+.
  */
 function makeVerboseOut(level: number): {
   out: OutputContext;
@@ -1501,7 +1508,7 @@ function makeVerboseOut(level: number): {
   };
 }
 
-describe('TASK-305 AC #6: --format csv escapes commas AND quotes', () => {
+describe('--format csv escapes commas AND quotes', () => {
   it('quotes a path containing a comma and a path containing a double-quote', async () => {
     const ctx = makeContext({ device: 'ipod' });
     const { out, stdout } = makeOut('text');
@@ -1536,7 +1543,7 @@ describe('TASK-305 AC #6: --format csv escapes commas AND quotes', () => {
     await runWithContext(ctx, () =>
       runAction(out, () =>
         runDoctorDiagnostics(
-          '/tmp/ipod-test-305-ac6',
+          '/tmp/ipod-test-csv-escape',
           undefined,
           out,
           { format: 'csv' },
@@ -1560,12 +1567,12 @@ describe('TASK-305 AC #6: --format csv escapes commas AND quotes', () => {
   });
 });
 
-describe('TASK-305 AC #7..#9: verbose orphan summary', () => {
+describe('verbose orphan summary', () => {
   // Construct an orphan set that exercises all three groupings deterministically.
   //
-  // - 2 F* directories (F00, F01) → AC #7 byDir grouping
-  // - 3 extensions (.m4a, .mp3, .flac) → AC #8 byExt grouping
-  // - 12 orphans total, sizes 1..12 KiB → AC #9 top-10-largest descending
+  // - 2 F* directories (F00, F01) → the by-directory grouping
+  // - 3 extensions (.m4a, .mp3, .flac) → the by-extension grouping
+  // - 12 orphans total, sizes 1..12 KiB → the top-10-largest-descending listing
   function buildOrphans(): Array<{ path: string; size: number }> {
     return [
       // F00: 4 m4a + 2 mp3 + 1 flac (7 entries)
@@ -1631,7 +1638,7 @@ describe('TASK-305 AC #7..#9: verbose orphan summary', () => {
     return stdout.text();
   }
 
-  it('AC #7: groups orphans by F* directory with count and total size', async () => {
+  it('groups orphans by F* directory with count and total size', async () => {
     const text = await runVerboseDoctor();
 
     // The "By directory:" section appears verbatim.
@@ -1642,7 +1649,7 @@ describe('TASK-305 AC #7..#9: verbose orphan summary', () => {
     expect(text).toMatch(/F01\s+5 files\s+50\.0 KB/);
   });
 
-  it('AC #8: groups orphans by file extension with count and total size', async () => {
+  it('groups orphans by file extension with count and total size', async () => {
     const text = await runVerboseDoctor();
 
     expect(text).toContain('By extension:');
@@ -1654,7 +1661,7 @@ describe('TASK-305 AC #7..#9: verbose orphan summary', () => {
     expect(text).toMatch(/\.flac\s+3 files\s+30\.0 KB/);
   });
 
-  it('AC #9: lists the 10 largest orphans, descending by size', async () => {
+  it('lists the 10 largest orphans, descending by size', async () => {
     const text = await runVerboseDoctor();
 
     expect(text).toContain('Largest orphans:');
@@ -1738,9 +1745,9 @@ describe('--system-only flag (sugar for --scope system)', () => {
   });
 });
 
-// ── TASK-342 AC #5: macOS persona shape ────────────────────────────────────
+// ── macOS persona shape ──────────────────────────────────────────────────────
 
-describe('runDoctor — macOS persona shape (TASK-342 AC #5)', () => {
+describe('runDoctor — macOS persona shape', () => {
   it('iPod on darwin: text-mode renders System → Device Readiness → Database Health in order', async () => {
     const ctx = makeContext({ device: 'ipod', json: false });
     const { out, stdout } = makeOut('text');
@@ -1775,7 +1782,7 @@ describe('runDoctor — macOS persona shape (TASK-342 AC #5)', () => {
     await runWithContext(ctx, () =>
       runAction(out, () =>
         runDoctorDiagnostics(
-          '/tmp/ipod-darwin-ac5a',
+          '/tmp/ipod-darwin-section-order',
           undefined,
           out,
           {},
@@ -1902,7 +1909,7 @@ describe('runDoctor — macOS persona shape (TASK-342 AC #5)', () => {
     await runWithContext(ctx, () =>
       runAction(out, () =>
         runDoctorDiagnostics(
-          '/tmp/ipod-darwin-ac5c',
+          '/tmp/ipod-darwin-no-system',
           undefined,
           out,
           { system: false },

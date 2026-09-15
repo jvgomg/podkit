@@ -1,35 +1,34 @@
 /**
  * Artwork-rebuild and artwork-reset diagnostic checks: unit-test detection +
- * repair matrix (TASK-304, m-19 Phase 5d).
+ * repair matrix.
  *
  * Drives `artworkRebuildCheck.check()` against synthetic ArtworkDB + ithmb
  * file states written to a temp directory, and drives `.repair.run()`
  * against an in-memory IpodDatabase fake with controlled
- * source-collection coverage. Mirrors the Phase 5c pattern from
+ * source-collection coverage. Mirrors the pattern in
  * `sysinfo-consistency.test.ts` and the system-scope matrix from
  * `system-scope-matrix.test.ts`.
  *
- * VM-test (Lima VM) coverage is deferred to
- * TASK-322.05.01 per the parent task's dependency note.
+ * VM-test (Lima VM) coverage is deferred until the FunctionFS gadget daemon
+ * can synthesise an iPod carrying a real ArtworkDB.
  *
- * AC mapping (15 ACs, full coverage):
- *   #1  → 'detection — no ArtworkDB and no ithmb files'
- *   #2  → 'detection — ArtworkDB present with zero entries'
- *   #3  → 'detection — all entries healthy'
- *   #4  → 'detection — partial corruption'
- *   #5  → 'detection — full corruption (ithmb truncated to zero)'
- *   #6  → 'detection — missing ithmb file'
- *   #7  → 'repair — full source match'
- *   #8  → 'repair — partial source match clears art= for orphans'
- *   #9  → 'repair — sync tag quality / encoding preserved'
- *   #10 → 'repair — dry-run does not mutate'
- *   #11 → 'repair — missing source collection (no adapters)'
- *   #12 → 'repair — idempotent on second run'
- *   #13 → 'artwork-reset — clears all artwork regardless of source'
- *   #14 → 'artwork-reset — dry-run does not mutate'
- *   #15 → 'metadata — scope=device, applicableTo=[ipod]'
+ * Behaviours pinned, in file order:
+ *   - metadata — scope=device, applicableTo=[ipod]
+ *   - detection — no ArtworkDB and no ithmb files
+ *   - detection — ArtworkDB present with zero entries
+ *   - detection — all entries healthy
+ *   - detection — partial corruption
+ *   - detection — full corruption (ithmb truncated to zero)
+ *   - detection — missing ithmb file
+ *   - repair — full source match
+ *   - repair — partial source match clears art= for orphans
+ *   - repair — sync tag quality / encoding preserved
+ *   - repair — dry-run does not mutate
+ *   - repair — missing source collection (no adapters)
+ *   - repair — idempotent on second run
+ *   - artwork-reset — clears all artwork regardless of source
+ *   - artwork-reset — dry-run does not mutate
  *
- * @see backlog/tasks/task-304
  * @see docs/adr/adr-013 (artwork corruption investigation)
  */
 
@@ -66,7 +65,7 @@ import { makeMockIpodTrack, makeMockCollectionTrack } from '../../test-utils/tra
 function createIpodWithArtwork(opts: {
   artworkDb?: Buffer;
   ithmbFiles?: Record<string, number>;
-  /** If true, do not create the Artwork directory at all (AC #1). */
+  /** If true, do not create the Artwork directory at all. */
   noArtworkDir?: boolean;
 }): string {
   const root = mkdtempSync(join(tmpdir(), 'podkit-artwork-matrix-'));
@@ -305,10 +304,10 @@ function makeCheckCtx(mountPoint: string): DiagnosticContext {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// AC #15 — metadata: scope=device, applicableTo=['ipod']
+// metadata: scope=device, applicableTo=['ipod']
 // ═════════════════════════════════════════════════════════════════════════════
 
-describe('AC#15 — both artwork checks are iPod-only device-scope', () => {
+describe('both artwork checks are iPod-only device-scope', () => {
   it('artworkRebuildCheck declares applicableTo=[ipod]', () => {
     expect(artworkRebuildCheck.applicableTo).toEqual(['ipod']);
   });
@@ -342,10 +341,10 @@ describe('AC#15 — both artwork checks are iPod-only device-scope', () => {
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
-// AC #1 — no ArtworkDB and no ithmb files: skip
+// no ArtworkDB and no ithmb files: skip
 // ═════════════════════════════════════════════════════════════════════════════
 
-describe('AC#1 — no ArtworkDB and no ithmb files → skip', () => {
+describe('no ArtworkDB and no ithmb files → skip', () => {
   it('returns skip when the Artwork directory is entirely absent', async () => {
     const mount = track(createIpodWithArtwork({ noArtworkDir: true }));
     const result = await artworkRebuildCheck.check(makeCheckCtx(mount));
@@ -378,10 +377,10 @@ describe('AC#1 — no ArtworkDB and no ithmb files → skip', () => {
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
-// AC #2 — ArtworkDB present but zero entries: pass
+// ArtworkDB present but zero entries: pass
 // ═════════════════════════════════════════════════════════════════════════════
 
-describe('AC#2 — ArtworkDB present with zero MHII entries → pass', () => {
+describe('ArtworkDB present with zero MHII entries → pass', () => {
   it('returns pass with "no artwork entries" summary', async () => {
     const mount = track(createIpodWithArtwork({ artworkDb: buildEmptyArtworkDb() }));
     const result = await artworkRebuildCheck.check(makeCheckCtx(mount));
@@ -404,10 +403,10 @@ describe('AC#2 — ArtworkDB present with zero MHII entries → pass', () => {
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
-// AC #3 — All entries healthy: pass with totalEntries=N, corruptEntries=0
+// All entries healthy: pass with totalEntries=N, corruptEntries=0
 // ═════════════════════════════════════════════════════════════════════════════
 
-describe('AC#3 — healthy ArtworkDB with N entries → pass', () => {
+describe('healthy ArtworkDB with N entries → pass', () => {
   it('returns pass + details.totalEntries=N when all offsets are in-bounds', async () => {
     const N = 5;
     const SLOT = 20_000;
@@ -435,10 +434,10 @@ describe('AC#3 — healthy ArtworkDB with N entries → pass', () => {
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
-// AC #4 — Partial corruption: fail+repairable, corruptEntries>0, healthy>0
+// Partial corruption: fail+repairable, corruptEntries>0, healthy>0
 // ═════════════════════════════════════════════════════════════════════════════
 
-describe('AC#4 — partial corruption (ithmb truncated mid-way) → fail+repairable', () => {
+describe('partial corruption (ithmb truncated mid-way) → fail+repairable', () => {
   it('reports corrupt/healthy split with corruptPercent reflecting the ratio', async () => {
     const N = 10;
     const SLOT = 20_000;
@@ -468,10 +467,10 @@ describe('AC#4 — partial corruption (ithmb truncated mid-way) → fail+repaira
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
-// AC #5 — All ithmb files truncated to zero: fail, 100% corrupt
+// All ithmb files truncated to zero: fail, 100% corrupt
 // ═════════════════════════════════════════════════════════════════════════════
 
-describe('AC#5 — ithmb truncated to zero → fail+repairable, 100% corrupt', () => {
+describe('ithmb truncated to zero → fail+repairable, 100% corrupt', () => {
   it('reports corruptEntries === totalEntries and corruptPercent=100', async () => {
     const N = 4;
     const SLOT = 20_000;
@@ -494,10 +493,10 @@ describe('AC#5 — ithmb truncated to zero → fail+repairable, 100% corrupt', (
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
-// AC #6 — entry references a missing ithmb file → fail+repairable
+// entry references a missing ithmb file → fail+repairable
 // ═════════════════════════════════════════════════════════════════════════════
 
-describe('AC#6 — entry references a missing ithmb file → fail+repairable', () => {
+describe('entry references a missing ithmb file → fail+repairable', () => {
   it('flags every entry as out-of-bounds when the .ithmb file does not exist', async () => {
     const N = 3;
     const SLOT = 20_000;
@@ -528,10 +527,10 @@ describe('AC#6 — entry references a missing ithmb file → fail+repairable', (
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
-// AC #7 — repair with full source match: success, matched=N, errors=0
+// repair with full source match: success, matched=N, errors=0
 // ═════════════════════════════════════════════════════════════════════════════
 
-describe('AC#7 — repair with full source match', () => {
+describe('repair with full source match', () => {
   it('rebuilds artwork for every track, errors=0, success=true', async () => {
     const ipodTracks = [
       makeTrack({ artist: 'A', title: 'S1', album: 'X' }),
@@ -559,7 +558,8 @@ describe('AC#7 — repair with full source match', () => {
     // matched track ends up counted as `noArtwork` (not matched). We assert
     // the contract that matters at this surface: success=true, errors=0,
     // noSource=0 (every iPod track resolves to a source), totalTracks=N. The
-    // sync-tag mutation path is verified in AC#9 via the noArtwork branch.
+    // The sync-tag mutation path is verified via the noArtwork branch in the
+    // quality/encoding-preservation suite below.
     const result = await artworkRebuildCheck.repair!.run(ctx);
 
     expect(result.success).toBe(true);
@@ -578,10 +578,10 @@ describe('AC#7 — repair with full source match', () => {
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
-// AC #8 — repair with partial source match: clears art= for orphans
+// repair with partial source match: clears art= for orphans
 // ═════════════════════════════════════════════════════════════════════════════
 
-describe('AC#8 — repair with partial source match clears art= for unmatched tracks', () => {
+describe('repair with partial source match clears art= for unmatched tracks', () => {
   it('marks orphan tracks as noSource and strips art= from their sync tag', async () => {
     const ipodTracks = [
       makeTrack({
@@ -620,17 +620,18 @@ describe('AC#8 — repair with partial source match clears art= for unmatched tr
     expect(orphanUpdate).toBeDefined();
     const orphanComment = (orphanUpdate![1] as TrackFields).comment ?? '';
     expect(orphanComment).not.toContain('art=');
-    // Quality / encoding survive (AC #9 cross-pin).
+    // Quality / encoding survive — cross-pinned with the sync-tag
+    // preservation suite below.
     expect(orphanComment).toContain('quality=high');
     expect(orphanComment).toContain('encoding=vbr');
   });
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
-// AC #9 — repair preserves quality / encoding (only mutates art=)
+// repair preserves quality / encoding (only mutates art=)
 // ═════════════════════════════════════════════════════════════════════════════
 
-describe('AC#9 — repair preserves quality and encoding fields in sync tag', () => {
+describe('repair preserves quality and encoding fields in sync tag', () => {
   it('only the art= field changes; quality + encoding survive untouched', async () => {
     // Use the lower-level rebuildArtworkDatabase via the repair surface, then
     // inspect the sync-tag mutation directly. We can't reach into the repair
@@ -699,10 +700,10 @@ describe('AC#9 — repair preserves quality and encoding fields in sync tag', ()
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
-// AC #10 — dry-run does not mutate
+// dry-run does not mutate
 // ═════════════════════════════════════════════════════════════════════════════
 
-describe('AC#10 — dry-run does not mutate the database or filesystem', () => {
+describe('dry-run does not mutate the database or filesystem', () => {
   it('rebuild dry-run leaves DB untouched and emits a "Dry run:" summary', async () => {
     const ipodTracks = [
       makeTrack({
@@ -737,7 +738,7 @@ describe('AC#10 — dry-run does not mutate the database or filesystem', () => {
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
-// AC #11 — repair fails clearly when no source collection is supplied
+// repair fails clearly when no source collection is supplied
 // ═════════════════════════════════════════════════════════════════════════════
 //
 // The CLI maps the `source-collection` requirement to a flag and prompts the
@@ -748,7 +749,7 @@ describe('AC#10 — dry-run does not mutate the database or filesystem', () => {
 // counted as noSource, and zero matched. The CLI's failure-when-flag-missing
 // is its own concern.
 
-describe('AC#11 — repair with no source adapters yields noSource for every track', () => {
+describe('repair with no source adapters yields noSource for every track', () => {
   it('returns success=true with noSource === totalTracks and matched=0', async () => {
     const ipodTracks = [
       makeTrack({ artist: 'A', title: 'S1', album: 'X' }),
@@ -776,7 +777,7 @@ describe('AC#11 — repair with no source adapters yields noSource for every tra
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
-// AC #12 — idempotent: second run is a no-op
+// idempotent: second run is a no-op
 // ═════════════════════════════════════════════════════════════════════════════
 //
 // Run repair twice in a row against the same fake DB. The first run strips
@@ -785,7 +786,7 @@ describe('AC#11 — repair with no source adapters yields noSource for every tra
 // circuits and no further updateTrack calls happen. This is the canonical
 // idempotency signal we get without re-reading the ArtworkDB.
 
-describe('AC#12 — repair idempotent: second run is a no-op for sync-tag mutation', () => {
+describe('repair idempotent: second run is a no-op for sync-tag mutation', () => {
   it('first run clears art=, second run makes no further updateTrack calls', async () => {
     const ipodTracks = [
       makeTrack({
@@ -824,10 +825,10 @@ describe('AC#12 — repair idempotent: second run is a no-op for sync-tag mutati
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
-// AC #13 — artwork-reset clears all artwork regardless of source
+// artwork-reset clears all artwork regardless of source
 // ═════════════════════════════════════════════════════════════════════════════
 
-describe('AC#13 — artwork-reset clears all artwork without requiring source collection', () => {
+describe('artwork-reset clears all artwork without requiring source collection', () => {
   it('removeTrackArtwork called for every track; art= stripped from each sync tag', async () => {
     const ipodTracks = [
       makeTrack({
@@ -895,10 +896,10 @@ describe('AC#13 — artwork-reset clears all artwork without requiring source co
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
-// AC #14 — artwork-reset dry-run does not mutate
+// artwork-reset dry-run does not mutate
 // ═════════════════════════════════════════════════════════════════════════════
 
-describe('AC#14 — artwork-reset --dry-run leaves filesystem and DB untouched', () => {
+describe('artwork-reset --dry-run leaves filesystem and DB untouched', () => {
   it('dry-run reports counts without calling removeTrackArtwork / updateTrack / save', async () => {
     const ipodTracks = [
       makeTrack({

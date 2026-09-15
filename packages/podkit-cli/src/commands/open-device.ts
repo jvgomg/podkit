@@ -76,7 +76,7 @@ export interface OpenDeviceResult {
   ipodModel?: IpodModel;
   /**
    * Resolved content paths for mass-storage devices; `undefined` for iPods.
-   * Consumed by the pre-sync sweep (TASK-398) so it can walk the right
+   * Consumed by the pre-sync debris sweep so it can walk the right
    * directories without duplicating the open-device resolution logic.
    */
   contentPaths?: import('@podkit/core').ContentPaths;
@@ -271,7 +271,7 @@ export async function openDevice(
     const ipod = await core.IpodDatabase.open(path);
     const ipodDeviceInfo = ipod.getInfo().device;
 
-    // Cascade-driven identity (TASK-317.03). Compose the full bag from every
+    // Cascade-driven identity. Compose the full bag from every
     // axis available — SysInfoExtended on disk (firewireGuid + serial +
     // modelNumStr) and the live USB descriptor — rather than relying solely
     // on libgpod's view. Resolves the "Could not identify iPod model from
@@ -399,7 +399,7 @@ export async function openDevice(
     firmwareCapabilities: resolvedCaps,
     deviceSupportsAlac: effectiveCaps.supportedAudioCodecs.includes('alac'),
     isIpodDevice: false,
-    // Pre-sync sweep (TASK-398) needs to walk the configured content paths
+    // Pre-sync debris sweep needs to walk the configured content paths
     // to find debris before track ops run. Exposing the resolved paths
     // alongside the adapter is the smallest surface change that avoids
     // duplicating the resolution logic in sync.ts.

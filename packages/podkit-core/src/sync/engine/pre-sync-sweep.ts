@@ -74,8 +74,8 @@ export interface PreSyncSweepInput {
  * Tolerant of every scanner failure: a missing content path, an
  * unreadable directory, a `stat()` that races with another process —
  * none of these throw out of `runPreSyncSweep`. The sweep is best-effort
- * by design (TASK-398 specifies non-fatal cleanup), and the next sync
- * always retries.
+ * by design — debris cleanup is never allowed to fail a sync — and the
+ * next sync always retries.
  */
 export async function runPreSyncSweep(input: PreSyncSweepInput): Promise<PlanPreliminaries> {
   const debris: Array<{ path: string; bytes: number }> = [];

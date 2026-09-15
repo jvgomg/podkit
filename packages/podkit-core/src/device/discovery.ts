@@ -335,10 +335,10 @@ export function displayForConfig(
  * new device kind only needs one new function instead of a runtime-
  * registered provider in a separate package.
  *
- * The behaviour mirrors the pre-TASK-427 `DeviceProvider.describeAddIntent`
+ * The behaviour mirrors the earlier `DeviceProvider.describeAddIntent`
  * implementations in `@podkit/devices-ipod/src/provider.ts` and
  * `@podkit/devices-mass-storage/src/provider.ts` — lifted verbatim into
- * the discovery layer.
+ * the discovery layer when the provider surface was retired.
  */
 export function describeAddIntent(d: DiscoveredDevice): DeviceAddIntent | null {
   switch (d.kind) {

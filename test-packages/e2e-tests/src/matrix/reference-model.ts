@@ -427,8 +427,8 @@ export function artworkPrimary(capabilities: DeviceCapabilities): ArtworkPrimary
  *   (resizing it to `artworkMaxResolution`), regardless of transfer mode.
  * - **Sidecar-primary device** (`artworkSources[0] === 'sidecar'`, e.g.
  *   rockbox): art lives in a device-side sidecar image (`cover.jpg` peer of
- *   the audio file). Per doc-012 §"Sidecar Artwork Devices (TASK-370,
- *   landed)" the embedded copy follows the standard transcode/copy +
+ *   the audio file). Per doc-012 §"Sidecar Artwork Devices" (implemented)
+ *   the embedded copy follows the standard transcode/copy +
  *   transfer-mode rules — same as the database-artwork branch below — and a
  *   peer cover lands separately via `adapter.writeSidecar`. The device
  *   reads the peer cover; the embedded copy survives in the file body
@@ -518,9 +518,9 @@ export function expectedFileArtworkSize(
  * not produce a sidecar at all.
  *
  * Documents the doc-012 sidecar spec for the matrix reference model. Production
- * does not yet write sidecars (TASK-142 only landed the read side); cells that
+ * does not yet write sidecars (only the read side has landed); cells that
  * assert against this must `skipBug(...)` the missing-sidecar-write gap until a
- * follow-up task implements the writer.
+ * follow-up implements the writer.
  */
 export function expectedSidecarSize(
   sourceSize: number,

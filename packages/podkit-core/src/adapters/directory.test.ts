@@ -782,7 +782,7 @@ describe('DirectoryAdapter', () => {
     });
   });
 
-  describe('sidecar artwork detection (TASK-142)', () => {
+  describe('sidecar artwork detection (cover files beside the audio count as artwork)', () => {
     it('sets hasArtwork=true when cover.jpg sits beside an audio file with no embedded picture', async () => {
       mockGlob.mockImplementation(async () => ['/music/album/track.flac']);
       mockParseFile.mockImplementation(async () => ({

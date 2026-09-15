@@ -6,7 +6,7 @@
  * 1. VideoPresenter.executeSync returns warnings emitted via device.setWarningSink
  *    when the handler wires the sink through the device adapter.
  * 2. VideoPresenter.executeSync returns a `warnings` field on every code path —
- *    pins the latent return-shape bug where the field was absent before TASK-396.
+ *    pins the latent return-shape bug where the field was absent.
  */
 
 import { describe, expect, it, mock } from 'bun:test';

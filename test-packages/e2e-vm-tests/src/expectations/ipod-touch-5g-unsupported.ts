@@ -17,7 +17,7 @@ const unsupported = { kind: 'ios-device', headline: unsupportedHeadline } as con
 
 export const expectedCapabilities: DeviceCapabilities | null = null;
 
-// TASK-331 added `'unsupported'` to ReadinessLevel + exposed the structured
+// `'unsupported'` was added to ReadinessLevel, exposing the structured
 // payload as a top-level `unsupported` field on the result. The fail `usb`
 // stage mirrors what `checkReadiness({ unsupported })` emits for an
 // unsupported-PID device, so this fixture is the byte-for-byte expected

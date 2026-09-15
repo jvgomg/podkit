@@ -37,8 +37,8 @@ import type { DevicePersona } from './types.js';
  * UTF-16-LE byte budget for `persona.description`. The USB string
  * descriptor carries length in a `u8` `bLength` field (max 255); the
  * 2-byte header (`bLength` + `bDescriptorType`) leaves 253 bytes for the
- * body. 252 is the conservative ceiling task-spec'd in TASK-426 (one byte
- * of slack so the kernel writer never lands exactly on the limit).
+ * body. 252 is the conservative ceiling (one byte of slack so the kernel
+ * writer never lands exactly on the limit).
  */
 export const MAX_DESCRIPTION_UTF16_BYTES = 252;
 

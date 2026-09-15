@@ -714,7 +714,7 @@ quality = "low"
   });
 
   // ---------------------------------------------------------------------------
-  // DeviceConfig.unsupported — rich shape serialisation (TASK-317.03 follow-up)
+  // DeviceConfig.unsupported — rich shape serialisation
   // ---------------------------------------------------------------------------
 
   it('serialises unsupported as a TOML inline table', () => {
@@ -760,7 +760,7 @@ quality = "low"
   });
 
   // ---------------------------------------------------------------------------
-  // Per-device default collections — defaultMusic / defaultVideo (TASK-436.07)
+  // Per-device default collections — defaultMusic / defaultVideo
   // ---------------------------------------------------------------------------
 
   it('writes a defaultMusic name as a quoted string', () => {

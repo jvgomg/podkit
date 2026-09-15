@@ -6,7 +6,7 @@
  * device packages) can refer to the shape without depending on
  * `@podkit/core`'s runtime surface.
  *
- * Pre-TASK-427 this file also hosted the `DeviceProvider` interface +
+ * This file previously also hosted the `DeviceProvider` interface +
  * `DiscoveredContext` for the now-deleted provider-driven enumeration
  * framework. Both removed: the per-kind dispatcher in
  * `@podkit/core/discovery` (`describeAddIntent(d: DiscoveredDevice)`)
@@ -36,8 +36,9 @@ export interface DeviceAddIntent {
   /**
    * String tag identifying which arm of the `DiscoveredDevice` union
    * produced this intent — `'ipod'` / `'mass-storage'` / `'unsupported'`.
-   * Carries the same vocabulary `DeviceProvider.id` used pre-TASK-427 so
-   * existing CLI consumers can keep branching on it unchanged.
+   * Carries the same vocabulary `DeviceProvider.id` used before the
+   * provider-driven enumeration framework was removed, so existing CLI
+   * consumers can keep branching on it unchanged.
    */
   providerId: string;
   /**

@@ -19,7 +19,7 @@
  * does not return until the persona has enumerated (see
  * `runners/lima-enumeration.ts`), so by the time `body` runs the bus is
  * populated. This module used to own that wait; it moved into the primitive
- * so direct callers could not bypass it (TASK-504).
+ * so direct callers could not bypass it.
  *
  * @module
  */

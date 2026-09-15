@@ -627,8 +627,8 @@ describe('discoverConnectedDevices', () => {
 
   // ── massStoragePresets data-flow regression test ─────────────────────────
   //
-  // TASK-427 added `massStoragePresets` to `DiscoverConnectedDevicesOptions`
-  // so the four CLI surfaces (`device scan` / `device info` / `device init` /
+  // `massStoragePresets` is on `DiscoverConnectedDevicesOptions` so the four
+  // CLI surfaces (`device scan` / `device info` / `device init` /
   // `doctor`) recognise user-defined `[presets.X]` DAPs alongside built-ins.
   // The option is OPTIONAL — TypeScript won't catch a future regression that
   // drops it from a callsite. These tests pin the data flow:

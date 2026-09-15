@@ -31,7 +31,7 @@
  *     (44/44 tests).
  *
  *   - The "legacy `91-podkit-ipod-scsi.rules` cleanup on repair" half of
- *     the AC has the same dependency. We assert here that the legacy
+ *     this scenario has the same dependency. We assert here that the legacy
  *     file is NOT currently present (the healthy VM is provisioned with
  *     the post-rename layout), but the cleanup-during-repair path is
  *     covered unit-side.

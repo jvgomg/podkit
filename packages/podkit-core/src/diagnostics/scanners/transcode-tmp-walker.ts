@@ -11,7 +11,7 @@
  * {@link isAlive} (kernel `kill(pid, 0)` + start-time tuple match guards
  * against PID reuse). Live owner → skip. Dead owner → reap.
  *
- * **The ownerless grace window (TASK-501).** `.owner` cannot be created in
+ * **The ownerless grace window.** `.owner` cannot be created in
  * the same syscall as the `mkdir` that precedes it, so every live scratch
  * dir passes through a window in which it exists with no owner marker.
  * Treating that as debris deleted the output directory of a running sync,

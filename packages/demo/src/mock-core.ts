@@ -2674,7 +2674,7 @@ export function getChecksumTypeByModelNumber(_modelNumStr: string): string | und
   return undefined;
 }
 
-// HFS+-on-Linux filesystem policy stubs (TASK-317.12). No-ops in demo mode —
+// HFS+-on-Linux filesystem policy stubs. No-ops in demo mode —
 // the demo never runs real disk operations, so the refusal can never fire.
 export function isFilesystemUnsupportedHere(
   _filesystem: string | undefined | null,

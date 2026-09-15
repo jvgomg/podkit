@@ -361,7 +361,7 @@ describe('libgpod-node artwork IDs (getUniqueArtworkIds)', () => {
 });
 
 // ============================================================================
-// Extended artwork management tests (TASK-040.03)
+// Extended artwork management tests
 // ============================================================================
 
 describe('libgpod-node artwork management APIs', () => {

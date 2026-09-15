@@ -6,7 +6,7 @@
  * roots), debris (`.podkit-tmp` and adapter-failure extensions), or
  * "missing" — manifest entries with no file on disk. The
  * `orphan-files-mass-storage` and `debris-files-mass-storage` checks share
- * this walker; the future pre-sync sweep (TASK-398) reaches the same code
+ * this walker; the future pre-sync sweep reaches the same code
  * path via the scanner registry, so no surface walks twice.
  *
  * The scope is already bounded by `resolveContentDirs` to

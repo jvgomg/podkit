@@ -1061,8 +1061,8 @@ describe('self-healing sync: below a raised cap (report-only, --force-transcode 
         //
         // Two different requests, not encoder noise: the reduced copy was
         // encoded at the `low` cap (128) and the lift at the source-bounded
-        // high target (min(320, 256) = 256). Since TASK-499 every AAC encoder
-        // podkit drives is handed that target, so the gap is structural.
+        // high target (min(320, 256) = 256). Every AAC encoder podkit drives
+        // is handed that target, so the gap is structural.
         // Measured on FFmpeg 9.0.1 native `aac`: 134 → 241 kbps. Those are
         // iTunesDB figures, which are container-inclusive — see
         // `probeAudioStreamBitrateKbps` in `@podkit/e2e-shared` — and so sit a

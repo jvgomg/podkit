@@ -176,7 +176,7 @@ describe('AlbumArtworkCache', () => {
     expect(cache.size).toBe(1);
   });
 
-  describe('adapter fallback (TASK-142)', () => {
+  describe('adapter fallback (adapter-supplied bytes when the audio body has no embedded picture)', () => {
     const adapterBytes = Buffer.from('adapter-supplied-cover');
 
     it('promotes adapter bytes to the album-level cache when embed extraction returns null (single-source)', async () => {

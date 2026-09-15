@@ -25,7 +25,7 @@ describe('classifyReadiness', () => {
   });
 
   it('maps the unknown-model refusal to needs-setup', () => {
-    // Inherited from the CLI hard-error (TASK-440): an unidentified iPod must
+    // Inherited from the CLI's hard-error on an unidentified iPod: it must
     // be set up over USB once before it can sync.
     expect(classifyReadiness({ exitCode: 1, code: 'UNKNOWN_IPOD_MODEL' })).toBe('needs-setup');
   });

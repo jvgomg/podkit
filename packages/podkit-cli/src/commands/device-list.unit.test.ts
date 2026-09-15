@@ -1,7 +1,7 @@
 /**
  * Unit tests for the `device list` runner.
  *
- * `runDeviceList` accepts a deps seam (TASK-315). Tests stub `loadCore` /
+ * `runDeviceList` accepts a dependency-injection seam. Tests stub `loadCore` /
  * `getDeviceManager` / `loadLibgpod` to prove no real USB walk or native
  * binding load happens.
  */

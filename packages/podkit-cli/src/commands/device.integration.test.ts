@@ -6,7 +6,7 @@
  * No command function is invoked here, so no CLI context is set up. Every test
  * used to call a `createDeviceContext()` helper whose result nothing read and
  * whose only effect was to leave a module-global context set between tests;
- * TASK-507 established it was inert and removed it. If a test here ever does
+ * it was confirmed inert and removed. If a test here ever does
  * drive a command, set the context inside that test rather than reinstating a
  * blanket one.
  *

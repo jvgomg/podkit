@@ -287,7 +287,7 @@ describe('runDeviceReset: behaviour past IpodDatabase.hasDatabase/open', () => {
 
   it('hasDatabase=false errors with NOT_INITIALIZED pointing to init', async () => {
     // Reset re-sets an already-initialised device; a device with no iTunesDB
-    // is rejected (AC#4) — even in dry-run, since there is nothing to reset.
+    // is rejected — even in dry-run, since there is nothing to reset.
     const ctx = makeContext(mount);
     const { out, stdout, exitCode } = makeOut();
 

@@ -26,7 +26,7 @@
  * makes the daemon call firmware inquiry / `loadUsb` in-process, these
  * assertions fail — a loud signal that the daemon now needs the
  * `usbNativeBundlerPlugin` in its `compile` script (or must keep shelling
- * out to the CLI). See TASK-461.
+ * out to the CLI).
  */
 
 import { describe, expect, it } from 'bun:test';

@@ -8,7 +8,7 @@
  *   1. Whether the planner's pre-flight (free-space check, etc.) intercepts
  *      the failure BEFORE `save()` runs. When it does, the sync exits with
  *      `{success: false, error: "..."}` and a synthetic `errors[]` entry
- *      (post-TASK-378 AC #8: e.g. `class: 'NotEnoughSpacePlanTime'`) —
+ *      (e.g. `class: 'NotEnoughSpacePlanTime'`) —
  *      the typed save() error path is unreachable for this cell, but the
  *      envelope still carries structured detail.
  *   2. Typed error class thrown out of `save()` (or `null` when the planner
@@ -346,7 +346,7 @@ function generateFanOut(): SaveFailCell[] {
     transferMode: 'fast',
     failureMode: 'enospc',
   });
-  // TASK-412: ADR-018 post-sweep recompute cell — embedded × flac × prefer-copy × fast.
+  // ADR-018 post-sweep recompute cell — embedded × flac × prefer-copy × fast.
   // Pins the path where the plan-time gate passes (free + debrisCleanup
   // covers the estimate), the sweep partially fails (chattr-immutable
   // debris files survive rm), and the post-sweep statfs recompute throws
@@ -358,7 +358,7 @@ function generateFanOut(): SaveFailCell[] {
     transferMode: 'fast',
     failureMode: 'enospc-post-sweep',
   });
-  // TASK-412: estimate-drift cell — embedded × mp3 × prefer-copy × fast.
+  // ADR-018 estimate-drift cell — embedded × mp3 × prefer-copy × fast.
   // Pins the path where both the plan-time gate AND the post-sweep gate
   // pass (the planner's typical-bitrate estimate fits the mount free)
   // but the source mp3's actual bytes exceed it, so the transfer phase
@@ -461,12 +461,12 @@ function predictEnospc(cell: SaveFailCell): SaveFailExpected {
     failedTrackCount: 0,
     portableTagWarn: false,
     postSweepDetail: null,
-    reason: `${cell.shape} × ${cell.sourceFormat} × ${cell.codecConfig} × ${cell.transferMode} × ENOSPC — planner pre-flight intercepts ENOSPC before save() can fire its typed errors (see planning.md + save-transactions.md "Free-space contract" subsections). Sync exits with envelope-level "Not enough space..." plus a synthetic NotEnoughSpacePlanTime entry in errors[] (TASK-378 AC #8); post-cleanup rescan re-queues the unwritten add ops.`,
+    reason: `${cell.shape} × ${cell.sourceFormat} × ${cell.codecConfig} × ${cell.transferMode} × ENOSPC — planner pre-flight intercepts ENOSPC before save() can fire its typed errors (see planning.md + save-transactions.md "Free-space contract" subsections). Sync exits with envelope-level "Not enough space..." plus a synthetic NotEnoughSpacePlanTime entry in errors[]; post-cleanup rescan re-queues the unwritten add ops.`,
   };
 }
 
 /**
- * ADR-018 post-sweep recompute cell (TASK-412).
+ * ADR-018 post-sweep recompute cell.
  *
  * The mount carries chattr-immutable `.podkit-tmp` debris under the Music
  * content path. Plan-time envelope `free + debrisCleanup.totalBytes`
@@ -485,7 +485,7 @@ function predictPostSweep(cell: SaveFailCell): SaveFailExpected {
     rescanRefiresAddOrUpgrade: true,
     // The fault setup chattr +i's two pre-seeded `.podkit-tmp` files so the
     // per-path rm in `runPreliminariesPreFlight` returns EPERM. Those tmps
-    // survive on disk, and after TASK-413's helper fix (which correctly
+    // survive on disk, and after the doctor helper's fix (which correctly
     // reads `debris-files-mass-storage` instead of the legacy
     // `orphan-files-mass-storage`) doctor sees them as debris → `true`.
     // Previously masked because the helper queried the wrong check ID and
@@ -503,7 +503,7 @@ function predictPostSweep(cell: SaveFailCell): SaveFailExpected {
 }
 
 /**
- * Estimate-drift mid-save cell (TASK-412).
+ * Estimate-drift mid-save cell (ADR-018).
  *
  * Mount sized to fit `estimateCopySize` (typical-bitrate × duration) but
  * not the source's actual bytes. Plan-time + post-sweep gates both pass;
@@ -556,8 +556,8 @@ function predictChmodFault(cell: SaveFailCell): SaveFailExpected {
     case 'track-readonly': {
       // Pre-seed: first sync lands the file (managed). Source genre is
       // mutated. Second sync queues a tag-update diff on the managed file
-      // (in-place taglib write). After TASK-376, `TagLibTagWriter.writeTags`
-      // routes through `atomicWriteFileWithSync` (write sibling tmp → fsync
+      // (in-place taglib write). `TagLibTagWriter.writeTags` routes through
+      // `atomicWriteFileWithSync` (write sibling tmp → fsync
       // → renameat over target). A plain `chmod 0444` no longer trips the
       // write because the parent dir stays writable and rename ignores file
       // perms. The fault instead applies ext4's immutable bit (`chattr +i`)
@@ -667,10 +667,10 @@ function predictChmodFault(cell: SaveFailCell): SaveFailExpected {
     }
 
     case 'manifest-dir-readonly': {
-      // chmod 0500 on <mount>/.podkit/ BEFORE the sync. After TASK-404 the
-      // per-device sync lock acquires `<mount>/.podkit/sync.lock` BEFORE any
+      // chmod 0500 on <mount>/.podkit/ BEFORE the sync. The per-device sync
+      // lock acquires `<mount>/.podkit/sync.lock` BEFORE any
       // track operation runs; the lock create hits EACCES on the read-only
-      // dir. TASK-413 wraps that EACCES in a typed `LockUnavailableError`
+      // dir. That EACCES is wrapped in a typed `LockUnavailableError`
       // which the sync orchestrator translates to a `CliError` (code
       // LOCK_UNAVAILABLE) emitted BEFORE save() ever runs. Symptoms:
       //   - syncExit: 1 with a clean stderr message (no JS stack trace).
@@ -679,7 +679,7 @@ function predictChmodFault(cell: SaveFailCell): SaveFailExpected {
       //   - No files landed → partialDeviceState: 'no-files-landed' and the
       //     next dry-run sync re-fires the add op (rescan: true).
       // The old "copy succeeds; manifest write fails late" prediction
-      // captured the pre-TASK-404 behaviour where the manifest write inside
+      // captured the earlier behaviour where the manifest write inside
       // save() was the first thing to hit .podkit/. With the lock now
       // gating the whole sync, the early-typed-failure path supersedes it.
       void syncPath;
@@ -693,7 +693,7 @@ function predictChmodFault(cell: SaveFailCell): SaveFailExpected {
         errorMessageMatches: null,
         failedTrackCount: 0,
         portableTagWarn: false,
-        reason: `${cell.shape} × ${cell.sourceFormat} × ${cell.codecConfig} × ${cell.transferMode} × manifest-dir-readonly — TASK-413: the per-device sync lock at <mount>/.podkit/sync.lock cannot be created (.podkit/ is chmod 0555 → EACCES). Wrapped as LockUnavailableError → typed CliError (code LOCK_UNAVAILABLE) emitted BEFORE save() runs, so no per-track error envelope, no files landed, rescan still wants to add. Replaces the pre-TASK-404 "manifest write fails late" path.`,
+        reason: `${cell.shape} × ${cell.sourceFormat} × ${cell.codecConfig} × ${cell.transferMode} × manifest-dir-readonly — the per-device sync lock at <mount>/.podkit/sync.lock cannot be created (.podkit/ is chmod 0555 → EACCES). Wrapped as LockUnavailableError → typed CliError (code LOCK_UNAVAILABLE) emitted BEFORE save() runs, so no per-track error envelope, no files landed, rescan still wants to add. Replaces the earlier "manifest write fails late" prediction.`,
       };
     }
 
@@ -708,7 +708,7 @@ function predictChmodFault(cell: SaveFailCell): SaveFailExpected {
         partialDeviceState: 'database-stale',
         rescanRefiresAddOrUpgrade: true,
         // The failure happens inside libgpod's iTunesDB write (`.<DB>.<rand>`
-        // sidecar; not a `.podkit-tmp`). After TASK-413 the
+        // sidecar; not a `.podkit-tmp`). The
         // `doctorSeesPodkitTmp` helper inspects `debris-files-ipod`, which
         // walks for `.podkit-tmp` residue only — libgpod's tmp pattern is
         // ignored. So the check fires `pass` with empty debris and the

@@ -164,7 +164,7 @@ async function runIpodBlockPipeline(
   // Mirror the unsupported-path stage shape: surface vendorId/productId/
   // usbModel into the stage details so JSON consumers reading
   // `result.stages[0].details` see the same information as the
-  // unsupported-path push (TASK-338).
+  // unsupported-path push.
   stages.push({
     stage: 'usb',
     status: 'pass',
@@ -181,7 +181,7 @@ async function runIpodBlockPipeline(
   // scan({ kinds: ['ipod'] }) only returns partitioned devices. Surface the partition
   // layout collected by the platform probe (lsblk on Linux, diskutil on
   // macOS) so JSON consumers can render "iPod with single partition (FAT32,
-  // 32GB)" without re-probing the kernel (TASK-338).
+  // 32GB)" without re-probing the kernel.
   stages.push({
     stage: 'partition',
     status: 'pass',
@@ -196,7 +196,7 @@ async function runIpodBlockPipeline(
   // surface a UUID, and udisksctl picks a generic `/media/$USER/disk` mount
   // point. Trying to "make it work" patches three friction points without
   // fixing any of them; refusing cleanly with a docs link is the policy.
-  // See `filesystem-policy.ts` and TASK-317.12.
+  // See `filesystem-policy.ts`.
   if (isFilesystemUnsupportedHere(device.storage.filesystem, platform)) {
     const unsupported = makeHfsplusOnLinuxUnsupportedReason({
       ...(device.storage.filesystem ? { filesystem: device.storage.filesystem } : {}),
@@ -213,8 +213,8 @@ async function runIpodBlockPipeline(
       },
     });
     // Deliberately do NOT push placeholder "Skipped — previous check failed"
-    // rows for mount/sysinfo/database — TASK-317.12 calls those out as
-    // misleading wording (the cause is the filesystem, not a prior failure).
+    // rows for mount/sysinfo/database: that wording is misleading here,
+    // because the cause is the filesystem, not a prior failure.
     return {
       level: 'unsupported',
       stages,

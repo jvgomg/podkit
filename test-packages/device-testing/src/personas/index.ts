@@ -11,7 +11,7 @@
  * `docs/architecture/testing/vm-testing.md` §5. A persona that violates
  * the id/description/sourceFixture rules throws here rather than at the
  * EOVERFLOW/ENAMETOOLONG syscall inside the VM, which was historically the
- * symptom (see TASK-426 for context).
+ * symptom.
  *
  * @module
  */
@@ -85,11 +85,11 @@ const ALL_PERSONAS: readonly DevicePersona[] = [
   sonyNwA3000,
   sonyNwA1200,
   sonyNwHd5,
-  // TASK-324 Phase 5 — synthesised rejection / error-path personas.
+  // Synthesised rejection / error-path personas.
   ipodShuffleNotSupported,
   nonIpodUsbDisk,
   malformedSysinfo,
-  // TASK-324 Phase 5 AC #1 — state-variant personas (synthesised).
+  // State-variant personas (synthesised).
   ipodVideo5gCorruptDb,
   echoMiniPopulated,
   ipod5gModelnumMismatch,

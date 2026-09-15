@@ -519,7 +519,7 @@ describe('runDeviceAdd: iPod flow', () => {
     expect(err.error.toLowerCase()).toMatch(/no ipod|detected.*device/);
   });
 
-  it('surfaces the canonical iOS unsupported message when an iPod touch is on USB but no disk (TASK-317.03)', async () => {
+  it('surfaces the canonical iOS unsupported message when an iPod touch is on USB but no disk', async () => {
     const ctx = makeContext({ device: 'd' });
     const { out, stdout, exitCode } = makeOut();
     const deps: DeviceAddDeps = {
@@ -544,13 +544,13 @@ describe('runDeviceAdd: iPod flow', () => {
     expect(exitCode.get()).toBe(1);
     const err = stdout.json<AddOutputError & { details?: { unsupported?: { kind?: string } } }>();
     expect(err.code).toBe('UNSUPPORTED_DEVICE');
-    // Canonical message — never mentions libgpod (TASK-317.03 wording rule).
+    // Canonical message — never mentions libgpod (the unsupported-device wording rule).
     expect(err.error.toLowerCase()).not.toContain('libgpod');
     expect(err.error.toLowerCase()).toContain('proprietary sync protocol');
     expect(err.details?.unsupported?.kind).toBe('ios-device');
   });
 
-  it('surfaces UNSUPPORTED_DEVICE (not DETECTED_MASS_STORAGE) when only a refused-vendor device is on the bus (TASK-427 sev-1 regression)', async () => {
+  it('surfaces UNSUPPORTED_DEVICE (not DETECTED_MASS_STORAGE) when only a refused-vendor device is on the bus (regression: refused-vendor devices must never be misreported as an addable mass-storage device)', async () => {
     // Pre-refactor `enumerateConnectedDevices` produced no intent for a
     // Sony Walkman, so `device add` fell through to `NO_IPOD`.
     // Post-refactor `discoverConnectedDevices` emits a
@@ -594,10 +594,10 @@ describe('runDeviceAdd: iPod flow', () => {
 });
 
 // =============================================================================
-// HFS+ on Linux refusal (TASK-317.12)
+// HFS+ on Linux refusal
 // =============================================================================
 
-describe('runDeviceAdd: HFS+ on Linux refusal (TASK-317.12)', () => {
+describe('runDeviceAdd: HFS+ on Linux refusal', () => {
   let dir: string;
 
   beforeEach(async () => {
@@ -870,10 +870,10 @@ describe('runDeviceAdd: HFS+ on Linux refusal (TASK-317.12)', () => {
 });
 
 // =============================================================================
-// Missing volumeUuid defensive refusal (TASK-317.15)
+// Missing volumeUuid defensive refusal
 // =============================================================================
 
-describe('runDeviceAdd: missing volumeUuid refusal (TASK-317.15)', () => {
+describe('runDeviceAdd: missing volumeUuid refusal', () => {
   let dir: string;
 
   beforeEach(async () => {
@@ -1071,7 +1071,7 @@ describe('runDeviceAdd: missing volumeUuid refusal (TASK-317.15)', () => {
 });
 
 // =============================================================================
-// (TASK-427) enumeration-via-providers tests removed — replaced by
+// enumeration-via-providers tests removed — replaced by
 // `add-intent.test.ts` (`describeAddIntent` per-kind dispatcher +
 // `suggestAddIntents` composition) and `discovery.test.ts` (the union
 // reconciliation). The `enumerateConnectedDevices` + `DeviceProvider`
@@ -1344,8 +1344,8 @@ describe('runDeviceAdd: nano 2G slick-flow (cascade + combined prompt)', () => {
     }
   });
 
-  it('cancels add when user declines the warn-allow prompt on an unsupported generation (TASK-317.03)', async () => {
-    // Per TASK-317.03 the runner now warns + prompts instead of hard-refusing.
+  it('cancels add when user declines the warn-allow prompt on an unsupported generation', async () => {
+    // The runner warns and prompts instead of hard-refusing on an unsupported generation.
     // No --yes here; supply confirm that returns false → cancellation.
     const ctx = makeContext({ device: 'touchcancel', json: true, configPath: tempConfig });
     const { out, exitCode } = makeOut(true);
@@ -1401,7 +1401,7 @@ describe('runDeviceAdd: nano 2G slick-flow (cascade + combined prompt)', () => {
     expect(exitCode.get()).toBeUndefined();
   });
 
-  it('persists unsupported rich shape when the user accepts the warn-allow prompt (TASK-317.03)', async () => {
+  it('persists unsupported rich shape when the user accepts the warn-allow prompt', async () => {
     const ctx = makeContext({ device: 'touchok', json: true, configPath: tempConfig });
     const { out, stdout, exitCode } = makeOut(true);
 

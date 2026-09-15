@@ -8,7 +8,7 @@
  * `getSourcePath`, `getInterruptedSuffix`, `type` fields — the helper
  * itself is content-type-agnostic.
  *
- * Extracted in TASK-423; the two original loops lived in `sync.ts` and
+ * Extracted from `sync.ts`, where the two original loops (music, video)
  * shared ~75% structure.
  */
 
@@ -122,8 +122,9 @@ interface CollectionPhaseResultCommon {
 
 /**
  * Discriminated by `kind` so music's extra accumulators are typed, not
- * stringly-keyed. Video gets no extras; music carries the two TASK-378
- * tip counters.
+ * stringly-keyed. Video gets no extras; music carries the two counters
+ * that drive end-of-sync tips (artwork-missing baseline, transfer-mode
+ * mismatch count).
  */
 export type CollectionPhaseResult =
   | (CollectionPhaseResultCommon & {

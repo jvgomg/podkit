@@ -3,7 +3,7 @@
  * `runDeviceReset`, `runDeviceInit`, `runDeviceResetArtwork`).
  *
  * Focused on the early-throw paths that don't require a real iTunesDB
- * fixture — proving the deps seam added in TASK-315 short-circuits before
+ * fixture — proving the dependency-injection seam short-circuits before
  * any real USB walk or libgpod open happens. Full behaviour coverage
  * (success paths against real fixtures) lives in `device.integration.test.ts`.
  */

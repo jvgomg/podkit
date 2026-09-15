@@ -17,13 +17,13 @@
  * level (`lossy-reduction.test.ts`, `handler.test.ts`); this test proves the path
  * is wired end-to-end through config → classifier → seam → transcoder → device.
  *
- * That assertion was once *not* true by construction. Before TASK-499,
+ * That assertion was once *not* true by construction. Before a fix,
  * `buildVbrArgs` discarded `targetKbps` on FFmpeg's native `aac` encoder, so
  * both runs emitted a byte-identical `-c:a aac -q:a 5` and the two bitrates
  * differed only by encoder noise — observed failing `> 231` with `231`, on both
  * attempts, so `bunfig.toml`'s `retry = 1` did not mask it. The test was gated
- * off on hosts with only native `aac` while that stood. TASK-499 made all three
- * AAC encoders take the seam's target and the gate is gone (TASK-500).
+ * off on hosts with only native `aac` while that stood. Once all three AAC
+ * encoders were made to take the seam's target, that gate was removed.
  *
  * "Takes the target" meant something weaker on `aac_at` than it sounded.
  * Native `aac` was handed `-b:a`, but `aac_at` and `libfdk_aac` were handed a
@@ -31,7 +31,7 @@
  * nearest-wins, so every target below ~112 kbps landed on `-q:a 8`. Both of
  * this test's targets (~92 preserve, ~69 convert) are under that, so on macOS
  * the two runs issued byte-identical arguments and this assertion could not
- * hold: measured 67 against 67, failing 12 runs out of 13. TASK-511 moved
+ * hold: measured 67 against 67, failing 12 runs out of 13. A later fix moved
  * `aac_at` to ABR at the target itself, which is what makes the two requests
  * differ here. `libfdk_aac` still picks a band, but a documented one, and its
  * bands are far enough apart that these two targets do not share one.
@@ -176,8 +176,8 @@ describe('forced transcode (incompatible codec): preserve is efficiency-matched 
 
     // The efficiency-matched preserve target (source ÷ 0.75) is a third higher
     // than the convert target (min(source, cap) = source). Same encoder, same
-    // content — the only difference is the seam's target, and since TASK-499
-    // every AAC encoder podkit drives is handed that target. So the two runs
+    // content — the only difference is the seam's target, and every AAC
+    // encoder podkit drives is handed that target. So the two runs
     // ask for two different bitrates by construction, rather than differing by
     // whatever the encoder felt like on the day.
     //
@@ -186,8 +186,8 @@ describe('forced transcode (incompatible codec): preserve is efficiency-matched 
     // sit below their nominal 171/128 because libopus undershoots `-b:a`
     // heavily on pink noise, so the source bitrate podkit probes off the file
     // is ~69 rather than 128. That scales both targets equally and does not
-    // touch the relationship under test — see TASK-502 for re-deriving these
-    // against real music.)
+    // touch the relationship under test — a follow-up could re-derive these
+    // figures against real music.)
     expect(preserveBitrate).toBeGreaterThan(convertBitrate);
 
     // Cap-bounded: the efficiency-lifted preserve target stays at or below the
@@ -195,7 +195,8 @@ describe('forced transcode (incompatible codec): preserve is efficiency-matched 
     // end-to-end. A guard rather than a proof: making the *clamp* fire needs a
     // source whose lifted target crosses 256, which on this fixture depends on
     // how libopus rate-controls noise. The clamp itself is pinned at the unit
-    // level in `lossy-reduction.test.ts`; see TASK-502 for making it bind here.
+    // level in `lossy-reduction.test.ts`; a follow-up could construct a
+    // fixture that makes it bind here too.
     expect(preserveBitrate).toBeLessThanOrEqual(aacCeilingKbps(HIGH_CAP_KBPS));
   }, 240000);
 });

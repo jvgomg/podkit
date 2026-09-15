@@ -825,9 +825,9 @@ device = "${stanza?.name ?? ''}"
           expect(liftedTracks.length).toBe(1);
           // Two different requests, not encoder noise: the reduced copy was
           // encoded at the `low` cap (128) and the lift at the source-bounded
-          // high target (min(192, 256) = 192). Since TASK-499 every AAC encoder
-          // podkit drives is given that target, so the gap is structural rather
-          // than a byproduct of how the encoder felt about the content.
+          // high target (min(192, 256) = 192). Every AAC encoder podkit drives
+          // is given that target, so the gap is structural rather than a
+          // byproduct of how the encoder felt about the content.
           // Measured on FFmpeg 9.0.1 native `aac`: 128 → 192 kbps, i.e. each
           // run lands exactly on the target the seam resolved.
           const liftedBitrate = await soleDeviceStreamBitrateKbps(target.musicRoot());

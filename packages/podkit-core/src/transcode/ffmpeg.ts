@@ -112,7 +112,7 @@ export function buildVbrArgs(encoder: string, quality: number, targetKbps?: numb
       //
       // It used to be translated: a five-point map (320→q0, 256→q2, 192→q4,
       // 128→q6, 96→q8) picking the *nearest* point. Two problems, both
-      // measured on this encoder (FFmpeg 9.0.1, stereo noise, TASK-511):
+      // measured on this encoder (FFmpeg 9.0.1, stereo noise):
       //
       //   - `-q:a` is not a bitrate axis, so the map was only ever valid for
       //     the content it was calibrated on. The table above was measured on
@@ -146,7 +146,7 @@ export function buildVbrArgs(encoder: string, quality: number, targetKbps?: numb
       // (measured on stereo pink noise: q=3 → 247 kbps, q=5 → 216 kbps).
       // Reusing libfdk's 1-5 quality number there put `low` at ~190 kbps and
       // `medium` at ~230 kbps — silently above the ceilings ADR-023 §2
-      // promises (TASK-499).
+      // promises.
       //
       // Its ABR rate control, by contrast, tracks `-b:a` to within a kbps
       // even on incompressible content and never exceeds it, so that is what

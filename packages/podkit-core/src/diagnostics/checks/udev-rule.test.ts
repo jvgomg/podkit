@@ -100,7 +100,7 @@ describe('udevRuleCheck metadata', () => {
   });
 });
 
-// ── Detection (check() — TASK-336) ───────────────────────────────────────────
+// ── Detection: rule presence, content staleness, and read failures ───────────
 
 /**
  * Build an in-memory readFile fake. If `content` is undefined the fake
@@ -123,7 +123,7 @@ function makeReadFile(opts: { content?: string; errno?: string }): ReadFileFn {
   };
 }
 
-describe('checkUdevRule — detection (TASK-336)', () => {
+describe('checkUdevRule — detection', () => {
   it('returns skip on darwin without reading the file', async () => {
     let readCalls = 0;
     const result = await checkUdevRule({
@@ -248,7 +248,7 @@ describe('UDEV_RULE_CONTENT', () => {
     expect(UDEV_RULE_CONTENT).toContain('TAG+="uaccess"');
   });
 
-  // ── SCSI generic clause (TASK-292.12) ─────────────────────────────────────
+  // ── SCSI generic clause — the SCSI VPD inquiry path ───────────────────────
 
   it('targets scsi_generic subsystem (SCSI VPD inquiry path)', () => {
     expect(UDEV_RULE_CONTENT).toContain('SUBSYSTEM=="scsi_generic"');
@@ -272,7 +272,7 @@ describe('UDEV_RULE_CONTENT', () => {
     expect(scsiClause).toContain('TAG+="uaccess"');
   });
 
-  // ── USB clause (TASK-317.13) ──────────────────────────────────────────────
+  // ── USB clause — the libusb firmware-inquiry path ─────────────────────────
 
   it('targets usb subsystem (libusb firmware-inquiry path)', () => {
     // The USB clause must be present so /dev/bus/usb/<bus>/<dev> for
@@ -330,7 +330,7 @@ describe('UDEV_RULE_CONTENT matches the canonical shipped rule file', () => {
   });
 });
 
-// ── Legacy filename cleanup (TASK-317.13) ─────────────────────────────────
+// ── Legacy filename cleanup — the rule was renamed once ───────────────────
 
 describe('LEGACY_TARGET_PATHS', () => {
   it('includes the pre-rename SCSI-only filename so upgrades clean it up', () => {
@@ -451,7 +451,7 @@ describe('runUdevRuleInstall success', () => {
 
 // ── Failure paths ─────────────────────────────────────────────────────────────
 
-// ── Legacy filename cleanup on install (TASK-317.13) ──────────────────────
+// ── Legacy filename cleanup on install — the rename must not leave two ────
 
 describe('runUdevRuleInstall legacy filename cleanup', () => {
   it('issues an rm -f for each legacy path during install', async () => {

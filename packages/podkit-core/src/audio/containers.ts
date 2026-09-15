@@ -15,7 +15,7 @@ import { extname } from 'node:path';
  *
  * Originally introduced because FFmpeg's OGG muxer cannot write image
  * streams (upstream tickets #4448, #9044), so the pipeline routed OGG/Opus
- * artwork through node-taglib-sharp. TASK-372 generalised that path —
+ * artwork through node-taglib-sharp. That path was later generalised —
  * every embedded-sink container now goes through the tag writer — so the
  * predicate is no longer used inside `transferArtwork`. Kept exported for
  * the e2e matrix's `artworkContainerRank` and for any caller that needs

@@ -13,7 +13,7 @@
  *
  * Refusing cleanly with a docs link is structurally cleaner than trying to
  * patch all three friction points. macOS HFS+ is unchanged — the policy is
- * Linux-only. See TASK-317.12 and `packages/docs-site/src/content/docs/devices/linux-filesystems.md`.
+ * Linux-only. See `packages/docs-site/src/content/docs/devices/linux-filesystems.md`.
  */
 
 import { DOCS_URLS } from '../docs-urls.js';
@@ -47,7 +47,9 @@ export function isFilesystemUnsupportedHere(
 
 /**
  * Build the canonical refusal text that the CLI prints for an HFS+ iPod
- * encountered on Linux. Matches the wording mandated by TASK-317.12.
+ * encountered on Linux. The wording is fixed: the CLI, the readiness
+ * pipeline and the docs all quote the same refusal text, so it is changed
+ * here and nowhere else.
  *
  * Returned as an array of lines so callers can route them through whichever
  * output sink they own (CliError message text). Callers that need a single

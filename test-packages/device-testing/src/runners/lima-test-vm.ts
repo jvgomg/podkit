@@ -404,7 +404,7 @@ export interface StopDaemonOpts {
  * budget attached, so a genuine synthesis failure still surfaces as itself.
  *
  * Callers that previously paired this with their own `waitFor*` call no
- * longer need one (TASK-504).
+ * longer need one — the wait is now built in.
  */
 export async function startDaemonForPersona(opts: StartDaemonOpts): Promise<void> {
   const link = opts.link ?? deviceSubstrateLink();

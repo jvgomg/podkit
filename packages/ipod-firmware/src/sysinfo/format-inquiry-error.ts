@@ -156,7 +156,7 @@ function buildReasonLine(
  *
  * - At least one attempt EACCES on a `/dev/sg*` or `/dev/bus/usb/...` node →
  *   `podkit doctor --repair udev-rule`. The udev rule covers both subsystems
- *   after TASK-317.13.
+ *   (SCSI generic and USB), so the same repair command fixes either.
  * - Otherwise → no hint (the per-transport reason lines are the message).
  */
 function buildRemediationHint(

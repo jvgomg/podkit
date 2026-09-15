@@ -4,8 +4,8 @@
  * `printOrphanSummary` is the most format-fragile block in the doctor
  * render — three sorted sub-sections (by-directory, by-extension, top-10
  * largest) plus a CSV-export hint. It was structurally uncovered before
- * the TASK-345 refactor (only exercised indirectly through the doctor
- * integration tests' verbose output).
+ * dedicated unit tests were added for it (only exercised indirectly through
+ * the doctor integration tests' verbose output).
  *
  * All output flows through `out.verbose1`, so we drive the OutputContext
  * with `verbose: 1` and assert against the captured stdout text.

@@ -22,9 +22,9 @@ describe('template fast-path', () => {
 
   // This pair asserts on the branch `createTestIpod` took, via the
   // `usedTemplate` flag it reports, NOT on how long it took. The elapsed-time
-  // proxy this replaced (`expect(ms).toBeLessThan(50)`, TASK-227) failed on
+  // proxy this replaced (`expect(ms).toBeLessThan(50)`) failed on
   // essentially every CI run with the fast path working perfectly — a template
-  // copy measured 68ms on a loaded 4-vCPU runner (TASK-507). Nothing about the
+  // copy measured 68ms on a loaded 4-vCPU runner. Nothing about the
   // contract "defaults copy a template instead of spawning gpod-tool" is
   // expressible as a duration, so don't reintroduce one.
   it.skipIf(process.env.PODKIT_DISABLE_TEMPLATE_CACHE === '1')(

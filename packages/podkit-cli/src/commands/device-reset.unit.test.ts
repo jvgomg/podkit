@@ -298,7 +298,7 @@ describe('runDeviceReset: factory reset happy path', () => {
   });
 });
 
-describe('runDeviceReset: AC#4 uninitialised device', () => {
+describe('runDeviceReset: uninitialised device', () => {
   it('errors with NOT_INITIALIZED pointing to init when no DB exists', async () => {
     const dir = await tmpDir('podkit-reset-nodb-');
     const ctx = makeContext({ device: dir });

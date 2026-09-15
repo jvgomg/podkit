@@ -199,7 +199,7 @@ export {
   BACKING_FILES_VM_DIR,
 } from './runners/lima-test-vm-backing-files.js';
 
-// local-linux runner constants (TASK-322.04)
+// local-linux runner constants
 export { LOCAL_MUTATE_ENV } from './runners/local-linux.js';
 
 // The substrate link: which substrate this machine drives, how to reach it,
@@ -271,7 +271,8 @@ export { withPersona, runJsonCommand } from './vm/persona-fixture.js';
 
 // The enumeration waits are deliberately NOT re-exported. `startDaemonForPersona`
 // performs them, and a caller able to reach past it is a caller able to get a
-// started daemon on an empty bus — the silent failure TASK-504 closed.
+// started daemon on an empty bus — a silent "no devices" false negative
+// rather than a loud error.
 export { ENUMERATION_TIMEOUT_MS } from './runners/lima-enumeration.js';
 
 export type {

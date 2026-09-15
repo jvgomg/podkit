@@ -141,7 +141,7 @@ export const inquiryMethodsCheck: DiagnosticCheck = {
   // iPod-only: this check probes the SCSI/USB transports used exclusively
   // by iPod firmware inquiry. Surfacing it under "System" on a mass-storage
   // device (e.g. Echo Mini) would mislead users into thinking iPodDriver.kext
-  // matters for their device. (TASK-317.08)
+  // matters for their device.
   applicableTo: ['ipod'],
 
   async check(_ctx: DiagnosticContext): Promise<CheckResult> {

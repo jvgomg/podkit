@@ -860,7 +860,8 @@ describe('SubsonicAdapter connection retries', () => {
 });
 
 // =============================================================================
-// getArtwork — adapter-side artwork fallback (TASK-142)
+// getArtwork — adapter-side artwork fallback (cover art fetched from the
+// server when the audio body carries no embedded picture)
 // =============================================================================
 
 describe('SubsonicAdapter getArtwork', () => {

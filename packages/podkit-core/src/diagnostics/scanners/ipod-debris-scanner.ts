@@ -1,8 +1,8 @@
 /**
  * Scanner registration for iPod content debris.
  *
- * Wraps `walkIpodContentForDebris` for consumption by the pre-sync sweep
- * (TASK-398). Doctor's `debris-files-ipod` check uses the same walker
+ * Wraps `walkIpodContentForDebris` for consumption by the pre-sync sweep.
+ * Doctor's `debris-files-ipod` check uses the same walker
  * directly — both code paths produce identical results.
  */
 

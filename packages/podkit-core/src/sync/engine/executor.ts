@@ -193,7 +193,7 @@ export class SyncExecutor<TSource, TDevice, TOp extends BaseOperation = SyncOper
       warningSink,
     };
 
-    // Pre-sync sweep pre-flight (TASK-398). Only the FIRST plan against a
+    // Pre-sync sweep pre-flight. Only the FIRST plan against a
     // device carries `preliminaries`; subsequent collection plans see
     // undefined and the helper short-circuits. No-op in dry-run.
     // The adapter is threaded through so the helper can auto-prune

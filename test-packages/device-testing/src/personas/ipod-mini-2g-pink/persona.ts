@@ -96,7 +96,7 @@ export const ipodMini2gPink: DevicePersona = {
 
   // Synthesised from the FAT32 single-partition layout. Real capture-time
   // identifier/volumeUuid live in `raw/diskutil.plist`; placeholder values
-  // here are good enough for shape-level assertions until a later AC needs
+  // here are good enough for shape-level assertions until something needs
   // to compare against the parsed plist directly.
   platformDeviceInfoDarwin: [
     ipodMacosPlatformInfo({

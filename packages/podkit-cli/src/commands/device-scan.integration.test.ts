@@ -38,7 +38,8 @@ const PERIPHERALS_ONLY: EnumeratedUsbDevice[] = [
 
 /**
  * Realistic mixed scan — 1 iPod + 1 Echo Mini + 5 peripherals + 1 iOS device.
- * Specified verbatim in TASK-317.01 AC #8.
+ * This exact mix is the scenario classification must get right: recognised
+ * devices interleaved with unrelated peripherals on the same bus.
  */
 const MIXED_SCAN: EnumeratedUsbDevice[] = [
   { vendorId: '05ac', productId: '1209', diskIdentifier: 'disk5' }, // iPod 5G Video (supported)
@@ -95,7 +96,7 @@ describe('device scan integration — USB enumeration → classification', () =>
   });
 
   it('classifies an Echo Mini with no mounted SD card (no diskIdentifier)', () => {
-    // AC #11: Echo Mini plugged with SD card removed should still classify as
+    // Echo Mini plugged with SD card removed should still classify as
     // mass-storage rather than fall through to "Unknown iPod (USB only)".
     const recognised = classifyUsbDevices([{ vendorId: '071b', productId: '3203' }]);
     expect(recognised).toHaveLength(1);
@@ -105,7 +106,7 @@ describe('device scan integration — USB enumeration → classification', () =>
     }
   });
 
-  it('preserves deterministic ordering across repeated runs (regression: m-18 §6)', () => {
+  it('preserves deterministic ordering across repeated runs (regression: multi-device renders became unstable when device order was not preserved)', () => {
     // Two iPods + peripherals — the recognised-device list must keep input
     // order so multi-device renders stably.
     const input: EnumeratedUsbDevice[] = [

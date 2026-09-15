@@ -207,7 +207,9 @@ interface DoctorOptions {
  * applies when `--scope` is `'all'` (i.e. the default). The result is the
  * exact list passed to `core.runDiagnostics({ scopes })`.
  *
- * Exported for unit-test coverage of the flag matrix (TASK-333 AC #6).
+ * Exported for unit-test coverage of the flag matrix — every combination of
+ * `--scope` and `--no-system`, cross-checked against the `--json` envelope
+ * toggle to confirm it never changes which scopes run.
  */
 export function resolveDoctorScopes(
   options: Pick<DoctorOptions, 'scope' | 'system' | 'systemOnly'>
@@ -343,7 +345,7 @@ export const doctorCommand = new Command('doctor')
 
 /**
  * Body of the `podkit doctor` action callback, extracted so the flag-matrix
- * tests (TASK-307) can drive it in-process with stubbed deps. Production goes
+ * tests can drive it in-process with stubbed deps. Production goes
  * through `.action()` above; tests construct their own `OutputContext` (with
  * `BufferSink` + `BufferExitCodeSink`) and pass injectable deps.
  *
@@ -527,7 +529,7 @@ export async function runDoctorAction(
 /**
  * Run iPod / mass-storage diagnostics for a resolved device path.
  *
- * Exported for unit tests (TASK-308) — production callers go through
+ * Exported for unit tests — production callers go through
  * the Commander action above. Tests pass `deps.loadCore` to inject a fake
  * `@podkit/core` module and `deps.getDeviceManager` for the readiness path.
  * For iPod tests that need to drive past `core.IpodDatabase.open`, supply a
@@ -1085,7 +1087,7 @@ export async function runDoctorDiagnostics(
 /**
  * Run only system-scope checks. Skips device resolution, readiness, and
  * database health — callable on a machine with no iPod plugged in, which
- * is the entry point for VM-test baseline assertions (see TASK-322.06).
+ * is the entry point for VM-test baseline assertions.
  *
  * Exported for unit-test injection: tests pass a `loadCore` stub to assert
  * which scopes are forwarded to `runDiagnostics`.

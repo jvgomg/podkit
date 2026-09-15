@@ -170,7 +170,7 @@ describe('VM: doctor output contract', () => {
     }, VM_COLD_TIMEOUT_MS);
 
     // ─────────────────────────────────────────────────────────────────────
-    // JSON SCHEMA (system scope — drives ACs #1, #2, #3, #14, #15)
+    // JSON SCHEMA (system scope)
     //
     // We exercise the system-scope envelope because it is reachable without
     // gpod-tool. The schema-shape assertions transfer to the device-bound

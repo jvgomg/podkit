@@ -2,7 +2,7 @@
  * Debris file detection for iPod devices.
  *
  * Surfaces `.podkit-tmp` residue across every `iPod_Control/` directory
- * podkit writes into. After TASK-376 routed portable tag-writes through
+ * podkit writes into. Since portable tag-writes were routed through
  * `atomicWriteFileWithSync`, an interrupted sync can leave these tmps
  * anywhere — not just under `iPod_Control/Music/F**`. The walker keys on
  * the suffix, not the path.

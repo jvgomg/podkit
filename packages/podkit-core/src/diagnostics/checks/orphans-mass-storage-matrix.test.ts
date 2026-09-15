@@ -1,19 +1,19 @@
 /**
  * Mass-storage orphan-files diagnostic check — preset × content-path × override
- * matrix (TASK-306, m-19 Phase 5d).
+ * matrix.
  *
  * Each test drives `orphanFilesMassStorageCheck.check` / `.repair.run` against
  * a real temp directory populated to model a mass-storage device. The
  * `ContentPaths` shape passed in `DiagnosticContext.contentPaths` represents
  * the *resolved* content paths — production resolves the per-device override →
  * `deviceDefaults.musicDir` → preset-default precedence chain upstream of the
- * check. AC #6 therefore exercises three independent permutations and pins
- * the precedence at the resolution layer that produces the value the check
- * actually consumes.
+ * check. The override-precedence suite therefore exercises three independent
+ * permutations and pins the precedence at the resolution layer that produces
+ * the value the check actually consumes.
  *
- * VM-test (Lima VM, FunctionFS gadget) is deferred behind TASK-322.05.01.
+ * VM-test (Lima VM, FunctionFS gadget) coverage is deferred until the
+ * FunctionFS gadget daemon can synthesise a mass-storage device.
  *
- * @see backlog/tasks/task-306
  * @see docs/adr/adr-016-test-harness-foundations.md
  */
 
@@ -74,8 +74,8 @@ async function createFiles(mountPoint: string, files: Record<string, string>): P
  *
  * Production wires this chain together at the config layer; the diagnostics
  * check only sees the resolved value. Reproducing the merge here lets each
- * AC #6 permutation assert what the check is handed *given the inputs at
- * each layer*.
+ * override-precedence permutation assert what the check is handed *given the
+ * inputs at each layer*.
  */
 function resolveMusicDir(args: {
   perDevice?: string;
@@ -87,7 +87,7 @@ function resolveMusicDir(args: {
 
 // ── Tests ───────────────────────────────────────────────────────────────────
 
-describe('orphan-files-mass-storage — preset × content-path × override matrix (TASK-306)', () => {
+describe('orphan-files-mass-storage — preset × content-path × override matrix', () => {
   let tempDir: string;
 
   beforeEach(async () => {
@@ -102,7 +102,7 @@ describe('orphan-files-mass-storage — preset × content-path × override matri
 
   /**
    * Recursively chmod a tree back to 0o755 so `rm -rf` works after a test
-   * leaves a directory in 0o555 mode (used by the AC#10 partial-failure case).
+   * leaves a directory in 0o555 mode (used by the partial-failure case).
    * Best-effort: ignores ENOENT and other errors.
    */
   async function chmodTreeBestEffort(root: string): Promise<void> {
@@ -132,12 +132,11 @@ describe('orphan-files-mass-storage — preset × content-path × override matri
   }
 
   // ──────────────────────────────────────────────────────────────────────────
-  // Preset coverage — AC #1..#4
+  // Preset coverage — one case per built-in preset layout
   // ──────────────────────────────────────────────────────────────────────────
 
   describe('preset content-path layouts', () => {
-    // AC #1
-    it('AC#1 echo-mini preset with no orphans → pass, orphanCount absent (clean baseline)', async () => {
+    it('echo-mini preset with no orphans → pass, orphanCount absent (clean baseline)', async () => {
       // echo-mini stores music at the device root (musicDir: '').
       const cp = presetContentPaths('echo-mini');
       expect(cp.musicDir).toBe('');
@@ -158,9 +157,7 @@ describe('orphan-files-mass-storage — preset × content-path × override matri
       expect(result.details?.wastedBytes).toBe(0);
       expect(result.details?.orphans).toEqual([]);
     });
-
-    // AC #2
-    it('AC#2 echo-mini preset + one unmanaged file at device-root music dir → warn, orphanCount=1, wastedBytes=fileSize', async () => {
+    it('echo-mini preset + one unmanaged file at device-root music dir → warn, orphanCount=1, wastedBytes=fileSize', async () => {
       const cp = presetContentPaths('echo-mini');
       const orphanContent = 'this is the orphan file payload';
 
@@ -181,9 +178,7 @@ describe('orphan-files-mass-storage — preset × content-path × override matri
       expect(orphans).toHaveLength(1);
       expect(orphans[0]!.path).toBe(join(tempDir, 'Artist/Album/manual-drop.mp3'));
     });
-
-    // AC #3
-    it('AC#3 generic preset (Music/, Video/Movies/, Video/Shows/) flags orphan in its default music location → warn', async () => {
+    it('generic preset (Music/, Video/Movies/, Video/Shows/) flags orphan in its default music location → warn', async () => {
       const cp = presetContentPaths('generic');
       expect(cp.musicDir).toBe('Music');
       expect(cp.moviesDir).toBe('Video/Movies');
@@ -200,9 +195,7 @@ describe('orphan-files-mass-storage — preset × content-path × override matri
       expect(result.status).toBe('warn');
       expect(result.details?.orphanCount).toBe(1);
     });
-
-    // AC #4
-    it('AC#4 rockbox preset (Music/, Video/Movies/, Video/Shows/) flags orphan within its layout → warn', async () => {
+    it('rockbox preset (Music/, Video/Movies/, Video/Shows/) flags orphan within its layout → warn', async () => {
       const cp = presetContentPaths('rockbox');
       // Rockbox uses DEFAULT_CONTENT_PATHS; assert that to pin the preset's
       // contract — if rockbox ever moves to a custom layout this test surfaces
@@ -224,12 +217,11 @@ describe('orphan-files-mass-storage — preset × content-path × override matri
   });
 
   // ──────────────────────────────────────────────────────────────────────────
-  // Out-of-scope content — AC #5
+  // Out-of-scope content — files outside the configured content paths
   // ──────────────────────────────────────────────────────────────────────────
 
   describe('files outside configured content paths', () => {
-    // AC #5
-    it('AC#5 files in non-content root directories (e.g. /System/, /Documents/) are NOT flagged as orphans', async () => {
+    it('files in non-content root directories (e.g. /System/, /Documents/) are NOT flagged as orphans', async () => {
       const cp = presetContentPaths('generic');
 
       await createFiles(tempDir, {
@@ -252,10 +244,10 @@ describe('orphan-files-mass-storage — preset × content-path × override matri
   });
 
   // ──────────────────────────────────────────────────────────────────────────
-  // Override precedence — AC #6 (three nested permutations)
+  // Override precedence — three nested permutations
   // ──────────────────────────────────────────────────────────────────────────
 
-  describe('AC#6 musicDir override precedence (per-device > deviceDefaults > preset default)', () => {
+  describe('musicDir override precedence (per-device > deviceDefaults > preset default)', () => {
     // Layer 1: per-device override beats every fallback.
     it('per-device override `MyMusic` wins over deviceDefaults `Tunes` and preset default `Music`', async () => {
       const musicDir = resolveMusicDir({
@@ -347,12 +339,11 @@ describe('orphan-files-mass-storage — preset × content-path × override matri
   });
 
   // ──────────────────────────────────────────────────────────────────────────
-  // Repair behaviour — AC #7, #8, #9
+  // Repair behaviour — delete, dry-run, and managed-file preservation
   // ──────────────────────────────────────────────────────────────────────────
 
   describe('repair behaviour', () => {
-    // AC #7
-    it('AC#7 repair deletes orphans then subsequent check reports pass', async () => {
+    it('repair deletes orphans then subsequent check reports pass', async () => {
       const cp = presetContentPaths('generic');
 
       await createFiles(tempDir, {
@@ -376,9 +367,7 @@ describe('orphan-files-mass-storage — preset × content-path × override matri
       const after = await orphanFilesMassStorageCheck.check(makeCtx(tempDir, cp));
       expect(after.status).toBe('pass');
     });
-
-    // AC #8
-    it('AC#8 repair --dry-run leaves the filesystem unmodified', async () => {
+    it('repair --dry-run leaves the filesystem unmodified', async () => {
       const cp = presetContentPaths('generic');
 
       await createFiles(tempDir, {
@@ -404,9 +393,7 @@ describe('orphan-files-mass-storage — preset × content-path × override matri
       expect(follow.status).toBe('warn');
       expect(follow.details?.orphanCount).toBe(1);
     });
-
-    // AC #9
-    it('AC#9 repair preserves managed files — managed-files set is identical before and after', async () => {
+    it('repair preserves managed files — managed-files set is identical before and after', async () => {
       const cp = presetContentPaths('generic');
 
       const managed = [
@@ -441,9 +428,7 @@ describe('orphan-files-mass-storage — preset × content-path × override matri
       expect(existsSync(join(tempDir, 'Music/Artist/Album/orphan.mp3'))).toBe(false);
       expect(existsSync(join(tempDir, 'Video/Movies/orphan.mp4'))).toBe(false);
     });
-
-    // AC #10
-    it('AC#10 partial failure: read-only parent dir → details.errors populated, success=false, deleted=remaining', async () => {
+    it('partial failure: read-only parent dir → details.errors populated, success=false, deleted=remaining', async () => {
       const cp = presetContentPaths('generic');
 
       await createFiles(tempDir, {
@@ -496,12 +481,12 @@ describe('orphan-files-mass-storage — preset × content-path × override matri
   });
 
   // ──────────────────────────────────────────────────────────────────────────
-  // Applicability — AC #11, #12
+  // Applicability — which device types each orphan check applies to
   // ──────────────────────────────────────────────────────────────────────────
 
   describe('applicability across device types', () => {
-    // AC #11 — mass-storage-only declared scope and registry lookup
-    it('AC#11 orphanFilesMassStorageCheck declares applicableTo=["mass-storage"]; iPod devices skip it', async () => {
+    // Mass-storage-only declared scope, plus registry lookup.
+    it('orphanFilesMassStorageCheck declares applicableTo=["mass-storage"]; iPod devices skip it', async () => {
       expect(orphanFilesMassStorageCheck.applicableTo).toEqual(['mass-storage']);
 
       // The registered check resolves by id.
@@ -519,8 +504,8 @@ describe('orphan-files-mass-storage — preset × content-path × override matri
       expect(ids).not.toContain('orphan-files-mass-storage');
     });
 
-    // AC #12 — iPod-flavoured orphan-files NOT applied to mass-storage devices
-    it('AC#12 iPod orphan-files check is NOT applied to mass-storage devices (absent from checks[])', async () => {
+    // The iPod-flavoured orphan-files check is NOT applied to mass-storage.
+    it('iPod orphan-files check is NOT applied to mass-storage devices (absent from checks[])', async () => {
       expect(orphanFilesCheck.applicableTo).toEqual(['ipod']);
 
       const cp = presetContentPaths('generic');

@@ -1,5 +1,5 @@
 /**
- * `checkReadiness()` unsupported short-circuit (TASK-331).
+ * `checkReadiness()` unsupported short-circuit.
  *
  * Verifies that when the USB classifier has marked an iPod as unsupported,
  * the readiness pipeline surfaces `level: 'unsupported'` and the structured

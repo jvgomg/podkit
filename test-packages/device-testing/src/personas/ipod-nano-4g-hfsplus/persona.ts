@@ -125,7 +125,7 @@ export const ipodNano4gHfsplus: DevicePersona = {
 
   // macOS supports HFS+ iPods (only Linux refuses them). Records what the
   // macOS findIpodDevices pipeline would surface for the synthesised HFS+
-  // partition; placeholder UUID/identifier — tighten when a later AC pins
+  // partition; placeholder UUID/identifier — tighten when something needs to pin
   // the parsed-plist comparison.
   platformDeviceInfoDarwin: [
     ipodMacosPlatformInfo({

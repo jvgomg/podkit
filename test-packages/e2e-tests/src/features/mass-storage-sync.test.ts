@@ -518,7 +518,7 @@ describe('mass-storage sync: echo-mini device', () => {
   }, 180000);
 
   // ---------------------------------------------------------------------------
-  // --delete scoping: managed vs unmanaged files (TASK-261)
+  // --delete scoping: managed vs unmanaged files
   // ---------------------------------------------------------------------------
 
   it('--delete removes managed tracks no longer in source but preserves unmanaged files', async () => {
@@ -1238,7 +1238,7 @@ device = "echomini"
   }, 120000);
 
   // ---------------------------------------------------------------------------
-  // Album-artist paths: compilation grouping (TASK-263)
+  // Album-artist paths: compilation grouping
   // ---------------------------------------------------------------------------
 
   it('groups compilation tracks under albumArtist directory', async () => {
@@ -1316,7 +1316,7 @@ device = "echomini"
   }, 120000);
 
   // ---------------------------------------------------------------------------
-  // Self-healing relocate: albumArtist metadata change (TASK-263)
+  // Self-healing relocate: albumArtist metadata change
   // ---------------------------------------------------------------------------
 
   it('relocates files on device when source albumArtist changes', async () => {
@@ -1425,7 +1425,7 @@ device = "echomini"
   }, 180000);
 
   // ---------------------------------------------------------------------------
-  // Custom pathTemplate via config (TASK-263)
+  // Custom pathTemplate via config
   // ---------------------------------------------------------------------------
 
   it('relocates files when device pathTemplate changes between syncs', async () => {
@@ -1533,7 +1533,7 @@ device = "echomini"
   }, 180000);
 
   // ---------------------------------------------------------------------------
-  // pathTemplate change combined with adding new music in the same op (TASK-263)
+  // pathTemplate change combined with adding new music in the same op
   // ---------------------------------------------------------------------------
 
   it('relocates existing files and adds new files in the same sync when pathTemplate changes', async () => {
@@ -1657,7 +1657,6 @@ device = "echomini"
 
   // ---------------------------------------------------------------------------
   // pathTemplate change combined with --delete and an add in the same op
-  // (TASK-263)
   // ---------------------------------------------------------------------------
 
   it('relocates, adds, and deletes in one sync when pathTemplate changes with --delete', async () => {
@@ -1795,7 +1794,7 @@ device = "echomini"
   }, 180000);
 
   // ---------------------------------------------------------------------------
-  // Headline convergence invariant (TASK-327)
+  // Headline convergence invariant
   //
   // For every metadata field the differ tracks, mutating the source tag and
   // running two consecutive syncs must converge: the second sync produces an
@@ -1890,7 +1889,7 @@ device = "echomini"
   }, 180000);
 
   // ---------------------------------------------------------------------------
-  // transferMode plumbing through the CLI (TASK-327 follow-up)
+  // transferMode plumbing through the CLI
   //
   // Proves the chain: TOML transferMode="portable" → config loader →
   // music-presenter → pipeline → adapter → on-disk tag write. The integration

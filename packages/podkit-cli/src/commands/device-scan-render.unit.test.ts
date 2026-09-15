@@ -347,7 +347,7 @@ describe('renderDeviceScan', () => {
       expect(stripAnsi(lines.join('\n'))).toContain('Unknown iPod (USB only)');
     });
 
-    it('renders "iOS device" label for an iOS-range PID with no model (TASK-317.03 #4)', () => {
+    it('renders "iOS device" label for an iOS-range PID with no model', () => {
       // PID 0x12ad is in the iOS-range catch (0x1290–0x12af) but not in
       // IPOD_USB_IDS — the classifier returns supported=false with an
       // unsupportedReason but no model. The renderer should NOT collapse
@@ -369,7 +369,7 @@ describe('renderDeviceScan', () => {
       expect(output).not.toContain('Unknown iPod (USB only)');
     });
 
-    it('renders the resolved model name for a known iPod touch PID (TASK-317.03 #4)', () => {
+    it('renders the resolved model name for a known iPod touch PID', () => {
       // The known iPod touch 5G PID 0x12a0 IS in IPOD_USB_IDS — the
       // classifier returns a model with displayName. The renderer must
       // surface that name verbatim, not "Unknown iPod".
@@ -398,7 +398,7 @@ describe('renderDeviceScan', () => {
     });
   });
 
-  describe('needs-partition remediation copy (TASK-317.11 #3)', () => {
+  describe('needs-partition remediation copy', () => {
     it('points at docs, not at the destructive `device init` command', () => {
       // The supported USB-only iPod (PID 1209) renders with the synthetic
       // `needs-partition` readiness produced by `fakeCreateUsbOnlyReadinessResult`.

@@ -7,7 +7,7 @@
  * and {@link startDaemonForPersona} is its only production caller: a started
  * daemon whose gadget is not on the bus is not a useful thing to hand back to
  * anyone, so the wait belongs inside the primitive rather than at each call
- * site (TASK-504).
+ * site.
  *
  * Two enumerations are involved and they complete in order:
  *

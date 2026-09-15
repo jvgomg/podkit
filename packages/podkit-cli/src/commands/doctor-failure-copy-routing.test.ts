@@ -1,7 +1,7 @@
 /**
  * Pins the per-check-id routing contract for FAILURE_COPY.
  *
- * Each check id renders ONLY its own copy. TASK-317.02 Bug 3 was a
+ * Each check id renders ONLY its own copy. This guards against a
  * regression where every failing check fell through to the artwork-
  * rebuild wording; explicit id-based dispatch fixes it, and this test
  * locks the contract in place.

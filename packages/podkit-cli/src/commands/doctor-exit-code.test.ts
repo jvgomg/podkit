@@ -1,5 +1,5 @@
 /**
- * Exit-code & overall-health matrix for `podkit doctor` (TASK-308).
+ * Exit-code & overall-health matrix for `podkit doctor`.
  *
  * Pins the decision recorded in `docs/agents/testing.md` §"Doctor exit-code &
  * overall-health semantics": `healthy = readinessHealthy && every check is
@@ -10,10 +10,8 @@
  * `runSystemOnlyDoctor`) with a stubbed `@podkit/core` so we never spawn
  * the CLI and never touch a real device or libgpod binding. Once the
  * `@podkit/device-testing` bundle copies raw persona fixtures alongside its
- * compiled index (TASK-324), the inline check fixtures below can migrate to
+ * compiled index, the inline check fixtures below can migrate to
  * persona-driven imports.
- *
- * @see backlog/tasks/task-308 - Doctor-exit-code-and-overall-health-semantics.md
  */
 
 import { describe, it, expect } from 'bun:test';
@@ -34,13 +32,12 @@ import type { DeviceManager } from '@podkit/core';
 // NOTE: `@podkit/device-testing` is intentionally NOT imported as a runtime
 // dependency here. The current dist bundle eagerly evaluates every persona
 // module (`personas/*/persona.ts`), which calls `readFileSync` on raw
-// fixture files that the bundler does not yet copy alongside it. The TASK-308
+// fixture files that the bundler does not yet copy alongside it. This
 // matrix asserts the doctor's exit-code contract — every check status is
 // supplied inline as a typed fixture rather than via the registry. Once the
-// persona bundle copies raw fixtures (planned in TASK-324) this file can
-// switch to driving cases from `@podkit/device-testing`'s registries
-// directly; the test shapes here were designed to make that migration a
-// straight import swap.
+// persona bundle copies raw fixtures this file can switch to driving cases
+// from `@podkit/device-testing`'s registries directly; the test shapes here
+// were designed to make that migration a straight import swap.
 
 // ── Test fixtures: shared ─────────────────────────────────────────────────
 
@@ -181,8 +178,9 @@ interface FakeCoreOptions {
   /** Result returned from core.checkReadiness. */
   readiness?: FakeReadiness;
   /**
-   * Make `core.runDiagnostics` throw — used by AC #8 (DB open failed during
-   * diagnostics). The CLI's try/catch leaves `report` undefined.
+   * Make `core.runDiagnostics` throw — simulating a database-open failure
+   * partway through diagnostics. The CLI's try/catch leaves `report`
+   * undefined.
    */
   diagnosticsThrows?: boolean;
 }
@@ -197,7 +195,8 @@ function makeFakeCore(opts: FakeCoreOptions = {}): unknown {
   // `openDevice`'s `resolveIpodModel(...)` call inside `runDoctorDiagnostics`
   // succeeds. Without a valid identifier `resolveIpodModel` returns `null`,
   // `openDevice` throws, the CLI catches, and `report` is never populated —
-  // which collapses the iPod-path assertions into the AC #8 fallback branch.
+  // which collapses the iPod-path assertions into the database-open-failure
+  // fallback branch.
   const fakeIpod = {
     getInfo: () => ({
       device: {
@@ -249,13 +248,13 @@ function makeFakeCore(opts: FakeCoreOptions = {}): unknown {
           { stage: 'database', status: 'pass', summary: 'ok' },
         ],
       },
-    // TASK-317.03: doctor calls assessIpodIdentity to thread the cascade
-    // unsupported reason into checkReadiness, AND runRepair calls it to
-    // refuse mutating repairs on unsupported devices. Stub returns "no
-    // model" so the cascade refusal short-circuit is a no-op for the
-    // existing fixtures; consumers read `assessment.model?.unsupportedReason`
-    // directly (no bridge function), so the absent model means
-    // `unsupportedReason` is undefined.
+    // doctor calls assessIpodIdentity to thread the cascade unsupported
+    // reason into checkReadiness, AND runRepair calls it to refuse mutating
+    // repairs on unsupported devices. Stub returns "no model" so the
+    // cascade refusal short-circuit is a no-op for the existing fixtures;
+    // consumers read `assessment.model?.unsupportedReason` directly (no
+    // bridge function), so the absent model means `unsupportedReason` is
+    // undefined.
     assessIpodIdentity: async () => ({
       model: null,
       capabilities: null,
@@ -343,9 +342,9 @@ async function runDoctor(
   );
 }
 
-// ── AC #2: readiness ready + all pass → healthy=true, exit 0 ───────────────
+// ── readiness ready + all checks pass → healthy=true, exit 0 ──────────────
 
-describe('AC #2: readiness ready + every check pass', () => {
+describe('readiness ready + every check pass', () => {
   it('iPod path → healthy=true, exit code unset (0)', async () => {
     const ctx = makeContext({ device: 'ipod' });
     const { out, stdout, exitCode } = makeOut();
@@ -362,7 +361,7 @@ describe('AC #2: readiness ready + every check pass', () => {
 
     await runDoctor(
       ctx,
-      '/tmp/ipod-test-ac2',
+      '/tmp/ipod-test-all-checks-pass',
       undefined,
       {},
       {
@@ -409,9 +408,9 @@ describe('AC #2: readiness ready + every check pass', () => {
   });
 });
 
-// ── AC #3: device-check fail → healthy=false, exit 2 ───────────────────────
+// ── device-check fail → healthy=false, exit 2 ──────────────────────────────
 
-describe('AC #3: readiness ready + one device check fails', () => {
+describe('readiness ready + one device check fails', () => {
   it('iPod with corrupt artwork (fail) → healthy=false, exit 2, issue count = 1', async () => {
     const ctx = makeContext({ device: 'ipod' });
     const { out, stdout, stderr, exitCode } = makeOut();
@@ -432,7 +431,7 @@ describe('AC #3: readiness ready + one device check fails', () => {
 
     await runDoctor(
       ctx,
-      '/tmp/ipod-test-ac3',
+      '/tmp/ipod-test-device-check-fails',
       undefined,
       {},
       {
@@ -454,9 +453,9 @@ describe('AC #3: readiness ready + one device check fails', () => {
   });
 });
 
-// ── AC #4: device-check warn → healthy=false, exit 2 (warn counts) ─────────
+// ── device-check warn → healthy=false, exit 2 (warn counts) ────────────────
 
-describe('AC #4: readiness ready + one device check warns', () => {
+describe('readiness ready + one device check warns', () => {
   it('iPod with orphan-files warn → healthy=false, exit 2 (warn counts per decision)', async () => {
     const ctx = makeContext({ device: 'ipod' });
     const { out, stdout, exitCode } = makeOut();
@@ -476,7 +475,7 @@ describe('AC #4: readiness ready + one device check warns', () => {
 
     await runDoctor(
       ctx,
-      '/tmp/ipod-test-ac4',
+      '/tmp/ipod-test-device-check-warns',
       undefined,
       {},
       {
@@ -492,9 +491,9 @@ describe('AC #4: readiness ready + one device check warns', () => {
   });
 });
 
-// ── AC #5: system-check warn + --no-system flips back to healthy ───────────
+// ── system-check warn + --no-system flips back to healthy ──────────────────
 
-describe('AC #5: system-check warn with and without --no-system', () => {
+describe('system-check warn with and without --no-system', () => {
   it('legacy --scope all + system check warn → healthy=false, exit 2', async () => {
     const ctx = makeContext({ device: 'ipod' });
     const { out, stdout, exitCode } = makeOut();
@@ -516,7 +515,7 @@ describe('AC #5: system-check warn with and without --no-system', () => {
 
     await runDoctor(
       ctx,
-      '/tmp/ipod-test-ac5a',
+      '/tmp/ipod-test-system-warn-default',
       undefined,
       {},
       {
@@ -549,7 +548,7 @@ describe('AC #5: system-check warn with and without --no-system', () => {
 
     await runDoctor(
       ctx,
-      '/tmp/ipod-test-ac5b',
+      '/tmp/ipod-test-system-warn-no-system',
       undefined,
       { system: false }, // --no-system
       {
@@ -566,9 +565,9 @@ describe('AC #5: system-check warn with and without --no-system', () => {
   });
 });
 
-// ── AC #6: readiness fails → healthy=false, exit 2 (DB checks skipped) ─────
+// ── readiness fails → healthy=false, exit 2 (DB checks skipped) ───────────
 
-describe('AC #6: readiness fails (e.g. mount fail)', () => {
+describe('readiness fails (e.g. mount fail)', () => {
   it('readiness level=needs-repair → healthy=false, exit 2, report skipped', async () => {
     const ctx = makeContext({ device: 'ipod' });
     const { out, stdout, exitCode } = makeOut();
@@ -593,7 +592,7 @@ describe('AC #6: readiness fails (e.g. mount fail)', () => {
 
     await runDoctor(
       ctx,
-      '/tmp/ipod-test-ac6',
+      '/tmp/ipod-test-readiness-mount-fail',
       undefined,
       {},
       {
@@ -611,9 +610,9 @@ describe('AC #6: readiness fails (e.g. mount fail)', () => {
   });
 });
 
-// ── AC #7: readiness ready + every check skips → healthy=true, exit 0 ──────
+// ── readiness ready + every check skips → healthy=true, exit 0 ────────────
 
-describe('AC #7: readiness ready + every check skips', () => {
+describe('readiness ready + every check skips', () => {
   it('all checks status=skip → healthy=true, exit unset', async () => {
     const ctx = makeContext({ device: 'ipod' });
     const { out, stdout, exitCode } = makeOut();
@@ -629,7 +628,7 @@ describe('AC #7: readiness ready + every check skips', () => {
 
     await runDoctor(
       ctx,
-      '/tmp/ipod-test-ac7',
+      '/tmp/ipod-test-all-checks-skip',
       undefined,
       {},
       {
@@ -645,16 +644,17 @@ describe('AC #7: readiness ready + every check skips', () => {
   });
 });
 
-// ── AC #8: report unavailable (DB open / diagnostics failed) ───────────────
+// ── report unavailable (DB open / diagnostics failed) ──────────────────────
 
-describe('AC #8: report unavailable (database open or diagnostics threw)', () => {
+describe('report unavailable (database open or diagnostics threw)', () => {
   it('readiness ready but diagnostics throws → healthy=false (current behaviour: dbHealthy fallback returns true; readinessHealthy gates)', async () => {
     // dbStage.status === 'pass' so dbAvailable === true; the CLI then
     // attempts runDiagnostics, which throws. report stays undefined and
     // dbHealthy = dbAvailable !== false || !readinessResult = true.
     // With readinessHealthy=true, healthy resolves to true → exit unset.
-    // This pins the documented "well-defined" current behaviour referenced
-    // in AC #8 ("currently dbHealthy=false unless dbAvailable was unset").
+    // This pins the documented "well-defined" current behaviour for when
+    // diagnostics throws after dbAvailable was already true ("currently
+    // dbHealthy=false unless dbAvailable was unset").
     const ctx = makeContext({ device: 'ipod' });
     const { out, stdout, exitCode } = makeOut();
     const fakeCore = makeFakeCore({
@@ -663,7 +663,7 @@ describe('AC #8: report unavailable (database open or diagnostics threw)', () =>
 
     await runDoctor(
       ctx,
-      '/tmp/ipod-test-ac8',
+      '/tmp/ipod-test-report-unavailable',
       undefined,
       {},
       {
@@ -684,9 +684,9 @@ describe('AC #8: report unavailable (database open or diagnostics threw)', () =>
   });
 });
 
-// ── AC #9: issue count in human output mirrors fails (warn counted too) ────
+// ── issue count in human output mirrors fails (warn counted too) ──────────
 
-describe('AC #9: human-mode issue count', () => {
+describe('human-mode issue count', () => {
   it('1 fail + 1 warn + 1 pass → "Issues:" lists both non-pass checks', async () => {
     const ctx = makeContext({ device: 'ipod', json: false });
     const stdout = new BufferSink();
@@ -727,7 +727,7 @@ describe('AC #9: human-mode issue count', () => {
 
     await runDoctor(
       ctx,
-      '/tmp/ipod-test-ac9',
+      '/tmp/ipod-test-human-issue-count',
       undefined,
       {},
       {
@@ -749,9 +749,9 @@ describe('AC #9: human-mode issue count', () => {
   });
 });
 
-// ── AC #10: mass-storage with no orphans + --no-system → healthy=true ──────
+// ── mass-storage with no orphans + --no-system → healthy=true ─────────────
 
-describe('AC #10: mass-storage with no orphans + --no-system', () => {
+describe('mass-storage with no orphans + --no-system', () => {
   it('Echo Mini, orphan-files-mass-storage pass, --no-system → healthy=true, exit unset', async () => {
     const ctx = makeContext({ device: 'echo' });
     const { out, stdout, exitCode } = makeOut();
@@ -789,9 +789,9 @@ describe('AC #10: mass-storage with no orphans + --no-system', () => {
   });
 });
 
-// ── AC #11: mass-storage with orphans → healthy=false (warn counts) ────────
+// ── mass-storage with orphans → healthy=false (warn counts) ───────────────
 
-describe('AC #11: mass-storage with orphans (warn)', () => {
+describe('mass-storage with orphans (warn)', () => {
   it('Echo Mini, orphan-files-mass-storage warn → healthy=false, exit 2 (decision: warn counts)', async () => {
     const ctx = makeContext({ device: 'echo' });
     const { out, stdout, exitCode } = makeOut();
@@ -826,16 +826,16 @@ describe('AC #11: mass-storage with orphans (warn)', () => {
   });
 });
 
-// ── AC #12: repair success/failure exit codes ──────────────────────────────
+// ── repair success/failure exit codes ──────────────────────────────────────
 
-describe('AC #12: repair commands', () => {
+describe('repair commands', () => {
   // These three scenarios test the repair-exit-code contract from the
   // doctor.ts top-of-file docs. We exercise the contract by directly
   // verifying that runAction translates a thrown CliError (REPAIR_FAILED) to
   // exit 1, and that a successful repair leaves the exit code unset (= 0).
   // Repair runners themselves are covered in doctor.e2e.test.ts; here we
-  // only pin the exit-code mapping that ties them back into the TASK-308
-  // matrix.
+  // only pin the exit-code mapping that ties them back into the
+  // exit-code/health matrix above.
 
   it('CliError(REPAIR_FAILED) → exit 1 (success=false branch)', async () => {
     const ctx = makeContext({ device: 'ipod' });
@@ -885,7 +885,7 @@ describe('AC #12: repair commands', () => {
   });
 });
 
-// ── AC #13: JSON `healthy` boolean mirrors the exit code (invariant) ───────
+// ── JSON `healthy` boolean mirrors the exit code (invariant) ──────────────
 //
 // This is the cross-flag consistency assertion: across every fixture we
 // drive, `(exitCode === 0) === (json.healthy === true)`. Exit code is
@@ -899,7 +899,7 @@ interface MatrixCase {
 
 const matrixCases: MatrixCase[] = [
   {
-    label: 'AC #2 iPod all-pass',
+    label: 'iPod all-pass',
     run: async () => {
       const ctx = makeContext({ device: 'ipod' });
       const { out, stdout, exitCode } = makeOut();
@@ -920,7 +920,7 @@ const matrixCases: MatrixCase[] = [
     },
   },
   {
-    label: 'AC #3 device fail',
+    label: 'device fail',
     run: async () => {
       const ctx = makeContext({ device: 'ipod' });
       const { out, stdout, exitCode } = makeOut();
@@ -941,7 +941,7 @@ const matrixCases: MatrixCase[] = [
     },
   },
   {
-    label: 'AC #4 device warn',
+    label: 'device warn',
     run: async () => {
       const ctx = makeContext({ device: 'ipod' });
       const { out, stdout, exitCode } = makeOut();
@@ -962,7 +962,7 @@ const matrixCases: MatrixCase[] = [
     },
   },
   {
-    label: 'AC #5a system warn (with --scope all)',
+    label: 'system warn (with --scope all)',
     run: async () => {
       const ctx = makeContext({ device: 'ipod' });
       const { out, stdout, exitCode } = makeOut();
@@ -983,7 +983,7 @@ const matrixCases: MatrixCase[] = [
     },
   },
   {
-    label: 'AC #5b system warn excluded by --no-system',
+    label: 'system warn excluded by --no-system',
     run: async () => {
       const ctx = makeContext({ device: 'ipod' });
       const { out, stdout, exitCode } = makeOut();
@@ -1004,7 +1004,7 @@ const matrixCases: MatrixCase[] = [
     },
   },
   {
-    label: 'AC #6 readiness fail (needs-repair)',
+    label: 'readiness fail (needs-repair)',
     run: async () => {
       const ctx = makeContext({ device: 'ipod' });
       const { out, stdout, exitCode } = makeOut();
@@ -1033,7 +1033,7 @@ const matrixCases: MatrixCase[] = [
     },
   },
   {
-    label: 'AC #7 all-skip',
+    label: 'all-skip',
     run: async () => {
       const ctx = makeContext({ device: 'ipod' });
       const { out, stdout, exitCode } = makeOut();
@@ -1054,7 +1054,7 @@ const matrixCases: MatrixCase[] = [
     },
   },
   {
-    label: 'AC #10 mass-storage clean + --no-system',
+    label: 'mass-storage clean + --no-system',
     run: async () => {
       const ctx = makeContext({ device: 'echo' });
       const { out, stdout, exitCode } = makeOut();
@@ -1077,7 +1077,7 @@ const matrixCases: MatrixCase[] = [
     },
   },
   {
-    label: 'AC #11 mass-storage orphans warn',
+    label: 'mass-storage orphans warn',
     run: async () => {
       const ctx = makeContext({ device: 'echo' });
       const { out, stdout, exitCode } = makeOut();
@@ -1101,7 +1101,7 @@ const matrixCases: MatrixCase[] = [
   },
 ];
 
-describe('AC #13: healthy boolean mirrors exit code across the full matrix', () => {
+describe('healthy boolean mirrors exit code across the full matrix', () => {
   for (const c of matrixCases) {
     it(`${c.label}: (exitCode === 0) === (healthy === true)`, async () => {
       const { healthy, exitCode } = await c.run();
@@ -1111,11 +1111,11 @@ describe('AC #13: healthy boolean mirrors exit code across the full matrix', () 
   }
 });
 
-// ── --scope system: TASK-333 interaction with the matrix ───────────────────
+// ── --scope system: interaction with the exit-code/health matrix ──────────
 
-// ── TASK-331: readiness=unsupported short-circuit ─────────────────────────
+// ── readiness=unsupported short-circuit ────────────────────────────────────
 
-describe('TASK-331: readiness level=unsupported', () => {
+describe('readiness level=unsupported', () => {
   it('iPod touch 5G — JSON envelope surfaces unsupported + structured payload, exit 1', async () => {
     const ctx = makeContext({ device: 'unsupported-touch' });
     const { out, stdout, stderr, exitCode } = makeOut();
@@ -1189,7 +1189,7 @@ describe('TASK-331: readiness level=unsupported', () => {
     expect(exitCode.get()).toBe(1);
   });
 
-  it('TASK-317.03 — suppresses mutating repair suggestions on unsupported devices', async () => {
+  it('suppresses mutating repair suggestions on unsupported devices', async () => {
     // The unsupported short-circuit must skip the repair-action assembly so
     // the user does not see "podkit device init" as a remediation for a
     // device that running init on would corrupt (hashAB nano, …).
@@ -1226,7 +1226,8 @@ describe('TASK-331: readiness level=unsupported', () => {
     expect(all).not.toContain('podkit device init');
     expect(all).not.toContain('--repair sysinfo-extended');
     expect(all).not.toContain('--repair sysinfo-consistency');
-    // Wording must NOT mention libgpod (TASK-317.03 rule).
+    // Wording must NOT mention libgpod — unsupported-device messaging must
+    // stay user-facing and not name internal implementation details.
     expect(all.toLowerCase()).not.toContain('libgpod');
   });
 
@@ -1268,10 +1269,10 @@ describe('TASK-331: readiness level=unsupported', () => {
   });
 });
 
-describe('--scope system: warn / fail / pass exit codes (TASK-333 interaction)', () => {
+describe('--scope system: warn / fail / pass exit codes', () => {
   // These mirror the existing doctor.test.ts assertions but explicitly tie
-  // them back to TASK-308 ACs. The "warn counts" decision must hold for
-  // --scope system too.
+  // them back to the exit-code/health matrix's behaviours. The "warn counts"
+  // decision must hold for --scope system too.
 
   it('all system pass → healthy=true, exit unset', async () => {
     const { out, stdout, exitCode } = makeOut();
@@ -1290,7 +1291,7 @@ describe('--scope system: warn / fail / pass exit codes (TASK-333 interaction)',
     expect(exitCode.get()).toBeUndefined();
   });
 
-  it('system warn → healthy=false, exit 2 (matches TASK-308 decision)', async () => {
+  it('system warn → healthy=false, exit 2 (matches the warn-counts-as-unhealthy decision)', async () => {
     const { out, stdout, exitCode } = makeOut();
     const fakeCore = makeFakeCore({
       report: {
@@ -1329,9 +1330,9 @@ describe('--scope system: warn / fail / pass exit codes (TASK-333 interaction)',
 //
 // Importing the device-testing fixture registries here keeps a hard
 // reference so the test file can grow into a fixture-driven matrix as
-// personas mature (TASK-324). Asserting the canonical IDs are present
-// makes any rename surface here loudly.
+// personas mature. Asserting the canonical IDs are present makes any
+// rename surface here loudly.
 
 // (No fixture-registry presence assertions here yet — see the import comment
-// at the top of this file. The TASK-324 follow-up will land the
-// persona-driven matrix and re-introduce these.)
+// at the top of this file. A follow-up will land the persona-driven matrix
+// and re-introduce these.)

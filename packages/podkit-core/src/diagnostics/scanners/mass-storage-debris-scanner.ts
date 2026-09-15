@@ -4,7 +4,7 @@
  * Wraps `walkMassStorageContent` and projects only the `debris` bucket —
  * orphans + missingTrackedFiles are user-facing concerns owned by the
  * `orphan-files-mass-storage` check, never by the scanner registry. The
- * pre-sync sweep (TASK-398) consumes this scanner; doctor's
+ * pre-sync sweep consumes this scanner; doctor's
  * `debris-files-mass-storage` check uses the same walker directly.
  */
 

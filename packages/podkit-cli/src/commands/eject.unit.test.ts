@@ -2,7 +2,7 @@
  * Unit tests for the `eject` runner.
  *
  * Exercises the runner directly with a stubbed `@podkit/core` module so no
- * real USB walk happens (AC #2 of TASK-315). Each test scopes its own
+ * real USB walk happens. Each test scopes its own
  * CliContext via `runWithContext` and captures output via BufferSink.
  */
 

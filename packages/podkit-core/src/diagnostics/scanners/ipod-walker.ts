@@ -2,8 +2,8 @@
  * Shared walker for iPod content directories.
  *
  * Surfaces `.podkit-tmp` residue across every directory podkit may write to
- * on an iPod — not just `iPod_Control/Music/F**`. TASK-376's atomic-write
- * retrofit routes portable tag-writes through `atomicWriteFileWithSync`,
+ * on an iPod — not just `iPod_Control/Music/F**`. The atomic-write retrofit
+ * routes portable tag-writes through `atomicWriteFileWithSync`,
  * which lays down `<dest>.podkit-tmp` siblings during the rename. A SIGKILLed
  * sync can leave them in any directory podkit touched, so we walk the full
  * `iPod_Control/` subtree and key on the suffix, not the path.

@@ -224,7 +224,7 @@ export interface DeviceConfig {
   /**
    * Persists the user's explicit "add this device anyway" choice from
    * `podkit device add` on a generation podkit does not officially support
-   * (hashAB nano 6G/7G, shuffle 3G/4G, iOS — see TASK-317.03). When set,
+   * (hashAB nano 6G/7G, shuffle 3G/4G, iOS). When set,
    * future runs render the canonical unsupported-device message but skip
    * the prompt; commands that gate on support (`sync`, `doctor` mutating
    * repairs) still refuse.

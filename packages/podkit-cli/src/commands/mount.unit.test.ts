@@ -2,7 +2,7 @@
  * Unit tests for the `mount` runner.
  *
  * Exercises the runner directly with a stubbed `@podkit/core` module so no
- * real USB walk happens (AC #2 of TASK-315). The runner is shared by both
+ * real USB walk happens. The runner is shared by both
  * `podkit mount` and `podkit device mount`.
  */
 

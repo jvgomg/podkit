@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Runtime smoke test for a *built* podkit binary — the gate whose absence
-# let a non-executing / silently-broken binary ship (ADR-026, m-23).
+# let a non-executing / silently-broken binary ship (ADR-026).
 #
 # Unlike the unit/integration suites (which run against the workspace's
 # freshly-built binding), this drives the ACTUAL single-file binary the

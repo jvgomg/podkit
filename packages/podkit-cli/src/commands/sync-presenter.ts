@@ -23,7 +23,9 @@ import { confirmNo } from '../utils/confirm.js';
 import { decideEmptyPlaylist } from './empty-playlist-guard.js';
 
 // =============================================================================
-// Free-space JSON envelope helpers (TASK-378 AC #8)
+// Free-space JSON envelope helpers — build typed ErrorInfo for the
+// not-enough-space exit paths, so `--json` consumers can read structured
+// space-error detail instead of scraping the message body
 // =============================================================================
 
 /**
@@ -149,7 +151,8 @@ export interface GenericSyncResult {
    */
   warnings?: import('@podkit/core').Warning[];
   /**
-   * Per-track typed errors from the execute phase (TASK-378 AC #8).
+   * Per-track typed errors from the execute phase, so `--json` consumers can
+   * read structured error detail instead of scraping the message body.
    * Sync.ts aggregates these into the final JSON output's `errors[]` array
    * so consumers can read `{class, category, causes}` without scraping
    * the message body.
@@ -660,23 +663,23 @@ export async function genericSyncCollection<TSource, TDevice>(
   // 6. Create plan + check space
   const { plan, summary } = presenter.createPlan(diff, removeOrphans, contentConfig, ipod, core);
 
-  // Attach device-level pre-flight (TASK-398) to the FIRST collection's
-  // plan. Orchestrator (sync.ts) ensures this is only set for one
-  // collection per device — subsequent calls receive `preliminaries =
+  // Attach device-level pre-flight (the pre-sync debris sweep) to the FIRST
+  // collection's plan. Orchestrator (sync.ts) ensures this is only set for
+  // one collection per device — subsequent calls receive `preliminaries =
   // undefined` so the executor's pre-flight runs exactly once.
   if (preliminaries) {
     plan.preliminaries = preliminaries;
   }
 
   const storage = getStorageInfo(devicePath, statfsSync);
-  // Free-space accounting (TASK-398 §5): expand the available envelope by
+  // Free-space accounting: expand the available envelope by
   // the bytes the pre-sync sweep estimates it will free. We add to the
   // *available* side rather than subtracting from `plan.estimatedSize` —
   // subtracting would suppress a real space warning if the sweep
   // partially fails. The estimate is generous by design; the executor's
   // transfer phase still surfaces ENOSPC if actual freed bytes fall
-  // short. Coordinate with TASK-378 (free-space probe rewrite) if the
-  // accounting model evolves.
+  // short. If the free-space probe or this accounting model changes,
+  // keep the two in step.
   const debrisFreedEstimate = plan.preliminaries?.debrisCleanup?.totalBytes ?? 0;
   const effectiveFreeSpace = (storage?.free ?? 0) + debrisFreedEstimate;
   const hasEnoughSpace = storage ? presenter.willFit(plan, effectiveFreeSpace, core) : true;

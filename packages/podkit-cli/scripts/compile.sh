@@ -142,7 +142,7 @@ echo "Staged usb prebuild: ${USB_PREBUILD#"$USB_PKG_DIR/"}"
 
 # Compile the CLI binary
 #
-# Dev-hook policy (TASK-405 / dev-builds.md):
+# Dev-hook policy (see dev-builds.md):
 #   PODKIT_DEV_HOOKS=1 → __PODKIT_DEV_HOOKS__=true, output bin/podkit-debug.
 #   Otherwise          → __PODKIT_DEV_HOOKS__=false, output bin/podkit
 #                        (production: the dev-hooks ternary collapses + the

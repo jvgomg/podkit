@@ -255,7 +255,7 @@ describe('assertAssessmentSupported', () => {
 });
 
 // =============================================================================
-// confirmUnsupportedDeviceAdd (TASK-317.03 — warn-allow flow)
+// confirmUnsupportedDeviceAdd (warn-allow flow)
 // =============================================================================
 
 describe('confirmUnsupportedDeviceAdd', () => {
@@ -358,7 +358,7 @@ describe('confirmUnsupportedDeviceAdd', () => {
     expect(decision).toBe('add-anyway');
   });
 
-  it('NEVER mentions libgpod in user-facing copy (TASK-317.03 wording)', async () => {
+  it('NEVER mentions libgpod in user-facing copy', async () => {
     const { out, stdout, stderr } = makeOut();
     await confirmUnsupportedDeviceAdd(out, makeUnsupportedAssessment(), {
       autoConfirm: true,

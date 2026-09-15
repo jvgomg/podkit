@@ -82,7 +82,7 @@ export type {
   ExecuteResult,
 } from './sync/engine/types.js';
 
-// Pre-sync sweep (TASK-398): build PlanPreliminaries from scanner registry.
+// Pre-sync sweep: build PlanPreliminaries from scanner registry.
 export {
   runPreSyncSweep,
   runPreliminariesPreFlight,
@@ -655,7 +655,7 @@ export {
   STAGE_DISPLAY_NAMES,
 } from './device/index.js';
 
-// Cross-platform filesystem policy (HFS+-on-Linux refusal — TASK-317.12)
+// Cross-platform filesystem policy (HFS+-on-Linux refusal)
 export {
   isFilesystemUnsupportedHere,
   formatHfsplusOnLinuxRefusal,

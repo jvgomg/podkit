@@ -348,8 +348,8 @@ describe('acquireLock', () => {
   });
 
   it('throws LockUnavailableError when the parent directory is read-only (EACCES)', async () => {
-    // Regression for TASK-413: when `.podkit/` is chmod 0555 (manifest-dir-readonly
-    // fault), `open(path, 'wx')` returns EACCES. Before TASK-413 this propagated
+    // Regression: when `.podkit/` is chmod 0555 (the manifest-dir-readonly
+    // fault), `open(path, 'wx')` returns EACCES. That used to propagate
     // as a raw ErrnoException past the sync orchestrator's catch block, producing
     // a JS stack trace on stderr instead of a typed CliError. The fix wraps EACCES
     // (and EROFS/EPERM) as LockUnavailableError so the CLI surfaces a clean

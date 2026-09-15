@@ -1,25 +1,27 @@
 /**
- * Orphan-files (iPod) matrix coverage — TASK-305, m-19 Phase 5d.
+ * Orphan-files (iPod) matrix coverage.
  *
- * Unit tests pinning the 14 ACs in `task-305` against the iPod-flavour
- * `orphan-files` check. Every test drives the exported `orphanFilesCheck.check`
- * (and `.repair.run`) against a synthetic on-disk × library-references state.
+ * Unit tests pinning the iPod-flavour `orphan-files` check. Every test drives
+ * the exported `orphanFilesCheck.check` (and `.repair.run`) against a
+ * synthetic on-disk × library-references state.
  *
- * AC mapping (cross-reference):
- *   AC #1  — no F* directories at all                         → this file
- *   AC #2  — all files on disk are library-referenced         → this file
- *   AC #3  — orphans on disk                                   → this file
- *   AC #4  — library refs files not on disk                   → this file
- *   AC #5  — orphans across multiple F* dirs                  → this file
- *   AC #6  — CSV escaping (commas, quotes)                    → doctor-flag-matrix.test.ts
- *   AC #7  — verbose text: by F* directory                    → doctor-flag-matrix.test.ts
- *   AC #8  — verbose text: by extension                       → doctor-flag-matrix.test.ts
- *   AC #9  — verbose text: top-10 largest                      → doctor-flag-matrix.test.ts
- *   AC #10 — repair deletes all detected orphans              → this file
- *   AC #11 — repair --dry-run does not modify filesystem      → this file
- *   AC #12 — mixed deletable/undeletable: per-file errors      → this file
- *   AC #13 — repair preserves library-referenced files         → this file
- *   AC #14 — check is iPod-only                                → this file
+ * Behaviours pinned here:
+ *   - no F* directories at all
+ *   - every file on disk is library-referenced
+ *   - orphans on disk
+ *   - the library references files that are not on disk
+ *   - orphans spread across multiple F* directories
+ *   - repair deletes all detected orphans
+ *   - repair --dry-run does not modify the filesystem
+ *   - a mix of deletable and undeletable orphans surfaces per-file errors
+ *   - repair preserves library-referenced files
+ *   - the check is iPod-only
+ *
+ * The CLI-layer renderings of the same data — CSV escaping, and the verbose
+ * groupings by F* directory, by extension and by top-10 largest — live in
+ * `doctor-flag-matrix.test.ts`, because they are properties of the renderer
+ * rather than of the check. What this file pins is the `details.orphans`
+ * shape those renderers consume.
  *
  * Filesystem injection: the production `orphanFilesCheck` reads via
  * `node:fs/promises` directly and exposes no DI seam. We use isolated temp
@@ -27,7 +29,6 @@
  * deterministic, and the "fake filesystem" criterion is met in spirit: each
  * test owns its own throwaway tree, and no test touches any other location.
  *
- * @see backlog/tasks/task-305 - orphan-files-iPod-detection-and-repair-coverage.md
  * @see packages/podkit-core/src/diagnostics/checks/orphans.test.ts — baseline
  */
 
@@ -82,7 +83,7 @@ function ipodPath(rel: string): string {
 
 // ── Suite ───────────────────────────────────────────────────────────────────
 
-describe('orphanFilesCheck — TASK-305 matrix', () => {
+describe('orphanFilesCheck — detection and repair matrix', () => {
   let dir: string;
 
   beforeEach(async () => {
@@ -93,9 +94,9 @@ describe('orphanFilesCheck — TASK-305 matrix', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  // ── AC #1: no F* directories ─────────────────────────────────────────────
+  // ── no F* directories ─────────────────────────────────────────────────────
 
-  describe('AC #1: no F* directories', () => {
+  describe('no F* directories', () => {
     it('skips when the Music directory is absent entirely', async () => {
       // No iPod_Control/Music tree at all.
       const result = await orphanFilesCheck.check(ctx(dir, []));
@@ -121,9 +122,9 @@ describe('orphanFilesCheck — TASK-305 matrix', () => {
     });
   });
 
-  // ── AC #2: every file on disk is referenced ──────────────────────────────
+  // ── every file on disk is referenced ──────────────────────────────────────
 
-  describe('AC #2: all files referenced', () => {
+  describe('all files referenced', () => {
     it('passes with no orphan details when every disk file maps to a track', async () => {
       await laydown(dir, {
         'F00/a.m4a': 'AAAA',
@@ -148,9 +149,9 @@ describe('orphanFilesCheck — TASK-305 matrix', () => {
     });
   });
 
-  // ── AC #3: orphans on disk ───────────────────────────────────────────────
+  // ── orphans on disk ───────────────────────────────────────────────────────
 
-  describe('AC #3: orphans found', () => {
+  describe('orphans found', () => {
     it('warns with orphanCount, wastedBytes, and orphans[] populated', async () => {
       await laydown(dir, {
         'F00/keep.m4a': 'KEEP',
@@ -183,9 +184,9 @@ describe('orphanFilesCheck — TASK-305 matrix', () => {
     });
   });
 
-  // ── AC #4: library refs files not on disk ────────────────────────────────
+  // ── library refs files not on disk ────────────────────────────────────────
 
-  describe('AC #4: library references missing files', () => {
+  describe('library references missing files', () => {
     it('still passes for orphan-files when a tracked file is missing on disk', async () => {
       // Only `present.m4a` exists; `missing.m4a` is in the DB but not on disk.
       await laydown(dir, {
@@ -204,9 +205,9 @@ describe('orphanFilesCheck — TASK-305 matrix', () => {
     });
   });
 
-  // ── AC #5: orphans across multiple F* dirs ───────────────────────────────
+  // ── orphans across multiple F* dirs ───────────────────────────────────────
 
-  describe('AC #5: orphans spread across multiple F* directories', () => {
+  describe('orphans spread across multiple F* directories', () => {
     it('reports every orphan across F00, F01, F23', async () => {
       await laydown(dir, {
         'F00/o0.m4a': '0',
@@ -223,15 +224,15 @@ describe('orphanFilesCheck — TASK-305 matrix', () => {
     });
   });
 
-  // ── AC #6..#9: CLI-layer concerns (CSV + verbose grouping) ───────────────
+  // ── CLI-layer concerns (CSV + verbose grouping) ───────────────────────────
 
-  describe('AC #6..#9: CLI rendering (covered in doctor-flag-matrix.test.ts)', () => {
+  describe('CLI rendering contract (rendering itself is covered in doctor-flag-matrix.test.ts)', () => {
     it('produces a `details.orphans` array shape that the CLI can render', async () => {
       // This test pins the contract used by the CLI:
-      //   - AC #6 CSV path/size export consumes `details.orphans[].{path,size}`
-      //   - AC #7 byDir grouping uses `dirname(path)` → F* segment
-      //   - AC #8 byExt grouping uses `extname(path)`
-      //   - AC #9 top-10-by-size uses `details.orphans[].size`
+      //   - the CSV path/size export consumes `details.orphans[].{path,size}`
+      //   - byDir grouping uses `dirname(path)` → F* segment
+      //   - byExt grouping uses `extname(path)`
+      //   - top-10-by-size uses `details.orphans[].size`
       //
       // The CSV escape branch (commas + quotes) is asserted at the CLI layer
       // because `escapeCsvField` is internal to `commands/doctor.ts`.
@@ -257,9 +258,9 @@ describe('orphanFilesCheck — TASK-305 matrix', () => {
     });
   });
 
-  // ── AC #10: repair deletes all detected orphans ──────────────────────────
+  // ── repair deletes all detected orphans ───────────────────────────────────
 
-  describe('AC #10: repair deletes orphans, follow-up doctor passes', () => {
+  describe('repair deletes orphans, follow-up doctor passes', () => {
     it('deletes every orphan; a follow-up check reports pass', async () => {
       await laydown(dir, {
         'F00/keep.m4a': 'KEEP',
@@ -281,9 +282,9 @@ describe('orphanFilesCheck — TASK-305 matrix', () => {
     });
   });
 
-  // ── AC #11: --dry-run leaves filesystem untouched ────────────────────────
+  // ── --dry-run leaves filesystem untouched ─────────────────────────────────
 
-  describe('AC #11: dry-run does not write', () => {
+  describe('dry-run does not write', () => {
     it('reports planned deletions without removing any file', async () => {
       await laydown(dir, {
         'F00/keep.m4a': 'KEEP',
@@ -311,9 +312,9 @@ describe('orphanFilesCheck — TASK-305 matrix', () => {
     });
   });
 
-  // ── AC #12: mixed deletable / undeletable ────────────────────────────────
+  // ── mixed deletable / undeletable ─────────────────────────────────────────
 
-  describe('AC #12: partial deletion failure surfaces per-file errors', () => {
+  describe('partial deletion failure surfaces per-file errors', () => {
     it('reports errors[] and success=false when at least one delete fails', async () => {
       // F02 is a directory that we mark read-only. Orphan files inside it
       // can't be unlinked because the parent directory blocks the entry
@@ -345,9 +346,9 @@ describe('orphanFilesCheck — TASK-305 matrix', () => {
     });
   });
 
-  // ── AC #13: repair preserves managed files ───────────────────────────────
+  // ── repair preserves managed files ────────────────────────────────────────
 
-  describe('AC #13: managed files survive repair (file-list diff)', () => {
+  describe('managed files survive repair (file-list diff)', () => {
     it('every track-referenced path is identical pre- and post-repair', async () => {
       await laydown(dir, {
         'F00/keep1.m4a': 'KEEP1',
@@ -385,9 +386,9 @@ describe('orphanFilesCheck — TASK-305 matrix', () => {
     });
   });
 
-  // ── AC #14: check is iPod-only ───────────────────────────────────────────
+  // ── check is iPod-only ────────────────────────────────────────────────────
 
-  describe('AC #14: scope is iPod-only', () => {
+  describe('scope is iPod-only', () => {
     it('declares applicableTo: ["ipod"] (mass-storage devices use orphan-files-mass-storage)', () => {
       expect(orphanFilesCheck.applicableTo).toEqual(['ipod']);
     });

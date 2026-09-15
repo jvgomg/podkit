@@ -427,7 +427,7 @@ describe('VM: pre-sync sweep SIGKILL round-trip', () => {
   }, VM_COLD_TIMEOUT_MS);
 
   // ─────────────────────────────────────────────────────────────────────────
-  // AC #2 — mass-storage SIGKILL round-trip
+  // Mass-storage SIGKILL round-trip
   // ─────────────────────────────────────────────────────────────────────────
 
   it(
@@ -500,7 +500,7 @@ describe('VM: pre-sync sweep SIGKILL round-trip', () => {
   );
 
   // ─────────────────────────────────────────────────────────────────────────
-  // AC #3 — iPod SIGKILL (synthetic-debris variant — permanent)
+  // iPod SIGKILL (synthetic-debris variant — permanent)
   //
   // The iPod adapter does not use podkit's atomic-write helper for any of
   // its on-disk writes today. iTunesDB / ArtworkDB writes go through
@@ -589,7 +589,7 @@ music = "default"
   );
 
   // ─────────────────────────────────────────────────────────────────────────
-  // AC #4 — transcode-tmp SIGKILL round-trip
+  // Transcode-tmp SIGKILL round-trip
   // ─────────────────────────────────────────────────────────────────────────
 
   it(
@@ -648,12 +648,12 @@ music = "default"
   );
 
   // ─────────────────────────────────────────────────────────────────────────
-  // AC #5 — concurrent-process safety
+  // Concurrent-process safety
   //
   // A live podkit-debug holding the `pre-rename-transcode` pause has a
   // valid `.owner` file pointing at its still-alive PID. A sibling
   // `podkit sync --dry-run` invoked in parallel MUST NOT reap that dir
-  // — the walker's PID-liveness probe (TASK-402) is the safety floor.
+  // — the walker's PID-liveness probe is the safety floor.
   // ─────────────────────────────────────────────────────────────────────────
 
   it(

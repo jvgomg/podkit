@@ -1,7 +1,7 @@
 /**
  * System-state registry.
  *
- * Populated with 6 starter states (TASK-321.06):
+ * Populated with 6 starter states:
  *   `healthy`, `no-ffmpeg`, `no-libgpod`, `no-udev`, `no-sg-perms`,
  *   `corrupt-configfs`
  *

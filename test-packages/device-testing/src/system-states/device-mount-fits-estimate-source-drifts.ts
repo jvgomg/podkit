@@ -28,7 +28,7 @@
  * loopback is a per-test artefact, not a host-environment misconfiguration.
  *
  * @see docs/adr/adr-018-free-space-pre-flight-strategy.md
- * @see test-packages/e2e-vm-tests/src/save-failure-matrix.e2e.test.ts (TASK-412 estimate-drift cell)
+ * @see test-packages/e2e-vm-tests/src/save-failure-matrix.e2e.test.ts (estimate-drift cell)
  * @module
  */
 

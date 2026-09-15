@@ -18,8 +18,8 @@
  * the mutate-between-syncs sequence (`observeChangePass`) live in
  * `../matrix/artwork-rules.ts`.
  *
- * Subsonic coverage of artwork-change is deferred (TASK-355.05) — it needs
- * Navidrome rescan plumbing in the test source.
+ * Subsonic coverage of artwork-change is deferred — it needs Navidrome
+ * rescan plumbing in the test source.
  *
  * @module
  */

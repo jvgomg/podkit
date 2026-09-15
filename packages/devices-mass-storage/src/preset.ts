@@ -146,7 +146,8 @@ export function definePreset(
   // user-defined preset that neither sets these fields nor extends a
   // preset that does will fall through to the generic-baseline strings —
   // imperfect, but the alternative (throwing here) would break existing
-  // consumers that built presets pre-TASK-317.07.
+  // consumers that built presets before the `manufacturer`/`productName`
+  // display fields existed.
   const manufacturer = input.manufacturer ?? base.manufacturer;
   const productName = input.productName ?? base.productName;
 

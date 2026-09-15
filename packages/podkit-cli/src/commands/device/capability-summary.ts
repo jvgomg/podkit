@@ -9,7 +9,7 @@
  * Also hosts `confirmUnsupportedDeviceAdd`, the prompt-style gate used by
  * `add.ts` to surface the canonical message for known-unsupported iPod
  * generations and offer the user an explicit "Add anyway?" choice
- * (TASK-317.03 warn-allow flow). The legacy `assertAssessmentSupported`
+ * (the warn-allow flow). The legacy `assertAssessmentSupported`
  * remains as a thin compat shim for transitional callers.
  *
  * @module
@@ -182,7 +182,7 @@ function fmt(value: unknown, source: string | undefined): string {
 }
 
 // =============================================================================
-// confirmUnsupportedDeviceAdd  (TASK-317.03 — warn-allow flow)
+// confirmUnsupportedDeviceAdd  (warn-allow flow)
 // =============================================================================
 
 /**
@@ -200,7 +200,7 @@ export type UnsupportedAddDecision = 'supported' | 'add-anyway' | 'cancelled';
 /**
  * Prompt-style gate for the cascade-derived "device is unsupported" signal.
  *
- * Replaces the previous throw-style `assertAssessmentSupported` (TASK-317.03):
+ * Replaces the previous throw-style `assertAssessmentSupported`:
  * `podkit device add` now warns and offers to proceed instead of hard-refusing.
  * On confirmation the caller writes `unsupported: true` in the device config so
  * future runs (`sync`, mutating `doctor` repairs) can still refuse.

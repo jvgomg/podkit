@@ -14,7 +14,7 @@ import { describe, it, expect } from 'bun:test';
 
 import { withTestIpod, Database, MediaType } from './helpers/test-setup';
 
-describe('TASK-041: Video removal CRITICAL investigation', () => {
+describe('Video removal CRITICAL investigation', () => {
   describe('removing all videos', () => {
     it('add videos, save, remove all, save again - check for CRITICALs', async () => {
       await withTestIpod(async (ipod) => {
