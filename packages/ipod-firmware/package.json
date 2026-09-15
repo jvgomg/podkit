@@ -1,6 +1,6 @@
 {
   "name": "@podkit/ipod-firmware",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "iPod firmware inquiry — SCSI and USB delivery for podkit",
   "type": "module",
   "main": "./dist/index.js",
