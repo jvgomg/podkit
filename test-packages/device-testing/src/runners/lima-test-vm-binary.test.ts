@@ -10,13 +10,13 @@
  * to, so both halves of that comparison have to be real for the happy paths to
  * be happy. The mismatch itself gets its own section at the end.
  *
- * Coverage targets the six TASK-322.03 acceptance criteria:
- *   AC1 — helper exists and performs limactl copy + install atomically
- *   AC2 — idempotent (skip on sha256 match)
- *   AC3 — atomic (temp path then install; cleanup on failure)
- *   AC4 — host binary must exist
- *   AC5 — error path surfaces a descriptive Error
- *   AC6 — gpod-tool missing source path errors clearly
+ * The behaviours pinned here:
+ *   - copy then install, as one sequence that leaves no partial state
+ *   - idempotent: a matching sha256 skips the install entirely
+ *   - atomic: staged at a temp path first, and cleaned up when a step fails
+ *   - a missing host binary is refused before anything reaches the substrate
+ *   - failures surface a descriptive error rather than a bare exit code
+ *   - the gpod-tool variant reports a missing source just as clearly
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
@@ -174,7 +174,7 @@ afterEach(() => {
 // transferBinary — happy path
 // ---------------------------------------------------------------------------
 
-describe('transferBinary (AC1: copy + install + cleanup atomically)', () => {
+describe('transferBinary (copy + install + cleanup atomically)', () => {
   it('runs probe → copy → install → cleanup when no existing VM binary', async () => {
     // probe finds nothing (empty stdout), then copy, install, cleanup all succeed.
     const { runner, calls } = makeScriptedRunner([
@@ -239,10 +239,10 @@ describe('transferBinary (AC1: copy + install + cleanup atomically)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// AC2: idempotency (sha256 match → skip)
+// Idempotency: a matching sha256 skips the install.
 // ---------------------------------------------------------------------------
 
-describe('transferBinary (AC2: idempotent on sha256 match)', () => {
+describe('transferBinary (idempotent on sha256 match)', () => {
   it('skips copy + install when the VM already has the same sha256', async () => {
     const { runner, calls } = makeScriptedRunner([probed('aarch64', hostSha)]);
 
@@ -272,10 +272,10 @@ describe('transferBinary (AC2: idempotent on sha256 match)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// AC3: atomic — temp path then install; cleanup on failure
+// Atomicity: staged at a temp path, then installed; cleaned up on failure.
 // ---------------------------------------------------------------------------
 
-describe('transferBinary (AC3: atomicity)', () => {
+describe('transferBinary (atomicity)', () => {
   it('uses a unique /tmp/podkit-transfer-<uuid> path per invocation', async () => {
     const probe1 = makeScriptedRunner([probed('aarch64'), ok(), ok(), ok()]);
     const probe2 = makeScriptedRunner([probed('aarch64'), ok(), ok(), ok()]);
@@ -350,10 +350,10 @@ describe('transferBinary (AC3: atomicity)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// AC4 + AC5: error surfaces
+// Error surfaces: a missing host binary, and a failing guest step.
 // ---------------------------------------------------------------------------
 
-describe('transferBinary (AC4/AC5: error paths)', () => {
+describe('transferBinary (error paths)', () => {
   it('throws a descriptive error when the host binary does not exist', async () => {
     const ghost = path.join(tmpRoot, 'no-such-binary');
     const { runner, calls } = makeScriptedRunner([]);
@@ -429,7 +429,7 @@ describe('transferBinary (AC4/AC5: error paths)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// AC6: gpod-tool variant
+// The gpod-tool variant.
 // ---------------------------------------------------------------------------
 
 describe('transferGpodTool', () => {

@@ -77,6 +77,15 @@ SUBSTRATE_FORBIDDEN_COMMANDS="bun node npm"
 # -dev, plus the toolchain metapackages. Same reasoning as above.
 SUBSTRATE_FORBIDDEN_PACKAGES="build-essential pkg-config"
 
+# Where provisioning records which template produced this box.
+#
+# Needed because the running point release is NOT evidence of which image was
+# booted: cloud-init enables package updates, so a box provisioned from the
+# pinned image moves past it within days. Asking "what does /etc/debian_version
+# say" answers a question nobody has. This file answers the one that matters —
+# which template version created this substrate — and does not drift.
+SUBSTRATE_PROVENANCE_FILE="/etc/podkit-substrate-provenance"
+
 # Directory the harness installs transferred binaries into. Must exist and be
 # writable by root; the substrate receives artifacts only, never a source tree.
 SUBSTRATE_BIN_DIR="/usr/local/bin"

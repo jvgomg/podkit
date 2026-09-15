@@ -154,4 +154,14 @@ log "ensuring $SUBSTRATE_BIN_DIR exists and is writable"
 install -d -m 0755 "$SUBSTRATE_BIN_DIR"
 test -w "$SUBSTRATE_BIN_DIR"
 
+# Record which template produced this box, so the doctor can answer "was this
+# provisioned from what the repo now pins?" without consulting the running
+# release, which advances on its own and answers a different question.
+log "recording provenance in $SUBSTRATE_PROVENANCE_FILE"
+{
+  printf '%s\n' '# Managed by provision-substrate.sh — DO NOT EDIT.'
+  printf 'debian_point_release=%s\n' "$SUBSTRATE_DEBIAN_POINT_RELEASE"
+} > "$SUBSTRATE_PROVENANCE_FILE"
+chmod 0644 "$SUBSTRATE_PROVENANCE_FILE"
+
 log "provisioning complete — verify with substrate-doctor.sh"

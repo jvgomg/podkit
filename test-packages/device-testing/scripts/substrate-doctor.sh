@@ -44,21 +44,38 @@ if [ -r /etc/debian_version ]; then
   case "$DEBIAN_VERSION" in
     "$SUBSTRATE_DEBIAN_MAJOR".*)
       pass "debian major $SUBSTRATE_DEBIAN_MAJOR (running $DEBIAN_VERSION)"
-      # Point-release drift is reported, not failed: which image was booted is
-      # a provisioning input, while the running point release advances with
-      # any security update. --strict makes it fatal for template validation.
+      # The running point release is reported, never asserted. cloud-init
+      # enables package updates, so a box provisioned from the pinned image
+      # moves past it within days — one substrate went 12.10 -> 12.15 in
+      # thirty-six hours. Failing on that would break every developer's loop
+      # over a security update that changed nothing the harness depends on.
       if [ "$DEBIAN_VERSION" != "$SUBSTRATE_DEBIAN_POINT_RELEASE" ]; then
-        if [ "$STRICT" -eq 1 ]; then
-          fail "point release is $DEBIAN_VERSION, template pins $SUBSTRATE_DEBIAN_POINT_RELEASE"
-        else
-          note "point release is $DEBIAN_VERSION, template pins $SUBSTRATE_DEBIAN_POINT_RELEASE"
-        fi
+        note "point release is $DEBIAN_VERSION, template pinned $SUBSTRATE_DEBIAN_POINT_RELEASE at provision time"
       fi
       ;;
     *) fail "debian major must be $SUBSTRATE_DEBIAN_MAJOR, found $DEBIAN_VERSION" ;;
   esac
 else
   fail "not a Debian system (/etc/debian_version absent)"
+fi
+
+# --strict asks a different question from the rest of this script: not "can this
+# box run the tests" but "was it provisioned from the template the repo now
+# pins". Those come apart the moment the box takes an update, which is why the
+# answer comes from a stamp written at provision time rather than from the
+# running release. Without it, --strict was unusable within a day of building a
+# substrate — it reported a defect where there was only a security update.
+if [ "$STRICT" -eq 1 ]; then
+  if [ ! -r "$SUBSTRATE_PROVENANCE_FILE" ]; then
+    fail "no provenance at $SUBSTRATE_PROVENANCE_FILE — provisioned before this was recorded; re-run provision-substrate.sh"
+  else
+    PROVISIONED_RELEASE="$(sed -n 's/^debian_point_release=//p' "$SUBSTRATE_PROVENANCE_FILE")"
+    if [ "$PROVISIONED_RELEASE" = "$SUBSTRATE_DEBIAN_POINT_RELEASE" ]; then
+      pass "provisioned from the pinned template ($PROVISIONED_RELEASE)"
+    else
+      fail "provisioned from $PROVISIONED_RELEASE, template now pins $SUBSTRATE_DEBIAN_POINT_RELEASE — recreate the substrate"
+    fi
+  fi
 fi
 
 # ---------------------------------------------------------------------------
