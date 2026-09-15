@@ -2,17 +2,20 @@
 # boot-substrate.sh — bring up a device substrate as a QEMU/KVM guest and
 # leave it reachable over ssh on localhost.
 #
-# The third provisioner recipe, beside `../proxmox/`. Like that one it produces
-# nothing but "a Debian box you can ssh into"; what turns that box into a
-# substrate is applied afterwards by the shared contract scripts:
+# Not a supported provisioner — doc-060 keeps those to Lima and Proxmox, and
+# nothing in the harness targets this box. It exists because the CI conformance
+# check needs a substrate somewhere. Like `../proxmox/` it produces nothing but
+# "a Debian box you can ssh into"; what turns that box into a substrate is
+# applied afterwards by the shared contract scripts:
 #
 #   ../../scripts/provision-substrate.sh
 #   ../../scripts/substrate-doctor.sh
 #
 # Written for the CI conformance backstop (.github/workflows/
 # substrate-conformance.yml), which needs a substrate on a machine nobody in
-# this project owns. It is plain bash with no CI in it, so it also works as a
-# local way to get a throwaway substrate on any Linux box with KVM.
+# this project owns. It is plain bash with no CI in it so that a CI failure can
+# be reproduced by hand on any Linux box with KVM — that is the reason, not an
+# invitation to adopt it as a way of getting substrates.
 #
 # Usage:
 #   SUBSTRATE_IMAGE_URL=$(bun -e 'import { substrateDebianImageUrl } from
@@ -132,6 +135,10 @@ TEMPLATE="$SCRIPT_DIR/../proxmox/cloud-init.user-data.yaml"
 # an arbitrary public key line supplied by whoever runs this. Today's ed25519
 # keys happen to be safe; that is not a property worth depending on in the one
 # place a substrate's only credential is written.
+#
+# Not absolute: `awk -v` still processes backslash escapes when it assigns, so a
+# key containing a backslash would arrive mangled. That is one interpreter
+# rather than two, and no base64 key alphabet contains one.
 awk -v host="$SUBSTRATE_HOSTNAME" -v key="$(cat "$SUBSTRATE_SSH_KEY.pub")" '
   function replace(s, needle, value,   out, i) {
     while ((i = index(s, needle)) > 0) {

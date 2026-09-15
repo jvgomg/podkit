@@ -1,13 +1,21 @@
 # Device substrate (CI conformance backstop)
 
-The third provisioner recipe, beside [Proxmox](./device-substrate-proxmox.md)
-and the Lima device VM: a **device substrate booted on a GitHub Actions runner**,
-used by `.github/workflows/substrate-conformance.yml` to prove that
+A **throwaway device substrate booted on a GitHub Actions runner**, used by
+`.github/workflows/substrate-conformance.yml` to prove that
 `substrate-doctor.sh` is satisfiable by a machine nobody in this project owns.
 
+Not a third supported provisioner. doc-060 puts "provisioner support beyond
+Proxmox and Lima as shipped recipes" out of scope, and this does not change
+that: the QEMU bring-up exists because the conformance check needs a substrate
+somewhere, nothing in the harness targets it, and no test runs against it. It is
+written as plain bash with no CI in it only so that a CI failure can be
+reproduced by hand — not as an invitation to adopt it.
+
 Written as a change log rather than prose so it can be lifted into automation.
-Every step is idempotent, and every one of them is already automated — the
-workflow *is* this document executed.
+Every step is idempotent, and the Steps section below is automated end to end —
+the workflow *is* those steps executed. The Preconditions are the exception and
+are marked as such: they are what to check by hand when a run fails, not
+assertions anything performs.
 
 A substrate is not "a Proxmox VM" and not "a CI runner". It is any SSH-reachable
 Debian box that passes `substrate-doctor.sh`. See
@@ -36,8 +44,13 @@ test backstop is `ci.yml`; the gate is `bun run quality`.
 [ADR-028 §6](../adr/adr-028-substrate-agnostic-device-harness.md) states that
 "`usb-synth` on CI is technically reachable — GitHub runners are full VMs that
 can `modprobe dummy_hcd`", and task-516 was written on that premise. **The
-premise is false**, and the `premise` job in the workflow measures it on every
-run rather than leaving this paragraph to rot:
+premise does not hold.**
+
+The three findings below are read off Ubuntu's kernel configuration and package
+archive rather than off a CI run — which is exactly why the `premise` job exists:
+it re-asserts them on every run, so this section is a standing claim instead of a
+remembered one, and it flips on its own if any of them stops being true. Until
+that workflow has run once, read this as researched rather than measured.
 
 - **Ubuntu does not build `dummy_hcd`.** `CONFIG_USB_DUMMY_HCD` is not enabled in
   any Ubuntu kernel flavour, so no `linux-modules-extra-*` package carries the
@@ -69,14 +82,19 @@ to leave it open is now cost, not capability.
 
 ---
 
-## Preconditions to assert
+## Preconditions
 
-| Assertion | Check | Required value |
-|---|---|---|
-| KVM is exposed | `ls -l /dev/kvm` | the node exists |
-| KVM is usable by the job | `[ -w /dev/kvm ]` | writable after the udev rule |
-| Egress to the Debian mirror | `curl -sI https://cloud.debian.org/` | HTTP 200 |
-| The pinned image still exists | `curl -fsI "$SUBSTRATE_IMAGE_URL"` | HTTP 200 |
+Unlike the Steps below, **nothing checks these for you** — except the second row,
+which `boot-substrate.sh` asserts. They are here because each one produces a
+failure that does not name itself, so this is the list to walk by hand when a run
+goes wrong.
+
+| Assertion | Check | Required value | Asserted? |
+|---|---|---|---|
+| KVM is exposed | `ls -l /dev/kvm` | the node exists | no |
+| KVM is usable by the job | `[ -w /dev/kvm ]` | writable after the udev rule | yes, by `boot-substrate.sh` |
+| Egress to the Debian mirror | `curl -sI https://cloud.debian.org/` | HTTP 200 | no — surfaces as a curl failure in the boot step |
+| The pinned image still exists | `curl -fsI "$SUBSTRATE_IMAGE_URL"` | HTTP 200 | no — same, and the likeliest cause after a Debian archive move |
 
 The KVM one is the only one that has ever been the problem. Hosted runners
 expose `/dev/kvm` but do not put the runner user in the `kvm` group, and a group
@@ -96,12 +114,17 @@ instead of a clear error.
 
 ```bash
 sudo apt-get update -qq
-sudo apt-get install -y -qq --no-install-recommends \
-  qemu-system-x86 qemu-utils cloud-image-utils
+sudo apt-get install -y -qq qemu-system-x86 qemu-utils cloud-image-utils
 ```
 
 `cloud-image-utils` is what provides `cloud-localds`, which builds the NoCloud
 seed image from the user-data.
+
+Recommends are deliberately **not** stripped here, unlike everywhere else this
+repo calls apt. `qemu-system-x86`'s firmware blobs move between Depends and
+Recommends across releases, and a QEMU that cannot find a BIOS fails at boot
+with a message that looks nothing like a missing package. The contract's
+no-extra-packages rule is about the substrate, not about the machine driving it.
 
 ### 2. Grant the job access to `/dev/kvm`
 

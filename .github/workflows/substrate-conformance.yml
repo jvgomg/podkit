@@ -141,11 +141,14 @@ jobs:
           echo "resolved: $url"
 
       # Recommends are deliberately *not* stripped here, unlike everywhere else
-      # in this repo's apt calls. qemu-system-x86's firmware blobs move between
-      # Depends and Recommends across releases, and a QEMU that cannot find a
-      # BIOS fails at boot with a message that looks nothing like a missing
-      # package. The contract's no-extra-packages rule is about the substrate,
-      # not about the runner driving it.
+      # in this repo's apt calls, and both packages are a reason on their own.
+      # qemu-system-x86's firmware blobs move between Depends and Recommends
+      # across releases, and a QEMU that cannot find a BIOS fails at boot with a
+      # message that looks nothing like a missing package. cloud-image-utils
+      # gets `cloud-localds` its ISO builder (genisoimage/xorriso) the same way,
+      # so stripping recommends yields a `cloud-localds` that is on PATH and
+      # cannot build a seed. The contract's no-extra-packages rule is about the
+      # substrate, not about the runner driving it.
       - name: Install QEMU and cloud-image-utils
         run: |
           sudo apt-get update -qq
@@ -210,6 +213,6 @@ jobs:
         with:
           name: substrate-guest-console
           path: |
-            ${{ runner.temp }}/podkit-ci-substrate/console.log
-            ${{ runner.temp }}/podkit-ci-substrate/user-data.yaml
+            ${{ env.SUBSTRATE_WORK_DIR }}/console.log
+            ${{ env.SUBSTRATE_WORK_DIR }}/user-data.yaml
           if-no-files-found: warn
