@@ -73,6 +73,7 @@ BOOT_DISK="$SUBSTRATE_WORK_DIR/substrate.qcow2"
 SEED_IMAGE="$SUBSTRATE_WORK_DIR/seed.img"
 CONSOLE_LOG="$SUBSTRATE_WORK_DIR/console.log"
 QEMU_PIDFILE="$SUBSTRATE_WORK_DIR/qemu.pid"
+QGA_SOCKET="$SUBSTRATE_WORK_DIR/qga.sock"
 
 log() { echo "==> $1"; }
 fatal() { echo "FATAL: $1" >&2; exit 1; }
@@ -163,8 +164,20 @@ cloud-localds "$SEED_IMAGE" "$USER_DATA"
 # (apt) and the host needs ssh in; it needs no address of its own, and asking
 # for one would mean a bridge and root on the runner.
 
+# The guest-agent channel is not optional here, even though nothing on this
+# side talks to it. The committed cloud-init template installs
+# qemu-guest-agent and runs `systemctl enable --now` on it, because on Proxmox
+# the host provides the channel. Without it the unit has no
+# /dev/virtio-ports/org.qemu.guest_agent.0 to bind, systemd waits out the
+# device timeout, the runcmd fails, and cloud-init finishes with
+# `status: error` — measured at 102 seconds of dead boot before the failure.
+#
+# Adding the channel rather than trimming the template is the point: the
+# template is what the Proxmox path uses, and a CI run that only passes against
+# a doctored copy of it proves nothing about the file anyone will actually
+# render.
 log "booting the guest (ssh on 127.0.0.1:$SUBSTRATE_SSH_PORT)"
-rm -f "$CONSOLE_LOG" "$QEMU_PIDFILE"
+rm -f "$CONSOLE_LOG" "$QEMU_PIDFILE" "$QGA_SOCKET"
 qemu-system-x86_64 \
   -name "$SUBSTRATE_HOSTNAME" \
   -machine q35,accel=kvm \
@@ -175,6 +188,9 @@ qemu-system-x86_64 \
   -drive "file=$SEED_IMAGE,if=virtio,format=raw" \
   -netdev "user,id=net0,hostfwd=tcp:127.0.0.1:$SUBSTRATE_SSH_PORT-:22" \
   -device virtio-net-pci,netdev=net0 \
+  -device virtio-serial-pci \
+  -chardev "socket,path=$QGA_SOCKET,server=on,wait=off,id=qga0" \
+  -device virtserialport,chardev=qga0,name=org.qemu.guest_agent.0 \
   -display none \
   -serial "file:$CONSOLE_LOG" \
   -pidfile "$QEMU_PIDFILE" \
