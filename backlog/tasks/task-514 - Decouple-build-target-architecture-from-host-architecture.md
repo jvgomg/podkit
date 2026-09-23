@@ -1,10 +1,10 @@
 ---
 id: TASK-514
 title: Decouple build target architecture from host architecture
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-13 18:33'
-updated_date: '2026-09-23 21:29'
+updated_date: '2026-09-23 21:30'
 labels:
   - testing
   - infrastructure
@@ -232,3 +232,25 @@ Two things to watch, both cheap and neither yet observed:
 Expect the same nine e2e-vm failures TASK-523 covers. They are substrate behaviour rather than architecture, so they should reproduce identically from a Mac — and if they do *not*, that is the most useful data point 523 could get.
 ---
 <!-- COMMENTS:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Closes the last two criteria (#5, #8) from an arm64 Mac, which is the platform the earlier halves could not reach.
+
+No new mechanism was needed, as the handoff predicted — but three defects were, each invisible from the amd64 Linux box the previous work was driven from, and each alone enough to stop cross-architecture `test:vm`:
+
+1. **The turbo wrapper stamped the host's architecture over the substrate's.** That value has `configured` precedence, so it overrode the entry points that probe the link and would otherwise have been right. Fixed without breaking the module's no-probe invariant: an ssh substrate *declares* its arch in the registry, so `declaredSubstrateMachine()` answers with no link and no substrate running.
+2. **Three turbo tasks ran the build driver with no edge to the packages it imports from `dist/`.** Cold-tree symptom was a missing export from a module correct in source. Their two siblings were covered by `^build`; `@podkit/gpod-testing` depends on neither package and could never have been.
+3. **`SSH_AUTH_SOCK` did not pass through turbo,** so no ssh link could authenticate under strict env mode.
+
+From review: the wrapper now refuses a misconfigured `PODKIT_SUBSTRATE` instead of silently falling back to the host — `SubstrateSelectionError.unconfigured` separates "nothing is set up" from "this is a typo", which previously cost a full build cycle before an unrelated step refused.
+
+Verified on hardware: Lima arm64 substrate 194 pass / 44 skip / 0 fail; remote amd64 substrate 176 / 44 / 9, building x64 on the remote builder from the Mac. The nine are TASK-523's and reproduce identically from a second driving host and architecture — with zero failures on arm64, which confirms they are substrate behaviour, not architecture. `test:vm` therefore still exits 1 against the amd64 substrate until 523 lands; #8 is ticked on that basis.
+
+Also clean: lint, typecheck 40/40, test 69/69 tasks, e2e 37/37. Three tests added (`declaredSubstrateMachine`, and both sides of the `unconfigured` flag).
+
+Known limitation, documented rather than fixed: `quality` runs the substrate's VM suites and this machine's Docker suite under one `PODKIT_TARGET_ARCH`, which cannot serve both when they differ. `.env.example` says to run those halves separately.
+
+Commit: `d751125c`.
+<!-- SECTION:FINAL_SUMMARY:END -->
