@@ -23,6 +23,8 @@
 
 import { describe, it, expect } from 'bun:test';
 import { spawnSync } from 'node:child_process';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { repoRoot } from './paths.js';
@@ -114,6 +116,85 @@ describe('bootstrap-pve.sh --print-only', () => {
   it('runs the same commands directly when on the PVE host', () => {
     for (const command of logicalCommands(printedRunbook([]))) {
       expect(command, `spawns ssh in local mode: ${command}`).not.toMatch(/\bssh\s/);
+    }
+  });
+});
+
+/**
+ * `--render <hostname>` emits the cloud-init snippet and contacts nothing.
+ *
+ * `ssh_authorized_keys` is a LIST, and the first renderer substituted a single
+ * key into it. That is not a cosmetic limit: a developer with a laptop and a
+ * build box has two keys, and rendering one of them silently revokes the other
+ * the next time the guest is recreated from the snippet — with nothing failing
+ * at render time to say so. Observed against a real host, where re-running the
+ * bootstrap rewrote a hand-edited two-key snippet down to one.
+ */
+describe('bootstrap-pve.sh --render', () => {
+  /** A key file, and the snippet rendered from it. */
+  function render(hostname: string, keyFileContents: string): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'podkit-pve-render-'));
+    try {
+      const keyFile = path.join(dir, 'keys.pub');
+      fs.writeFileSync(keyFile, keyFileContents);
+      const result = spawnSync('bash', [BOOTSTRAP, '--render', hostname], {
+        encoding: 'utf8',
+        env: { ...process.env, PODKIT_SSH_PUBKEY: keyFile },
+      });
+      expect(result.status, `--render failed: ${result.stderr}`).toBe(0);
+      return result.stdout;
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  /** The rendered `ssh_authorized_keys` entries, in order. */
+  function authorizedKeys(snippet: string): string[] {
+    return snippet
+      .split('\n')
+      .filter((line) => /^\s+- ssh-/.test(line))
+      .map((line) => line.replace(/^\s+- /, ''));
+  }
+
+  it('authorises every key in the file, not just the first', () => {
+    const snippet = render(
+      'podkit-builder',
+      '# a comment line\n\nssh-ed25519 AAAAONE laptop\nssh-ed25519 AAAATWO buildbox\n'
+    );
+    expect(authorizedKeys(snippet)).toEqual([
+      'ssh-ed25519 AAAAONE laptop',
+      'ssh-ed25519 AAAATWO buildbox',
+    ]);
+  });
+
+  it('substitutes the hostname and leaves no placeholder behind', () => {
+    const snippet = render('podkit-builder', 'ssh-ed25519 AAAAONE laptop\n');
+    expect(snippet).toContain('hostname: podkit-builder');
+    expect(snippet).not.toContain('__HOSTNAME__');
+    expect(snippet).not.toContain('__SSH_PUBKEY__');
+  });
+
+  it('preserves a key comment containing substitution metacharacters', () => {
+    // `&` and `\` mean something in an awk replacement, and a key's trailing
+    // comment is free text. A mangled key authorises nobody and looks fine.
+    const key = 'ssh-ed25519 AAAAONE me@host & co \\ x';
+    expect(authorizedKeys(render('podkit-builder', `${key}\n`))).toEqual([key]);
+  });
+
+  it('refuses a key file holding no keys', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'podkit-pve-render-'));
+    try {
+      const keyFile = path.join(dir, 'keys.pub');
+      // Readable, plausible, and would render a guest nobody can log into.
+      fs.writeFileSync(keyFile, '# only a comment\n\n');
+      const result = spawnSync('bash', [BOOTSTRAP, '--render', 'podkit-builder'], {
+        encoding: 'utf8',
+        env: { ...process.env, PODKIT_SSH_PUBKEY: keyFile },
+      });
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain('no key lines');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
     }
   });
 });

@@ -6,6 +6,25 @@
 #   bash bootstrap-pve.sh                              # on the PVE host
 #   bash bootstrap-pve.sh --pve-host root@<pve>        # from anywhere
 #   bash bootstrap-pve.sh --pve-host root@<pve> --print-only
+#   bash bootstrap-pve.sh --render podkit-builder      # the snippet, to stdout
+#
+# ---------------------------------------------------------------------------
+# Re-running it on a host that already has guests
+# ---------------------------------------------------------------------------
+#
+# It is idempotent, but step 2 REWRITES both snippets, and a snippet is not
+# inert once a guest exists: PVE derives the cloud-init instance-id from the
+# config it generates, so changing a snippet's CONTENT makes the next boot of
+# any guest using it look like a new instance to cloud-init. Observed on PVE
+# 9.1.4: the guest regenerated its SSH host keys, and every `known_hosts` entry
+# for it stopped matching.
+#
+# That is survivable and not a defect — but it is only harmless if what you
+# render is what the guest already authorises. Check before running it against
+# a host with live guests:
+#
+#   diff <(bash bootstrap-pve.sh --render podkit-substrate) \
+#        <(ssh root@<pve> cat /var/lib/vz/snippets/podkit-substrate.yaml)
 #
 # ---------------------------------------------------------------------------
 # Why this script exists at all, and where it stops
@@ -50,7 +69,13 @@
 #   PODKIT_PVE_STORAGE         space-separated storages     (default "local-lvm local")
 #   PODKIT_PVE_BRIDGE          bridge guests attach to      (default vmbr0)
 #   PODKIT_PVE_SNIPPET_STORAGE storage holding snippets     (default local)
-#   PODKIT_SSH_PUBKEY          public key to authorise      (default ~/.ssh/id_ed25519.pub)
+#   PODKIT_SSH_PUBKEY          public key(s) to authorise   (default ~/.ssh/id_ed25519.pub)
+#
+# PODKIT_SSH_PUBKEY may name a file holding SEVERAL key lines, and every one of
+# them is authorised. Blank lines and `#` comments are ignored, so
+# `~/.ssh/authorized_keys` is a valid value. A developer with a laptop and a
+# build box has two keys, and rendering only the first silently revokes the
+# other the next time the guest is recreated.
 
 set -eu
 
@@ -62,12 +87,14 @@ REPO_REL_DIR="test-packages/device-testing/substrate/proxmox"
 
 PVE_HOST=""
 PRINT_ONLY=0
+RENDER_HOSTNAME=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --pve-host) PVE_HOST="${2:?--pve-host needs an ssh target}"; shift 2 ;;
     --print-only) PRINT_ONLY=1; shift ;;
-    -h|--help) sed -n '2,60p' "${BASH_SOURCE[0]}"; exit 0 ;;
+    --render) RENDER_HOSTNAME="${2:?--render needs a guest hostname}"; shift 2 ;;
+    -h|--help) sed -n '2,80p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "FATAL: unknown argument '$1'" >&2; exit 2 ;;
   esac
 done
@@ -96,6 +123,67 @@ PROFILE_HOSTNAMES="podkit-substrate podkit-builder"
 log()   { echo "==> $1"; }
 warn()  { echo "WARN: $1" >&2; }
 fatal() { echo "FATAL: $1" >&2; exit 1; }
+
+# ---------------------------------------------------------------------------
+# Rendering the template
+# ---------------------------------------------------------------------------
+#
+# Two placeholders, and one of them is a LIST: `ssh_authorized_keys` takes any
+# number of entries, and a developer with a laptop and a build box has two.
+# Rendering only the first is not a cosmetic loss — it is the second machine's
+# access, removed the next time the guest is recreated from the snippet, with
+# nothing failing at render time to say so.
+#
+# awk rather than sed because a multi-line replacement needs GNU sed's `\n` in
+# the RHS, which BSD sed — every macOS workstation — rejects, and this script
+# renders on the workstation side.
+#
+# Any line containing the placeholder is emitted once per key, so the list
+# indentation is preserved by construction rather than re-encoded here, and the
+# template's own comment line documenting the placeholder is expanded the same
+# way the YAML list is.
+#
+# The key file is read by awk itself rather than passed in with `-v`, for the
+# same portability reason: a `-v` assignment may not contain a newline on BSD
+# awk, and it processes backslash escapes that a key comment is free to
+# contain.
+#
+# shellcheck disable=SC2016 # an awk program: $0 and the rest are awk's, not the shell's
+RENDER_AWK='
+function expand(line, placeholder, value,   pos) {
+  # index/substr rather than sub(): an awk replacement string treats & and \\
+  # as metacharacters, and a key comment is free text that may contain both.
+  # Escaping them correctly is possible and is not portable — BSD awk and gawk
+  # disagree on \\\\ — so the substitution avoids the replacement grammar
+  # altogether.
+  pos = index(line, placeholder)
+  if (pos == 0) return line
+  return substr(line, 1, pos - 1) value substr(line, pos + length(placeholder))
+}
+BEGIN {
+  while ((getline line < keyfile) > 0) {
+    if (line ~ /^[[:space:]]*#/ || line ~ /^[[:space:]]*$/) continue
+    keys[++n] = line
+  }
+}
+{
+  line = expand($0, "__HOSTNAME__", hostname)
+  if (index(line, "__SSH_PUBKEY__") > 0) {
+    for (i = 1; i <= n; i++) print expand(line, "__SSH_PUBKEY__", keys[i])
+  } else {
+    print line
+  }
+}'
+
+# Every key line in the file, so `~/.ssh/authorized_keys` is as valid a value
+# for PODKIT_SSH_PUBKEY as a lone `.pub`. This one VALIDATES; RENDER_AWK
+# applies the same rule while rendering, because it reads the file itself.
+read_pubkeys() { grep -v -e '^[[:space:]]*#' -e '^[[:space:]]*$' "$1" || true; }
+
+render_snippet() {
+  awk -v hostname="$1" -v keyfile="$SSH_PUBKEY" "$RENDER_AWK" \
+    "$SCRIPT_DIR/cloud-init.user-data.yaml"
+}
 
 # ---------------------------------------------------------------------------
 # Transport
@@ -151,12 +239,32 @@ pve_pipe() {
   if [ -n "$PVE_HOST" ]; then ssh "$PVE_HOST" "$1"; else bash -c "$1"; fi
 }
 
+[ -r "$SCRIPT_DIR/cloud-init.user-data.yaml" ] || fatal "cloud-init.user-data.yaml not beside this script"
+
+# ---------------------------------------------------------------------------
+# --render: the snippet for one guest, to stdout
+# ---------------------------------------------------------------------------
+#
+# Contacts nothing. It exists so the rendered result can be DIFFED against what
+# a host already serves before a re-run rewrites it — see the header on why a
+# changed snippet is not inert once a guest exists.
+
+if [ -n "$RENDER_HOSTNAME" ]; then
+  [ -r "$SSH_PUBKEY" ] || fatal "no readable public key at $SSH_PUBKEY (set PODKIT_SSH_PUBKEY)"
+  [ -n "$(read_pubkeys "$SSH_PUBKEY")" ] || fatal "$SSH_PUBKEY holds no key lines"
+  render_snippet "$RENDER_HOSTNAME"
+  exit 0
+fi
+
 # ---------------------------------------------------------------------------
 # Preflight
 # ---------------------------------------------------------------------------
 
 if [ "$PRINT_ONLY" -eq 0 ]; then
   [ -r "$SSH_PUBKEY" ] || fatal "no readable public key at $SSH_PUBKEY (set PODKIT_SSH_PUBKEY)"
+  # A file that exists but holds only comments renders a guest nobody can log
+  # into, and the snippet looks plausible.
+  [ -n "$(read_pubkeys "$SSH_PUBKEY")" ] || fatal "$SSH_PUBKEY holds no key lines"
 
   # Assert the transport BEFORE doing anything, so a wrong --pve-host fails in
   # one second rather than halfway through a grant.
@@ -178,7 +286,6 @@ if [ "$PRINT_ONLY" -eq 0 ]; then
 fi
 
 [ -r "$SCRIPT_DIR/pveum-recipe.sh" ] || fatal "pveum-recipe.sh not beside this script"
-[ -r "$SCRIPT_DIR/cloud-init.user-data.yaml" ] || fatal "cloud-init.user-data.yaml not beside this script"
 
 # ---------------------------------------------------------------------------
 # 1. The pveum grant
@@ -239,17 +346,14 @@ for hostname in $PROFILE_HOSTNAMES; do
   # builder-specific variant. Rendered here and piped, so the key never touches
   # a file on the hypervisor other than the snippet itself.
   if [ "$PRINT_ONLY" -eq 1 ]; then
-    printf "sed -e 's|__HOSTNAME__|%s|' -e \"s|__SSH_PUBKEY__|\$(cat %s)|\" \\\\\n" \
-      "$hostname" "$SSH_PUBKEY"
-    printf '    %s/cloud-init.user-data.yaml' "$REPO_REL_DIR"
+    # The same render the reader could run themselves — `--render <hostname>`
+    # is this line, spelled shorter.
+    printf 'bash %s/bootstrap-pve.sh --render %s' "$REPO_REL_DIR" "$hostname"
     if [ -n "$PVE_HOST" ]; then
       printf ' | ssh %s %s\n' "$PVE_HOST" "$(quote_for_display "cat > $SNIPPET_DIR/$hostname.yaml")"
     else printf ' > %s/%s.yaml\n' "$SNIPPET_DIR" "$hostname"; fi
   else
-    sed -e "s|__HOSTNAME__|$hostname|" \
-        -e "s|__SSH_PUBKEY__|$(cat "$SSH_PUBKEY")|" \
-        "$SCRIPT_DIR/cloud-init.user-data.yaml" \
-      | pve_run "cat > $SNIPPET_DIR/$hostname.yaml"
+    render_snippet "$hostname" | pve_run "cat > $SNIPPET_DIR/$hostname.yaml"
   fi
 done
 

@@ -181,6 +181,37 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# CPU instruction set
+# ---------------------------------------------------------------------------
+#
+# The substrate carries no toolchain, so it never trips over this while being
+# provisioned — it trips over it the first time an artifact is transferred to
+# it, and then in the worst possible way.
+#
+# A `bun --compile` podkit binary embeds the Bun runtime, whose x64 build
+# requires AVX2. On a Proxmox guest created without `--cpu host` the CPU model
+# does not expose it, and the binary does not refuse to start: `podkit
+# --version` spins at 100% CPU indefinitely with no output and no error.
+# Measured on this contract's own substrate — ten minutes of spin before the
+# CPU model was changed, 0.5s afterwards.
+#
+# A hang is the one failure mode this box must not have, because everything
+# above it — the doctor's own transfer step, `test:vm`, a release check —
+# reads it as a slow machine rather than an impossible one.
+case "$(uname -m)" in
+  x86_64)
+    if [ -r /proc/cpuinfo ] && grep -qw avx2 /proc/cpuinfo; then
+      pass "cpu exposes avx2"
+    else
+      fail "cpu does not expose avx2 — a bun --compile podkit binary hangs rather than failing on such a CPU. On a Proxmox guest: qm set <vmid> --cpu host (or --cpu x86-64-v3) and restart it"
+    fi
+    ;;
+  *)
+    # aarch64 has no baseline/AVX split; nothing to assert.
+    ;;
+esac
+
+# ---------------------------------------------------------------------------
 # Artifact destination
 # ---------------------------------------------------------------------------
 

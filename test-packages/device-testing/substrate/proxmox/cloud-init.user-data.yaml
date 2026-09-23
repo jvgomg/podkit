@@ -32,7 +32,11 @@
 # docs/environments/builder-proxmox.md):
 #
 #   __HOSTNAME__    hostname for the guest, e.g. podkit-substrate / podkit-builder
-#   __SSH_PUBKEY__  the full public key line you will connect with
+#   __SSH_PUBKEY__  a full public key line you will connect with
+#
+# Any line holding __SSH_PUBKEY__ is emitted once per key the renderer was
+# given, so authorising a second machine is a second line in the key file and
+# nothing here. See bootstrap-pve.sh's PODKIT_SSH_PUBKEY.
 #
 # Nothing machine-specific is committed: the rendered copy lives on your PVE
 # host's snippet storage, never in the repo.

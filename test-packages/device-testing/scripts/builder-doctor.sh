@@ -149,6 +149,49 @@ if command -v meson >/dev/null 2>&1; then
   fi
 fi
 
+# ---------------------------------------------------------------------------
+# CPU instruction set
+# ---------------------------------------------------------------------------
+#
+# Bun's x64 build requires AVX2 (there is a separate `-baseline` build for CPUs
+# without it). A Proxmox guest created without `--cpu host` gets a CPU model
+# that does not expose it, and the result is not a clear refusal: `bun
+# --version`, `bun -e` and a trivial `bun install` all work, and a real
+# workspace install dies with
+#
+#   panic: a formatting trait implementation returned an error ...
+#   oh no: Bun has crashed. This indicates a bug in Bun, not your code.
+#
+# which reads as a Bun bug rather than a hypervisor setting. Measured both ways
+# on the same guest: `--cpu kvm64` panics, `--cpu host` installs cleanly.
+#
+# So the assertion is about the CPU rather than about bun, because no cheap bun
+# invocation distinguishes the two.
+case "$(uname -m)" in
+  x86_64)
+    if [ -r /proc/cpuinfo ] && grep -qw avx2 /proc/cpuinfo; then
+      pass "cpu exposes avx2"
+    else
+      fail "cpu does not expose avx2 — bun's x64 build needs it, and a workspace install panics without it. On a Proxmox guest: qm set <vmid> --cpu host (or --cpu x86-64-v3) and restart it"
+    fi
+    ;;
+  *)
+    # aarch64 has no baseline/AVX split; nothing to assert.
+    ;;
+esac
+
+# `bun` must RUN, not merely be on PATH. dpkg accounts for none of it — it is an
+# extracted tarball on $PATH — so "the file is there" and "this user can execute
+# it" are genuinely different claims here.
+if command -v bun >/dev/null 2>&1; then
+  BUN_VERSION="$(bun --version 2>/dev/null || true)"
+  if [ -z "$BUN_VERSION" ]; then
+    fail "bun is on PATH but \`bun --version\` produced nothing"
+  else
+    pass "bun $BUN_VERSION runs"
+  fi
+fi
+
 # node-gyp bakes the building Node's ABI into the addon, so the major version is
 # a property of the artifact rather than a preference.
 if command -v node >/dev/null 2>&1; then

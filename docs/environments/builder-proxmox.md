@@ -80,7 +80,9 @@ One extra precondition of its own:
 | Room for a 4 GiB guest | `free -g` on the PVE host | 4 GiB free *while the substrate is stopped* |
 
 That qualifier is not pessimism, it is the operating mode — see
-[Running it day to day](#running-it-day-to-day).
+[Running it day to day](#running-it-day-to-day). On a 16 GiB host the two did
+coexist comfortably (≈7 GiB still available with both running), so read the
+qualifier as the floor to plan for rather than a rule the hypervisor enforces.
 
 ---
 
@@ -107,17 +109,22 @@ so the builder shares the substrate's.
 
 **Done for you by step 1.** Described here for the by-hand path.
 
-The **same template** the substrate uses:
+The **same template** the substrate uses, rendered by the same script:
 
 ```bash
-sed -e "s|__HOSTNAME__|podkit-builder|" \
-    -e "s|__SSH_PUBKEY__|$(cat ~/.ssh/id_ed25519.pub)|" \
-    test-packages/device-testing/substrate/proxmox/cloud-init.user-data.yaml \
-    > /var/lib/vz/snippets/podkit-builder.yaml
+bash test-packages/device-testing/substrate/proxmox/bootstrap-pve.sh \
+  --render podkit-builder > /var/lib/vz/snippets/podkit-builder.yaml
 ```
 
-Not a copy of it, and not a builder-specific variant — the same file with a
-different hostname substituted.
+`--render` contacts nothing and writes nothing — it emits the snippet on stdout,
+so it is also how you diff what you are about to place against what a host
+already serves.
+
+Not a copy of the template, and not a builder-specific variant — the same file
+with a different hostname substituted. `PODKIT_SSH_PUBKEY` may name a file
+holding several keys (`~/.ssh/authorized_keys` is a valid value) and every one
+of them is authorised; a laptop and a build box are two keys, and rendering only
+the first revokes the second the next time the guest is recreated.
 
 That is worth a sentence, because a "builder cloud-init template" is the obvious
 deliverable and would be the wrong one. The template is deliberately tiny: it
@@ -155,6 +162,7 @@ qm create $VMID \
   --name podkit-builder \
   --pool podkit \
   --memory 4096 --cores 4 \
+  --cpu host \
   --net0 virtio,bridge=vmbr0 \
   --scsihw virtio-scsi-single \
   --serial0 socket --vga serial0 \
@@ -171,7 +179,31 @@ qm resize $VMID scsi0 40G
 qm start $VMID
 ```
 
-Three deliberate differences from the substrate's recipe:
+`--cpu host` is not a performance tweak — it is what makes the box able to run
+`bun` at all, and it is the one line whose absence costs the most time.
+
+PVE's default CPU model is `kvm64`, which does not expose AVX. Bun's x64 build
+requires it. On a `kvm64` guest every command in the builder contract installs
+and every file lands where it should, and then `bun install` panics:
+
+```
+CPU lacks AVX support. Please consider upgrading to a newer CPU.
+panic: a formatting trait implementation returned an error ...
+oh no: Bun has crashed.
+```
+
+The same CPU model is worse on the *receiving* side: a `bun --compile` binary
+does not report the missing instruction set, it spins at 100% CPU forever. A
+binary built on a correctly-configured builder and copied to a `kvm64` substrate
+hangs on `--version` with no output and no error, which reads like a corrupt
+transfer rather than a host that cannot execute it. Give **both** guests the
+host CPU model.
+
+`--cpu host` is the simplest correct answer on a single hypervisor. If you
+migrate guests between hosts, `--cpu x86-64-v3` is the portable floor that still
+includes AVX and AVX2.
+
+Three further deliberate differences from the substrate's recipe:
 
 - **4096 MiB / 4 cores** rather than 2048 / 2, matching the Lima glibc builder.
   The builds are CPU-bound (gcc, meson, ninja) and the static-deps closure is
@@ -225,7 +257,8 @@ whether `bun` is on their PATH, whether they can write the staging tree — and
 root passes them on a box nobody else can build on.
 
 The doctor's exit code is the verdict, and its output names every assertion
-individually. Expect ~68 of them.
+individually. Measured on the reference build: **73 `ok` lines, zero failures**
+(74 under `--strict`, which adds the point-release provenance check).
 
 Provisioning is safe to re-run on a live box: the toolchain install is an
 apt no-op, meson and Node and Bun are each skipped when already satisfactory,
@@ -278,6 +311,40 @@ tell.
 
 The prebuild is the one with an ordering constraint: `compile.sh` embeds it, so
 it must exist before the binary is compiled.
+
+### Building by hand, before the driver exists
+
+Until TASK-514's build driver lands, a build is a staged tree plus four
+commands. The sequence, run in `/var/tmp/podkit-build`:
+
+```bash
+bun install --frozen-lockfile
+STATIC_DEPS_DIR=/var/cache/podkit-build/static-deps \
+WORK_DIR=/var/cache/podkit-build/prebuild-work \
+  bash tools/prebuild/build-linux-glibc.sh
+bun run build            # workspace dists — compile.sh resolves @podkit/* through them
+bash packages/podkit-cli/scripts/compile.sh
+```
+
+`bun run build` is easy to leave out and fails late and confusingly:
+`compile.sh` reports `Could not resolve: "@podkit/ipod-firmware". Maybe you need
+to "bun install"?` — which it does not.
+
+Three things about the staging itself, each of which produced a wrong result
+rather than an error:
+
+- **Exclude every build output from the rsync.** A macOS `gpod-tool` binary
+  copied in with a newer mtime than its source makes `make` report `Nothing to
+  be done for 'all'`, leaving a Mach-O file on an amd64 builder. Exclude
+  `node_modules`, `dist`, `static-deps`, `.prebuild-work`, `*.node`, `bin/` and
+  the compiled `tools/gpod-tool/gpod-tool`.
+- **`rsync -a` fails on the staging directory** with `failed to set times on
+  ".": Operation not permitted` (exit 23), because `/var/tmp/podkit-build` is
+  root-owned and world-writable. The payload transfers; only the directory's
+  own timestamp fails. Add `--omit-dir-times`.
+- **Container-run builds write root-owned files** into the staged tree, since
+  podman runs as root here. A musl build leaves `bin/podkit` owned by root, and
+  the next unprivileged glibc build cannot overwrite it.
 
 ### musl comes from a container, not a second VM
 
