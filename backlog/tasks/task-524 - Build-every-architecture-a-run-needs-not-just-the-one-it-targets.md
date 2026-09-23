@@ -1,10 +1,10 @@
 ---
 id: TASK-524
 title: 'Build every architecture a run needs, not just the one it targets'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-23 21:52'
-updated_date: '2026-09-23 22:07'
+updated_date: '2026-09-23 22:18'
 labels:
   - testing
   - infrastructure
@@ -49,7 +49,9 @@ Note for whoever picks this up: a fully green `quality` on the cross-architectur
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Landed in 2e4d3b45.
+Landed in 2e4d3b45, with a log-string follow-up in e8f01103.
+
+## Design
 
 **The rule.** New `test-packages/substrate/src/required-arches.ts`:
 `resolveRequiredArches({libc, targetArch, hostArch})` returns one
@@ -87,14 +89,63 @@ substrate" notice is suppressed on the host-docker pass: there it is the
 expected state, and its remedy (pin `PODKIT_BUILD_HOST`) would break the
 other pass. The requirement's own reason is logged instead.
 
-**Verification.** `bun run test` (69 tasks), typecheck and lint green; 11
-new unit tests for the resolver (same-arch, cross-arch, glibc-untouched,
-alias normalisation, unsupported arch) and 4 for the jobs table. Cross-arch
-build-host selection verified by simulation on an arm64 host with
-`PODKIT_SUBSTRATE=deviceRemote`: x64 → builderRemote (Alpine container),
-arm64 → builderMusl, distinct staging directories.
+## Verification
 
-**Not yet executed:** a real `quality` run on the cross-architecture setup.
-That needs the amd64 substrate reachable and, per this task's own note,
-TASK-523 for the substrate's mass-storage LUNs.
+Unit level: `bun run test` (69 tasks), typecheck and lint green; 11 new
+tests for the resolver (same-arch, cross-arch, glibc-untouched, alias
+normalisation, unsupported arch) and 4 for the jobs table.
+
+**On the cross-architecture setup** — arm64 Mac host,
+`PODKIT_SUBSTRATE=deviceRemote` → `podkit-substrate` x86_64,
+`podkit-builder` x86_64.
+
+`build:musl-binary --force` ran clean end to end, exit 0, 13/13 turbo
+tasks. Both jobs planned two passes and took them:
+
+- `build:musl-prebuild` [1/2] x64 on `builderRemote` (Alpine container) →
+  `prebuilds/linux-x64-musl`; [2/2] arm64 on `builderMusl`, which the
+  driver started from `stopped` itself → `prebuilds/linux-arm64-musl`.
+- `build:musl-binary` announced `this run needs 2 architectures —
+  linux-x64 (substrate), linux-arm64 (host-docker)`, then collected all six
+  binaries. Staging directories were distinct per build host
+  (`/var/tmp/podkit-build/musl-binary` vs `/tmp/podkit-musl-builder-src`).
+
+All six artifacts landed with the right ELF headers:
+`podkit`/`podkit-debug`/`podkit-daemon` `-linux-x64-musl` as x86-64, and
+the `-linux-arm64-musl` trio as ARM aarch64. The x64 set did not exist
+before this run.
+
+**AC #3 end to end.** `test:e2e:docker-loopback` passed 3/3 on host Docker
+(aarch64) against the arm64 musl binaries while the selected substrate was
+amd64 — the cell that was previously unreachable. `docker-dist`'s resolver
+finds the x64 set from the same run; its suite was not executed, because it
+needs TASK-523's mass-storage LUNs.
+
+**AC #4 measured** via `turbo --dry=json`, holding the target at x64 and
+varying only the host:
+
+| task | host=arm64 | host=x64 |
+|---|---|---|
+| `build:musl-prebuild` | `4ab57b43…` | `c8f0cfa6…` |
+| `build:musl-binary` | `613b30b5…` | `d00aa011…` |
+| `build:linux-binary` (glibc) | `82b2e255…` | `82b2e255…` |
+
+The musl pair separates; the glibc task is untouched, confirming the
+declaration is scoped to the tasks whose output set actually depends on the
+host.
+
+**Cache stability.** A repeat run with no source change is `FULL TURBO`,
+13/13 cached, 875ms. (An intervening miss on `build:musl-binary` was
+correct: `--force` rewrote the prebuild `.node` files, which are declared
+inputs of it.)
+
+## Follow-up
+
+e8f01103 — the substrate pass's `reason` ran to two clauses and pushed the
+useful part of the driver's build line off the end on a real run; trimmed
+to one phrase, with the detail left on `ArchConsumer`.
+
+Still open for a fully green cross-architecture `quality`: TASK-523
+(substrate mass-storage LUNs), which gates `test:e2e:docker-dist` and is
+unrelated to this change.
 <!-- SECTION:NOTES:END -->
