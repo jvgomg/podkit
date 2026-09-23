@@ -40,6 +40,7 @@ import {
   looksLikeLinkFailureResult,
   guestStageScript,
   resolveGuestArgv,
+  settleLinkResult,
   stageExitIsOk,
   startHostLinkProcess,
   type HostSpawnFn,
@@ -229,14 +230,12 @@ export function createLimactlLink(
           err
         );
       }
-      if (result.exitCode === 0) return;
-      if (looksLikeLimactlLinkFailure(result)) {
-        throw linkFailure('copyIn', `copy ${hostPath} → ${guestPath}`, result.stderr.trim());
-      }
-      throw new Error(
-        `failed to copy ${hostPath} → ${vmName}:${guestPath}: exit=${result.exitCode}: ` +
-          (result.stderr.trim() || result.stdout.trim() || '(no output)')
-      );
+      settleLinkResult({
+        result,
+        classify: looksLikeLimactlLinkFailure,
+        linkFailure: (detail) => linkFailure('copyIn', `copy ${hostPath} → ${guestPath}`, detail),
+        what: `copy ${hostPath} → ${vmName}:${guestPath}`,
+      });
     },
 
     async copyOut(guestPath: string, hostPath: string, copyOpts: SubstrateCopyOpts = {}) {
@@ -257,14 +256,12 @@ export function createLimactlLink(
           err
         );
       }
-      if (result.exitCode === 0) return;
-      if (looksLikeLimactlLinkFailure(result)) {
-        throw linkFailure('copyOut', `copy ${guestPath} → ${hostPath}`, result.stderr.trim());
-      }
-      throw new Error(
-        `failed to copy ${vmName}:${guestPath} → ${hostPath}: exit=${result.exitCode}: ` +
-          (result.stderr.trim() || result.stdout.trim() || '(no output)')
-      );
+      settleLinkResult({
+        result,
+        classify: looksLikeLimactlLinkFailure,
+        linkFailure: (detail) => linkFailure('copyOut', `copy ${guestPath} → ${hostPath}`, detail),
+        what: `copy ${vmName}:${guestPath} → ${hostPath}`,
+      });
     },
 
     async stageTree(hostSrc: string, guestDest: string, stageOpts: StageTreeOpts = {}) {
@@ -298,13 +295,13 @@ export function createLimactlLink(
       // a non-zero code here is rsync's own or the shell's. Re-checking costs
       // nothing and keeps the two links agreeing on what "staged" means.
       if (stageExitIsOk(result.exitCode)) return;
-      if (looksLikeLimactlLinkFailure(result)) {
-        throw linkFailure('stageTree', `stage ${hostSrc} → ${guestDest}`, result.stderr.trim());
-      }
-      throw new Error(
-        `failed to stage ${hostSrc} → ${vmName}:${guestDest}: exit=${result.exitCode}: ` +
-          (result.stderr.trim() || result.stdout.trim() || '(no output)')
-      );
+      settleLinkResult({
+        result,
+        classify: looksLikeLimactlLinkFailure,
+        linkFailure: (detail) =>
+          linkFailure('stageTree', `stage ${hostSrc} → ${guestDest}`, detail),
+        what: `stage ${hostSrc} → ${vmName}:${guestDest}`,
+      });
     },
 
     spawn(command: SubstrateCommand, spawnOpts: SubstrateSpawnOpts = {}): SubstrateProcess {

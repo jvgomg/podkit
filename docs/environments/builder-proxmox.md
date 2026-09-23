@@ -8,7 +8,11 @@ Every step is idempotent.
 
 A builder is not "a Proxmox VM". It is any SSH-reachable Debian box that passes
 `builder-doctor.sh`; Proxmox is the reference recipe, and any amd64 machine a
-contributor already owns fills the role equally well. See
+contributor already owns fills the role equally well — **including the machine
+you are sitting at**, via a `podkit-builder` alias pointed at `localhost`. The
+repo has no separate "local" provisioner for that case on purpose: `ssh` names
+how a box is reached and says nothing about where it is, so localhost is the
+same entry, the same link and the same contract rather than a fourth code path. See
 [ADR-029](../adr/adr-029-portable-device-substrate.md) §4 and
 [CONTEXT.md](../../CONTEXT.md) §Test environments.
 
@@ -453,7 +457,17 @@ the prebuild work tree, deliberately outside the staging directory so it
 survives `rsync --delete`. A cold static-deps build is the expensive part of a
 builder's first run and nothing in it changes between source revisions — so
 never "clean up" that directory to reclaim disk without meaning to pay for it
-again.
+again. Measured here: 4m51s cold, 41s warm.
+
+**A cache is only reusable at the path it was built at.** `build-static-deps.sh`
+installs generated `.pc` files carrying an absolute `prefix=`, so a closure
+built under one mount point is unusable under another — and the symptom is not
+"stale cache", it is `fatal error: gpod/itdb.h: No such file or directory` from
+a tree whose headers are plainly present. This is why the driver mounts the
+cache into the musl container **at the same path it has outside**. A hand-run
+that mounts it somewhere else poisons it for the driver; the fix is to delete
+the affected `static-deps*` and `prebuild-work*` directories and pay for one
+cold build.
 
 ---
 

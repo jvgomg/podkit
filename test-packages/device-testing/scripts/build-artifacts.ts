@@ -45,6 +45,8 @@ import {
   ArtifactArchMismatchError,
   BUILD_HOST_ENV_VAR,
   BUILDER_CONTRACT_REL_PATH,
+  FILE_COPY_TIMEOUT_MS,
+  guestCommandError,
   isLimaVm,
   isSshVm,
   probeSubstrateMachine,
@@ -152,7 +154,16 @@ async function assertBuildHostArch(
   );
 }
 
-/** The build-host-local directory holding the static-dep and prebuild caches. */
+/**
+ * The build-host-local directory holding the static-dep and prebuild caches.
+ *
+ * The Lima answer contains a literal `$HOME`, which is correct where the value
+ * is only ever interpolated into a bash script and expanded there — and wrong
+ * anywhere it is passed to something that does not run a shell. Only an ssh
+ * build host is ever containerised, and its answer is an absolute path from
+ * the contract, so the two never meet; {@link runJobScript} asserts that rather
+ * than leaving it to hold by coincidence.
+ */
 function cacheDirFor(buildHost: VmDefinition): string {
   // An ssh build host's contract declares one and its doctor asserts it is
   // writable; a Lima builder has no contract, so its cache lives where every
@@ -172,10 +183,36 @@ async function runJobScript(
   const scriptPath = path.join(ctx.stageDir, JOB_SCRIPT_NAME);
   const hostTemp = path.join(os.tmpdir(), `podkit-build-${job.id}-${process.pid}.sh`);
   fs.writeFileSync(hostTemp, `${job.script(ctx)}\n`, { mode: 0o755 });
+  // Land in /tmp, then `sudo install` into place — not a direct `copyIn` to
+  // the staging directory. A containerised job stages as root, and whether the
+  // resulting tree is then writable by the build user depends on rsync's uid
+  // mapping happening to line up between two machines. It does on the
+  // reference builder and it is not something to depend on: /tmp is writable
+  // on every box by definition, and `install` sets the mode explicitly rather
+  // than inheriting whatever the host's umask produced.
+  const stagedTemp = `/tmp/${path.basename(hostTemp)}`;
   try {
-    await link.copyIn(hostTemp, scriptPath, { timeoutMs: 60_000 });
+    await link.copyIn(hostTemp, stagedTemp, { timeoutMs: 60_000 });
   } finally {
     fs.rmSync(hostTemp, { force: true });
+  }
+  const installed = await link.exec(['sudo', 'install', '-m', '0755', stagedTemp, scriptPath], {
+    timeoutMs: 60_000,
+  });
+  await link.exec(['rm', '-f', stagedTemp], { timeoutMs: 60_000 });
+  if (installed.exitCode !== 0) {
+    throw guestCommandError(`failed to install the job script at ${scriptPath}`, installed);
+  }
+
+  if (selection.containerised && ctx.cacheDir.includes('$')) {
+    // A `-v` argument is not a shell word: `$HOME` would be mounted literally,
+    // as a directory named `$HOME`, and the cache would silently be cold on
+    // every run. See `cacheDirFor`.
+    throw new Error(
+      `build host '${selection.buildHost.id}' resolves its cache to '${ctx.cacheDir}', which ` +
+        `contains a shell variable and cannot be a container mount. A containerised build host ` +
+        `must declare an absolute cache directory.`
+    );
   }
 
   const command = selection.containerised
@@ -186,6 +223,15 @@ async function runJobScript(
         '--rm',
         '-v',
         `${ctx.stageDir}:/src`,
+        // The caches, at the SAME path inside the container as outside. Without
+        // this the container is handed `cacheDir` by the job's preamble, finds
+        // nothing there, rebuilds the whole static-dep closure, and `--rm`
+        // throws it away — five minutes per musl run, every run, with nothing
+        // reporting that anything was wasted. Same path on both sides so the
+        // one value in `BuildJobContext.cacheDir` stays true wherever it is
+        // read.
+        '-v',
+        `${ctx.cacheDir}:${ctx.cacheDir}`,
         '-w',
         '/src',
         shellContractValue(BUILDER_CONTRACT_REL_PATH, 'BUILDER_MUSL_IMAGE'),
@@ -292,18 +338,6 @@ async function collectDir(
     log(`collected ${artifact.label} → ${path.relative(repoRoot(), hostPath)}`);
   }
 }
-
-/**
- * Bound for a single artifact transfer.
- *
- * The payload is one file and the largest is a compiled podkit binary — around
- * 120 MB. Sized off a throughput FLOOR of 1 MB/s rather than anything measured,
- * which is roughly two orders of magnitude below a healthy link and is what a
- * contended host deep in swap looks like. Past that it is a wedged session
- * rather than a slow copy. The same figure `@podkit/lima`'s transport uses, for
- * the same reason.
- */
-const FILE_COPY_TIMEOUT_MS = 150_000;
 
 async function main(argv: readonly string[]): Promise<number> {
   const jobId = argv[0];

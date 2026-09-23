@@ -27,7 +27,7 @@ import * as path from 'node:path';
 
 import { defaultSubprocessRunner, type SubprocessRunner } from '@podkit/device-types';
 import { limactlError, runLimactl, shellQuote } from './limactl.js';
-import { FILE_COPY_TIMEOUT_MS } from './transport.js';
+import { FILE_COPY_TIMEOUT_MS } from './link-adapters.js';
 import { repoRoot } from './paths.js';
 import {
   LIMA_DEVICE_HARNESS_VM_NAME,
@@ -65,7 +65,7 @@ const ENTRYPOINT_REL = 'packages/podkit-docker/entrypoint.sh';
 // Wall-clock bounds
 //
 // Bounded per call site, not per module — same rule as `./lifecycle.js` and
-// `./transport.js`, and for the same reason: a bound that fires on a legitimate
+// `./link-adapters.js`, and for the same reason: a bound that fires on a legitimate
 // slow operation is worse than no bound at all.
 //
 // The build path is a long tail hanging off a series of very short steps. The

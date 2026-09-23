@@ -3,7 +3,7 @@
  *
  * Owns the pure-Lima mechanics shared across the repo: the `limactl` wrapper,
  * every Lima VM config, idempotent lifecycle primitives, a single cross-process
- * advisory lock, generic in-VM transport, baseline-hash + drift, and the in-VM
+ * advisory lock, the VM-shaped link adapters, baseline-hash + drift, and the in-VM
  * docker-image build/pull.
  *
  * Two things are deliberately NOT here. Domain concerns (personas,
@@ -111,15 +111,20 @@ export {
   WARM_START_TIMEOUT_MS,
 } from './lifecycle.js';
 
-// Generic transport
-export type { RunInVmOpts, RunInVmResult, CopyOutOpts, StageSourceTreeOpts } from './transport.js';
+// VM-shaped adapters over the limactl link
+export type {
+  RunInVmOpts,
+  RunInVmResult,
+  CopyOutOpts,
+  StageSourceTreeOpts,
+} from './link-adapters.js';
 export {
   runInVm,
   copyOut,
   stageSourceTree,
   DEFAULT_STAGE_EXCLUDES,
   FILE_COPY_TIMEOUT_MS,
-} from './transport.js';
+} from './link-adapters.js';
 
 // Guest-local staging destinations (one declared owner per directory). They
 // moved to `@podkit/substrate` when a remote builder gained directories Lima

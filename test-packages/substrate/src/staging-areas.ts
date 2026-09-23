@@ -6,7 +6,7 @@
  * is not a slow path, it is a corrupt one: each side's `--delete` and temp-file
  * renames race the other's, and the loser aborts with rsync exit 23 ("some
  * files/attrs were not transferred"). That is a genuinely different failure
- * from the exit 24 staging tolerates — 24 is a file vanishing on the SENDING
+ * from the exit 24 a stage tolerates — 24 is a file vanishing on the SENDING
  * side and leaves the destination consistent; 23 here means two writers in the
  * destination and leaves it inconsistent, so it must stay fatal.
  *

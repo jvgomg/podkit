@@ -115,6 +115,26 @@ export interface SubstrateExecResult {
   exitCode: number;
 }
 
+/**
+ * Bound for a single-file copy over a link, in either direction.
+ *
+ * The payload is one file, not a tree, and the largest one this repo moves is
+ * a compiled podkit binary — around 120 MB. Measured over the Lima SSH
+ * loopback, 118 MB moves in ~0.7s in either direction (~170 MB/s), so the
+ * transfer itself is never the reason a copy would be slow.
+ *
+ * The bound is therefore sized off a throughput FLOOR rather than the measured
+ * figure: 1 MB/s, roughly two orders of magnitude below measured, which is
+ * what a host deep in swap with a contended SSH channel looks like. That gives
+ * 120s for a 120 MB payload, plus 30s of headroom for the handshake in front
+ * of it. Anything past that is a wedged session, not a slow copy.
+ *
+ * It lives beside the interface rather than beside either implementation
+ * because both now move artifacts, and a second derivation of the same figure
+ * is the thing this constant exists to prevent.
+ */
+export const FILE_COPY_TIMEOUT_MS = 150_000;
+
 /** Options for {@link SubstrateLink.copyIn}. */
 export interface SubstrateCopyOpts {
   /** Host-side wall-clock bound in milliseconds. */
@@ -302,6 +322,40 @@ export function guestCommandError(prefix: string, result: SubstrateExecResult): 
   const stdout = result.stdout.trim();
   const tail = stderr || stdout || `(no output, exit=${result.exitCode})`;
   return new Error(`${prefix}: exit=${result.exitCode}: ${tail}`);
+}
+
+/**
+ * Turn a non-zero result from a copy or a stage into the right error.
+ *
+ * Every link operation that is not `exec` settles the same way: a zero exit
+ * returns, a result the implementation classifies as the link dying becomes a
+ * {@link SubstrateLinkError}, and anything else is the guest refusing and
+ * becomes a plain `Error`. That ladder existed six times — `copyIn`, `copyOut`
+ * and `stageTree` in each of the two links — and the two copies of each drifted
+ * apart at exactly the level of detail that matters: which failures are
+ * *skippable* (ADR-028 §2, §5).
+ *
+ * `classify` is the parameter because that is the one genuinely per-link part:
+ * limactl has its own fatal vocabulary about Lima INSTANCES on top of the SSH
+ * vocabulary underneath, and only it can recognise that.
+ */
+export function settleLinkResult(opts: {
+  result: SubstrateExecResult;
+  /** Whether this result is the link dying rather than the guest refusing. */
+  classify: (result: SubstrateExecResult) => boolean;
+  /** Build this link's failure error. */
+  linkFailure: (detail: string) => SubstrateLinkError;
+  /** `failed to <what>`, naming both ends. */
+  what: string;
+}): void {
+  if (opts.result.exitCode === 0) return;
+  if (opts.classify(opts.result)) {
+    throw opts.linkFailure(opts.result.stderr.trim());
+  }
+  throw new Error(
+    `failed to ${opts.what}: exit=${opts.result.exitCode}: ` +
+      (opts.result.stderr.trim() || opts.result.stdout.trim() || '(no output)')
+  );
 }
 
 /** Whether `err` is a link failure. Narrows, so callers do not string-match. */

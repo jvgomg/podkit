@@ -11,7 +11,7 @@ import {
   stageSourceTree,
   DEFAULT_STAGE_EXCLUDES,
   FILE_COPY_TIMEOUT_MS,
-} from './transport.js';
+} from './link-adapters.js';
 import type {
   SubprocessRunner,
   SubprocessRunOpts,

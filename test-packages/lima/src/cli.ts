@@ -35,7 +35,7 @@ import { spawnSync } from 'node:child_process';
 import { getVm, listVms, type LimaVmDefinition, type VmDefinition } from '@podkit/substrate';
 import { instanceStatus } from './instance-status.js';
 import { ensureRunning, stop, destroy, recover, type LifecycleOpts } from './lifecycle.js';
-import { runInVm, stageSourceTree, DEFAULT_STAGE_EXCLUDES } from './transport.js';
+import { runInVm, stageSourceTree, DEFAULT_STAGE_EXCLUDES } from './link-adapters.js';
 import { stagingDestFor } from '@podkit/substrate';
 import { BASELINE_VM_HASH_PATH } from './baseline-hash.js';
 import { repoRoot } from './paths.js';

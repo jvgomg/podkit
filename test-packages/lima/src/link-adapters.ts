@@ -1,5 +1,5 @@
 /**
- * Named, VM-shaped adapters over the limactl {@link SubstrateLink}.
+ * Named, VM-shaped adapters over the limactl `SubstrateLink`.
  *
  * Three operations, each a one-liner over the link now that the link carries
  * all five:
@@ -21,10 +21,16 @@
  * Every call is routed through the injected `SubprocessRunner` so the adapters
  * stay unit-testable with scripted `limactl` outputs.
  *
+ * The file was called `transport.ts`. `CONTEXT.md` reserves that word for how
+ * the PRODUCT reaches an iPod's firmware (USB vs SCSI), and once these three
+ * became adapters over the link, a file named for the reserved word was the
+ * confusion the glossary warns about.
+ *
  * @module
  */
 
 import { type SubprocessRunner } from '@podkit/device-types';
+import { FILE_COPY_TIMEOUT_MS } from '@podkit/substrate';
 import { createLimactlLink } from './link.js';
 
 // ---------------------------------------------------------------------------
@@ -41,7 +47,7 @@ import { createLimactlLink } from './link.js';
 //     inventing one here would abort a build the substrate knows nothing about.
 //   - `copyOut` moves ONE file whose size the substrate can reason about, so a
 //     wall clock derived from a throughput floor is the right instrument
-//     ({@link FILE_COPY_TIMEOUT_MS}).
+//     (`FILE_COPY_TIMEOUT_MS`, in `@podkit/substrate`).
 //   - `stageSourceTree` is genuinely open-ended — the same carve-out the cold
 //     create has — and is left unbounded. See the note on the function.
 //
@@ -52,21 +58,12 @@ import { createLimactlLink } from './link.js';
 // ---------------------------------------------------------------------------
 
 /**
- * Bound for a single-file `limactl copy` in either direction.
- *
- * The payload is one file, not a tree, and the substrate's largest one is a
- * compiled podkit binary — ~120 MB for the Linux CLI. Measured over the Lima
- * SSH loopback on this class of host, 118 MB moves in ~0.7s in either
- * direction (~170 MB/s), so the transfer itself is never the reason this would
- * be slow.
- *
- * The bound is therefore sized off a throughput FLOOR rather than the measured
- * figure: 1 MB/s, roughly two orders of magnitude below measured, which is what
- * a host deep in swap with a contended SSH channel looks like. That gives 120s
- * for a 120 MB payload, plus 30s of headroom for the SSH handshake in front of
- * it. Anything past that is a wedged session, not a slow copy.
+ * The single-file copy bound. It lives in `@podkit/substrate` beside the link
+ * interface now, because both links move artifacts and a second derivation of
+ * the same figure is what the constant exists to prevent. Re-exported so this
+ * package's existing consumers resolve unchanged.
  */
-export const FILE_COPY_TIMEOUT_MS = 150_000;
+export { FILE_COPY_TIMEOUT_MS } from '@podkit/substrate';
 
 /** Options honoured by {@link runInVm}. */
 export interface RunInVmOpts {
@@ -134,7 +131,7 @@ export interface CopyOutOpts {
  *
  * A thin adapter over the limactl {@link SubstrateLink}, exactly as
  * {@link runInVm} is — the argv (`limactl copy <vm>:<vmPath> <hostPath>`) and
- * the {@link FILE_COPY_TIMEOUT_MS} bound are unchanged. Routing through the
+ * the `FILE_COPY_TIMEOUT_MS` bound are unchanged. Routing through the
  * link is what keeps ONE definition of "pull a file off a box" in the repo now
  * that a remote builder needs the same operation over ssh.
  */

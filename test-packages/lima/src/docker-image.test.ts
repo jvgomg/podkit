@@ -22,7 +22,7 @@ import {
   VM_HOUSEKEEPING_TIMEOUT_MS,
   IMAGE_PRUNE_TIMEOUT_MS,
 } from './docker-image.js';
-import { FILE_COPY_TIMEOUT_MS } from './transport.js';
+import { FILE_COPY_TIMEOUT_MS } from './link-adapters.js';
 import type {
   SubprocessRunner,
   SubprocessRunOpts,

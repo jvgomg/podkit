@@ -59,7 +59,9 @@ export type {
 } from './link.js';
 export {
   SubstrateLinkError,
+  FILE_COPY_TIMEOUT_MS,
   guestCommandError,
+  settleLinkResult,
   isSubstrateLinkError,
   isTimeoutRejection,
   looksLikeSshLinkFailure,

@@ -42,6 +42,7 @@ import {
   isTimeoutRejection,
   looksLikeLinkFailureResult,
   resolveGuestArgv,
+  settleLinkResult,
   shellQuote,
   type SubstrateCommand,
   type SubstrateCopyOpts,
@@ -221,14 +222,12 @@ export function createSshLink(def: SshVmDefinition, opts: CreateSshLinkOpts = {}
           err
         );
       }
-      if (result.exitCode === 0) return;
-      if (looksLikeLinkFailureResult(result)) {
-        throw linkFailure('copyIn', `copy ${hostPath} → ${guestPath}`, result.stderr.trim());
-      }
-      throw new Error(
-        `failed to copy ${hostPath} → ${alias}:${guestPath}: exit=${result.exitCode}: ` +
-          (result.stderr.trim() || result.stdout.trim() || '(no output)')
-      );
+      settleLinkResult({
+        result,
+        classify: looksLikeLinkFailureResult,
+        linkFailure: (detail) => linkFailure('copyIn', `copy ${hostPath} → ${guestPath}`, detail),
+        what: `copy ${hostPath} → ${alias}:${guestPath}`,
+      });
     },
 
     async copyOut(guestPath: string, hostPath: string, copyOpts: SubstrateCopyOpts = {}) {
@@ -247,14 +246,12 @@ export function createSshLink(def: SshVmDefinition, opts: CreateSshLinkOpts = {}
           err
         );
       }
-      if (result.exitCode === 0) return;
-      if (looksLikeLinkFailureResult(result)) {
-        throw linkFailure('copyOut', `copy ${guestPath} → ${hostPath}`, result.stderr.trim());
-      }
-      throw new Error(
-        `failed to copy ${alias}:${guestPath} → ${hostPath}: exit=${result.exitCode}: ` +
-          (result.stderr.trim() || result.stdout.trim() || '(no output)')
-      );
+      settleLinkResult({
+        result,
+        classify: looksLikeLinkFailureResult,
+        linkFailure: (detail) => linkFailure('copyOut', `copy ${guestPath} → ${hostPath}`, detail),
+        what: `copy ${alias}:${guestPath} → ${hostPath}`,
+      });
     },
 
     async stageTree(hostSrc: string, guestDest: string, stageOpts: StageTreeOpts = {}) {
@@ -294,14 +291,17 @@ export function createSshLink(def: SshVmDefinition, opts: CreateSshLinkOpts = {}
           err
         );
       }
+      // The tolerated vanished-file exit is absorbed before the shared ladder
+      // sees it — `stageExitIsOk`, not `exitCode === 0`, is what "succeeded"
+      // means for a stage.
       if (stageExitIsOk(result.exitCode)) return;
-      if (looksLikeLinkFailureResult(result)) {
-        throw linkFailure('stageTree', `stage ${hostSrc} → ${guestDest}`, result.stderr.trim());
-      }
-      throw new Error(
-        `failed to stage ${hostSrc} → ${alias}:${guestDest}: exit=${result.exitCode}: ` +
-          (result.stderr.trim() || result.stdout.trim() || '(no output)')
-      );
+      settleLinkResult({
+        result,
+        classify: looksLikeLinkFailureResult,
+        linkFailure: (detail) =>
+          linkFailure('stageTree', `stage ${hostSrc} → ${guestDest}`, detail),
+        what: `stage ${hostSrc} → ${alias}:${guestDest}`,
+      });
     },
 
     spawn(command: SubstrateCommand, spawnOpts: SubstrateSpawnOpts = {}): SubstrateProcess {
