@@ -287,3 +287,4 @@ Measured on a PVE 9.1.4 host (kernel 6.17.4-2-pve) running the recipe above.
 - [ADR-016](../adr/adr-016-linux-vm-test-harness.md) — the Lima harness this generalises
 - [linux-dev-host.md](./linux-dev-host.md) — the development box this is a sibling of
 - [device-substrate-ci.md](./device-substrate-ci.md) — the same contract, applied to a throwaway substrate on a CI runner
+- [builder-proxmox.md](./builder-proxmox.md) — the sibling VM that *builds* what this one runs, carrying the inverse contract

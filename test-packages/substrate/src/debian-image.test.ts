@@ -15,9 +15,8 @@
 
 import { describe, it, expect } from 'bun:test';
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 
-import { repoRoot } from './paths.js';
+import { shellContractValue } from './shell-contract.js';
 import { getVm, isLimaVm, listVms, type LimaVmId } from './registry.js';
 import {
   substrateDebianImageUrl,
@@ -71,10 +70,9 @@ function parseImages(yaml: string): ImageEntry[] {
   return entries;
 }
 
-/** The `NAME="value"` assignment for one shell-contract variable. */
-function shellContractValue(name: string): string | undefined {
-  const contract = fs.readFileSync(path.join(repoRoot(), SUBSTRATE_CONTRACT_REL_PATH), 'utf8');
-  return new RegExp(`^${name}="([^"]*)"$`, 'm').exec(contract)?.[1];
+/** One value from the shell half of the substrate contract. */
+function substrateContractValue(name: string): string {
+  return shellContractValue(SUBSTRATE_CONTRACT_REL_PATH, name);
 }
 
 describe('pinned Debian image', () => {
@@ -129,11 +127,11 @@ describe('pinned Debian image — agreement with the Lima YAMLs', () => {
 
 describe('pinned Debian image — agreement with the shell contract', () => {
   it('declares the same Debian major version', () => {
-    expect(shellContractValue('SUBSTRATE_DEBIAN_MAJOR')).toBe(SUBSTRATE_DEBIAN_MAJOR);
+    expect(substrateContractValue('SUBSTRATE_DEBIAN_MAJOR')).toBe(SUBSTRATE_DEBIAN_MAJOR);
   });
 
   it('declares the same point release', () => {
-    expect(shellContractValue('SUBSTRATE_DEBIAN_POINT_RELEASE')).toBe(
+    expect(substrateContractValue('SUBSTRATE_DEBIAN_POINT_RELEASE')).toBe(
       SUBSTRATE_DEBIAN_POINT_RELEASE
     );
   });

@@ -41,6 +41,7 @@
 
 import * as path from 'node:path';
 import { repoRoot } from './paths.js';
+import type { TargetArch } from './target-arch.js';
 
 /**
  * Role a substrate plays. Drives nothing mechanical here — it is metadata that
@@ -51,8 +52,15 @@ export type VmCategory = 'device' | 'builder' | 'test-runner' | 'demo' | 'abi';
 
 /**
  * Which libc a build/test VM targets, or `agnostic` for VMs whose purpose is
- * not libc-specific. Architecture itself stays a RUNTIME in-VM concern
- * (`uname -m`) — it is never a config axis — so it is deliberately absent here.
+ * not libc-specific.
+ *
+ * Architecture is deliberately NOT folded in here, and the reason changed once
+ * a remote builder existed. For a Lima entry it remains a runtime in-VM concern
+ * (`uname -m`) and is never a config axis — the VM is created on this host and
+ * is this host's architecture. For an `ssh` entry it is declared, because the
+ * machine is somewhere else and nothing local can infer it; see
+ * {@link SshVmDefinition.targetArch}. Keeping the two on separate fields is
+ * what lets that asymmetry be stated rather than averaged away.
  */
 export type VmArchRelevance = 'agnostic' | 'glibc' | 'musl';
 
@@ -113,6 +121,24 @@ export interface SshVmDefinition extends VmDefinitionBase {
    * it and no infrastructure detail can reach a public repository by accident.
    */
   sshAlias: string;
+  /**
+   * The architecture this machine is, and therefore the one it runs or
+   * produces artifacts for.
+   *
+   * Declared on the `ssh` variant only, and that asymmetry is the point. A Lima
+   * entry is created on this host from this host's image, so its architecture
+   * is the host's by construction and naming it would be a value that can only
+   * ever be redundant or wrong. An `ssh` entry names a machine somewhere else,
+   * and nothing local can infer its CPU — which matters because "can this
+   * builder produce the artifact I want?" is asked *before* there is a
+   * connection to probe `uname -m` over.
+   *
+   * Declared, not authoritative: what the box actually reports still wins at
+   * the point it costs something. `probeSubstrateMachine` reads the live value
+   * and `assertArtifactArch` refuses a mismatched ELF at transfer time, so a
+   * stale declaration here is caught rather than shipped.
+   */
+  targetArch: TargetArch;
 }
 
 /** One substrate definition, discriminated by {@link VmProvisioner}. */
@@ -232,12 +258,39 @@ const REGISTRY: readonly VmDefinition[] = [
     id: 'deviceRemote',
     instanceName: 'podkit-device-remote',
     sshAlias: 'podkit-substrate',
+    // The reference recipe boots the amd64 Debian cloud image, and the whole
+    // reason the remote substrate is interesting is that it is a different
+    // architecture from the arm64 Mac driving it.
+    targetArch: 'x64',
     category: 'device',
     archRelevance: 'agnostic',
     // Baseline tracking still reads the Lima YAML as a provisioning input, and
     // ADR-029 records that drift detection has to move to the contract scripts
     // before a remote substrate can be tracked at all. Until it does, claiming
     // to track this one would seal a hash over inputs it was not built from.
+    trackedForBaseline: false,
+  }),
+  // The remote builder — where artifacts get built, as the remote substrate is
+  // where they get run. A sibling Proxmox VM of that substrate by default, but
+  // the role is what is registered: any amd64 machine that passes
+  // `builder-doctor.sh` fills it, and the repo never learns which one did.
+  //
+  // It carries the INVERSE of the substrate's contract — the toolchain and the
+  // `-dev` packages `substrate-contract.sh` forbids — so that the substrate's
+  // verdict on a statically-linked binary keeps meaning something (ADR-029 §4).
+  // Its musl artifacts come from an Alpine container on this same box rather
+  // than from a second guest (doc-060), which is why there is one builder entry
+  // here and two Lima builder VMs above.
+  defineSshVm({
+    id: 'builderRemote',
+    instanceName: 'podkit-builder-remote',
+    sshAlias: 'podkit-builder',
+    targetArch: 'x64',
+    category: 'builder',
+    // The libc of the BOX, not of everything it can produce. The Alpine
+    // container makes musl artifacts reachable from a glibc builder, and
+    // recording `musl` here would misdescribe the machine that hosts it.
+    archRelevance: 'glibc',
     trackedForBaseline: false,
   }),
 ];

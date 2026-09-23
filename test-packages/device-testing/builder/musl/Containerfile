@@ -1,0 +1,89 @@
+# The musl build environment, as a container rather than a second VM.
+#
+# A builder produces musl artifacts from an Alpine container on the box it
+# already has — decided in `backlog/docs/doc-060` and TASK-520, not in ADR-029,
+# whose §4 settles builder-as-a-role and says of libc only that glibc and musl
+# move together. The macOS path uses a second Lima VM
+# (test-packages/lima/vms/podkit-builder-musl.yaml) because it has one; a
+# hypervisor that cannot comfortably hold a 2 GiB substrate and a 4 GiB builder
+# at once certainly cannot hold a third guest, and the Alpine userland is the
+# entire difference between the two builds.
+#
+# Built and tagged by provision-builder.sh, as $BUILDER_MUSL_IMAGE. Never
+# pushed anywhere — it is a local build environment, not a shipped image.
+#
+# The package list below is the SAME list podkit-builder-musl.yaml installs, and
+# `builder-contract.test.ts` asserts the two agree exactly. A Lima YAML cannot
+# read a Containerfile, so the duplication is unavoidable; the duplication going
+# unnoticed is not.
+
+# Passed by provision-builder.sh from $BUILDER_MUSL_BASE_IMAGE, which pins the
+# same Alpine minor the published image is FROM (packages/podkit-docker/
+# Dockerfile). The binaries built here ship in that image, so the parity is
+# exact rather than approximate. The default keeps a bare `podman build` of this
+# file honest — and is pinned by `builder-contract.test.ts` alongside the
+# contract's value, since a default nobody passes is a default nobody notices
+# going stale.
+ARG BASE_IMAGE=alpine:3.21
+FROM ${BASE_IMAGE}
+
+# glib-static, sqlite-static, gtk-doc, perl-xml-parser and friends live in the
+# community repo, which the base image ships enabled — unlike the nocloud qcow2
+# the Lima VM boots, where it is commented out and the YAML has to uncomment it.
+# That difference is why this file has no `sed` line and the YAML does.
+RUN apk add --no-cache \
+      bash \
+      build-base \
+      pkgconf \
+      python3 \
+      curl \
+      git \
+      rsync \
+      cmake \
+      meson \
+      ninja \
+      glib-dev \
+      glib-static \
+      gdk-pixbuf-dev \
+      libffi-dev \
+      pcre2-dev \
+      sqlite-dev \
+      sqlite-static \
+      libplist-dev \
+      libplist-static \
+      libxml2-dev \
+      libxml2-static \
+      libpng-dev \
+      libpng-static \
+      libjpeg-turbo-dev \
+      libjpeg-turbo-static \
+      tiff-dev \
+      zlib-dev \
+      zlib-static \
+      gettext-dev \
+      gettext-static \
+      intltool \
+      autoconf \
+      automake \
+      libtool \
+      gtk-doc \
+      perl-xml-parser \
+      linux-headers \
+      eudev-dev \
+      libstdc++ \
+      ffmpeg \
+      flac \
+      nodejs \
+      npm
+
+# Bun is not an apk package. Installed into /usr/local so it is on PATH for any
+# user the container runs as, matching what the Lima musl builder does.
+RUN curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash \
+    && /usr/local/bin/bun --version
+
+# Where the staged source tree is bind-mounted at build time. Declared rather
+# than assumed so `podman run -v <staging>:/src` needs no `--workdir`.
+WORKDIR /src
+
+# No ENTRYPOINT and no CMD on purpose. This image is a toolchain a build script
+# invokes commands inside; baking one in would mean every caller overrides it.

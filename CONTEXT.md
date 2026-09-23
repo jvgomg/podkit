@@ -70,6 +70,16 @@ _Avoid_: **transport**. In podkit that word already means how the product reache
 an iPod's firmware (USB vs SCSI — see `@podkit/ipod-firmware`), and both meanings
 would otherwise appear in the same test files.
 
+**Builder**:
+The box podkit's Linux artifacts are compiled on — a Lima VM on macOS, a sibling
+Proxmox VM beside a remote substrate, or any amd64 machine that passes
+`builder-doctor.sh`. A role, like a substrate, and reached over the same link.
+It carries the **inverse** of the substrate contract: the toolchain and `-dev`
+packages a substrate forbids, because the substrate's *absence* of them is what
+makes its verdict on a statically-linked binary mean anything. The two contracts
+are never merged.
+_Avoid_: "the build VM", and any phrasing implying one box could be both.
+
 **Harness**:
 The device-testing machinery that synthesises USB gadgets *inside* a substrate —
 personas, backing files, the FunctionFS daemon, `apply-state.sh`. Distinct from

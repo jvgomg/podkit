@@ -110,3 +110,17 @@ export const PINNED_DEBIAN_IMAGE_VM_IDS: readonly LimaVmId[] = [
  */
 export const SUBSTRATE_CONTRACT_REL_PATH =
   'test-packages/device-testing/scripts/substrate-contract.sh';
+
+/**
+ * Repo-relative path of the *builder* contract — the second profile, which
+ * restates the same two Debian values for the same reason and must move with
+ * them.
+ *
+ * A builder is not a substrate and the two contracts contradict each other on
+ * purpose (ADR-029 §4), but they agree on the Debian release, and that
+ * agreement is load-bearing: the builder's glibc becomes the produced binary's
+ * minimum, so a builder on a newer release yields artifacts the substrate
+ * cannot start. `builder-contract.test.ts` asserts it, along with everything
+ * about the two profiles that must NOT converge.
+ */
+export const BUILDER_CONTRACT_REL_PATH = 'test-packages/device-testing/scripts/builder-contract.sh';

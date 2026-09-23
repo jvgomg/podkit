@@ -41,6 +41,7 @@ const SSH_DEVICE: VmDefinition = {
   instanceName: 'podkit-device-remote',
   provisioner: 'ssh',
   sshAlias: 'podkit-substrate',
+  targetArch: 'x64',
   category: 'device',
   archRelevance: 'agnostic',
   trackedForBaseline: false,

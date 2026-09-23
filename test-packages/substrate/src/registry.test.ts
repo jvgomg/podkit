@@ -29,7 +29,7 @@ const LIMA_VMS_DIR = path.join(repoRoot(), 'test-packages', 'lima', 'vms');
 describe('substrate registry', () => {
   it('lists every substrate with clean ids and podkit- instance names', () => {
     const vms = listVms();
-    expect(vms).toHaveLength(8);
+    expect(vms).toHaveLength(9);
     for (const vm of vms) {
       expect(vm.id).toMatch(/^[A-Za-z][A-Za-z0-9]*$/);
       expect(vm.instanceName).toMatch(/^podkit-/);
@@ -75,6 +75,32 @@ describe('substrate registry', () => {
     expect(byId('virtualIpod').instanceName).toBe('podkit-virtual-ipod');
     expect(byId('abiVerify').instanceName).toBe('podkit-abi-verify');
     expect(byId('deviceRemote').instanceName).toBe('podkit-device-remote');
+    expect(byId('builderRemote').instanceName).toBe('podkit-builder-remote');
+  });
+});
+
+describe('the builder role', () => {
+  it('registers a remote builder carrying its arch and its libc', () => {
+    // ADR-029 §4: "builder" is a role reached over the same link as a device
+    // substrate, and the registry entry is what makes a Proxmox builder VM, a
+    // spare amd64 box and a CI runner interchangeable in it. The pair
+    // (arch, libc) is the whole of what a caller needs to decide whether this
+    // builder can produce a given artifact.
+    const builder = getVm('builderRemote');
+    expect(builder.category).toBe('builder');
+    expect(builder.provisioner).toBe('ssh');
+    expect(isSshVm(builder) && builder.targetArch).toBe('x64');
+    expect(builder.archRelevance).toBe('glibc');
+  });
+
+  it('declares musl without a second builder entry', () => {
+    // The musl artifacts come from an Alpine container ON the glibc builder,
+    // not from a sibling VM (doc-060) — a hypervisor that cannot hold a
+    // substrate and a builder at once cannot hold a third guest. So there is
+    // exactly one remote builder, and its archRelevance is the libc of the box
+    // itself rather than of everything it can produce.
+    const remoteBuilders = listVms().filter((vm) => vm.category === 'builder' && isSshVm(vm));
+    expect(remoteBuilders).toHaveLength(1);
   });
 });
 
@@ -113,6 +139,17 @@ describe('provisioner discriminator', () => {
       const descriptor = Object.getOwnPropertyDescriptor(vm, 'yamlPath');
       expect(typeof descriptor?.get).toBe('function');
       expect(descriptor?.value).toBeUndefined();
+    }
+  });
+
+  it('gives every ssh substrate a declared target architecture', () => {
+    // A Lima entry needs none: it is created on this host and is therefore
+    // this host's architecture by construction. An ssh entry names a machine
+    // somewhere else, and nothing local can infer what CPU it has — which is
+    // exactly the question "can this builder produce the artifact I want?"
+    // asks, before there is a connection to probe over.
+    for (const vm of listVms().filter(isSshVm)) {
+      expect(['arm64', 'x64']).toContain(vm.targetArch);
     }
   });
 
