@@ -165,20 +165,20 @@ open rather than decided here.
 > hosted runner is a full VM and still cannot `modprobe dummy_hcd` — Ubuntu does
 > not enable `CONFIG_USB_DUMMY_HCD` in any kernel flavour, so no
 > `linux-modules-extra-*` package carries the module. A stock runner also fails
-> the contract on its base OS and on every negative assertion, since the runner
-> image ships bun, node, npm and dozens of `-dev` packages by design.
+> the contract on its base OS (`/etc/debian_version` reads `trixie/sid`) and on
+> both negative assertions, since the runner image carries `node`, `npm` and 47
+> `-dev`/toolchain packages by design.
 >
 > The **decision is unchanged**: `usb-synth` on CI stays open, and this note does
 > not decide it. `usb-synth` does remain reachable, but through a Debian guest
 > booted on the runner rather than on the runner itself — so whatever settles the
 > question, it will not be the runner kernel.
 >
-> Provenance, because it matters here: the paragraph above is read off Ubuntu's
-> kernel configuration and package archive, not off a run.
-> `.github/workflows/substrate-conformance.yml` asserts it on every run from
-> 2026-09-15 onward, so it is a standing claim rather than a remembered one — but
-> until that workflow has run at least once, treat this as researched rather than
-> measured. See [device-substrate-ci.md](../environments/device-substrate-ci.md).
+> Measured on `ubuntu-24.04` image `20260907.300.1`, kernel `6.17.0-1022-azure`:
+> 15 of the contract's assertions fail, and `/sys/class/udc` is absent entirely.
+> `.github/workflows/substrate-conformance.yml` re-asserts this every run, so it
+> is a standing claim rather than a remembered one. See
+> [device-substrate-ci.md](../environments/device-substrate-ci.md).
 
 ### 7. Vocabulary
 

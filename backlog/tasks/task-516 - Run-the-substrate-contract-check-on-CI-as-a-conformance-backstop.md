@@ -1,10 +1,10 @@
 ---
 id: TASK-516
 title: Run the substrate contract check on CI as a conformance backstop
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-13 18:34'
-updated_date: '2026-09-15 23:47'
+updated_date: '2026-09-23 09:07'
 labels:
   - testing
   - infrastructure
@@ -37,8 +37,8 @@ Note this is a **backstop**, in the sense CONTEXT.md defines: it is judged on wh
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 CI provisions a standard Linux runner with the shared provisioning script and runs the doctor, requiring exit zero
-- [ ] #2 The doctor's negative assertions are exercised against a deliberately non-conforming environment and name the offending package
+- [x] #1 CI provisions a standard Linux runner with the shared provisioning script and runs the doctor, requiring exit zero
+- [x] #2 The doctor's negative assertions are exercised against a deliberately non-conforming environment and name the offending package
 - [x] #3 The job is labelled as a conformance backstop, not as the gate
 - [x] #4 Findings are recorded if a stock CI runner cannot satisfy the contract
 - [x] #5 usb-synth on CI remains undecided and is not enabled by this task
@@ -82,4 +82,20 @@ Recorded in `docs/environments/device-substrate-ci.md` §Findings, with a correc
 **Review fixes applied after the first commit.** The environments doc showed `--no-install-recommends` on the QEMU install where the workflow deliberately omits it, while claiming "the workflow *is* this document executed" — following it by hand would have hit exactly the trap the workflow avoids, and `cloud-image-utils` has the same exposure (`cloud-localds` gets its ISO builder through Recommends, so stripping them yields a `cloud-localds` on PATH that cannot build a seed). The Preconditions table implied assertions nothing performs and now marks the one row that is actually checked. The ADR note claimed measurement that has not happened. The awk-substitution comment claimed the replacement text is never interpreted, which holds for sed's `/` and `&` but not for backslashes in `awk -v`. And the QEMU bring-up was framed as "the third provisioner recipe", which reads as shipping a supported provisioner — doc-060 puts that out of scope, so it is now framed as what it is: CI glue, runnable by hand only so a CI failure can be reproduced.
 
 **usb-synth stays undecided (AC #5).** No cell runs and nothing presumes one. Worth flagging for whoever picks the question up: a Debian guest on a runner *does* have `dummy_hcd`, so the open question is now cost — the 3-10 minute floor per iteration ADR-028 weighed against rapid local loops — rather than capability. That changes the argument, not the decision.
+
+**Run 35840611601 is green end to end.** AC #1 and #2 now rest on a run, not on construction.
+
+Conformance job, 2m54s total: guest reached sshd in 15s and cloud-init in 30s; `provision-substrate.sh` took 42s (almost all apt); `substrate-doctor.sh` passed **23 of 23**, including `udc slots: 4 (need 4)` — the assertion the host cannot satisfy at all — and `debian major 12 (running 12.10)` with no drift note, the box being minutes old. The negative half then failed exactly 3 assertions and named `npm`, `build-essential` and `libc6-dev` among 13 packages.
+
+Premise job, measured on `ubuntu-24.04` image `20260907.300.1`, kernel `6.17.0-1022-azure`: **15 assertions fail**. `modinfo dummy_hcd` → not found, `/sys/class/udc` absent, 0 UDC slots. `/etc/debian_version` reads `trixie/sid`. `node` and `npm` at `/usr/local/bin`, plus 47 `-dev`/toolchain packages. The ADR-028 §6 premise is now disproved by measurement rather than by reading.
+
+**Three things the runs corrected that reading had not.**
+
+1. `bun` is *not* on a hosted runner. This note and the environments doc both claimed it was — podkit's own `ci.yml` installs it through mise, which makes it easy to assume the image ships it. Corrected in place and left visible, because it is the argument for the `premise` job: three of four claims were right and the wrong one was wrong in the direction of sounding plausible.
+2. The workflow did not parse on first push. `runner.temp` was referenced in a job-level `env:` block, where the `runner` context does not exist; GitHub rejects the file rather than resolving it empty, so the dispatch returned HTTP 422. Exported from a step to `GITHUB_ENV` instead. `actionlint` finds this in a second and is worth running on any workflow change — it validates context availability per position.
+3. The first real run failed at `cloud-init status --wait`. The committed template installs `qemu-guest-agent` and enables it, because on Proxmox the host provides the virtio-serial port; the boot script did not, so the unit had nothing to bind, systemd waited out the device timeout (102 seconds of dead boot), the runcmd failed and cloud-init ended in error. Fixed by adding the channel, not by trimming the template — a run that only passes against a doctored copy proves nothing about the file the Proxmox path renders. **This is the clearest evidence the job is worth its minutes: the template had never been exercised by anything but a hand-run on a PVE host, and the first automated render found a host assumption baked into it.**
+
+`node` did appear at `/usr/bin/node` on bookworm once `npm` was installed, so excluding it from the required names was unnecessary in this release. It stays excluded: the reason was Debian moving that binary between packages across releases, which is a claim about future ones.
+
+Closing as Done. Unpushed follow-ups: none. The workflow has no `push` trigger — weekly on the default branch, on PRs touching the contract files, and `workflow_dispatch`.
 <!-- SECTION:NOTES:END -->

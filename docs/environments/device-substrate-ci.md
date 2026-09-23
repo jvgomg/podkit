@@ -46,28 +46,52 @@ test backstop is `ci.yml`; the gate is `bun run quality`.
 can `modprobe dummy_hcd`", and task-516 was written on that premise. **The
 premise does not hold.**
 
-The three findings below are read off Ubuntu's kernel configuration and package
-archive rather than off a CI run — which is exactly why the `premise` job exists:
-it re-asserts them on every run, so this section is a standing claim instead of a
-remembered one, and it flips on its own if any of them stops being true. Until
-that workflow has run once, read this as researched rather than measured.
+Measured on `ubuntu-24.04` image `20260907.300.1`, kernel `6.17.0-1022-azure`
+(run 35840127746): **15 of the contract's assertions fail**. The `premise` job
+re-asserts them every run, so this section is a standing claim rather than a
+remembered one, and it flips on its own if any of them stops being true.
 
-- **Ubuntu does not build `dummy_hcd`.** `CONFIG_USB_DUMMY_HCD` is not enabled in
-  any Ubuntu kernel flavour, so no `linux-modules-extra-*` package carries the
-  module and `modinfo dummy_hcd` reports *Module not found*. This is a property
-  of Ubuntu's kernel config, not of the runner being virtualised or restricted —
-  the runner *is* a full VM, and that turns out not to be the binding
-  constraint. It is the same finding as the PVE host's in the Proxmox playbook,
+- **Ubuntu does not build `dummy_hcd`.** `modinfo dummy_hcd` reports *Module not
+  found* and `/sys/class/udc` is absent, so the runner offers **0 UDC slots**
+  where the contract needs four. `CONFIG_USB_DUMMY_HCD` is not enabled in any
+  Ubuntu kernel flavour, so no `linux-modules-extra-*` package carries it. This
+  is a property of Ubuntu's kernel config, not of the runner being virtualised
+  or restricted — the runner *is* a full VM, and that turns out not to be the
+  binding constraint. Same finding as the PVE host's in the Proxmox playbook,
   for the same reason, and it is why every substrate is a **Debian** guest.
-- **The base OS assertion fails too.** `ubuntu-latest` reports a
-  `/etc/debian_version` of the Debian testing branch Ubuntu forked from, never
-  `12.x`, so the contract's hard major-version assertion rejects it before it
-  reaches the modules.
-- **Every negative assertion fires at once.** The hosted runner image ships
-  `bun`, `node`, `npm` and several dozen `-dev` packages *by design* — it exists
-  to build software. That is not a defect in the image; it is the clearest
-  possible demonstration that "a machine that can build podkit" and "a machine
-  that can prove podkit's binary needs nothing to run" are different machines.
+- **The base OS assertion fails too.** `/etc/debian_version` reads `trixie/sid`
+  — the Debian branch Ubuntu forked from, never `12.x` — so the contract's hard
+  major-version assertion rejects the box before it reaches the modules.
+- **Both negative assertions fire.** `node` and `npm` are on `PATH` at
+  `/usr/local/bin`, and 47 `-dev`/toolchain packages are installed, from
+  `libc6-dev` and `pkg-config` through three parallel LLVM and GCC toolchains.
+  That is not a defect in the image — it exists to build software. It is the
+  clearest possible demonstration that "a machine that can build podkit" and "a
+  machine that can prove podkit's binary needs nothing to run" are different
+  machines.
+
+  One prediction of this document was wrong and the run corrected it: `bun` is
+  *not* on a hosted runner (`ok  no bun on PATH`). podkit's own `ci.yml`
+  installs it through mise, so it is easy to assume the image ships it. Left in
+  rather than quietly fixed, because it is the argument for the `premise` job:
+  three of these four claims were right, and the one that was wrong was wrong in
+  the direction of sounding more plausible.
+
+### What the guest does, measured
+
+Run 35840611601, the same workflow, same runner image. The Debian 12 guest
+reached sshd in **15 seconds** and cloud-init in **30**; `provision-substrate.sh`
+then took 42 seconds (almost all of it apt), and `substrate-doctor.sh` passed
+**23 of 23** assertions — including `udc slots: 4 (need 4)`, which is the
+assertion the host cannot satisfy at all. `debian major 12 (running 12.10)` with
+no drift note, since the box is minutes old. Whole job: **2m54s**.
+
+The negative half then failed exactly 3 assertions and named `npm`,
+`build-essential` and `libc6-dev` among 13 packages. Worth recording that
+`node` *did* appear at `/usr/bin/node` on bookworm after installing `npm`, so the
+caution that kept it out of the required list turned out to be unnecessary here
+— it stays out anyway, because the reason it was excluded (Debian has moved that
+binary between packages across releases) is about future releases, not this one.
 
 The consequence for this recipe: conformance is proven against a **Debian 12
 guest booted on the runner**, not against the runner. Say that plainly wherever
@@ -176,6 +200,17 @@ Two details in that script are worth not re-deriving:
   `package_update: true`, so sshd answers while apt still holds the dpkg lock,
   and `provision-substrate.sh`'s first `apt-get update` would fail on the lock
   rather than on anything real.
+- **The guest needs a qemu guest-agent channel**, even though nothing on the
+  host talks to it. The template installs `qemu-guest-agent` and runs
+  `systemctl enable --now` on it, because on Proxmox the host provides the
+  virtio-serial port. Without
+  `-device virtio-serial-pci` plus a `virtserialport` named
+  `org.qemu.guest_agent.0`, the unit has nothing to bind, systemd waits out the
+  device timeout, the `runcmd` fails and cloud-init ends in `status: error` —
+  measured at 102 seconds of dead boot before the failure surfaced. Found by the
+  first real run. Adding the channel is the right fix rather than trimming the
+  template: the template is what the Proxmox path renders, and a CI run that
+  only passes against a doctored copy proves nothing about the real file.
 
 ### 5. Apply and verify the substrate contract
 
