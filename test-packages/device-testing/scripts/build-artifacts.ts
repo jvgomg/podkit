@@ -228,7 +228,14 @@ async function collectFile(
 ): Promise<void> {
   const guestPath = path.posix.join(ctx.stageDir, artifact.guestRel);
   fs.mkdirSync(path.dirname(artifact.hostPath), { recursive: true });
-  const temp = `${artifact.hostPath}.incoming`;
+  // The temp name is DOT-PREFIXED, not suffixed. `<name>.incoming` would still
+  // match the task's own `podkit-linux-*` output glob, so a run killed mid-copy
+  // would strand a half-written file that the next successful run then cached
+  // as an output — the wrong-artifact failure again, arriving through turbo.
+  const temp = path.join(
+    path.dirname(artifact.hostPath),
+    `.podkit-incoming-${path.basename(artifact.hostPath)}`
+  );
   fs.rmSync(temp, { force: true });
   await link.copyOut(guestPath, temp, { timeoutMs: FILE_COPY_TIMEOUT_MS });
 
