@@ -1,18 +1,12 @@
 /**
- * A hand-rolled Proxmox VE API client.
+ * A hand-rolled Proxmox VE API client (ADR-029 §3): six endpoint groups, one
+ * auth header, form-encoded bodies.
  *
- * Six endpoint groups — create, start, stop, status, destroy, snapshot/rollback
- * — one auth header, and form-encoded bodies. doc-060 rejects a dependency for
- * that: it would be supply-chain surface for six calls, and it would turn
- * fingerprint pinning into a command-line flag rather than a typed option.
+ * `fetch` and the certificate probe are injectable — the test seam for every
+ * request path, header, body and error mapping.
  *
- * `fetch` and the certificate probe are injectable, which is the whole test
- * seam: every request path, header shape, body and error mapping is asserted
- * against a scripted fetch with no hypervisor anywhere.
- *
- * Mutating calls return a UPID rather than completing, so each one is followed
- * by polling the task. A caller that skipped it would read a status that is
- * still the old one.
+ * Mutating calls return a UPID rather than completing, so each is followed by
+ * polling the task; skipping that reads a status that is still the old one.
  *
  * @module
  */
@@ -168,8 +162,25 @@ export function createPveClient(opts: CreatePveClientOpts): PveClient {
     return pinned;
   }
 
+  // Per-request TLS settings are a Bun `fetch` extension. Node's ignores the
+  // option, which would leave the pin unenforced — so refuse rather than
+  // proceed. An injected fetch is a test's own business.
+  if (
+    config.tlsFingerprint &&
+    !opts.fetchFn &&
+    typeof (globalThis as { Bun?: unknown }).Bun === 'undefined'
+  ) {
+    throw new Error(
+      "PODKIT_PVE_TLS_FINGERPRINT is set, but this runtime's `fetch` cannot be given " +
+        'per-request TLS settings, so the pin could not be enforced. Run this under Bun.'
+    );
+  }
+
   async function request<T>(req: RequestOpts): Promise<T> {
-    const url = new URL(`/api2/json${req.path}`, config.apiUrl);
+    // Appended to the configured URL rather than rooted at its origin: a base
+    // URL may carry a path when the API sits behind a reverse proxy, and an
+    // absolute path would silently discard it.
+    const url = new URL(`${config.apiUrl.href.replace(/\/+$/, '')}/api2/json${req.path}`);
     const tls = await tlsOptions();
     const init: PveRequestInit = {
       method: req.method,

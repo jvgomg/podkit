@@ -60,8 +60,6 @@ export interface SshCliOpts {
   readonly linkFor?: (def: SshVmDefinition) => SubstrateLink;
   /** DI seams handed to the PVE client. */
   readonly client?: Omit<CreatePveClientOpts, 'config'>;
-  /** Open an interactive shell. Production callers leave unset. */
-  readonly shellFn?: (alias: string) => number;
 }
 
 /** Verbs this branch serves. */
@@ -87,10 +85,18 @@ const LIFECYCLE_VERBS: ReadonlySet<string> = new Set([
   'snapshot',
 ]);
 
-function defaultShell(alias: string): number {
+function openShell(alias: string): number {
   const result = spawnSync('ssh', [alias], { stdio: 'inherit' });
   if (result.error) throw result.error;
   return result.status ?? 0;
+}
+
+/** Whether the substrate answers. A reply is the evidence that it is running. */
+async function isReachable(link: SubstrateLink): Promise<boolean> {
+  return link
+    .exec(['true'])
+    .then((result) => result.exitCode === 0)
+    .catch(() => false);
 }
 
 /** In-guest path the harness seals its provisioning hash at. */
@@ -147,7 +153,7 @@ export async function runSshSubstrateVerb(
   const linkFor = opts.linkFor ?? ((d: SshVmDefinition) => createSshLink(d));
 
   if (verb === 'shell') {
-    return (opts.shellFn ?? defaultShell)(def.sshAlias);
+    return openShell(def.sshAlias);
   }
 
   if (verb === 'unlock') {
@@ -226,11 +232,7 @@ async function cmdStatus(
   }
   // No token, but a substrate that answers is a substrate that is running.
   // That is an observation, not a guess, so it is a legitimate answer.
-  const reachable = await linkFor(def)
-    .exec(['true'])
-    .then((r) => r.exitCode === 0)
-    .catch(() => false);
-  io.log(reachable ? 'running' : 'unreachable');
+  io.log((await isReachable(linkFor(def))) ? 'running' : 'unreachable');
   return 0;
 }
 
@@ -241,11 +243,7 @@ async function cmdInstall(
   io: SshCliIo
 ): Promise<number> {
   const link = linkFor(def);
-  const reachable = await link
-    .exec(['true'])
-    .then((r) => r.exitCode === 0)
-    .catch(() => false);
-  if (reachable) {
+  if (await isReachable(link)) {
     io.log(
       `[podkit-vm] ${link.description} is reachable. Device-specific binaries + systemd units ` +
         'are staged by the device-testing harness (`bun run harness:install`).'

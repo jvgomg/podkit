@@ -1,21 +1,13 @@
 /**
- * Baseline hashing for VM provisioning inputs.
+ * Baseline hashing for substrate provisioning inputs.
  *
- * A substrate's "baseline" is the set of provisioning inputs that, when
- * changed, mean the running guest was provisioned from something the repo no
- * longer says — its declarative config, the contract scripts, the image pin.
+ * Inputs span packages, so this module owns only the primitive: an ordered list
+ * in, one combined hash out. Composing the list for a substrate belongs to the
+ * package that owns its provisioning.
  *
- * Those inputs span packages, so this module owns only the *primitive*: an
- * ordered list in, one combined hash out. Composing the list for a given
- * substrate belongs to the package that owns its provisioning.
- *
- * The primitive is shared between the drift check (hashes host, compares to
- * guest) and the harness setup (hashes host, seals into guest), so neither can
- * drift from the other without a unit test catching it.
- *
- * Changing the list or its order changes every sealed hash, and every
- * previously sealed guest then reads as drifted. That is the intended cost of
- * adding an input, not an accident.
+ * Shared between the drift check and the harness seal, so the two cannot
+ * disagree. Changing the list or its order changes every sealed hash and every
+ * sealed guest then reads as drifted — the intended cost of adding an input.
  *
  * @module
  */

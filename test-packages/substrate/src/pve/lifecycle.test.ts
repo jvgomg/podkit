@@ -8,6 +8,7 @@ import {
   pveEnsureRunning,
   pveRecover,
   pveSealSnapshot,
+  PveCreateFailedError,
   pveStop,
   qmContextFor,
   resolvePveLifecycle,
@@ -153,6 +154,25 @@ describe('power verbs', () => {
     const { client, calls } = fakeClient({ status: 'stopped' });
     await pveEnsureRunning(binding(client));
     expect(calls).toEqual(['start']);
+  });
+
+  it('attaches the precondition no token can satisfy when create fails', async () => {
+    const { client } = fakeClient({ status: 'missing' });
+    const failing: PveClient = {
+      ...client,
+      createGuest: async () => {
+        throw new Error('unable to parse volume ID');
+      },
+    };
+    const err = await pveEnsureRunning(binding(failing)).then(
+      () => null,
+      (e: unknown) => e as Error
+    );
+    expect(err).toBeInstanceOf(PveCreateFailedError);
+    // The original cause survives; the hint is added, not substituted.
+    expect(err!.message).toContain('unable to parse volume ID');
+    expect(err!.message).toContain('bootstrap-pve.sh');
+    expect(err!.message).toContain('local:snippets/podkit-substrate.yaml');
   });
 
   it('is a no-op on a running guest', async () => {

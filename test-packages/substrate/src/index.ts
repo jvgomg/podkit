@@ -237,7 +237,6 @@ export { PveApiError, pveApiError, parseDeniedPrivilege, isPveApiError } from '.
 export type { ProbedCertificate, ProbeCertificateFn, PinnedTlsOptions } from './pve/tls.js';
 export {
   normalizeFingerprint,
-  fingerprintsMatch,
   resolvePinnedTls,
   probeCertificateOverTls,
   PveTlsPinError,
@@ -284,6 +283,7 @@ export {
   pveSealSnapshot,
   pveRecover,
   chooseRecoveryStrategy,
+  PveCreateFailedError,
   POST_PROVISION_SNAPSHOT,
 } from './pve/lifecycle.js';
 
@@ -294,3 +294,7 @@ export {
   pveDebianImagePath,
   SUBSTRATE_IMAGE_PIN,
 } from './debian-image.js';
+
+// Holding a substrate for the duration of a run
+export type { RunLockOutcome, AcquireRunLockOpts } from './run-lock.js';
+export { acquireRunLock } from './run-lock.js';

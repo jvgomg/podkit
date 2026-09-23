@@ -1,24 +1,13 @@
 /**
- * Certificate pinning for the Proxmox API.
+ * Certificate pinning for the Proxmox API (ADR-029 §3).
  *
- * A PVE host's certificate is self-signed, so system-CA validation fails
- * against it. doc-060 rules out an insecure flag, so the pin narrows the trust
- * anchor instead of relaxing verification:
+ * The pin narrows the trust anchor rather than relaxing verification: probe the
+ * certificate over a credential-free socket, compare it to the pin, then use it
+ * as the sole `ca` with `rejectUnauthorized` on. The credential-bearing
+ * connection therefore validates against an anchor the pin itself validated.
  *
- *   1. Probe the presented certificate over a socket that carries no
- *      credentials and is closed immediately.
- *   2. Compare its SHA-256 against the pin. A mismatch aborts before the token
- *      is sent anywhere.
- *   3. Issue every real request with that certificate as the sole `ca`,
- *      `rejectUnauthorized` on, and identity decided by fingerprint.
- *
- * Step 3 closes the gap step 1 opens: the credential-bearing connection
- * validates against an anchor the pin itself validated. The one
- * `rejectUnauthorized: false` in the repo is the probe socket, and no option
- * reaches it. With no pin configured, `fetch` does ordinary CA validation.
- *
- * Identity is the fingerprint, not the hostname: PVE issues its certificate to
- * the node name, which need not match the URL it is reached at.
+ * Identity is the fingerprint, not the hostname — PVE issues to the node name,
+ * which need not match the URL it is reached at.
  *
  * @module
  */

@@ -4,7 +4,7 @@ title: Proxmox substrate lifecycle over a pool-scoped API token
 status: In Progress
 assignee: []
 created_date: '2026-09-13 18:34'
-updated_date: '2026-09-23 23:08'
+updated_date: '2026-09-23 23:43'
 labels:
   - testing
   - infrastructure
@@ -51,16 +51,16 @@ Also add the **remote advisory lock**: held in the substrate for the duration of
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A rendered pveum recipe creates a dedicated user, pool and custom role, and includes the storage and SDN.Use grants
-- [ ] #2 The API client is hand-rolled over an injectable fetch and covers create, start, stop, status, destroy and snapshot/rollback
-- [ ] #3 TLS verification is on by default and accepts a pinned fingerprint; no insecure flag exists anywhere in the codebase
-- [ ] #4 Lifecycle verbs are served by the existing podkit-vm CLI via the provisioner discriminator, not a parallel command family
-- [ ] #5 With no token configured, doctor/install/test still work and lifecycle verbs print the manual qm equivalent instead of failing
-- [ ] #6 A 403 from PVE is reported as the missing privilege and the path it was needed on
-- [ ] #7 The baseline hash covers the provision script, doctor, cloud-init template and image pin, and drift names the recovery command
+- [x] #1 A rendered pveum recipe creates a dedicated user, pool and custom role, and includes the storage and SDN.Use grants
+- [x] #2 The API client is hand-rolled over an injectable fetch and covers create, start, stop, status, destroy and snapshot/rollback
+- [x] #3 TLS verification is on by default and accepts a pinned fingerprint; no insecure flag exists anywhere in the codebase
+- [x] #4 Lifecycle verbs are served by the existing podkit-vm CLI via the provisioner discriminator, not a parallel command family
+- [x] #5 With no token configured, doctor/install/test still work and lifecycle verbs print the manual qm equivalent instead of failing
+- [x] #6 A 403 from PVE is reported as the missing privilege and the path it was needed on
+- [x] #7 The baseline hash covers the provision script, doctor, cloud-init template and image pin, and drift names the recovery command
 - [ ] #8 vm:recover rolls back to the post-provision snapshot, and falls back to full recreate when the template hash changed
-- [ ] #9 A remote advisory lock is held for the run; contention times out and names the holder's host, user, pid and start time
-- [ ] #10 Per-test state still runs through apply-state.sh with no snapshot involvement
+- [x] #9 A remote advisory lock is held for the run; contention times out and names the holder's host, user, pid and start time
+- [x] #10 Per-test state still runs through apply-state.sh with no snapshot involvement
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -175,5 +175,27 @@ So nothing about the design needs revisiting; what is missing is only the ergono
 That is a genuine gap rather than a doc typo, because this task makes recreate routine and recreate is what regenerates host keys. What the token *can* do is `network-get-interfaces` (`VM.GuestAgent.Audit`), which binds an IP to a VMID — confirmed 9000 → 192.168.10.213 — and so rules out an impostor at that address on the LAN without proving the key itself.
 
 So this task needs a host-key story: either accept that the privileged half of the workflow is where a changed key gets verified and say so in the playbook, or have recreate capture the new fingerprint through a path the token holds and write it into the caller's `known_hosts`. The second is the one that makes recreate actually unattended.
+---
+
+created: 2026-09-23 23:43
+---
+Built. Nine of ten ACs are done and verified by unit tests; **AC #8 is implemented but not yet proven against the host**, for the reason the task already gives — snapshot and rollback have never been exercised with the token, and `PODKIT_PVE_API_URL` is still missing from `.env.local`, so nothing here has talked to a hypervisor.
+
+**The five decisions, as made.**
+
+1. **`PODKIT_PVE_API_URL`, a full base URL.** Documented in `.env.example` alongside `PODKIT_PVE_POOL`, `PODKIT_PVE_STORAGE` and `PODKIT_PVE_BRIDGE` (the last three matching what `bootstrap-pve.sh` already takes).
+2. **No key names the node.** `GET /pools/<pool>` returns vmid, name, status and node for every member, so it is both the `status` implementation and the vmid→node resolver. A second place to say it could only agree or be wrong.
+3. **Pinning narrows the trust anchor.** Probe the certificate over a credential-free socket, compare to the pin *before* the token is sent, then use that exact certificate as the sole `ca` with `rejectUnauthorized` on and identity decided by fingerprint rather than hostname (PVE issues to the node name). The single `rejectUnauthorized: false` in the repo is that probe socket, and `tls-posture.test.ts` greps the whole tree to keep it the only one.
+4. **`--cicustom` stays.** Native `--ciuser`/`--sshkeys` would drop `qemu-guest-agent`, i.e. produce a guest whose address the token can no longer read. Create therefore reuses the snippet phase 1 placed and names `bootstrap-pve.sh` when it is absent.
+5. **The token cannot verify a host key, and the playbook now says so.** `device-substrate-proxmox.md` used to tell the reader to run `qm guest exec … ssh-keygen -lf`, which needs the one privilege the recipe deliberately withholds. Replaced with a §"Host keys after a recreate" that states the limit, prints the agent-reported IP↔VMID binding `vm:recover` produces, and names the two privileged paths that can read the key.
+
+**Two things the build added that the task did not ask for, both because AC #8 is otherwise dead code.**
+
+- **`bun run harness:seal`.** Nothing in the repo sealed a baseline hash into a substrate it did not create, so a remote guest could never have a `templateHash` verdict other than `unknown` — and `unknown` recreates. The new command re-runs the doctor, writes the hash, and takes the `podkit-provisioned` snapshot in one step, because a snapshot without a matching sealed hash is a restore point nothing vouches for.
+- **`deviceRemote.trackedForBaseline` is now `true`.** ADR-029's condition (drift must move onto the contract scripts first) is met, and the composition is per substrate — a Lima guest is sealed over its YAML, a Proxmox guest over the cloud-init template, both over the three contract scripts, `apply-state.sh` and the image pin. Folding both declarations into one list would report a Lima box as drifted because someone edited a hypervisor template it has never seen.
+
+**Deliberate reading of AC #5.** Lifecycle verbs on an unconfigured machine print the `qm` equivalent and exit **1**, not 0. The state was not reached, and a wrapper doing `vm:up && test:vm` must not carry on against a stopped guest. `status` is the exception and exits 0: a substrate that answers over ssh is a substrate that is running, which is an observation rather than a guess. `doctor`, `install` and `shell` never needed the hypervisor and are untouched.
+
+**Also fixed in passing:** `apply-state.sh`'s header still described a snapshot orchestrator that was deleted in May 2026. It now describes what the script does, and `state-layering.test.ts` pins the boundary — no snapshot call on the state-application path, and exactly one snapshot name in the repo.
 ---
 <!-- COMMENTS:END -->

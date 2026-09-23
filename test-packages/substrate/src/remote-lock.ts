@@ -1,25 +1,16 @@
 /**
- * A cross-machine advisory lock, held inside the substrate.
+ * A cross-machine advisory lock, held inside the substrate (ADR-029 §6).
  *
- * The host-local lock in `@podkit/lima` keeps two processes on one machine from
- * racing a Lima instance. It structurally cannot see a second machine, and a
- * shared substrate is exactly where the second machine turns up: two runs
- * interleaving personas and gadget state corrupt each other. So the lock lives
- * where the contention is.
+ * The host-local lock in `@podkit/lima` cannot see a second machine, and a
+ * shared substrate is where the second machine turns up.
  *
- * Three properties, all from doc-060:
+ * `mkdir` is the atomic primitive. Contention waits briefly then fails naming
+ * the holder, rather than blocking — a peer may legitimately hold for a whole
+ * run, and waiting that long is indistinguishable from a hang. A crashed run is
+ * cleared by {@link forceReleaseRemoteLock}; there is no mtime auto-reclaim,
+ * because a lock held over ssh has no refresher to go quiet.
  *
- * - **Atomic.** `mkdir` is the primitive: it succeeds for exactly one caller.
- * - **Bounded wait.** Contention retries for a short window and then fails,
- *   naming the holder's host, user, pid and start time. Blocking indefinitely
- *   on a peer who may legitimately hold for a whole run is indistinguishable
- *   from a hang.
- * - **Breakable.** A crashed run leaves the lock behind; {@link forceReleaseRemoteLock}
- *   is the documented way out. There is no mtime-based auto-reclaim, because a
- *   lock held over ssh has no refresher to go quiet.
- *
- * `/run/lock` is a tmpfs, so a reboot releases the lock — which is the right
- * answer for a holder that no longer exists.
+ * `/run/lock` is a tmpfs, so a reboot releases it.
  *
  * @module
  */

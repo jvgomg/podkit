@@ -122,6 +122,20 @@ describe('authentication and transport', () => {
     expect((calls[0]!.tls as { rejectUnauthorized?: boolean }).rejectUnauthorized).toBe(true);
   });
 
+  it('keeps a base path, so an API behind a reverse proxy still resolves', async () => {
+    const calls: string[] = [];
+    const fetchFn = (async (input: unknown) => {
+      calls.push(String(input));
+      return new Response(JSON.stringify({ data: { version: '9.1.4' } }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const pve = createPveClient({
+      config: config({ PODKIT_PVE_API_URL: 'https://gateway.example/pve' }),
+      fetchFn,
+    });
+    await pve.version();
+    expect(calls[0]).toBe('https://gateway.example/pve/api2/json/version');
+  });
+
   it('reports a refused connection as unreachable, not as an API error', async () => {
     const fetchFn = (async () => {
       throw new TypeError('connect ECONNREFUSED');

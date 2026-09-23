@@ -137,9 +137,13 @@ export function resolvePveConfig(
     );
   }
 
+  // Positional: disks first, snippets/images second. One entry means both roles
+  // share it — NOT that the second falls back to the default, which would point
+  // snippets at a storage the operator never named and 403 on Datastore.Audit
+  // much later, as an unresolvable `--cicustom`.
   const storages = trimmed(env, PVE_STORAGE_ENV).split(/\s+/).filter(Boolean);
-  const [diskStorage = DEFAULT_PVE_STORAGES[0], snippetStorage = DEFAULT_PVE_STORAGES[1]] =
-    storages;
+  const diskStorage = storages[0] ?? DEFAULT_PVE_STORAGES[0];
+  const snippetStorage = storages[1] ?? storages[0] ?? DEFAULT_PVE_STORAGES[1];
 
   return {
     available: true,
@@ -150,9 +154,7 @@ export function resolvePveConfig(
       tlsFingerprint: trimmed(env, PVE_TLS_FINGERPRINT_ENV) || null,
       pool: trimmed(env, PVE_POOL_ENV) || DEFAULT_PVE_POOL,
       diskStorage,
-      // A single-entry list means disks and snippets share one storage. Both
-      // still have to be granted; the recipe loops over whatever is named.
-      snippetStorage: snippetStorage ?? diskStorage,
+      snippetStorage,
       bridge: trimmed(env, PVE_BRIDGE_ENV) || DEFAULT_PVE_BRIDGE,
     },
   };

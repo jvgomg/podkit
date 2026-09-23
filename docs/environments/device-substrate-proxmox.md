@@ -360,10 +360,25 @@ bun run vm:unlock deviceRemote [--force]  # report or break the run lock
 
 A remote substrate is shared, and two runs interleaving personas and gadget
 state corrupt each other. So a lock is held **inside the guest**
-(`/run/lock/podkit-substrate.lock`) for the duration of a run, and a contender
-waits a short while before failing with the holder's host, user, pid and start
-time. Waiting indefinitely would be indistinguishable from a hang, because the
-holder may legitimately be another person running a full suite.
+(`/run/lock/podkit-substrate.lock`) for the duration of a run. It is taken by
+the wrapper that fronts `test:vm` and `test:e2e:docker-dist` — one process spans
+every suite, and taking it per suite would serialise the suites against each
+other.
+
+A contender waits a short while, then fails naming the holder's host, user, pid
+and start time. Waiting indefinitely would be indistinguishable from a hang,
+because the holder may legitimately be another person running a full suite.
+
+**Start the substrate before running the suite.** On a remote substrate the run
+is refused if the lock cannot be taken, including when the box is simply not up:
+
+```bash
+bun run vm:up deviceRemote && bun run test:vm
+```
+
+Running unlocked is not offered, because an unlocked run looks exactly like a
+locked one until two of them interleave. A Lima substrate is unaffected — it is
+local to your machine and the host advisory lock already covers it.
 
 `/run/lock` is a tmpfs, so a reboot releases the lock. A crashed run does not —
 break that one with `vm:unlock --force`, once you know the run is gone.

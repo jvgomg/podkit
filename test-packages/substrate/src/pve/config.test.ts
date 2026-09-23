@@ -59,10 +59,12 @@ describe('resolvePveConfig', () => {
   });
 
   it('lets one storage serve both roles', () => {
-    const resolved = resolvePveConfig({ ...COMPLETE, PODKIT_PVE_STORAGE: 'local' });
+    // Named a storage that is NOT either default, so a silent fall-through to
+    // `local` cannot pass this.
+    const resolved = resolvePveConfig({ ...COMPLETE, PODKIT_PVE_STORAGE: 'tank' });
     if (!resolved.available) throw new Error('expected available');
-    expect(resolved.config.diskStorage).toBe('local');
-    expect(resolved.config.snippetStorage).toBe('local');
+    expect(resolved.config.diskStorage).toBe('tank');
+    expect(resolved.config.snippetStorage).toBe('tank');
   });
 
   it('strips a trailing slash so paths do not double up', () => {

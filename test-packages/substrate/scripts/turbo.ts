@@ -52,6 +52,17 @@
  * help — it overrides the entry point that would otherwise have got it right,
  * and the run builds arm64 artifacts for a box that cannot start them.
  *
+ * ## The run lock
+ *
+ * Both callers run suites INSIDE the substrate, and this is the one process
+ * that spans all of them — so an `ssh` substrate's run lock is taken here and
+ * held until turbo exits. Taking it per suite would serialise the suites
+ * against each other; taking it nowhere would leave two machines interleaving
+ * persona and gadget state, which is what the lock is for.
+ *
+ * A Lima substrate is not locked here: it is local to this machine and the
+ * host advisory lock already covers it.
+ *
  * ## Usage
  *
  *   bun test-packages/substrate/scripts/turbo.ts run test:vm
@@ -74,6 +85,8 @@ import {
   selectSubstrate,
   SubstrateSelectionError,
 } from '../src/selection.js';
+import { type VmDefinition } from '../src/registry.js';
+import { acquireRunLock } from '../src/run-lock.js';
 
 /**
  * What the selected substrate declares, or `null` when nothing names one.
@@ -94,9 +107,9 @@ import {
  * build driver discards it — it is about which box the TESTS run on, and the
  * commands that own that decision announce it themselves.
  */
-function substrateMachine(): string | null {
+function selectedSubstrate(): VmDefinition | null {
   try {
-    return declaredSubstrateMachine(selectSubstrate().substrate);
+    return selectSubstrate().substrate;
   } catch (err) {
     if (err instanceof SubstrateSelectionError && err.unconfigured) return null;
     throw err;
@@ -104,11 +117,13 @@ function substrateMachine(): string | null {
 }
 
 async function main(): Promise<number> {
+  let substrate: VmDefinition | null;
   let resolution: TargetArchResolution;
   try {
+    substrate = selectedSubstrate();
     resolution = resolveTargetArch({
       env: process.env,
-      substrateMachine: substrateMachine(),
+      substrateMachine: substrate ? declaredSubstrateMachine(substrate) : null,
       hostArch: process.arch,
     });
   } catch (err) {
@@ -129,17 +144,29 @@ async function main(): Promise<number> {
     );
   }
 
-  const proc = Bun.spawn(['bunx', 'turbo', ...process.argv.slice(2)], {
-    stdin: 'inherit',
-    stdout: 'inherit',
-    stderr: 'inherit',
-    env: {
-      ...process.env,
-      [TARGET_ARCH_ENV_VAR]: arch,
-      [HOST_ARCH_ENV_VAR]: hostTargetArch(),
-    },
-  });
-  return proc.exited;
+  const lock = await acquireRunLock(substrate);
+  if (lock.kind === 'refused') {
+    process.stderr.write(`[turbo] ${lock.reason}\n`);
+    return 1;
+  }
+
+  try {
+    const proc = Bun.spawn(['bunx', 'turbo', ...process.argv.slice(2)], {
+      stdin: 'inherit',
+      stdout: 'inherit',
+      stderr: 'inherit',
+      env: {
+        ...process.env,
+        [TARGET_ARCH_ENV_VAR]: arch,
+        [HOST_ARCH_ENV_VAR]: hostTargetArch(),
+      },
+    });
+    return await proc.exited;
+  } finally {
+    // Best-effort: a lock this process cannot release is reclaimed with
+    // `vm:unlock --force`, which is why that verb exists.
+    if (lock.kind === 'held') await lock.release().catch(() => undefined);
+  }
 }
 
 main()

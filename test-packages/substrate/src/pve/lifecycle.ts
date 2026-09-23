@@ -14,7 +14,7 @@
  */
 
 import { pveDebianImagePath, type DebianImageArch } from '../debian-image.js';
-import { isSshVm, type VmDefinition, type SshVmDefinition } from '../registry.js';
+import { isSshVm, type SshVmDefinition, type VmCategory, type VmDefinition } from '../registry.js';
 import type { TargetArch } from '../target-arch.js';
 import {
   createPveClient,
@@ -41,11 +41,16 @@ const DEBIAN_ARCH: Readonly<Record<TargetArch, DebianImageArch>> = {
 };
 
 /** Guest sizing by the role the substrate plays. */
-const SIZING: Readonly<Record<string, { memoryMiB: number; cores: number; diskGiB: number }>> = {
-  device: { memoryMiB: 2048, cores: 2, diskGiB: 20 },
+interface GuestSizing {
+  readonly memoryMiB: number;
+  readonly cores: number;
+  readonly diskGiB: number;
+}
+const DEFAULT_SIZING: GuestSizing = { memoryMiB: 2048, cores: 2, diskGiB: 20 };
+const SIZING: Readonly<Partial<Record<VmCategory, GuestSizing>>> = {
+  device: DEFAULT_SIZING,
   builder: { memoryMiB: 4096, cores: 4, diskGiB: 40 },
 };
-const DEFAULT_SIZING = SIZING['device']!;
 
 /** Everything needed to drive one guest. */
 export interface PveBinding {
@@ -84,11 +89,16 @@ export interface ResolvePveLifecycleOpts {
   readonly client?: Omit<CreatePveClientOpts, 'config'>;
 }
 
-/** The create arguments for a registry entry, derived from the entry and config. */
-export function guestSpecFor(substrate: SshVmDefinition, config: PveConfig): CreateGuestSpec {
+/**
+ * The create arguments for a registry entry, minus the VMID — that is the one
+ * field the repo does not know and the caller must supply.
+ */
+export function guestSpecFor(
+  substrate: SshVmDefinition,
+  config: PveConfig
+): Omit<CreateGuestSpec, 'vmid'> {
   const sizing = SIZING[substrate.category] ?? DEFAULT_SIZING;
   return {
-    vmid: 0,
     // The ssh alias is also the guest name and the snippet basename. One
     // string, so `bootstrap-pve.sh` and this module cannot name different
     // guests for the same role.
@@ -198,29 +208,37 @@ export async function pveEnsureRunning(
   await binding.client.start(binding.vmid);
 }
 
+/** A create that failed, with the precondition no token can satisfy attached. */
+export class PveCreateFailedError extends Error {
+  readonly snippetRef: string;
+  constructor(snippetRef: string, cause: unknown) {
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    super(
+      `${detail}\n\n` +
+        `Create depends on the cloud-init snippet '${snippetRef}', and no API token can place ` +
+        `one — PVE's upload endpoint has no 'snippets' content type. If it is missing or stale, ` +
+        `re-run phase 1 on the host:\n` +
+        `  bash test-packages/device-testing/substrate/proxmox/bootstrap-pve.sh --pve-host root@<host>`,
+      { cause }
+    );
+    this.name = 'PveCreateFailedError';
+    this.snippetRef = snippetRef;
+  }
+}
+
 /**
- * Create the guest, translating the one failure a reader cannot diagnose from
- * PVE's own message: an absent cloud-init snippet.
+ * Create the guest, attaching the precondition it cannot repair itself.
  *
- * The token cannot place a snippet — PVE's upload endpoint has no `snippets`
- * content type — so this is a phase-1 step, not something create can repair.
+ * Unconditional rather than matched on PVE's wording: create is the only verb
+ * that depends on the snippet, so the note is always relevant, and inspecting
+ * an error message to decide would break the typed-error rule in
+ * `docs/architecture/conventions.md` §3.
  */
 async function createGuest(binding: PveBinding): Promise<void> {
   try {
     await binding.client.createGuest(binding.guestSpec);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    if (/snippet|cicustom|unable to parse|does not exist/i.test(message)) {
-      throw new Error(
-        `${message}\n\n` +
-          `If the cloud-init snippet '${binding.guestSpec.snippetRef}' is missing, no API token ` +
-          `can place it — PVE's upload endpoint has no 'snippets' content type. Re-run phase 1 ` +
-          `on the host:\n` +
-          `  bash test-packages/device-testing/substrate/proxmox/bootstrap-pve.sh --pve-host root@<host>`,
-        { cause: err }
-      );
-    }
-    throw err;
+    throw new PveCreateFailedError(binding.guestSpec.snippetRef, err);
   }
 }
 

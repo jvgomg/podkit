@@ -264,10 +264,9 @@ const REGISTRY: readonly VmDefinition[] = [
     targetArch: 'x64',
     category: 'device',
     archRelevance: 'agnostic',
-    // Tracked since drift moved onto the contract scripts: the inputs a remote
-    // guest is sealed over are its cloud-init template, the three contract
-    // scripts, `apply-state.sh` and the image pin — none of them Lima's YAML.
-    // `bun run harness:seal` writes the hash; `vm:doctor` reads it.
+    // Sealed over its cloud-init template, the three contract scripts,
+    // `apply-state.sh` and the image pin. `bun run harness:seal` writes the
+    // hash; `vm:doctor` reads it.
     trackedForBaseline: true,
   }),
   // The remote builder — where artifacts get built, as the remote substrate is

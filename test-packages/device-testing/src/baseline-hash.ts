@@ -1,16 +1,13 @@
 /**
  * Which provisioning inputs a substrate is pinned to.
  *
- * The hashing primitive lives in `@podkit/lima` and is re-exported so existing
- * import sites resolve unchanged. What this module adds is the *composition*:
- * the inputs span packages — the declarative config belongs to the provisioner,
- * `apply-state.sh` belongs here because it is coupled to the SystemState
- * registry — so only this package can name the full list.
+ * The hashing primitive lives in `@podkit/lima`; this module adds the
+ * composition, because the inputs span packages and only this one can name the
+ * full list.
  *
- * The list is per substrate, not global. A Lima guest is provisioned from its
- * YAML and a Proxmox guest from the cloud-init template; folding both into one
- * list would report a Lima box as drifted because someone edited a hypervisor
- * template it has never seen.
+ * The list is per substrate. A Lima guest is declared by its YAML and a Proxmox
+ * guest by the cloud-init template; one shared list would report a Lima box as
+ * drifted over a hypervisor template it has never seen.
  *
  * @module
  */
