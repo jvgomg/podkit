@@ -4,7 +4,7 @@ title: Proxmox substrate lifecycle over a pool-scoped API token
 status: To Do
 assignee: []
 created_date: '2026-09-13 18:34'
-updated_date: '2026-09-23 17:38'
+updated_date: '2026-09-23 19:07'
 labels:
   - testing
   - infrastructure
@@ -113,5 +113,43 @@ Three findings from TASK-522 (phase-1 bootstrap) that change what this task has 
 **3. Phase 1 is now one command, so the blocker is smaller than it was.** `bootstrap-pve.sh` runs the grant, both snippets and the pinned image, from the PVE host or over ssh from anywhere, with `--print-only` for the by-hand path. This task's stated blocker — "the token in `.env.local`" — is now a single command away rather than a document to follow.
 
 Unchanged and still worth honouring: snapshot and rollback remain unproven on the host and AC #8 builds recover on top of them, so verify those before writing recover. And the first real destroy is still driven by a human, not an agent.
+---
+
+author: claude
+created: 2026-09-23 18:59
+---
+Unblocked: the token, its secret, the TLS fingerprint and both VMIDs are now in `.env.local` on the Linux dev box, and both guests exist (9000 substrate, 9001 builder).
+
+**One key is still missing, and it is my omission from TASK-522.** `.env.example` documents `PODKIT_PVE_TOKEN_ID`, `PODKIT_PVE_TOKEN_SECRET`, `PODKIT_PVE_TLS_FINGERPRINT` and the two VMIDs — but **nothing names the PVE host itself**. There is no address, hostname or base URL for the client to connect to, in either the example or the local file. The API client cannot be written until that key exists.
+
+Left for this task to name rather than guessed at now, because the shape is a real decision: a bare hostname plus an assumed `:8006`, or a full base URL, are not the same thing once someone puts the API behind a reverse proxy or a non-default port. Whichever it is, it is machine-specific and belongs in `.env.local` beside the token, never in the repo.
+
+Worth deciding at the same time: whether it should instead be an **ssh_config alias** like the guests use. The argument for is consistency — one mechanism for "where is this machine", already documented, already keeping addresses out of the repo. The argument against is that this is an HTTPS endpoint rather than an ssh target, so an alias would be a name resolved by a file that has no bearing on the connection actually being made. I lean to a plain `PODKIT_PVE_API_URL` for that reason, but it is this task's call.
+
+**Also note the dev box cannot currently reach either guest** — no `~/.ssh/config`, and neither name resolves. That does not block the API half (which talks to the hypervisor, not the guests), but it does block AC #5's "doctor/install/test still work over the link" being verified from here.
+---
+
+author: claude
+created: 2026-09-23 19:07
+---
+**The low-privilege half is demonstrated end to end**, by hand, from the unprivileged Linux dev box — an LXC that is a peer of the guests and has no PVE root. Sequence, all with the pool-scoped token alone:
+
+1. TLS: fetched the live cert, compared its SHA-256 against `PODKIT_PVE_TLS_FINGERPRINT` — match, *before* the token was sent anywhere. This is the shape AC #3 wants.
+2. `GET /version` → 9.1.4. `GET /nodes` → one node, `rae`.
+3. `GET /pools/podkit` → both guests, both `stopped`. Note this single call returns vmid, name, status and node for every pool member — it is a better `status` implementation than per-VM polling, and it is the one call the pool ACL exists to permit (`Pool.Audit`).
+4. `POST /nodes/rae/qemu/{9000,9001}/status/start` → both returned UPIDs and reached `running` within 3s.
+5. sshd on both guests answered 3s later.
+
+So nothing about the design needs revisiting; what is missing is only the ergonomics this task builds.
+
+**Two findings for the implementation.**
+
+**`PODKIT_PVE_API_URL` — a full base URL.** Confirmed necessary: nothing in `.env.local` named the endpoint, and it cannot be derived. A URL rather than a hostname so a non-default port or a proxy needs no second key. Not an ssh_config alias — an alias is resolved by a file with no bearing on an HTTPS connection, so it would look like configuration while doing nothing.
+
+**The documented host-key verification is unavailable to the token that needs it.** `device-substrate-proxmox.md` tells the reader to verify a regenerated SSH host key out of band with `qm guest exec <vmid> -- ssh-keygen -lf …`. The token cannot: guest-exec is `VM.GuestAgent.Unrestricted`, which `pveum-recipe.sh` deliberately does not grant, because it would make the token strictly more powerful than the ssh access it is meant to complement. Measured: `Permission check failed (/vms/9000, VM.GuestAgent.Unrestricted)`.
+
+That is a genuine gap rather than a doc typo, because this task makes recreate routine and recreate is what regenerates host keys. What the token *can* do is `network-get-interfaces` (`VM.GuestAgent.Audit`), which binds an IP to a VMID — confirmed 9000 → 192.168.10.213 — and so rules out an impostor at that address on the LAN without proving the key itself.
+
+So this task needs a host-key story: either accept that the privileged half of the workflow is where a changed key gets verified and say so in the playbook, or have recreate capture the new fingerprint through a path the token holds and write it into the caller's `known_hosts`. The second is the one that makes recreate actually unattended.
 ---
 <!-- COMMENTS:END -->

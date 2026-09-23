@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-09-07 23:35'
-updated_date: '2026-09-14 23:29'
+updated_date: '2026-09-23 19:24'
 labels:
   - testing
   - infrastructure
@@ -148,5 +148,22 @@ The general point for anyone provisioning a substrate: podkit's harness runs ssh
 **Observation on `--strict`.** The box passed `--strict` 22/22 when built on 2026-09-13 and fails it now, thirty-six hours later, on the single assertion `point release is 12.15, template pins 12.10`. cloud-init sets `package_update: true` and unattended-upgrades does the rest. Non-strict still passes.
 
 That vindicates making point-release drift a note rather than a failure — hard-failing would break the loop on the first security update. But it also means `--strict` is unusable for its stated purpose (template validation) within about a day of provisioning, which is not what its documentation implies. The pin describes *the image you boot*, not the box afterwards. If `--strict` is to stay meaningful it should compare against the image the box was created from rather than the running release — or be documented as valid only immediately post-provision. Not fixed here; flagged so the next reader does not take a strict failure as a real defect.
+---
+
+author: claude
+created: 2026-09-23 19:24
+---
+Phase 3 — the no-PVE-rights half — now verified from the amd64 Linux dev box (an unprivileged LXC, peer of the guests):
+
+- `scp` the two substrate contract scripts + `ssh bash substrate-doctor.sh` → **PASS, 24/24**, including `udc slots: 4 (need 4)` and `no bun on PATH`
+- the same for the builder → **PASS, 73/73** (74 under `--strict`), including `command bun (/usr/local/bin/bun)`
+
+The two contracts contradicting each other is visible in one screen, which is the design working.
+
+No `limactl` was involved and no PVE privilege was used — just the ssh alias. That is the bulk of this task's thesis, and it holds.
+
+**AC #5 is still the one open criterion**, and what it needs has not changed: amd64 `podkit`, `dummy-hcd-daemon` and `gpod-tool` on the substrate. The builder that produces them now exists and passes its doctor, so the remaining dependency is TASK-514 half 2 — the driver that runs the build on it — rather than a missing machine.
+
+One observation for whoever closes it: the substrate reports Debian **12.15** against a 12.10 pin, and passes non-strict exactly as designed. Its SSH host key also changed when the cloud-init snippet was re-rendered (the mechanism TASK-522 documented), so a stale `known_hosts` entry on any machine that talked to it before today will refuse the connection until cleared.
 ---
 <!-- COMMENTS:END -->
