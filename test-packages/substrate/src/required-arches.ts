@@ -105,9 +105,7 @@ export function resolveRequiredArches(
     {
       arch: input.targetArch,
       consumer: 'substrate',
-      reason:
-        'they are what this run targets — the selected substrate, which runs them through ' +
-        'vm:install, the VM suites and the in-VM shipped image, or this host when none is selected',
+      reason: 'the architecture this run targets',
     },
   ];
 
@@ -115,8 +113,7 @@ export function resolveRequiredArches(
     required.push({
       arch: input.hostArch,
       consumer: 'host-docker',
-      reason:
-        "this host's Docker daemon builds the shipped image from them for test:e2e:docker-loopback",
+      reason: "this host's Docker builds the shipped image for test:e2e:docker-loopback",
     });
   }
 
