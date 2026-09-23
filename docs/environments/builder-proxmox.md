@@ -86,15 +86,26 @@ That qualifier is not pessimism, it is the operating mode — see
 
 ## Steps
 
-### 1. Reuse the pool grant
+### 1. Reuse the phase-1 bootstrap
 
-Nothing new. The builder lives in the same pool the substrate does, so the
-`pveum` recipe already run for
-[step 1 of the substrate playbook](./device-substrate-proxmox.md#1-grant-the-automation-exactly-one-pool)
-covers it. A second pool would mean a second token with no second boundary to
-justify it.
+Nothing new to run. `bootstrap-pve.sh` prepares the builder alongside the
+substrate — same pool, same grant, and it renders **both** snippets:
+
+```bash
+bash test-packages/device-testing/substrate/proxmox/bootstrap-pve.sh \
+  --pve-host root@<pve-host>
+```
+
+If you already ran it for the substrate, `podkit-builder.yaml` is on the
+snippets storage and the pinned image is on the host. Re-running is safe and
+changes nothing.
+
+A second pool would mean a second token with no second boundary to justify it,
+so the builder shares the substrate's.
 
 ### 2. Render the cloud-init user-data
+
+**Done for you by step 1.** Described here for the by-hand path.
 
 The **same template** the substrate uses:
 

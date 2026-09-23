@@ -66,9 +66,38 @@ storage makes the VM's cloud-init read depend on that server being up at start.
 
 ## Steps
 
-### 1. Grant the automation exactly one pool
+### 1. Phase 1 — the privileged bootstrap, once
 
-On the PVE host, as root:
+Run `bootstrap-pve.sh`. It does the three things that need root on the PVE host
+and stops: the `pveum` grant below, the cloud-init snippets (step 2) and the
+pinned image (step 3). It runs **either on the PVE host or from a workstation
+with ssh to it**:
+
+```bash
+# from a workstation
+PODKIT_PVE_POOL=podkit \
+PODKIT_PVE_STORAGE="local-lvm local" \
+PODKIT_PVE_BRIDGE=vmbr0 \
+  bash test-packages/device-testing/substrate/proxmox/bootstrap-pve.sh \
+    --pve-host root@<pve-host>
+
+# on the PVE host, same script, no flag
+bash bootstrap-pve.sh
+```
+
+Add `--print-only` to see the exact command sequence without running anything —
+useful for pasting it by hand, or for reading it before handing a script your
+hypervisor. The runbook is generated from the same file that automates it, so
+the two cannot drift.
+
+After it succeeds, **nothing needs the hypervisor's root again**: guest
+lifecycle is inside the pool-scoped token it created, and everything else is
+plain ssh to a guest.
+
+The rest of this section explains what it does, for anyone running the steps by
+hand.
+
+#### What the grant is
 
 ```bash
 PODKIT_PVE_POOL=podkit \
@@ -110,6 +139,13 @@ env file.
 
 ### 2. Render the cloud-init user-data
 
+**Done for you by step 1.** Described here for the by-hand path.
+
+The snippet is one of the three things no API token can do for you: PVE's
+storage-upload endpoint accepts `iso`, `vztmpl` and `import` content — not
+`snippets` — so placing one is a filesystem write on the host or nothing. That
+is the single biggest reason phase 1 exists as a separate, privileged step.
+
 Take `test-packages/device-testing/substrate/proxmox/cloud-init.user-data.yaml`,
 substitute the two placeholders, and place it on the snippets storage:
 
@@ -128,6 +164,9 @@ step 5 by the same scripts the Lima path uses. Adding provisioning here instead
 would re-encode the contract in a second place and drift from it.
 
 ### 3. Fetch the pinned Debian cloud image
+
+**Done for you by step 1**, and skipped there when the file is already present.
+Described here for the by-hand path.
 
 ```bash
 cd /var/lib/vz/template/iso

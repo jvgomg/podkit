@@ -4,7 +4,7 @@ title: Proxmox substrate lifecycle over a pool-scoped API token
 status: To Do
 assignee: []
 created_date: '2026-09-13 18:34'
-updated_date: '2026-09-14 19:48'
+updated_date: '2026-09-23 17:38'
 labels:
   - testing
   - infrastructure
@@ -99,5 +99,19 @@ Priority raised to High, and the reason has changed.
 515 was filed as a convenience — start/stop/recreate rather than opening the Proxmox UI. The builder-VM decision (ADR-029 §4, TASK-520) makes it closer to a dependency. A substrate at 2 GiB and a builder at 4 GiB will not generally coexist on a modest hypervisor, so the operating mode is start-for-a-build and stop-after. Without the API that is `qm start` / `qm shutdown` by hand around every build — friction on the hot path of the local loop, which is the thing ADR-028's decision drivers protect.
 
 Still blocked on the same thing: the token in `.env.local`. And the verification order now matters more than it did — snapshot and rollback remain unproven on the host, and AC #8 builds recover on top of them.
+---
+
+author: claude
+created: 2026-09-23 17:38
+---
+Three findings from TASK-522 (phase-1 bootstrap) that change what this task has to build.
+
+**1. Address guests by VMID, not by name — and take the VMID from the env.** PVE's API is `/nodes/{node}/qemu/{vmid}/status/start`; there is no name-addressed form. Resolving a name to a VMID via the pool is possible but pointless, and it would tempt the client into the registry's `instanceName` — which does NOT match what the playbooks create (`podkit-device-remote` vs `--name podkit-substrate`). I nearly "fixed" that mismatch before noticing it does not matter: a VMID is a fact about someone's hypervisor, so it belongs in `.env.local` beside the token, by the same argument that keeps the ssh alias out of the repo. `PODKIT_PVE_VMID_DEVICE_REMOTE` / `PODKIT_PVE_VMID_BUILDER_REMOTE` are now documented in `.env.example`. The registry declares the role; the env declares which guest fills it. Nothing needs to change in `registry.ts`.
+
+**2. Recreate cannot be fully token-driven unless `--cicustom` goes.** PVE's storage-upload endpoint accepts `iso`, `vztmpl` and `import` content — not `snippets` — so a token holder cannot place or update a cloud-init snippet at all. Two consequences for AC #8's recreate path: with the current `--cicustom` design, recreate works only because phase 1 already left the snippet on the host, and any change to it (a second developer's key, say) needs root again. The alternative is to drop `--cicustom` for PVE's native `--ciuser` / `--sshkeys` / `--ipconfig0`, which `VM.Config.Cloudinit` *does* cover — the shared template only really buys NOPASSWD sudo and `qemu-guest-agent`, and both could move into the provisioning scripts. That is a real design choice this task should make deliberately rather than inherit.
+
+**3. Phase 1 is now one command, so the blocker is smaller than it was.** `bootstrap-pve.sh` runs the grant, both snippets and the pinned image, from the PVE host or over ssh from anywhere, with `--print-only` for the by-hand path. This task's stated blocker — "the token in `.env.local`" — is now a single command away rather than a document to follow.
+
+Unchanged and still worth honouring: snapshot and rollback remain unproven on the host and AC #8 builds recover on top of them, so verify those before writing recover. And the first real destroy is still driven by a human, not an agent.
 ---
 <!-- COMMENTS:END -->

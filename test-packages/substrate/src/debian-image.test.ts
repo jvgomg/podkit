@@ -15,7 +15,9 @@
 
 import { describe, it, expect } from 'bun:test';
 import * as fs from 'node:fs';
+import * as path from 'node:path';
 
+import { repoRoot } from './paths.js';
 import { shellContractValue } from './shell-contract.js';
 import { getVm, isLimaVm, listVms, type LimaVmId } from './registry.js';
 import {
@@ -90,6 +92,25 @@ describe('pinned Debian image', () => {
   it('pins a dated serial rather than a floating tag', () => {
     expect(SUBSTRATE_DEBIAN_IMAGE_SERIAL).toMatch(/^\d{8}-\d{4}$/);
     expect(SUBSTRATE_DEBIAN_POINT_RELEASE.startsWith(`${SUBSTRATE_DEBIAN_MAJOR}.`)).toBe(true);
+  });
+});
+
+describe('pinned Debian image — agreement with the Proxmox bootstrap', () => {
+  it('fetches exactly the pinned amd64 image', () => {
+    // bootstrap-pve.sh restates the URL because it runs ON a PVE host, which
+    // has no TypeScript and no clone of this repo. Read by regex rather than by
+    // sourcing (unlike the two contracts): it is an executable script with
+    // `set -eu` and top-level logic, not a declarations-only file, so sourcing
+    // it to read one variable would run it.
+    const script = fs.readFileSync(
+      path.join(repoRoot(), 'test-packages/device-testing/substrate/proxmox/bootstrap-pve.sh'),
+      'utf8'
+    );
+    const url = /^PINNED_IMAGE_URL="([^"]+)"$/m.exec(script)?.[1];
+    expect(url, 'bootstrap-pve.sh declares no PINNED_IMAGE_URL').toBeDefined();
+    // amd64 specifically: a PVE host is x86, and the substrate and builder are
+    // both amd64 guests on it.
+    expect(url).toBe(substrateDebianImageUrl('amd64'));
   });
 });
 
