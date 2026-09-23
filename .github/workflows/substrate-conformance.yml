@@ -117,11 +117,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
-    env:
-      SUBSTRATE_WORK_DIR: ${{ runner.temp }}/podkit-ci-substrate
-
     steps:
       - uses: actions/checkout@v4
+
+      # Exported from a step rather than declared in a job-level `env:` block,
+      # because the `runner` context does not exist at job level — only
+      # `github`, `needs`, `strategy`, `matrix`, `vars`, `inputs` and `secrets`
+      # do, and a workflow referencing it there fails to parse rather than
+      # resolving to empty. Written to GITHUB_ENV so the three scripts below and
+      # the artifact upload all read one value; the scripts' own default
+      # (`${RUNNER_TEMP:-/tmp}/podkit-ci-substrate`) agrees with it, which is
+      # what makes them runnable by hand.
+      - name: Choose a work directory
+        run: echo "SUBSTRATE_WORK_DIR=${{ runner.temp }}/podkit-ci-substrate" >> "$GITHUB_ENV"
 
       # bun only. The image URL is resolved from `@podkit/substrate`'s
       # `debian-image.ts` rather than restated in this file, which is the whole
