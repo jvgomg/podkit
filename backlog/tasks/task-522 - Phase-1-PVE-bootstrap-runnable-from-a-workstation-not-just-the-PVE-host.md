@@ -4,7 +4,7 @@ title: 'Phase-1 PVE bootstrap runnable from a workstation, not just the PVE host
 status: In Progress
 assignee: []
 created_date: '2026-09-23 17:31'
-updated_date: '2026-09-23 17:37'
+updated_date: '2026-09-23 17:43'
 labels:
   - testing
   - infrastructure
@@ -112,3 +112,23 @@ This also dissolves a mismatch I had expected to have to fix. The registry's `in
 
 Running it against the real host. It needs the PVE address and root there, neither of which this machine has.
 <!-- SECTION:NOTES:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: claude
+created: 2026-09-23 17:43
+---
+All eight ACs are ticked against a **faked** PVE, not a real one. Ticked rather than left open because each AC is a property of the script — modes, step coverage, print-only parseability, idempotence, the URL pin, both profiles, the playbooks, no committed secrets — and every one of those is verifiable without a hypervisor. None of them says "works on a real PVE host".
+
+That claim is deliberately NOT made, and the task stays In Progress until someone makes it. The handoff brief is on TASK-520; the one thing most likely to be wrong is the storage-path resolution:
+
+```
+pvesh get /storage/<id> --output-format json | sed -n 's/.*"path":"\([^"]*\)".*/\1/p'
+```
+
+That regex assumes a `path` key in the JSON for a directory storage. Stubbed here, never observed. If it returns empty the script fails loudly with an actionable message rather than writing a snippet somewhere PVE never reads — which was the point of resolving the path rather than assuming `/var/lib/vz/snippets` — but a fix may still be needed.
+
+Also unobserved: the `pvesm status --content snippets` check, which warns rather than fails. `snippets` is off by default on every storage including `local`, so that warning is expected to fire on a fresh host and is the most likely first surprise.
+---
+<!-- COMMENTS:END -->

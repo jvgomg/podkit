@@ -323,6 +323,24 @@ Docs site deploys from a dedicated `docs-live` branch, not from `main`. Releases
 
 Read [docs/agents/config-migrations.md](docs/agents/config-migrations.md) when making breaking changes to the config file format.
 
+## Machine Provisioning (substrate, builder, dev host)
+
+`docs/environments/` holds the playbooks for the machines podkit's test and
+build work runs on. **Read [docs/environments/README.md](docs/environments/README.md)
+before standing one up or touching a hypervisor** — it maps the four boxes and,
+more importantly, the three privilege phases: one privileged bootstrap on the
+PVE host, then a pool-scoped token for guest lifecycle, then plain ssh for
+everything else.
+
+The two that matter most are inverses of each other and must never be merged:
+the **substrate** asserts that no toolchain is present (that absence is what
+makes its verdict on a statically-linked binary mean anything), and the
+**builder** requires exactly those packages.
+
+No hostname, address, pool, storage, bridge or credential belongs in any
+committed file. See [.env.example](.env.example) for where each one lives
+instead.
+
 ## Device Profiles
 
 The `devices/` directory contains structured documentation for portable music players that podkit supports or may support in the future. Each file uses markdown with a YAML frontmatter block covering device specs, audio format support, metadata handling, artwork, playlists, and features.
@@ -350,6 +368,11 @@ Key files to understand:
 | VM test entry | `test-packages/e2e-vm-tests/src/` |
 | FunctionFS daemon | `test-packages/device-testing-daemon/src/main.ts` |
 | Lima VM configs (all VMs) | `test-packages/lima/vms/` |
+| PVE phase-1 bootstrap | `test-packages/device-testing/substrate/proxmox/bootstrap-pve.sh` |
+| PVE least-privilege grant | `test-packages/device-testing/substrate/proxmox/pveum-recipe.sh` |
+| Substrate contract (values/apply/assert) | `test-packages/device-testing/scripts/substrate-{contract,doctor}.sh`, `provision-substrate.sh` |
+| Builder contract (values/apply/assert) | `test-packages/device-testing/scripts/builder-{contract,doctor}.sh`, `provision-builder.sh` |
+| musl build container | `test-packages/device-testing/builder/musl/Containerfile` |
 | Harness lifecycle script | `test-packages/device-testing/scripts/harness.ts` |
 | VM registry + provisioner discriminator | `test-packages/substrate/src/registry.ts` |
 | Substrate selection | `test-packages/substrate/src/selection.ts` |

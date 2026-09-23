@@ -53,11 +53,22 @@ the declarative YAML under this package's `vms/` for `lima` entries, and the
 | `virtualIpod` | `podkit-virtual-ipod` | `demo` | The virtual-iPod demo VM. Config only lives here; its lifecycle stays with the `vipod:*` mise tasks and the in-VM `@podkit/virtual-ipod-server`. |
 | `abiVerify` | `podkit-abi-verify` | `abi` | Stock Debian, no dev packages — a **manual, on-demand** check that a produced binary's `ldd` shows only stable system libraries. Wired into no CI job and no turbo task. |
 | `deviceRemote` | `podkit-device-remote` | `device` | The same device role over SSH rather than Lima, reached through the `podkit-substrate` alias in the developer's own `~/.ssh/config`. `podkit-vm` refuses to lifecycle it — that belongs to its own provisioner. |
+| `builderRemote` | `podkit-builder-remote` | `builder` | The builder role over SSH — a sibling Proxmox VM, or any amd64 machine that passes `builder-doctor.sh`. Carries the *inverse* of the substrate contract, and produces its musl artifacts from an Alpine container rather than a second guest. Reached through the `podkit-builder` alias. |
 
 `category` and `archRelevance` are metadata, not mechanism: they let a caller
 filter the registry ("all builders") without string-matching instance names.
-Architecture is a *runtime* in-VM concern (`uname -m`), never a config axis, so
-it is deliberately absent.
+
+Architecture is asymmetric between the two provisioners, deliberately. For a
+`lima` entry it stays a *runtime* in-VM concern (`uname -m`) and is never a
+config axis: the VM is created on this host from this host's image, so naming
+its architecture could only ever be redundant or wrong. An `ssh` entry names a
+machine somewhere else that nothing local can ask, so it carries a declared
+`targetArch` — which is what makes "can this builder produce the artifact I
+want?" answerable before there is a connection to probe over.
+
+Neither carries a hostname, and an `ssh` entry carries no VMID either. PVE
+addresses a guest by VMID and that is a fact about someone's hypervisor, so it
+lives in `.env.local` beside the token.
 
 ### Never spell an instance name by hand
 

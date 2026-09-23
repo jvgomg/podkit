@@ -4,7 +4,7 @@ title: Builder contract and a Proxmox builder VM
 status: In Progress
 assignee: []
 created_date: '2026-09-14 19:47'
-updated_date: '2026-09-23 09:45'
+updated_date: '2026-09-23 17:43'
 labels:
   - testing
   - infrastructure
@@ -151,5 +151,53 @@ Also fixed a comment in `registry.ts` that contradicted the diff ten lines below
 Every guard added or changed was mutation-checked: pointing the subpath at a missing file, drifting the ARG default, dropping `bun` from the builder's required commands, and removing a package from the Lima YAML each fail red. Re-ran provisioning end to end on real Debian 12 afterwards — Containerfile located rather than skipped this time, `--no-install-recommends` closure still satisfies every pkg-config assertion, doctor exit 0 unprivileged under `--strict`.
 
 Gate re-run clean: lint · typecheck 40/40 · unit 44/44 · integration 31/31 · build 22/22.
+---
+
+author: claude
+created: 2026-09-23 17:43
+---
+## Handoff to an agent with PVE access
+
+Everything that can be done without a hypervisor is done and committed. What is left is #3, #5 and #6, and the order below matters.
+
+**Read first:** `docs/environments/README.md` (the three privilege phases), then `docs/environments/builder-proxmox.md`.
+
+### Do NOT start by destroying the substrate
+
+The existing `podkit-substrate` guest works and passes its doctor. Nothing in this task needs it gone, and losing it costs the one proven substrate on the host.
+
+Build the **builder** first — it is a new guest at a new VMID, so it risks nothing that currently works:
+
+1. `bash test-packages/device-testing/substrate/proxmox/bootstrap-pve.sh --print-only` — read it before running it.
+2. Run it for real. Idempotent; on a host that already has the substrate it adds `podkit-builder.yaml` and changes nothing else. Note it **rewrites `podkit-substrate.yaml`** — harmless if the authorised key is unchanged, worth checking if it is not.
+3. `qm create` per builder-proxmox.md step 4 (VMID 9001, 4 GiB, 4 cores, 40 G).
+4. Apply the contract per step 5. Copy the `builder/` tree as well as the three scripts, or the musl image is skipped.
+5. **Run the doctor unprivileged** — not under sudo. Several assertions are about the user a build actually runs as, and root passes them on a box nobody else can build on. Expect ~71 `ok` lines.
+6. Reboot, run the doctor again. That closes **#3**.
+
+Recreating the substrate from the new snippet is worth doing *after* that, as the first real exercise of the bootstrap → guest path, and it is the natural place to prove snapshot/rollback for TASK-515 AC #8. Optional for this task.
+
+### What #5 and #6 still need
+
+Neither is reachable by standing the box up. They need **TASK-514 half 2** — the build driver that runs `compile.sh` and the prebuild scripts on a builder reached over `SubstrateLink`. Nothing in the repo drives a build on a remote builder yet. The playbook tabulates the five artifacts and the command that produces each, and the musl one-liner, so the driver has a target to hit.
+
+A useful intermediate that needs no new code: stage a checkout onto the builder by hand and run `tools/prebuild/build-linux-glibc.sh` and `compile.sh` in `/var/tmp/podkit-build`. If that produces a working amd64 binary, #5 is proven *as a capability of the box* even before the driver exists, and that is genuinely the risky unknown — the driver is mechanism.
+
+### Verified here vs unverified on a host
+
+| | Status |
+|---|---|
+| contract trio, provision + doctor | run end to end on real `debian:12`; doctor passes unprivileged under `--strict` |
+| musl Containerfile | built with podman, toolchain smoke-tested |
+| `bootstrap-pve.sh`, both modes | run against a **faked** PVE (stub `pveum`/`pvesh`/`pvesm`/`curl`) |
+| `pvesh get /storage/<id>` path resolution | **unverified against a real host** — most likely thing to be wrong |
+| snippets storage advertising `snippets` content | warned about, never observed |
+| anything involving an actual guest | not done |
+
+### Sending the secrets back
+
+The token secret is printed **once** by phase 1 and cannot be re-read. It should go straight into `.env.local` on whichever machine will drive the lifecycle — that file is gitignored and is the only place it belongs.
+
+Do not paste it into a task comment, a commit message or a chat transcript; those persist in ways a gitignored file does not. If it is lost, delete and recreate the token rather than hunting for it. What *can* safely be reported back here is everything non-secret: the VMIDs chosen, the pool/storage/bridge names used, the doctor's output, and whether the `pvesh` path resolution worked.
 ---
 <!-- COMMENTS:END -->
