@@ -225,6 +225,80 @@ describe('createLimactlLink.copyIn', () => {
   });
 });
 
+describe('createLimactlLink.copyOut', () => {
+  it('uses limactl copy guest→host, the direction a build host needs', async () => {
+    const { runner, calls } = recorder();
+    await createLimactlLink(DEVICE, { subprocess: runner }).copyOut('/tmp/podkit', '/host/podkit', {
+      timeoutMs: 99,
+    });
+    expect(calls[0]!.args).toEqual(['copy', 'podkit-device:/tmp/podkit', '/host/podkit']);
+    expect(calls[0]!.opts?.timeoutMs).toBe(99);
+  });
+
+  it('classifies a stopped instance as a link failure', async () => {
+    const { runner } = recorder({ stdout: '', stderr: LIMACTL_STOPPED_INSTANCE, exitCode: 1 });
+    let caught: unknown;
+    try {
+      await createLimactlLink(DEVICE, { subprocess: runner }).copyOut('/tmp/x', '/host/x');
+    } catch (err) {
+      caught = err;
+    }
+    expect(isSubstrateLinkError(caught)).toBe(true);
+    expect((caught as { operation?: string }).operation).toBe('copyOut');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// stageTree
+//
+// The in-GUEST rsync, reading the source through Lima's home mount. The SSH
+// link does the opposite — a host-side rsync that pushes — and that divergence
+// is the one place the two implementations are allowed to differ, because it is
+// the one place the mechanism genuinely does.
+// ---------------------------------------------------------------------------
+
+describe('createLimactlLink.stageTree', () => {
+  it('runs one in-guest sh script that mkdirs then rsyncs', async () => {
+    const { runner, calls } = recorder();
+    await createLimactlLink(DEVICE, { subprocess: runner }).stageTree('/repo', '/tmp/build');
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.args.slice(0, 5)).toEqual(['shell', 'podkit-device', '--', 'sh', '-c']);
+    const body = calls[0]!.args[5]!;
+    expect(body).toContain("mkdir -p '/tmp/build'");
+    expect(body).toContain('rsync -a --delete --omit-dir-times');
+    expect(body).toContain("'/repo/' '/tmp/build/'");
+    // The source path is the HOST's, read through Lima's mount — nothing is
+    // pushed over the link. A stage that transferred bytes here would be the
+    // SSH link's mechanism wearing this link's name.
+    expect(calls[0]!.command).toBe('limactl');
+  });
+
+  it('tolerates the vanished-file exit inside the script', async () => {
+    const { runner, calls } = recorder();
+    await createLimactlLink(DEVICE, { subprocess: runner }).stageTree('/repo', '/tmp/build');
+    expect(calls[0]!.args[5]!).toContain('-ne 24');
+  });
+
+  it('passes no wall-clock bound by default — staging is open-ended', async () => {
+    const { runner, calls } = recorder();
+    await createLimactlLink(DEVICE, { subprocess: runner }).stageTree('/repo', '/tmp/build');
+    expect(calls[0]!.opts?.timeoutMs).toBeUndefined();
+  });
+
+  it('classifies a missing instance as a link failure', async () => {
+    const { runner } = recorder({ stdout: '', stderr: LIMACTL_MISSING_INSTANCE, exitCode: 1 });
+    let caught: unknown;
+    try {
+      await createLimactlLink(DEVICE, { subprocess: runner }).stageTree('/repo', '/tmp/build');
+    } catch (err) {
+      caught = err;
+    }
+    expect(isSubstrateLinkError(caught)).toBe(true);
+    expect((caught as { operation?: string }).operation).toBe('stageTree');
+  });
+});
+
 // ---------------------------------------------------------------------------
 // spawn
 // ---------------------------------------------------------------------------

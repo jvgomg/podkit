@@ -38,6 +38,7 @@ import type { SshVmDefinition } from './registry.js';
 import {
   SubstrateLinkError,
   describeGuestCommand,
+  type SubstrateLinkOperation,
   isTimeoutRejection,
   looksLikeLinkFailureResult,
   resolveGuestArgv,
@@ -51,6 +52,7 @@ import {
   type SubstrateSpawnOpts,
 } from './link.js';
 import { startHostLinkProcess, type HostSpawnFn } from './link-spawn.js';
+import { hostRsyncArgs, stageExitIsOk, type StageTreeOpts } from './stage-tree.js';
 
 /**
  * `ssh` options every invocation carries.
@@ -122,7 +124,7 @@ export interface CreateSshLinkOpts {
  */
 async function runSshTool(
   subprocess: SubprocessRunner,
-  tool: 'ssh' | 'scp',
+  tool: 'ssh' | 'scp' | 'rsync',
   alias: string,
   args: readonly string[],
   timeoutMs: number | undefined
@@ -156,7 +158,7 @@ export function createSshLink(def: SshVmDefinition, opts: CreateSshLinkOpts = {}
   const description = `ssh_config alias \`${alias}\``;
 
   const linkFailure = (
-    operation: 'exec' | 'copyIn',
+    operation: SubstrateLinkOperation,
     what: string,
     detail: string,
     cause?: unknown
@@ -171,7 +173,7 @@ export function createSshLink(def: SshVmDefinition, opts: CreateSshLinkOpts = {}
       cause,
     });
 
-  return {
+  const link: SubstrateLink = {
     substrateId: def.id,
     description,
 
@@ -229,6 +231,79 @@ export function createSshLink(def: SshVmDefinition, opts: CreateSshLinkOpts = {}
       );
     },
 
+    async copyOut(guestPath: string, hostPath: string, copyOpts: SubstrateCopyOpts = {}) {
+      // The mirror of `copyIn`, argument order reversed and nothing else. `-p`
+      // stays absent for the same reason: a build host's umask is not the
+      // host's business, and the caller chmods what it collected.
+      const args = [...SSH_BASE_ARGS, '-q', `${alias}:${guestPath}`, hostPath];
+      let result: SubstrateExecResult;
+      try {
+        result = await runSshTool(subprocess, 'scp', alias, args, copyOpts.timeoutMs);
+      } catch (err) {
+        throw linkFailure(
+          'copyOut',
+          `copy ${guestPath} → ${hostPath}`,
+          err instanceof Error ? err.message : String(err),
+          err
+        );
+      }
+      if (result.exitCode === 0) return;
+      if (looksLikeLinkFailureResult(result)) {
+        throw linkFailure('copyOut', `copy ${guestPath} → ${hostPath}`, result.stderr.trim());
+      }
+      throw new Error(
+        `failed to copy ${alias}:${guestPath} → ${hostPath}: exit=${result.exitCode}: ` +
+          (result.stderr.trim() || result.stdout.trim() || '(no output)')
+      );
+    },
+
+    async stageTree(hostSrc: string, guestDest: string, stageOpts: StageTreeOpts = {}) {
+      // Two calls, not one. `mkdir -p` has to happen in the guest because
+      // rsync creates only the LAST path component, and the builder's staging
+      // roots live under `/var/tmp/…` where an intermediate may be missing.
+      // The Lima link folds the same mkdir into its single in-guest script;
+      // here there is no in-guest script to fold it into.
+      const mkdir = stageOpts.sudo
+        ? ['sudo', 'mkdir', '-p', guestDest]
+        : ['mkdir', '-p', guestDest];
+      const made = await link.exec(
+        mkdir,
+        typeof stageOpts.timeoutMs === 'number' ? { timeoutMs: stageOpts.timeoutMs } : {}
+      );
+      if (made.exitCode !== 0) {
+        throw new Error(
+          `failed to create ${alias}:${guestDest}: exit=${made.exitCode}: ` +
+            (made.stderr.trim() || '(no output)')
+        );
+      }
+
+      // `rsync -e` takes a command line, not an argv, so the base args are
+      // joined into one word here. They are the same `BatchMode=yes` this link
+      // uses everywhere else: an rsync that stops to ask for a passphrase in a
+      // build nobody is watching is a hang, not a prompt.
+      const sshCommand = ['ssh', ...SSH_BASE_ARGS].join(' ');
+      const args = hostRsyncArgs(sshCommand, hostSrc, `${alias}:${guestDest}`, stageOpts);
+      let result: SubstrateExecResult;
+      try {
+        result = await runSshTool(subprocess, 'rsync', alias, args, stageOpts.timeoutMs);
+      } catch (err) {
+        throw linkFailure(
+          'stageTree',
+          `stage ${hostSrc} → ${guestDest}`,
+          err instanceof Error ? err.message : String(err),
+          err
+        );
+      }
+      if (stageExitIsOk(result.exitCode)) return;
+      if (looksLikeLinkFailureResult(result)) {
+        throw linkFailure('stageTree', `stage ${hostSrc} → ${guestDest}`, result.stderr.trim());
+      }
+      throw new Error(
+        `failed to stage ${hostSrc} → ${alias}:${guestDest}: exit=${result.exitCode}: ` +
+          (result.stderr.trim() || result.stdout.trim() || '(no output)')
+      );
+    },
+
     spawn(command: SubstrateCommand, spawnOpts: SubstrateSpawnOpts = {}): SubstrateProcess {
       const guestArgv = resolveGuestArgv(command, spawnOpts);
       return startHostLinkProcess({
@@ -239,4 +314,5 @@ export function createSshLink(def: SshVmDefinition, opts: CreateSshLinkOpts = {}
       });
     },
   };
+  return link;
 }

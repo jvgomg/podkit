@@ -261,10 +261,13 @@
         "@podkit/device-testing#vm:doctor"
       ],
       "cache": true,
-      // A cached pass is a statement about the binaries that ran, and those
-      // are per-architecture. Without this, switching substrates replays
-      // yesterday's arm64 result as if the amd64 suite had run.
-      "env": ["PODKIT_TARGET_ARCH"],
+      // A cached pass is a statement about the binaries that ran and the box
+      // they ran on. Without the architecture, switching substrates replays
+      // yesterday's arm64 result as if the amd64 suite had run; without the
+      // selection, two substrates of the SAME architecture share one cache
+      // entry — and under turbo's strict env mode the variable would not even
+      // reach the task that has to read it.
+      "env": ["PODKIT_TARGET_ARCH", "PODKIT_SUBSTRATE"],
       "inputs": [
         "src/vm/**",
         "src/personas/**",
@@ -285,7 +288,7 @@
         "@podkit/device-testing-daemon#build",
         "@podkit/gpod-testing#build:linux-binary"
       ],
-      "env": ["PODKIT_TARGET_ARCH"],
+      "env": ["PODKIT_TARGET_ARCH", "PODKIT_SUBSTRATE"],
       "inputs": [
         "scripts/vm-install.ts",
         "scripts/harness.ts",
@@ -307,6 +310,10 @@
     },
     "@podkit/device-testing#vm:doctor": {
       "dependsOn": ["@podkit/lima#build"],
+      // Uncached, but the variable still has to REACH the script: the doctor
+      // reads the selection to decide whether baseline drift is even a
+      // question for the selected substrate.
+      "env": ["PODKIT_SUBSTRATE"],
       "inputs": [
         "scripts/vm-doctor.ts",
         "src/baseline-hash.ts",
@@ -331,8 +338,8 @@
       ],
       "cache": true,
       // Same reason as `@podkit/device-testing#test:vm` above: a cached pass
-      // belongs to the architecture it was obtained on.
-      "env": ["PODKIT_TARGET_ARCH"],
+      // belongs to the architecture AND the substrate it was obtained on.
+      "env": ["PODKIT_TARGET_ARCH", "PODKIT_SUBSTRATE"],
       "inputs": [
         "src/**",
         "$TURBO_ROOT$/test-packages/device-testing/src/**",
@@ -366,7 +373,18 @@
     },
     "@podkit/device-testing#build:linux-prebuild": {
       "dependsOn": [],
-      "env": ["PODKIT_TARGET_ARCH"],
+      "env": [
+        // Which architecture, and — new with the build driver — WHICH BOX. A
+        // build host is a role now: the same source produces a different
+        // binary on a Lima builder and on a remote one (different glibc floor,
+        // different toolchain), and `PODKIT_SUBSTRATE` moves the default
+        // between them because artifacts are built where the tests run. Both
+        // therefore belong in the key, or turbo replays one box's output into
+        // the other's run.
+        "PODKIT_TARGET_ARCH",
+        "PODKIT_BUILD_HOST",
+        "PODKIT_SUBSTRATE"
+      ],
       "inputs": [
         "$TURBO_ROOT$/packages/libgpod-node/native/**",
         "$TURBO_ROOT$/packages/libgpod-node/binding.gyp",
@@ -378,7 +396,9 @@
         "$TURBO_ROOT$/tools/prebuild/get-ldflags.sh",
         "$TURBO_ROOT$/test-packages/lima/vms/podkit-builder-glibc.yaml",
         "$TURBO_ROOT$/bun.lock",
-        "scripts/build-linux-prebuild.sh",
+        "scripts/build-artifacts.ts",
+        "src/build-jobs/**",
+        "$TURBO_ROOT$/test-packages/device-testing/scripts/builder-contract.sh",
         "$TURBO_ROOT$/test-packages/lima/src/**",
         "!$TURBO_ROOT$/test-packages/lima/src/**/*.test.ts",
         "$TURBO_ROOT$/test-packages/substrate/src/**",
@@ -402,7 +422,18 @@
     },
     "@podkit/device-testing#build:linux-binary": {
       "dependsOn": ["@podkit/device-testing#build:linux-prebuild", "^build"],
-      "env": ["PODKIT_TARGET_ARCH"],
+      "env": [
+        // Which architecture, and — new with the build driver — WHICH BOX. A
+        // build host is a role now: the same source produces a different
+        // binary on a Lima builder and on a remote one (different glibc floor,
+        // different toolchain), and `PODKIT_SUBSTRATE` moves the default
+        // between them because artifacts are built where the tests run. Both
+        // therefore belong in the key, or turbo replays one box's output into
+        // the other's run.
+        "PODKIT_TARGET_ARCH",
+        "PODKIT_BUILD_HOST",
+        "PODKIT_SUBSTRATE"
+      ],
       "inputs": [
         "$TURBO_ROOT$/packages/*/src/**",
         "!$TURBO_ROOT$/packages/*/src/**/*.test.ts",
@@ -418,7 +449,9 @@
         "$TURBO_ROOT$/turbo.json",
         "$TURBO_ROOT$/package.json",
         "$TURBO_ROOT$/bun.lock",
-        "scripts/build-linux-binary.sh",
+        "scripts/build-artifacts.ts",
+        "src/build-jobs/**",
+        "$TURBO_ROOT$/test-packages/device-testing/scripts/builder-contract.sh",
         "$TURBO_ROOT$/test-packages/lima/src/**",
         "!$TURBO_ROOT$/test-packages/lima/src/**/*.test.ts",
         "$TURBO_ROOT$/test-packages/substrate/src/**",
@@ -435,7 +468,18 @@
     },
     "@podkit/device-testing#build:musl-prebuild": {
       "dependsOn": [],
-      "env": ["PODKIT_TARGET_ARCH"],
+      "env": [
+        // Which architecture, and — new with the build driver — WHICH BOX. A
+        // build host is a role now: the same source produces a different
+        // binary on a Lima builder and on a remote one (different glibc floor,
+        // different toolchain), and `PODKIT_SUBSTRATE` moves the default
+        // between them because artifacts are built where the tests run. Both
+        // therefore belong in the key, or turbo replays one box's output into
+        // the other's run.
+        "PODKIT_TARGET_ARCH",
+        "PODKIT_BUILD_HOST",
+        "PODKIT_SUBSTRATE"
+      ],
       "inputs": [
         "$TURBO_ROOT$/packages/libgpod-node/native/**",
         "$TURBO_ROOT$/packages/libgpod-node/binding.gyp",
@@ -447,7 +491,10 @@
         "$TURBO_ROOT$/tools/prebuild/get-ldflags.sh",
         "$TURBO_ROOT$/test-packages/lima/vms/podkit-builder-musl.yaml",
         "$TURBO_ROOT$/bun.lock",
-        "scripts/build-musl-prebuild.sh",
+        "scripts/build-artifacts.ts",
+        "src/build-jobs/**",
+        "$TURBO_ROOT$/test-packages/device-testing/scripts/builder-contract.sh",
+        "$TURBO_ROOT$/test-packages/device-testing/builder/musl/Containerfile",
         "$TURBO_ROOT$/test-packages/lima/src/**",
         "!$TURBO_ROOT$/test-packages/lima/src/**/*.test.ts",
         "$TURBO_ROOT$/test-packages/substrate/src/**",
@@ -460,7 +507,18 @@
     },
     "@podkit/device-testing#build:musl-binary": {
       "dependsOn": ["@podkit/device-testing#build:musl-prebuild", "^build"],
-      "env": ["PODKIT_TARGET_ARCH"],
+      "env": [
+        // Which architecture, and — new with the build driver — WHICH BOX. A
+        // build host is a role now: the same source produces a different
+        // binary on a Lima builder and on a remote one (different glibc floor,
+        // different toolchain), and `PODKIT_SUBSTRATE` moves the default
+        // between them because artifacts are built where the tests run. Both
+        // therefore belong in the key, or turbo replays one box's output into
+        // the other's run.
+        "PODKIT_TARGET_ARCH",
+        "PODKIT_BUILD_HOST",
+        "PODKIT_SUBSTRATE"
+      ],
       "inputs": [
         "$TURBO_ROOT$/packages/*/src/**",
         "!$TURBO_ROOT$/packages/*/src/**/*.test.ts",
@@ -476,7 +534,10 @@
         "$TURBO_ROOT$/turbo.json",
         "$TURBO_ROOT$/package.json",
         "$TURBO_ROOT$/bun.lock",
-        "scripts/build-musl-binary.sh",
+        "scripts/build-artifacts.ts",
+        "src/build-jobs/**",
+        "$TURBO_ROOT$/test-packages/device-testing/scripts/builder-contract.sh",
+        "$TURBO_ROOT$/test-packages/device-testing/builder/musl/Containerfile",
         "$TURBO_ROOT$/test-packages/lima/src/**",
         "!$TURBO_ROOT$/test-packages/lima/src/**/*.test.ts",
         "$TURBO_ROOT$/test-packages/substrate/src/**",
@@ -490,11 +551,24 @@
     },
     "@podkit/gpod-testing#build:linux-binary": {
       "dependsOn": [],
-      "env": ["PODKIT_TARGET_ARCH"],
+      "env": [
+        // Which architecture, and — new with the build driver — WHICH BOX. A
+        // build host is a role now: the same source produces a different
+        // binary on a Lima builder and on a remote one (different glibc floor,
+        // different toolchain), and `PODKIT_SUBSTRATE` moves the default
+        // between them because artifacts are built where the tests run. Both
+        // therefore belong in the key, or turbo replays one box's output into
+        // the other's run.
+        "PODKIT_TARGET_ARCH",
+        "PODKIT_BUILD_HOST",
+        "PODKIT_SUBSTRATE"
+      ],
       "inputs": [
         "$TURBO_ROOT$/tools/gpod-tool/**",
         "$TURBO_ROOT$/test-packages/lima/vms/podkit-builder-glibc.yaml",
-        "$TURBO_ROOT$/test-packages/device-testing/scripts/build-gpod-tool-linux.sh",
+        "$TURBO_ROOT$/test-packages/device-testing/scripts/build-artifacts.ts",
+        "$TURBO_ROOT$/test-packages/device-testing/src/build-jobs/**",
+        "$TURBO_ROOT$/test-packages/device-testing/scripts/builder-contract.sh",
         "$TURBO_ROOT$/test-packages/lima/src/**",
         "!$TURBO_ROOT$/test-packages/lima/src/**/*.test.ts",
         "$TURBO_ROOT$/test-packages/substrate/src/**",

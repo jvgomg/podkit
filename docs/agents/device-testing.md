@@ -297,9 +297,9 @@ bunx turbo run \
   @podkit/gpod-testing#build:linux-binary
 ```
 
-The build scripts (`build-linux-binary.sh`, `build-linux-prebuild.sh`) auto-create + auto-start the builder Lima VM (`podkit-builder-glibc`) on demand — via `podkit-vm ensure`, which holds the shared advisory lock — so a developer rarely touches that VM directly. To free RAM or force a fresh rebuild: `bun run vm:down builderGlibc` / `bun run vm:destroy builderGlibc`.
+The build driver (`test-packages/device-testing/scripts/build-artifacts.ts`, one body for all five build jobs) picks a build host for the `(arch, libc)` the run needs. When that is a Lima builder it auto-creates + auto-starts it — through the shared advisory lock — so a developer rarely touches that VM directly. To free RAM or force a fresh rebuild: `bun run vm:down builderGlibc` / `bun run vm:destroy builderGlibc`. When it is a remote builder, the repo has no start verb yet (TASK-515) and the driver says so. See `test-packages/substrate/src/build-host.ts` for the selection rules and [builder-proxmox.md](../environments/builder-proxmox.md) for the remote box.
 
-**CI:** `.github/workflows/prebuild.yml` invokes the same `build-linux-glibc.sh` script. No duplicated logic. `tools/prebuild/*` are pure bash recipes with no Bun/Node dependency at their outer layer — CI runs them directly with no Lima involved, and they import nothing from `@podkit/lima`. Only the host wrappers (ensure VM → stage → run recipe → copy out) know about Lima.
+**CI:** `.github/workflows/prebuild.yml` invokes the same `build-linux-glibc.sh` script. No duplicated logic. `tools/prebuild/*` are pure bash recipes with no Bun/Node dependency at their outer layer — CI runs them directly with no Lima involved, and they import nothing from `@podkit/lima`. Only the build driver (ensure build host → stage → run recipe → copy out) knows about a provisioner at all, and it reaches both through `SubstrateLink`.
 
 The musl/Alpine paths in `prebuild.yml` and `build-platform.yml` run inside Alpine containers with their own static-link nuances; locally they mirror through `podkit-builder-musl`. See [ADR-026](../adr/adr-026-dual-libc-linux-distribution.md).
 

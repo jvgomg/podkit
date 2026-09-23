@@ -23,7 +23,7 @@
   "scripts": {
     "build": "bun build src/index.ts --outdir dist --target bun && bun run build:types",
     "build:types": "tsc -p tsconfig.build.json --emitDeclarationOnly --outDir dist",
-    "build:linux-binary": "bash ../../test-packages/device-testing/scripts/build-gpod-tool-linux.sh",
+    "build:linux-binary": "bun run ../../test-packages/device-testing/scripts/build-artifacts.ts glibcGpodTool",
     "generate-templates": "bun run scripts/generate-templates.ts",
     "test": "true",
     "test:unit": "bun test --pass-with-no-tests",

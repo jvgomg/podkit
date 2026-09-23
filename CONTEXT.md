@@ -78,6 +78,11 @@ It carries the **inverse** of the substrate contract: the toolchain and `-dev`
 packages a substrate forbids, because the substrate's *absence* of them is what
 makes its verdict on a statically-linked binary mean anything. The two contracts
 are never merged.
+
+Selected, not named: a build host is whichever registered builder can produce
+the `(architecture, libc)` a run needs, preferring the one provisioned like the
+selected substrate. That is what lets an arm64 Mac build for an amd64 substrate
+— natively, on an amd64 box, never by cross-compiling.
 _Avoid_: "the build VM", and any phrasing implying one box could be both.
 
 **Harness**:

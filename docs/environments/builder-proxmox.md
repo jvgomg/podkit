@@ -312,10 +312,43 @@ tell.
 The prebuild is the one with an ordering constraint: `compile.sh` embeds it, so
 it must exist before the binary is compiled.
 
-### Building by hand, before the driver exists
+### Driving a build
 
-Until TASK-514's build driver lands, a build is a staged tree plus four
-commands. The sequence, run in `/var/tmp/podkit-build`:
+One command per artifact group, from a checkout on your own machine:
+
+```bash
+bun run --cwd test-packages/device-testing build:linux-prebuild   # the .node addon
+bun run --cwd test-packages/device-testing build:linux-binary     # podkit, podkit-debug, podkit-daemon
+bun run --cwd test-packages/gpod-testing   build:linux-binary     # gpod-tool
+bun run --cwd test-packages/device-testing build:musl-prebuild    # the musl .node
+bun run --cwd test-packages/device-testing build:musl-binary      # the musl trio
+```
+
+Each is a thin wrapper over one driver
+(`test-packages/device-testing/scripts/build-artifacts.ts`), which selects a
+build host, stages the tree over the link, runs the build, and collects the
+artifacts back. Nothing names this box: it is chosen because it is the
+registered builder that can produce the `(architecture, libc)` the run needs,
+and because it is provisioned the same way as the selected substrate. See
+`test-packages/substrate/src/build-host.ts`.
+
+They are also the bodies of the turbo tasks, so `bun run test:vm` reaches them
+on its own — you do not normally invoke them by hand.
+
+**Set `PODKIT_SUBSTRATE` in `.env.local`, not on the command line.** It is what
+points both the tests and (by default) the builds at this hypervisor rather than
+at Lima. `bun run --cwd …` changes the working directory, and Bun loads
+`.env.local` relative to it — so a bare `bun run --cwd test-packages/…` from the
+repo root does NOT pick the file up. Either run through turbo, or export the
+variable for the command.
+
+Set `PODKIT_BUILD_HOST=builderRemote` as well to pin builds to this box when
+your own machine could also build for the target architecture.
+
+### Building by hand, without the driver
+
+Occasionally useful when diagnosing the builder itself. A staged tree plus four
+commands, run in a staging directory under `/var/tmp/podkit-build`:
 
 ```bash
 bun install --frozen-lockfile
@@ -330,21 +363,26 @@ bash packages/podkit-cli/scripts/compile.sh
 `compile.sh` reports `Could not resolve: "@podkit/ipod-firmware". Maybe you need
 to "bun install"?` — which it does not.
 
-Three things about the staging itself, each of which produced a wrong result
-rather than an error:
+Four things about the staging itself, each of which produced a wrong result
+rather than an error when this was the only way to build. **The driver handles
+all four**; they are recorded because a hand-run still hits them.
 
 - **Exclude every build output from the rsync.** A macOS `gpod-tool` binary
   copied in with a newer mtime than its source makes `make` report `Nothing to
-  be done for 'all'`, leaving a Mach-O file on an amd64 builder. Exclude
-  `node_modules`, `dist`, `static-deps`, `.prebuild-work`, `*.node`, `bin/` and
-  the compiled `tools/gpod-tool/gpod-tool`.
+  be done for 'all'`, leaving a Mach-O file on an amd64 builder. The driver's
+  shared exclude floor is `DEFAULT_STAGE_EXCLUDES` in
+  `test-packages/substrate/src/stage-tree.ts`.
 - **`rsync -a` fails on the staging directory** with `failed to set times on
   ".": Operation not permitted` (exit 23), because `/var/tmp/podkit-build` is
   root-owned and world-writable. The payload transfers; only the directory's
-  own timestamp fails. Add `--omit-dir-times`.
-- **Container-run builds write root-owned files** into the staged tree, since
-  podman runs as root here. A musl build leaves `bin/podkit` owned by root, and
-  the next unprivileged glibc build cannot overwrite it.
+  own timestamp fails. `--omit-dir-times` fixes it, and every stage carries it.
+- **Container-run builds write root-owned files** into the staged tree. The
+  driver stages containerised jobs as root for that reason, and gives each job
+  its own directory under `/var/tmp/podkit-build` so a musl build cannot leave
+  a glibc one unable to write.
+- **Keep the caches.** `/var/cache/podkit-build/{static-deps,prebuild-work}` and
+  their `-musl` siblings are what the driver passes as `STATIC_DEPS_DIR` and
+  `WORK_DIR`.
 
 ### musl comes from a container, not a second VM
 
@@ -361,11 +399,15 @@ the staged tree into it:
 
 ```bash
 sudo podman run --rm \
-  -v /var/tmp/podkit-build:/src \
+  -v /var/tmp/podkit-build/musl-prebuild:/src \
   -w /src \
   podkit-musl-builder:local \
   bash tools/prebuild/build-linux-musl.sh
 ```
+
+That is exactly what the driver issues for a musl job — it writes the job's
+script into the staged tree and runs `bash /src/.podkit-build-job.sh` inside the
+image, so the script that ran is left on the box for whoever has to debug it.
 
 Containers run as **root** on the builder. Rootless podman on a cloud image
 needs subuid/subgid ranges cloud-init does not write, and the failure is a

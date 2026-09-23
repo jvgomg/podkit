@@ -49,6 +49,12 @@ function scriptedLink(
     async copyIn() {
       throw new Error('copyIn: not expected in these tests');
     },
+    async copyOut() {
+      throw new Error('copyOut: not expected in these tests');
+    },
+    async stageTree() {
+      throw new Error('stageTree: not expected in these tests');
+    },
     spawn(): SubstrateProcess {
       throw new Error('spawn: not expected in these tests');
     },

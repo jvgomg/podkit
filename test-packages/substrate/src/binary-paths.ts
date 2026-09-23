@@ -101,6 +101,28 @@ export function resolveDefaultPodkitMuslBinary(env: NodeJS.ProcessEnv = process.
 }
 
 /**
+ * Resolve the default host path to the compiled **musl** podkit-debug binary.
+ *
+ * The musl sibling of {@link resolveDefaultPodkitDebugBinary}, and the eighth
+ * of these because the musl build job produces it. It had no resolver while
+ * the build was a shell script that spelled the filename itself; the build
+ * driver reads every artifact path from here instead, so the name exists once.
+ * Reads `PODKIT_LINUX_DEBUG_MUSL_BINARY` if set.
+ */
+export function resolveDefaultPodkitDebugMuslBinary(env: NodeJS.ProcessEnv = process.env): string {
+  const override = env['PODKIT_LINUX_DEBUG_MUSL_BINARY'];
+  if (override && override.length > 0) return override;
+  const arch = targetArch(env);
+  return path.resolve(
+    repoRoot(),
+    'packages',
+    'podkit-cli',
+    'bin',
+    `podkit-debug-linux-${arch}-musl`
+  );
+}
+
+/**
  * Resolve the default host path to the compiled **musl** podkit-daemon linux
  * binary. Mirrors {@link resolveDefaultPodkitMuslBinary} for the daemon. Reads
  * `PODKIT_DAEMON_LINUX_MUSL_BINARY` if set; otherwise the per-arch default at

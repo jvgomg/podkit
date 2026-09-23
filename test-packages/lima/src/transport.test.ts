@@ -168,7 +168,7 @@ describe('stageSourceTree', () => {
     });
     const body = calls[0]!.args[5]!;
     expect(calls[0]!.args.slice(0, 5)).toEqual(['shell', 'vm1', '--', 'sh', '-c']);
-    expect(body).toContain('rsync -a --delete');
+    expect(body).toContain('rsync -a --delete --omit-dir-times');
     expect(body).toContain("--exclude 'node_modules'");
     expect(body).toContain("--exclude '.git'");
     expect(body).toContain("'/repo/'");
@@ -185,7 +185,7 @@ describe('stageSourceTree', () => {
     const { runner } = recorder({ stdout: '', stderr: 'rsync error 12', exitCode: 12 });
     await expect(
       stageSourceTree({ vmName: 'vm1', hostSrc: '/repo', vmDest: '/tmp/b', subprocess: runner })
-    ).rejects.toThrow(/failed to stage source tree/);
+    ).rejects.toThrow(/failed to stage \/repo → vm1:\/tmp\/b/);
   });
 
   it('applies the shared exclude floor even when the caller names none', async () => {
@@ -233,7 +233,7 @@ describe('stageSourceTree', () => {
     });
     const body = calls[0]!.args[5]!;
     expect(body).toContain('sudo mkdir -p');
-    expect(body).toContain('sudo rsync -a --delete');
+    expect(body).toContain('sudo rsync -a --delete --omit-dir-times');
   });
 
   it('does not invoke sudo by default', async () => {

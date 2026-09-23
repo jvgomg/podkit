@@ -48,6 +48,7 @@ export {
 // The substrate link — how commands and files reach a substrate
 export type {
   SubstrateLink,
+  SubstrateLinkOperation,
   SubstrateCommand,
   SubstrateExecOpts,
   SubstrateExecResult,
@@ -71,9 +72,36 @@ export {
 export type { HostSpawnFn } from './link-spawn.js';
 export { startHostLinkProcess } from './link-spawn.js';
 
+// Staging a source tree onto a substrate — the exclude floor and the rsync
+// mechanics both links share
+export type { StageTreeOpts } from './stage-tree.js';
+export {
+  DEFAULT_STAGE_EXCLUDES,
+  RSYNC_VANISHED_EXIT,
+  stageExcludes,
+  rsyncStageArgs,
+  guestStageScript,
+  hostRsyncArgs,
+  stageExitIsOk,
+} from './stage-tree.js';
+
+// Guest-local staging destinations (one declared owner per directory)
+export type { StagingArea, BuildJobId } from './staging-areas.js';
+export {
+  listStagingAreas,
+  getStagingArea,
+  stagingDestFor,
+  stagingDestForJob,
+  findStagingCollision,
+  BUILD_JOB_IDS,
+} from './staging-areas.js';
+
 // The SSH link implementation (every substrate not reached through limactl)
 export type { CreateSshLinkOpts } from './link-ssh.js';
 export { createSshLink } from './link-ssh.js';
+
+// Reading a shell contract's values from TypeScript
+export { readShellContract, shellContractValue, shellContractList } from './shell-contract.js';
 
 // Substrate selection
 export type {
@@ -88,6 +116,21 @@ export {
   SubstrateSelectionError,
   SUBSTRATE_ENV_VAR,
 } from './selection.js';
+
+// Build-host selection — WHERE artifacts are built
+export type {
+  BuildHostSelection,
+  BuildHostSelectionSource,
+  BuildLibc,
+  ResolveBuildHostInput,
+  SelectBuildHostOpts,
+} from './build-host.js';
+export {
+  resolveBuildHostSelection,
+  selectBuildHost,
+  BuildHostSelectionError,
+  BUILD_HOST_ENV_VAR,
+} from './build-host.js';
 
 // Target architecture — what artifacts are built FOR
 export type {
@@ -122,6 +165,7 @@ export {
   resolveDefaultPodkitDebugBinary,
   resolveDefaultDaemonLinuxBinary,
   resolveDefaultPodkitMuslBinary,
+  resolveDefaultPodkitDebugMuslBinary,
   resolveDefaultDaemonLinuxMuslBinary,
   resolveDefaultDummyHcdDaemonBinary,
   resolveDefaultGpodToolBinary,

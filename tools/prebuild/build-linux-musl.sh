@@ -146,7 +146,8 @@ else
   ldd "$PREBUILD" || true
   # Forbidden runtime deps: libgpod plus the glib/gdk-pixbuf/plist transitive
   # closure that must be statically linked. Kept aligned with build-linux-glibc.sh
-  # and build-linux-binary.sh's checks.
+  # and the binary build jobs' checks
+  # (test-packages/device-testing/src/build-jobs/jobs.ts).
   if ldd "$PREBUILD" 2>/dev/null | grep -E 'libgpod|libgdk_pixbuf|libglib|libgobject|libgio|libgmodule|libplist|libffi|libxml2|libsqlite|libpcre2|libpng|libjpeg|libtiff'; then
     echo "ERROR: $PREBUILD has runtime dependencies on libraries that must be" >&2
     echo "       statically linked. Check tools/prebuild/build-static-deps.sh" >&2

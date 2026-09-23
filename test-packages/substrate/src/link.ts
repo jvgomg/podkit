@@ -1,9 +1,10 @@
 /**
  * `SubstrateLink` — how commands and files reach a substrate.
  *
- * Three operations cover everything the device harness does to the box it
- * drives: run something (`exec`), put a file there (`copyIn`), and hold a
- * handle on something long-lived (`spawn`). Every helper in the harness is
+ * Five operations cover everything this repo does to a box it drives: run
+ * something (`exec`), put a file there (`copyIn`), take one back (`copyOut`),
+ * put a source tree there (`stageTree`), and hold a handle on something
+ * long-lived (`spawn`). Every helper in the harness and every build job is
  * written against this interface and against nothing else, which is what makes
  * a Lima VM on macOS and an SSH-reachable Debian box on a hypervisor the same
  * code path rather than two separately-correct implementations (ADR-028 §1).
@@ -30,6 +31,28 @@
  * vocabulary every SSH-carried link shares lives here as
  * {@link looksLikeSshLinkFailure}.
  *
+ * ## Why `copyOut` and `stageTree` exist now, and did not before
+ *
+ * This interface was `exec` / `copyIn` / `spawn`, and said so: transfers were
+ * host→guest only because a *device* substrate receives artifacts and never
+ * sends any, and an unused direction is a second implementation to keep
+ * correct for free.
+ *
+ * A **build host** is the other half of that sentence. It is reached over the
+ * same link and by the same two provisioners, and its entire purpose is to
+ * produce bytes the host has to collect — so the direction stopped being
+ * unused. {@link SubstrateLink.copyOut} is that, and nothing more; the device
+ * substrate's no-source-tree, no-host-mount invariant is unchanged, because
+ * nothing points these two operations at it.
+ *
+ * {@link SubstrateLink.stageTree} is here for a sharper reason: it is the ONE
+ * operation whose mechanism genuinely differs by provisioner. Lima mounts the
+ * host's home into the guest, so staging is an in-guest rsync from that mount;
+ * every other substrate has no mount, so staging is a host-side `rsync -e ssh`
+ * that pushes over the link. A driver written against this interface is blind
+ * to which of those it got, which is what makes "builder is a role" true
+ * rather than aspirational (ADR-029 §4).
+ *
  * ## There is no stdin channel, on purpose
  *
  * `limactl shell` does not reliably forward stdin to the guest command, which
@@ -45,6 +68,11 @@
  */
 
 import type { Readable } from 'node:stream';
+
+// Type-only, so there is no runtime edge back: `./stage-tree.js` imports
+// `shellQuote` from here, and erasing this import is what keeps that from
+// being a cycle.
+import type { StageTreeOpts } from './stage-tree.js';
 
 /**
  * What to run in the guest.
@@ -178,14 +206,36 @@ export interface SubstrateLink {
   /**
    * Copy one host file to an absolute guest path.
    *
-   * Host→guest only. There is no `copyOut`: nothing in the harness has ever
-   * needed one, and an unused direction is a second implementation to keep
-   * correct for free.
-   *
    * @throws {SubstrateLinkError} on link failure, and a plain `Error` when the
    * copy itself failed (no such file, permission denied at the destination).
    */
   copyIn(hostPath: string, guestPath: string, opts?: SubstrateCopyOpts): Promise<void>;
+  /**
+   * Copy one file OUT of the guest to an absolute host path.
+   *
+   * The build-host direction. A device substrate is never asked for one; see
+   * the note at the top of this module for why the direction exists at all.
+   *
+   * @throws {SubstrateLinkError} on link failure, and a plain `Error` when the
+   * copy itself failed (no such file in the guest, unwritable destination).
+   */
+  copyOut(guestPath: string, hostPath: string, opts?: SubstrateCopyOpts): Promise<void>;
+  /**
+   * Put a host source tree at an absolute guest path, minus the artefacts a
+   * build must never inherit from the host.
+   *
+   * The one operation whose *mechanism* differs per provisioner — see the note
+   * at the top of this module. Callers state what they are staging and where;
+   * how the bytes travel is the link's business.
+   *
+   * Semantics are rsync's: `--delete`, so the destination ends up matching the
+   * source, and the shared exclude floor in `./stage-tree.ts` always applies
+   * with the caller's `excludes` on top of it.
+   *
+   * @throws {SubstrateLinkError} on link failure, and a plain `Error` when
+   * rsync itself failed with anything but the tolerated vanished-file code.
+   */
+  stageTree(hostSrc: string, guestDest: string, opts?: StageTreeOpts): Promise<void>;
   /**
    * Start a guest process and hand back a handle on it. Synchronous, because
    * the caller wants the handle before the process finishes — that is the
@@ -207,15 +257,22 @@ export interface SubstrateLink {
  * (ADR-028 §2). Everything a reader needs to tell those apart is on the
  * instance rather than in the message, so no caller has to string-match.
  */
+/**
+ * Which link operation failed. Every operation that can fail *because the box
+ * did not answer* is here; `spawn` is absent because its link failures surface
+ * on {@link SubstrateProcess.exited} rather than as a throw.
+ */
+export type SubstrateLinkOperation = 'exec' | 'copyIn' | 'copyOut' | 'stageTree';
+
 export class SubstrateLinkError extends Error {
   /** Registry id of the substrate that could not be reached. */
   readonly substrateId: string;
   /** Which link operation failed. */
-  readonly operation: 'exec' | 'copyIn';
+  readonly operation: SubstrateLinkOperation;
 
   constructor(opts: {
     substrateId: string;
-    operation: 'exec' | 'copyIn';
+    operation: SubstrateLinkOperation;
     message: string;
     cause?: unknown;
   }) {

@@ -4,7 +4,7 @@ title: Decouple build target architecture from host architecture
 status: In Progress
 assignee: []
 created_date: '2026-09-13 18:33'
-updated_date: '2026-09-14 20:16'
+updated_date: '2026-09-23 19:30'
 labels:
   - testing
   - infrastructure
@@ -55,6 +55,21 @@ Expect the cost to concentrate in two places: the turbo cache keying above, and 
 - [x] #7 The device substrate still receives artifacts only — no source tree, no host mount
 - [ ] #8 test:vm passes on macOS with an arm64 substrate and with an amd64 substrate
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+## Half 2 plan (build host over the link)
+
+1. **`@podkit/substrate/stage-tree.ts`** — lift `DEFAULT_STAGE_EXCLUDES` and the rsync mechanics out of `@podkit/lima`'s transport. Two forms of the same command: in-guest (Lima, host-mounted source) and host-side `rsync -e ssh` (every other link).
+2. **`SubstrateLink` gains `copyOut` and `stageTree`.** `copyOut` was deliberately absent because nothing needed it; a builder that produces artifacts the host must collect is that need. `stageTree` is the one operation whose *mechanism* genuinely differs per provisioner, which is why it belongs on the link rather than above it.
+3. **Staging-area registry moves to `@podkit/substrate`**, re-exported from `@podkit/lima`, and gains `builderRemote` areas. Same argument as the binary-paths move: a directory on a Proxmox guest is not a Lima fact.
+4. **`@podkit/substrate/build-host.ts`** — build-host selection, the mirror of `selection.ts`. `PODKIT_BUILD_HOST` → a builder that can produce `(targetArch, libc)` → error naming the step. This is where half 1's `podkit_assert_target_arch` dead end ("run the build on a <arch> build host") becomes a selection instead of a refusal.
+5. **One TypeScript build driver + job table** replacing the five near-identical bash wrappers. Guest script bodies ported verbatim; the Lima argv stays byte-identical and is pinned by unit tests over the recording runner (Seam 1).
+6. **musl over ssh = the Alpine container** on the glibc builder, per doc-060. Same driver, same job, one wrapper around the guest command.
+7. **`vm:install` stops hard-coding Lima** — it resolves the selected substrate like every other harness entry point. Required for AC #8's second half.
+8. Docs: builder playbook ("before the driver exists" is now "the driver"), vm-build-orchestration, `.env.example`, CONTEXT.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 

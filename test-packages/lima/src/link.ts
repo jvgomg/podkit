@@ -38,7 +38,9 @@ import {
   SubstrateLinkError,
   describeGuestCommand,
   looksLikeLinkFailureResult,
+  guestStageScript,
   resolveGuestArgv,
+  stageExitIsOk,
   startHostLinkProcess,
   type HostSpawnFn,
   type SubstrateCommand,
@@ -47,7 +49,9 @@ import {
   type SubstrateExecResult,
   type SubstrateLink,
   type SubstrateProcess,
+  type SubstrateLinkOperation,
   type SubstrateSpawnOpts,
+  type StageTreeOpts,
 } from '@podkit/substrate';
 
 import { runLimactl } from './limactl.js';
@@ -159,7 +163,7 @@ export function createLimactlLink(
   const description = `Lima instance \`${vmName}\``;
 
   const linkFailure = (
-    operation: 'exec' | 'copyIn',
+    operation: SubstrateLinkOperation,
     what: string,
     detail: string,
     cause?: unknown
@@ -177,7 +181,7 @@ export function createLimactlLink(
       cause,
     });
 
-  return {
+  const link: SubstrateLink = {
     substrateId: def.id,
     description,
 
@@ -235,6 +239,74 @@ export function createLimactlLink(
       );
     },
 
+    async copyOut(guestPath: string, hostPath: string, copyOpts: SubstrateCopyOpts = {}) {
+      // `limactl copy` takes `<vm>:<path>` on whichever side is the guest, so
+      // this is `copyIn` with the two operands swapped and nothing else.
+      let result: SubstrateExecResult;
+      try {
+        result = await runLimactl(
+          subprocess,
+          ['copy', `${vmName}:${guestPath}`, hostPath],
+          typeof copyOpts.timeoutMs === 'number' ? { timeoutMs: copyOpts.timeoutMs } : {}
+        );
+      } catch (err) {
+        throw linkFailure(
+          'copyOut',
+          `copy ${guestPath} → ${hostPath}`,
+          err instanceof Error ? err.message : String(err),
+          err
+        );
+      }
+      if (result.exitCode === 0) return;
+      if (looksLikeLimactlLinkFailure(result)) {
+        throw linkFailure('copyOut', `copy ${guestPath} → ${hostPath}`, result.stderr.trim());
+      }
+      throw new Error(
+        `failed to copy ${vmName}:${guestPath} → ${hostPath}: exit=${result.exitCode}: ` +
+          (result.stderr.trim() || result.stdout.trim() || '(no output)')
+      );
+    },
+
+    async stageTree(hostSrc: string, guestDest: string, stageOpts: StageTreeOpts = {}) {
+      // In-GUEST rsync, reading `hostSrc` through Lima's home mount. Nothing
+      // crosses the link but the command, which is why a cold stage of a
+      // multi-gigabyte tree costs a VM-local copy rather than an SSH transfer.
+      // The SSH link cannot do this and does not try — see the note on
+      // `SubstrateLink.stageTree`.
+      //
+      // The `mkdir -p` shares this call by design. Splitting it out to bound it
+      // separately would buy an SSH round trip on every stage to guard against
+      // a hang whose only cause — a wedged `limactl shell` — the rsync that
+      // follows it would hit anyway.
+      const script = guestStageScript(hostSrc, guestDest, stageOpts);
+      let result: SubstrateExecResult;
+      try {
+        result = await runLimactl(
+          subprocess,
+          ['shell', vmName, '--', 'sh', '-c', script],
+          typeof stageOpts.timeoutMs === 'number' ? { timeoutMs: stageOpts.timeoutMs } : {}
+        );
+      } catch (err) {
+        throw linkFailure(
+          'stageTree',
+          `stage ${hostSrc} → ${guestDest}`,
+          err instanceof Error ? err.message : String(err),
+          err
+        );
+      }
+      // The script itself already swallows the tolerated vanished-file exit, so
+      // a non-zero code here is rsync's own or the shell's. Re-checking costs
+      // nothing and keeps the two links agreeing on what "staged" means.
+      if (stageExitIsOk(result.exitCode)) return;
+      if (looksLikeLimactlLinkFailure(result)) {
+        throw linkFailure('stageTree', `stage ${hostSrc} → ${guestDest}`, result.stderr.trim());
+      }
+      throw new Error(
+        `failed to stage ${hostSrc} → ${vmName}:${guestDest}: exit=${result.exitCode}: ` +
+          (result.stderr.trim() || result.stdout.trim() || '(no output)')
+      );
+    },
+
     spawn(command: SubstrateCommand, spawnOpts: SubstrateSpawnOpts = {}): SubstrateProcess {
       const guestArgv = resolveGuestArgv(command, spawnOpts);
       return startHostLinkProcess({
@@ -245,4 +317,5 @@ export function createLimactlLink(
       });
     },
   };
+  return link;
 }

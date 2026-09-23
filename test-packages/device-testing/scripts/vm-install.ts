@@ -34,12 +34,10 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { getVm } from '@podkit/lima';
+import { isSubstrateLinkError } from '@podkit/substrate';
 
-import { createSubstrateLink } from '../src/runners/substrate.js';
+import { ensureSubstrateReady, resolveDeviceSubstrate } from '../src/runners/substrate.js';
 import {
-  instanceStatus,
-  LIMA_DEVICE_HARNESS_VM_NAME,
   DEFAULT_DUMMY_HCD_DAEMON_VM_PATH,
   resolveDefaultPodkitBinary,
   resolveDefaultPodkitDebugBinary,
@@ -73,24 +71,26 @@ interface Summary {
 }
 
 async function main(): Promise<number> {
-  const vmName = LIMA_DEVICE_HARNESS_VM_NAME;
-  // The Lima device substrate specifically — this is the turbo task behind
-  // `harness:install`, whose cache marker and remediation both name the Lima
-  // instance.
-  const link = createSubstrateLink(getVm('device'));
+  // Whichever substrate this machine drives — not the Lima one by name. This
+  // script transfers artifacts to the box the tests will run on, and hard-coding
+  // `getVm('device')` meant a machine configured for a remote substrate built
+  // binaries and then installed them somewhere else (or, here, refused with
+  // "Lima instance is not registered" about an instance nobody asked for).
+  //
+  // The selection's announcement is rendered by `resolveDeviceSubstrate` itself.
+  const { definition, link } = resolveDeviceSubstrate();
+  const vmName = definition.instanceName;
 
-  const status = await instanceStatus().catch(() => 'missing' as const);
-  if (status === 'missing') {
+  try {
+    // Starts a stopped Lima instance under the shared advisory lock; for an
+    // SSH substrate there is no start verb to call, so this throws with the
+    // reason and the check to run. Either way the error names the box.
+    await ensureSubstrateReady(definition);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
     process.stderr.write(
-      `[vm:install] Lima instance \`${vmName}\` is not registered.\n` +
-        `[vm:install] Run \`bun run harness:setup\` to create it.\n`
-    );
-    return 1;
-  }
-  if (status === 'stopped') {
-    process.stderr.write(
-      `[vm:install] Lima instance \`${vmName}\` is stopped.\n` +
-        `[vm:install] Run \`bun run vm:up device\` first.\n`
+      `[vm:install] ${message}\n` +
+        (isSubstrateLinkError(err) ? '' : `[vm:install] Substrate: ${link.description}\n`)
     );
     return 1;
   }

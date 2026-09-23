@@ -22,6 +22,7 @@ import { EventEmitter } from 'node:events';
 
 import { createSshLink } from './link-ssh.js';
 import { isSubstrateLinkError } from './link.js';
+import { DEFAULT_STAGE_EXCLUDES } from './stage-tree.js';
 import type { HostSpawnFn } from './link-spawn.js';
 import { getVm, isSshVm, type SshVmDefinition } from './registry.js';
 
@@ -222,6 +223,119 @@ describe('createSshLink.copyIn', () => {
     }
     expect(isSubstrateLinkError(caught)).toBe(false);
     expect((caught as Error).message).toContain('Permission denied');
+  });
+});
+
+describe('createSshLink.copyOut', () => {
+  it('scps guest→host, the direction a build host needs', async () => {
+    const { runner, calls } = recorder();
+    const link = createSshLink(remote(), { subprocess: runner });
+    await link.copyOut('/tmp/podkit', '/host/bin/podkit', { timeoutMs: 4321 });
+
+    expect(calls[0]!.command).toBe('scp');
+    expect(calls[0]!.args).toEqual([
+      '-o',
+      'BatchMode=yes',
+      '-q',
+      `${remote().sshAlias}:/tmp/podkit`,
+      '/host/bin/podkit',
+    ]);
+    expect(calls[0]!.opts?.timeoutMs).toBe(4321);
+  });
+
+  it('reports a missing guest file as a copy failure, not a link failure', async () => {
+    const { runner } = recorder({
+      stdout: '',
+      stderr: 'scp: /tmp/nope: No such file or directory',
+      exitCode: 1,
+    });
+    const link = createSshLink(remote(), { subprocess: runner });
+    let caught: unknown;
+    try {
+      await link.copyOut('/tmp/nope', '/host/nope');
+    } catch (err) {
+      caught = err;
+    }
+    expect(isSubstrateLinkError(caught)).toBe(false);
+    expect((caught as Error).message).toContain('No such file');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// stageTree
+//
+// The one operation whose MECHANISM differs from the limactl link's. Lima runs
+// the rsync inside the guest against its own host mount; this link has no
+// mount, so the rsync runs on the host and pushes over ssh. Both are pinned,
+// in their own package, precisely so nobody "unifies" them back into one.
+// ---------------------------------------------------------------------------
+
+describe('createSshLink.stageTree', () => {
+  it('creates the destination in the guest, then pushes with a host-side rsync', async () => {
+    const { runner, calls } = recorder();
+    const link = createSshLink(remote(), { subprocess: runner });
+    await link.stageTree('/repo', '/var/tmp/build');
+
+    expect(calls[0]!.command).toBe('ssh');
+    expect(calls[0]!.args.at(-1)).toBe(`'mkdir' '-p' '/var/tmp/build'`);
+
+    expect(calls[1]!.command).toBe('rsync');
+    expect(calls[1]!.args.slice(0, 2)).toEqual(['-e', 'ssh -o BatchMode=yes']);
+    expect(calls[1]!.args).toContain('--delete');
+    // Not cosmetic: the builder's staging root is root-owned and
+    // world-writable, and `rsync -a` on it fails with exit 23 after
+    // transferring the entire payload.
+    expect(calls[1]!.args).toContain('--omit-dir-times');
+    expect(calls[1]!.args.slice(-2)).toEqual(['/repo/', `${remote().sshAlias}:/var/tmp/build/`]);
+  });
+
+  it('applies the shared exclude floor, extended by the caller', async () => {
+    const { runner, calls } = recorder();
+    const link = createSshLink(remote(), { subprocess: runner });
+    await link.stageTree('/repo', '/var/tmp/build', {
+      excludes: ['packages/libgpod-node/prebuilds'],
+    });
+
+    const args = calls[1]!.args;
+    for (const pattern of DEFAULT_STAGE_EXCLUDES) {
+      expect(args[args.indexOf(pattern) - 1]).toBe('--exclude');
+    }
+    expect(args[args.indexOf('packages/libgpod-node/prebuilds') - 1]).toBe('--exclude');
+  });
+
+  it('runs the far end as root via --rsync-path, never the near end', async () => {
+    const { runner, calls } = recorder();
+    const link = createSshLink(remote(), { subprocess: runner });
+    await link.stageTree('/repo', '/opt/podkit', { sudo: true });
+
+    expect(calls[1]!.command).toBe('rsync');
+    expect(calls[1]!.args.slice(2, 4)).toEqual(['--rsync-path', 'sudo rsync']);
+    expect(calls[0]!.args.at(-1)).toBe(`'sudo' 'mkdir' '-p' '/opt/podkit'`);
+  });
+
+  it('tolerates the vanished-file exit and nothing else', async () => {
+    // The mkdir has to succeed in both runs, so the rsync's exit is the only
+    // thing under test. A flat recorder would answer both calls the same way.
+    const afterMkdir = (rsync: SubprocessRunResult): SubprocessRunner => {
+      let call = 0;
+      return {
+        async run(): Promise<SubprocessRunResult> {
+          return call++ === 0 ? ok() : rsync;
+        },
+      };
+    };
+
+    await createSshLink(remote(), {
+      subprocess: afterMkdir({ stdout: '', stderr: 'file has vanished', exitCode: 24 }),
+    }).stageTree('/repo', '/tmp/b');
+
+    // 23 is two writers in one destination, which leaves it INCONSISTENT —
+    // a different failure from 24's file vanishing on the sending side.
+    await expect(
+      createSshLink(remote(), {
+        subprocess: afterMkdir({ stdout: '', stderr: 'rsync: some files...', exitCode: 23 }),
+      }).stageTree('/repo', '/tmp/b')
+    ).rejects.toThrow(/failed to stage \/repo →/);
   });
 });
 

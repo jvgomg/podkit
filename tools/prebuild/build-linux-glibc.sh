@@ -100,7 +100,7 @@ export STATIC_DEPS_DIR
 # Phase 2: prebuildify (produces packages/libgpod-node/prebuilds/linux-${arch}/)
 # ---------------------------------------------------------------------------
 # Invariant assumed by this script: $REPO_ROOT is a VM-local source tree, not
-# a host-mounted one. The caller (build-linux-prebuild.sh on macOS, or the CI
+# a host-mounted one. The caller (the `glibcPrebuild` build job, or the CI
 # runner on GitHub Actions) rsyncs the repo into a VM-local path before
 # invoking this script. Why this matters: node-gyp bakes absolute host paths
 # (node_modules/.bun/node-gyp@<hash>, /tmp/prebuildify/node/<ver>) into
@@ -138,7 +138,8 @@ else
   ldd "$PREBUILD" || true
   # Forbidden runtime deps: libgpod plus the full glib/gdk-pixbuf/plist transitive
   # closure that must be statically linked into the addon. Keep this aligned with
-  # the broader check in test-packages/device-testing/scripts/build-linux-binary.sh.
+  # the broader check in the `glibcBinary` build job's guest script
+  # (test-packages/device-testing/src/build-jobs/jobs.ts).
   if ldd "$PREBUILD" 2>/dev/null | grep -E 'libgpod|libgdk_pixbuf|libglib|libgobject|libgio|libgmodule|libplist|libffi|libxml2|libsqlite|libpcre2|libpng|libjpeg|libtiff'; then
     echo "ERROR: $PREBUILD has runtime dependencies on libraries that must be" >&2
     echo "       statically linked. Check tools/prebuild/build-static-deps.sh" >&2

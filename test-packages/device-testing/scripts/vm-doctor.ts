@@ -33,7 +33,7 @@
 import { getVm } from '@podkit/lima';
 
 import { instanceStatus, LIMA_DEVICE_HARNESS_VM_NAME } from '../src/runners/lima-test-vm.js';
-import { createSubstrateLink } from '../src/runners/substrate.js';
+import { createSubstrateLink, resolveDeviceSubstrate } from '../src/runners/substrate.js';
 import {
   computeBaselineHash,
   deviceBaselineFiles,
@@ -61,6 +61,21 @@ function remediation(reason: string): string {
 
 async function main(): Promise<number> {
   const vmName = LIMA_DEVICE_HARNESS_VM_NAME;
+
+  // 0. Baseline drift is a property of the LIMA device substrate: the hash is
+  //    sealed from `podkit-device.yaml`, and ADR-029 records that drift
+  //    detection has to move onto the contract scripts before a remote
+  //    substrate can be tracked at all. Say that plainly rather than reporting
+  //    "the Lima instance is missing" to someone who never asked for one.
+  const selected = resolveDeviceSubstrate().definition;
+  if (!selected.trackedForBaseline) {
+    process.stdout.write(
+      `[vm:doctor] substrate '${selected.id}' is not baseline-tracked — no drift to check.\n` +
+        `[vm:doctor] Its provisioning is asserted by \`substrate-doctor.sh\` instead ` +
+        `(docs/environments/device-substrate-proxmox.md).\n`
+    );
+    return 0;
+  }
 
   // 1. VM must be reachable. We treat `missing` as an upstream concern
   //    (harness:setup will create + hash). We treat `stopped` as a clear

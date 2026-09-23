@@ -48,6 +48,14 @@ tasks `@podkit/device-testing#build:linux-binary`,
 `@podkit/gpod-testing#build:linux-binary` do); it owns when those tasks
 must run before `test:vm` proceeds, and how baseline drift is detected.
 
+A third concern used to be implicit and is now explicit: **which boxes are
+involved at all.** `PODKIT_SUBSTRATE` chooses where the tests run;
+`PODKIT_BUILD_HOST` (usually unset) chooses where the artifacts are built.
+Both are declared in the `env` of every task whose output or verdict depends
+on them, because under turbo's strict env mode an undeclared variable neither
+reaches the task nor enters its cache key — and a cached "these passed"
+belongs to the substrate it was obtained on as much as to the architecture.
+
 ---
 
 ## 2. Primitives
@@ -108,9 +116,10 @@ test file.
 
 | Concern | Owner |
 |---------|-------|
-| Compiling Linux binaries from current source | `@podkit/device-testing#build:linux-binary` (and siblings) — unchanged. |
+| Choosing which box compiles | `selectBuildHost()` in `@podkit/substrate` — one rule: can it produce this `(arch, libc)`, and is it the substrate's sibling. |
+| Compiling Linux binaries from current source | `@podkit/device-testing#build:linux-binary` (and siblings), whose body is the one build driver `scripts/build-artifacts.ts`. |
 | Knowing **when** to re-compile | Turbo (existing inputs/outputs declarations on the build tasks). |
-| Transferring binaries into the VM | `scripts/harness.ts install` — unchanged. |
+| Transferring binaries into the substrate | `scripts/harness.ts install` / `scripts/vm-install.ts`, over the selected substrate's link. |
 | Knowing **when** to re-transfer | `vm:install` turbo task (new). |
 | Detecting VM baseline drift | `scripts/vm-doctor.ts` + `vm:doctor` turbo task (new). |
 | Writing the baseline hash | `harness.ts setup` (modified to seal the hash post-install). |
@@ -168,11 +177,12 @@ No silent recovery, no auto-rebuild.
 
 This orchestration does **not** cover:
 
-- **Builder-VM lifecycle.** The `podkit-builder-glibc` VM auto-creates
-  on first use of `build:linux-binary` — through `podkit-vm ensure` and
-  its shared advisory lock, not through turbo — and is otherwise
-  developer-managed via `vm:down builderGlibc`/`vm:destroy builderGlibc`.
-  Deliberately no turbo ordering node: see ADR-027.
+- **Build-host lifecycle.** A Lima builder auto-creates on first use of a
+  build job — through the shared advisory lock, not through turbo — and is
+  otherwise developer-managed via `vm:down builderGlibc`/`vm:destroy
+  builderGlibc`. Deliberately no turbo ordering node: see ADR-027. A REMOTE
+  builder has no start verb in this repo yet (TASK-515); the driver probes it
+  and prints what to do.
 - **Test discovery.** Whether a given `.e2e.test.ts` file runs is
   governed by `bun test`'s path glob; the orchestration only ensures the
   binary it observes is current.
@@ -180,10 +190,11 @@ This orchestration does **not** cover:
   invoked per-test by the runner; the drift check confirms the script
   shipped into the VM matches host, not that the right state is currently
   applied.
-- **Cross-arch caching.** `PODKIT_TARGET_ARCH` is hashed into the cache
-  key of every task that produces a Linux binary, and the artifact's ELF
-  header is checked against the substrate's `uname -m` at transfer time;
-  nothing else is needed here.
+- **Cross-arch caching.** `PODKIT_TARGET_ARCH`, `PODKIT_BUILD_HOST` and
+  `PODKIT_SUBSTRATE` are hashed into the cache key of every task that produces
+  a Linux binary. The artifact's ELF header is checked twice — once by the
+  build driver before it writes the file turbo will cache, and again against
+  the substrate's `uname -m` at transfer time. Nothing else is needed here.
 
 ---
 

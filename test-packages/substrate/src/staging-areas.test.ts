@@ -16,9 +16,13 @@ import {
   getStagingArea,
   stagingDestFor,
   findStagingCollision,
+  stagingDestForJob,
+  BUILD_JOB_IDS,
   type StagingArea,
-} from './staging.js';
-import { getVm } from '@podkit/substrate';
+} from './staging-areas.js';
+import { getVm } from './registry.js';
+import { BUILDER_CONTRACT_REL_PATH } from './debian-image.js';
+import { shellContractValue } from './shell-contract.js';
 
 const area = (id: string, vm: string, dest: string): StagingArea => ({
   id,
@@ -123,5 +127,67 @@ describe('findStagingCollision', () => {
 
   it('holds for the real registry', () => {
     expect(findStagingCollision(listStagingAreas())).toBeUndefined();
+  });
+});
+
+describe('stagingDestForJob', () => {
+  it('resolves the same job to a different directory on each build host', () => {
+    expect(stagingDestForJob('builderGlibc', 'glibcBinary')).toBe('/tmp/podkit-builder-src');
+    expect(stagingDestForJob('builderRemote', 'glibcBinary')).toBe(
+      '/var/tmp/podkit-build/glibc-binary'
+    );
+  });
+
+  it('accepts the concrete instance name as well as the registry id', () => {
+    expect(stagingDestForJob('podkit-builder-remote', 'muslBinary')).toBe(
+      '/var/tmp/podkit-build/musl-binary'
+    );
+  });
+
+  it('names what a build host does declare when it cannot host the job', () => {
+    expect(() => stagingDestForJob('builderGlibc', 'muslBinary')).toThrow(
+      /build host 'builderGlibc' declares no staging area for job 'muslBinary'/
+    );
+    expect(() => stagingDestForJob('builderGlibc', 'muslBinary')).toThrow(/glibcBinary/);
+  });
+
+  it('gives each (build host, job) pair exactly one directory', () => {
+    const pairs = listStagingAreas()
+      .filter((entry) => entry.job)
+      .map((entry) => `${entry.vm}:${entry.job}`);
+    expect(new Set(pairs).size).toBe(pairs.length);
+  });
+
+  // The remote builder is a glibc box that reaches musl through an Alpine
+  // container, so it is the ONE host that must be able to run every job. A new
+  // job with no directory there would fall back to nothing and fail at the far
+  // end of a link; this fails at `bun test` instead.
+  it('declares every build job on the remote builder', () => {
+    for (const job of BUILD_JOB_IDS) {
+      expect(stagingDestForJob('builderRemote', job).startsWith('/var/tmp/')).toBe(true);
+    }
+  });
+
+  it('declares every build job on some Lima builder too', () => {
+    const limaJobs = new Set(
+      listStagingAreas()
+        .filter((entry) => entry.job && getVm(entry.vm).provisioner === 'lima')
+        .map((entry) => entry.job)
+    );
+    for (const job of BUILD_JOB_IDS) expect(limaJobs.has(job)).toBe(true);
+  });
+});
+
+describe('the remote builder’s areas agree with its contract', () => {
+  // The contract creates `BUILDER_STAGING_DIR` mode 1777 and the doctor asserts
+  // it is writable. A job directory outside it would inherit neither, and would
+  // fail on the far end of a link rather than here.
+  it('nests every remote build area inside BUILDER_STAGING_DIR', () => {
+    const root = shellContractValue(BUILDER_CONTRACT_REL_PATH, 'BUILDER_STAGING_DIR');
+    const remote = listStagingAreas().filter((entry) => entry.vm === 'builderRemote');
+    expect(remote.length).toBeGreaterThan(0);
+    for (const entry of remote) {
+      expect(entry.dest.startsWith(`${root}/`)).toBe(true);
+    }
   });
 });

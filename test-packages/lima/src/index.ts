@@ -78,6 +78,7 @@ export {
   resolveDefaultPodkitDebugBinary,
   resolveDefaultDaemonLinuxBinary,
   resolveDefaultPodkitMuslBinary,
+  resolveDefaultPodkitDebugMuslBinary,
   resolveDefaultDaemonLinuxMuslBinary,
   resolveDefaultDummyHcdDaemonBinary,
   resolveDefaultGpodToolBinary,
@@ -120,14 +121,18 @@ export {
   FILE_COPY_TIMEOUT_MS,
 } from './transport.js';
 
-// VM-local staging destinations (one declared owner per directory)
-export type { StagingArea } from './staging.js';
+// Guest-local staging destinations (one declared owner per directory). They
+// moved to `@podkit/substrate` when a remote builder gained directories Lima
+// never created; re-exported here so existing consumers resolve unchanged.
+export type { StagingArea, BuildJobId } from '@podkit/substrate';
 export {
   listStagingAreas,
   getStagingArea,
   stagingDestFor,
+  stagingDestForJob,
   findStagingCollision,
-} from './staging.js';
+  BUILD_JOB_IDS,
+} from '@podkit/substrate';
 
 // Output-streaming subprocess runners (live provisioning logs + liveness bound)
 export type {

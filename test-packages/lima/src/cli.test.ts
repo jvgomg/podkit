@@ -468,7 +468,7 @@ describe('stage', () => {
     const { runner } = makeScriptedRunner([fail('rsync: connection unexpectedly closed', 12)]);
     const code = await main(['stage', 'device', '--dest', '/tmp/work'], { subprocess: runner });
     expect(code).toBe(1);
-    expect(stderrText()).toContain('failed to stage source tree');
+    expect(stderrText()).toContain('failed to stage');
   });
 });
 

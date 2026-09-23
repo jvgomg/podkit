@@ -597,11 +597,12 @@ lands, the `it.skip` comments are the canonical pointer.
 
 ### Cross-arch gpod-tool binary
 
-`test-packages/device-testing/scripts/build-gpod-tool-linux.sh`
-builds for the host's arch only (Apple Silicon → `linux-arm64`;
-Intel → `linux-x64`). A future Linux x86 CI runner would need either
-a separate Docker build or a cross-compile step. Not blocking today
-because the device-harness VM matches the host arch.
+The `glibcGpodTool` build job builds for whatever the selected build
+host is. On a Lima builder that is the developer's own architecture
+(Apple Silicon → `linux-arm64`); on a remote builder it is that box's,
+which is how an arm64 Mac produces an amd64 `gpod-tool` for an amd64
+substrate. There is still no *cross*-compile — the build always runs
+natively on a machine of the target architecture (ADR-029 §4).
 
 ### Persona schema validator
 
