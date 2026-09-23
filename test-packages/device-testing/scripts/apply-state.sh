@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
-# apply-state.sh — mutate the Lima test VM to match a named SystemState.
+# apply-state.sh — mutate the substrate to match a named SystemState.
 #
-# Called by the @podkit/device-testing snapshot orchestrator (see
-# test-packages/device-testing/src/runners/lima-test-vm-state.ts) when a base
-# snapshot for the requested state is missing — typically on first run or
-# after the VM has been reprovisioned. The mutated VM is then captured into
-# `base-<state-id>` so subsequent test runs can restore the snapshot in <1s
-# instead of re-running apt/chmod/modprobe.
+# Called by the state runner (see
+# test-packages/device-testing/src/runners/lima-test-vm-state.ts) before a test
+# that declares a SystemState. It is a forward mutation every time, ~800ms; no
+# restore point is taken and none is restored (ADR-028).
 #
 # Contract:
 #   - Single positional arg: a SystemState id (one of `healthy`, `no-ffmpeg`,
@@ -23,8 +21,9 @@
 # script is the in-VM realisation of those definitions; the TypeScript registry
 # is the source of truth, the script is the executor.
 #
-# See: docs/adr/adr-016-linux-vm-test-harness.md §"Snapshot-based state layering"
+# See: docs/adr/adr-016-linux-vm-test-harness.md
 #      docs/adr/adr-017-device-persona-fixtures.md §"SystemState schema"
+#      docs/adr/adr-028-substrate-agnostic-device-harness.md (why not snapshots)
 
 set -eu
 

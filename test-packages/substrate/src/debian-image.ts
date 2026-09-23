@@ -124,3 +124,31 @@ export const SUBSTRATE_CONTRACT_REL_PATH =
  * about the two profiles that must NOT converge.
  */
 export const BUILDER_CONTRACT_REL_PATH = 'test-packages/device-testing/scripts/builder-contract.sh';
+
+/**
+ * Directory on a PVE host holding the pinned cloud image. `bootstrap-pve.sh`
+ * places it there; the lifecycle client imports the disk from it.
+ */
+export const PVE_IMAGE_DIR = '/var/lib/vz/template/iso';
+
+/** Filename of the pinned image for one architecture. */
+export function substrateDebianImageFile(arch: DebianImageArch): string {
+  return substrateDebianImageUrl(arch).slice(substrateDebianImageUrl(arch).lastIndexOf('/') + 1);
+}
+
+/** Absolute path the pinned image is expected at on a PVE host. */
+export function pveDebianImagePath(arch: DebianImageArch): string {
+  return `${PVE_IMAGE_DIR}/${substrateDebianImageFile(arch)}`;
+}
+
+/**
+ * The image pin as one string, for inclusion in a provisioning baseline. A
+ * guest booted from a different serial was provisioned from something the repo
+ * no longer says.
+ */
+export const SUBSTRATE_IMAGE_PIN = [
+  `debian=${SUBSTRATE_DEBIAN_MAJOR}`,
+  `suite=${SUBSTRATE_DEBIAN_SUITE}`,
+  `point=${SUBSTRATE_DEBIAN_POINT_RELEASE}`,
+  `serial=${SUBSTRATE_DEBIAN_IMAGE_SERIAL}`,
+].join(' ');

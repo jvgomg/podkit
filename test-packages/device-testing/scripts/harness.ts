@@ -26,22 +26,16 @@
  */
 
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 
 import { createVmProvisioningRunner, ensureRunning, getVm } from '@podkit/lima';
 import { primeTargetArchFromSubstrate, shellQuote, type SubstrateLink } from '@podkit/substrate';
 
 import { createSubstrateLink } from '../src/runners/substrate.js';
-import { installIntoSubstrate } from '../src/runners/substrate-install.js';
-import {
-  computeBaselineHash,
-  deviceBaselineFiles,
-  BASELINE_VM_HASH_PATH,
-} from '../src/baseline-hash.js';
+import { sealBaselineHash as sealBaseline } from '../src/baseline-seal.js';
+import { BASELINE_VM_HASH_PATH } from '../src/baseline-hash.js';
 import {
   instanceStatus,
   LIMA_DEVICE_HARNESS_VM_NAME,
@@ -454,40 +448,17 @@ async function cmdSetup(): Promise<number> {
 }
 
 async function sealBaselineHash(): Promise<number> {
-  const { combinedSha, files } = computeBaselineHash(deviceBaselineFiles());
-  console.log(
-    `[harness:setup] sealing baseline hash (${combinedSha.slice(0, 12)}...; ${files.length} files)`
-  );
-  // The hash is BYTES, not a file, and the obvious shape — pipe it to a
-  // guest-side `tee` — is the one thing a link deliberately cannot do: a
-  // `limactl shell` does not reliably forward stdin, so an stdin channel would
-  // work over ssh and half-work over Lima. Writing a host temp file and
-  // sending it through the same install path every other artefact uses costs
-  // one file and behaves identically on both links.
-  const hostTmp = path.join(os.tmpdir(), `podkit-baseline-${randomUUID()}`);
-  fs.writeFileSync(hostTmp, `${combinedSha}\n`, 'utf8');
   try {
-    await installIntoSubstrate({
-      link,
-      hostPath: hostTmp,
-      guestPath: BASELINE_VM_HASH_PATH,
-      stagePath: `/tmp/podkit-baseline-${randomUUID()}`,
-      mode: '0644',
-      createParents: true,
-      label: 'baseline hash',
-    });
+    const { combinedSha, inputCount } = await sealBaseline(DEVICE_VM, link);
+    console.log(
+      `[harness:setup] sealed baseline hash (${combinedSha.slice(0, 12)}...; ${inputCount} inputs)`
+    );
   } catch (err) {
     console.error(
       `[harness:setup] failed to write baseline-hash to ${BASELINE_VM_HASH_PATH}: ` +
         (err instanceof Error ? err.message : String(err))
     );
     return 1;
-  } finally {
-    try {
-      fs.unlinkSync(hostTmp);
-    } catch {
-      // Best-effort: a stuck file in the host tmpdir does no harm.
-    }
   }
   return 0;
 }

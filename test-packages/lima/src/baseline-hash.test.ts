@@ -63,7 +63,9 @@ describe('computeBaselineHash', () => {
     expect(result.files[0]!.label).toBe('podkit-device.yaml');
     expect(result.files[1]!.label).toBe('apply-state.sh');
     // The two absolute paths genuinely come from different roots.
-    expect(path.dirname(result.files[0]!.absPath)).not.toBe(path.dirname(result.files[1]!.absPath));
+    expect(path.dirname(result.files[0]!.absPath!)).not.toBe(
+      path.dirname(result.files[1]!.absPath!)
+    );
     expect(result.files[0]!.sha256).toBe(createHash('sha256').update('yaml-a').digest('hex'));
     expect(result.files[1]!.sha256).toBe(createHash('sha256').update('sh-a').digest('hex'));
     expect(result.combinedSha).toMatch(/^[0-9a-f]{64}$/);
@@ -113,7 +115,23 @@ describe('computeBaselineHash', () => {
     expect(() => computeBaselineHash(inOrder)).toThrow(/host source is incomplete/);
   });
 
+  it('hashes a tracked value without a file behind it', () => {
+    // A pin declared in TypeScript: hashing the module would fold in every
+    // unrelated edit to that module.
+    const result = computeBaselineHash([{ label: 'image-pin', value: 'serial=20250316-2053' }]);
+    expect(result.files[0]!.absPath).toBeNull();
+    expect(result.files[0]!.sha256).toBe(
+      createHash('sha256').update('serial=20250316-2053').digest('hex')
+    );
+  });
+
+  it('changes the combined hash when a tracked value changes', () => {
+    const before = computeBaselineHash([{ label: 'image-pin', value: 'a' }]).combinedSha;
+    const after = computeBaselineHash([{ label: 'image-pin', value: 'b' }]).combinedSha;
+    expect(after).not.toBe(before);
+  });
+
   it('throws rather than hashing nothing when given an empty list', () => {
-    expect(() => computeBaselineHash([])).toThrow(/no tracked baseline files/);
+    expect(() => computeBaselineHash([])).toThrow(/no tracked baseline inputs/);
   });
 });

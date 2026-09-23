@@ -107,6 +107,42 @@ Absent a token, everything except the lifecycle verbs still works and those
 verbs print the manual `qm` equivalent. A contributor with a hand-built box
 stays on the same code path as one with automation.
 
+Four things settled while building it, each because the obvious answer was
+wrong:
+
+- **The endpoint is a full base URL** (`PODKIT_PVE_API_URL`), not a hostname
+  with an assumed `:8006`, and not an ssh_config alias like the guests use. An
+  alias is resolved by a file that has no bearing on an HTTPS connection, so it
+  would look like configuration while doing nothing.
+- **There is no key naming the node.** `GET /pools/<pool>` returns vmid, name,
+  status and node for every member in one call — it is both the `status`
+  implementation and the vmid→node resolver, and it is the call the pool ACL
+  exists to permit.
+- **Pinning narrows the trust anchor; it does not relax verification.** The
+  certificate is probed over a credential-free socket, compared against the pin
+  before any token is sent, and then used as the sole `ca` for every request
+  with chain validation left on and identity decided by fingerprint. Identity by
+  fingerprint rather than hostname because PVE issues its certificate to the
+  node name, which need not match the URL it is reached at. With no pin
+  configured, ordinary system-CA validation applies. No switch anywhere disables
+  it, and a repo-wide test asserts that no such switch exists.
+- **`--cicustom` stays.** PVE's upload endpoint has no `snippets` content type,
+  so a token cannot place a cloud-init snippet — which means recreate reuses the
+  one phase 1 left, and a snippet change needs root again. The alternative,
+  PVE's native `--ciuser`/`--sshkeys`, was rejected: the snippet also installs
+  `qemu-guest-agent`, and a recreate that silently dropped it would produce a
+  guest whose address the token can no longer read. A named "re-run phase 1" is
+  the better failure.
+
+**The token cannot verify a regenerated SSH host key, and that is accepted.**
+Reading a key inside the guest is guest-exec — `VM.GuestAgent.Unrestricted` —
+which the recipe deliberately does not grant, because it would make the token
+strictly more powerful than the ssh access it complements. Recreate therefore
+prints the address the guest agent binds to the VMID (`VM.GuestAgent.Audit`),
+which rules out an impostor at that address without proving the key, and names
+the privileged paths that can. Unattended recreate is not on offer; the
+alternative was widening the token, which is the one thing the design is for.
+
 ### 4. Host architecture no longer implies target architecture
 
 Target architecture is resolved from the selected substrate, with host
@@ -175,6 +211,24 @@ the stale box.
 Stated explicitly because the two look identical at a glance, and a later reader
 comparing this ADR with ADR-028's Alternatives would otherwise score it as a
 reversal.
+
+The snapshot and the sealed baseline hash are taken by one command, because they
+describe one moment. A snapshot without a matching sealed hash is a restore
+point nothing vouches for, so recover has to treat it as unknown and recreate —
+which makes the fast path unreachable exactly when it would help.
+
+### 6. A shared substrate needs a lock the host cannot hold
+
+The existing advisory lock is a file in the caller's temp directory and
+structurally cannot see a second machine. A substrate reached over ssh is
+shared, so the lock lives **in the guest**, on a tmpfs that a reboot clears.
+
+Contention waits briefly and then fails, naming the holder's host, user, pid and
+start time, with a documented force flag. Not blocking indefinitely: the holder
+may legitimately be another person running a full suite, and a wait that long is
+indistinguishable from a hang. Not auto-reclaiming on a stale mtime either — a
+lock held over ssh has no refresher to go quiet, so staleness cannot be
+inferred, only asserted by a human.
 
 ## Consequences
 

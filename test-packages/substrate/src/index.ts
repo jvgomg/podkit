@@ -196,3 +196,101 @@ export {
   SUBSTRATE_CONTRACT_REL_PATH,
   BUILDER_CONTRACT_REL_PATH,
 } from './debian-image.js';
+
+// The remote advisory lock — held IN the substrate, so it sees other machines
+export type { RemoteLockHolder, AcquireRemoteLockOpts, RemoteLockRelease } from './remote-lock.js';
+export {
+  acquireRemoteLock,
+  releaseRemoteLock,
+  forceReleaseRemoteLock,
+  readRemoteLockHolder,
+  withRemoteLock,
+  parseRemoteLockHolder,
+  describeRemoteLockHolder,
+  RemoteLockBusyError,
+  REMOTE_LOCK_PATH,
+  DEFAULT_REMOTE_LOCK_TIMEOUT_MS,
+  DEFAULT_REMOTE_LOCK_POLL_MS,
+} from './remote-lock.js';
+
+// Proxmox VE — configuration, API client, and lifecycle for an `ssh` substrate
+export type { PveConfig, PveConfigResolution } from './pve/config.js';
+export {
+  resolvePveConfig,
+  resolvePveVmid,
+  pveVmidEnvVar,
+  PveConfigError,
+  PVE_API_URL_ENV,
+  PVE_TOKEN_ID_ENV,
+  PVE_TOKEN_SECRET_ENV,
+  PVE_TLS_FINGERPRINT_ENV,
+  PVE_POOL_ENV,
+  PVE_STORAGE_ENV,
+  PVE_BRIDGE_ENV,
+  DEFAULT_PVE_POOL,
+  DEFAULT_PVE_BRIDGE,
+} from './pve/config.js';
+
+export type { PveDeniedPrivilege, PveApiFailure } from './pve/errors.js';
+export { PveApiError, pveApiError, parseDeniedPrivilege, isPveApiError } from './pve/errors.js';
+
+export type { ProbedCertificate, ProbeCertificateFn, PinnedTlsOptions } from './pve/tls.js';
+export {
+  normalizeFingerprint,
+  fingerprintsMatch,
+  resolvePinnedTls,
+  probeCertificateOverTls,
+  PveTlsPinError,
+  PveTlsFingerprintFormatError,
+} from './pve/tls.js';
+
+export type {
+  PveClient,
+  PveGuest,
+  PveGuestStatus,
+  PveSnapshot,
+  CreateGuestSpec,
+  CreatePveClientOpts,
+} from './pve/client.js';
+export {
+  createPveClient,
+  PveUnreachableError,
+  PveTaskError,
+  PveApiMissingGuest,
+} from './pve/client.js';
+
+export type { QmVerb, QmContext, ManualNoticeInput } from './pve/qm.js';
+export { manualQmEquivalent, manualLifecycleNotice, QM_VERB_FOR_CLI_VERB } from './pve/qm.js';
+
+export type {
+  PveBinding,
+  PveLifecycleResolution,
+  PveUnavailableReason,
+  RecoveryStrategy,
+  TemplateHashVerdict,
+  ChooseRecoveryInput,
+  PveRecoverOpts,
+  PveRecoverResult,
+  ReportFn,
+} from './pve/lifecycle.js';
+export {
+  resolvePveLifecycle,
+  qmContextFor,
+  guestSpecFor,
+  pveStatus,
+  pveEnsureRunning,
+  pveStop,
+  pveDestroy,
+  pveSealSnapshot,
+  pveRecover,
+  chooseRecoveryStrategy,
+  POST_PROVISION_SNAPSHOT,
+} from './pve/lifecycle.js';
+
+// The pinned image as a PVE host path + the pin as a baseline input
+export {
+  PVE_IMAGE_DIR,
+  substrateDebianImageFile,
+  pveDebianImagePath,
+  SUBSTRATE_IMAGE_PIN,
+} from './debian-image.js';

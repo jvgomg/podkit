@@ -303,6 +303,20 @@ The virtual iPod system creates a synthetic iPod for demonstrating podkit. It co
 - Bun test runner
 - ESM modules
 
+### Comments
+
+Keep them terse. A comment carries the light context the code cannot — why this
+shape, what the non-obvious constraint is — and stops.
+
+Never write the work into a comment. No task ids, no "found while proving X on
+a live host", no narration of what a previous version did or which defect this
+fixes. That history belongs in the backlog task, the commit message or an ADR;
+in a comment it is stale the day it lands and it makes the file longer than the
+thing it explains.
+
+Pointing at an ADR (or an architecture doc) is the right way to carry a
+decision's reasoning — link it, don't restate it.
+
 ## Release Workflow
 
 Read [docs/agents/releases.md](docs/agents/releases.md) when creating changesets, reviewing release PRs, or publishing releases.

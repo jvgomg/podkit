@@ -59,10 +59,12 @@ describe('substrate registry', () => {
     expect(() => getVm('does-not-exist')).toThrow(/Known VMs:/);
   });
 
-  it('tracks exactly the Lima device-synthesis harness for baseline drift', () => {
+  it('tracks exactly the device substrates for baseline drift', () => {
+    // A builder is not tracked: it carries the inverse contract and nothing
+    // seals a hash into it.
     const tracked = listVms().filter((v) => v.trackedForBaseline);
-    expect(tracked).toHaveLength(1);
-    expect(tracked[0]!.id).toBe('device');
+    expect(tracked.map((v) => v.id)).toEqual(['device', 'deviceRemote']);
+    expect(tracked.every((v) => v.category === 'device')).toBe(true);
   });
 
   it('maps each id to its provisioner-facing instance name', () => {

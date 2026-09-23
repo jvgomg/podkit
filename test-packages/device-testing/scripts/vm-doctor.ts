@@ -1,57 +1,64 @@
 #!/usr/bin/env bun
 /**
- * Baseline-drift preflight for the device-harness VM.
+ * Baseline-drift preflight for the selected device substrate.
  *
- * Hashes the host-side baseline sources
- * (`podkit-device.yaml` + `apply-state.sh`) and compares to the
- * hash file written by `harness:setup` at
- * `/var/lib/podkit-device-harness/baseline-hash` inside the VM. A mismatch
- * means the running VM was provisioned from a different version of the
- * yaml/script than the one currently on disk; the next test run will
- * observe state that does not match the source-of-truth files.
+ * Hashes the host-side provisioning inputs and compares them to the hash
+ * `harness:setup` sealed inside the guest. A mismatch means the running guest
+ * was provisioned from a different version of those inputs than the one on
+ * disk, so the next test run observes state the source no longer describes.
  *
  * Exit codes:
- *   0  hashes match (or doctor is being run against a missing VM and that
- *      is currently treated as the harness's own concern — `harness:setup`
- *      will create the VM and write the hash).
- *   1  drift detected, or a probe failed in a way that prevents the
- *      doctor from giving a meaningful answer.
+ *   0  hashes match, or there is no guest to check yet (`harness:setup` will
+ *      create it and seal the hash).
+ *   1  drift detected, or a probe failed in a way that prevents an answer.
  *
- * The doctor deliberately does NOT auto-rebuild the VM. Rebuilding takes
- * minutes; an explicit error with the exact remediation command is a
- * better UX than silent disruption. The remediation is always:
- *
- *   bun run vm:destroy device && bun run harness:setup
- *
- * `harness:setup` writes the current hash post-install (see
- * `cmdSetup` in `harness.ts`).
+ * It deliberately does NOT rebuild anything. Rebuilding takes minutes, and an
+ * explicit error naming the remediation beats silent disruption — so the
+ * remediation is named, and it differs by provisioner.
  *
  * @see docs/architecture/testing/vm-build-orchestration.md
  * @module
  */
 
-import { getVm } from '@podkit/lima';
+import { isLimaVm, type VmDefinition } from '@podkit/substrate';
 
-import { instanceStatus, LIMA_DEVICE_HARNESS_VM_NAME } from '../src/runners/lima-test-vm.js';
+import { instanceStatus } from '../src/runners/lima-test-vm.js';
 import { createSubstrateLink, resolveDeviceSubstrate } from '../src/runners/substrate.js';
 import {
   computeBaselineHash,
-  deviceBaselineFiles,
+  substrateBaselineInputs,
   BASELINE_VM_HASH_PATH,
 } from '../src/baseline-hash.js';
 
-function remediation(reason: string): string {
+/**
+ * The way out, named for the substrate in front of the reader.
+ *
+ * Provisioning is post-boot and idempotent, so re-applying the contract fixes a
+ * merely-drifted box. Recreating is for a wedged one — and on a Proxmox guest
+ * that is a single verb, which is most of why the API lifecycle exists.
+ */
+function remediation(substrate: VmDefinition, reason: string): string {
+  const reapply = isLimaVm(substrate)
+    ? '  bun run harness:setup'
+    : '  # apply the contract (docs/environments/device-substrate-proxmox.md §5), then:\n' +
+      '  bun run harness:seal';
+  const recreate = isLimaVm(substrate)
+    ? [`  bun run vm:destroy ${substrate.id} --yes && bun run harness:setup`]
+    : [
+        `  bun run vm:recover ${substrate.id}`,
+        '',
+        'That rolls back to the provisioning snapshot when the committed inputs still',
+        'match, and recreates the guest when they do not — which is this case, so',
+        'expect a recreate. Re-apply the contract and re-seal afterwards.',
+      ];
   return [
     `[vm:doctor] ${reason}`,
     '',
     'To re-apply the current source-of-truth files and re-seal:',
-    '  bun run harness:setup',
+    reapply,
     '',
-    // Provisioning is post-boot and idempotent, so re-applying the contract is
-    // enough for a drifted box. A destroy is for a box that is wedged, not one
-    // that is merely out of date — it costs a full image boot to fix neither.
-    'If the VM is wedged rather than merely drifted, recreate it:',
-    '  bun run vm:destroy device --yes && bun run harness:setup',
+    `If '${substrate.id}' is wedged rather than merely drifted, recreate it:`,
+    ...recreate,
     '',
     'Skipping this check leaves VM tests observing a substrate whose',
     'provisioning does not match the contract scripts on disk.',
@@ -60,59 +67,47 @@ function remediation(reason: string): string {
 }
 
 async function main(): Promise<number> {
-  const vmName = LIMA_DEVICE_HARNESS_VM_NAME;
+  const substrate = resolveDeviceSubstrate().definition;
 
-  // 0. Baseline drift is a property of the LIMA device substrate: the hash is
-  //    sealed from `podkit-device.yaml`, and ADR-029 records that drift
-  //    detection has to move onto the contract scripts before a remote
-  //    substrate can be tracked at all. Say that plainly rather than reporting
-  //    "the Lima instance is missing" to someone who never asked for one.
-  const selected = resolveDeviceSubstrate().definition;
-  if (!selected.trackedForBaseline) {
+  // 0. Only a substrate that seals a hash has drift to report. Say that
+  //    plainly rather than reporting a missing Lima instance to someone who
+  //    never asked for one.
+  if (!substrate.trackedForBaseline) {
     process.stdout.write(
-      `[vm:doctor] substrate '${selected.id}' is not baseline-tracked — no drift to check.\n` +
+      `[vm:doctor] substrate '${substrate.id}' is not baseline-tracked — no drift to check.\n` +
         `[vm:doctor] Its provisioning is asserted by \`substrate-doctor.sh\` instead ` +
         `(docs/environments/device-substrate-proxmox.md).\n`
     );
     return 0;
   }
 
-  // 1. VM must be reachable. We treat `missing` as an upstream concern
-  //    (harness:setup will create + hash). We treat `stopped` as a clear
-  //    error message — drift cannot be checked against a stopped VM.
-  const status = await instanceStatus().catch(() => 'missing' as const);
-  if (status === 'missing') {
-    process.stdout.write(
-      `[vm:doctor] Lima instance \`${vmName}\` is missing — no drift to check.\n` +
-        `[vm:doctor] Run \`bun run harness:setup\` to create it.\n`
-    );
-    // Missing VM is not drift; the harness's own check will catch this and
-    // surface a more specific message. Doctor passes so test:vm proceeds to
-    // the harness preflight, which gives the better error.
-    return 0;
-  }
-  if (status === 'stopped') {
-    process.stderr.write(
-      `[vm:doctor] Lima instance \`${vmName}\` is stopped — cannot check baseline drift.\n` +
-        `[vm:doctor] Run \`bun run vm:up device\` first.\n`
-    );
-    return 1;
+  // 1. A guest that does not exist yet is the harness's concern: `harness:setup`
+  //    creates it and seals the hash, and gives a better error than this can.
+  if (isLimaVm(substrate)) {
+    const status = await instanceStatus().catch(() => 'missing' as const);
+    if (status === 'missing') {
+      process.stdout.write(
+        `[vm:doctor] Lima instance \`${substrate.instanceName}\` is missing — no drift to check.\n` +
+          `[vm:doctor] Run \`bun run harness:setup\` to create it.\n`
+      );
+      return 0;
+    }
+    if (status === 'stopped') {
+      process.stderr.write(
+        `[vm:doctor] Lima instance \`${substrate.instanceName}\` is stopped — cannot check drift.\n` +
+          `[vm:doctor] Run \`bun run vm:up ${substrate.id}\` first.\n`
+      );
+      return 1;
+    }
   }
 
-  // 2. Compute host-side baseline hash.
-  const { combinedSha, files } = computeBaselineHash(deviceBaselineFiles());
+  // 2. Hash the host-side inputs for THIS substrate. A Lima guest and a
+  //    Proxmox guest are declared by different files, so the lists differ.
+  const { combinedSha, files } = computeBaselineHash(substrateBaselineInputs(substrate));
 
-  // 3. Read VM-side hash. Absence is treated as drift — the VM exists but
-  //    was never sealed by `harness:setup`. (A pre-vm-doctor VM created
-  //    before this orchestration landed falls into this bucket; the
-  //    remediation is to rebuild via harness:setup so the hash is sealed.)
-  // Linked to the LIMA device substrate specifically, not to whichever
-  // substrate is selected: the hash this doctor compares against is sealed
-  // from `podkit-device.yaml`, and ADR-029 records that drift detection has to
-  // move onto the contract scripts before a remote substrate can be tracked at
-  // all. Checking a remote box against a Lima-derived hash would report drift
-  // that means nothing.
-  const link = createSubstrateLink(getVm('device'));
+  // 3. Read the sealed hash. Absence is drift: the guest exists but was never
+  //    sealed, so nothing vouches for how it was provisioned.
+  const link = createSubstrateLink(substrate);
   const probe = await link
     .exec(['sh', '-c', `cat ${BASELINE_VM_HASH_PATH} 2>/dev/null || true`])
     .catch((err: unknown) => ({ exitCode: 1, stdout: '', stderr: String(err) }));
@@ -120,7 +115,8 @@ async function main(): Promise<number> {
   if (probe.exitCode !== 0) {
     process.stderr.write(
       remediation(
-        `failed to probe VM for baseline hash at ${BASELINE_VM_HASH_PATH}: ` +
+        substrate,
+        `failed to probe ${link.description} for a baseline hash at ${BASELINE_VM_HASH_PATH}: ` +
           `${probe.stderr.trim() || 'unknown error'}`
       )
     );
@@ -132,9 +128,9 @@ async function main(): Promise<number> {
   if (!vmHash) {
     process.stderr.write(
       remediation(
-        `VM has no baseline hash at ${BASELINE_VM_HASH_PATH}. ` +
-          `The VM was likely created before \`vm:doctor\` shipped, or by a manual \`limactl create\`. ` +
-          `Rebuild it so the hash is sealed.`
+        substrate,
+        `${link.description} has no baseline hash at ${BASELINE_VM_HASH_PATH}. ` +
+          `It was provisioned by hand, or before this check shipped. Seal it.`
       )
     );
     return 1;
@@ -144,12 +140,13 @@ async function main(): Promise<number> {
     const driftedNames = files.map((f) => `  - ${f.label}`).join('\n');
     process.stderr.write(
       remediation(
-        `baseline drift detected.\n` +
+        substrate,
+        `substrate '${substrate.id}' drifted from the committed provisioning inputs.\n` +
           `\n` +
-          `VM hash: ${vmHash}\n` +
-          `Host hash: ${combinedSha}\n` +
+          `Guest hash: ${vmHash}\n` +
+          `Host hash:  ${combinedSha}\n` +
           `\n` +
-          `Tracked files (one of these or their composition changed):\n` +
+          `Tracked inputs (one of these or their composition changed):\n` +
           `${driftedNames}`
       )
     );
@@ -157,7 +154,7 @@ async function main(): Promise<number> {
   }
 
   process.stdout.write(
-    `[vm:doctor] baseline OK (${vmHash.slice(0, 12)}...; ${files.length} files tracked).\n`
+    `[vm:doctor] baseline OK (${vmHash.slice(0, 12)}...; ${files.length} inputs tracked).\n`
   );
   return 0;
 }

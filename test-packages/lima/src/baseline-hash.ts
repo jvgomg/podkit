@@ -1,32 +1,21 @@
 /**
  * Baseline hashing for VM provisioning inputs.
  *
- * A VM's "baseline" is the set of host files that, when changed, mean the
- * running VM was provisioned from an out-of-date version of the source. For
- * the device-synthesis harness those inputs are:
+ * A substrate's "baseline" is the set of provisioning inputs that, when
+ * changed, mean the running guest was provisioned from something the repo no
+ * longer says — its declarative config, the contract scripts, the image pin.
  *
- *   - its Lima YAML — apt packages, kernel modules, fstab entries; the
- *     cloud-init script that runs at first boot.
- *   - `apply-state.sh` — runtime realisation of SystemStates. Drift here means
- *     a SystemState in the TypeScript registry may have no in-VM applier.
+ * Those inputs span packages, so this module owns only the *primitive*: an
+ * ordered list in, one combined hash out. Composing the list for a given
+ * substrate belongs to the package that owns its provisioning.
  *
- * Those inputs span packages: the YAML lives in this package's `vms/`, while
- * `apply-state.sh` belongs to `@podkit/device-testing` (it is domain-coupled to
- * the SystemState registry). This module therefore owns only the *primitive* —
- * an explicit list of absolute file paths in, one combined hash out. Composing
- * the list for a given VM is the job of the package that owns its non-YAML
- * inputs.
+ * The primitive is shared between the drift check (hashes host, compares to
+ * guest) and the harness setup (hashes host, seals into guest), so neither can
+ * drift from the other without a unit test catching it.
  *
- * The primitive is shared between the drift check (read-side: hashes host,
- * compares to VM) and the harness setup (write-side: hashes host, seals into
- * VM), so neither path can drift from the other without a unit test catching
- * it.
- *
- * Note: consolidating the VM YAMLs under `vms/` changed the labels fed into
- * the combined hash, so it shifted once at that point and every previously
- * sealed VM reads as drifted. That is a deliberate one-time cost, paid
- * alongside the Lima instance renames that already require a destroy and
- * re-provision — not an accident.
+ * Changing the list or its order changes every sealed hash, and every
+ * previously sealed guest then reads as drifted. That is the intended cost of
+ * adding an input, not an accident.
  *
  * @module
  */
@@ -58,60 +47,88 @@ export interface TrackedBaselineFile {
   absPath: string;
 }
 
-/** Per-file digest emitted by {@link computeBaselineHash}. */
-export interface BaselineFileEntry extends TrackedBaselineFile {
-  /** sha256 hex of the file content. */
+/**
+ * A provisioning input that is a value rather than a file — a pin expressed in
+ * TypeScript, say. Hashing the module that declares it would fold in every
+ * unrelated edit to that module, so the value itself is what is tracked.
+ */
+export interface TrackedBaselineValue {
+  /** Short, stable name. See {@link TrackedBaselineFile.label}. */
+  label: string;
+  /** The value whose change means the guest was provisioned differently. */
+  value: string;
+}
+
+/** Anything a baseline may be sealed over. */
+export type TrackedBaselineInput = TrackedBaselineFile | TrackedBaselineValue;
+
+/** Per-input digest emitted by {@link computeBaselineHash}. */
+export interface BaselineFileEntry {
+  label: string;
+  /** Absolute host path, or `null` for a tracked value. */
+  absPath: string | null;
+  /** sha256 hex of the content. */
   sha256: string;
 }
 
 /** Result of {@link computeBaselineHash}. */
 export interface BaselineHashResult {
-  /** Combined sha256 across all baseline files (the value sealed in the VM). */
+  /** Combined sha256 across all inputs (the value sealed in the VM). */
   combinedSha: string;
-  /** Per-file digests, in the order the caller declared them. */
+  /** Per-input digests, in the order the caller declared them. */
   files: readonly BaselineFileEntry[];
 }
 
+function isTrackedValue(input: TrackedBaselineInput): input is TrackedBaselineValue {
+  return 'value' in input;
+}
+
 /**
- * Hash a VM's tracked baseline files into one combined digest.
+ * Hash a substrate's tracked provisioning inputs into one combined digest.
  *
  * Declaration order is significant: the combined hash folds in
- * `` `${label}:${sha256}\n` `` per file, in the given order, so reordering or
- * relabelling the list produces a visibly different combined hash rather than
- * masquerading as a real source change. Callers must therefore build the list
- * in a fixed order, and append rather than insert when adding an input.
+ * `` `${label}:${sha256}\n` `` per input, in the given order, so reordering or
+ * relabelling produces a visibly different hash rather than masquerading as a
+ * real source change. Build the list in a fixed order, and append rather than
+ * insert when adding an input.
  *
  * Throws if any tracked file is missing — a baseline whose source is absent is
  * meaningless and should fail loudly rather than silently compute a
  * "different" hash that future runs would match.
  */
 export function computeBaselineHash(
-  trackedFiles: readonly TrackedBaselineFile[]
+  trackedInputs: readonly TrackedBaselineInput[]
 ): BaselineHashResult {
-  if (trackedFiles.length === 0) {
+  if (trackedInputs.length === 0) {
     throw new Error(
-      'computeBaselineHash: no tracked baseline files were supplied. ' +
-        'A baseline over zero files cannot detect drift.'
+      'computeBaselineHash: no tracked baseline inputs were supplied. ' +
+        'A baseline over zero inputs cannot detect drift.'
     );
   }
 
   const combined = createHash('sha256');
   const files: BaselineFileEntry[] = [];
 
-  for (const { label, absPath } of trackedFiles) {
-    let content: Buffer;
-    try {
-      content = fs.readFileSync(absPath);
-    } catch (err) {
-      const cause = err instanceof Error ? err.message : String(err);
-      throw new Error(
-        `computeBaselineHash: cannot read tracked baseline file ` +
-          `'${label}' at ${absPath} (${cause}). The host source is incomplete.`
-      );
+  for (const input of trackedInputs) {
+    let content: Buffer | string;
+    let absPath: string | null = null;
+    if (isTrackedValue(input)) {
+      content = input.value;
+    } else {
+      absPath = input.absPath;
+      try {
+        content = fs.readFileSync(input.absPath);
+      } catch (err) {
+        const cause = err instanceof Error ? err.message : String(err);
+        throw new Error(
+          `computeBaselineHash: cannot read tracked baseline file ` +
+            `'${input.label}' at ${input.absPath} (${cause}). The host source is incomplete.`
+        );
+      }
     }
     const sha256 = createHash('sha256').update(content).digest('hex');
-    files.push({ label, absPath, sha256 });
-    combined.update(`${label}:${sha256}\n`);
+    files.push({ label: input.label, absPath, sha256 });
+    combined.update(`${input.label}:${sha256}\n`);
   }
 
   return { combinedSha: combined.digest('hex'), files };

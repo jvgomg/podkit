@@ -161,6 +161,8 @@ export { startHeartbeat, formatElapsed, DEFAULT_HEARTBEAT_MS } from './progress.
 // Baseline hash + drift
 export type {
   TrackedBaselineFile,
+  TrackedBaselineValue,
+  TrackedBaselineInput,
   BaselineFileEntry,
   BaselineHashResult,
 } from './baseline-hash.js';

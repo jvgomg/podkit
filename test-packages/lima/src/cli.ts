@@ -1,10 +1,16 @@
 #!/usr/bin/env bun
 /**
- * `podkit-vm` — the single command-line chokepoint for Lima VM lifecycle.
+ * `podkit-vm` — the single command-line chokepoint for substrate lifecycle.
  *
- * Every verb that can create or start a VM routes through the shared advisory
- * lock (via the lifecycle primitives), so TS callers, shell scripts, and this
- * CLI all funnel through ONE lock code path.
+ * Verbs dispatch on the registry's provisioner discriminator: Lima instances
+ * are driven here, `ssh` substrates in `./cli-ssh.js` over the Proxmox API.
+ * Same verbs either way — doc-060 rules out a parallel command family.
+ *
+ * Every Lima verb that can create or start a VM routes through the shared
+ * advisory lock (via the lifecycle primitives), so TS callers, shell scripts,
+ * and this CLI all funnel through ONE lock code path. An `ssh` substrate is
+ * shared across machines, so its lock lives in the substrate instead
+ * (`unlock`).
  *
  * Verbs:
  *   ensure   <instance>   create + start the VM if needed (idempotent, locked)
@@ -22,6 +28,8 @@
  *   doctor   <instance>   report whether a tracked VM carries a sealed baseline
  *                         hash (the drift comparison itself belongs to the
  *                         package that owns the VM's non-YAML inputs)
+ *   snapshot <instance>   seal the provisioning snapshot (ssh substrates only)
+ *   unlock   <instance>   report or break the in-substrate run lock (ssh only)
  *
  * This module is a script entry point, so it prints user-facing output and sets
  * the process exit code — unlike the library modules, which stay quiet.
@@ -32,7 +40,15 @@
 import * as readline from 'node:readline';
 import { spawnSync } from 'node:child_process';
 
-import { getVm, listVms, type LimaVmDefinition, type VmDefinition } from '@podkit/substrate';
+import {
+  createSshLink,
+  getVm,
+  listVms,
+  type LimaVmDefinition,
+  type SshVmDefinition,
+  type VmDefinition,
+} from '@podkit/substrate';
+import { runSshSubstrateVerb, SSH_VERBS } from './cli-ssh.js';
 import { instanceStatus } from './instance-status.js';
 import { ensureRunning, stop, destroy, recover, type LifecycleOpts } from './lifecycle.js';
 import { runInVm, stageSourceTree, DEFAULT_STAGE_EXCLUDES } from './link-adapters.js';
@@ -52,6 +68,8 @@ const VERBS = [
   'shell',
   'install',
   'doctor',
+  'snapshot',
+  'unlock',
 ] as const;
 
 const USAGE = `Usage: podkit-vm <verb> <instance> [options]
@@ -72,13 +90,15 @@ Verbs:
   shell     Open an interactive shell inside the VM
   install   Ensure the VM is running (generic precondition for harness install)
   doctor    Report whether a tracked VM carries a sealed baseline hash
+  snapshot  Seal the provisioning snapshot (ssh substrates only)
+  unlock    Report the in-substrate run lock, or break it with --force (ssh only)
 
-<instance> is a registry id or a Lima instance name. Known VMs:
+<instance> is a registry id, a Lima instance name, or an ssh substrate id. Known:
 ${listVms()
   .map(
     (vm) =>
       `  ${vm.id} (${vm.instanceName})` +
-      (vm.provisioner === 'lima' ? '' : `  [${vm.provisioner}-provisioned — not lifecycled here]`)
+      (vm.provisioner === 'lima' ? '' : `  [${vm.provisioner}; lifecycled over the Proxmox API]`)
   )
   .join('\n')}
 `;
@@ -365,6 +385,36 @@ async function cmdDoctor(def: LimaVmDefinition, opts: LifecycleOpts): Promise<nu
 }
 
 /**
+ * Hand an `ssh` substrate's verb to the Proxmox branch, with this module's
+ * terminal. Kept here so the CLI has one place that knows about stdin/stdout.
+ */
+async function dispatchSsh(
+  verb: string,
+  def: SshVmDefinition,
+  args: readonly string[],
+  opts: LifecycleOpts
+): Promise<number> {
+  if (!(SSH_VERBS as readonly string[]).includes(verb)) {
+    errorLog(
+      `[podkit-vm] verb \`${verb}\` is not available for the ssh-provisioned substrate ` +
+        `\`${def.id}\`. Available: ${SSH_VERBS.join(', ')}.`
+    );
+    return 1;
+  }
+  return runSshSubstrateVerb(verb, def, args, {
+    ...(opts.subprocess
+      ? { linkFor: (d: SshVmDefinition) => createSshLink(d, { subprocess: opts.subprocess }) }
+      : {}),
+    io: {
+      log,
+      errorLog,
+      confirm: confirmPrompt,
+      interactive: Boolean(process.stdin.isTTY),
+    },
+  });
+}
+
+/**
  * Entry point. `argv` and `opts` default to the real process argv and the real
  * `limactl`/lock so production invocation is unchanged; tests pass both
  * explicitly to dispatch against a scripted `SubprocessRunner` and a hermetic
@@ -395,18 +445,21 @@ export async function main(
     errorLog(`[podkit-vm] ${err instanceof Error ? err.message : String(err)}`);
     return 1;
   }
-  // Every verb below drives `limactl`. Refuse a substrate this provisioner did
-  // not create, here rather than deeper: `status` would otherwise ask Lima
-  // about a box Lima has never heard of and print `missing`, which is a
-  // confident wrong answer about a machine that may be running perfectly well.
+  // Dispatch on the provisioner. Everything below drives `limactl`, and asking
+  // Lima about a box it has never heard of would print `missing` — a confident
+  // wrong answer about a machine that may be running perfectly well.
   if (resolvedDef.provisioner !== 'lima') {
+    return dispatchSsh(verb, resolvedDef, args, opts);
+  }
+  const def: LimaVmDefinition = resolvedDef;
+
+  if (verb === 'snapshot' || verb === 'unlock') {
     errorLog(
-      `[podkit-vm] \`${resolvedDef.id}\` is provisioned by '${resolvedDef.provisioner}', ` +
-        'not by Lima, so podkit-vm cannot lifecycle it.'
+      `[podkit-vm] \`${verb}\` applies to an ssh substrate only. A Lima VM's lock is ` +
+        'host-local, and its provisioning is re-applied rather than rolled back.'
     );
     return 1;
   }
-  const def: LimaVmDefinition = resolvedDef;
 
   // A cold create runs for minutes; stream its provisioning log so the operator
   // can tell a slow VM from a wedged one. Probes stay buffered (see

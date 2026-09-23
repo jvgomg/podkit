@@ -120,29 +120,37 @@ describe('verb and argument validation', () => {
   });
 
   // `deviceRemote` is the registry's real ssh-provisioned entry (not an
-  // invented fixture) — the whole point is that the shipped registry, not a
-  // synthetic stand-in, exercises this branch. Without this guard,
-  // `podkit-vm status deviceRemote` would ask `limactl` about an instance it
-  // has never heard of and print `missing`: a confident wrong answer about a
-  // substrate that may be running perfectly well over SSH (see the comment at
-  // the guard's call site in `main()`).
-  it('refuses to lifecycle the ssh-provisioned substrate, before touching limactl', async () => {
+  // invented fixture) — the shipped registry is what exercises this branch.
+  // `limactl` must never see it: asking Lima about an instance it has never
+  // heard of prints `missing`, a confident wrong answer about a substrate that
+  // may be running perfectly well over SSH.
+  it('answers status for the ssh substrate over its link, never through limactl', async () => {
     const remote = getVm('deviceRemote');
-    const { runner, calls } = makeScriptedRunner([]); // any call here would be a real bug
+    const { runner, calls } = makeScriptedRunner([ok()]);
     const code = await main(['status', remote.id], { subprocess: runner });
+    expect(code).toBe(0);
+    // A substrate that replies is a substrate that is running. That is an
+    // observation, so it is a legitimate answer with no API token.
+    expect(stdoutText()).toContain('running');
+    expect(calls.map((c) => c.command)).toEqual(['ssh']);
+  });
+
+  it('prints the qm equivalent rather than failing when no token is configured', async () => {
+    const remote = getVm('deviceRemote');
+    const { runner, calls } = makeScriptedRunner([]); // any limactl call would be a bug
+    const code = await main(['ensure', remote.instanceName], { subprocess: runner });
     expect(code).toBe(1);
     const err = stderrText();
-    expect(err).toContain(`\`${remote.id}\` is provisioned by 'ssh'`);
-    expect(err).toContain('podkit-vm cannot lifecycle it');
+    expect(err).toContain('No Proxmox API token is configured');
+    expect(err).toContain('qm start <vmid>');
     expect(calls).toHaveLength(0);
   });
 
-  it('accepts the ssh-provisioned entry by its concrete instance name too', async () => {
-    const remote = getVm('deviceRemote');
+  it('refuses snapshot and unlock on a Lima VM', async () => {
     const { runner, calls } = makeScriptedRunner([]);
-    const code = await main(['ensure', remote.instanceName], { subprocess: runner });
+    const code = await main(['snapshot', 'device'], { subprocess: runner });
     expect(code).toBe(1);
-    expect(stderrText()).toContain(`\`${remote.id}\` is provisioned by 'ssh'`);
+    expect(stderrText()).toContain('applies to an ssh substrate only');
     expect(calls).toHaveLength(0);
   });
 });

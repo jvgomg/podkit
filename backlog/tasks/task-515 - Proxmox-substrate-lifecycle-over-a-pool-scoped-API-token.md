@@ -1,10 +1,10 @@
 ---
 id: TASK-515
 title: Proxmox substrate lifecycle over a pool-scoped API token
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-09-13 18:34'
-updated_date: '2026-09-23 19:07'
+updated_date: '2026-09-23 23:08'
 labels:
   - testing
   - infrastructure
@@ -62,6 +62,30 @@ Also add the **remote advisory lock**: held in the substrate for the duration of
 - [ ] #9 A remote advisory lock is held for the run; contention times out and names the holder's host, user, pid and start time
 - [ ] #10 Per-test state still runs through apply-state.sh with no snapshot involvement
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Five decisions this task had to make, then the build.
+
+**D1 — `PODKIT_PVE_API_URL`, a full base URL.** Not a hostname plus an assumed `:8006`, not an ssh_config alias. An alias is resolved by a file with no bearing on an HTTPS connection. Added to `.env.example` alongside `PODKIT_PVE_POOL` (default `podkit`).
+
+**D2 — the node is discovered, not configured.** `GET /pools/<pool>` returns vmid, name, status AND node for every member in one call (comment #6). So there is no `PODKIT_PVE_NODE` key: the pool listing is both the `status` implementation and the vmid→node resolver, and it is the one call `Pool.Audit` exists to permit.
+
+**D3 — TLS pin narrows the trust anchor; it does not disable verification.** Probe the cert over `node:tls`, compare SHA-256 against the pin, then issue every request with that exact certificate as the `ca` and a `checkServerIdentity` that re-checks the fingerprint. With no pin configured, plain system-CA `fetch` — unchanged, still verifying. There is no branch anywhere that turns verification off.
+
+**D4 — keep `--cicustom`; recreate does not invent a snippet.** PVE's upload endpoint has no `snippets` content type, so a token cannot place one. The alternative (native `--ciuser`/`--sshkeys`) was rejected: the snippet also brings `qemu-guest-agent`, and a recreate that quietly dropped it would produce a guest whose address the token can no longer read — a quieter failure than a named "re-run phase 1". Create therefore reuses the snippet phase 1 placed and names `bootstrap-pve.sh` when it is absent.
+
+**D5 — the host-key story is that the token cannot tell you the key.** Guest-exec is `VM.GuestAgent.Unrestricted` and is deliberately not granted, so the playbook's `qm guest exec … ssh-keygen -lf` instruction is unavailable to the very principal that makes recreate routine. What the token *can* do is bind an IP to a VMID via `network-get-interfaces`. Recreate prints that binding and names the two privileged ways to read the key; the playbook stops claiming otherwise.
+
+Build order:
+
+1. `src/pve/{config,errors,tls,client,qm,lifecycle}.ts` in `@podkit/substrate` — hand-rolled over an injectable `fetch`, six endpoints, 403 → privilege + path.
+2. `src/remote-lock.ts` — advisory lock held IN the substrate over `SubstrateLink`, `mkdir`-atomic, metadata naming host/user/pid/start, short timeout, documented force.
+3. `podkit-vm` dispatches on the provisioner instead of refusing non-Lima; absent config degrades to the printed `qm` equivalent.
+4. Baseline hash extends to the cloud-init template and the image pin (a literal, not a file), and drift names the recovery command per substrate.
+5. Playbook + `.env.example` + ADR-029 amendments.
+<!-- SECTION:PLAN:END -->
 
 ## Comments
 

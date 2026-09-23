@@ -1,56 +1,79 @@
 /**
- * Device-harness VM baseline: which host files a provisioned VM is pinned to,
- * and the hashing primitive that turns them into a sealed digest.
+ * Which provisioning inputs a substrate is pinned to.
  *
- * The hashing primitive itself lives in the Lima substrate package
- * (`@podkit/lima`) and is re-exported here so the existing
- * `../src/baseline-hash.js` import sites (harness + drift check scripts) keep
- * resolving unchanged. What this module adds is the *composition*: the device
- * harness's baseline spans two packages — the Lima YAML (owned by
- * `@podkit/lima`) and `apply-state.sh` (owned here, because it is coupled to
- * the SystemState registry) — so only this package can name the full list.
+ * The hashing primitive lives in `@podkit/lima` and is re-exported so existing
+ * import sites resolve unchanged. What this module adds is the *composition*:
+ * the inputs span packages — the declarative config belongs to the provisioner,
+ * `apply-state.sh` belongs here because it is coupled to the SystemState
+ * registry — so only this package can name the full list.
+ *
+ * The list is per substrate, not global. A Lima guest is provisioned from its
+ * YAML and a Proxmox guest from the cloud-init template; folding both into one
+ * list would report a Lima box as drifted because someone edited a hypervisor
+ * template it has never seen.
  *
  * @module
  */
 
 import * as path from 'node:path';
 
-import { deviceVm, type TrackedBaselineFile } from '@podkit/lima';
+import { isLimaVm, SUBSTRATE_IMAGE_PIN, type VmDefinition } from '@podkit/substrate';
+import { deviceVm, type TrackedBaselineInput } from '@podkit/lima';
 
 import { devTestingPackageRoot } from './runners/paths.js';
 
-export type { TrackedBaselineFile, BaselineFileEntry, BaselineHashResult } from '@podkit/lima';
+export type {
+  TrackedBaselineFile,
+  TrackedBaselineValue,
+  TrackedBaselineInput,
+  BaselineFileEntry,
+  BaselineHashResult,
+} from '@podkit/lima';
 export { computeBaselineHash, BASELINE_VM_HASH_PATH } from '@podkit/lima';
 
+/** Package-relative location of the Proxmox cloud-init template. */
+export const CLOUD_INIT_TEMPLATE_REL_PATH = 'substrate/proxmox/cloud-init.user-data.yaml';
+
 /**
- * The device-harness VM's tracked baseline files, in the order they are folded
- * into the combined hash. Order is significant (see `computeBaselineHash`):
- * the Lima YAML first, then `apply-state.sh`. Append new inputs at the END.
+ * A substrate's tracked provisioning inputs, in the order they are folded into
+ * the combined hash. Order is significant; append at the END.
  *
- * Paths are resolved inside the function body, never at module load. Both
- * anchors walk `import.meta.url` back to a source-tree marker, and this
- * package's modules get bundled into the single-file FunctionFS daemon, whose
- * `/$bunfs/root/…` paths carry no such marker — eager resolution would turn a
- * host-only concern into a daemon startup crash.
+ * Paths resolve inside the function body, never at module load: this package's
+ * modules get bundled into the single-file FunctionFS daemon, whose
+ * `/$bunfs/root/…` paths carry no source-tree marker to anchor on.
  */
-export function deviceBaselineFiles(): readonly TrackedBaselineFile[] {
-  const scriptsDir = path.join(devTestingPackageRoot(), 'scripts');
-  const tracked = [
-    deviceVm().yamlPath,
+export function substrateBaselineInputs(substrate: VmDefinition): readonly TrackedBaselineInput[] {
+  const root = devTestingPackageRoot();
+  const scriptsDir = path.join(root, 'scripts');
+
+  // Whatever declares the guest before the contract scripts run. One per
+  // provisioner, and a substrate has exactly one.
+  const declaration = isLimaVm(substrate)
+    ? substrate.yamlPath
+    : path.join(root, CLOUD_INIT_TEMPLATE_REL_PATH);
+
+  const files = [
+    declaration,
     path.join(scriptsDir, 'apply-state.sh'),
-    // The substrate contract. These matter more to drift than the Lima YAML
-    // does: the YAML now only produces a plain Debian box, while these three
-    // are what make it a substrate. A change to any of them means the running
-    // box was provisioned from something the repo no longer says.
+    // The contract. These matter more than the declaration does: it only
+    // produces a plain Debian box, while these three are what make it a
+    // substrate.
     path.join(scriptsDir, 'substrate-contract.sh'),
     path.join(scriptsDir, 'provision-substrate.sh'),
     path.join(scriptsDir, 'substrate-doctor.sh'),
   ];
-  // Labels are basenames rather than repeated literals, so a file rename can
-  // never leave the hash naming something that no longer exists. This relies
-  // on the tracked basenames being distinct — they are, and both live in
-  // different packages. Adding a third input whose basename collides with an
-  // existing one would make drift output ambiguous (two identical-looking
-  // lines); switch to repo-relative labels if that ever happens.
-  return tracked.map((absPath) => ({ label: path.basename(absPath), absPath }));
+
+  return [
+    // Labels are basenames, so a rename cannot leave the hash naming a file
+    // that no longer exists. Relies on the basenames being distinct.
+    ...files.map((absPath) => ({ label: path.basename(absPath), absPath })),
+    // The image pin is a TypeScript constant, so the value is tracked rather
+    // than the module that declares it.
+    { label: 'debian-image-pin', value: SUBSTRATE_IMAGE_PIN },
+  ];
+}
+
+/** The Lima device-synthesis harness's inputs. */
+export function deviceBaselineFiles(): readonly TrackedBaselineInput[] {
+  return substrateBaselineInputs(deviceVm());
 }

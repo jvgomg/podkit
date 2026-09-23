@@ -264,11 +264,11 @@ const REGISTRY: readonly VmDefinition[] = [
     targetArch: 'x64',
     category: 'device',
     archRelevance: 'agnostic',
-    // Baseline tracking still reads the Lima YAML as a provisioning input, and
-    // ADR-029 records that drift detection has to move to the contract scripts
-    // before a remote substrate can be tracked at all. Until it does, claiming
-    // to track this one would seal a hash over inputs it was not built from.
-    trackedForBaseline: false,
+    // Tracked since drift moved onto the contract scripts: the inputs a remote
+    // guest is sealed over are its cloud-init template, the three contract
+    // scripts, `apply-state.sh` and the image pin — none of them Lima's YAML.
+    // `bun run harness:seal` writes the hash; `vm:doctor` reads it.
+    trackedForBaseline: true,
   }),
   // The remote builder — where artifacts get built, as the remote substrate is
   // where they get run. A sibling Proxmox VM of that substrate by default, but
