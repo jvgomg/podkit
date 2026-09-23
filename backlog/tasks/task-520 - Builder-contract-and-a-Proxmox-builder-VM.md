@@ -1,14 +1,13 @@
 ---
 id: TASK-520
 title: Builder contract and a Proxmox builder VM
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-14 19:47'
-updated_date: '2026-09-23 17:43'
+updated_date: '2026-09-23 18:47'
 labels:
   - testing
   - infrastructure
-  - ready-for-human
 milestone: m-20
 dependencies:
   - TASK-494
@@ -43,10 +42,10 @@ Deliverables mirror TASK-493: the two scripts, a cloud-init variant, the `qm cre
 <!-- AC:BEGIN -->
 - [x] #1 provision-builder.sh and builder-doctor.sh exist as portable Debian bash, sharing the substrate scripts' mechanism but not their package lists
 - [x] #2 builder-doctor.sh asserts the toolchain the builder needs, and does not assert the substrate's no-toolchain invariant
-- [ ] #3 A Proxmox builder VM exists, passes its doctor, and survives a reboot
+- [x] #3 A Proxmox builder VM exists, passes its doctor, and survives a reboot
 - [x] #4 The registry carries a builder entry with an ssh alias name and its arch and libc, and no hostname
-- [ ] #5 The builder produces the glibc podkit binary, podkit-debug, the daemon, gpod-tool and the libgpod-node prebuild
-- [ ] #6 musl artifacts are produced by an Alpine container on the builder rather than a second VM
+- [x] #5 The builder produces the glibc podkit binary, podkit-debug, the daemon, gpod-tool and the libgpod-node prebuild
+- [x] #6 musl artifacts are produced by an Alpine container on the builder rather than a second VM
 - [x] #7 The playbook documents provisioning it, and its start-for-a-build / stop-after operating mode
 - [x] #8 No hostname, pool, storage, bridge or credential appears in any committed file
 <!-- AC:END -->
@@ -199,5 +198,75 @@ A useful intermediate that needs no new code: stage a checkout onto the builder 
 The token secret is printed **once** by phase 1 and cannot be re-read. It should go straight into `.env.local` on whichever machine will drive the lifecycle — that file is gitignored and is the only place it belongs.
 
 Do not paste it into a task comment, a commit message or a chat transcript; those persist in ways a gitignored file does not. If it is lost, delete and recreate the token rather than hunting for it. What *can* safely be reported back here is everything non-secret: the VMIDs chosen, the pool/storage/bridge names used, the doctor's output, and whether the `pvesh` path resolution worked.
+---
+
+author: claude
+created: 2026-09-23 18:47
+---
+## The builder exists, and it builds
+
+Run on a real PVE host (9.1.4, 16 GiB, Intel i5-9500T). #3, #5 and #6 ticked on evidence; what follows is what was observed. The fixes the run produced landed in `f9520481`.
+
+### The box (VMID 9001, pool `podkit`, storage `local-lvm`, bridge `vmbr0`)
+
+`qm create` per the playbook — 4 GiB, 4 cores, 40 G — booted first time from the rendered `podkit-builder.yaml`, cloud-init `status: done`, guest agent up, root filesystem already grown to 40 G. Contract applied per step 5, with the `builder/` tree copied too, so the musl image built rather than being skipped.
+
+**Doctor: 73 `ok`, zero failures, unprivileged. 74 under `--strict`.** The playbook's "~68" was an estimate; the measured number is now in it. Rebooted and re-ran with a fresh copy of the scripts — byte-identical output, and `/tmp` was indeed cleared, which is what the playbook warns about. **#3 closed.**
+
+### The one thing that nearly cost the whole exercise
+
+**A Proxmox guest created without `--cpu host` cannot run what podkit builds.** The default CPU model exposes no AVX2, and nothing says so usefully:
+
+- on the builder, `bun --version`, `bun -e` and a trivial `bun install` all work; a real workspace `bun install` dies with `panic: a formatting trait implementation returned an error` and a bun.report URL, which reads as a Bun bug
+- on the substrate, a binary from a correct builder does not fail at all — `podkit --version` spins at 100% CPU indefinitely with no output. It sat there ten minutes before I killed it. With `--cpu host`: 0.48s.
+
+Measured both ways on the same guest by flipping `--cpu` and restarting. Both playbooks now carry the flag and the reasoning, and **both doctors assert `avx2` on x86-64** — the builder because bun needs it, the substrate because a hang is the one failure mode a box that only receives artifacts must not have. Mutation-checked: the builder doctor fails on `kvm64` and passes on `host`.
+
+The existing substrate had this latent all along; it had simply never been asked to run a binary. It now has `--cpu host` and passes its doctor (24 `ok`).
+---
+
+author: claude
+created: 2026-09-23 18:47
+---
+## #5 and #6 — the artifacts, and what the driver will hit
+
+### #5 — all five glibc artifacts, by hand, with no new code
+
+Staged a checkout into `/var/tmp/podkit-build` and built:
+
+| Artifact | Result |
+|---|---|
+| `libgpod-node` prebuild | built; `ldd` shows libc/libm/libstdc++ only — libgpod, glib, gdk-pixbuf and plist all statically linked |
+| `podkit` | 123 MB, ELF x86-64, `--version` → 0.6.0 |
+| `podkit-debug` | built |
+| `podkit-daemon` | built |
+| `gpod-tool` | built, `--help` runs |
+
+**Then the part that actually matters:** copied `podkit` to the substrate — a box with no gcc, no bun, no node — and ran it there. 0.48s, correct version, `device scan` reaching its typed "no devices found" message, and `ldd` listing only `libc`, `libm`, `libpthread`, `libdl`. The builder→substrate model is proven end to end, which is the thing the driver could not have told us.
+
+### #6 — musl out of the container
+
+`podkit-musl-builder:local`, built by provisioning, produced the musl prebuild and then a complete musl `podkit`: `interpreter /lib/ld-musl-x86_64.so.1`, `--version` → 0.6.0 inside the container. The `Error relocating … napi_* symbol not found` lines `ldd` prints are expected for an N-API addon — the host supplies those at runtime — and the script's own static-linkage check passes. No second VM involved.
+
+### Staging gotchas TASK-514 half 2 will hit
+
+Each produced a wrong result rather than an error, so each is now in the playbook:
+
+1. `rsync -a` into `/var/tmp/podkit-build` exits **23** — `failed to set times on "."` — because the directory is root-owned and world-writable. The payload transfers; only the directory's own mtime fails. `--omit-dir-times` fixes it.
+2. A stale macOS `gpod-tool` binary rsynced in with a newer mtime made `make` report `Nothing to be done for 'all'`, leaving a **Mach-O file on an amd64 builder**. Exclude build outputs from the staging.
+3. `bun run build` is required before `compile.sh`, which otherwise fails with `Could not resolve: "@podkit/ipod-firmware". Maybe you need to "bun install"?` — which it does not.
+4. Container builds write **root-owned files** into the staged tree, so the next unprivileged build cannot overwrite them.
+
+### Snapshot / rollback, for TASK-515 AC #8
+
+Snapshotted the builder, wrote a canary file, `qm rollback`, restarted: canary gone, guest otherwise intact, ssh host key unchanged. Note the verb stops the guest, so the lifecycle client must start it again.
+
+### Bootstrap → guest, proven without risking the substrate
+
+Rather than recreating `podkit-substrate` — the only proven substrate on the host — a throwaway guest was created at 9002 **from the rendered snippet** and destroyed afterwards. It booted, cloud-init completed, NOPASSWD sudo worked, and **both** authorised keys worked, verified by logging in from the second machine. That is the case the old single-key renderer would silently have broken, so it is the stronger test, and it cost nothing.
+
+### Left as found
+
+The builder is **stopped**, per the start-for-a-build / stop-after mode. Worth recording against the description's assumption: on this host the two guests coexisted comfortably (≈7 GiB still available with both running), so stopping it is a choice here rather than a necessity.
 ---
 <!-- COMMENTS:END -->

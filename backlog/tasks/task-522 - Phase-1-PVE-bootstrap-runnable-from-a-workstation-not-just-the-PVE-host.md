@@ -1,14 +1,13 @@
 ---
 id: TASK-522
 title: 'Phase-1 PVE bootstrap runnable from a workstation, not just the PVE host'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-23 17:31'
-updated_date: '2026-09-23 17:43'
+updated_date: '2026-09-23 18:47'
 labels:
   - testing
   - infrastructure
-  - ready-for-human
 milestone: m-20
 dependencies:
   - TASK-493
@@ -130,5 +129,50 @@ pvesh get /storage/<id> --output-format json | sed -n 's/.*"path":"\([^"]*\)".*/
 That regex assumes a `path` key in the JSON for a directory storage. Stubbed here, never observed. If it returns empty the script fails loudly with an actionable message rather than writing a snippet somewhere PVE never reads — which was the point of resolving the path rather than assuming `/var/lib/vz/snippets` — but a fix may still be needed.
 
 Also unobserved: the `pvesm status --content snippets` check, which warns rather than fails. `snippets` is off by default on every storage including `local`, so that warning is expected to fire on a fresh host and is the most likely first surprise.
+---
+
+author: claude
+created: 2026-09-23 18:46
+---
+## Run against a real PVE host — and what it found
+
+PVE 9.1.4. Both modes exercised: `--print-only` read first, then the real run from a workstation over `--pve-host`. Phase 1 is now verified against hardware rather than a stub, which is what this task was waiting on. Fixes landed in `f9520481`.
+
+### The two unverified things
+
+**`pvesh get /storage/<id>` parsed for a `path` key — worked, unchanged.** The real payload is a flat one-line object and the key appears exactly once:
+
+```
+{"content":"backup,snippets,import,iso,vztmpl","digest":"…","path":"/var/lib/vz","storage":"local","type":"dir"}
+```
+
+The greedy `.*` before `"path":"` is harmless because there is no second `path`, and the resolved directory is where PVE actually reads snippets from. No fix needed.
+
+**The `pvesm status --content snippets` check never fired**, because the storage already advertised `snippets` from the earlier substrate build. So the "expected on a fresh host" warning remains the one thing still unobserved.
+
+### What it did find
+
+Re-running it on a host with live guests is not as inert as the docs claimed, in two ways:
+
+1. **It rendered a two-key snippet down to one key.** The substrate's snippet had been hand-edited to authorise a second machine; the renderer substitutes a single `__SSH_PUBKEY__`, so the second key was dropped with nothing failing. Nobody loses access until the guest is recreated — which is exactly what the snippet exists for. `PODKIT_SSH_PUBKEY` may now name a file of several keys and every one is rendered.
+2. **A rewritten snippet changes the cloud-init instance-id.** The next `qm set` + restart made the guest look like a new instance to cloud-init, and it regenerated its SSH host keys — `known_hosts` stopped matching on every machine. The new fingerprint was verified out of band (`qm guest exec … ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`) rather than accepted blind. Documented in both playbooks.
+
+### Added while fixing the first
+
+`--render <hostname>` writes a snippet to stdout and contacts nothing, so what is about to be placed can be diffed against what a host already serves. `--print-only` now emits that command rather than restating the substitution, so the runbook has one less thing that can drift from the automation. Four tests cover it, including a key comment containing `&` and `\` — awk replacement metacharacters, which is why the renderer substitutes with index/substr rather than `sub()`.
+
+### Everything else behaved as designed
+
+Idempotence held: pool, user, roles and token each reported as existing and skipped; the pinned image found and not re-fetched; both snippets rendered with hostname and keys substituted and no placeholder left. Storage `local`, bridge `vmbr0`, pool `podkit`, snippets at `/var/lib/vz/snippets`.
+
+### The token, end to end
+
+Rotated — the original secret was never captured, and the header says to recreate rather than hunt — and the new one lives in `.env.local` on the workstation, not in this comment, a commit or a transcript. It works and it is confined, now measured rather than inferred:
+
+- `pveum user permissions` lists `/pool/podkit`, `/storage/local`, `/storage/local-lvm`, `/sdn/zones/localnetwork/vmbr0` and the two pool VMs, nothing else
+- an API call authenticated as the token lists exactly those two guests; an unrelated guest on the same node is invisible to it
+- the presented TLS fingerprint matches the pinned `PODKIT_PVE_TLS_FINGERPRINT`
+
+`.env.local` also carries `PODKIT_PVE_VMID_DEVICE_REMOTE=9000` and `PODKIT_PVE_VMID_BUILDER_REMOTE=9001`, which is where TASK-515 will read them.
 ---
 <!-- COMMENTS:END -->
