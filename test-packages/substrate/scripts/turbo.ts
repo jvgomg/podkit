@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
- * `turbo`, with the target architecture materialised into the environment
- * first.
+ * `turbo`, with the target and host architectures materialised into the
+ * environment first.
  *
  * ## Why this wrapper exists
  *
@@ -15,6 +15,18 @@
  *
  * So every entry point that can reach one of those tasks goes through here,
  * and here resolves the value once.
+ *
+ * ## The second value, and why it is not redundant
+ *
+ * The musl tasks produce every architecture the run needs rather than the one
+ * it targets, and "every architecture the run needs" is a function of the
+ * target AND the host (`../src/required-arches.ts`). Only the target was in
+ * the cache key — so two dev hosts of different architectures sharing one
+ * substrate hashed identically while producing different sets of artifacts,
+ * and the single-architecture host's cache entry replayed into the
+ * cross-architecture host's run would leave the loopback surface with no musl
+ * binary it can execute. {@link HOST_ARCH_ENV_VAR} is stamped here for the
+ * same reason and by the same mechanism as the target.
  *
  * ## Why it asks the registry and not the substrate
  *
@@ -51,10 +63,12 @@
 
 import {
   TARGET_ARCH_ENV_VAR,
+  hostTargetArch,
   resolveTargetArch,
   TargetArchError,
   type TargetArchResolution,
 } from '../src/target-arch.js';
+import { HOST_ARCH_ENV_VAR } from '../src/required-arches.js';
 import {
   declaredSubstrateMachine,
   selectSubstrate,
@@ -119,7 +133,11 @@ async function main(): Promise<number> {
     stdin: 'inherit',
     stdout: 'inherit',
     stderr: 'inherit',
-    env: { ...process.env, [TARGET_ARCH_ENV_VAR]: arch },
+    env: {
+      ...process.env,
+      [TARGET_ARCH_ENV_VAR]: arch,
+      [HOST_ARCH_ENV_VAR]: hostTargetArch(),
+    },
   });
   return proc.exited;
 }

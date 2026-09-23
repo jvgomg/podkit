@@ -11,13 +11,18 @@
  *
  * The image is `FROM alpine:3.21` (musl), so it copies the **musl** binaries —
  * the glibc ones cannot start in the container. Those binaries are produced by
- * `@podkit/device-testing#build:musl-binary` (the Lima Alpine builder VM) and
- * land on the host at `packages/podkit-{cli,daemon}/bin/*-linux-<suffix>-musl`.
- * Wiring that turbo task as a dependency of `test:e2e:docker-loopback` is what
- * keeps this a VM-free *runtime* while still sourcing real musl binaries.
+ * `@podkit/device-testing#build:musl-binary` and land on the host at
+ * `packages/podkit-{cli,daemon}/bin/*-linux-<suffix>-musl`. Wiring that turbo
+ * task as a dependency of `test:e2e:docker-loopback` is what keeps this a
+ * VM-free *runtime* while still sourcing real musl binaries.
  *
  * Single native arch only: a dev host's Docker Desktop runs one architecture,
- * so there is no buildx / QEMU / `--platform` juggling here.
+ * so there is no buildx / QEMU / `--platform` juggling here. That the HOST's
+ * architecture is asked for — rather than the run's target, which is the
+ * substrate's — is deliberate, and it is why the musl build produces every
+ * architecture a run needs rather than the one it targets: this surface and its
+ * in-substrate sibling `test:e2e:docker-dist` want different machines from one
+ * turbo invocation. See `required-arches.ts` in `@podkit/substrate`.
  */
 
 import { existsSync, mkdtempSync, mkdirSync, copyFileSync, rmSync, chmodSync } from 'node:fs';

@@ -21,10 +21,22 @@
  * {@link selectBuildHost}'s decision (ADR-029 §4). The per-job part — the guest
  * script and the artifact list — lives in `../src/build-jobs/jobs.ts`.
  *
+ * ## One job, every architecture the run needs
+ *
+ * A job is not one build. `requiredArches()` answers which architectures this
+ * run has to produce for the job's libc, and the driver makes a pass per
+ * architecture — each selecting its own build host, because a build host
+ * produces exactly one. That is one pass in every setup that has ever existed
+ * and two for a musl job whose host and substrate differ, where the shipped
+ * image is built twice: once inside the substrate and once on this machine's
+ * Docker. See `required-arches.ts` in `@podkit/substrate`.
+ *
  * ## The order of the checks is load-bearing
  *
- * 1. **Select the build host** before touching anything. A run that cannot be
- *    built for should say so in a second, not after a multi-gigabyte stage.
+ * 1. **Plan every pass** before touching anything — build-host selection for
+ *    all of them, then the artifact paths they will write. A run that cannot
+ *    be built for should say so in a second, not after a multi-gigabyte stage,
+ *    and certainly not after the FIRST architecture has already compiled.
  * 2. **Probe the build host's real `uname -m`** and refuse a mismatch. The
  *    registry's declared `targetArch` and a Lima instance's host-derived one
  *    are both claims; this is the measurement. Every failure this guards
@@ -52,11 +64,13 @@ import {
   probeSubstrateMachine,
   readElfTargetArch,
   repoRoot,
+  requiredArches,
   selectBuildHost,
   selectSubstrate,
   shellContractValue,
   stagingDestForJob,
   normalizeTargetArch,
+  type ArchRequirement,
   type BuildHostSelection,
   type SubstrateLink,
   type VmDefinition,
@@ -66,6 +80,7 @@ import { createVmProvisioningRunner, ensureRunning } from '@podkit/lima';
 
 import { createSubstrateLink } from '../src/runners/substrate.js';
 import {
+  assertDistinctArtifactPaths,
   getBuildJob,
   type BuildArtifact,
   type BuildJob,
@@ -146,7 +161,7 @@ async function assertBuildHostArch(
   const actual = normalizeTargetArch(machine, 'build host machine type');
   if (actual === selection.arch) return;
   throw new Error(
-    `This run targets linux-${selection.arch}, but build host '${selection.buildHost.id}' ` +
+    `This pass targets linux-${selection.arch}, but build host '${selection.buildHost.id}' ` +
       `reports '${machine}' (${actual}). Building anyway would write ${actual} bytes under a ` +
       `linux-${selection.arch} name, which nothing downstream would notice. ` +
       `Point ${BUILD_HOST_ENV_VAR} at a ${selection.arch} build host, or correct the registry ` +
@@ -339,39 +354,80 @@ async function collectDir(
   }
 }
 
-async function main(argv: readonly string[]): Promise<number> {
-  const jobId = argv[0];
-  if (!jobId) {
-    process.stderr.write('usage: build-artifacts.ts <job-id>\n');
-    return 2;
-  }
+/**
+ * Everything one architecture's pass needs, resolved before any of them runs.
+ *
+ * Selection happens for EVERY required architecture up front, so a run that
+ * has no build host for its second architecture says so in a second rather
+ * than after the first one has finished compiling.
+ */
+interface BuildPass {
+  readonly requirement: ArchRequirement;
+  readonly selection: BuildHostSelection;
+  readonly ctx: BuildJobContext;
+}
 
-  const job = getBuildJob(jobId);
+/** Resolve one architecture's build host and job context. */
+function planPass(
+  job: BuildJob,
+  requirement: ArchRequirement,
+  provisioner: VmProvisioner | undefined
+): BuildPass {
   const selection = selectBuildHost({
     libc: job.libc,
-    substrateProvisioner: substrateProvisioner(),
+    arch: requirement.arch,
+    substrateProvisioner: provisioner,
   });
-  if (selection.announcement) log(selection.announcement);
+  return {
+    requirement,
+    selection,
+    ctx: {
+      arch: selection.arch,
+      stageDir: stagingDestForJob(selection.buildHost.id, job.id),
+      cacheDir: cacheDirFor(selection.buildHost),
+      containerised: selection.containerised,
+    },
+  };
+}
 
+/**
+ * Stage, build and collect one architecture's artifacts.
+ *
+ * `position` is `{ index, total }` over the run's passes. It only ever reaches
+ * a log line, and it is rendered here rather than by the caller so the one
+ * place that decides a single-pass run says nothing extra is the place that
+ * writes the line.
+ */
+async function runPass(
+  job: BuildJob,
+  pass: BuildPass,
+  position: { readonly index: number; readonly total: number }
+): Promise<void> {
+  const ordinal = position.total > 1 ? ` [${position.index + 1}/${position.total}]` : '';
+  const { ctx, selection } = pass;
   const { buildHost } = selection;
+  // The announcement fires when the build host is not the selected substrate's
+  // sibling — which is the NORMAL state of a second pass, whose whole job is to
+  // build for this machine rather than for the substrate. Surfacing it there
+  // would report the expected as an anomaly, and its remedy (pin
+  // `PODKIT_BUILD_HOST`) is advice that would break the other pass. The
+  // requirement's own reason, logged below, is the accurate line for that case.
+  if (selection.announcement && pass.requirement.consumer === 'substrate') {
+    log(selection.announcement);
+  }
+
   const link = createSubstrateLink(buildHost, {
     subprocess: createVmProvisioningRunner({ report: (line) => log(line) }),
   });
   log(
-    `${job.task}: building linux-${selection.arch} (${selection.libc}) on ` +
+    `${job.task}${ordinal}: building linux-${selection.arch} (${selection.libc}) on ` +
       `'${buildHost.id}' via ${link.description}` +
-      (selection.containerised ? ' [Alpine container]' : '')
+      (selection.containerised ? ' [Alpine container]' : '') +
+      ` — ${pass.requirement.reason}`
   );
 
   await ensureBuildHostReady(buildHost, link);
   await assertBuildHostArch(selection, link);
-
-  const ctx: BuildJobContext = {
-    arch: selection.arch,
-    stageDir: stagingDestForJob(buildHost.id, job.id),
-    cacheDir: cacheDirFor(buildHost),
-    containerised: selection.containerised,
-  };
 
   const stageSrc = job.stageSrc(repoRoot());
   log(`staging ${path.relative(repoRoot(), stageSrc) || '.'} → ${buildHost.id}:${ctx.stageDir}`);
@@ -390,6 +446,38 @@ async function main(argv: readonly string[]): Promise<number> {
   for (const artifact of job.artifacts(ctx)) {
     if (artifact.kind === 'file') await collectFile(artifact, ctx, selection, link);
     else await collectDir(artifact, ctx, link);
+  }
+}
+
+async function main(argv: readonly string[]): Promise<number> {
+  const jobId = argv[0];
+  if (!jobId) {
+    process.stderr.write('usage: build-artifacts.ts <job-id>\n');
+    return 2;
+  }
+
+  const job = getBuildJob(jobId);
+  // Every architecture this run needs, not just the one it targets. Only a
+  // musl job ever gets two, and only when the host differs from the substrate
+  // — see `required-arches.ts` in `@podkit/substrate`.
+  const provisioner = substrateProvisioner();
+  const passes = requiredArches(job.libc).map((requirement) =>
+    planPass(job, requirement, provisioner)
+  );
+  assertDistinctArtifactPaths(
+    job,
+    passes.map((pass) => pass.ctx)
+  );
+
+  if (passes.length > 1) {
+    log(
+      `${job.task}: this run needs ${passes.length} architectures — ` +
+        `${passes.map((pass) => `linux-${pass.ctx.arch} (${pass.requirement.consumer})`).join(', ')}.`
+    );
+  }
+
+  for (const [index, pass] of passes.entries()) {
+    await runPass(job, pass, { index, total: passes.length });
   }
 
   return 0;

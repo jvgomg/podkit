@@ -491,7 +491,17 @@
         // Same three as `build:linux-prebuild` above, for the same reason.
         "PODKIT_TARGET_ARCH",
         "PODKIT_BUILD_HOST",
-        "PODKIT_SUBSTRATE"
+        "PODKIT_SUBSTRATE",
+        // And a fourth the glibc tasks do not need. A musl job produces every
+        // architecture the run needs, which is the target's plus the HOST's
+        // when they differ — `test:e2e:docker-loopback` builds the shipped
+        // image on this machine's Docker. So the set of outputs is a function
+        // of the host too, and without it two dev hosts of different
+        // architectures sharing one substrate hash identically: the
+        // same-architecture host's single-set cache entry replays into the
+        // cross-architecture host's run and the loopback surface finds nothing
+        // it can execute.
+        "PODKIT_HOST_ARCH"
       ],
       "inputs": [
         "$TURBO_ROOT$/packages/libgpod-node/native/**",
@@ -521,10 +531,11 @@
     "@podkit/device-testing#build:musl-binary": {
       "dependsOn": ["@podkit/device-testing#build:musl-prebuild", "^build"],
       "env": [
-        // Same three as `build:linux-prebuild` above, for the same reason.
+        // Same four as `build:musl-prebuild` above, for the same reasons.
         "PODKIT_TARGET_ARCH",
         "PODKIT_BUILD_HOST",
-        "PODKIT_SUBSTRATE"
+        "PODKIT_SUBSTRATE",
+        "PODKIT_HOST_ARCH"
       ],
       "inputs": [
         "$TURBO_ROOT$/packages/*/src/**",

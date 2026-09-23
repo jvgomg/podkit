@@ -12,7 +12,12 @@ import { describe, expect, it } from 'bun:test';
 
 import { BUILD_JOB_IDS, repoRoot, stagingDestForJob } from '@podkit/substrate';
 
-import { getBuildJob, listBuildJobs, type BuildJobContext } from './jobs.js';
+import {
+  assertDistinctArtifactPaths,
+  getBuildJob,
+  listBuildJobs,
+  type BuildJobContext,
+} from './jobs.js';
 
 const ctx = (overrides: Partial<BuildJobContext> = {}): BuildJobContext => ({
   arch: 'x64',
@@ -104,6 +109,56 @@ describe('artifacts', () => {
     const artifact = artifacts[0]!;
     expect(artifact.kind).toBe('dir');
     expect(artifact.guestRel).toBe('packages/libgpod-node/prebuilds/linux-arm64');
+  });
+
+  // The whole point of a two-architecture run: each pass must name its own
+  // files. `ctx.arch` is what says which pass this is, so nothing may read the
+  // ambient target architecture behind its back.
+  it('names host paths for the pass architecture, not the ambient one', () => {
+    for (const job of listBuildJobs()) {
+      const x64 = job.artifacts(ctx({ arch: 'x64' }));
+      const arm64 = job.artifacts(ctx({ arch: 'arm64' }));
+      for (const [index, artifact] of x64.entries()) {
+        const target = artifact.kind === 'file' ? artifact.hostPath : artifact.hostDir;
+        const sibling = arm64[index]!;
+        const siblingTarget = sibling.kind === 'file' ? sibling.hostPath : sibling.hostDir;
+        expect(target).toContain('x64');
+        expect(siblingTarget).toContain('arm64');
+        expect(target).not.toBe(siblingTarget);
+      }
+    }
+  });
+});
+
+describe('assertDistinctArtifactPaths', () => {
+  it('accepts a single-architecture run', () => {
+    for (const job of listBuildJobs()) {
+      expect(() => assertDistinctArtifactPaths(job, [ctx()])).not.toThrow();
+    }
+  });
+
+  it('accepts a two-architecture run, because the arch is in every filename', () => {
+    for (const job of listBuildJobs()) {
+      expect(() =>
+        assertDistinctArtifactPaths(job, [ctx({ arch: 'x64' }), ctx({ arch: 'arm64' })])
+      ).not.toThrow();
+    }
+  });
+
+  // What an absolute `PODKIT_*_BINARY` override does to a two-architecture
+  // run: both passes collect into one file and the second wins silently.
+  it('refuses two architectures that resolve to the same host path', () => {
+    const job = getBuildJob('muslBinary');
+    const pinned = {
+      ...job,
+      artifacts: () => job.artifacts(ctx({ arch: 'x64' })),
+    };
+    expect(() =>
+      assertDistinctArtifactPaths(pinned, [ctx({ arch: 'x64' }), ctx({ arch: 'arm64' })])
+    ).toThrow(/overwrite the first/);
+    expect(() =>
+      assertDistinctArtifactPaths(pinned, [ctx({ arch: 'x64' }), ctx({ arch: 'arm64' })])
+    ).toThrow(/podkit \(musl\)/);
   });
 });
 

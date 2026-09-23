@@ -102,6 +102,50 @@ recreated it manually.
 `dependsOn: []` — this is a pure check; nothing builds it. It runs as a
 sibling of `vm:install`.
 
+### Every architecture the run needs (`resolveRequiredArches`)
+
+A quality run has **two** architecture roles, not one, and only the musl
+artifacts feel it. `test:e2e:docker-dist` builds the shipped image inside the
+substrate, so it wants the substrate's musl binaries; its sibling
+`test:e2e:docker-loopback` builds the same image on **this machine's** Docker
+daemon, so it wants the host's. Both run inside one turbo invocation.
+
+While a musl job produced one architecture per run, a cross-architecture setup
+was internally unsatisfiable — no value of `PODKIT_TARGET_ARCH` served both, and
+whichever surface lost went looking for a musl binary the run had not built.
+So the rule the build follows is:
+
+> Produce every architecture this run needs, not just the one it targets.
+
+`resolveRequiredArches({ libc, targetArch, hostArch })` in `@podkit/substrate`
+is that rule, and it is deliberately small:
+
+| libc | architectures required |
+|------|------------------------|
+| `glibc` | the target's, always — every glibc consumer is inside the substrate. |
+| `musl` | the target's, plus the host's when they differ. |
+
+`scripts/build-artifacts.ts` makes one **pass** per requirement. Each pass
+selects its own build host (a build host produces exactly one architecture), so
+an arm64 Mac driving an amd64 substrate reaches `builderRemote` for the amd64
+musl set and its local `builderMusl` VM for the arm64 one — no new selection
+rules and no new boxes. Every pass is planned before any of them runs, so a run
+with no build host for its second architecture fails in a second rather than
+after the first has finished compiling.
+
+The artifact filenames already carry the architecture, so both sets coexist and
+the existing output globs match them. `assertDistinctArtifactPaths()` asserts
+that rather than trusting it: a `PODKIT_*_BINARY` override names one absolute
+path that every resolver honours ahead of the architecture, and two passes
+collecting into it would leave the wrong bytes under the right name.
+
+The host architecture reaches turbo the same way the target one does — stamped
+into the environment by `test-packages/substrate/scripts/turbo.ts`, as
+`PODKIT_HOST_ARCH`, and declared in the `env` of the two musl tasks. Without it
+in the key, two dev hosts of different architectures sharing one substrate hash
+identically while producing different sets, and the same-architecture host's
+entry replays into the cross-architecture host's run.
+
 ### `test:vm` wiring
 
 The two VM-test packages (`@podkit/device-testing` and
@@ -116,6 +160,7 @@ test file.
 
 | Concern | Owner |
 |---------|-------|
+| Choosing **how many** architectures a run builds | `resolveRequiredArches()` in `@podkit/substrate` — one rule: produce every architecture this run needs, not just the one it targets. |
 | Choosing which box compiles | `selectBuildHost()` in `@podkit/substrate` — one rule: can it produce this `(arch, libc)`, and is it the substrate's sibling. |
 | Compiling Linux binaries from current source | `@podkit/device-testing#build:linux-binary` (and siblings), whose body is the one build driver `scripts/build-artifacts.ts`. |
 | Knowing **when** to re-compile | Turbo (existing inputs/outputs declarations on the build tasks). |
@@ -201,9 +246,11 @@ This orchestration does **not** cover:
   applied.
 - **Cross-arch caching.** `PODKIT_TARGET_ARCH`, `PODKIT_BUILD_HOST` and
   `PODKIT_SUBSTRATE` are hashed into the cache key of every task that produces
-  a Linux binary. The artifact's ELF header is checked twice — once by the
-  build driver before it writes the file turbo will cache, and again against
-  the substrate's `uname -m` at transfer time. Nothing else is needed here.
+  a Linux binary, and `PODKIT_HOST_ARCH` into the musl pair as well
+  (§2, "Every architecture the run needs").
+  The artifact's ELF header is checked twice — once by the build driver before
+  it writes the file turbo will cache, and again against the substrate's
+  `uname -m` at transfer time. Nothing else is needed here.
 
 ---
 
@@ -223,6 +270,10 @@ This orchestration does **not** cover:
 ## 8. References
 
 - `turbo.json` — task definitions.
+- `test-packages/substrate/src/required-arches.ts` — which architectures a run
+  must produce.
+- `test-packages/device-testing/scripts/build-artifacts.ts` — the build driver
+  that makes one pass per required architecture.
 - `test-packages/device-testing/scripts/harness.ts` — install
   implementation.
 - `test-packages/device-testing/scripts/vm-doctor.ts` — drift preflight.

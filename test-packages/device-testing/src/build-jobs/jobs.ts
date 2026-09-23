@@ -37,6 +37,7 @@
 import * as path from 'node:path';
 
 import {
+  envForTargetArch,
   repoRoot,
   resolveDefaultDaemonLinuxBinary,
   resolveDefaultDaemonLinuxMuslBinary,
@@ -52,7 +53,15 @@ import {
 
 /** What the driver knows by the time it renders a job's script. */
 export interface BuildJobContext {
-  /** Architecture the artifacts are for. */
+  /**
+   * Architecture the artifacts are for.
+   *
+   * Per-*pass*, not per-run: a musl job runs once per architecture the run
+   * needs (`required-arches.ts` in `@podkit/substrate`), so this is the one
+   * value every path in a pass — staging directory, script, artifact
+   * destinations — has to agree on. {@link BuildJob.artifacts} resolves its
+   * host paths through {@link envForTargetArch} for exactly that reason.
+   */
   readonly arch: TargetArch;
   /** Absolute staging directory on the build host. */
   readonly stageDir: string;
@@ -276,11 +285,11 @@ const JOBS: readonly BuildJob[] = [
     // prebuilds/ is deliberately NOT excluded: the glibc `.node` the prebuild
     // job produced must ride along for compile.sh to embed it.
     script: (ctx) => [preamble(ctx, ''), BUN_INSTALL, compileBinaries()].join('\n'),
-    artifacts: () => [
+    artifacts: (ctx) => [
       {
         kind: 'file',
         guestRel: 'packages/podkit-cli/bin/podkit',
-        hostPath: resolveDefaultPodkitBinary(),
+        hostPath: resolveDefaultPodkitBinary(envForTargetArch(ctx.arch)),
         label: 'podkit',
         assertArch: true,
         executable: true,
@@ -288,7 +297,7 @@ const JOBS: readonly BuildJob[] = [
       {
         kind: 'file',
         guestRel: 'packages/podkit-cli/bin/podkit-debug',
-        hostPath: resolveDefaultPodkitDebugBinary(),
+        hostPath: resolveDefaultPodkitDebugBinary(envForTargetArch(ctx.arch)),
         label: 'podkit-debug',
         assertArch: true,
         executable: true,
@@ -296,7 +305,7 @@ const JOBS: readonly BuildJob[] = [
       {
         kind: 'file',
         guestRel: 'packages/podkit-daemon/bin/podkit-daemon',
-        hostPath: resolveDefaultDaemonLinuxBinary(),
+        hostPath: resolveDefaultDaemonLinuxBinary(envForTargetArch(ctx.arch)),
         label: 'podkit-daemon',
         assertArch: true,
         executable: true,
@@ -323,11 +332,11 @@ const JOBS: readonly BuildJob[] = [
         './gpod-tool --help 2>&1 | head -1 || true',
         'ldd ./gpod-tool || true',
       ].join('\n'),
-    artifacts: () => [
+    artifacts: (ctx) => [
       {
         kind: 'file',
         guestRel: 'gpod-tool',
-        hostPath: resolveDefaultGpodToolBinary(),
+        hostPath: resolveDefaultGpodToolBinary(envForTargetArch(ctx.arch)),
         label: 'gpod-tool',
         assertArch: true,
         executable: true,
@@ -362,11 +371,11 @@ const JOBS: readonly BuildJob[] = [
     task: '@podkit/device-testing#build:musl-binary',
     stageSrc: (root) => root,
     script: (ctx) => [preamble(ctx, '-musl'), BUN_INSTALL, compileBinaries()].join('\n'),
-    artifacts: () => [
+    artifacts: (ctx) => [
       {
         kind: 'file',
         guestRel: 'packages/podkit-cli/bin/podkit',
-        hostPath: resolveDefaultPodkitMuslBinary(),
+        hostPath: resolveDefaultPodkitMuslBinary(envForTargetArch(ctx.arch)),
         label: 'podkit (musl)',
         assertArch: true,
         executable: true,
@@ -374,7 +383,7 @@ const JOBS: readonly BuildJob[] = [
       {
         kind: 'file',
         guestRel: 'packages/podkit-cli/bin/podkit-debug',
-        hostPath: resolveDefaultPodkitDebugMuslBinary(),
+        hostPath: resolveDefaultPodkitDebugMuslBinary(envForTargetArch(ctx.arch)),
         label: 'podkit-debug (musl)',
         assertArch: true,
         executable: true,
@@ -382,7 +391,7 @@ const JOBS: readonly BuildJob[] = [
       {
         kind: 'file',
         guestRel: 'packages/podkit-daemon/bin/podkit-daemon',
-        hostPath: resolveDefaultDaemonLinuxMuslBinary(),
+        hostPath: resolveDefaultDaemonLinuxMuslBinary(envForTargetArch(ctx.arch)),
         label: 'podkit-daemon (musl)',
         assertArch: true,
         executable: true,
@@ -390,6 +399,52 @@ const JOBS: readonly BuildJob[] = [
     ],
   },
 ];
+
+/** Where on the host one artifact lands, whichever kind it is. */
+function artifactDest(artifact: BuildArtifact): string {
+  return artifact.kind === 'file' ? artifact.hostPath : artifact.hostDir;
+}
+
+/**
+ * Refuse a multi-architecture run whose passes would write to the same host
+ * path.
+ *
+ * The architecture is in every default filename, so this holds by construction
+ * — until a `PODKIT_LINUX_MUSL_BINARY`-style override names one absolute path,
+ * which every resolver honours ahead of the architecture. Two passes then
+ * collect into one file and the second silently overwrites the first, leaving
+ * a correctly-named artifact of the wrong architecture at the path the loopback
+ * surface reads. That is precisely the failure this whole area exists to make
+ * impossible, so it is an error rather than a warning.
+ *
+ * Cheap and total: it compares the paths the job itself declares, so a future
+ * artifact added without an architecture in its name is caught the first time
+ * a cross-architecture run touches it.
+ *
+ * @throws {Error} naming the colliding path and both architectures.
+ */
+export function assertDistinctArtifactPaths(
+  job: BuildJob,
+  contexts: readonly BuildJobContext[]
+): void {
+  const claimedBy = new Map<string, TargetArch>();
+  for (const ctx of contexts) {
+    for (const artifact of job.artifacts(ctx)) {
+      const dest = artifactDest(artifact);
+      const owner = claimedBy.get(dest);
+      if (owner !== undefined && owner !== ctx.arch) {
+        throw new Error(
+          `${job.task} must produce both linux-${owner} and linux-${ctx.arch} artifacts this ` +
+            `run, but ${artifact.label} resolves to ${dest} for both. The second pass would ` +
+            `overwrite the first and leave the wrong architecture under that name. Unset the ` +
+            `PODKIT_*_BINARY override that pins it, or select a substrate of this host's ` +
+            `architecture so only one set is needed.`
+        );
+      }
+      claimedBy.set(dest, ctx.arch);
+    }
+  }
+}
 
 /** Every build job, in declaration order. */
 export function listBuildJobs(): readonly BuildJob[] {
