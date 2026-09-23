@@ -140,6 +140,15 @@ guarantees a **drift check** runs first.
   a new install step lands in `harness.ts` — list it in `vm:install`
   inputs.
 
+- Any turbo task that runs `build-artifacts.ts` must depend on
+  `@podkit/substrate#build` and `@podkit/lima#build`. The driver is
+  TypeScript and imports both packages from their `dist/`, so without that
+  edge turbo may schedule the job while those dists are half-written; the
+  symptom is the driver dying on a missing export from a module that is
+  plainly correct in source. Listing the two packages' `src/**` in `inputs`
+  gets the cache key right and says nothing about ordering — they are
+  separate concerns and both are needed.
+
 - Any new line in `podkit-device.yaml` (apt package, module,
   fstab entry) or `apply-state.sh` (new state, new helper) automatically
   contributes to the baseline hash; no further wiring needed.

@@ -300,6 +300,15 @@ host-scoped `IdentityAgent` below a `Host *` block does nothing. `ssh -G
 podkit-builder` prints the effective values, which is the only reliable way to
 tell.
 
+Being agent-served is necessary but not sufficient: the agent has to reach the
+build, and turbo runs tasks under a strict environment where an undeclared
+variable simply is not there. `SSH_AUTH_SOCK` is therefore listed in
+`turbo.json`'s `globalPassThroughEnv` — pass-through rather than hashed, since
+the socket path changes every login and says nothing about the artifacts.
+Without it a build fails with `Permission denied (publickey)` against a host
+that `ssh podkit-builder true` reaches from the same shell one line earlier,
+and the error names ssh rather than turbo.
+
 ---
 
 ## What the builder produces

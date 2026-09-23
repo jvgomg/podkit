@@ -42,7 +42,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import { listVms, type VmDefinition } from './registry.js';
+import { isSshVm, listVms, type VmDefinition } from './registry.js';
 
 /**
  * Environment variable naming the selected substrate, by registry id.
@@ -96,9 +96,28 @@ export interface SubstrateSelection {
  * read.
  */
 export class SubstrateSelectionError extends Error {
-  constructor(message: string) {
+  /**
+   * Whether the cause is that NOTHING names a substrate on this machine, as
+   * opposed to something naming one wrongly.
+   *
+   * The two are the same failure to this module and opposite facts to its
+   * callers. "No substrate configured" is an ordinary state — a plain
+   * `turbo run build` on a laptop that has never run the harness — and a
+   * caller may reasonably carry on with a host default. "Configured, and
+   * wrong" is a typo or a stale id, and carrying on there is how a build
+   * silently produces the wrong artifacts and only says so several tasks
+   * later, about something else.
+   *
+   * A caller that cannot tell them apart has to treat both as benign, which is
+   * why this is on the error rather than left to each caller to infer from the
+   * environment.
+   */
+  readonly unconfigured: boolean;
+
+  constructor(message: string, options: { unconfigured?: boolean } = {}) {
     super(message);
     this.name = 'SubstrateSelectionError';
+    this.unconfigured = options.unconfigured ?? false;
   }
 }
 
@@ -167,7 +186,10 @@ export function resolveSubstrateSelection(input: SubstrateSelectionInput): Subst
     throw new SubstrateSelectionError(
       `No substrate selected and \`limactl\` is not on PATH, so there is nothing to fall back to. ` +
         `Set ${SUBSTRATE_ENV_VAR} in .env.local to one of: ${describeCandidates(candidates)} ` +
-        `(copy .env.example to get started), or install Lima to use '${lima.id}'.`
+        `(copy .env.example to get started), or install Lima to use '${lima.id}'.`,
+      // The one branch reached because this machine has nothing set up, rather
+      // than because something it was told is wrong.
+      { unconfigured: true }
     );
   }
 
@@ -208,6 +230,31 @@ export function commandOnPath(
         return false;
       }
     });
+}
+
+/**
+ * The machine type a selected substrate declares, or `null` when it declares
+ * none.
+ *
+ * The bridge between "which box runs the tests" and "what architecture must
+ * the binaries be", and the reason it can exist at all is that an ssh
+ * substrate's architecture is a REGISTRY FACT rather than a measurement: the
+ * entry the developer selected names it. So the answer is available
+ * synchronously, with no link, no round trip, and no substrate running — which
+ * is what lets the value be resolved before the command that brings the
+ * substrate up (see `./target-arch.ts` on why probing there would be wrong).
+ *
+ * A Lima substrate declares nothing on purpose. It is created from this
+ * machine's image, so its architecture *is* the host's, and the host is what
+ * the caller already falls back to.
+ *
+ * The declaration is a claim, not proof. It is checked against the substrate's
+ * real `uname -m` at the point it costs something — the arch assertion before
+ * transfer in `./artifact-arch.ts` — so a registry entry left behind by a
+ * replaced machine fails loudly rather than producing bytes that cannot start.
+ */
+export function declaredSubstrateMachine(substrate: VmDefinition): string | null {
+  return isSshVm(substrate) ? substrate.targetArch : null;
 }
 
 /**

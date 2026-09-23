@@ -16,6 +16,7 @@ import {
   commandOnPath,
   SubstrateSelectionError,
   SUBSTRATE_ENV_VAR,
+  declaredSubstrateMachine,
   type SubstrateSelectionInput,
 } from './selection.js';
 import { listVms, type VmDefinition } from './registry.js';
@@ -242,5 +243,62 @@ describe('selectSubstrate', () => {
     expect(caught).toBeInstanceOf(SubstrateSelectionError);
     expect((caught as Error).message).toContain('PODKIT_DEVICE_HARNESS_VM_NAME');
     expect((caught as Error).message).toContain(SUBSTRATE_ENV_VAR);
+  });
+});
+
+describe('declaredSubstrateMachine', () => {
+  // The whole point: an ssh substrate's architecture is knowable without
+  // talking to it, so the value that decides what gets built can be resolved
+  // by an entry point that must not probe — before the substrate is even up.
+  it('returns the machine type an ssh substrate declares', () => {
+    expect(declaredSubstrateMachine(SSH_DEVICE)).toBe('x64');
+  });
+
+  // A Lima substrate is created from this machine's image, so it has no
+  // declaration to make: its architecture IS the host's, which is what the
+  // caller falls back to.
+  it('returns null for a Lima substrate, which declares nothing', () => {
+    expect(declaredSubstrateMachine(LIMA_DEVICE)).toBeNull();
+  });
+});
+
+describe('SubstrateSelectionError.unconfigured', () => {
+  // The flag exists for callers that have to tell "this machine has nothing
+  // set up", which is an ordinary state, from "somebody set the variable and
+  // got it wrong", which is not. A caller that cannot tell them apart has to
+  // treat both as benign, and a typo then falls back silently.
+  it('is set when nothing is configured and there is no Lima to fall back to', () => {
+    let caught: unknown;
+    try {
+      resolveSubstrateSelection(input({ env: {}, limactlAvailable: false }));
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(SubstrateSelectionError);
+    expect((caught as SubstrateSelectionError).unconfigured).toBe(true);
+  });
+
+  it('is NOT set when the configured id names nothing', () => {
+    let caught: unknown;
+    try {
+      resolveSubstrateSelection(input({ env: { [SUBSTRATE_ENV_VAR]: 'nosuchbox' } }));
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(SubstrateSelectionError);
+    expect((caught as SubstrateSelectionError).unconfigured).toBe(false);
+  });
+
+  // An ambiguous registry is a defect in the repo, not a machine that has not
+  // been set up — falling back silently would hide it.
+  it('is NOT set when the registry itself is ambiguous', () => {
+    let caught: unknown;
+    try {
+      resolveSubstrateSelection(input({ env: {}, substrates: [LIMA_DEVICE, LIMA_DEVICE] }));
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(SubstrateSelectionError);
+    expect((caught as SubstrateSelectionError).unconfigured).toBe(false);
   });
 });

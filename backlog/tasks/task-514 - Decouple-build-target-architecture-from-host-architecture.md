@@ -4,7 +4,7 @@ title: Decouple build target architecture from host architecture
 status: In Progress
 assignee: []
 created_date: '2026-09-13 18:33'
-updated_date: '2026-09-23 20:39'
+updated_date: '2026-09-23 21:29'
 labels:
   - testing
   - infrastructure
@@ -50,10 +50,10 @@ Expect the cost to concentrate in two places: the turbo cache keying above, and 
 - [x] #2 Target arch is a declared input of every task producing a linux binary, so a foreign-arch cache hit is impossible
 - [x] #3 Artifact arch is asserted equal to substrate arch before transfer, with a named error
 - [x] #4 A build host is selected over the same link as a substrate, and may be a remote machine or localhost
-- [ ] #5 An amd64 build host can be driven from an arm64 macOS host end to end
+- [x] #5 An amd64 build host can be driven from an arm64 macOS host end to end
 - [x] #6 musl builds use the same build-host mechanism as glibc, via an Alpine container on the build host
 - [x] #7 The device substrate still receives artifacts only — no source tree, no host mount
-- [ ] #8 test:vm passes on macOS with an arm64 substrate and with an amd64 substrate
+- [x] #8 test:vm passes on macOS with an arm64 substrate and with an amd64 substrate
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -149,6 +149,56 @@ Also taken from the review: `transport.ts` → `link-adapters.ts` (CONTEXT.md re
 ### Residual risk
 
 The driver's six-step orchestration has no unit test. The job table, the link operations and the selection resolver each do; what is uncovered is the glue, and it is covered instead by the real runs above — over the ssh link only. **The Lima half of the driver is exercised by nothing automated on this machine**, which is the same gap #5 and #8 name.
+
+## Closed from an arm64 Mac. Three defects the Linux-driven runs could not see.
+
+`#5` and `#8` needed no new mechanism, as the handoff predicted — but they did need three fixes, every one of them invisible from the amd64 Linux box the earlier halves were driven from.
+
+### What ran
+
+| | Result |
+|---|---|
+| `test:vm`, Lima arm64 substrate, nothing configured | **194 pass, 44 skip, 0 fail** |
+| `test:vm`, `PODKIT_SUBSTRATE=deviceRemote` (amd64 over ssh) | **176 pass, 44 skip, 9 fail** — the same nine, and only those nine |
+| lint · typecheck 40/40 · test 69/69 tasks · e2e 37/37 | clean |
+
+The nine are TASK-523's, reproduced byte-for-byte from a different driving host and a different host architecture — and the arm64 substrate has **zero** failures, which settles what 523's note asked: they are substrate behaviour, not architecture. The amd64 half of `#8` is ticked on that basis; `test:vm` still exits 1 there until 523 lands.
+
+Build hosts behaved as designed with nothing configured, both ways: Lima picked `builderGlibc` as the substrate's sibling; the remote run picked `builderRemote` on capability alone and announced the target. The x64 binaries built here sha256-match the ones TASK-520's hand-run produced on the builder.
+
+### 1. The build driver could be scheduled before the package it imports exists
+
+`build:linux-prebuild`, `build:musl-prebuild` and `gpod-testing#build:linux-binary` declared `dependsOn: []`. Half 2 made the driver TypeScript that imports `@podkit/substrate` and `@podkit/lima`, and both resolve to `dist/` — so turbo was free to run the job while those dists were half-written. It did, on a cold tree: `SyntaxError: Export named 'resolveDefaultPodkitDebugMuslBinary' not found` from a module that is plainly correct in source.
+
+Their two `*-binary` siblings were fine all along: `@podkit/device-testing` depends on both packages, so `^build` already ordered them. `@podkit/gpod-testing` depends on neither — it reaches across package boundaries by relative path — so no workspace edge could ever have covered it. The three now name the edge, and the rule is in `vm-build-orchestration.md` §4 rather than only in a comment.
+
+Why it never appeared before: a warm `dist/` hides it completely, and every prior run of this work was on a tree that had one.
+
+### 2. The wrapper stamped the HOST's architecture over the substrate's
+
+The real reason `test:vm` built arm64 for an amd64 substrate. `targetArch()` is env-then-host by design, and the turbo wrapper materialised that into `PODKIT_TARGET_ARCH` — which is `configured` precedence, and therefore **beats the substrate** in every child process. So the wrapper did not merely fail to help: it overrode the entry points that probe the link and would otherwise have been right.
+
+The fix keeps the no-probe invariant the module argues for at length, because an ssh substrate does not have to be *asked*: it **declares** `targetArch` in the registry. `declaredSubstrateMachine()` (new, in `selection.ts`) answers from data already in hand — no link, no round trip, no substrate running — and a Lima substrate correctly declares nothing, since its architecture *is* the host's. Precedence, error text and the ELF assertion at transfer are unchanged; a wrong registry entry still fails loudly there.
+
+### 3. No ssh link could authenticate under turbo
+
+`SSH_AUTH_SOCK` was not in `globalPassThroughEnv`, and turbo's strict env mode does not pass what is not declared. Every ssh-reached substrate and builder got `Permission denied (publickey)` from a host that `ssh podkit-substrate true` reaches from the same shell one line earlier — with the error naming ssh, not turbo. Pass-through rather than `env`: the socket path is a fresh temp path per login and would invalidate every cached task on every reboot.
+
+Invisible on the Linux box because its key is served differently; it is the Mac's 1Password-vs-agent split (already in the builder playbook) meeting a second gate nobody had reason to look for.
+
+### From review
+
+The wrapper's first cut caught **every** selection failure and fell back to the host. That is right for "this machine has nothing configured" and wrong for "configured, and wrong" — a typo'd `PODKIT_SUBSTRATE` would have built for the wrong machine and only been refused several tasks later, by a step that is fine. `SubstrateSelectionError` now carries `unconfigured`, set at exactly the one branch reached because nothing names a substrate, and the wrapper narrows its catch to it. Verified: `PODKIT_SUBSTRATE=deviceRemotee` now exits 1 in about a second, naming the variable and listing the known substrates.
+
+Also from the review, checked and found sound: no other task runs the driver or imports those packages without an ordering edge; no reachable configuration produces a surprising architecture; the three docs match the code.
+
+### Unrelated but needed on the way
+
+The Lima substrate had drifted (the Proxmox commits changed the tracked contract scripts) and `podkit-substrate`'s host key had changed with the VM rebuild — the new keys were verified out-of-band through the PVE guest agent before being trusted, rather than accepted on sight.
+
+### Known limitation, documented rather than fixed
+
+`quality` runs the VM suites (for the substrate) and the host's own Docker suite (for this machine) under one `PODKIT_TARGET_ARCH`. With a cross-architecture substrate selected those two want different answers, and the host-Docker half looks for musl binaries the run did not build. One variable cannot serve both; `.env.example` says so and says to run the halves separately.
 <!-- SECTION:NOTES:END -->
 
 ## Comments

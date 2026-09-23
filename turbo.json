@@ -10,7 +10,18 @@
     "PODKIT_CLI_BINARY",
     "PODKIT_CONTAINER_RUNTIME",
     "TEST_CONCURRENCY",
-    "TEST_TIMEOUT"
+    "TEST_TIMEOUT",
+    // Every ssh-reached substrate and build host authenticates through the
+    // developer's ssh-agent. Under turbo's strict env mode an undeclared
+    // variable does not reach the task at all, so without this the link fails
+    // with `Permission denied (publickey)` against a host the same command
+    // reaches from the shell one line earlier — and the error names ssh, not
+    // turbo, which is what makes it expensive to find.
+    //
+    // PASS-THROUGH rather than `env`: the socket path is a fresh temp path per
+    // login session, so hashing it would invalidate every cached task on every
+    // reboot while saying nothing about the artifacts.
+    "SSH_AUTH_SOCK"
   ],
   "tasks": {
     "build": {
@@ -372,7 +383,17 @@
       "outputs": []
     },
     "@podkit/device-testing#build:linux-prebuild": {
-      "dependsOn": [],
+      "dependsOn": [
+        // The build driver these tasks run is TypeScript that imports
+        // `@podkit/substrate` and `@podkit/lima`, and both packages resolve to
+        // their `dist/`. Without this edge turbo is free to schedule the job
+        // while those dists are half-written — the symptom is the driver dying
+        // on a missing export from a module that is plainly correct in source.
+        // The sibling `build:*-binary` tasks get the same ordering from
+        // `^build`; these three have no workspace dependency to carry it.
+        "@podkit/substrate#build",
+        "@podkit/lima#build"
+      ],
       "env": [
         // Which architecture, and — new with the build driver — WHICH BOX. A
         // build host is a role now: the same source produces a different
@@ -461,7 +482,11 @@
       ]
     },
     "@podkit/device-testing#build:musl-prebuild": {
-      "dependsOn": [],
+      "dependsOn": [
+        // Same two as `build:linux-prebuild` above, for the same reason.
+        "@podkit/substrate#build",
+        "@podkit/lima#build"
+      ],
       "env": [
         // Same three as `build:linux-prebuild` above, for the same reason.
         "PODKIT_TARGET_ARCH",
@@ -532,7 +557,11 @@
       ]
     },
     "@podkit/gpod-testing#build:linux-binary": {
-      "dependsOn": [],
+      "dependsOn": [
+        // Same two as `build:linux-prebuild` above, for the same reason.
+        "@podkit/substrate#build",
+        "@podkit/lima#build"
+      ],
       "env": [
         // Same three as `build:linux-prebuild` above, for the same reason.
         "PODKIT_TARGET_ARCH",
