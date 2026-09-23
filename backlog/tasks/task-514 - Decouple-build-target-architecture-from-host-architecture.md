@@ -4,7 +4,7 @@ title: Decouple build target architecture from host architecture
 status: In Progress
 assignee: []
 created_date: '2026-09-13 18:33'
-updated_date: '2026-09-23 19:30'
+updated_date: '2026-09-23 20:39'
 labels:
   - testing
   - infrastructure
@@ -49,9 +49,9 @@ Expect the cost to concentrate in two places: the turbo cache keying above, and 
 - [x] #1 targetArch() resolves from the selected substrate, with host arch only as the no-substrate default; vmArch() is gone
 - [x] #2 Target arch is a declared input of every task producing a linux binary, so a foreign-arch cache hit is impossible
 - [x] #3 Artifact arch is asserted equal to substrate arch before transfer, with a named error
-- [ ] #4 A build host is selected over the same link as a substrate, and may be a remote machine or localhost
+- [x] #4 A build host is selected over the same link as a substrate, and may be a remote machine or localhost
 - [ ] #5 An amd64 build host can be driven from an arm64 macOS host end to end
-- [ ] #6 musl builds use the same build-host mechanism as glibc, via an Alpine container on the build host
+- [x] #6 musl builds use the same build-host mechanism as glibc, via an Alpine container on the build host
 - [x] #7 The device substrate still receives artifacts only — no source tree, no host mount
 - [ ] #8 test:vm passes on macOS with an arm64 substrate and with an amd64 substrate
 <!-- AC:END -->
@@ -96,6 +96,59 @@ Two scope extensions the implementer flagged, both of which I accepted:
 **Seam left for half 2:** `resolveTargetArch` already takes the substrate's machine type as a parameter, so pointing builds at a builder means calling `primeTargetArchFromSubstrate` with a builder's link. The builder is already addressed by registry id in the build scripts, and the new `podkit_assert_target_arch` guard is exactly where a remote builder becomes legitimate — today it refuses a foreign target and says "run the build on a &lt;arch&gt; build host", which half 2 makes actionable. The cache key is already correct for a foreign target, and the assertion is transport-agnostic.
 
 Flagged, not fixed: `@podkit/libgpod-node#build`'s `prebuilds/**` output glob overlaps the Linux prebuild tasks' outputs. Pre-existing, and only matters with a cross-machine remote cache.
+
+---
+
+## Half 2 landed. Three commits: `96cc47ed`, `644a7414`, `ad1d8fad`.
+
+**Ticked: #4 and #6. Still open: #5 and #8, and both for the same reason — no macOS host was available.** The mechanism they name is proven; the platform they name is not.
+
+### The shape
+
+Five shell wrappers became **one driver plus a job table**. Each wrapper opened the same six steps — check for `limactl`, start a Lima instance, read `uname -m` out of it, look up a staging directory, rsync, run a guest script, copy artifacts back — and every one of those steps named `limactl`. That is what made a foreign build host impossible rather than merely unconfigured: "use a different box" meant writing five more scripts. The guest scripts are ported near-verbatim, including the `ldd` allow-list and the "do not execute the daemon, it is a poller with no fast-exit path" note.
+
+**`SubstrateLink` gained `copyOut` and `stageTree`.** `copyOut` was deliberately absent, and its own doc said why: nothing needed it, and an unused direction is a second implementation to keep correct for free. A build host whose entire purpose is to produce bytes the host collects is that need arriving. `stageTree` is on the link for a sharper reason — it is the **one** operation whose mechanism genuinely differs by provisioner: Lima runs the rsync inside the guest against its own host mount, every other link pushes from the host over ssh. A driver written against the interface is blind to which it got, which is what makes "builder is a role" true rather than aspirational.
+
+**Build-host selection is a separate resolver from substrate selection, not a mode of it.** They answer different questions about boxes whose contracts contradict each other, and the day they share a definition is the day the wrong box can satisfy either. The rule is one question — can this box produce `(arch, libc)` — with a tie-break: among capable builders, the one provisioned like the selected substrate wins. Capability alone settles the headline case (an arm64 Mac has no local builder that can produce amd64); the tie-break settles the case capability *cannot* — an amd64 host driving an amd64 remote substrate, where building locally would produce artifacts on a machine whose glibc floor nobody asserted anything about.
+
+Half 1 left `podkit_assert_target_arch` refusing with *"run the build on a `<arch>` build host"* and naming no such host. That guard is gone; its sentence is now a selection, and when nothing can serve, the error names every candidate **with its reason** — verified by running it: `builderGlibc (rejected: it is a Lima instance on this x64 host, so it produces x64), builderRemote (rejected: it declares x64)`.
+
+### What was actually run, on real hardware
+
+Driven from the amd64 Linux dev box — which has `limactl` on PATH but **no `qemu-img`**, so it cannot host a Lima VM at all — against the Proxmox builder and substrate over plain ssh. A genuinely foreign build host, reached over the link, from a machine that cannot build locally.
+
+| | Result |
+|---|---|
+| all five build jobs | produce their artifacts; glibc natively, musl in the Alpine container |
+| second containerised run | re-stages cleanly (the root-owned-tree trap) |
+| `test:vm` end to end | reaches the remote amd64 substrate with amd64 binaries built on the remote amd64 builder |
+| e2e-vm suite | **176 pass, 44 skip, 9 fail** |
+| musl static-deps cache | 4m51s cold → **41s warm** after the mount fix below |
+| lint · typecheck 40/40 · unit · integration · build 22/22 · e2e 37/37 | clean |
+
+The nine failures are **not** the build path and are filed as **TASK-523**: the mass-storage LUN never appears as a `/dev/sd*` node on that substrate. Ruled out by measurement — `substrate-doctor.sh` passes there (24 assertions), the synthesised backing files loop-mount correctly *on the substrate* (`loop0p1: TYPE="hfsplus"`), and 176 cells pass with the same binaries.
+
+### Two defects the review caught that the box then confirmed
+
+**The musl container never saw the caches.** `podman run` mounted only the staged tree, so the job's preamble created `STATIC_DEPS_DIR` inside a `--rm` container, rebuilt the whole static C-dep closure, and threw it away — five minutes a run, with nothing reporting that anything was wasted. Mounting it at the **same path inside and outside** is not cosmetic: `build-static-deps.sh` writes `.pc` files carrying an absolute `prefix=`, so a closure built under one mount point is unusable under another. Proven the hard way — the cache left by TASK-520's hand-run had `prefix=/cache/static-deps-musl` and produced `fatal error: gpod/itdb.h: No such file or directory` from a tree whose headers were plainly there. Now in the playbook.
+
+**The job script relied on uids lining up between two machines.** A containerised job stages as root; whether the tree is then writable by the build user depends on `rsync -a` mapping the sending uid onto a local account. It does on the reference builder, which is why this worked twice before anyone noticed. The script now lands in `/tmp` — writable everywhere by definition — and is `sudo install`ed into place with an explicit mode.
+
+### Scope decisions, stated rather than silent
+
+- **AC #4 says "or localhost" and there is no localhost provisioner.** Deliberate: an `ssh` entry names how a box is *reached* and says nothing about where it is, so a `podkit-builder` alias with `HostName localhost` is a complete answer — same entry, same link, same contract, no in-process special case to keep correct. Documented in `.env.example` and the playbook rather than built.
+- **AC #6's container is the remote path only.** The Lima path keeps its second VM, which is what doc-060 says ("musl on a *remote* builder means an Alpine container on that build host") and what macOS has to spare.
+- **`PODKIT_SUBSTRATE` joined the cache key of the build tasks and both VM suites**, beyond what AC #2 asked for. Not optional: under turbo's strict env mode an undeclared variable does not reach the task at all, so `vm:install` could not have selected a remote substrate — and a cached "these passed" belongs to the box it was obtained on as much as to the architecture.
+- **`vm:doctor` gained an early return** for a substrate that is not baseline-tracked, so a remote-substrate user reads "not baseline-tracked" rather than "the Lima instance is missing" about an instance they never asked for.
+- **The plan's "Lima argv stays byte-identical" no longer holds.** `--omit-dir-times` is now on the in-guest rsync too. Deliberate and documented: the builder's staging root is root-owned and world-writable, and a plain `rsync -a` on it transfers the entire payload and *then* fails with exit 23.
+- **Declined: per-provisioner capability data on the registry entry** to collapse the three `isLimaVm`/`isSshVm` cascades. The repo's own `createSubstrateLink` defends the exhaustive-switch pattern for the same discriminator, and the three sites ask genuinely different questions (capability, lifecycle, filesystem convention).
+- **Declined: a `BuildRun` type** for the `(ctx, selection, link)` trio. A fair Data Clump reading, and the same argument TASK-520 used to decline bundling `(arch, libc)`: a shape guessed ahead of its only caller.
+
+Also taken from the review: `transport.ts` → `link-adapters.ts` (CONTEXT.md reserves "transport" for how the *product* reaches an iPod's firmware, and the file is now unambiguously link code); `FILE_COPY_TIMEOUT_MS` moved beside the link interface rather than restated in the driver; the six copies of the "non-zero exit → link failure or guest refusal" ladder collapsed into one `settleLinkResult` taking the per-link classifier; the in-flight artifact name dot-prefixed so a run killed mid-copy cannot strand a file matching the task's own output glob.
+
+### Residual risk
+
+The driver's six-step orchestration has no unit test. The job table, the link operations and the selection resolver each do; what is uncovered is the glue, and it is covered instead by the real runs above — over the ssh link only. **The Lima half of the driver is exercised by nothing automated on this machine**, which is the same gap #5 and #8 name.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
@@ -109,5 +162,23 @@ Half 1 landed and verified by the lead: lint clean, typecheck 40/40, unit 44/44,
 Half 2 is reshaped by the builder decision. It was written as "a build host may be a Proxmox builder VM, an existing amd64 machine, or localhost" — still true as a role, but the *reference* implementation is now a Proxmox builder VM (ADR-029 §4), because the end state has to work for a developer whose only other hardware is a hypervisor. That makes half 2 depend on TASK-520 (builder contract + builder VM) rather than on whatever amd64 box happens to be reachable.
 
 AC #8 as written wants `test:vm` passing against both an arm64 and an amd64 substrate. Only the arm64 half is ticked. The amd64 half is the real acceptance test for the whole decoupling effort, and it needs 520's builder and the substrate's host key trusted — both in progress on the human side.
+---
+
+created: 2026-09-23 20:39
+---
+## Handoff: what a macOS host still has to prove
+
+#5 and #8 are the only criteria left, and neither needs new code — they need an arm64 Mac.
+
+With a Lima substrate and nothing configured, everything should behave exactly as before: `selectBuildHost` picks `builderGlibc`/`builderMusl` because they are the substrate's siblings and can produce arm64. Pinned by `build-host.test.ts`'s first case, unverified on hardware — and this is the half of the change most worth a careful eye, because the Lima path is the one no automated run here touched.
+
+Then set `PODKIT_SUBSTRATE=deviceRemote` in `.env.local` and run `bun run test:vm`. Expect the driver to announce nothing and route to `builderRemote` on its own: no local Lima builder can produce x64 on that host, so capability decides before the tie-break is consulted. **That run closes #5 and the amd64 half of #8.**
+
+Two things to watch, both cheap and neither yet observed:
+
+1. **`.env.local` has to reach the task.** Bun loads it relative to the working directory, so `bun run --cwd test-packages/…` does *not* pick it up. Go through turbo (`bun run test:vm` from the repo root), which is how the variable enters the environment before turbo hashes it.
+2. **The builder has to be running.** Nothing in this repo starts an SSH build host — that is TASK-515. The driver probes and prints what to do; `qm start <vmid>` on the PVE host is the manual equivalent, and the playbook's start-for-a-build / stop-after mode still applies.
+
+Expect the same nine e2e-vm failures TASK-523 covers. They are substrate behaviour rather than architecture, so they should reproduce identically from a Mac — and if they do *not*, that is the most useful data point 523 could get.
 ---
 <!-- COMMENTS:END -->
