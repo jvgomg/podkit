@@ -13,9 +13,9 @@
 
 import { pveApiError, type PveApiError } from './errors.js';
 import {
-  resolvePinnedTls,
+  createPinnedFetch,
   probeCertificateOverTls,
-  type PinnedTlsOptions,
+  verifyPinnedCertificate,
   type ProbeCertificateFn,
 } from './tls.js';
 import type { PveConfig } from './config.js';
@@ -127,9 +127,6 @@ export interface PveClient {
   guestAddresses(vmid: number): Promise<readonly string[]>;
 }
 
-/** `fetch` init plus the runtime TLS settings pinning needs. */
-type PveRequestInit = RequestInit & { tls?: PinnedTlsOptions };
-
 interface RequestOpts {
   readonly method: 'GET' | 'POST' | 'PUT' | 'DELETE';
   readonly path: string;
@@ -146,7 +143,6 @@ function formEncode(body: Readonly<Record<string, string | number | undefined>>)
 
 export function createPveClient(opts: CreatePveClientOpts): PveClient {
   const { config } = opts;
-  const doFetch = opts.fetchFn ?? fetch;
   const probe = opts.probeCertificate ?? probeCertificateOverTls;
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const requestTimeoutMs = opts.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
@@ -154,26 +150,21 @@ export function createPveClient(opts: CreatePveClientOpts): PveClient {
 
   // Resolved once. The probe costs a handshake, and re-running it per request
   // would also mean re-reporting a pin mismatch several times per verb.
-  let pinned: Promise<PinnedTlsOptions | undefined> | undefined;
-  function tlsOptions(): Promise<PinnedTlsOptions | undefined> {
-    pinned ??= config.tlsFingerprint
-      ? resolvePinnedTls(config.apiUrl, config.tlsFingerprint, probe)
-      : Promise.resolve(undefined);
-    return pinned;
-  }
+  // Pinned requests go through a transport that checks the certificate on the
+  // socket; unpinned ones through the runtime's own `fetch` with ordinary
+  // system-CA validation. An injected transport wins over both.
+  const transport =
+    opts.fetchFn ?? (config.tlsFingerprint ? createPinnedFetch(config.tlsFingerprint) : fetch);
 
-  // Per-request TLS settings are a Bun `fetch` extension. Node's ignores the
-  // option, which would leave the pin unenforced — so refuse rather than
-  // proceed. An injected fetch is a test's own business.
-  if (
-    config.tlsFingerprint &&
-    !opts.fetchFn &&
-    typeof (globalThis as { Bun?: unknown }).Bun === 'undefined'
-  ) {
-    throw new Error(
-      "PODKIT_PVE_TLS_FINGERPRINT is set, but this runtime's `fetch` cannot be given " +
-        'per-request TLS settings, so the pin could not be enforced. Run this under Bun.'
-    );
+  // Diagnosis, once: a rotated certificate should read as a named mismatch
+  // rather than as a torn-down connection.
+  let verified: Promise<unknown> | undefined;
+  function verifyPin(): Promise<unknown> {
+    verified ??=
+      config.tlsFingerprint && !opts.fetchFn
+        ? verifyPinnedCertificate(config.apiUrl, config.tlsFingerprint, probe)
+        : Promise.resolve(undefined);
+    return verified;
   }
 
   async function request<T>(req: RequestOpts): Promise<T> {
@@ -181,21 +172,20 @@ export function createPveClient(opts: CreatePveClientOpts): PveClient {
     // URL may carry a path when the API sits behind a reverse proxy, and an
     // absolute path would silently discard it.
     const url = new URL(`${config.apiUrl.href.replace(/\/+$/, '')}/api2/json${req.path}`);
-    const tls = await tlsOptions();
-    const init: PveRequestInit = {
+    await verifyPin();
+    const init: RequestInit = {
       method: req.method,
       headers: {
         Authorization: `PVEAPIToken=${config.tokenId}=${config.tokenSecret}`,
         ...(req.body ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}),
       },
       ...(req.body ? { body: formEncode(req.body) } : {}),
-      ...(tls ? { tls } : {}),
       signal: AbortSignal.timeout(requestTimeoutMs),
     };
 
     let response: Response;
     try {
-      response = await doFetch(url, init);
+      response = await transport(url, init);
     } catch (err) {
       throw new PveUnreachableError(
         `cannot reach the Proxmox API at ${config.apiUrl.origin} ` +

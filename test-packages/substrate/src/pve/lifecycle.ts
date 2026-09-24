@@ -377,8 +377,9 @@ export async function pveRecover(
   report(`${strategy.action}: ${strategy.reason}`);
 
   if (strategy.action === 'rollback') {
-    // Rollback on a running guest is refused by PVE, and a hard stop is right
-    // here: the disk state is about to be discarded anyway.
+    // PVE will roll a running guest back, but pulling the disk out from under
+    // a live kernel is not something to do on purpose. Stopping first makes the
+    // operation deterministic, and the disk state is discarded either way.
     if (status === 'running') await binding.client.stop(binding.vmid, { force: true });
     await binding.client.rollback(binding.vmid, strategy.snapshot);
     await binding.client.start(binding.vmid);

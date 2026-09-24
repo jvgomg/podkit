@@ -14,7 +14,6 @@ import {
 } from './client.js';
 import { resolvePveConfig, type PveConfig } from './config.js';
 import { isPveApiError } from './errors.js';
-import type { ProbedCertificate } from './tls.js';
 
 const FP = 'a'.repeat(64);
 
@@ -34,7 +33,6 @@ interface Recorded {
   path: string;
   headers: Record<string, string>;
   body: string | null;
-  tls: unknown;
 }
 
 /** A `fetch` that answers from a route table and records what it was asked. */
@@ -49,7 +47,6 @@ function scriptedFetch(routes: Record<string, unknown | (() => unknown)>) {
       path,
       headers: { ...((init?.headers ?? {}) as Record<string, string>) },
       body: (init?.body as string | undefined) ?? null,
-      tls: (init as { tls?: unknown } | undefined)?.tls,
     });
     const key = `${method} ${path}`;
     if (!(key in routes)) {
@@ -92,34 +89,24 @@ describe('authentication and transport', () => {
     expect(calls[0]?.headers['Authorization']).toBe('PVEAPIToken=podkit@pve!automation=s3cr3t');
   });
 
-  it('carries no TLS override when no fingerprint is pinned', async () => {
-    const { pve, calls } = client({ 'GET /version': { version: '9.1.4' } });
-    await pve.version();
-    expect(calls[0]?.tls).toBeUndefined();
-  });
-
-  it('pins the probed certificate on every request, probing only once', async () => {
-    const probed: URL[] = [];
-    const probe = async (url: URL): Promise<ProbedCertificate> => {
-      probed.push(url);
-      return { pem: 'PEM', fingerprint256: FP, subject: 'rae' };
-    };
-    const { fetchFn, calls } = scriptedFetch({
-      'GET /version': { version: '9.1.4' },
-      'GET /nodes': [{ node: 'rae' }],
-    });
+  it('routes through an injected transport rather than opening a socket', async () => {
+    // Pinning is a transport, not a request option — so an injected transport
+    // replaces it wholesale and no probe is attempted. That is what keeps
+    // every other test in this file hermetic.
+    let probed = 0;
+    const { fetchFn, calls } = scriptedFetch({ 'GET /version': { version: '9.1.4' } });
     const pve = createPveClient({
       config: config({ PODKIT_PVE_TLS_FINGERPRINT: FP }),
       fetchFn,
-      probeCertificate: probe,
-      sleep: async () => {},
+      probeCertificate: async () => {
+        probed++;
+        return { pem: 'PEM', fingerprint256: FP, subject: 'rae' };
+      },
     });
     await pve.version();
-    await pve.listNodes();
 
-    expect(probed).toHaveLength(1);
-    expect(calls.every((c) => (c.tls as { ca?: string } | undefined)?.ca === 'PEM')).toBe(true);
-    expect((calls[0]!.tls as { rejectUnauthorized?: boolean }).rejectUnauthorized).toBe(true);
+    expect(calls).toHaveLength(1);
+    expect(probed).toBe(0);
   });
 
   it('keeps a base path, so an API behind a reverse proxy still resolves', async () => {

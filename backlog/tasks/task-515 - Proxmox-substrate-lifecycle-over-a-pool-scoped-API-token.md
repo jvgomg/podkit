@@ -4,7 +4,7 @@ title: Proxmox substrate lifecycle over a pool-scoped API token
 status: In Progress
 assignee: []
 created_date: '2026-09-13 18:34'
-updated_date: '2026-09-23 23:43'
+updated_date: '2026-09-23 23:56'
 labels:
   - testing
   - infrastructure
@@ -197,5 +197,29 @@ Built. Nine of ten ACs are done and verified by unit tests; **AC #8 is implement
 **Deliberate reading of AC #5.** Lifecycle verbs on an unconfigured machine print the `qm` equivalent and exit **1**, not 0. The state was not reached, and a wrapper doing `vm:up && test:vm` must not carry on against a stopped guest. `status` is the exception and exits 0: a substrate that answers over ssh is a substrate that is running, which is an observation rather than a guess. `doctor`, `install` and `shell` never needed the hypervisor and are untouched.
 
 **Also fixed in passing:** `apply-state.sh`'s header still described a snapshot orchestrator that was deleted in May 2026. It now describes what the script does, and `state-layering.test.ts` pins the boundary — no snapshot call on the state-application path, and exactly one snapshot name in the repo.
+---
+
+created: 2026-09-23 23:56
+---
+Reviewed on both axes (standards + spec). Three real defects and one gap; all fixed in `9e11e9c2`.
+
+**`PODKIT_PVE_STORAGE=tank` resolved snippets to `local`.** The second positional slot fell through to the *default* instead of to the first entry, so a single-storage setup silently pointed `--cicustom` at a storage the operator never named — manufacturing exactly the late opaque `Datastore.Audit` 403 that comment #4 exists to warn about. Worse, `config.test.ts`'s "one storage serves both roles" case named `local`, which *is* the default, so it passed either way. The fixture now names a storage that is neither default.
+
+**A base URL with a path was discarded.** `new URL('/api2/json' + path, base)` roots at the origin, so `https://gateway/pve` lost its prefix — breaking the reverse-proxy case that was the stated reason for choosing a full URL over a hostname in D1.
+
+**`createGuest` matched on PVE's error wording** to decide whether to mention the snippet, against `docs/architecture/conventions.md` §3 ("no message-keyword inspection"). Create is the only verb that depends on the snippet, so the note is now unconditional and the error is a typed `PveCreateFailedError`.
+
+**AC #9 was half-built: nothing took the lock.** `acquireRemoteLock` had no caller outside its own tests — the verbs could report and break a lock that no run ever held. It now fronts the turbo wrapper, which is the one process spanning `test:vm` and `test:e2e:docker-dist`; per suite would serialise the suites against each other. An unreachable substrate **refuses** the run rather than running unlocked, so on a remote substrate the flow is `vm:up deviceRemote && test:vm`. Extracted as `acquireRunLock` in `@podkit/substrate` with an injectable link, and unit-tested.
+
+**Two corrections to what I claimed in comment #7.**
+
+- I wrote that `tls-posture.test.ts` "greps the whole tree". It scanned five file extensions — `.tsx`, Rust, `.yml`, JSON and Dockerfiles were unscanned. Widened.
+- Per-request TLS settings are a **Bun `fetch` extension**. Node's `fetch` ignores the option, which would leave a configured pin unenforced. A pin under a runtime that would ignore it is now refused rather than silently accepted.
+
+**Left as-is, deliberately.** doc-060's seam 3 says an injectable `fetch` should be "the only new seam", and the diff also injects `probeCertificate`, `sleep`/`now`/`makeToken` and the CLI's `io`/`linkFor`. The certificate probe is the TLS half of the same client seam; the clock seams are what make a bounded wait assertable without sleeping in a test; `io`/`linkFor` follow the existing subprocess-runner DI pattern the same doc calls seam 1. Worth recording as a deviation rather than pretending it is not one.
+
+**AC #5 wording.** The AC says lifecycle verbs "print the manual qm equivalent instead of failing". They print it and exit **1**. I read "instead of failing" as "instead of an error/stack trace", not "exit 0" — `vm:up && test:vm` must not proceed against a guest that was never started. `status` is the exception and exits 0, because a substrate that answers over ssh genuinely is running. Flagging the reading rather than leaving it implicit in a code comment.
+
+AC #8 remains unchecked and unproven: `PODKIT_PVE_API_URL` is still absent from `.env.local`, so nothing here has contacted a hypervisor, and snapshot/rollback are still the two calls the token has never made.
 ---
 <!-- COMMENTS:END -->

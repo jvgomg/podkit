@@ -118,14 +118,23 @@ wrong:
   status and node for every member in one call — it is both the `status`
   implementation and the vmid→node resolver, and it is the call the pool ACL
   exists to permit.
-- **Pinning narrows the trust anchor; it does not relax verification.** The
-  certificate is probed over a credential-free socket, compared against the pin
-  before any token is sent, and then used as the sole `ca` for every request
-  with chain validation left on and identity decided by fingerprint. Identity by
-  fingerprint rather than hostname because PVE issues its certificate to the
-  node name, which need not match the URL it is reached at. With no pin
-  configured, ordinary system-CA validation applies. No switch anywhere disables
-  it, and a repo-wide test asserts that no such switch exists.
+- **The pin replaces chain validation, and is enforced on the socket.** PVE
+  presents only its leaf, signed by a cluster CA that never reaches the wire, so
+  there is no anchor to validate against and "pin *plus* chain validation" is
+  not available however desirable it sounds. Instead the pinned transport opens
+  its own connection, compares the live certificate's SHA-256 in the handshake
+  callback, and destroys the socket on mismatch before a request byte is
+  written. Identity is the fingerprint rather than the hostname, because PVE
+  issues to the node name, which need not match the address it is reached at.
+  With no pin configured, ordinary system-CA validation applies.
+
+  It speaks HTTP over `node:tls` rather than using a higher-level client, and
+  that is a measured decision rather than a preference: Bun's `fetch` never
+  calls `tls.checkServerIdentity`, and its `https.request` ignores
+  `createConnection`. Both were tried, and both returned 200 against a
+  deliberately wrong pin. Owning the socket is what makes the check unmissable.
+  No switch anywhere disables verification, and a repo-wide test asserts that
+  no such switch exists.
 - **`--cicustom` stays.** PVE's upload endpoint has no `snippets` content type,
   so a token cannot place a cloud-init snippet — which means recreate reuses the
   one phase 1 left, and a snippet change needs root again. The alternative,

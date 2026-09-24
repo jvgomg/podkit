@@ -234,10 +234,12 @@ export {
 export type { PveDeniedPrivilege, PveApiFailure } from './pve/errors.js';
 export { PveApiError, pveApiError, parseDeniedPrivilege, isPveApiError } from './pve/errors.js';
 
-export type { ProbedCertificate, ProbeCertificateFn, PinnedTlsOptions } from './pve/tls.js';
+export type { ProbedCertificate, ProbeCertificateFn } from './pve/tls.js';
 export {
   normalizeFingerprint,
-  resolvePinnedTls,
+  sniFor,
+  verifyPinnedCertificate,
+  createPinnedFetch,
   probeCertificateOverTls,
   PveTlsPinError,
   PveTlsFingerprintFormatError,
