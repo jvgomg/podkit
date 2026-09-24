@@ -123,7 +123,7 @@ podkit-vm <verb> <instance> [options]
 | `status` | Print `running` \| `stopped` \| `missing`. |
 | `stop` | Stop the VM; no-op if missing or already stopped. |
 | `destroy` | Delete the VM (`--yes` to skip the confirmation prompt; refuses non-interactively without it). |
-| `recover` | Destroy → recreate → start a wedged VM. |
+| `recover` | Repair a wedged VM. Lima: destroy → recreate → start. ssh: roll back to the provisioning snapshot where the guest's sealed hash still matches or could not be established, recreate where it drifted, is unsealed, or has no snapshot (`--recreate` to rebuild outright). |
 | `shell` | Interactive shell inside the VM. |
 | `install` | Generic precondition only: make sure the VM is running. Device-specific binary/unit staging belongs to the device-testing harness. |
 | `doctor` | Report whether a baseline-tracked VM carries a sealed baseline hash. |

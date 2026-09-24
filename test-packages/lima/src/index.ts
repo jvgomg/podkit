@@ -185,3 +185,8 @@ export {
   VM_HOUSEKEEPING_TIMEOUT_MS,
   IMAGE_PRUNE_TIMEOUT_MS,
 } from './docker-image.js';
+
+// The `podkit-vm` CLI itself, for the one caller that has to compose with it
+// rather than shell out: `vm:recover` needs a baseline hash this package
+// cannot compute (see `scripts/vm-recover.ts` in `@podkit/device-testing`).
+export { main as runPodkitVm } from './cli.js';

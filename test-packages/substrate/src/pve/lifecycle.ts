@@ -357,14 +357,27 @@ export async function pveSealSnapshot(binding: PveBinding, description: string):
   await binding.client.snapshot(binding.vmid, POST_PROVISION_SNAPSHOT, description);
 }
 
-/** Whether the running guest still matches the committed provisioning inputs. */
+/**
+ * What the comparison against the committed provisioning inputs came to.
+ *
+ * `absent` is a fact about the guest's disk: it was asked, and carries no
+ * claim. `unknown` is the admission that no comparison was possible, and
+ * `not-sought` that none was attempted — both carry the reason, so a caller
+ * never has to reconstruct one and `'unknown'` can never mean two things at
+ * once. Which of these reach the destructive branch, and why that matters, is
+ * `docs/architecture/testing/vm-testing.md`.
+ */
 export type TemplateHashVerdict =
   /** The sealed hash matches the host sources. */
-  | 'match'
+  | { readonly verdict: 'match' }
   /** They differ — the guest was provisioned from something the repo no longer says. */
-  | 'drifted'
-  /** Nothing is sealed, so there is no claim to check. */
-  | 'unknown';
+  | { readonly verdict: 'drifted' }
+  /** The guest answered and nothing is sealed in it, so no claim exists. */
+  | { readonly verdict: 'absent' }
+  /** No comparison could be made. {@link because} says which side was missing. */
+  | { readonly verdict: 'unknown'; readonly because: string }
+  /** The caller pre-empted the question — an operator asking for a rebuild. */
+  | { readonly verdict: 'not-sought'; readonly because: string };
 
 /** How to recover, and why. */
 export type RecoveryStrategy =
@@ -385,12 +398,20 @@ export interface ChooseRecoveryInput {
  * snapshot time — so when the committed template has moved since, rolling back
  * reinstates the stale box while reporting success. That trap is why the drift
  * verdict outranks the presence of a snapshot.
+ *
+ * Every route to `recreate` below names a fact, and a verdict that establishes
+ * nothing rolls back instead. The two mistakes are not symmetric; see
+ * `docs/architecture/testing/vm-testing.md` for why that orders the branches.
  */
 export function chooseRecoveryStrategy(input: ChooseRecoveryInput): RecoveryStrategy {
   const name = input.snapshotName ?? POST_PROVISION_SNAPSHOT;
   const snapshot = input.snapshots.find((s) => s.name === name);
+  const hash = input.templateHash;
 
-  if (input.templateHash === 'drifted') {
+  if (hash.verdict === 'not-sought') {
+    return { action: 'recreate', reason: hash.because };
+  }
+  if (hash.verdict === 'drifted') {
     return {
       action: 'recreate',
       reason:
@@ -398,14 +419,27 @@ export function chooseRecoveryStrategy(input: ChooseRecoveryInput): RecoveryStra
         `'${name}' would restore the stale box`,
     };
   }
-  if (input.templateHash === 'unknown') {
+  if (hash.verdict === 'absent') {
     return {
       action: 'recreate',
       reason: `nothing is sealed in this guest, so there is no provisioning state to roll back to`,
     };
   }
   if (!snapshot) {
-    return { action: 'recreate', reason: `this guest has no '${name}' snapshot` };
+    const missing = `this guest has no '${name}' snapshot`;
+    return {
+      action: 'recreate',
+      reason: hash.verdict === 'unknown' ? `${hash.because}, and ${missing}` : missing,
+    };
+  }
+  if (hash.verdict === 'unknown') {
+    return {
+      action: 'rollback',
+      snapshot: name,
+      reason:
+        `${hash.because}, so '${name}' is the only evidence available — rolling back rather ` +
+        `than rebuilding a guest nothing has shown to be stale. Re-check with \`bun run vm:doctor\``,
+    };
   }
   return {
     action: 'rollback',
@@ -416,7 +450,7 @@ export function chooseRecoveryStrategy(input: ChooseRecoveryInput): RecoveryStra
 
 /** Hooks {@link pveRecover} needs from the package that owns provisioning. */
 export interface PveRecoverOpts {
-  /** Drift verdict for the running guest. */
+  /** Drift verdict for the guest. */
   readonly templateHash: TemplateHashVerdict;
   /**
    * Wait until the restarted guest answers over ssh, throwing if it never

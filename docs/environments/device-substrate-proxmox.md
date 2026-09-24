@@ -297,8 +297,8 @@ bun run harness:seal
 That re-runs the doctor, writes the baseline hash into the guest, and — when a
 PVE token is configured — takes the `podkit-provisioned` snapshot. The three are
 one command because they describe one moment: a snapshot without a matching
-sealed hash is a restore point nothing vouches for, and `vm:recover` has to
-treat it as unknown and recreate instead of rolling back.
+sealed hash is a restore point nothing vouches for, so `vm:recover` finds a
+guest that answers and carries no seal, and recreates instead of rolling back.
 
 `bun run vm:doctor` reads that hash before every `test:vm` and reports drift
 when the committed provisioning inputs have moved.
@@ -344,6 +344,25 @@ bun run vm:recover deviceRemote   # roll back to the snapshot, or recreate
 before reporting, bounded at five minutes — PVE's start task settles when QEMU
 was launched, not when sshd is up, so anything driven over the link afterwards
 would otherwise race the boot.
+
+It picks between the two branches on the sealed baseline hash, which it reads
+over ssh — so a **stopped** guest, or one whose sshd is wedged, cannot be asked.
+A guest that did not answer has told you nothing about its disk, so with no
+comparison available `recover` **rolls back** to `podkit-provisioned` (which the
+API reports without the link) and prints which side it could not read.
+Recreating is reserved for facts: the inputs drifted, the guest answered and
+carries no seal, there is no snapshot, there is no guest. Run `bun run
+vm:doctor` afterwards to confirm the box it restored is current. The reasoning
+is in [vm-testing.md](../architecture/testing/vm-testing.md).
+
+When you know the guest is beyond repair, ask for the rebuild outright:
+
+```bash
+bun run vm:recover deviceRemote --recreate
+```
+
+That skips the verdict entirely — and the guest, which is about to be deleted —
+and lands you on the host-key and re-seal steps below.
 
 Same verbs as the local Lima substrate — `podkit-vm` dispatches on the
 provisioner, so there is one CLI to learn rather than two lifecycles that are

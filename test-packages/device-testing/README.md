@@ -14,7 +14,7 @@ Generic lifecycle for the `podkit-device` Lima VM — and every other registered
 | `vm:down device` | Stop the VM (preserves state) |
 | `vm:destroy device` | Delete the VM (prompts unless `--yes`) |
 | `vm:shell device` | Interactive shell inside the VM |
-| `vm:recover device` | Destroy → recreate → start a wedged VM |
+| `vm:recover device` | Repair a wedged VM: roll back to the provisioning snapshot, or recreate it |
 | `harness:status` | Health check: VM state, SSH, binaries, systemd unit, kernel modules |
 | `harness:install` | Turbo-build podkit + dummy-hcd-daemon, transfer everything, install the systemd unit |
 | `harness:setup` | First-time onboarding: ensure the VM is up + install + seal the baseline hash |

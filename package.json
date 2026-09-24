@@ -28,7 +28,7 @@
     "vm:down": "bun test-packages/lima/src/cli.ts stop",
     "vm:destroy": "bun test-packages/lima/src/cli.ts destroy",
     "vm:status": "bun test-packages/lima/src/cli.ts status",
-    "vm:recover": "bun test-packages/lima/src/cli.ts recover",
+    "vm:recover": "bun test-packages/device-testing/scripts/vm-recover.ts",
     "vm:shell": "bun test-packages/lima/src/cli.ts shell",
     "vm:snapshot": "bun test-packages/lima/src/cli.ts snapshot",
     "vm:unlock": "bun test-packages/lima/src/cli.ts unlock",

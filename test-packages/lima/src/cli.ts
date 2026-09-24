@@ -86,7 +86,10 @@ Verbs:
   status    Print the VM status (running | stopped | missing)
   stop      Stop the VM (no-op if missing or already stopped)
   destroy   Delete the VM (--yes to skip the confirmation prompt)
-  recover   Destroy then recreate + start the VM
+  recover   Repair the VM: roll back to the provisioning snapshot where that is
+            sound, recreate it where it is not (ssh substrates)
+              --expect-hash <sha>  baseline hash the guest should be sealed with
+              --recreate           rebuild outright, without consulting the guest
   shell     Open an interactive shell inside the VM
   install   Ensure the VM is running (generic precondition for harness install)
   doctor    Report whether a tracked VM carries a sealed baseline hash

@@ -90,7 +90,7 @@ bun run vm:down device           # Stop it (preserves state)
 bun run vm:status device         # running | stopped | missing
 bun run vm:shell device          # Interactive shell inside the VM
 bun run vm:destroy device        # Delete it (--yes to skip confirm)
-bun run vm:recover device        # Destroy → recreate → start a wedged VM
+bun run vm:recover device        # Repair a wedged VM: roll back to the snapshot, or recreate
 bun run vm:down builderGlibc     # Same verbs for the Linux builder VMs
 
 # Device-harness provisioning (macOS dev; Lima) — what the substrate does NOT do

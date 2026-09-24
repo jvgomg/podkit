@@ -38,6 +38,7 @@ import {
   QM_VERB_FOR_CLI_VERB,
   readRemoteLockHolder,
   resolvePveLifecycle,
+  isSubstrateLinkError,
   isSubstrateNotReadyError,
   waitForSubstrateReady,
   type PveBinding,
@@ -107,18 +108,62 @@ async function isReachable(link: SubstrateLink): Promise<boolean> {
 /** In-guest path the harness seals its provisioning hash at. */
 const BASELINE_VM_HASH_PATH = '/var/lib/podkit-device-harness/baseline-hash';
 
-async function readSealedHash(link: SubstrateLink): Promise<string> {
-  const probe = await link.exec(['sh', '-c', `cat ${BASELINE_VM_HASH_PATH} 2>/dev/null || true`]);
-  return probe.stdout.trim();
+/**
+ * What a probe for the guest's sealed hash came back with.
+ *
+ * A guest that answered with an empty file and a guest nobody could reach are
+ * not the same fact, and only the first says anything about provisioning.
+ */
+export type SealedHashRead =
+  /** The guest answered. `hash` is empty when nothing is sealed in it. */
+  | { readonly read: true; readonly hash: string }
+  /** Nobody could ask. `detail` is the link tool's own diagnostic. */
+  | { readonly read: false; readonly detail: string };
+
+async function readSealedHash(link: SubstrateLink): Promise<SealedHashRead> {
+  try {
+    const probe = await link.exec(['sh', '-c', `cat ${BASELINE_VM_HASH_PATH} 2>/dev/null || true`]);
+    if (probe.exitCode !== 0) {
+      return { read: false, detail: probe.stderr.trim() || `exit=${probe.exitCode}` };
+    }
+    return { read: true, hash: probe.stdout.trim() };
+  } catch (err) {
+    return {
+      read: false,
+      detail: isSubstrateLinkError(err)
+        ? err.detail
+        : err instanceof Error
+          ? err.message
+          : String(err),
+    };
+  }
 }
 
-/** Compare what the guest was sealed with against what the host sources say. */
+/** Advice attached wherever the host side is the half that is missing. */
+const EXPECT_HASH_HINT =
+  "no expected hash was supplied (--expect-hash), so the guest's seal had nothing to be " +
+  'compared against';
+
+/**
+ * Compare what the guest was sealed with against what the host sources say.
+ *
+ * Every answer other than `match`/`drifted` says which side came up empty,
+ * because `recreate` is downstream of this and must not fire on an absence the
+ * reader cannot see.
+ */
 export function templateHashVerdict(
-  sealed: string,
+  read: SealedHashRead,
   expected: string | undefined
 ): TemplateHashVerdict {
-  if (!sealed || !expected) return 'unknown';
-  return sealed === expected ? 'match' : 'drifted';
+  if (!read.read) {
+    return {
+      verdict: 'unknown',
+      because: `the sealed hash at ${BASELINE_VM_HASH_PATH} could not be read (${read.detail})`,
+    };
+  }
+  if (!expected) return { verdict: 'unknown', because: EXPECT_HASH_HINT };
+  if (!read.hash) return { verdict: 'absent' };
+  return { verdict: read.hash === expected ? 'match' : 'drifted' };
 }
 
 /** Print the `qm` a verb would have run, and why it could not run it. */
@@ -272,8 +317,16 @@ async function cmdDoctor(def: SshVmDefinition, link: SubstrateLink, io: SshCliIo
     io.log(`[podkit-vm] \`${def.id}\` is not baseline-tracked. Nothing to check.`);
     return 0;
   }
-  const sealed = await readSealedHash(link).catch(() => '');
-  if (!sealed) {
+  const sealed = await readSealedHash(link);
+  if (!sealed.read) {
+    io.errorLog(
+      `[podkit-vm] could not read ${BASELINE_VM_HASH_PATH} in ${link.description} ` +
+        `(${sealed.detail}). That is a fact about the link, not about the guest — start it ` +
+        `with \`bun run vm:up ${def.id}\` before concluding anything about its baseline.`
+    );
+    return 1;
+  }
+  if (!sealed.hash) {
     io.errorLog(
       `[podkit-vm] no sealed baseline hash at ${BASELINE_VM_HASH_PATH} in ${link.description}. ` +
         'Apply the contract and seal it with `bun run harness:setup`.'
@@ -281,7 +334,7 @@ async function cmdDoctor(def: SshVmDefinition, link: SubstrateLink, io: SshCliIo
     return 1;
   }
   io.log(
-    `[podkit-vm] \`${def.id}\` carries a sealed baseline hash (${sealed.slice(0, 12)}...).\n` +
+    `[podkit-vm] \`${def.id}\` carries a sealed baseline hash (${sealed.hash.slice(0, 12)}...).\n` +
       '[podkit-vm] Run `bun run vm:doctor` to compare it against the host sources.'
   );
   return 0;
@@ -321,6 +374,31 @@ async function cmdDestroy(
   return 0;
 }
 
+/**
+ * Establish what the guest was sealed with, or say why that was not possible.
+ *
+ * The status read comes FIRST and over the API, which answers for a stopped
+ * guest. Reaching for the link before knowing the guest is up measures the
+ * power state and reports it as a fact about the disk — and `recreate` is
+ * downstream.
+ */
+async function establishTemplateHash(
+  binding: PveBinding,
+  link: SubstrateLink,
+  expected: string | undefined
+): Promise<TemplateHashVerdict> {
+  const status = await pveStatus(binding);
+  if (status !== 'running') {
+    return {
+      verdict: 'unknown',
+      because:
+        `VMID ${binding.vmid} is ${status}, so its sealed hash could not be read over ` +
+        link.description,
+    };
+  }
+  return templateHashVerdict(await readSealedHash(link), expected);
+}
+
 async function cmdRecover(
   binding: PveBinding,
   args: readonly string[],
@@ -329,12 +407,16 @@ async function cmdRecover(
   report: (message: string) => void
 ): Promise<number> {
   // The host-side hash spans packages this one must not depend on, so the
-  // caller that can compute it passes it in. Without it the verdict is
-  // `unknown`, and `unknown` recreates rather than rolling back.
+  // caller that can compute it passes it in — see `scripts/vm-recover.ts` in
+  // `@podkit/device-testing`. Without it nothing can be compared, and a
+  // comparison that did not happen is not evidence of drift.
   const expectIndex = args.indexOf('--expect-hash');
   const expected = expectIndex >= 0 ? args[expectIndex + 1] : undefined;
-  const sealed = await readSealedHash(link).catch(() => '');
-  const verdict = templateHashVerdict(sealed, expected);
+  // Nothing is asked of a guest that is about to be deleted, so the request
+  // itself is what the strategy is chosen on.
+  const verdict: TemplateHashVerdict = args.includes('--recreate')
+    ? { verdict: 'not-sought', because: 'the operator asked for a rebuild with --recreate' }
+    : await establishTemplateHash(binding, link, expected);
 
   // The hook THROWS, so nothing downstream of it runs against a guest that
   // never answered. The strategy is captured on the way past because the two

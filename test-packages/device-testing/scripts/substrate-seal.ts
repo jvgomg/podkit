@@ -6,7 +6,7 @@
  *
  * All three describe the same moment, which is why they are one command. A
  * snapshot without a matching sealed hash is a restore point nothing vouches
- * for, and `vm:recover` would have to treat it as unknown and recreate instead.
+ * for, so `vm:recover` reads the seal as absent and recreates instead.
  *
  * The Lima harness seals as the last step of `harness:setup`; this is the same
  * step for a substrate this repo did not create.

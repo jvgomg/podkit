@@ -90,9 +90,35 @@ function linkThatRefusesTheProbe(sealed: string): SubstrateLink {
   };
 }
 
-const POOL = {
-  members: [{ vmid: 9000, name: 'podkit-substrate', node: 'rae', status: 'stopped', type: 'qemu' }],
-};
+/**
+ * The pool listing, which is where guest status comes from.
+ *
+ * Parameterised because `recover` now branches on it: a stopped guest cannot be
+ * asked for its sealed hash, and a fixture frozen at one status would hide the
+ * difference this file exists to pin.
+ */
+function poolAt(status: 'running' | 'stopped') {
+  return {
+    members: [{ vmid: 9000, name: 'podkit-substrate', node: 'rae', status, type: 'qemu' }],
+  };
+}
+
+const POOL = poolAt('stopped');
+
+/** The API routes a recovery touches, whichever branch it takes. */
+function recoverRoutes(status: 'running' | 'stopped', snapshots: unknown[]) {
+  return {
+    'GET /pools/podkit': poolAt(status),
+    'GET /nodes/rae/qemu/9000/snapshot': snapshots,
+    [`POST /nodes/rae/qemu/9000/snapshot/${POST_PROVISION_SNAPSHOT}/rollback`]: 'UPID:rae:1',
+    'POST /nodes/rae/qemu/9000/status/stop': 'UPID:rae:1',
+    'POST /nodes/rae/qemu/9000/status/start': 'UPID:rae:1',
+    'GET /nodes/rae/qemu/9000/agent/network-get-interfaces': { result: [] },
+    ...TASK_OK,
+  };
+}
+
+const SEALED_SNAPSHOT = [{ name: POST_PROVISION_SNAPSHOT, description: '', snaptime: 1 }];
 
 /** A `fetch` answering a route table, as in the client's own tests. */
 function scriptedFetch(routes: Record<string, unknown>) {
@@ -260,16 +286,7 @@ describe('with a token configured', () => {
 
   it('rolls back when the sealed hash matches what the caller expects', async () => {
     const cap = captureIo();
-    const { fetchFn, calls } = scriptedFetch({
-      'GET /pools/podkit': POOL,
-      'GET /nodes/rae/qemu/9000/snapshot': [
-        { name: POST_PROVISION_SNAPSHOT, description: '', snaptime: 1 },
-      ],
-      [`POST /nodes/rae/qemu/9000/snapshot/${POST_PROVISION_SNAPSHOT}/rollback`]: 'UPID:rae:1',
-      'POST /nodes/rae/qemu/9000/status/start': 'UPID:rae:1',
-      'GET /nodes/rae/qemu/9000/agent/network-get-interfaces': { result: [] },
-      ...TASK_OK,
-    });
+    const { fetchFn, calls } = scriptedFetch(recoverRoutes('running', SEALED_SNAPSHOT));
     const code = await runSshSubstrateVerb('recover', REMOTE, ['--expect-hash', 'abc123'], {
       io: cap.io,
       env: TOKEN_ENV,
@@ -281,21 +298,13 @@ describe('with a token configured', () => {
       `POST /nodes/rae/qemu/9000/snapshot/${POST_PROVISION_SNAPSHOT}/rollback`
     );
     expect(cap.stdout()).toContain('rollback');
+    expect(cap.stdout()).toContain('matches the committed provisioning inputs');
   });
 
   it('waits for the restarted guest to answer before calling the recovery done', async () => {
     const cap = captureIo();
     const probes: string[] = [];
-    const { fetchFn } = scriptedFetch({
-      'GET /pools/podkit': POOL,
-      'GET /nodes/rae/qemu/9000/snapshot': [
-        { name: POST_PROVISION_SNAPSHOT, description: '', snaptime: 1 },
-      ],
-      [`POST /nodes/rae/qemu/9000/snapshot/${POST_PROVISION_SNAPSHOT}/rollback`]: 'UPID:rae:1',
-      'POST /nodes/rae/qemu/9000/status/start': 'UPID:rae:1',
-      'GET /nodes/rae/qemu/9000/agent/network-get-interfaces': { result: [] },
-      ...TASK_OK,
-    });
+    const { fetchFn } = scriptedFetch(recoverRoutes('running', SEALED_SNAPSHOT));
     const code = await runSshSubstrateVerb('recover', REMOTE, ['--expect-hash', 'abc123'], {
       io: cap.io,
       env: TOKEN_ENV,
@@ -315,16 +324,7 @@ describe('with a token configured', () => {
     // A rollback preserves the guest's host keys, so a box that does not
     // answer afterwards is genuinely broken — no manual step finishes this.
     const cap = captureIo();
-    const { fetchFn } = scriptedFetch({
-      'GET /pools/podkit': POOL,
-      'GET /nodes/rae/qemu/9000/snapshot': [
-        { name: POST_PROVISION_SNAPSHOT, description: '', snaptime: 1 },
-      ],
-      [`POST /nodes/rae/qemu/9000/snapshot/${POST_PROVISION_SNAPSHOT}/rollback`]: 'UPID:rae:1',
-      'POST /nodes/rae/qemu/9000/status/start': 'UPID:rae:1',
-      'GET /nodes/rae/qemu/9000/agent/network-get-interfaces': { result: [] },
-      ...TASK_OK,
-    });
+    const { fetchFn } = scriptedFetch(recoverRoutes('running', SEALED_SNAPSHOT));
     const code = await runSshSubstrateVerb('recover', REMOTE, ['--expect-hash', 'abc123'], {
       io: cap.io,
       env: TOKEN_ENV,
@@ -343,10 +343,9 @@ describe('with a token configured', () => {
   it('recreates instead when the sealed hash no longer matches', async () => {
     const cap = captureIo();
     const { fetchFn, calls } = scriptedFetch({
-      'GET /pools/podkit': POOL,
-      'GET /nodes/rae/qemu/9000/snapshot': [
-        { name: POST_PROVISION_SNAPSHOT, description: '', snaptime: 1 },
-      ],
+      'GET /pools/podkit': poolAt('running'),
+      'GET /nodes/rae/qemu/9000/snapshot': SEALED_SNAPSHOT,
+      'POST /nodes/rae/qemu/9000/status/stop': 'UPID:rae:1',
       'DELETE /nodes/rae/qemu/9000': 'UPID:rae:1',
       'GET /nodes': [{ node: 'rae' }],
       'POST /nodes/rae/qemu': 'UPID:rae:1',
@@ -405,6 +404,150 @@ describe('with a token configured', () => {
   });
 });
 
+describe('recover, when the guest cannot be asked what it was sealed with', () => {
+  // The destructive branch answers to evidence. Every case here has none, so
+  // none of them may delete a guest that still has a snapshot to roll back to.
+
+  it('rolls a STOPPED guest back rather than destroying it', async () => {
+    const cap = captureIo();
+    const probes: string[] = [];
+    const { fetchFn, calls } = scriptedFetch(recoverRoutes('stopped', SEALED_SNAPSHOT));
+    const code = await runSshSubstrateVerb('recover', REMOTE, ['--expect-hash', 'abc123'], {
+      io: cap.io,
+      env: TOKEN_ENV,
+      // Deliberately a link that WOULD answer with a matching hash: the guest
+      // being stopped is what has to settle the verdict, so nothing may consult
+      // this.
+      linkFor: () => fakeLink({ 'baseline-hash': 'abc123\n' }, true, (x) => void probes.push(x)),
+      client: { fetchFn, sleep: async () => {} },
+    });
+    expect(code).toBe(0);
+    expect(calls).toContain(
+      `POST /nodes/rae/qemu/9000/snapshot/${POST_PROVISION_SNAPSHOT}/rollback`
+    );
+    expect(calls.some((c) => c.startsWith('DELETE'))).toBe(false);
+    expect(probes.some((x) => x.includes('baseline-hash'))).toBe(false);
+  });
+
+  it('says the guest was stopped rather than reporting a bare unknown verdict', async () => {
+    const cap = captureIo();
+    const { fetchFn } = scriptedFetch(recoverRoutes('stopped', SEALED_SNAPSHOT));
+    await runSshSubstrateVerb('recover', REMOTE, ['--expect-hash', 'abc123'], {
+      io: cap.io,
+      env: TOKEN_ENV,
+      linkFor: () => fakeLink({ 'baseline-hash': 'abc123\n' }),
+      client: { fetchFn, sleep: async () => {} },
+    });
+    const said = `${cap.stdout()}\n${cap.stderr()}`;
+    expect(said).toContain('is stopped');
+    expect(said).toContain('sealed hash could not be read');
+  });
+
+  it('rolls back when the link is down, quoting what ssh said', async () => {
+    // A running guest with a wedged sshd is what `vm:recover` is FOR, and it
+    // reads as unreadable too. Rolling back is the cheap repair.
+    const cap = captureIo();
+    const { fetchFn, calls } = scriptedFetch(recoverRoutes('running', SEALED_SNAPSHOT));
+    const code = await runSshSubstrateVerb('recover', REMOTE, ['--expect-hash', 'abc123'], {
+      io: cap.io,
+      env: TOKEN_ENV,
+      linkFor: () => fakeLink({}, false),
+      client: { fetchFn, sleep: async () => {} },
+    });
+    expect(code).toBe(1); // the readiness wait fails on the same dead link
+    expect(calls).toContain(
+      `POST /nodes/rae/qemu/9000/snapshot/${POST_PROVISION_SNAPSHOT}/rollback`
+    );
+    expect(calls.some((c) => c.startsWith('DELETE'))).toBe(false);
+    expect(cap.stderr()).toContain('Host key verification failed');
+  });
+
+  it('rolls back when no expected hash was supplied, and names that as the gap', async () => {
+    const cap = captureIo();
+    const { fetchFn, calls } = scriptedFetch(recoverRoutes('running', SEALED_SNAPSHOT));
+    const code = await runSshSubstrateVerb('recover', REMOTE, [], {
+      io: cap.io,
+      env: TOKEN_ENV,
+      linkFor: () => fakeLink({ 'baseline-hash': 'abc123\n' }),
+      client: { fetchFn, sleep: async () => {} },
+    });
+    expect(code).toBe(0);
+    expect(calls.some((c) => c.startsWith('DELETE'))).toBe(false);
+    expect(cap.stderr()).toContain('--expect-hash');
+  });
+
+  it('still recreates when the guest was asked and carries no seal at all', async () => {
+    // Read, and empty: that is a fact about the disk, and the one thing that
+    // distinguishes a guest with nothing to roll back to from one nobody asked.
+    const cap = captureIo();
+    const { fetchFn, calls } = scriptedFetch({
+      ...recoverRoutes('running', SEALED_SNAPSHOT),
+      'DELETE /nodes/rae/qemu/9000': 'UPID:rae:1',
+      'GET /nodes': [{ node: 'rae' }],
+      'POST /nodes/rae/qemu': 'UPID:rae:1',
+      'PUT /nodes/rae/qemu/9000/config': 'UPID:rae:1',
+      'PUT /nodes/rae/qemu/9000/resize': 'UPID:rae:1',
+    });
+    const code = await runSshSubstrateVerb('recover', REMOTE, ['--expect-hash', 'abc123'], {
+      io: cap.io,
+      env: TOKEN_ENV,
+      linkFor: () => fakeLink({ 'baseline-hash': '\n' }),
+      client: { fetchFn, sleep: async () => {} },
+    });
+    expect(code).toBe(0);
+    expect(calls).toContain('DELETE /nodes/rae/qemu/9000');
+    expect(cap.stderr()).toContain('nothing is sealed');
+  });
+
+  it('recreates a stopped guest that has no snapshot, on that evidence', async () => {
+    const cap = captureIo();
+    const { fetchFn, calls } = scriptedFetch({
+      ...recoverRoutes('stopped', []),
+      'DELETE /nodes/rae/qemu/9000': 'UPID:rae:1',
+      'GET /nodes': [{ node: 'rae' }],
+      'POST /nodes/rae/qemu': 'UPID:rae:1',
+      'PUT /nodes/rae/qemu/9000/config': 'UPID:rae:1',
+      'PUT /nodes/rae/qemu/9000/resize': 'UPID:rae:1',
+    });
+    await runSshSubstrateVerb('recover', REMOTE, ['--expect-hash', 'abc123'], {
+      io: cap.io,
+      env: TOKEN_ENV,
+      linkFor: () => fakeLink({}, false),
+      client: { fetchFn, sleep: async () => {} },
+    });
+    expect(calls).toContain('DELETE /nodes/rae/qemu/9000');
+    expect(cap.stderr()).toContain(`no '${POST_PROVISION_SNAPSHOT}' snapshot`);
+    // Still the destructive branch, so it still owes the reader the half of
+    // the picture it could not establish.
+    expect(cap.stderr()).toContain('is stopped');
+  });
+
+  it('recreates on --recreate without asking the guest anything', async () => {
+    const cap = captureIo();
+    const probes: string[] = [];
+    const { fetchFn, calls } = scriptedFetch({
+      ...recoverRoutes('running', SEALED_SNAPSHOT),
+      'DELETE /nodes/rae/qemu/9000': 'UPID:rae:1',
+      'GET /nodes': [{ node: 'rae' }],
+      'POST /nodes/rae/qemu': 'UPID:rae:1',
+      'PUT /nodes/rae/qemu/9000/config': 'UPID:rae:1',
+      'PUT /nodes/rae/qemu/9000/resize': 'UPID:rae:1',
+    });
+    const code = await runSshSubstrateVerb('recover', REMOTE, ['--recreate'], {
+      io: cap.io,
+      env: TOKEN_ENV,
+      linkFor: () => fakeLink({ 'baseline-hash': 'abc123\n' }, true, (x) => void probes.push(x)),
+      client: { fetchFn, sleep: async () => {} },
+    });
+    expect(code).toBe(0);
+    expect(calls).toContain('DELETE /nodes/rae/qemu/9000');
+    expect(cap.stderr()).toContain('--recreate');
+    // Only the post-restart readiness probe. Nothing asks a guest that is
+    // about to be deleted what it was sealed with.
+    expect(probes.some((x) => x.includes('baseline-hash'))).toBe(false);
+  });
+});
+
 describe('unlock', () => {
   const HOLDER = 'host=kestrel\nuser=james\npid=4242\nstartedAt=2026-09-23T10:00:00.000Z\ntoken=t';
 
@@ -444,10 +587,26 @@ describe('unlock', () => {
 });
 
 describe('templateHashVerdict', () => {
-  it('is unknown unless both sides are present', () => {
-    expect(templateHashVerdict('', 'abc')).toBe('unknown');
-    expect(templateHashVerdict('abc', undefined)).toBe('unknown');
-    expect(templateHashVerdict('abc', 'abc')).toBe('match');
-    expect(templateHashVerdict('abc', 'def')).toBe('drifted');
+  const read = (hash: string) => ({ read: true, hash }) as const;
+
+  it('compares only what both sides actually supplied', () => {
+    expect(templateHashVerdict(read('abc'), 'abc')).toEqual({ verdict: 'match' });
+    expect(templateHashVerdict(read('abc'), 'def')).toEqual({ verdict: 'drifted' });
+  });
+
+  it('calls an empty seal absent — the guest answered, and carries no claim', () => {
+    expect(templateHashVerdict(read(''), 'abc')).toEqual({ verdict: 'absent' });
+  });
+
+  it('keeps a seal that could not be read distinct from one that is not there', () => {
+    const verdict = templateHashVerdict({ read: false, detail: 'Connection refused' }, 'abc');
+    expect(verdict.verdict).toBe('unknown');
+    expect(verdict).toHaveProperty('because', expect.stringContaining('Connection refused'));
+  });
+
+  it("reports a missing expected hash as its own gap, not as the guest's", () => {
+    const verdict = templateHashVerdict(read('abc'), undefined);
+    expect(verdict.verdict).toBe('unknown');
+    expect(verdict).toHaveProperty('because', expect.stringContaining('--expect-hash'));
   });
 });

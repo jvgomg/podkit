@@ -14,6 +14,7 @@ import {
   qmContextFor,
   resolvePveLifecycle,
   type PveBinding,
+  type TemplateHashVerdict,
 } from './lifecycle.js';
 import { manualLifecycleNotice, manualQmEquivalent } from './qm.js';
 import { resolvePveConfig, type PveConfig } from './config.js';
@@ -281,8 +282,12 @@ describe('chooseRecoveryStrategy', () => {
     { name: POST_PROVISION_SNAPSHOT, description: '', snaptime: 1, parent: null },
   ];
 
+  const unknown = (because: string): TemplateHashVerdict => ({ verdict: 'unknown', because });
+
   it('rolls back when the snapshot matches the committed inputs', () => {
-    expect(chooseRecoveryStrategy({ snapshots: sealed, templateHash: 'match' })).toEqual({
+    expect(
+      chooseRecoveryStrategy({ snapshots: sealed, templateHash: { verdict: 'match' } })
+    ).toEqual({
       action: 'rollback',
       snapshot: POST_PROVISION_SNAPSHOT,
       reason: expect.stringContaining('matches'),
@@ -291,21 +296,59 @@ describe('chooseRecoveryStrategy', () => {
 
   it('recreates when the template moved, even though a snapshot exists', () => {
     // The trap: rolling back here restores the stale box and reports success.
-    const strategy = chooseRecoveryStrategy({ snapshots: sealed, templateHash: 'drifted' });
+    const strategy = chooseRecoveryStrategy({
+      snapshots: sealed,
+      templateHash: { verdict: 'drifted' },
+    });
     expect(strategy.action).toBe('recreate');
     expect(strategy.reason).toContain('stale');
   });
 
-  it('recreates when nothing is sealed', () => {
-    expect(chooseRecoveryStrategy({ snapshots: sealed, templateHash: 'unknown' }).action).toBe(
-      'recreate'
-    );
+  it('recreates when the guest was asked and carries no seal', () => {
+    const strategy = chooseRecoveryStrategy({
+      snapshots: sealed,
+      templateHash: { verdict: 'absent' },
+    });
+    expect(strategy.action).toBe('recreate');
+    expect(strategy.reason).toContain('nothing is sealed');
+  });
+
+  it('rolls back rather than recreating when the seal could not be established', () => {
+    // The destructive branch answers to evidence. A guest nobody could ask has
+    // produced none, and the snapshot is evidence the API supplied anyway.
+    const strategy = chooseRecoveryStrategy({
+      snapshots: sealed,
+      templateHash: unknown('VMID 9000 is stopped'),
+    });
+    expect(strategy.action).toBe('rollback');
+    expect(strategy.reason).toContain('VMID 9000 is stopped');
+  });
+
+  it('recreates an unestablished guest only on the evidence that it has no snapshot', () => {
+    const strategy = chooseRecoveryStrategy({
+      snapshots: [],
+      templateHash: unknown('VMID 9000 is stopped'),
+    });
+    expect(strategy.action).toBe('recreate');
+    expect(strategy.reason).toContain(`no '${POST_PROVISION_SNAPSHOT}' snapshot`);
+    // The one remaining path that deletes a guest it could not question still
+    // has to say it could not question it.
+    expect(strategy.reason).toContain('VMID 9000 is stopped');
   });
 
   it('recreates when there is no snapshot to roll back to', () => {
-    expect(chooseRecoveryStrategy({ snapshots: [], templateHash: 'match' }).action).toBe(
-      'recreate'
-    );
+    expect(
+      chooseRecoveryStrategy({ snapshots: [], templateHash: { verdict: 'match' } }).action
+    ).toBe('recreate');
+  });
+
+  it('recreates when the caller pre-empted the question, and says who asked', () => {
+    const strategy = chooseRecoveryStrategy({
+      snapshots: sealed,
+      templateHash: { verdict: 'not-sought', because: 'the operator asked with --recreate' },
+    });
+    expect(strategy.action).toBe('recreate');
+    expect(strategy.reason).toContain('--recreate');
   });
 });
 
@@ -318,7 +361,7 @@ describe('pveRecover', () => {
     const { client, calls } = fakeClient({ status: 'running', snapshots: sealed });
     let provisioned = false;
     const result = await pveRecover(binding(client), {
-      templateHash: 'match',
+      templateHash: { verdict: 'match' },
       provision: async () => {
         provisioned = true;
       },
@@ -337,7 +380,7 @@ describe('pveRecover', () => {
     const { client, calls } = fakeClient({ status: 'running', snapshots: sealed });
     const ran: string[] = [];
     const result = await pveRecover(binding(client), {
-      templateHash: 'drifted',
+      templateHash: { verdict: 'drifted' },
       provision: async () => void ran.push('provision'),
       reseal: async () => void ran.push('reseal'),
     });
@@ -348,7 +391,7 @@ describe('pveRecover', () => {
 
   it('recreates a guest that is gone, without trying to stop it', async () => {
     const { client, calls } = fakeClient({ status: 'missing' });
-    const result = await pveRecover(binding(client), { templateHash: 'match' });
+    const result = await pveRecover(binding(client), { templateHash: { verdict: 'match' } });
     expect(result.strategy.reason).toContain('does not exist');
     expect(calls).toEqual(['createGuest', 'start', 'guestAddresses']);
   });
@@ -359,7 +402,7 @@ describe('pveRecover', () => {
     const { client } = fakeClient({ status: 'running', snapshots: sealed });
     const ran: string[] = [];
     await pveRecover(binding(client), {
-      templateHash: 'drifted',
+      templateHash: { verdict: 'drifted' },
       awaitReady: async () => void ran.push('awaitReady'),
       provision: async () => void ran.push('provision'),
       reseal: async () => void ran.push('reseal'),
@@ -372,7 +415,7 @@ describe('pveRecover', () => {
     let readyAfter: readonly string[] = [];
     let sawStrategy = '';
     const result = await pveRecover(binding(client), {
-      templateHash: 'match',
+      templateHash: { verdict: 'match' },
       awaitReady: async (strategy) => {
         sawStrategy = strategy.action;
         readyAfter = [...calls];
@@ -388,7 +431,7 @@ describe('pveRecover', () => {
     const { client } = fakeClient({ status: 'missing' });
     let provisioned = false;
     const err = await pveRecover(binding(client), {
-      templateHash: 'match',
+      templateHash: { verdict: 'match' },
       awaitReady: async () => {
         throw new Error('substrate never answered');
       },
@@ -403,7 +446,7 @@ describe('pveRecover', () => {
 
   it('returns the agent-reported address, since recreate regenerates host keys', async () => {
     const { client } = fakeClient({ status: 'missing' });
-    const result = await pveRecover(binding(client), { templateHash: 'match' });
+    const result = await pveRecover(binding(client), { templateHash: { verdict: 'match' } });
     expect(result.addresses).toEqual(['192.0.2.10']);
   });
 });

@@ -137,6 +137,28 @@ Two consequences a test author has to know:
   module keeps holding no link (ADR-029 §2). The bound, the poll interval and
   which refusals end the wait early are documented in
   `test-packages/substrate/src/link-ready.ts`.
+- **A guest that did not answer has not told you anything about its disk.**
+  `recover` chooses between rolling back and rebuilding on a sealed baseline
+  hash, and that hash is read over the link. A stopped guest and a guest
+  carrying no seal both used to read as one empty string, so switching a box off
+  was enough to have it destroyed. `TemplateHashVerdict` now separates `absent`
+  (the guest answered; nothing is sealed) from `unknown` (no comparison was
+  possible, and `because` says which side was missing), and only facts —
+  drift, an empty seal, a missing snapshot, a missing guest, an explicit
+  `--recreate` — reach the destructive branch. A verdict that establishes
+  nothing rolls back to `podkit-provisioned` instead, which the API can report
+  on a stopped guest without the link being involved at all. The two mistakes
+  are not symmetric: a needless rollback costs a restart and the next
+  `vm:doctor` catches it; a needless recreate costs a re-provision, a re-seal
+  and a host-key verification from the PVE host.
+- **The expected hash comes from above `podkit-vm`.** A guest's provisioning
+  inputs span packages that depend on `@podkit/lima`, so the CLI cannot compute
+  the hash it compares against. `test-packages/device-testing/scripts/vm-recover.ts`
+  composes it and passes `--expect-hash`; that is the only reason one `vm:*`
+  script does not point straight at `podkit-vm`. Sealing the hash somewhere the
+  hypervisor could read — a guest-agent-readable location, or snapshot
+  metadata — would remove the link from this decision entirely, and is the
+  obvious next move if the fallback proves too blunt.
 
 ### `deviceHarness`
 
