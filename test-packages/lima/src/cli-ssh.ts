@@ -392,7 +392,7 @@ async function establishTemplateHash(
     return {
       verdict: 'unknown',
       because:
-        `VMID ${binding.vmid} is ${status}, so its sealed hash could not be read over ` +
+        `VMID ${binding.vmid} is ${status}, and its sealed hash could not be read over ` +
         link.description,
     };
   }

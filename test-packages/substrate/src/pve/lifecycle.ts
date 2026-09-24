@@ -429,7 +429,7 @@ export function chooseRecoveryStrategy(input: ChooseRecoveryInput): RecoveryStra
     const missing = `this guest has no '${name}' snapshot`;
     return {
       action: 'recreate',
-      reason: hash.verdict === 'unknown' ? `${hash.because}, and ${missing}` : missing,
+      reason: hash.verdict === 'unknown' ? `${hash.because}; ${missing}` : missing,
     };
   }
   if (hash.verdict === 'unknown') {

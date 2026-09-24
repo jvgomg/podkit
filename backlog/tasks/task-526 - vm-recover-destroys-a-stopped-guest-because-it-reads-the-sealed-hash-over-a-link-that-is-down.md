@@ -3,10 +3,10 @@ id: TASK-526
 title: >-
   vm:recover destroys a stopped guest, because it reads the sealed hash over a
   link that is down
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-24 01:56'
-updated_date: '2026-09-24 22:34'
+updated_date: '2026-09-24 22:44'
 labels:
   - testing
   - infrastructure
@@ -58,7 +58,7 @@ Whichever is chosen, `recreate` is the destructive branch and should be reachabl
 - [x] #2 A sealed hash that could not be READ is distinguishable from one that is genuinely ABSENT, and only the latter can reach the recreate branch
 - [x] #3 When recover cannot establish the guest's sealed claim, it says so in terms of what it could not read — not as a bare 'unknown' verdict
 - [x] #4 The stopped-guest path is covered by a unit test that does not need a hypervisor
-- [ ] #5 Exercised at least once against the real remote substrate from a stopped start, and the result recorded
+- [x] #5 Exercised at least once against the real remote substrate from a stopped start, and the result recorded
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -114,5 +114,43 @@ Kept deliberately: the duplicate `pveStatus` read (`cmdRecover` and `pveRecover`
 
 `bun run lint`, `bun run typecheck` (40 tasks), `bun run test:unit` (44 tasks) and `bun run test:integration` (31 tasks) all clean. 63 tests across the two touched files, 12 of them new.
 
-**AC #5 is not yet done.** The live `bun run vm:recover deviceRemote` was blocked by a sandbox policy in the implementing session. The substrate was confirmed in exactly the right starting state first — VMID 9000, `stopped`, carrying a `podkit-provisioned` snapshot, host hash `73a79d88…` — which is precisely the shape the old code destroyed. Awaiting an operator-run invocation.
+## AC #5 — live run against the real remote substrate
+
+Run by the operator from a stopped start (the implementing session's own attempt was blocked by a sandbox policy). VMID 9000, `stopped`, carrying `podkit-provisioned`, host hash `73a79d88…` — the exact shape the old code destroyed.
+
+```
+$ bun run vm:recover deviceRemote
+[podkit-vm] rollback: VMID 9000 is stopped, so its sealed hash could not be read over
+  ssh_config alias `podkit-substrate`, so 'podkit-provisioned' is the only evidence
+  available — rolling back rather than rebuilding a guest nothing has shown to be stale.
+  Re-check with `bun run vm:doctor`
+[podkit-vm] waiting up to 300000ms for ssh_config alias `podkit-substrate` to answer over
+  ssh (ssh: connect to host 192.168.10.213 port 22: No route to host)
+[podkit-vm] `deviceRemote` recovered by rollback (…)
+```
+
+**Rollback, not recreate.** The reason names the stopped guest rather than reporting a bare verdict, and the first readiness probe after `start` refused with `No route to host` — the TASK-525 wait doing its job on this branch too.
+
+Verified afterwards:
+
+```
+$ bun run vm:doctor
+[vm:doctor] baseline OK (73a79d889b39...; 6 inputs tracked).
+```
+
+That is the same hash the host sources compute, so the guest the fallback restored was in fact a `match` — the conservative branch guessed right, confirmed after the fact rather than assumed. Under the old code this run would have destroyed the guest and left a re-provision, a re-seal and a manual host-key verification to do.
+
+**One wording defect the live run exposed**, invisible to the unit tests because each asserts on a fragment: the stopped-guest `because` ended in a clause with `so`, and `chooseRecoveryStrategy` appends another, giving `… is stopped, so its sealed hash could not be read over X, so 'podkit-provisioned' is the only evidence …`. Changed to `, and its sealed hash …`; the no-snapshot recreate reason now joins with `;` rather than a third `and`.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+`vm:recover` chose between rolling a guest back and destroying it on a sealed hash read over ssh, and collapsed every failure of that read into an empty string. A stopped guest, a wedged sshd and a genuinely unsealed disk all arrived at `chooseRecoveryStrategy` as `'unknown'`, which read that as "no provisioning state to roll back to" and answered with a full destroy-and-rebuild.
+
+Two facts were conflated: whether the guest answered on port 22, and what is on its disk. `TemplateHashVerdict` now separates them — `absent` is the guest answering with no seal, `unknown` is no comparison being possible and carries its reason, `not-sought` is a caller pre-empting the question. Only facts reach the destructive branch: drift, an empty seal, a missing snapshot, a missing guest, an explicit `--recreate`. A verdict that establishes nothing rolls back to `podkit-provisioned`, which the API reports on a stopped guest without the link. `cmdRecover` reads `pveStatus` over the API first and reaches for the link only when the guest is `running`.
+
+Tracing the callers found the other half: `--expect-hash` had no producer, so `expected` was always undefined and *every* recover recreated, stopped or not. `scripts/vm-recover.ts` in `@podkit/device-testing` now composes the hash and delegates.
+
+Proven live from a stopped start: rollback rather than recreate, with `vm:doctor` afterwards reporting the restored guest's hash identical to the host sources — the conservative branch was correct, confirmed rather than assumed.
+<!-- SECTION:FINAL_SUMMARY:END -->
