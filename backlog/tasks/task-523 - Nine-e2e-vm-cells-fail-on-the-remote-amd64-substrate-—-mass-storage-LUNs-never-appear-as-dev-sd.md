@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-23 20:23'
+updated_date: '2026-09-24 01:12'
 labels:
   - testing
   - infrastructure
@@ -64,3 +65,29 @@ Worth checking first, cheapest to most: whether the LUN is bound at all (`ls /sy
 - [ ] #3 All nine cells pass on the remote amd64 substrate, or each remaining one is skipped with a reason naming what the substrate lacks (ADR-028 §5)
 - [ ] #4 The Lima substrate is unaffected — the same suites still pass there
 <!-- AC:END -->
+
+## Comments
+
+<!-- COMMENTS:BEGIN -->
+author: claude
+created: 2026-09-24 01:12
+---
+Re-measured on 2026-09-24 from the amd64 Linux dev box, with the substrate sealed and its doctor passing 24/24: **176 pass, 44 skip, 9 fail** — the same nine, unchanged. So the count in the description is reproducible rather than a one-off, and nothing about the seal or the build path moves it.
+
+One extra data point, from a hand-run `podkit device scan --json` against the `ipod-video-5g-iflash-1tb` persona (a cell that *passes*, because its suite only asserts the USB descriptor):
+
+```json
+"readiness": { "level": "needs-partition", "stages": [
+  { "stage": "usb",       "status": "pass", "summary": "iPod Video (5th Generation) (Apple 05ac)" },
+  { "stage": "partition", "status": "fail", "summary": "No disk representation found" },
+  … filesystem/mount/sysinfo/database all skipped
+]}
+```
+
+That separates the two halves cleanly on this substrate: the gadget **binds and enumerates on the USB bus** — vendor `05ac`, product `1209`, serial read back, model cascade-resolved to `video_5g` — and it is only the mass-storage LUN → SCSI disk step that never happens. Which is to say the failure is downstream of the FunctionFS descriptor handshake, not in it.
+
+Two caveats on that reading, so nobody treats it as more than it is. I do not have a same-day Lima run of the same persona to compare against, so `needs-partition` here is measured, not contrasted — confirming that this persona reaches a further readiness level on Lima is still worth doing, and is cheap. And a passing cell showing the symptom means the nine failures are the *only* ones that assert on it, not the only ones exhibiting it; the blast radius is wider than the failure count suggests.
+
+AC #1's three candidates narrow accordingly: whatever the cause is, it lets the UDC bind succeed. Worth starting at `ls /sys/kernel/config/usb_gadget/*/functions/` and the `usb_f_mass_storage` LUN file on a live bind rather than at the daemon's own logs.
+---
+<!-- COMMENTS:END -->

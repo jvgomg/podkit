@@ -3,10 +3,10 @@ id: TASK-493
 title: >-
   Provision a sibling Proxmox device substrate and prove the harness over plain
   SSH
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-07 23:35'
-updated_date: '2026-09-23 19:24'
+updated_date: '2026-09-24 01:12'
 labels:
   - testing
   - infrastructure
@@ -53,7 +53,7 @@ Architecture note: the Mac is arm64 and the Linux box is amd64, so the substrate
 - [x] #2 The cloud-init template and qm create recipe are committed to the repo
 - [x] #3 podkit-device.yaml's provisioning invariants are preserved, including the assertion that no toolchain or -dev packages are present
 - [x] #4 apply-state.sh runs unmodified in the substrate via scp + ssh
-- [ ] #5 A persona can be brought up and observed by podkit device scan over SSH, with no limactl involved
+- [x] #5 A persona can be brought up and observed by podkit device scan over SSH, with no limactl involved
 - [x] #6 Findings on PVE nested-virt and host dummy_hcd availability are recorded
 - [x] #7 provision-substrate.sh and substrate-doctor.sh exist as portable Debian bash, and the Lima device YAML calls them instead of inlining the invariants
 - [x] #8 The doctor passes on the Lima substrate and on the Proxmox substrate, and its negative assertions fail on a non-conforming box naming the offending package
@@ -165,5 +165,33 @@ No `limactl` was involved and no PVE privilege was used — just the ssh alias. 
 **AC #5 is still the one open criterion**, and what it needs has not changed: amd64 `podkit`, `dummy-hcd-daemon` and `gpod-tool` on the substrate. The builder that produces them now exists and passes its doctor, so the remaining dependency is TASK-514 half 2 — the driver that runs the build on it — rather than a missing machine.
 
 One observation for whoever closes it: the substrate reports Debian **12.15** against a 12.10 pin, and passes non-strict exactly as designed. Its SSH host key also changed when the cloud-init snippet was re-rendered (the mechanism TASK-522 documented), so a stale `known_hosts` entry on any machine that talked to it before today will refuse the connection until cleared.
+---
+
+author: claude
+created: 2026-09-24 01:12
+---
+**AC #5 is proven, and the task closes.** From the amd64 Linux dev box, artifacts built on the remote builder and installed onto the remote substrate over ssh, a persona bound, and `podkit device scan --json` run on that box:
+
+```
+substrate: deviceRemote (ssh), source=configured
+"usbDescriptor": { "vendorId": "05ac", "productId": "1209", "serialNumber": "000A27001605D1A0" }
+"model": { "generationId": "video_5g", "family": "iPod Video", "source": "usb" }
+```
+
+No `limactl` anywhere on that path. `substrate-doctor.sh` PASS 24/24, baseline sealed (`73a79d889b39…`, 6 inputs), `podkit-provisioned` snapshot taken on the guest. `@podkit/e2e-vm-tests` against it: **176 pass, 44 skip, 9 fail** — the same nine TASK-523 already owns, and no others.
+
+Getting there surfaced two defects that were both blocking this AC, so both are fixed here rather than filed.
+
+**1. `.env.local` was invisible to most of the repo.** Bun auto-loads it *relative to the working directory*, and the entry points that matter do not run from the root: the four `harness:*` root scripts delegate with `bun run --cwd test-packages/device-testing …`, and turbo spawns every task with the package as cwd. So `PODKIT_SUBSTRATE` came back unset, selection fell back to Lima, and `bun run harness:seal` — the exact command the Proxmox playbook tells you to run — tried to seal `podkit-device`. Not an error; a silent retarget, which is precisely what `selection.ts` was written to refuse, defeated one layer below it by a dotenv detail.
+
+The fix locates the file from `repoRoot()` instead of from cwd (`test-packages/substrate/src/env-file.ts`) and applies it by mutating the environment, so the first resolver to ask materialises the values for the whole process *and* every child it spawns — which is what carries the selection into turbo's tasks. A variable already present always wins, because CI exports the selection directly and has no dotfile to inherit.
+
+Worth knowing for anyone reading an old transcript: a run driven with plain `bunx turbo run …` never saw the selection at all. AGENTS.md documented exactly that invocation for `vm:install`/`vm:doctor`; it now points at the repo's turbo wrapper, which is also what stamps the architecture into the cache key.
+
+**2. `vm:up` returned before the guest was up.** `pveEnsureRunning` fired `client.start()` and returned. The client does wait — for the *start task* — but that task completes when QEMU has been launched, not when the guest reports `running`. So `bun run vm:up deviceRemote` printed **``deviceRemote` (VMID 9000) is stopped.`** about a box it had just started, and anything chained after it would have run against a guest that was not up. It now polls to `running` under a 60s bound and raises `PveStartTimeoutError` naming the VMID and the bound. Verified live with a real stop/start: it now prints `is running`.
+
+One observation left for whoever needs it: `pveRecover` has the same shape — it starts the guest and calls the `provision` hook immediately, and that hook goes over ssh. The wait it needs is sshd readiness rather than `running`, which is a different wait at a different layer, so it is not fixed here. It has not bitten anything yet because a recreate is followed by minutes of cloud-init regardless.
+
+Standing observations from earlier comments still hold: the box reports Debian 12.15 against a 12.10 pin and passes non-strict as designed, and a recreate regenerates the SSH host key.
 ---
 <!-- COMMENTS:END -->
