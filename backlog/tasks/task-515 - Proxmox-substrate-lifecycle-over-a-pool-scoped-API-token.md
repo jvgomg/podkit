@@ -1,10 +1,10 @@
 ---
 id: TASK-515
 title: Proxmox substrate lifecycle over a pool-scoped API token
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-13 18:34'
-updated_date: '2026-09-23 23:56'
+updated_date: '2026-09-24 00:14'
 labels:
   - testing
   - infrastructure
@@ -58,7 +58,7 @@ Also add the **remote advisory lock**: held in the substrate for the duration of
 - [x] #5 With no token configured, doctor/install/test still work and lifecycle verbs print the manual qm equivalent instead of failing
 - [x] #6 A 403 from PVE is reported as the missing privilege and the path it was needed on
 - [x] #7 The baseline hash covers the provision script, doctor, cloud-init template and image pin, and drift names the recovery command
-- [ ] #8 vm:recover rolls back to the post-provision snapshot, and falls back to full recreate when the template hash changed
+- [x] #8 vm:recover rolls back to the post-provision snapshot, and falls back to full recreate when the template hash changed
 - [x] #9 A remote advisory lock is held for the run; contention times out and names the holder's host, user, pid and start time
 - [x] #10 Per-test state still runs through apply-state.sh with no snapshot involvement
 <!-- AC:END -->
@@ -66,25 +66,25 @@ Also add the **remote advisory lock**: held in the substrate for the duration of
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Five decisions this task had to make, then the build.
+Five decisions this task had to make, then the build. D3 was rewritten after the live host disproved it.
 
-**D1 — `PODKIT_PVE_API_URL`, a full base URL.** Not a hostname plus an assumed `:8006`, not an ssh_config alias. An alias is resolved by a file with no bearing on an HTTPS connection. Added to `.env.example` alongside `PODKIT_PVE_POOL` (default `podkit`).
+**D1 — `PODKIT_PVE_API_URL`, a full base URL.** Not a hostname plus an assumed `:8006`, not an ssh_config alias. An alias is resolved by a file with no bearing on an HTTPS connection. Added to `.env.example` alongside `PODKIT_PVE_POOL`, `PODKIT_PVE_STORAGE` and `PODKIT_PVE_BRIDGE`.
 
-**D2 — the node is discovered, not configured.** `GET /pools/<pool>` returns vmid, name, status AND node for every member in one call (comment #6). So there is no `PODKIT_PVE_NODE` key: the pool listing is both the `status` implementation and the vmid→node resolver, and it is the one call `Pool.Audit` exists to permit.
+**D2 — the node is discovered, not configured.** `GET /pools/<pool>` returns vmid, name, status AND node for every member in one call. So there is no `PODKIT_PVE_NODE` key: the pool listing is both the `status` implementation and the vmid→node resolver, and it is the one call `Pool.Audit` exists to permit.
 
-**D3 — TLS pin narrows the trust anchor; it does not disable verification.** Probe the cert over `node:tls`, compare SHA-256 against the pin, then issue every request with that exact certificate as the `ca` and a `checkServerIdentity` that re-checks the fingerprint. With no pin configured, plain system-CA `fetch` — unchanged, still verifying. There is no branch anywhere that turns verification off.
+**D3 — the pin REPLACES chain validation, enforced on the socket.** The plan was to probe the certificate, compare it to the pin, then use it as the sole `ca` with chain validation left on. That does not work and cannot: PVE presents only its leaf, signed by a cluster CA that never reaches the wire, so there is no anchor and the request fails `UNABLE_TO_VERIFY_LEAF_SIGNATURE`. Nor was there an enforcement point above the socket — Bun's `fetch` never calls `tls.checkServerIdentity` and its `https.request` ignores `createConnection`, both measured returning 200 against a deliberately wrong pin. So the pinned transport speaks HTTP over `node:tls`, compares the live certificate in the handshake callback, and destroys the socket before a request byte is written. With no pin configured, ordinary system-CA validation applies. No switch disables either, and a repo-wide test asserts none exists.
 
-**D4 — keep `--cicustom`; recreate does not invent a snippet.** PVE's upload endpoint has no `snippets` content type, so a token cannot place one. The alternative (native `--ciuser`/`--sshkeys`) was rejected: the snippet also brings `qemu-guest-agent`, and a recreate that quietly dropped it would produce a guest whose address the token can no longer read — a quieter failure than a named "re-run phase 1". Create therefore reuses the snippet phase 1 placed and names `bootstrap-pve.sh` when it is absent.
+**D4 — keep `--cicustom`; recreate does not invent a snippet.** PVE's upload endpoint has no `snippets` content type, so a token cannot place one. Native `--ciuser`/`--sshkeys` was rejected: the snippet also brings `qemu-guest-agent`, so a recreate that quietly dropped it would produce a guest whose address the token can no longer read — a quieter failure than a named "re-run phase 1".
 
 **D5 — the host-key story is that the token cannot tell you the key.** Guest-exec is `VM.GuestAgent.Unrestricted` and is deliberately not granted, so the playbook's `qm guest exec … ssh-keygen -lf` instruction is unavailable to the very principal that makes recreate routine. What the token *can* do is bind an IP to a VMID via `network-get-interfaces`. Recreate prints that binding and names the two privileged ways to read the key; the playbook stops claiming otherwise.
 
-Build order:
+What was built:
 
-1. `src/pve/{config,errors,tls,client,qm,lifecycle}.ts` in `@podkit/substrate` — hand-rolled over an injectable `fetch`, six endpoints, 403 → privilege + path.
-2. `src/remote-lock.ts` — advisory lock held IN the substrate over `SubstrateLink`, `mkdir`-atomic, metadata naming host/user/pid/start, short timeout, documented force.
-3. `podkit-vm` dispatches on the provisioner instead of refusing non-Lima; absent config degrades to the printed `qm` equivalent.
-4. Baseline hash extends to the cloud-init template and the image pin (a literal, not a file), and drift names the recovery command per substrate.
-5. Playbook + `.env.example` + ADR-029 amendments.
+1. `src/pve/{config,errors,tls,client,qm,lifecycle}.ts` in `@podkit/substrate` — hand-rolled over an injectable `fetch`, six endpoint groups, 403 → privilege + path.
+2. `src/remote-lock.ts` + `src/run-lock.ts` — advisory lock held IN the substrate, `mkdir`-atomic, metadata naming host/user/pid/start, bounded wait, documented force. Taken by the turbo wrapper, the one process spanning every in-substrate suite.
+3. `podkit-vm` dispatches on the provisioner; absent config degrades to the printed `qm` equivalent.
+4. Baseline hash extends per substrate to the cloud-init template and the image pin, and `harness:seal` writes the hash and takes the provisioning snapshot together.
+5. Playbook + `.env.example` + ADR-029 §3 and a new §6.
 <!-- SECTION:PLAN:END -->
 
 ## Comments
@@ -221,5 +221,35 @@ Reviewed on both axes (standards + spec). Three real defects and one gap; all fi
 **AC #5 wording.** The AC says lifecycle verbs "print the manual qm equivalent instead of failing". They print it and exit **1**. I read "instead of failing" as "instead of an error/stack trace", not "exit 0" — `vm:up && test:vm` must not proceed against a guest that was never started. `status` is the exception and exits 0, because a substrate that answers over ssh genuinely is running. Flagging the reading rather than leaving it implicit in a code comment.
 
 AC #8 remains unchecked and unproven: `PODKIT_PVE_API_URL` is still absent from `.env.local`, so nothing here has contacted a hypervisor, and snapshot/rollback are still the two calls the token has never made.
+---
+
+created: 2026-09-24 00:14
+---
+**Verified against the live host.** `PODKIT_PVE_API_URL=https://192.168.10.200:8006` is in `.env.local` (a full URL — the config refuses a bare address, per D1). Every call below went through the shipped client with the pin enforced, from the unprivileged LXC, with the pool-scoped token alone.
+
+```
+version     = 9.1.4            nodes = rae
+guest 9000  podkit-substrate   running  node=rae
+guest 9001  podkit-builder     running  node=rae
+wrong pin   : refused, connection torn down
+snapshot    : ok
+list        : podkit-verify
+rollback    : ok
+delete      : ok, [] remaining, guest still running
+```
+
+**AC #8's two unproven calls are now proven** — snapshot and rollback, plus `deleteSnapshot`, which `pveSealSnapshot` needs to replace rather than accumulate. Checked. No destroy was run; that one stays a human's.
+
+**First contact found the pin was not enforced at all.** Three defects, none of which any unit test could have caught, because all three only exist against a real handshake. Fixed in `71103805`.
+
+1. **SNI cannot be an IP literal.** Node refuses it outright, and a hypervisor reached by address is the ordinary case. `sniFor` omits it for an address.
+2. **The presented certificate cannot be its own trust anchor.** PVE sends only its leaf, signed by a cluster CA that never reaches the wire — `UNABLE_TO_VERIFY_LEAF_SIGNATURE`. Walking the chain does not help: the chain is length 1, `ca=false`. So "pin *plus* chain validation" is not on offer here however much better it sounds, and the pin has to **replace** chain validation. Comment #7's description of the mechanism was wrong and ADR-029 §3 now says what is true.
+3. **There was no enforcement point.** Bun's `fetch` never calls `tls.checkServerIdentity`; its `https.request` ignores `createConnection`. Both were tried against a local server with a deliberately wrong fingerprint, and **both returned 200**. The pinned transport now speaks HTTP over `node:tls`, compares the live certificate in the handshake callback, and destroys the socket before a request byte is written. Proven both ways by a test that generates its own certificate rather than reaching the network — the earlier version of that test hit `example.com`, which is both non-hermetic and was passing for the wrong reason.
+
+That also retires the Bun-only caveat from comment #8: `node:tls` behaves the same on both runtimes, so the guard that refused a pin under Node is gone with the mechanism it guarded.
+
+**One measured correction to the implementation.** `pveRecover` carried a comment saying PVE refuses a rollback on a running guest. It does not — measured: accepted, and the guest was still running afterwards. Recover still stops first, because pulling a disk out from under a live kernel is not something to do on purpose, but the comment now says that rather than claiming PVE forces it.
+
+**Still not exercised:** `createGuest` and `destroy` against the real host. Create needs a VMID that does not yet exist and would leave a guest behind; destroy is the one the task reserves for a human. Both are unit-tested against the scripted fetch, and every privilege they need is in the same pool ACL the calls above just used.
 ---
 <!-- COMMENTS:END -->
