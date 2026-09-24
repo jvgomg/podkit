@@ -4,7 +4,7 @@ title: pveRecover starts a guest and provisions it over ssh without waiting for 
 status: Done
 assignee: []
 created_date: '2026-09-24 01:18'
-updated_date: '2026-09-24 01:50'
+updated_date: '2026-09-24 01:56'
 labels:
   - testing
   - infrastructure
@@ -113,6 +113,8 @@ This was the *rollback* branch, which the task called out as "seconds away" — 
 
 1. `cmdRecover` reads the sealed hash over ssh *before* choosing a strategy, so recovering a **stopped** guest always reads an empty hash, lands on `unknown`, and therefore recreates rather than rolling back. That is why the run above starts with `vm:up`. Separate defect (a strategy-input problem, not a timing one).
 2. `backlog/tasks/task-515` records the substrate's real LAN address in its notes, which `AGENTS.md` rules out for committed files. The three test files that carried the same constant (`pve/client.test.ts`, `pve/lifecycle.test.ts`, `lima/src/cli-ssh.test.ts`) were moved to the `192.0.2.0/24` documentation range here; the task note was left alone as someone else's record.
+
+Observation 1 above — `vm:recover` recreating a stopped guest rather than rolling it back — is now filed as TASK-526.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
