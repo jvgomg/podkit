@@ -119,6 +119,11 @@ describe('verb and argument validation', () => {
     expect(err).not.toMatch(/at .*\.(ts|js):\d+/);
   });
 
+  // A machine that names no Proxmox guest. Stated rather than inherited: the
+  // real environment carries whatever `.env.local` the developer running this
+  // has, and these two cases turn on the token being absent.
+  const UNCONFIGURED: Readonly<Record<string, string | undefined>> = {};
+
   // `deviceRemote` is the registry's real ssh-provisioned entry (not an
   // invented fixture) — the shipped registry is what exercises this branch.
   // `limactl` must never see it: asking Lima about an instance it has never
@@ -127,7 +132,7 @@ describe('verb and argument validation', () => {
   it('answers status for the ssh substrate over its link, never through limactl', async () => {
     const remote = getVm('deviceRemote');
     const { runner, calls } = makeScriptedRunner([ok()]);
-    const code = await main(['status', remote.id], { subprocess: runner });
+    const code = await main(['status', remote.id], { subprocess: runner, env: UNCONFIGURED });
     expect(code).toBe(0);
     // A substrate that replies is a substrate that is running. That is an
     // observation, so it is a legitimate answer with no API token.
@@ -138,7 +143,10 @@ describe('verb and argument validation', () => {
   it('prints the qm equivalent rather than failing when no token is configured', async () => {
     const remote = getVm('deviceRemote');
     const { runner, calls } = makeScriptedRunner([]); // any limactl call would be a bug
-    const code = await main(['ensure', remote.instanceName], { subprocess: runner });
+    const code = await main(['ensure', remote.instanceName], {
+      subprocess: runner,
+      env: UNCONFIGURED,
+    });
     expect(code).toBe(1);
     const err = stderrText();
     expect(err).toContain('No Proxmox API token is configured');

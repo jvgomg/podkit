@@ -25,6 +25,10 @@
 // Path anchoring
 export { substratePackageRoot, repoRoot } from './paths.js';
 
+// `.env.local`, located from the repo root rather than from the working
+// directory — see ./env-file.ts.
+export { loadRepoEnvFile, envWithRepoDotfile } from './env-file.js';
+
 // Substrate registry + provisioner discriminator
 export type {
   VmDefinition,

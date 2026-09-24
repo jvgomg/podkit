@@ -14,6 +14,7 @@
  */
 
 import { pveDebianImagePath, type DebianImageArch } from '../debian-image.js';
+import { envWithRepoDotfile } from '../env-file.js';
 import { isSshVm, type SshVmDefinition, type VmCategory, type VmDefinition } from '../registry.js';
 import type { TargetArch } from '../target-arch.js';
 import {
@@ -112,7 +113,7 @@ export function guestSpecFor(
 /** Resolve the lifecycle binding for a substrate on this machine. */
 export function resolvePveLifecycle(
   substrate: VmDefinition,
-  env: Readonly<Record<string, string | undefined>>,
+  env: Readonly<Record<string, string | undefined>> = envWithRepoDotfile(),
   opts: ResolvePveLifecycleOpts = {}
 ): PveLifecycleResolution {
   if (!isSshVm(substrate)) {
@@ -189,12 +190,90 @@ export type ReportFn = (message: string) => void;
 const noReport: ReportFn = () => {};
 
 /**
+ * Bound on the wait for a started guest to report `running`.
+ *
+ * Generous: it covers a contended hypervisor, not a boot. The guest reports
+ * `running` once QEMU is up, long before sshd is — ssh readiness is a separate
+ * wait, owned by whoever holds a link.
+ */
+export const START_TIMEOUT_MS = 60_000;
+
+/** Gap between status polls while waiting for a start to take effect. */
+const START_POLL_MS = 1_000;
+
+/** A guest that was started and never reached `running`. */
+export class PveStartTimeoutError extends Error {
+  readonly vmid: number;
+  /** The status the guest was left reporting. */
+  readonly status: PveGuestStatus;
+
+  constructor(vmid: number, guestName: string, timeoutMs: number, last: PveGuestStatus) {
+    super(
+      last === 'missing'
+        ? `VMID ${vmid} (${guestName}) was started and then reported 'missing'. Something ` +
+            `removed the guest underneath this command.`
+        : `VMID ${vmid} (${guestName}) was started but still reports '${last}' after ` +
+            `${timeoutMs}ms. Check the guest's console on the PVE host — a start task can ` +
+            `succeed while the guest fails to boot.`
+    );
+    this.name = 'PveStartTimeoutError';
+    this.vmid = vmid;
+    this.status = last;
+  }
+}
+
+/** Seams for the status wait. Production callers leave them unset. */
+export interface PveEnsureRunningOpts {
+  readonly report?: ReportFn;
+  /** Bound on the wait. Defaults to {@link START_TIMEOUT_MS}. */
+  readonly timeoutMs?: number;
+  /** Clock, injected so the timeout branch is reachable without waiting. */
+  readonly now?: () => number;
+  /** Sleep, injected for the same reason. */
+  readonly sleep?: (ms: number) => Promise<void>;
+}
+
+const realSleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Poll until the guest reports `running`.
+ *
+ * The start call returns a UPID and the client waits for that task, but the
+ * task finishing means QEMU was launched — not that the guest has flipped to
+ * `running`. Only this wait makes the status a caller reads afterwards
+ * describe the box it asked for.
+ *
+ * `missing` ends the wait immediately: a guest that is not there cannot start,
+ * so polling it out to the bound buys a minute of silence for an answer
+ * already known.
+ */
+async function waitForRunning(
+  binding: PveBinding,
+  opts: PveEnsureRunningOpts
+): Promise<PveGuestStatus> {
+  const now = opts.now ?? Date.now;
+  const sleep = opts.sleep ?? realSleep;
+  const timeoutMs = opts.timeoutMs ?? START_TIMEOUT_MS;
+  const deadline = now() + timeoutMs;
+
+  let status = await pveStatus(binding);
+  while (status === 'stopped' && now() < deadline) {
+    await sleep(START_POLL_MS);
+    status = await pveStatus(binding);
+  }
+  if (status !== 'running') {
+    throw new PveStartTimeoutError(binding.vmid, binding.substrate.sshAlias, timeoutMs, status);
+  }
+  return status;
+}
+
+/**
  * Create the guest if it does not exist, start it if it is stopped, no-op if it
- * is already running.
+ * is already running. Returns only once the guest reports `running`.
  */
 export async function pveEnsureRunning(
   binding: PveBinding,
-  opts: { report?: ReportFn } = {}
+  opts: PveEnsureRunningOpts = {}
 ): Promise<void> {
   const report = opts.report ?? noReport;
   const status = await pveStatus(binding);
@@ -206,6 +285,7 @@ export async function pveEnsureRunning(
   }
   report(`starting VMID ${binding.vmid}`);
   await binding.client.start(binding.vmid);
+  await waitForRunning(binding, opts);
 }
 
 /** A create that failed, with the precondition no token can satisfy attached. */

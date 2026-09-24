@@ -51,6 +51,7 @@
  * @module
  */
 
+import { envWithRepoDotfile } from './env-file.js';
 import { commandOnPath } from './selection.js';
 import { isLimaVm, isSshVm, listVms, type VmDefinition, type VmProvisioner } from './registry.js';
 import { hostTargetArch, targetArch, type TargetArch } from './target-arch.js';
@@ -312,7 +313,7 @@ export interface SelectBuildHostOpts {
  * `./target-arch.ts`.
  */
 export function selectBuildHost(opts: SelectBuildHostOpts): BuildHostSelection {
-  const env = opts.env ?? process.env;
+  const env = opts.env ?? envWithRepoDotfile();
   return resolveBuildHostSelection({
     env,
     substrates: opts.substrates ?? listVms(),

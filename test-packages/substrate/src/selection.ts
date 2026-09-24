@@ -42,6 +42,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { envWithRepoDotfile } from './env-file.js';
 import { isSshVm, listVms, type VmDefinition } from './registry.js';
 
 /**
@@ -263,7 +264,7 @@ export function declaredSubstrateMachine(substrate: VmDefinition): string | null
  * {@link resolveSubstrateSelection}; this only supplies the facts.
  */
 export function selectSubstrate(
-  env: Readonly<Record<string, string | undefined>> = process.env,
+  env: Readonly<Record<string, string | undefined>> = envWithRepoDotfile(),
   substrates: readonly VmDefinition[] = listVms()
 ): SubstrateSelection {
   const retired = env[RETIRED_VM_NAME_ENV_VAR]?.trim();

@@ -161,21 +161,39 @@ describe('with a malformed token configuration', () => {
 });
 
 describe('with a token configured', () => {
-  it('starts a stopped guest', async () => {
+  it('starts a stopped guest and reports it running', async () => {
     const cap = captureIo();
+    // The pool listing is the status source, so it has to move when the guest
+    // does: `ensure` returns only once the guest reports `running`, and a
+    // fixture frozen at `stopped` would describe a box that never came up.
+    const pool = {
+      members: [
+        { vmid: 9000, name: 'podkit-substrate', node: 'rae', status: 'stopped', type: 'qemu' },
+      ],
+    };
     const { fetchFn, calls } = scriptedFetch({
-      'GET /pools/podkit': POOL,
+      'GET /pools/podkit': pool,
       'POST /nodes/rae/qemu/9000/status/start': 'UPID:rae:1',
       ...TASK_OK,
     });
+    const startingFetch = (async (input: unknown, init?: RequestInit) => {
+      const response = await (fetchFn as (i: unknown, x?: RequestInit) => Promise<Response>)(
+        input,
+        init
+      );
+      if (String(input).includes('/status/start')) pool.members[0]!.status = 'running';
+      return response;
+    }) as unknown as typeof fetch;
+
     const code = await runSshSubstrateVerb('ensure', REMOTE, [], {
       io: cap.io,
       env: TOKEN_ENV,
       linkFor: () => fakeLink(),
-      client: { fetchFn, sleep: async () => {} },
+      client: { fetchFn: startingFetch, sleep: async () => {} },
     });
     expect(code).toBe(0);
     expect(calls).toContain('POST /nodes/rae/qemu/9000/status/start');
+    expect(cap.stdout()).toContain('is running');
   });
 
   it('refuses a non-interactive destroy without --yes', async () => {

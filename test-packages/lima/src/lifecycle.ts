@@ -82,6 +82,16 @@ export interface LifecycleOpts {
   subprocess?: SubprocessRunner;
   /** Advisory-lock tuning; production callers leave unset. */
   lock?: VmLockOptions;
+  /**
+   * The environment the ssh branch reads its Proxmox configuration from.
+   * Production callers leave it unset and get the real one, `.env.local`
+   * included.
+   *
+   * A test MUST set it. Substrate configuration is a property of the machine
+   * rather than of the checkout, so a test that omits it asserts against
+   * whichever developer is running it.
+   */
+  env?: Readonly<Record<string, string | undefined>>;
 }
 
 /**

@@ -9,6 +9,7 @@ import {
   pveRecover,
   pveSealSnapshot,
   PveCreateFailedError,
+  PveStartTimeoutError,
   pveStop,
   qmContextFor,
   resolvePveLifecycle,
@@ -179,6 +180,75 @@ describe('power verbs', () => {
     const { client, calls } = fakeClient({ status: 'running' });
     await pveEnsureRunning(binding(client));
     expect(calls).toEqual([]);
+  });
+
+  it('does not return while the guest still reports stopped', async () => {
+    // The start task finishes when QEMU has been launched, which is not the
+    // moment the guest flips to `running`.
+    const { client, state } = fakeClient({ status: 'stopped' });
+    const slow: PveClient = {
+      ...client,
+      start: async () => {
+        state.status = 'stopped';
+      },
+    };
+    let settled = false;
+    const pending = pveEnsureRunning(binding(slow), { sleep: async () => {} }).then(() => {
+      settled = true;
+    });
+
+    // Let the poll loop turn over while the guest is still down.
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    state.status = 'running';
+    await pending;
+    expect(settled).toBe(true);
+  });
+
+  it('gives up at once on a guest that vanished, rather than polling to the bound', async () => {
+    const { client, state } = fakeClient({ status: 'stopped' });
+    let polls = 0;
+    const vanished: PveClient = {
+      ...client,
+      start: async () => {
+        state.status = 'stopped';
+      },
+      guestStatus: async () => {
+        polls += 1;
+        return polls === 1 ? 'stopped' : 'missing';
+      },
+    };
+    const err = await pveEnsureRunning(binding(vanished), { sleep: async () => {} }).then(
+      () => null,
+      (e: unknown) => e as Error
+    );
+    expect(err).toBeInstanceOf(PveStartTimeoutError);
+    expect(err!.message).toContain('missing');
+    // Two reads: the pre-start status, then the one that found it gone.
+    expect(polls).toBe(2);
+  });
+
+  it('gives up on a guest that never reports running, naming the bound', async () => {
+    const { client, state } = fakeClient({ status: 'stopped' });
+    const stuck: PveClient = {
+      ...client,
+      start: async () => {
+        state.status = 'stopped';
+      },
+    };
+    let clock = 0;
+    const err = await pveEnsureRunning(binding(stuck), {
+      timeoutMs: 5_000,
+      now: () => (clock += 1_000),
+      sleep: async () => {},
+    }).then(
+      () => null,
+      (e: unknown) => e as Error
+    );
+    expect(err).toBeInstanceOf(PveStartTimeoutError);
+    expect(err!.message).toContain('9000');
+    expect(err!.message).toContain('5000ms');
   });
 
   it('does not stop what is already stopped', async () => {

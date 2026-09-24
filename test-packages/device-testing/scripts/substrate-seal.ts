@@ -51,7 +51,7 @@ async function main(): Promise<number> {
 
   if (!isSshVm(definition)) return 0;
 
-  const resolved = resolvePveLifecycle(definition, process.env);
+  const resolved = resolvePveLifecycle(definition);
   if (!resolved.available) {
     process.stdout.write(
       `[harness:seal] no Proxmox lifecycle configured for '${definition.id}' ` +

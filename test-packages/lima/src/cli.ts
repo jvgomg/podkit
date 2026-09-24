@@ -405,6 +405,7 @@ async function dispatchSsh(
     ...(opts.subprocess
       ? { linkFor: (d: SshVmDefinition) => createSshLink(d, { subprocess: opts.subprocess }) }
       : {}),
+    ...(opts.env ? { env: opts.env } : {}),
     io: {
       log,
       errorLog,

@@ -98,8 +98,11 @@ bun run harness:setup            # First-time: bring VM up, build + install bina
 bun run harness:status           # Health check: VM, binaries, systemd unit, kernel modules
 bun run harness:install          # Rebuild + transfer podkit/daemon/gpod-tool/unit (manual; test:vm now does this automatically)
 bun run test:vm                  # Run VM tests — auto-runs vm:install (cached) + vm:doctor (drift check) first
-bunx turbo run @podkit/device-testing#vm:install  # Force-refresh the in-VM binary outside test:vm
-bunx turbo run @podkit/device-testing#vm:doctor   # Drift-check only — no install
+# Reach a turbo task through the repo's wrapper: it stamps the target and host
+# architecture into the cache key, which `bunx turbo` leaves unset (see
+# docs/agents/device-testing.md for the manual export if you skip it).
+bun test-packages/substrate/scripts/turbo.ts run @podkit/device-testing#vm:install  # Force-refresh the in-VM binary outside test:vm
+bun test-packages/substrate/scripts/turbo.ts run @podkit/device-testing#vm:doctor   # Drift-check only — no install
 
 # Build
 bun run build                    # Build all packages for Node.js

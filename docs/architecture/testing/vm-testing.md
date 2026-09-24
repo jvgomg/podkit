@@ -97,7 +97,11 @@ transfer goes through a **`SubstrateLink`** — `exec`, `copyIn`, `spawn` — wi
 two implementations: `limactl` for a box Lima provisioned, and `ssh` for one a
 hypervisor, a cloud or a human produced. Which substrate a run drives is
 resolved once, from `PODKIT_SUBSTRATE` (see `.env.example`), falling back to
-Lima when `limactl` is on PATH and **announcing** that it did so. See
+Lima when `limactl` is on PATH and **announcing** that it did so. `.env.local`
+is read from the repo root rather than from the working directory — most entry
+points here run from a package directory, and Bun's own auto-load is
+cwd-relative — and a variable already exported into the environment always beats
+the file, so CI can select a substrate with no dotfile at all. See
 [ADR-028](../../adr/adr-028-substrate-agnostic-device-harness.md) §1 and
 [ADR-029](../../adr/adr-029-portable-device-substrate.md) §2, and `CONTEXT.md`
 §"Test environments" for the vocabulary.

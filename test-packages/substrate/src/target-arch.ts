@@ -54,6 +54,7 @@
  * @module
  */
 
+import { envWithRepoDotfile } from './env-file.js';
 import type { SubstrateLink } from './link.js';
 
 /**
@@ -224,7 +225,7 @@ export function resolveTargetArch(input: ResolveTargetArchInput): TargetArchReso
  * different hat.
  */
 export function targetArch(
-  env: Readonly<Record<string, string | undefined>> = process.env
+  env: Readonly<Record<string, string | undefined>> = envWithRepoDotfile()
 ): TargetArch {
   return resolveTargetArch({ env, hostArch: process.arch }).arch;
 }

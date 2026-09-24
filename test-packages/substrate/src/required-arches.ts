@@ -46,6 +46,7 @@
  * @module
  */
 
+import { envWithRepoDotfile } from './env-file.js';
 import type { BuildLibc } from './build-host.js';
 import { hostTargetArch, normalizeTargetArch, targetArch, type TargetArch } from './target-arch.js';
 
@@ -132,7 +133,7 @@ export function resolveRequiredArches(
  */
 export function requiredArches(
   libc: BuildLibc,
-  env: Readonly<Record<string, string | undefined>> = process.env,
+  env: Readonly<Record<string, string | undefined>> = envWithRepoDotfile(),
   nodeArch: string = process.arch
 ): readonly ArchRequirement[] {
   const published = env[HOST_ARCH_ENV_VAR]?.trim();

@@ -22,6 +22,7 @@ import { spawnSync } from 'node:child_process';
 import {
   acquireRemoteLock,
   createSshLink,
+  envWithRepoDotfile,
   describeRemoteLockHolder,
   forceReleaseRemoteLock,
   manualLifecycleNotice,
@@ -123,7 +124,7 @@ function reportUnavailable(
   unavailable: { reason: string; missing: readonly string[] },
   opts: SshCliOpts
 ): number {
-  const env = opts.env ?? process.env;
+  const env = opts.env ?? envWithRepoDotfile();
   opts.io.errorLog(
     manualLifecycleNotice({
       verb: QM_VERB_FOR_CLI_VERB[verb] ?? 'status',
@@ -148,7 +149,7 @@ export async function runSshSubstrateVerb(
   args: readonly string[],
   opts: SshCliOpts
 ): Promise<number> {
-  const env = opts.env ?? process.env;
+  const env = opts.env ?? envWithRepoDotfile();
   const io = opts.io;
   const linkFor = opts.linkFor ?? ((d: SshVmDefinition) => createSshLink(d));
 
