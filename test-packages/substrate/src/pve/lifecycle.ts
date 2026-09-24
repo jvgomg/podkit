@@ -418,6 +418,18 @@ export function chooseRecoveryStrategy(input: ChooseRecoveryInput): RecoveryStra
 export interface PveRecoverOpts {
   /** Drift verdict for the running guest. */
   readonly templateHash: TemplateHashVerdict;
+  /**
+   * Wait until the restarted guest answers over ssh, throwing if it never
+   * does. Injected rather than built here because this module holds a
+   * `PveClient` and no `SubstrateLink`, and that boundary is deliberate
+   * (ADR-029 §2).
+   *
+   * It receives the strategy because the two branches fail differently: a
+   * rollback preserves the guest's host keys and a recreate regenerates them,
+   * so only the caller, and only when it knows which happened, can say
+   * something true about why the box is not answering.
+   */
+  readonly awaitReady?: (strategy: RecoveryStrategy) => Promise<void>;
   /** Apply the substrate contract to a freshly created guest. */
   readonly provision?: (binding: PveBinding) => Promise<void>;
   /** Re-seal the baseline after provisioning. */
@@ -435,6 +447,11 @@ export interface PveRecoverResult {
 /**
  * Repair a wedged or drifted guest: roll back where that is sound, recreate
  * where it is not.
+ *
+ * Both branches restart the guest and then hand it to hooks that reach it over
+ * ssh, so both go through {@link PveRecoverOpts.awaitReady} first — a started
+ * guest is not a reachable one. See `link-ready.ts` for why those are
+ * different facts.
  *
  * The agent-reported addresses come back with the result because recreating a
  * guest regenerates its SSH host keys. The token cannot read the new key — that
@@ -456,17 +473,25 @@ export async function pveRecover(
 
   report(`${strategy.action}: ${strategy.reason}`);
 
+  // Pairing these two is the point: every branch that starts the guest owes
+  // the caller a guest that answers, and splitting them is how the hooks below
+  // ended up racing a boot.
+  const startAndWait = async (): Promise<void> => {
+    await binding.client.start(binding.vmid);
+    if (opts.awaitReady) await opts.awaitReady(strategy);
+  };
+
   if (strategy.action === 'rollback') {
     // PVE will roll a running guest back, but pulling the disk out from under
     // a live kernel is not something to do on purpose. Stopping first makes the
     // operation deterministic, and the disk state is discarded either way.
     if (status === 'running') await binding.client.stop(binding.vmid, { force: true });
     await binding.client.rollback(binding.vmid, strategy.snapshot);
-    await binding.client.start(binding.vmid);
+    await startAndWait();
   } else {
     await pveDestroy(binding, { report });
     await createGuest(binding);
-    await binding.client.start(binding.vmid);
+    await startAndWait();
     if (opts.provision) await opts.provision(binding);
     if (opts.reseal) await opts.reseal(binding);
   }

@@ -172,6 +172,7 @@ export function createLimactlLink(
     new SubstrateLinkError({
       substrateId: def.id,
       operation,
+      detail,
       // The detail leads, because when the cause is `runLimactl`'s own message
       // it already reads as a full sentence (including the `brew install lima`
       // hint and the `timed out after Nms` bound), and burying it behind a

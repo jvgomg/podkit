@@ -167,6 +167,7 @@ export function createSshLink(def: SshVmDefinition, opts: CreateSshLinkOpts = {}
     new SubstrateLinkError({
       substrateId: def.id,
       operation,
+      detail,
       message:
         `substrate '${def.id}' is unreachable over ${description}: ${detail} ` +
         `(while trying to ${what}). ` +

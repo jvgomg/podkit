@@ -191,6 +191,7 @@ describe('probeSubstrateMachine', () => {
         substrateId: 'device',
         operation: 'exec',
         message: 'instance does not exist',
+        detail: 'instance does not exist',
       })
     );
     await expect(probeSubstrateMachine(link)).rejects.toThrow(SubstrateLinkError);

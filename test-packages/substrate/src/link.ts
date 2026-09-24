@@ -289,17 +289,29 @@ export class SubstrateLinkError extends Error {
   readonly substrateId: string;
   /** Which link operation failed. */
   readonly operation: SubstrateLinkOperation;
+  /**
+   * The link tool's own diagnostic, untransformed — ssh's stderr, or the
+   * runner's message when the process never produced any.
+   *
+   * Separate from {@link message} for the same reason the two fields above
+   * are: a caller that has to tell one link failure from another should read
+   * a field, not pattern-match a sentence this repo composed. The readiness
+   * wait is the caller that does — see {@link looksLikeTerminalSshFailure}.
+   */
+  readonly detail: string;
 
   constructor(opts: {
     substrateId: string;
     operation: SubstrateLinkOperation;
     message: string;
+    detail: string;
     cause?: unknown;
   }) {
     super(opts.message, opts.cause === undefined ? undefined : { cause: opts.cause });
     this.name = 'SubstrateLinkError';
     this.substrateId = opts.substrateId;
     this.operation = opts.operation;
+    this.detail = opts.detail;
   }
 }
 
@@ -427,6 +439,30 @@ export function looksLikeSshLinkFailure(stderr: string): boolean {
 export function looksLikeLinkFailureResult(result: SubstrateExecResult): boolean {
   return result.stdout.trim() === '' && looksLikeSshLinkFailure(result.stderr);
 }
+
+/**
+ * Whether an SSH diagnostic describes a refusal that waiting cannot resolve.
+ *
+ * The complement of a readiness wait. Most of the vocabulary below is what a
+ * box that has not finished booting looks like, and is worth polling through;
+ * these two are not. A changed host key is the recreate case — a fresh guest
+ * generates its own — and an alias that does not resolve is an error in
+ * `~/.ssh/config`. Polling either to the bound buys minutes of silence for an
+ * answer already known.
+ *
+ * `Permission denied (publickey)` is deliberately absent. Cloud-init installs
+ * the authorized key partway through first boot, so a guest that refuses the
+ * key now may well accept it in thirty seconds — treating it as terminal would
+ * break the one case the wait exists for.
+ */
+export function looksLikeTerminalSshFailure(detail: string): boolean {
+  return TERMINAL_SSH_PATTERNS.some((pattern) => pattern.test(detail));
+}
+
+const TERMINAL_SSH_PATTERNS: readonly RegExp[] = [
+  /\bHost key verification failed\b/,
+  /\bssh: Could not resolve hostname\b/,
+];
 
 const SSH_FAILURE_PATTERNS: readonly RegExp[] = [
   // Every pattern here is anchored on vocabulary the SSH CLIENT emits about

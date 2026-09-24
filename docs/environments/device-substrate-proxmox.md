@@ -340,6 +340,11 @@ bun run vm:status deviceRemote    # running | stopped | missing
 bun run vm:recover deviceRemote   # roll back to the snapshot, or recreate
 ```
 
+`vm:recover` restarts the guest and then **waits for it to answer over ssh**
+before reporting, bounded at five minutes — PVE's start task settles when QEMU
+was launched, not when sshd is up, so anything driven over the link afterwards
+would otherwise race the boot.
+
 Same verbs as the local Lima substrate — `podkit-vm` dispatches on the
 provisioner, so there is one CLI to learn rather than two lifecycles that are
 each 80% correct.
@@ -395,6 +400,12 @@ What the token *can* do is bind an address to a VMID, via
 `network-get-interfaces` (`VM.GuestAgent.Audit`). `vm:recover` prints that
 binding after a recreate, which rules out an impostor answering at that address
 on your LAN. It does not prove the key.
+
+This is also why a recreate's readiness wait usually ends early rather than at
+its bound: the first probe gets `Host key verification failed`, which no amount
+of waiting resolves, so `vm:recover` prints the guidance above alongside that
+diagnostic and exits non-zero. Fix `known_hosts` by the route below, then
+re-run.
 
 To verify the key itself you need the privileged half of the workflow — either
 of these, as root on the PVE host:

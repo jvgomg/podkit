@@ -9,6 +9,7 @@ import { runSshSubstrateVerb, templateHashVerdict } from './cli-ssh.js';
 import {
   getVm,
   POST_PROVISION_SNAPSHOT,
+  SubstrateLinkError,
   type SshVmDefinition,
   type SubstrateLink,
 } from '@podkit/substrate';
@@ -40,13 +41,18 @@ function captureIo() {
 }
 
 /** A link whose guest answers scripted output per command substring. */
-function fakeLink(responses: Record<string, string> = {}, reachable = true): SubstrateLink {
+function fakeLink(
+  responses: Record<string, string> = {},
+  reachable = true,
+  onExec?: (script: string) => void
+): SubstrateLink {
   return {
     substrateId: REMOTE.id,
     description: 'ssh_config alias `podkit-substrate`',
     async exec(command) {
-      if (!reachable) throw new Error('link down');
       const script = Array.isArray(command) ? command.join(' ') : String(command);
+      onExec?.(script);
+      if (!reachable) throw staleHostKey();
       for (const [needle, stdout] of Object.entries(responses)) {
         if (script.includes(needle)) return { stdout, stderr: '', exitCode: 0 };
       }
@@ -57,6 +63,29 @@ function fakeLink(responses: Record<string, string> = {}, reachable = true): Sub
     stageTree: async () => {},
     spawn: () => {
       throw new Error('not used');
+    },
+  };
+}
+
+/** What a recreated guest looks like over a link whose known_hosts is stale. */
+function staleHostKey(): SubstrateLinkError {
+  return new SubstrateLinkError({
+    substrateId: REMOTE.id,
+    operation: 'exec',
+    message: 'link down',
+    detail: 'Host key verification failed.',
+  });
+}
+
+/** Reachable enough to read the sealed hash, dead by the time it is probed. */
+function linkThatRefusesTheProbe(sealed: string): SubstrateLink {
+  const base = fakeLink({ 'baseline-hash': `${sealed}\n` });
+  return {
+    ...base,
+    async exec(command, execOpts) {
+      const script = Array.isArray(command) ? command.join(' ') : String(command);
+      if (script === 'true') throw staleHostKey();
+      return base.exec(command, execOpts);
     },
   };
 }
@@ -254,6 +283,63 @@ describe('with a token configured', () => {
     expect(cap.stdout()).toContain('rollback');
   });
 
+  it('waits for the restarted guest to answer before calling the recovery done', async () => {
+    const cap = captureIo();
+    const probes: string[] = [];
+    const { fetchFn } = scriptedFetch({
+      'GET /pools/podkit': POOL,
+      'GET /nodes/rae/qemu/9000/snapshot': [
+        { name: POST_PROVISION_SNAPSHOT, description: '', snaptime: 1 },
+      ],
+      [`POST /nodes/rae/qemu/9000/snapshot/${POST_PROVISION_SNAPSHOT}/rollback`]: 'UPID:rae:1',
+      'POST /nodes/rae/qemu/9000/status/start': 'UPID:rae:1',
+      'GET /nodes/rae/qemu/9000/agent/network-get-interfaces': { result: [] },
+      ...TASK_OK,
+    });
+    const code = await runSshSubstrateVerb('recover', REMOTE, ['--expect-hash', 'abc123'], {
+      io: cap.io,
+      env: TOKEN_ENV,
+      linkFor: () => fakeLink({ 'baseline-hash': 'abc123\n' }, true, (s) => void probes.push(s)),
+      client: { fetchFn, sleep: async () => {} },
+    });
+    expect(code).toBe(0);
+    // The sealed-hash read, then a second reach for the link after the
+    // restart. What that probe says is `link-ready.ts`'s business, not this
+    // file's; that it happened at all is the contract here.
+    expect(probes).toHaveLength(2);
+    expect(probes[0]).toContain('baseline-hash');
+    expect(probes[1]).not.toContain('baseline-hash');
+  });
+
+  it('will not report a rollback that never came back as a success', async () => {
+    // A rollback preserves the guest's host keys, so a box that does not
+    // answer afterwards is genuinely broken — no manual step finishes this.
+    const cap = captureIo();
+    const { fetchFn } = scriptedFetch({
+      'GET /pools/podkit': POOL,
+      'GET /nodes/rae/qemu/9000/snapshot': [
+        { name: POST_PROVISION_SNAPSHOT, description: '', snaptime: 1 },
+      ],
+      [`POST /nodes/rae/qemu/9000/snapshot/${POST_PROVISION_SNAPSHOT}/rollback`]: 'UPID:rae:1',
+      'POST /nodes/rae/qemu/9000/status/start': 'UPID:rae:1',
+      'GET /nodes/rae/qemu/9000/agent/network-get-interfaces': { result: [] },
+      ...TASK_OK,
+    });
+    const code = await runSshSubstrateVerb('recover', REMOTE, ['--expect-hash', 'abc123'], {
+      io: cap.io,
+      env: TOKEN_ENV,
+      // Answers the sealed-hash read, then refuses the readiness probe with a
+      // diagnostic waiting cannot fix — so the wait ends on the first probe
+      // rather than at its bound.
+      linkFor: () => linkThatRefusesTheProbe('abc123'),
+      client: { fetchFn, sleep: async () => {} },
+    });
+    expect(code).toBe(1);
+    expect(cap.stderr()).toContain('Host key verification failed');
+    expect(cap.stderr()).toContain('ssh_config alias `podkit-substrate`');
+    expect(cap.stdout()).not.toContain('NEW ssh host keys');
+  });
+
   it('recreates instead when the sealed hash no longer matches', async () => {
     const cap = captureIo();
     const { fetchFn, calls } = scriptedFetch({
@@ -268,7 +354,7 @@ describe('with a token configured', () => {
       'PUT /nodes/rae/qemu/9000/resize': 'UPID:rae:1',
       'POST /nodes/rae/qemu/9000/status/start': 'UPID:rae:1',
       'GET /nodes/rae/qemu/9000/agent/network-get-interfaces': {
-        result: [{ 'ip-addresses': [{ 'ip-address': '192.168.10.213' }] }],
+        result: [{ 'ip-addresses': [{ 'ip-address': '192.0.2.10' }] }],
       },
       ...TASK_OK,
     });
@@ -283,7 +369,39 @@ describe('with a token configured', () => {
     expect(calls.some((c) => c.startsWith('POST /nodes/rae/qemu/9000/snapshot/'))).toBe(false);
     // Recreate regenerates host keys, and the token cannot read the new one.
     expect(cap.stdout()).toContain('NEW ssh host keys');
-    expect(cap.stdout()).toContain('192.168.10.213');
+    expect(cap.stdout()).toContain('192.0.2.10');
+  });
+
+  it('treats a recreate refused on its new host keys as the documented outcome', async () => {
+    // The recreate worked. `known_hosts` going stale is what a recreate DOES,
+    // and the guidance below is the manual step that finishes it — so this
+    // stays a zero exit, as it was before there was a wait at all, and the
+    // guidance must survive the failed wait rather than being swallowed by it.
+    const cap = captureIo();
+    const { fetchFn } = scriptedFetch({
+      'GET /pools/podkit': POOL,
+      'GET /nodes/rae/qemu/9000/snapshot': [],
+      'DELETE /nodes/rae/qemu/9000': 'UPID:rae:1',
+      'GET /nodes': [{ node: 'rae' }],
+      'POST /nodes/rae/qemu': 'UPID:rae:1',
+      'PUT /nodes/rae/qemu/9000/config': 'UPID:rae:1',
+      'PUT /nodes/rae/qemu/9000/resize': 'UPID:rae:1',
+      'POST /nodes/rae/qemu/9000/status/start': 'UPID:rae:1',
+      'GET /nodes/rae/qemu/9000/agent/network-get-interfaces': {
+        result: [{ 'ip-addresses': [{ 'ip-address': '192.0.2.10' }] }],
+      },
+      ...TASK_OK,
+    });
+    const code = await runSshSubstrateVerb('recover', REMOTE, [], {
+      io: cap.io,
+      env: TOKEN_ENV,
+      linkFor: () => fakeLink({}, false),
+      client: { fetchFn, sleep: async () => {} },
+    });
+    expect(code).toBe(0);
+    expect(cap.stdout()).toContain('NEW ssh host keys');
+    expect(cap.stdout()).toContain('192.0.2.10');
+    expect(cap.stderr()).toContain('Host key verification failed');
   });
 });
 

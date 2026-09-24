@@ -69,6 +69,7 @@ export {
   isSubstrateLinkError,
   isTimeoutRejection,
   looksLikeSshLinkFailure,
+  looksLikeTerminalSshFailure,
   looksLikeLinkFailureResult,
   shellQuote,
   wrapGuestCommand,
@@ -77,6 +78,15 @@ export {
 } from './link.js';
 export type { HostSpawnFn } from './link-spawn.js';
 export { startHostLinkProcess } from './link-spawn.js';
+
+// Waiting for a substrate to answer — the wait a hypervisor cannot do for you
+export type { WaitForSubstrateReadyOpts, SubstrateNotReadyReason } from './link-ready.js';
+export {
+  waitForSubstrateReady,
+  isSubstrateNotReadyError,
+  SubstrateNotReadyError,
+  SUBSTRATE_READY_TIMEOUT_MS,
+} from './link-ready.js';
 
 // Staging a source tree onto a substrate — the exclude floor and the rsync
 // mechanics both links share

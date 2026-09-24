@@ -129,6 +129,14 @@ Two consequences a test author has to know:
   host-side link process; the guest process usually inherits the SIGHUP that
   closing the channel sends, and "usually" is why a test needing deterministic
   teardown kills the guest process by name through `exec`.
+- **A started guest is not a reachable one.** A hypervisor reports `running`
+  when QEMU launched, which is not when anything answers on port 22.
+  `waitForSubstrateReady(link)` is the bounded poll that closes the gap, and
+  anything that starts a box and then drives it over the link goes through it —
+  `pveRecover` takes it as an injected `awaitReady` hook so the lifecycle
+  module keeps holding no link (ADR-029 §2). The bound, the poll interval and
+  which refusals end the wait early are documented in
+  `test-packages/substrate/src/link-ready.ts`.
 
 ### `deviceHarness`
 

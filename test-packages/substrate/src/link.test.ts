@@ -143,16 +143,18 @@ describe('looksLikeLinkFailureResult', () => {
 describe('SubstrateLinkError', () => {
   // Callers branch on the TYPE, never on the message — that is the whole
   // reason the type exists, and a narrowing helper is what keeps them honest.
-  it('narrows, and carries the substrate and operation as data', () => {
+  it('narrows, and carries the substrate, operation and diagnostic as data', () => {
     const err: unknown = new SubstrateLinkError({
       substrateId: 'device',
       operation: 'copyIn',
       message: 'boom',
+      detail: 'scp: no such file',
     });
     expect(isSubstrateLinkError(err)).toBe(true);
     if (!isSubstrateLinkError(err)) throw new Error('unreachable');
     expect(err.substrateId).toBe('device');
     expect(err.operation).toBe('copyIn');
+    expect(err.detail).toBe('scp: no such file');
     expect(err.name).toBe('SubstrateLinkError');
   });
 

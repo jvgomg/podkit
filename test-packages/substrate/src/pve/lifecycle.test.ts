@@ -73,7 +73,7 @@ function fakeClient(initial: { status: PveGuestStatus; snapshots?: PveSnapshot[]
     },
     guestAddresses: async () => {
       calls.push('guestAddresses');
-      return ['192.168.10.213'];
+      return ['192.0.2.10'];
     },
   };
   return { client, calls, state };
@@ -353,10 +353,58 @@ describe('pveRecover', () => {
     expect(calls).toEqual(['createGuest', 'start', 'guestAddresses']);
   });
 
+  it('waits for the guest to answer over ssh before provisioning it', async () => {
+    // The start task finishes when QEMU launched. sshd is minutes away on a
+    // freshly created guest, and provisioning goes over ssh.
+    const { client } = fakeClient({ status: 'running', snapshots: sealed });
+    const ran: string[] = [];
+    await pveRecover(binding(client), {
+      templateHash: 'drifted',
+      awaitReady: async () => void ran.push('awaitReady'),
+      provision: async () => void ran.push('provision'),
+      reseal: async () => void ran.push('reseal'),
+    });
+    expect(ran).toEqual(['awaitReady', 'provision', 'reseal']);
+  });
+
+  it('waits for the guest to answer over ssh after a rollback too', async () => {
+    const { client, calls } = fakeClient({ status: 'running', snapshots: sealed });
+    let readyAfter: readonly string[] = [];
+    let sawStrategy = '';
+    const result = await pveRecover(binding(client), {
+      templateHash: 'match',
+      awaitReady: async (strategy) => {
+        sawStrategy = strategy.action;
+        readyAfter = [...calls];
+      },
+    });
+    expect(sawStrategy).toBe('rollback');
+    expect(result.strategy.action).toBe('rollback');
+    // Waited after the restart, not before it.
+    expect(readyAfter).toEqual(['stop(force)', `rollback(${POST_PROVISION_SNAPSHOT})`, 'start']);
+  });
+
+  it('does not provision a guest that never answered', async () => {
+    const { client } = fakeClient({ status: 'missing' });
+    let provisioned = false;
+    const err = await pveRecover(binding(client), {
+      templateHash: 'match',
+      awaitReady: async () => {
+        throw new Error('substrate never answered');
+      },
+      provision: async () => void (provisioned = true),
+    }).then(
+      () => null,
+      (e: unknown) => e as Error
+    );
+    expect(err!.message).toContain('never answered');
+    expect(provisioned).toBe(false);
+  });
+
   it('returns the agent-reported address, since recreate regenerates host keys', async () => {
     const { client } = fakeClient({ status: 'missing' });
     const result = await pveRecover(binding(client), { templateHash: 'match' });
-    expect(result.addresses).toEqual(['192.168.10.213']);
+    expect(result.addresses).toEqual(['192.0.2.10']);
   });
 });
 

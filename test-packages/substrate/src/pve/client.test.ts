@@ -342,11 +342,11 @@ describe('guest addresses', () => {
       'GET /nodes/rae/qemu/9000/agent/network-get-interfaces': {
         result: [
           { name: 'lo', 'ip-addresses': [{ 'ip-address': '127.0.0.1' }, { 'ip-address': '::1' }] },
-          { name: 'ens18', 'ip-addresses': [{ 'ip-address': '192.168.10.213' }] },
+          { name: 'ens18', 'ip-addresses': [{ 'ip-address': '192.0.2.10' }] },
         ],
       },
     });
-    expect(await pve.guestAddresses(9000)).toEqual(['192.168.10.213']);
+    expect(await pve.guestAddresses(9000)).toEqual(['192.0.2.10']);
   });
 
   it('turns an agent ACL denial into the privilege and path', async () => {

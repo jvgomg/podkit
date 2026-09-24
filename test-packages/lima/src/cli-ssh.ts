@@ -38,7 +38,11 @@ import {
   QM_VERB_FOR_CLI_VERB,
   readRemoteLockHolder,
   resolvePveLifecycle,
+  isSubstrateNotReadyError,
+  waitForSubstrateReady,
   type PveBinding,
+  type RecoveryStrategy,
+  type SubstrateNotReadyError,
   type SshVmDefinition,
   type SubstrateLink,
   type TemplateHashVerdict,
@@ -332,26 +336,83 @@ async function cmdRecover(
   const sealed = await readSealedHash(link).catch(() => '');
   const verdict = templateHashVerdict(sealed, expected);
 
-  const result = await pveRecover(binding, { templateHash: verdict, report });
-  io.log(
-    `[podkit-vm] \`${binding.substrate.id}\` recovered by ${result.strategy.action} ` +
-      `(${result.strategy.reason}).`
-  );
-  if (result.strategy.action === 'recreate') {
+  // The hook THROWS, so nothing downstream of it runs against a guest that
+  // never answered. The strategy is captured on the way past because the two
+  // branches fail differently, and the failure path has to say which happened.
+  const attempt: { strategy?: RecoveryStrategy } = {};
+  try {
+    const result = await pveRecover(binding, {
+      templateHash: verdict,
+      report,
+      awaitReady: async (strategy) => {
+        attempt.strategy = strategy;
+        await waitForSubstrateReady(link, { report });
+      },
+    });
     io.log(
-      '[podkit-vm] a recreated guest has NEW ssh host keys. The pool token cannot read them ' +
-        '(that is VM.GuestAgent.Unrestricted, deliberately not granted), so verify them from ' +
-        'the PVE host or its console — see docs/environments/device-substrate-proxmox.md.'
+      `[podkit-vm] \`${binding.substrate.id}\` recovered by ${result.strategy.action} ` +
+        `(${result.strategy.reason}).`
     );
-    if (result.addresses.length > 0) {
-      io.log(
-        `[podkit-vm] the guest agent binds VMID ${binding.vmid} to ${result.addresses.join(', ')}, ` +
-          'which rules out an impostor at that address but does not prove the key.'
-      );
+    if (result.strategy.action === 'recreate') {
+      reportNewHostKeys(binding, result.addresses, io);
     }
-    io.log('[podkit-vm] re-apply the contract with `bun run harness:setup`.');
+    return 0;
+  } catch (err) {
+    if (!isSubstrateNotReadyError(err)) throw err;
+    return reportNotReady(binding, attempt.strategy, err, io);
   }
-  return 0;
+}
+
+/**
+ * What a recreate leaves the operator to do by hand.
+ *
+ * Printed on both the success and the failure path, because a recreate whose
+ * readiness wait failed is the case this text was written for — suppressing it
+ * there would withhold the explanation exactly when it is needed.
+ */
+function reportNewHostKeys(binding: PveBinding, addresses: readonly string[], io: SshCliIo): void {
+  io.log(
+    '[podkit-vm] a recreated guest has NEW ssh host keys. The pool token cannot read them ' +
+      '(that is VM.GuestAgent.Unrestricted, deliberately not granted), so verify them from ' +
+      'the PVE host or its console — see docs/environments/device-substrate-proxmox.md.'
+  );
+  if (addresses.length > 0) {
+    io.log(
+      `[podkit-vm] the guest agent binds VMID ${binding.vmid} to ${addresses.join(', ')}, ` +
+        'which rules out an impostor at that address but does not prove the key.'
+    );
+  }
+  io.log('[podkit-vm] re-apply the contract with `bun run harness:setup`.');
+}
+
+/**
+ * Report a recovery whose guest never came back, and decide what that is worth
+ * as an exit code.
+ *
+ * A **recreate** that ends in a refusal waiting cannot fix is the documented,
+ * expected outcome: new host keys make `known_hosts` stale, and the guidance
+ * above is the manual step that finishes the job. That exits zero, as it did
+ * before there was a wait at all. Everything else — a rollback that did not
+ * come back, either branch that ran out the bound — is a substrate nothing can
+ * use, and says so with a non-zero exit.
+ */
+async function reportNotReady(
+  binding: PveBinding,
+  strategy: RecoveryStrategy | undefined,
+  err: SubstrateNotReadyError,
+  io: SshCliIo
+): Promise<number> {
+  const recreated = strategy?.action === 'recreate';
+  io.log(
+    `[podkit-vm] \`${binding.substrate.id}\` ${strategy?.action ?? 'recovery'} completed, but ` +
+      'the substrate did not answer afterwards.'
+  );
+  if (recreated) {
+    const addresses = await binding.client.guestAddresses(binding.vmid).catch(() => []);
+    reportNewHostKeys(binding, addresses, io);
+  }
+  io.errorLog(`[podkit-vm] ${err.message}`);
+  return recreated && err.reason === 'refused' ? 0 : 1;
 }
 
 async function cmdUnlock(
