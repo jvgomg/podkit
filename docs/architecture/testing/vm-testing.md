@@ -205,9 +205,15 @@ the FAT32 backing — doctor, sync, repair, anything `-d <path>`.
 ### Enumeration is the primitive's job, not the caller's
 
 `startDaemonForPersona` does not return until the persona's gadget is on
-the bus: it waits for the persona's `vid:pid` in sysfs, and for
-`/dev/sg*` as well when the persona carries a mass-storage backing file.
-There is no un-waited variant and the waits are not exported.
+the bus: it waits for the persona's `vid:pid` in sysfs, and — when the
+persona carries a mass-storage backing file — for that persona's own
+disk to attach. Both waits match on `vid:pid`, sharing the
+`/sys/class/scsi_generic/sg*` walk `mountPersona` uses to pick a disk,
+so the wait succeeds exactly when that lookup will. Neither is
+satisfied by a *different* persona's gadget, which is what an
+existence check on `/dev/sg*` would have done once two personas were
+bound concurrently. There is no un-waited variant and the waits are
+not exported.
 
 This is not a convenience. The unit is `Type=simple`, so `systemctl
 start` returns at daemon `exec()` — 2-3s before the kernel finishes
@@ -417,7 +423,7 @@ overflows.
 **Symptom:** daemon fails to start with
 `error: EOVERFLOW: value too large for defined data type, write`,
 systemd restart-loops the daemon, and the test times out waiting
-for `/dev/sg*` to appear with a misleading "daemon binding
+for the persona's disk to attach with a misleading "daemon binding
 mass-storage correctly?" message.
 
 **Fix:** keep `description` short. Move any long-form context to the

@@ -17,8 +17,11 @@
  *     harness VM). Without this the caller races the kernel and sees an empty
  *     `device scan`, which reads as a legitimate "no devices" result rather
  *     than as an error.
- *   - **SCSI.** Mass-storage personas additionally surface `/dev/sg*`, which
- *     the kernel creates asynchronously after the USB bind.
+ *   - **SCSI.** Mass-storage personas additionally surface a SCSI generic node
+ *     and, shortly after, the disk behind it. We wait for the disk owned by
+ *     this persona's `vid:pid`, not for any node to exist: with two personas
+ *     bound, the first `/dev/sg*` belongs to whichever enumerated first, so
+ *     existence proves nothing about the one the caller asked for.
  *
  * Both waits dump the daemon journal and the UDC slot budget on timeout, so a
  * gadget that binds a controller but never enumerates is a loud,
@@ -34,6 +37,7 @@ import type { SubstrateLink } from '@podkit/substrate';
 
 import type { DevicePersona } from '../personas/types.js';
 import { deviceSubstrateLink } from './substrate.js';
+import { buildScsiSdDiscoveryScript, hex4 } from './scsi-discovery.js';
 import {
   formatUdcSlotSummary,
   formatUdcSlotFailure,
@@ -85,37 +89,42 @@ function probeTimeout(deadline: number): number {
 // ---------------------------------------------------------------------------
 
 /**
- * Poll for at least one `/dev/sg*` node to appear in the VM. Called by
- * {@link startDaemonForPersona} for personas carrying a mass-storage backing
- * file; pure-FunctionFS personas produce no SCSI node and skip it.
+ * Poll until the persona's OWN mass-storage disk is attached in the VM. Called
+ * by {@link startDaemonForPersona} for personas carrying a mass-storage
+ * backing file; pure-FunctionFS personas produce no disk and skip it.
+ *
+ * Named for the disk rather than the SCSI generic node it walks: a matched sg
+ * node with nothing attached behind it is not what any caller wants, so the
+ * probe requires the block device too.
+ *
+ * The probe walks `/sys/class/scsi_generic/sg*` up to each node's owning USB
+ * device and compares `idVendor`/`idProduct` — the same walk `mountPersona`
+ * uses to pick a disk, so this wait succeeds exactly when that lookup will.
+ * Testing for the mere existence of a `/dev/sg*` node would be satisfied by a
+ * *different* persona's gadget, which is no guarantee at all once two are
+ * bound concurrently.
  *
  * The poll re-tries every 150 ms up to `timeoutMs` (default
  * {@link ENUMERATION_TIMEOUT_MS}). Throws on timeout with a descriptive
- * message naming the persona.
+ * message naming the persona and the `vid:pid` it was looking for.
  *
  * @internal exported for tests
  */
-export async function waitForScsiGenericEnumeration(opts: {
+export async function waitForDiskAttachment(opts: {
   link?: SubstrateLink;
-  personaId: string;
+  persona: DevicePersona;
   timeoutMs?: number;
 }): Promise<void> {
   const link = opts.link ?? deviceSubstrateLink();
   const timeoutMs = opts.timeoutMs ?? ENUMERATION_TIMEOUT_MS;
+  const { vendorId, productId } = opts.persona.usbDescriptor;
+  const idPair = `${hex4(vendorId)}:${hex4(productId)}`;
+  const script = buildScsiSdDiscoveryScript(vendorId, productId);
   const deadline = Date.now() + timeoutMs;
   // eslint-disable-next-line no-constant-condition
   while (true) {
     const probe = await link
-      .exec(
-        [
-          'sh',
-          '-c',
-          // `ls /dev/sg* 2>/dev/null | head -n1` outputs the first match or
-          // nothing. We branch on whether stdout is non-empty.
-          'ls /dev/sg* 2>/dev/null | head -n1',
-        ],
-        { timeoutMs: probeTimeout(deadline) }
-      )
+      .exec(['sh', '-c', script], { timeoutMs: probeTimeout(deadline) })
       // A link failure mid-poll is absorbed rather than propagated: the
       // substrate may simply be busy binding a gadget, and the deadline below
       // is what decides whether the wait has actually failed.
@@ -123,10 +132,11 @@ export async function waitForScsiGenericEnumeration(opts: {
     if (probe.exitCode === 0 && probe.stdout.trim().length > 0) return;
     if (Date.now() >= deadline) {
       const slotSuffix = await udcSlotSuffix(link);
-      const logSuffix = await daemonLogSuffix(link, opts.personaId);
+      const logSuffix = await daemonLogSuffix(link, opts.persona.id);
       throw new Error(
-        `startDaemonForPersona: timed out after ${timeoutMs}ms waiting for /dev/sg* to ` +
-          `appear in ${link.description} for persona '${opts.personaId}'. ` +
+        `startDaemonForPersona: timed out after ${timeoutMs}ms waiting for the ` +
+          `mass-storage disk of USB ${idPair} to attach in ${link.description} for ` +
+          `persona '${opts.persona.id}'. ` +
           `Is the dummy-hcd-daemon binding mass-storage correctly?` +
           `${slotSuffix}${logSuffix}`
       );
@@ -155,8 +165,8 @@ export async function waitForUsbEnumeration(opts: {
 }): Promise<void> {
   const link = opts.link ?? deviceSubstrateLink();
   const timeoutMs = opts.timeoutMs ?? ENUMERATION_TIMEOUT_MS;
-  const vid = opts.persona.usbDescriptor.vendorId.toString(16).padStart(4, '0');
-  const pid = opts.persona.usbDescriptor.productId.toString(16).padStart(4, '0');
+  const vid = hex4(opts.persona.usbDescriptor.vendorId);
+  const pid = hex4(opts.persona.usbDescriptor.productId);
   const idPair = `${vid}:${pid}`;
   const deadline = Date.now() + timeoutMs;
   // eslint-disable-next-line no-constant-condition

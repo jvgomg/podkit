@@ -16,7 +16,8 @@
 
 import { describe, it, expect } from 'bun:test';
 
-import { waitForScsiGenericEnumeration, waitForUsbEnumeration } from './lima-enumeration.js';
+import { waitForDiskAttachment, waitForUsbEnumeration } from './lima-enumeration.js';
+import { buildScsiSdDiscoveryScript } from './scsi-discovery.js';
 import type { DevicePersona } from '../personas/types.js';
 import type { SubprocessRunner, SubprocessRunOpts, SubprocessRunResult } from '../subprocess.js';
 import { createLimactlLink } from '@podkit/lima';
@@ -76,15 +77,45 @@ function makeRunner(
 
 const EMPTY: SubprocessRunResult = { stdout: '', stderr: '', exitCode: 0 };
 
-/** Minimal persona stand-in — only the fields the waits read. */
+/** Minimal persona stand-ins — only the fields the waits read. */
 const persona = {
   id: 'ipod-nano-7g-blue',
   usbDescriptor: { vendorId: 0x05ac, productId: 0x1209 },
 } as unknown as DevicePersona;
 
-/** Recognise the probe that polls for a SCSI generic node. */
+/** A second persona with a different vendor, for the concurrent-bind cases. */
+const otherPersona = {
+  id: 'echo-mini',
+  usbDescriptor: { vendorId: 0x071b, productId: 0x3203 },
+} as unknown as DevicePersona;
+
+/** Recognise the probe that walks sysfs for a persona's SCSI generic node. */
 function isScsiProbe(call: Call): boolean {
-  return call.args.some((a) => a.includes('/dev/sg*'));
+  return call.args.some((a) => a.includes('scsi_generic'));
+}
+
+/** The script the wait must send to look for `persona`'s disk. */
+function discoveryScriptFor(persona: DevicePersona): string {
+  const { vendorId, productId } = persona.usbDescriptor;
+  return buildScsiSdDiscoveryScript(vendorId, productId);
+}
+
+/**
+ * Answer a SCSI probe the way a substrate holding exactly `bound` personas
+ * would: it succeeds only if the script being run is the one that looks for a
+ * persona actually present.
+ *
+ * Recognises the probe by rebuilding the expected script rather than sniffing
+ * its punctuation, so reformatting the walk cannot silently turn every probe
+ * into a miss. What the script does against a real sysfs tree is pinned
+ * separately in `scsi-discovery.test.ts`.
+ */
+function scsiProbeAgainst(bound: readonly DevicePersona[]) {
+  return (call: Call): SubprocessRunResult => {
+    const script = call.args.join(' ');
+    const matched = bound.some((p) => script.includes(discoveryScriptFor(p)));
+    return matched ? { ...EMPTY, stdout: 'sdb\n' } : { ...EMPTY, exitCode: 1 };
+  };
 }
 
 /** Recognise the probe that walks sysfs for an enumerated USB device. */
@@ -93,25 +124,43 @@ function isUsbProbe(call: Call): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// waitForScsiGenericEnumeration
+// waitForDiskAttachment
 // ---------------------------------------------------------------------------
 
-describe('waitForScsiGenericEnumeration', () => {
-  it('returns as soon as a node appears', async () => {
-    const { runner, calls } = makeRunner(() => ({ ...EMPTY, stdout: '/dev/sg0\n' }));
-    await waitForScsiGenericEnumeration({
-      link: linkTo('podkit-device', runner),
-      personaId: 'echo-mini',
-    });
+describe('waitForDiskAttachment', () => {
+  it("returns as soon as the persona's own disk attaches", async () => {
+    const { runner, calls } = makeRunner(scsiProbeAgainst([persona]));
+    await waitForDiskAttachment({ link: linkTo('podkit-device', runner), persona });
     expect(calls).toHaveLength(1);
+    // The probe is the persona's own discovery walk, not a test for any node.
+    expect(calls[0]?.args).toContain(discoveryScriptFor(persona));
+  });
+
+  it("is NOT satisfied by a foreign persona's node", async () => {
+    // The regression this wait exists to prevent: `echo-mini` is already bound
+    // and owns the only sg node. An existence check would return immediately
+    // and hand the caller a gadget that is not theirs.
+    const { runner } = makeRunner(scsiProbeAgainst([otherPersona]));
+    await expect(
+      waitForDiskAttachment({
+        link: linkTo('podkit-device', runner),
+        persona,
+        timeoutMs: 200,
+      })
+    ).rejects.toThrow(/timed out after 200ms/);
+  });
+
+  it('returns once the persona joins a substrate a foreign persona already holds', async () => {
+    const { runner } = makeRunner(scsiProbeAgainst([otherPersona, persona]));
+    await waitForDiskAttachment({ link: linkTo('podkit-device', runner), persona });
   });
 
   it('bounds each probe by the time left on the deadline', async () => {
-    const { runner, calls } = makeRunner((call) => (isScsiProbe(call) ? EMPTY : EMPTY));
+    const { runner, calls } = makeRunner(() => EMPTY);
     await expect(
-      waitForScsiGenericEnumeration({
+      waitForDiskAttachment({
         link: linkTo('podkit-device', runner),
-        personaId: 'echo-mini',
+        persona,
         timeoutMs: 300,
       })
     ).rejects.toThrow(/timed out after 300ms/);
@@ -131,12 +180,12 @@ describe('waitForScsiGenericEnumeration', () => {
       throw new Error('limactl shell podkit-device timed out after 2000ms');
     });
     await expect(
-      waitForScsiGenericEnumeration({
+      waitForDiskAttachment({
         link: linkTo('podkit-device', runner),
-        personaId: 'echo-mini',
+        persona,
         timeoutMs: 200,
       })
-    ).rejects.toThrow(/timed out after 200ms waiting for \/dev\/sg\*/);
+    ).rejects.toThrow(/timed out after 200ms waiting for the mass-storage disk/);
   });
 
   it('reports the controller budget alongside the timeout', async () => {
@@ -159,9 +208,9 @@ describe('waitForScsiGenericEnumeration', () => {
       return EMPTY;
     });
 
-    const err = await waitForScsiGenericEnumeration({
+    const err = await waitForDiskAttachment({
       link: linkTo('podkit-device', runner),
-      personaId: 'echo-mini',
+      persona,
       timeoutMs: 200,
     }).catch((e: Error) => e);
 

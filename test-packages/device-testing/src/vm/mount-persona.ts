@@ -45,85 +45,24 @@
  */
 
 import { deviceHarness, startDaemonForPersona, stopDaemon } from '../runners/lima-test-vm.js';
+import {
+  buildScsiSdDiscoveryScript,
+  buildDeviceNodeDiscoveryScript,
+} from '../runners/scsi-discovery.js';
 import { VM_WARM_TIMEOUT_MS } from './vm-runtime-setup.js';
 import type { DevicePersona } from '../personas/types.js';
 
 // ---------------------------------------------------------------------------
 // SCSI-generic discovery
+//
+// The walk lives in `runners/scsi-discovery.ts` because the enumeration wait
+// needs it too and `runners/` may not import from `vm/`.
 // ---------------------------------------------------------------------------
 
-/**
- * Build a shell script that walks `/sys/class/scsi_generic/sg*` and prints
- * the first `/dev/sd<x>` whose USB parent matches `vendorId`/`productId`.
- *
- * Pure — returns a script string. Caller runs it via `limactl shell`.
- *
- * @internal exported for tests + advanced callers; most tests should
- * use {@link mountPersona} which composes this helper.
- */
-export function buildScsiSdDiscoveryScript(vendorId: number, productId: number): string {
-  const vidHex = vendorId.toString(16).padStart(4, '0');
-  const pidHex = productId.toString(16).padStart(4, '0');
-  return [
-    'for sg in /sys/class/scsi_generic/sg*; do',
-    '  [ -e "$sg" ] || continue;',
-    '  usb=$(readlink -f "$sg/device/../../../..");',
-    '  [ -f "$usb/idVendor" ] || continue;',
-    '  vid=$(cat "$usb/idVendor");',
-    '  pid=$(cat "$usb/idProduct");',
-    `  if [ "$vid" = "${vidHex}" ] && [ "$pid" = "${pidHex}" ]; then`,
-    '    blk=$(ls "$sg/device/block" 2>/dev/null | head -n1);',
-    '    if [ -n "$blk" ]; then echo "$blk"; exit 0; fi;',
-    '  fi;',
-    'done;',
-    'exit 1',
-  ].join(' ');
-}
-
-/**
- * Build a shell script that walks `/sys/class/scsi_generic/sg*` to the USB
- * device whose descriptor matches `vendorId`/`productId`, then prints BOTH
- * device nodes on two lines:
- *
- *   line 1: the block device, e.g. `/dev/sdb`
- *   line 2: the USB node,      e.g. `/dev/bus/usb/003/007`
- *
- * The USB node is derived from the matched USB parent dir's `busnum`/`devnum`
- * sysfs files, zero-padded to the 3-digit `/dev/bus/usb/BBB/DDD` layout the
- * kernel's usbfs uses — the exact path a container needs to be granted via
- * `--device` for USB passthrough.
- *
- * Pure — returns a script string. Caller runs it via `limactl shell`. Reuses
- * the same `sg*` → USB-parent walk as {@link buildScsiSdDiscoveryScript}; the
- * only addition is reading busnum/devnum off the already-matched USB parent.
- *
- * @internal exported for tests + advanced callers; most tests should use
- * {@link resolvePersonaDeviceNodes} which parses this script's output.
- */
-export function buildDeviceNodeDiscoveryScript(vendorId: number, productId: number): string {
-  const vidHex = vendorId.toString(16).padStart(4, '0');
-  const pidHex = productId.toString(16).padStart(4, '0');
-  return [
-    'for sg in /sys/class/scsi_generic/sg*; do',
-    '  [ -e "$sg" ] || continue;',
-    '  usb=$(readlink -f "$sg/device/../../../..");',
-    '  [ -f "$usb/idVendor" ] || continue;',
-    '  vid=$(cat "$usb/idVendor");',
-    '  pid=$(cat "$usb/idProduct");',
-    `  if [ "$vid" = "${vidHex}" ] && [ "$pid" = "${pidHex}" ]; then`,
-    '    blk=$(ls "$sg/device/block" 2>/dev/null | head -n1);',
-    '    [ -n "$blk" ] || continue;',
-    '    [ -f "$usb/busnum" ] && [ -f "$usb/devnum" ] || continue;',
-    '    bus=$(printf "%03d" "$(cat "$usb/busnum")");',
-    '    dev=$(printf "%03d" "$(cat "$usb/devnum")");',
-    '    echo "/dev/$blk";',
-    '    echo "/dev/bus/usb/$bus/$dev";',
-    '    exit 0;',
-    '  fi;',
-    'done;',
-    'exit 1',
-  ].join(' ');
-}
+export {
+  buildScsiSdDiscoveryScript,
+  buildDeviceNodeDiscoveryScript,
+} from '../runners/scsi-discovery.js';
 
 // ---------------------------------------------------------------------------
 // resolvePersonaDeviceNodes

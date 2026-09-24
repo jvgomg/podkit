@@ -68,7 +68,7 @@ import type { RunOpts, RunResult, RunnerId, TestRuntime } from '../runtime.js';
 import type { SubprocessRunner } from '../subprocess.js';
 import { transferBinary, transferGpodTool } from './lima-test-vm-binary.js';
 import { applyState as applyStateRaw } from './lima-test-vm-state.js';
-import { waitForScsiGenericEnumeration, waitForUsbEnumeration } from './lima-enumeration.js';
+import { waitForDiskAttachment, waitForUsbEnumeration } from './lima-enumeration.js';
 import { transferSystemdUnit } from './lima-test-vm-systemd.js';
 import { ensureBackingFilesForPersonas } from './lima-test-vm-backing-files.js';
 import { installIntoSubstrate } from './substrate-install.js';
@@ -399,9 +399,12 @@ export interface StopDaemonOpts {
  * asserting "no unsupported device appears" would pass for the wrong reason.
  *
  * Every persona gets the USB wait; personas carrying a mass-storage backing
- * file additionally wait for `/dev/sg*`, which the kernel creates after the
- * USB bind. Both waits fail loudly with the daemon journal and the UDC slot
- * budget attached, so a genuine synthesis failure still surfaces as itself.
+ * file additionally wait for their own disk to attach, which the kernel does
+ * after the USB bind. Both waits match the persona's `vid:pid`, so a second
+ * persona starting while a first is bound waits for its own gadget rather
+ * than being satisfied by the other's. Both fail loudly with the daemon
+ * journal and the UDC slot budget attached, so a genuine synthesis failure
+ * still surfaces as itself.
  *
  * Callers that previously paired this with their own `waitFor*` call no
  * longer need one — the wait is now built in.
@@ -426,9 +429,9 @@ export async function startDaemonForPersona(opts: StartDaemonOpts): Promise<void
   });
 
   if (opts.persona.massStorageBackingFile !== null) {
-    await waitForScsiGenericEnumeration({
+    await waitForDiskAttachment({
       link,
-      personaId: opts.persona.id,
+      persona: opts.persona,
       ...(timeoutMs !== undefined ? { timeoutMs } : {}),
     });
   }

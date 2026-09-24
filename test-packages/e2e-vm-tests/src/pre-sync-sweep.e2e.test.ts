@@ -53,6 +53,7 @@ import {
   stopDaemon,
   resolveDefaultPodkitDebugBinary,
   deviceSubstrateLink,
+  buildScsiSdDiscoveryScript,
   type SubstrateProcess,
 } from '@podkit/device-testing';
 
@@ -101,20 +102,12 @@ async function runVmRoot(
  * `/dev/sd<x>` node is the mount source.
  */
 async function mountEchoMini(): Promise<string> {
-  const findScript = [
-    'for sg in /sys/class/scsi_generic/sg*; do',
-    '  [ -e "$sg" ] || continue;',
-    '  usb=$(readlink -f "$sg/device/../../../..");',
-    '  [ -f "$usb/idVendor" ] || continue;',
-    '  vid=$(cat "$usb/idVendor");',
-    '  pid=$(cat "$usb/idProduct");',
-    '  if [ "$vid" = "071b" ] && [ "$pid" = "3203" ]; then',
-    '    blk=$(ls "$sg/device/block" 2>/dev/null | head -n1);',
-    '    if [ -n "$blk" ]; then echo "$blk"; exit 0; fi;',
-    '  fi;',
-    'done;',
-    'exit 1',
-  ].join(' ');
+  // Same walk `startDaemonForPersona` already waited on, driven by the
+  // persona rather than a second copy of its ids.
+  const findScript = buildScsiSdDiscoveryScript(
+    echoMini.usbDescriptor.vendorId,
+    echoMini.usbDescriptor.productId
+  );
   const find = await runVm(`sh -c ${sq(findScript)}`);
   if (find.exitCode !== 0 || !find.stdout.trim()) {
     throw new Error(

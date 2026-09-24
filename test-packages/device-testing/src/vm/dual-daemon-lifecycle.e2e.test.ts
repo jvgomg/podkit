@@ -28,8 +28,10 @@
  *   2. Each persona's configfs directory exists at
  *      `/sys/kernel/config/usb_gadget/podkit-<id>`.
  *   3. The kernel surfaces at least two more `/dev/sg*` nodes than the
- *      pre-test baseline (the boot disk has its own sg nodes; we count
- *      deltas, not absolutes).
+ *      pre-test baseline. The baseline is 0 on the current image — the boot
+ *      disk is virtio (`/dev/vda`) and contributes no sg node — but we count
+ *      deltas rather than absolutes so the assertion survives a leftover node
+ *      or an image whose boot disk is SCSI.
  *   4. `systemctl stop` removes both configfs trees and leaves no orphan
  *      gadget directory behind.
  *
@@ -199,8 +201,9 @@ describe('VM: dual-daemon lifecycle', () => {
 
         // 4. Both daemons drive a mass-storage LUN, so the kernel surfaces
         //    one extra /dev/sg* per running unit. Assert against the
-        //    pre-start baseline — the boot disk already contributes sg
-        //    nodes and the absolute count varies across VM images.
+        //    pre-start baseline rather than an absolute: it is 0 on this
+        //    image (virtio boot disk), but a leftover node or a SCSI boot
+        //    disk would make an absolute count wrong in either direction.
         //    Poll because dummy_hcd enumeration is asynchronous after UDC bind.
         const deadline = Date.now() + VM_WARM_TIMEOUT_MS;
         let current = baselineSgCount;

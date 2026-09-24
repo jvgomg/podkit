@@ -960,10 +960,13 @@ function makeEnumerationRunner(respond: (call: ScriptedCall) => SubprocessRunRes
 
 const isSystemctlStart = (c: ScriptedCall): boolean =>
   c.args.includes('systemctl') && c.args.includes('start');
-/** The sysfs walk that waits for the persona's vid:pid to appear. */
-const isUsbProbe = (c: ScriptedCall): boolean => c.args.some((a) => a.includes('idVendor'));
-/** The poll that waits for a SCSI generic node. */
-const isScsiProbe = (c: ScriptedCall): boolean => c.args.some((a) => a.includes('/dev/sg*'));
+// Both waits read idVendor, so they are told apart by the sysfs tree each
+// walks — the USB bus for the descriptor, the SCSI class for the disk.
+/** The sysfs walk that waits for the persona's vid:pid to appear on the bus. */
+const isUsbProbe = (c: ScriptedCall): boolean =>
+  c.args.some((a) => a.includes('/sys/bus/usb/devices'));
+/** The sysfs walk that waits for the persona's own disk to attach. */
+const isScsiProbe = (c: ScriptedCall): boolean => c.args.some((a) => a.includes('scsi_generic'));
 
 /** Mass-storage persona — gets both the USB and the SCSI wait. */
 const massStoragePersona = {
@@ -1081,14 +1084,16 @@ describe('startDaemonForPersona', () => {
     expect(calls.findIndex(isUsbProbe)).toBeGreaterThan(0);
   });
 
-  it('also waits for /dev/sg* when the persona carries a mass-storage backing file', async () => {
+  it("also waits for the persona's disk when it carries a mass-storage backing file", async () => {
     let scsiProbes = 0;
     const { runner, calls } = makeEnumerationRunner((c) => {
-      if (isUsbProbe(c)) return ok('MATCH\n');
+      // Order matters: the SCSI walk also reads idVendor, so test it first.
       if (isScsiProbe(c)) {
         scsiProbes += 1;
-        return scsiProbes < 2 ? ok('') : ok('/dev/sg0\n');
+        // The walk exits 1 until the persona's own disk is attached.
+        return scsiProbes < 2 ? fail(1, '') : ok('sdb\n');
       }
+      if (isUsbProbe(c)) return ok('MATCH\n');
       return undefined;
     });
 
@@ -1102,7 +1107,7 @@ describe('startDaemonForPersona', () => {
     expect(calls.findIndex(isScsiProbe)).toBeGreaterThan(calls.findIndex(isUsbProbe));
   });
 
-  it('skips the /dev/sg* wait for a persona with no mass-storage backing file', async () => {
+  it('skips the disk wait for a persona with no mass-storage backing file', async () => {
     // A pure-FunctionFS persona never produces a SCSI node; waiting for one
     // would time out every single time.
     const { runner, calls } = makeEnumerationRunner((c) =>
