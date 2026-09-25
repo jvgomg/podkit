@@ -1,6 +1,6 @@
 {
   "name": "@podkit/substrate",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "private": true,
   "description": "Provisioner-agnostic substrate layer for podkit's device tests: the typed VM registry, the provisioner discriminator, substrate selection, the substrate link, the pinned Debian image, and the target architecture artifacts are built for",
   "type": "module",
