@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-09-13 15:07'
-updated_date: '2026-09-24 23:39'
+updated_date: '2026-09-25 17:39'
 labels:
   - testing
   - vm
@@ -81,7 +81,7 @@ Two knock-ons to handle in the same change:
 - [x] #1 `waitForScsiGenericEnumeration` matches the persona's own sg node by walking `/sys/class/scsi_generic/sg*` to its owning USB device and comparing `idVendor`/`idProduct`, not `ls /dev/sg*`
 - [x] #2 The signature takes the whole `DevicePersona` (mirroring `waitForUsbEnumeration`) so the id is no longer error-message-only
 - [x] #3 A unit test with an injected `SubprocessRunner` pins that a foreign sg node does NOT satisfy the wait for a different persona
-- [ ] #4 Starting persona B while persona A is up is shown to block for B's own node (re-measure the ~1.5s window recorded in the description)
+- [x] #4 Starting persona B while persona A is up is shown to block for B's own node (re-measure the ~1.5s window recorded in the description)
 - [x] #5 The factually-wrong boot-disk rationale in `dual-daemon-lifecycle.e2e.test.ts`'s baseline comment is corrected; the baseline-delta approach itself is kept
 - [ ] #6 `bun run test:vm` stays green on the macOS harness host
 <!-- AC:END -->
@@ -106,6 +106,10 @@ The walk's four-level `device/../../../..` depth is the part that cannot be chec
 ## Not done here
 
 AC #4 and AC #6 need a live device substrate. This machine is an LXC container with no `/dev/kvm`, no `.env`, and `vm:status device` reports `missing`, so no device VM can be started. The new behaviour's timing is pinned only by fakes and a synthetic sysfs tree; the ~1.5s window has not been re-measured.
+
+## Correction to "Not done here"
+
+Written before the remote substrate was tried, and wrong about the environment: the harness config lives in `.env.local`, not `.env`, and `deviceRemote` was reachable all along. AC #4 is now measured (comment #2) and AC #6's suite was run against `deviceRemote` — 194 pass, 44 skip, 0 fail. Only AC #6's literal wording (the macOS harness host, i.e. a Lima substrate) remains unverified, and with it TASK-523 AC #4, "the Lima substrate is unaffected".
 <!-- SECTION:NOTES:END -->
 
 ## Comments
@@ -129,5 +133,31 @@ ipod-5g-modelnum-mismatch  ipod-nano-7g-space-gray    ipod-5g-stale-guid
 That is the better failure and it is what TASK-523 AC #2 asks for — a substrate that cannot expose a LUN should say so rather than fail nine tests downstream. But note the blast radius is slightly **wider** than nine. TASK-523's own comment records `ipod-video-5g-iflash-1tb` as a *passing* cell on that substrate, passing only because its suite asserts the USB descriptor and never looks for a disk. That persona has a backing file, so its setup hook will now time out. Any other backing-file persona in a descriptor-only suite is in the same position.
 
 No code change here: the new behaviour is the intended one. Flagging it so whoever picks up TASK-523 expects setup-hook timeouts rather than assertion failures, and does not read the changed failure shape as a regression from this task. On a substrate where LUNs do attach (Lima), nothing about the failure surface changes.
+---
+
+author: claude
+created: 2026-09-25 17:39
+---
+AC #4 measured on the **remote amd64 substrate** (`deviceRemote`), 2026-09-25. Not the Lima VM the description used, and the difference turns out to be the whole story.
+
+```
+baseline_sg_nodes=2                              <- NOT 0
+A (echo-mini)       blk=sdb  1790ms
+old_generic_wait_would_return_immediately_for_B=yes
+B (ipod-video-5g)   blk=sdc  1715ms
+both_up_sg_nodes=4
+after_stop_sg_nodes=2
+```
+
+B's own disk attaches 1715ms after its daemon starts, re-measuring the ~1.5s window. But `baseline_sg_nodes=2` is the finding that matters:
+
+```
+sg0 vendor=QEMU model=QEMU HARDDISK  block=sda
+sg1 vendor=QEMU model=QEMU DVD-ROM   block=sr0
+```
+
+This substrate boots off a **SCSI** disk, where the Lima VM boots off virtio (`/dev/vda`). So `ls /dev/sg*` was already non-empty before any persona started, and the old wait returned on its first poll **always — for every persona, including the first**. The description's "the wait is real when one persona is up" holds on Lima and is false here. On this substrate the old wait never waited at all, and `startDaemonForPersona` returned ~1.8s before any persona's disk existed.
+
+AC #6 is still unverified as literally worded: it names the macOS harness host, and I have no Lima device VM. What I can report is `bun run test:vm` against `deviceRemote`: **194 pass, 44 skip, 0 fail**.
 ---
 <!-- COMMENTS:END -->

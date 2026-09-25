@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-23 20:23'
-updated_date: '2026-09-24 01:12'
+updated_date: '2026-09-25 17:40'
 labels:
   - testing
   - infrastructure
@@ -60,9 +60,9 @@ Worth checking first, cheapest to most: whether the LUN is bound at all (`ls /sy
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The cause is identified as one of: gadget bind failure, enumeration timing, or a substrate-contract gap the doctor does not assert
+- [x] #1 The cause is identified as one of: gadget bind failure, enumeration timing, or a substrate-contract gap the doctor does not assert
 - [ ] #2 If it is a contract gap, substrate-doctor.sh asserts it — a substrate that cannot expose a LUN must fail its own doctor rather than fail nine tests
-- [ ] #3 All nine cells pass on the remote amd64 substrate, or each remaining one is skipped with a reason naming what the substrate lacks (ADR-028 §5)
+- [x] #3 All nine cells pass on the remote amd64 substrate, or each remaining one is skipped with a reason naming what the substrate lacks (ADR-028 §5)
 - [ ] #4 The Lima substrate is unaffected — the same suites still pass there
 <!-- AC:END -->
 
@@ -89,5 +89,35 @@ That separates the two halves cleanly on this substrate: the gadget **binds and 
 Two caveats on that reading, so nobody treats it as more than it is. I do not have a same-day Lima run of the same persona to compare against, so `needs-partition` here is measured, not contrasted — confirming that this persona reaches a further readiness level on Lima is still worth doing, and is cheap. And a passing cell showing the symptom means the nine failures are the *only* ones that assert on it, not the only ones exhibiting it; the blast radius is wider than the failure count suggests.
 
 AC #1's three candidates narrow accordingly: whatever the cause is, it lets the UDC bind succeed. Worth starting at `ls /sys/kernel/config/usb_gadget/*/functions/` and the `usb_f_mass_storage` LUN file on a live bind rather than at the daemon's own logs.
+---
+
+author: claude
+created: 2026-09-25 17:40
+---
+**Cause found, and it is enumeration timing — AC #1's second candidate.** Fixed as a side effect of TASK-509. Back-to-back A/B on this substrate, 2026-09-25, same box, same backing files, nothing else changed:
+
+| Commit | Result |
+|---|---|
+| `d6c87b5f` (before TASK-509) | **176 pass, 44 skip, 9 fail** |
+| `ea07558d` (after TASK-509) | **194 pass, 44 skip, 0 fail** |
+
+The nine failures at `d6c87b5f` are this task's table exactly — hfsplus-refusal ×2, device-add-no-verify ×2, doctor-output-contract (echo-mini), doctor-device-types (echo-mini), doctor-sysinfo-repair, doctor-sysinfo-modelnum-mismatch, pre-sync-sweep.
+
+**Why the description's conclusion was wrong.** It ruled out timing because `substrate-doctor.sh` passed and the backing files loop-mounted correctly on the box. Both true, and neither touches the actual defect, which was in the *host-side harness*, not the substrate. `startDaemonForPersona` waited for `/dev/sg*` to be non-empty — and this substrate boots off a **SCSI** disk:
+
+```
+sg0 vendor=QEMU model=QEMU HARDDISK  block=sda
+sg1 vendor=QEMU model=QEMU DVD-ROM   block=sr0
+```
+
+So `ls /dev/sg*` was already non-empty before any persona started. The wait returned on its first poll, every time, and the daemon start returned ~1.8s before the persona's disk attached. Every downstream `/dev/sd*` lookup then raced it and lost — which is precisely the reported symptom, `failed to find echo-mini /dev/sd* node` and `partition: No disk representation found`.
+
+The Lima VM where the harness was developed boots off virtio (`/dev/vda`), baseline 0, so the same wait accidentally worked there. That difference is the whole bug, and it is why this reproduced on the remote substrate and nowhere else.
+
+TASK-509 replaced the existence check with the persona's own `sg -> USB parent` walk, requiring the block device. Disk attach is measured at 1790ms (echo-mini) and 1715ms (ipod-video-5g); the wait now blocks for it.
+
+**AC #2 does not apply** — this was not a substrate-contract gap, and `substrate-doctor.sh` was right to pass. A doctor assertion would have been the wrong fix: the substrate could always expose a LUN, the harness just did not wait for it.
+
+**AC #4 is not verified.** "The Lima substrate is unaffected" needs a Lima device VM; this box is an LXC container with no `/dev/kvm`. The change is substrate-agnostic and the unit suites are green, but that is an argument, not a measurement — worth one `test:vm` run on the macOS harness host before closing.
 ---
 <!-- COMMENTS:END -->

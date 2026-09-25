@@ -61,7 +61,7 @@ The device-identification, doctor, and readiness pipelines are covered by three 
 
 ### Unit tests with injectable fakes
 
-Pure TypeScript tests. Always run on every host. No subprocesses, no VMs, no special permissions.
+Pure TypeScript tests. Always run on every host. No VMs, no special permissions, and nothing that has to be installed first — see the Unit row in [the taxonomy](../architecture/testing/taxonomy.md#2-depth) for why that, rather than "no subprocess", is the line.
 
 - Import `personas` and `systemStates` from `@podkit/device-testing` to get typed fixture objects.
 - Inject fakes through the `SubprocessRunner` seam (interface in `@podkit/device-types`; default implementation in `@podkit/core`; hand-rolled stubs returning canned stdout for unit tests).
@@ -600,7 +600,7 @@ and doc-039 §"Mass-storage sync gaps".
 
 | Test belongs in | When | Path |
 | --- | --- | --- |
-| `<workspace>/src/**/*.test.ts` | Pure unit test of library code. No subprocess, no fixtures bigger than a kilobyte. | The package's own `src/` tree. |
+| `<workspace>/src/**/*.test.ts` | Unit test of library code. No real system dep, no fixtures bigger than a kilobyte. May spawn a process where that is the only way to observe the unit ([taxonomy §2](../architecture/testing/taxonomy.md#2-depth)). | The package's own `src/` tree. |
 | `<workspace>/src/**/*.integration.test.ts` | Tests library code with real system deps (ffmpeg / gpod-tool / libgpod-node) but no CLI subprocess. | Same package. |
 | `<workspace>/src/**/*.perf.test.ts` | Performance benchmark. Generates synthetic load; assertion is a wall-clock or count threshold. | Same package. |
 | `@podkit/e2e-tests` (`*.test.ts`) | Spawns the built CLI subprocess. Dummy or real iPod target. No Docker, no Lima VM. | `test-packages/e2e-tests/` |

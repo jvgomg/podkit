@@ -38,7 +38,7 @@ produced the collisions this taxonomy retired.
 
 | Depth | What it exercises | Suffix / marker |
 |---|---|---|
-| **Unit** | Pure logic, all deps mocked. In-process, no subprocess, no device. | `*.test.ts` (bare) |
+| **Unit** | No real external dependency — no device, VM, substrate, network, or system tool. Heavyweight deps mocked. May spawn a process where that is the only way to observe the unit (see below). | `*.test.ts` (bare) |
 | **Integration** | Several real modules/deps in one process (ffmpeg, libgpod-node, real `entrypoint.sh` against stubs). No full binary, no device. | `*.integration.test.ts`, `*.bats` |
 | **E2E** | The built `podkit` **binary or Docker image** driven as a black box. | `*.e2e.test.ts` (+ Surface, see §3) |
 
@@ -47,6 +47,40 @@ produced the collisions this taxonomy retired.
 perf test is still a Unit or Integration test that happens to measure
 timing. See [docs/agents/testing.md](../../agents/testing.md) for the
 per-OS tagging convention.
+
+### What separates Unit from Integration is the dependency, not the process
+
+The line is **what a test needs installed to run**, because that is the
+question the Depth axis exists to answer ([§1](#1-the-two-axes)). A test
+that shells out to `ffmpeg`, `ffprobe`, `gpod-tool` or `libgpod-node` is
+Integration however it invokes them. A test that spawns `bun` to run a
+generated script against a synthetic fixture needs nothing that is not
+already present, and is Unit.
+
+Spawning a process is therefore **not** by itself disqualifying. Some
+artifacts are only observable out-of-process, and mocking the boundary
+would delete the property under test rather than isolate it:
+
+- a generated shell script or completion script — the script *is* the unit
+- process lifecycle (PID liveness, lock acquisition, signal handling)
+- import-time behaviour, such as asserting a module touches no filesystem
+  when it loads
+- a `sh` walk over a synthetic sysfs tree, where the risk is the walk's
+  path depth and no string assertion can check it
+
+This rule was previously written as "no subprocess", which the tree has
+never matched: the repo has always spawned processes from bare
+`*.test.ts` files for the reasons above. The wording, not the practice,
+was the error.
+
+Two known divergences are tracked rather than hidden. `@podkit/e2e-tests`
+keeps bare `*.test.ts` filenames for tests that are E2E by depth —
+[ADR-025](../../adr/adr-025-canonical-test-taxonomy.md) deferred that
+rename deliberately, as wide and mechanical with consistency as its only
+payoff. Separately, a small number of bare unit tests do reach for a real
+system tool and are Integration by this rule; re-suffixing them moves
+them between CI gates, so it is a change with consequences rather than a
+tidy-up (TASK-529).
 
 ---
 
