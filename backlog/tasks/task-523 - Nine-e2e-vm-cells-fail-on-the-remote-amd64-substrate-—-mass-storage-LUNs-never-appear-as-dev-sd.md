@@ -6,13 +6,14 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-23 20:23'
-updated_date: '2026-09-25 17:40'
+updated_date: '2026-09-25 17:46'
 labels:
   - testing
   - infrastructure
 milestone: m-20
 dependencies:
   - TASK-514
+  - TASK-509
 references:
   - docs/environments/device-substrate-proxmox.md
   - test-packages/device-testing/scripts/apply-state.sh
@@ -119,5 +120,19 @@ TASK-509 replaced the existence check with the persona's own `sg -> USB parent` 
 **AC #2 does not apply** — this was not a substrate-contract gap, and `substrate-doctor.sh` was right to pass. A doctor assertion would have been the wrong fix: the substrate could always expose a LUN, the harness just did not wait for it.
 
 **AC #4 is not verified.** "The Lima substrate is unaffected" needs a Lima device VM; this box is an LXC container with no `/dev/kvm`. The change is substrate-agnostic and the unit suites are green, but that is an argument, not a measurement — worth one `test:vm` run on the macOS harness host before closing.
+---
+
+author: claude
+created: 2026-09-25 17:46
+---
+Corroboration for AC #4, found in TASK-508's notes rather than by running anything. Its run 1 and run 3 on the **macOS Lima harness** (2026-09-13, pre-fix) both recorded:
+
+```
+e2e-vm-tests: 194 pass / 44 skip / 0 fail
+```
+
+That is cell-for-cell what this substrate produced after the fix (238 total either way). So the remote substrate has gone from 229 cells with nine failing to matching the Lima baseline exactly — which is the shape you would expect if the only difference between the two was a wait that happened to work on one boot-disk type.
+
+Treat it as corroboration, not as AC #4. It is a *pre-fix* Lima run twelve days old, so it shows the remote substrate now agrees with where Lima already was; it does not show that Lima is still there *after* the change. Only a post-fix `test:vm` on the macOS host does that, and the same run closes TASK-509 AC #6.
 ---
 <!-- COMMENTS:END -->

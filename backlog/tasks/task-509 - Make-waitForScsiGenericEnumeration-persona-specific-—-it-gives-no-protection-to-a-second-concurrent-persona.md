@@ -6,13 +6,14 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-09-13 15:07'
-updated_date: '2026-09-25 17:39'
+updated_date: '2026-09-25 17:46'
 labels:
   - testing
   - vm
   - concurrency
   - flakiness
-dependencies: []
+dependencies:
+  - TASK-508
 references:
   - test-packages/device-testing/src/runners/lima-enumeration.ts
   - test-packages/device-testing/src/vm/dual-daemon-lifecycle.e2e.test.ts
