@@ -3,10 +3,10 @@ id: TASK-523
 title: >-
   Nine e2e-vm cells fail on the remote amd64 substrate — mass-storage LUNs never
   appear as /dev/sd*
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-23 20:23'
-updated_date: '2026-09-25 19:28'
+updated_date: '2026-09-25 20:06'
 labels:
   - testing
   - infrastructure
@@ -64,7 +64,7 @@ Worth checking first, cheapest to most: whether the LUN is bound at all (`ls /sy
 - [x] #1 The cause is identified as one of: gadget bind failure, enumeration timing, or a substrate-contract gap the doctor does not assert
 - [x] #2 If it is a contract gap, substrate-doctor.sh asserts it — a substrate that cannot expose a LUN must fail its own doctor rather than fail nine tests
 - [x] #3 All nine cells pass on the remote amd64 substrate, or each remaining one is skipped with a reason naming what the substrate lacks (ADR-028 §5)
-- [ ] #4 The Lima substrate is unaffected — the same suites still pass there
+- [x] #4 The Lima substrate is unaffected — the same suites still pass there
 <!-- AC:END -->
 
 ## Comments
@@ -176,5 +176,24 @@ Related, and it cuts the same way: the fixture's substrate-disk chain was transc
 Neither correction changes AC #2's resolution, which rests on the doctor being unprivileged and non-mutating.
 
 **Status moved To Do → In Progress** — 3 of 4 ACs are checked and there are five comments of measured work on it; `To Do` was misreporting.
+---
+
+author: claude
+created: 2026-09-25 20:06
+---
+**AC #4 closed. `bun run test:vm` on the macOS Lima harness host (Mavis), post-fix, at `f2f13eb3`: 194 pass, 44 skip, 0 fail** — 238 tests across 22 files, 166s. Full detail in TASK-509 comment #5; the same run closes that task's AC #6, as comments #3 and #4 here predicted it would.
+
+"The Lima substrate is unaffected" now rests on a measurement instead of on the two arguments that stood in for one:
+
+- **Comment #3's corroboration was a twelve-day-old *pre-fix* Lima run.** It showed the remote substrate had caught up to where Lima already was. It could not show Lima was still there afterwards. It is now confirmed: 194/44/0 post-fix is identical to TASK-508's pre-fix 194/44/0, cell counts unchanged in both directions.
+- **Comment #5 withdrew the claim that unit tests would catch a Lima regression**, correctly — the fixture is transcribed from `deviceRemote`, so it can only catch regressions in our code. That residual risk is what this AC existed for, and it is now retired by running the suite rather than reasoning about it.
+
+Comment #5 also flagged that nobody had measured Lima's `/sys/class/scsi_generic` layout. Measured now: boot disk is `virtio_blk` (`vda`), no `sd*` or `sr*` at all, `baseline_sg_nodes=0`, and the class dir is **present and empty** — the exact inverse of this substrate's `sg0`=QEMU HARDDISK / `sg1`=QEMU DVD-ROM. Both ends of the boot-disk axis this bug lived on are measured. Lima's shape happens to be the empty-class-dir case `scsi-discovery.test.ts` already covered, which was a lucky guess until today.
+
+The nine cells from this task's table are confirmed **by name** on Lima, not inferred from a zero total — the run was captured whole rather than through `tail`, which is what comments #2–#4 could not do. Worth stating plainly what that adds and what it does not: it shows the nine were green on Lima all along and are still green after the fix. This substrate is where they were red; that A/B stands on comment #2.
+
+One property of the measurement, not of the change: `vm:doctor` failed first — the Lima VM's sealed baseline had drifted from the contract scripts that have landed since it was last provisioned. `harness:setup` re-applied and re-sealed (`fa7237c2195c`) before the run. So this is a VM freshly provisioned from HEAD's contract scripts, which is the stronger result but is not "an untouched Lima VM was green".
+
+No code changed to close this AC; working tree clean at `f2f13eb3`. All four ACs now answered — → Done.
 ---
 <!-- COMMENTS:END -->

@@ -3,10 +3,10 @@ id: TASK-509
 title: >-
   Make waitForScsiGenericEnumeration persona-specific — it gives no protection
   to a second concurrent persona
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-13 15:07'
-updated_date: '2026-09-25 19:28'
+updated_date: '2026-09-25 20:07'
 labels:
   - testing
   - vm
@@ -84,7 +84,7 @@ Two knock-ons to handle in the same change:
 - [x] #3 A unit test with an injected `SubprocessRunner` pins that a foreign sg node does NOT satisfy the wait for a different persona
 - [x] #4 Starting persona B while persona A is up is shown to block for B's own node (re-measure the ~1.5s window recorded in the description)
 - [x] #5 The factually-wrong boot-disk rationale in `dual-daemon-lifecycle.e2e.test.ts`'s baseline comment is corrected; the baseline-delta approach itself is kept
-- [ ] #6 `bun run test:vm` stays green on the macOS harness host
+- [x] #6 `bun run test:vm` stays green on the macOS harness host
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -111,6 +111,15 @@ AC #4 and AC #6 need a live device substrate. This machine is an LXC container w
 ## Correction to "Not done here"
 
 Written before the remote substrate was tried, and wrong about the environment: the harness config lives in `.env.local`, not `.env`, and `deviceRemote` was reachable all along. AC #4 is now measured (comment #2) and AC #6's suite was run against `deviceRemote` — 194 pass, 44 skip, 0 fail. Only AC #6's literal wording (the macOS harness host, i.e. a Lima substrate) remains unverified, and with it TASK-523 AC #4, "the Lima substrate is unaffected".
+
+## Both caveats above are now spent
+
+"Not done here" claimed AC #4 and AC #6 needed a substrate this machine lacked; the correction under it narrowed that to AC #6's literal wording. Both are closed:
+
+- **AC #4** — measured on `deviceRemote` (comment #2): B's own disk attaches 1715ms after its daemon starts, and that box's `baseline_sg_nodes=2` revealed the SCSI boot disk that made the old wait a no-op there.
+- **AC #6** — measured on the macOS Lima harness (comment #5): 194 pass, 44 skip, 0 fail at `f2f13eb3`, the nine TASK-523 cells confirmed by name. Lima is `virtio_blk`, `baseline_sg_nodes=0`, `/sys/class/scsi_generic` present and empty.
+
+Both ends of the boot-disk axis are measured. TASK-523 AC #4 closes on the same run.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
@@ -213,5 +222,38 @@ The original fixture omitted the driver node, so four `..` landed a level higher
 **3. Also from review, and actioned:** `FakeHostDisk`/`kind: 'host'` was ambiguous three ways (`host0` in these very paths, the macOS dev host, the substrate) — renamed `FakeSubstrateDisk`/`'substrate'`. The explanation of the defect was repeated in three places; it now lives in the doc and the module docstring only, not in the test body. The new paragraph in `vm-testing.md` was inserted mid-argument, orphaning the "This is not a convenience" paragraph from the wait it describes — moved below it.
 
 Re-verified after all of the above: 9/9 in the file, 404 pass / 1 skip / 0 fail for the package, `tsc` clean, `lint` clean.
+---
+
+author: claude
+created: 2026-09-25 20:06
+---
+**AC #6 closed — `bun run test:vm` on the macOS harness host (Mavis), post-fix, at `f2f13eb3`: 194 pass, 44 skip, 0 fail**, 238 tests across 22 files, 166s. This is the Lima virtio substrate that the previous four comments could only argue about.
+
+```
+PODKIT_SUBSTRATE=device bun run test:vm
+```
+
+The override is needed: this checkout's `.env.local` pins `PODKIT_SUBSTRATE=deviceRemote`, so an unqualified `test:vm` here measures the SCSI box again. Anyone reproducing this on a machine with both substrates configured must name `device` explicitly or they will re-run the side that was already green.
+
+**The nine cells are named this time, not inferred from a total.** Comments #2 and #3 were piped through `tail`, so only the totals survived; this run was captured whole. All nine of TASK-523's table pass by name: HFS+ refusal ×2, `device add --no-verify` ×2, doctor-output-contract (the five `Mass-storage device-bound doctor (echo-mini)` cells), doctor-device-types (echo-mini), doctor-sysinfo-repair (both `on-disk SIE truncated` cells), modelnum-mismatch, pre-sync-sweep SIGKILL round-trip. The two `--repair sysinfo-consistency` skips in that suite are the pre-existing `BLOCKED on daemon SCSI VPD 0xC0 scaffold` pair, unrelated to this change and skipped on both substrates.
+
+## The boot-disk axis, measured on both sides at last
+
+```
+lsblk           vda (20G), vdb — no sd*, no sr*
+root driver     virtio_blk
+baseline_sg_nodes=0
+/sys/class/scsi_generic   PRESENT, entries=0   (sg module loaded)
+```
+
+So Lima is the exact inverse of `deviceRemote`'s `sg0`=QEMU HARDDISK / `sg1`=QEMU DVD-ROM. Both ends of the axis the bug lived on are now measured rather than one measured and one assumed.
+
+This also closes a gap comment #5 of TASK-523 flagged honestly: *"Nobody has measured Lima's `/sys/class/scsi_generic` layout."* Now measured — the class dir is **present and empty**, which is precisely the case `scsi-discovery.test.ts` already models. The fixture was right about Lima by luck rather than by transcription; it is now confirmed by measurement. Worth noting it is present-and-empty, not absent: a glob over an absent dir would exercise a different path in the generated script, and it does not arise here.
+
+## One fact about the run itself
+
+`vm:doctor` failed first time — the sealed guest hash had drifted from the contract scripts on disk (`apply-state.sh`, `substrate-contract.sh`, `provision-substrate.sh`, `substrate-doctor.sh`, the YAML and the image pin have all moved since this VM was last sealed; `0c0a08ce`, `b96a6fdd`, `d6054c03` and others). Resolved with `harness:setup`, which re-applied provisioning and re-sealed at `fa7237c2195c`. So the green run is against a VM freshly provisioned from HEAD's contract scripts, not against the VM as it had been sitting. That is the stronger result, but it is a property of the measurement and should not be read as "an untouched Lima VM was green".
+
+No code changed for this AC. Working tree clean at `f2f13eb3`.
 ---
 <!-- COMMENTS:END -->
