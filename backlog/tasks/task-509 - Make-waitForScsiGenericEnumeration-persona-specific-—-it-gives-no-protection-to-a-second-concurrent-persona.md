@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-09-13 15:07'
-updated_date: '2026-09-25 17:46'
+updated_date: '2026-09-25 19:28'
 labels:
   - testing
   - vm
@@ -160,5 +160,58 @@ sg1 vendor=QEMU model=QEMU DVD-ROM   block=sr0
 This substrate boots off a **SCSI** disk, where the Lima VM boots off virtio (`/dev/vda`). So `ls /dev/sg*` was already non-empty before any persona started, and the old wait returned on its first poll **always — for every persona, including the first**. The description's "the wait is real when one persona is up" holds on Lima and is false here. On this substrate the old wait never waited at all, and `startDaemonForPersona` returned ~1.8s before any persona's disk existed.
 
 AC #6 is still unverified as literally worded: it names the macOS harness host, and I have no Lima device VM. What I can report is `bun run test:vm` against `deviceRemote`: **194 pass, 44 skip, 0 fail**.
+---
+
+author: claude
+created: 2026-09-25 19:15
+---
+**The substrate difference now has a unit test.** The fix was right, but nothing in the tree pinned the shape that actually caused it. `scsi-discovery.test.ts` covered *two personas bound* — it did not cover an sg node with **no USB parent at all**, which is what a SCSI boot disk is and the whole reason the old check behaved differently on the two substrates.
+
+Added to `scsi-discovery.test.ts`:
+
+- the fixture models a PCI-attached host disk alongside USB gadgets — `<devices>/pci0000:00/0000:00:05.0/host0/target0:0:N/0:0:N:0`, so four `..` lands on `pci0000:00`, a dir with no USB id files. Both host disks share `host0`, as the boot disk and optical drive do on `deviceRemote`. PCI ids are written on the function dir under their real names (`vendor`/`device`), so a walk stopping one level short still finds no `idVendor`.
+- **`is not satisfied by the substrate's own SCSI boot disk`** — `sg0`=sda + `sg1`=sr0 and nothing else: exit 1. This is TASK-523's root cause in one assertion.
+- **`finds the persona's disk past the boot disk that holds sg0`** — same two host disks plus the persona at `sg2`: returns `sdc`.
+
+**Checked that both cases bind.** Mutated `matchingScsiGenericWalk` to drop its id comparison (the old existence-check behaviour) and re-ran: 5 pass / 4 fail, both new cases among the failures. Source restored via `git checkout`; the mutation is not in the tree.
+
+This matters beyond regression cover: the walk's depth is the part a substrate change breaks, and until now the only *non*-USB parent in any fixture was absent entirely rather than present-and-foreign.
+
+## AC #6 — still not the Lima host, but re-measured at HEAD
+
+`bun run test:vm` against `deviceRemote` at `995da172` (this change in the working tree): **194 pass, 44 skip, 0 fail**, 238 tests across 22 files, 517s. Same cell-for-cell figure as comment #2's run and as TASK-508's pre-fix Lima runs.
+
+One honesty note on that capture: the command was piped through `tail -60`, so only the totals survived — I cannot name the individual cells from *this* run the way comment #2's A/B did. `0 fail` necessarily includes the nine, but the per-cell confirmation stands on the earlier run, not this one.
+
+AC #6 as literally worded (macOS harness host, i.e. a virtio-boot Lima substrate) remains open. That is not pedantry here: virtio-vs-SCSI boot is precisely the axis this bug lived on, so a green run on the SCSI substrate re-confirms the side that was broken and says nothing new about the side that accidentally worked.
+
+Also updated: the `scsi-discovery.ts` module docstring, which gave only the weaker two-persona reason for rejecting `ls /dev/sg*`, and a new paragraph in `docs/architecture/testing/vm-testing.md` — *a wait must not assume anything about the substrate's own hardware* — recording both boot-disk types and why the waits take a whole `DevicePersona`.
+---
+
+author: claude
+created: 2026-09-25 19:28
+---
+Corrections to comment #3, from review. Two were wrong as written and one was a real fixture defect, now fixed.
+
+**1. The mutation was misdescribed.** Comment #3 says "mutated `matchingScsiGenericWalk` to drop its id comparison". The figures (5 pass / 4 fail) are real, but the mutation also neutered the `[ -f "$usb/idVendor" ] || continue` guard on the line above. Dropping the comparison *alone* gives 7 pass / 2 fail and **neither new case fails** — the guard still rejects a substrate disk on its own. So the new cases are pinned by the guard, and the pre-existing foreign-gadget cases by the comparison; the two halves of the walk are covered by different tests, which is worth knowing and is not what comment #3 implied.
+
+**2. The fixture's depth was not substrate-faithful — measured and fixed.** Comment #3 claimed the fixture models the real shape, and that both substrate disks share `host0`. Both false. Probed `deviceRemote` directly:
+
+```
+SG=sg0 BLK=sda
+  leaf=/sys/devices/pci0000:00/0000:00:05.0/0000:01:01.0/virtio3/host2/target2:0:0/2:0:0:0
+  up4=/sys/devices/pci0000:00/0000:00:05.0/0000:01:01.0   up4_has_idVendor=no
+SG=sg1 BLK=sr0
+  leaf=/sys/devices/pci0000:00/0000:00:01.1/ata2/host1/target1:0:0/1:0:0:0
+  up4=/sys/devices/pci0000:00/0000:00:01.1                up4_has_idVendor=no
+```
+
+There is a **controller driver node** (`virtio3`, `ata2`) between the PCI function and the SCSI host, and the two disks are on *different* controllers and different hosts — virtio-scsi behind a PCI bridge for the boot disk, the SATA controller for the optical drive. Because of the driver node, four `..` lands on the PCI *function* dir, not on `pci0000:00`.
+
+The original fixture omitted the driver node, so four `..` landed a level higher. Same verdict either way (no `idVendor`), so the assertions held — but it meant the substrate cases were not exercising the real walk depth, which is the one property the module docstring says a substrate change breaks. The fixture now carries the measured chain as `SUBSTRATE_DISKS`, transcribed rather than invented, and the PCI `vendor`/`device` files sit on the dir the walk actually inspects — so "PCI ids are never `idVendor`" is now the real mechanism under test rather than incidental.
+
+**3. Also from review, and actioned:** `FakeHostDisk`/`kind: 'host'` was ambiguous three ways (`host0` in these very paths, the macOS dev host, the substrate) — renamed `FakeSubstrateDisk`/`'substrate'`. The explanation of the defect was repeated in three places; it now lives in the doc and the module docstring only, not in the test body. The new paragraph in `vm-testing.md` was inserted mid-argument, orphaning the "This is not a convenience" paragraph from the wait it describes — moved below it.
+
+Re-verified after all of the above: 9/9 in the file, 404 pass / 1 skip / 0 fail for the package, `tsc` clean, `lint` clean.
 ---
 <!-- COMMENTS:END -->

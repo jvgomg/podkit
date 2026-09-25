@@ -3,10 +3,10 @@ id: TASK-523
 title: >-
   Nine e2e-vm cells fail on the remote amd64 substrate — mass-storage LUNs never
   appear as /dev/sd*
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-09-23 20:23'
-updated_date: '2026-09-25 17:46'
+updated_date: '2026-09-25 19:28'
 labels:
   - testing
   - infrastructure
@@ -62,7 +62,7 @@ Worth checking first, cheapest to most: whether the LUN is bound at all (`ls /sy
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 The cause is identified as one of: gadget bind failure, enumeration timing, or a substrate-contract gap the doctor does not assert
-- [ ] #2 If it is a contract gap, substrate-doctor.sh asserts it — a substrate that cannot expose a LUN must fail its own doctor rather than fail nine tests
+- [x] #2 If it is a contract gap, substrate-doctor.sh asserts it — a substrate that cannot expose a LUN must fail its own doctor rather than fail nine tests
 - [x] #3 All nine cells pass on the remote amd64 substrate, or each remaining one is skipped with a reason naming what the substrate lacks (ADR-028 §5)
 - [ ] #4 The Lima substrate is unaffected — the same suites still pass there
 <!-- AC:END -->
@@ -134,5 +134,47 @@ e2e-vm-tests: 194 pass / 44 skip / 0 fail
 That is cell-for-cell what this substrate produced after the fix (238 total either way). So the remote substrate has gone from 229 cells with nine failing to matching the Lima baseline exactly — which is the shape you would expect if the only difference between the two was a wait that happened to work on one boot-disk type.
 
 Treat it as corroboration, not as AC #4. It is a *pre-fix* Lima run twelve days old, so it shows the remote substrate now agrees with where Lima already was; it does not show that Lima is still there *after* the change. Only a post-fix `test:vm` on the macOS host does that, and the same run closes TASK-509 AC #6.
+---
+
+author: claude
+created: 2026-09-25 19:15
+---
+**AC #2 resolved — checked as not-applicable, and for a structural reason rather than just "the conditional is false".**
+
+Comment #2 established the cause was harness-side, so the `if it is a contract gap` premise fails. But the clause after the dash states a general principle worth answering on its own terms: *a substrate that cannot expose a LUN must fail its own doctor rather than fail nine tests.*
+
+`substrate-doctor.sh` cannot be where that lives. Its own contract, stated at the top of the file:
+
+> Runs unprivileged. It inspects and never mutates — a doctor that fixes what it finds cannot tell you whether provisioning worked.
+
+Proving a LUN attaches means binding a gadget: writing configfs, claiming a UDC, waiting for the kernel to attach a disk. That is privileged and mutating, and it is a *dynamic* property — nothing static about the box establishes it. What the doctor does assert is the full static capability that makes a LUN possible, and it asserts it well: the five kernel modules, `udc slots: N >= SUBSTRATE_UDC_COUNT` (the count, not merely `dummy_hcd`'s presence, precisely because `num=1` loads cleanly then fails the first two-daemon test), configfs mounted *and* surviving a reboot, plus the negative toolchain assertions. It passed 24/24 and was right to.
+
+The principle is now satisfied one layer up, where the bind actually happens: `startDaemonForPersona` waits per-persona for that persona's own disk and, when it does not attach, fails in the setup hook naming the persona, its `vid:pid`, the daemon journal and the UDC slot budget. A substrate that cannot expose a LUN therefore says so once, at the first persona that needs one — not nine assertion failures downstream. That is the right layer: the doctor answers "could this box do it", the wait answers "did it, for this gadget, now".
+
+So AC #2 is checked as answered rather than left open pending a doctor change that would contradict the doctor's purpose.
+
+## AC #4 still open, and it is the one that matters
+
+Re-ran `bun run test:vm` against `deviceRemote` at HEAD (`995da172`): **194 pass, 44 skip, 0 fail** — so the fix holds at HEAD, not only at `ea07558d`. Totals only; the run was piped through `tail -60` so per-cell names did not survive the capture.
+
+That still says nothing about Lima, and the gap is not a formality: virtio-vs-SCSI boot *is* the axis the bug lived on. A green SCSI-substrate run re-confirms the side that was broken. AC #4 asks about the side that accidentally worked, and only a post-fix `test:vm` on the macOS host answers it. The same run closes TASK-509 AC #6.
+
+What has changed in the meantime is that the substrate difference is now pinned by unit tests rather than by argument — two new cases in `scsi-discovery.test.ts` model a PCI-attached host disk holding `sg0`/`sg1` and assert it neither satisfies a persona's wait nor hides the persona's own disk (TASK-509 comment #3). Those run on any host, including a macOS one, so a Lima regression of this specific kind would now fail at unit level too.
+---
+
+author: claude
+created: 2026-09-25 19:28
+---
+Two corrections to comment #4, both flagged in review as overclaims. They are.
+
+**1. "a Lima regression of this specific kind would now fail at unit level too" — too strong.** The new cases run against a *transcribed* sysfs tree, so they can only catch a regression in **our code** — someone reverting the walk to an existence check, or breaking its depth. They cannot catch a Lima sysfs or timing divergence, because the tree is a fixture and not a measurement of Lima. That residual risk is exactly what AC #4 exists for, so the sentence was arguing the AC away rather than supporting it. Withdrawn.
+
+Related, and it cuts the same way: the fixture's substrate-disk chain was transcribed from `deviceRemote` (TASK-509 comment #4), so it is faithful to *that* box. Nobody has measured Lima's `/sys/class/scsi_generic` layout, and a virtio-blk boot disk contributes no sg node at all — so on Lima the interesting case is the *absence* the fixture models as an empty class dir, which was already covered.
+
+**2. "says so once, at the first persona that needs one" — wrong unit.** The wait runs per setup hook, not once per suite run. A substrate that cannot expose a LUN produces a setup-hook failure in every suite that mounts a mass-storage persona — on the evidence of this task's own table, at least seven. The claim that holds is narrower and still worth something: each failure names the persona, its `vid:pid`, the daemon journal and the UDC budget *at the point the disk did not attach*, instead of surfacing as a downstream assertion about readiness level or a missing `/dev/sd*` node. Better diagnosis, not fewer failures.
+
+Neither correction changes AC #2's resolution, which rests on the doctor being unprivileged and non-mutating.
+
+**Status moved To Do → In Progress** — 3 of 4 ACs are checked and there are five comments of measured work on it; `To Do` was misreporting.
 ---
 <!-- COMMENTS:END -->

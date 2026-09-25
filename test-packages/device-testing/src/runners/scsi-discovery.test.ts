@@ -2,10 +2,11 @@
  * Behavioural tests for the persona SCSI-discovery script builders.
  *
  * These scripts decide which `/dev/sd<x>` belongs to which persona, and they
- * are the only thing standing between a two-persona substrate and a test that
- * mounts the wrong disk. Asserting on the generated string would pin the
- * wrong property — the risk is not the text, it is whether the four-level
- * `device/../../../..` walk actually lands on the USB device dir.
+ * are the only thing standing between a test and a disk that is not the one it
+ * asked for — another persona's, or the substrate's own. Asserting on the
+ * generated string would pin the wrong property: the risk is not the text, it
+ * is whether the four-level `device/../../../..` walk actually lands on the
+ * USB device dir.
  *
  * So each case builds a synthetic sysfs tree with the real shape (class entry
  * → scsi leaf → target → host → USB interface → USB device) and runs the
@@ -25,7 +26,12 @@ import { buildScsiSdDiscoveryScript, buildDeviceNodeDiscoveryScript } from './sc
 // Synthetic sysfs
 // ---------------------------------------------------------------------------
 
-interface FakeDevice {
+/**
+ * A persona's mass-storage gadget, reached over USB. The `kind` tag is what
+ * lets the union below narrow; nothing sets it.
+ */
+interface FakeGadget {
+  kind?: 'usb';
   /** Class entry name, e.g. `sg0`. */
   sg: string;
   vendorId: number;
@@ -36,18 +42,51 @@ interface FakeDevice {
   devnum?: number;
 }
 
+/**
+ * A SCSI disk belonging to the substrate itself, behind a PCI controller rather
+ * than USB. Any substrate that does not boot off virtio has these from boot,
+ * holding `sg0` and up before a persona exists — the case the walk has to
+ * survive.
+ *
+ * Not named for the SCSI `host<N>` in these paths, nor for the dev host: this
+ * is the box the tests run against.
+ */
+interface FakeSubstrateDisk {
+  kind: 'substrate';
+  /** Class entry name, e.g. `sg0`. */
+  sg: string;
+  /** Block device, e.g. `sda` or `sr0`. */
+  block: string;
+  /** Path segments under `/sys/devices` down to the PCI function. */
+  fn: readonly string[];
+  /** The controller's driver node between the function and the SCSI host. */
+  driver: string;
+  /** SCSI host number — distinct per controller. */
+  host: number;
+}
+
+type FakeDevice = FakeGadget | FakeSubstrateDisk;
+
 let root: string;
 let classDir: string;
 let treeCount = 0;
 
 /**
  * Materialise `devices` under a fresh temp root, mirroring the sysfs layout
- * the walk depends on:
+ * the walk depends on. A USB gadget:
  *
  *   <class>/sg0/device -> <devices>/usb1/<port>/<port>:1.0/host0/target0:0:0/0:0:0:0
  *
  * Four `..` from that leaf is `<devices>/usb1/<port>`, the USB device dir that
- * carries idVendor/idProduct.
+ * carries idVendor/idProduct. A substrate disk sits behind a PCI controller
+ * instead:
+ *
+ *   <class>/sg0/device -> <devices>/<fn>/<driver>/host<N>/target<N>:0:0/<N>:0:0:0
+ *
+ * where four `..` lands on the PCI function dir — which carries `vendor` and
+ * `device`, never `idVendor`. The driver node (`virtio3`, `ata2`) is what keeps
+ * the depth the same as the USB case; omitting it would land a level higher and
+ * stop exercising the real depth. See {@link SUBSTRATE_DISKS}.
  */
 async function buildSysfs(devices: readonly FakeDevice[]): Promise<void> {
   // Each case gets its own tree — sysfs is global, the fixture must not be.
@@ -56,26 +95,47 @@ async function buildSysfs(devices: readonly FakeDevice[]): Promise<void> {
   await mkdir(classDir, { recursive: true });
 
   for (const [index, device] of devices.entries()) {
-    const port = `1-${index + 1}`;
-    const usbDir = join(tree, 'devices', 'usb1', port);
-    const leaf = join(usbDir, `${port}:1.0`, 'host0', 'target0:0:0', '0:0:0:0');
-    await mkdir(leaf, { recursive: true });
-
-    const hex = (v: number) => v.toString(16).padStart(4, '0');
-    await writeFile(join(usbDir, 'idVendor'), `${hex(device.vendorId)}\n`);
-    await writeFile(join(usbDir, 'idProduct'), `${hex(device.productId)}\n`);
-    if (device.busnum !== undefined) {
-      await writeFile(join(usbDir, 'busnum'), `${device.busnum}\n`);
-    }
-    if (device.devnum !== undefined) {
-      await writeFile(join(usbDir, 'devnum'), `${device.devnum}\n`);
-    }
-    if (device.block) await mkdir(join(leaf, 'block', device.block), { recursive: true });
+    const leaf =
+      device.kind === 'substrate'
+        ? await buildSubstrateDisk(tree, device)
+        : await buildGadget(tree, device, index);
 
     const sgDir = join(classDir, device.sg);
     await mkdir(sgDir, { recursive: true });
     await symlink(leaf, join(sgDir, 'device'));
   }
+}
+
+/** Materialise one USB gadget and return its SCSI leaf dir. */
+async function buildGadget(tree: string, device: FakeGadget, index: number): Promise<string> {
+  const port = `1-${index + 1}`;
+  const usbDir = join(tree, 'devices', 'usb1', port);
+  const leaf = join(usbDir, `${port}:1.0`, 'host0', 'target0:0:0', '0:0:0:0');
+  await mkdir(leaf, { recursive: true });
+
+  const hex = (v: number) => v.toString(16).padStart(4, '0');
+  await writeFile(join(usbDir, 'idVendor'), `${hex(device.vendorId)}\n`);
+  await writeFile(join(usbDir, 'idProduct'), `${hex(device.productId)}\n`);
+  if (device.busnum !== undefined) {
+    await writeFile(join(usbDir, 'busnum'), `${device.busnum}\n`);
+  }
+  if (device.devnum !== undefined) {
+    await writeFile(join(usbDir, 'devnum'), `${device.devnum}\n`);
+  }
+  if (device.block) await mkdir(join(leaf, 'block', device.block), { recursive: true });
+  return leaf;
+}
+
+/** Materialise one PCI-attached substrate disk and return its SCSI leaf dir. */
+async function buildSubstrateDisk(tree: string, device: FakeSubstrateDisk): Promise<string> {
+  const fnDir = join(tree, 'devices', ...device.fn);
+  const host = `host${device.host}`;
+  const leaf = join(fnDir, device.driver, host, `target${device.host}:0:0`, `${device.host}:0:0:0`);
+  await mkdir(join(leaf, 'block', device.block), { recursive: true });
+  // Four `..` from the leaf lands here, so this is the dir the walk inspects.
+  await writeFile(join(fnDir, 'vendor'), '0x1af4\n');
+  await writeFile(join(fnDir, 'device'), '0x1001\n');
+  return leaf;
 }
 
 /** Run a generated script through a real `sh`, as the substrate link does. */
@@ -88,6 +148,31 @@ async function runScript(script: string): Promise<{ exitCode: number; stdout: st
 
 const ECHO_MINI = { vendorId: 0x071b, productId: 0x3203 };
 const IPOD_VIDEO = { vendorId: 0x05ac, productId: 0x1209 };
+
+/**
+ * The substrate's own SCSI nodes, transcribed from the remote amd64 substrate
+ * rather than invented: its boot disk is virtio-scsi behind a PCI bridge and
+ * its optical drive is on the SATA controller, so they sit on separate hosts.
+ * A substrate booting off virtio-blk contributes neither.
+ */
+const SUBSTRATE_DISKS = {
+  bootDisk: {
+    kind: 'substrate',
+    sg: 'sg0',
+    block: 'sda',
+    fn: ['pci0000:00', '0000:00:05.0', '0000:01:01.0'],
+    driver: 'virtio3',
+    host: 2,
+  },
+  opticalDrive: {
+    kind: 'substrate',
+    sg: 'sg1',
+    block: 'sr0',
+    fn: ['pci0000:00', '0000:00:01.1'],
+    driver: 'ata2',
+    host: 1,
+  },
+} as const satisfies Record<string, FakeSubstrateDisk>;
 
 beforeAll(async () => {
   root = await mkdtemp(join(tmpdir(), 'podkit-scsi-discovery-'));
@@ -141,6 +226,29 @@ describe('buildScsiSdDiscoveryScript', () => {
       buildScsiSdDiscoveryScript(ECHO_MINI.vendorId, ECHO_MINI.productId, classDir)
     );
     expect(result.exitCode).toBe(1);
+  });
+
+  it("is not satisfied by the substrate's own SCSI boot disk", async () => {
+    // Nothing here belongs to the persona.
+    await buildSysfs([SUBSTRATE_DISKS.bootDisk, SUBSTRATE_DISKS.opticalDrive]);
+    const result = await runScript(
+      buildScsiSdDiscoveryScript(ECHO_MINI.vendorId, ECHO_MINI.productId, classDir)
+    );
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout.trim()).toBe('');
+  });
+
+  it("finds the persona's disk past the boot disk that holds sg0", async () => {
+    await buildSysfs([
+      SUBSTRATE_DISKS.bootDisk,
+      SUBSTRATE_DISKS.opticalDrive,
+      { sg: 'sg2', ...ECHO_MINI, block: 'sdc' },
+    ]);
+    const result = await runScript(
+      buildScsiSdDiscoveryScript(ECHO_MINI.vendorId, ECHO_MINI.productId, classDir)
+    );
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout.trim()).toBe('sdc');
   });
 
   it('exits 1 on an empty class dir rather than globbing its own pattern', async () => {

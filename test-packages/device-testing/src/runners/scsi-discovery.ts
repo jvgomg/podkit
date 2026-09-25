@@ -6,7 +6,9 @@
  * this persona's? — and the only reliable answer walks
  * `/sys/class/scsi_generic/sg*` up to the owning USB device and compares
  * `idVendor`/`idProduct`. `ls /dev/sg*` cannot answer it: with two personas
- * bound, the first node is whichever gadget enumerated first.
+ * bound, the first node is whichever gadget enumerated first — and on a
+ * substrate that boots off SCSI rather than virtio, nodes exist before any
+ * persona starts at all, so an existence check is true from boot.
  *
  * The walk is four levels up from the SCSI leaf
  * (`…/1-1/1-1:1.0/host0/target0:0:0/0:0:0:0` → `…/1-1`), which is why the

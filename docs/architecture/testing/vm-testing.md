@@ -229,6 +229,18 @@ slot budget attached, so a genuine synthesis failure still surfaces as
 itself. The waits live in
 `test-packages/device-testing/src/runners/lima-enumeration.ts`.
 
+**A wait must not assume anything about the substrate's own hardware.**
+The existence check above did, and that is what made it fail on one
+substrate and not another: Lima boots off virtio (`/dev/vda`, no sg
+node), so `ls /dev/sg*` was empty until a persona appeared and the
+check accidentally worked. The remote Proxmox substrate boots off SCSI,
+where `sg0`/`sg1` are the boot disk and optical drive — the check was
+true from boot, for every persona including the first, and the daemon
+start returned ~1.8s before any disk attached. Nine e2e-vm cells failed
+there and nowhere else (TASK-523). Anything a wait matches on must come
+from the persona, which is why both waits take the whole
+`DevicePersona` rather than an id.
+
 ### `runJsonCommand(runtime, command, timeoutMs)`
 
 CLI-invocation helper (`persona-fixture.ts:206`). Parses stdout as
