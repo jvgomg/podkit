@@ -20,7 +20,13 @@
  * @module
  */
 
-import { isLimaVm, type VmDefinition } from '@podkit/substrate';
+import {
+  baselineDisagreement,
+  isLimaVm,
+  isSshVm,
+  resolvePveLifecycle,
+  type VmDefinition,
+} from '@podkit/substrate';
 
 import { instanceStatus } from '../src/runners/lima-test-vm.js';
 import { createSubstrateLink, resolveDeviceSubstrate } from '../src/runners/substrate.js';
@@ -37,6 +43,33 @@ import {
  * merely-drifted box. Recreating is for a wedged one — and on a Proxmox guest
  * that is a single verb, which is most of why the API lifecycle exists.
  */
+/**
+ * Say so when the provisioning snapshot claims a different seal from the one
+ * on the disk. The disk is what this command verifies, so this never changes
+ * the verdict — but `vm:recover` chooses on the snapshot, and a reader should
+ * not learn that the two differ from a recover that did something unexpected.
+ */
+async function reportSnapshotDisagreement(substrate: VmDefinition, vmHash: string): Promise<void> {
+  if (!isSshVm(substrate)) return;
+  const resolved = resolvePveLifecycle(substrate);
+  if (!resolved.available) return;
+  try {
+    const snapshots = await resolved.binding.client.listSnapshots(resolved.binding.vmid);
+    const disagreement = baselineDisagreement(snapshots, vmHash);
+    if (disagreement) {
+      process.stderr.write(
+        `[vm:doctor] note: ${disagreement}. \`vm:recover\` would choose on the snapshot; ` +
+          `\`bun run harness:seal\` retakes it from this disk.\n`
+      );
+    }
+  } catch (err) {
+    process.stderr.write(
+      `[vm:doctor] note: could not read the provisioning snapshot to compare with ` +
+        `(${err instanceof Error ? err.message : String(err)}).\n`
+    );
+  }
+}
+
 function remediation(substrate: VmDefinition, reason: string): string {
   const reapply = isLimaVm(substrate)
     ? '  bun run harness:setup'
@@ -47,9 +80,9 @@ function remediation(substrate: VmDefinition, reason: string): string {
     : [
         `  bun run vm:recover ${substrate.id}`,
         '',
-        'That rolls back to the provisioning snapshot when the committed inputs still',
-        'match, and recreates the guest when they do not — which is this case, so',
-        'expect a recreate. Re-apply the contract and re-seal afterwards.',
+        'That rolls back to the provisioning snapshot when the hash it records still',
+        'matches the committed inputs, and recreates the guest when it does not. After',
+        'a recreate, re-apply the contract and re-seal.',
       ];
   return [
     `[vm:doctor] ${reason}`,
@@ -124,6 +157,7 @@ async function main(): Promise<number> {
   }
 
   const vmHash = probe.stdout.trim();
+  await reportSnapshotDisagreement(substrate, vmHash);
 
   if (!vmHash) {
     process.stderr.write(

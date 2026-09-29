@@ -38,8 +38,11 @@ import {
   QM_VERB_FOR_CLI_VERB,
   readRemoteLockHolder,
   resolvePveLifecycle,
+  baselineDisagreement,
+  isBaselineHash,
   isSubstrateLinkError,
   isSubstrateNotReadyError,
+  snapshotHashVerdict,
   waitForSubstrateReady,
   type PveBinding,
   type RecoveryStrategy,
@@ -248,7 +251,7 @@ export async function runSshSubstrateVerb(
       return 0;
 
     case 'stop': {
-      const after = await pveStop(binding, { force: args.includes('--force') });
+      const after = await pveStop(binding, { force: args.includes('--force'), report });
       io.log(`[podkit-vm] \`${def.id}\` (VMID ${binding.vmid}) is ${after}.`);
       return 0;
     }
@@ -257,9 +260,7 @@ export async function runSshSubstrateVerb(
       return cmdDestroy(binding, args, io, report);
 
     case 'snapshot':
-      await pveSealSnapshot(binding, 'podkit: substrate contract applied');
-      io.log(`[podkit-vm] sealed snapshot '${POST_PROVISION_SNAPSHOT}' on VMID ${binding.vmid}.`);
-      return 0;
+      return cmdSnapshot(binding, linkFor(def), io);
 
     case 'recover':
       return cmdRecover(binding, args, linkFor(def), io, report);
@@ -375,28 +376,85 @@ async function cmdDestroy(
 }
 
 /**
- * Establish what the guest was sealed with, or say why that was not possible.
+ * Take the provisioning snapshot, recording whatever the guest's own seal says.
  *
- * The status read comes FIRST and over the API, which answers for a stopped
- * guest. Reaching for the link before knowing the guest is up measures the
- * power state and reports it as a fact about the disk — and `recreate` is
- * downstream.
+ * `harness:seal` is the command that seals and snapshots as one moment; this
+ * verb snapshots a disk sealed by something else, so the claim it can honestly
+ * write is the one on that disk — or none.
+ */
+async function cmdSnapshot(
+  binding: PveBinding,
+  link: SubstrateLink,
+  io: SshCliIo
+): Promise<number> {
+  const sealed = await readSealedHash(link);
+  const baselineHash = sealed.read && isBaselineHash(sealed.hash) ? sealed.hash : null;
+  if (baselineHash === null) {
+    const why = !sealed.read
+      ? `its seal could not be read (${sealed.detail})`
+      : sealed.hash
+        ? `${BASELINE_VM_HASH_PATH} does not hold a full hash`
+        : `nothing is sealed at ${BASELINE_VM_HASH_PATH}`;
+    io.errorLog(
+      `[podkit-vm] snapshotting VMID ${binding.vmid} without a baseline hash: ${why}. ` +
+        '`vm:recover` will have nothing to compare it with — `bun run harness:seal` seals and ' +
+        'snapshots together.'
+    );
+  }
+  await pveSealSnapshot(binding, { baselineHash });
+  io.log(`[podkit-vm] sealed snapshot '${POST_PROVISION_SNAPSHOT}' on VMID ${binding.vmid}.`);
+  return 0;
+}
+
+/**
+ * Establish what the restore point was sealed with, or say why that was not
+ * possible.
+ *
+ * The provisioning snapshot's claim comes first: it is read over the API, so
+ * it answers for a stopped or paused guest, and it describes exactly what a
+ * rollback would restore. The in-guest seal is the fallback where the snapshot
+ * claims nothing — and, where both can be read, a check on the claim: if they
+ * disagree something was rolled back or re-sealed by hand, and that is
+ * reported rather than settled quietly.
+ *
+ * The status read comes before any reach for the link. Asking a guest that is
+ * not running measures the power state and reports it as a fact about the
+ * disk — and `recreate` is downstream.
  */
 async function establishTemplateHash(
   binding: PveBinding,
   link: SubstrateLink,
-  expected: string | undefined
+  expected: string | undefined,
+  report: (message: string) => void
 ): Promise<TemplateHashVerdict> {
   const status = await pveStatus(binding);
+  const snapshots = status === 'missing' ? [] : await binding.client.listSnapshots(binding.vmid);
+  const fromSnapshot = snapshotHashVerdict(snapshots, expected);
+
   if (status !== 'running') {
+    if (fromSnapshot.verdict !== 'unknown') return fromSnapshot;
     return {
       verdict: 'unknown',
       because:
-        `VMID ${binding.vmid} is ${status}, and its sealed hash could not be read over ` +
-        link.description,
+        `VMID ${binding.vmid} is ${status}, its sealed hash could not be read over ` +
+        `${link.description}, and ${fromSnapshot.because}`,
     };
   }
-  return templateHashVerdict(await readSealedHash(link), expected);
+
+  const sealed = await readSealedHash(link);
+  const disagreement = sealed.read ? baselineDisagreement(snapshots, sealed.hash) : null;
+  if (disagreement) {
+    report(
+      `${disagreement}. Choosing on the snapshot, since that is what a rollback restores; ` +
+        '`bun run vm:doctor` judges the disk.'
+    );
+  }
+  if (fromSnapshot.verdict !== 'unknown') return fromSnapshot;
+  const fromGuest = templateHashVerdict(sealed, expected);
+  if (fromGuest.verdict === 'unknown') {
+    return { verdict: 'unknown', because: `${fromGuest.because}, and ${fromSnapshot.because}` };
+  }
+  return fromGuest;
 }
 
 async function cmdRecover(
@@ -416,7 +474,7 @@ async function cmdRecover(
   // itself is what the strategy is chosen on.
   const verdict: TemplateHashVerdict = args.includes('--recreate')
     ? { verdict: 'not-sought', because: 'the operator asked for a rebuild with --recreate' }
-    : await establishTemplateHash(binding, link, expected);
+    : await establishTemplateHash(binding, link, expected, report);
 
   // The hook THROWS, so nothing downstream of it runs against a guest that
   // never answered. The strategy is captured on the way past because the two

@@ -8,11 +8,15 @@ import {
   pveEnsureRunning,
   pveRecover,
   pveSealSnapshot,
+  PveBaselineHashFormatError,
   PveCreateFailedError,
+  PveGuestStateError,
   PveStartTimeoutError,
   pveStop,
   qmContextFor,
   resolvePveLifecycle,
+  baselineDisagreement,
+  snapshotHashVerdict,
   type PveBinding,
   type TemplateHashVerdict,
 } from './lifecycle.js';
@@ -20,6 +24,9 @@ import { manualLifecycleNotice, manualQmEquivalent } from './qm.js';
 import { resolvePveConfig, type PveConfig } from './config.js';
 import { getVm, type SshVmDefinition } from '../registry.js';
 import type { PveClient, PveGuestStatus, PveSnapshot } from './client.js';
+
+const SHA_A = 'a'.repeat(64);
+const SHA_B = 'b'.repeat(64);
 
 const ENV = {
   PODKIT_PVE_API_URL: 'https://pve.example:8006',
@@ -52,6 +59,10 @@ function fakeClient(initial: { status: PveGuestStatus; snapshots?: PveSnapshot[]
       calls.push('start');
       state.status = 'running';
     },
+    resume: async () => {
+      calls.push('resume');
+      state.status = 'running';
+    },
     stop: async (_vmid, opts) => {
       calls.push(opts?.force ? 'stop(force)' : 'stop');
       state.status = 'stopped';
@@ -61,9 +72,12 @@ function fakeClient(initial: { status: PveGuestStatus; snapshots?: PveSnapshot[]
       state.status = 'missing';
     },
     listSnapshots: async () => state.snapshots,
-    snapshot: async (_vmid, name) => {
+    snapshot: async (_vmid, name, description) => {
       calls.push(`snapshot(${name})`);
-      state.snapshots = [...state.snapshots, { name, description: '', snaptime: 1, parent: null }];
+      state.snapshots = [
+        ...state.snapshots,
+        { name, description: description ?? '', snaptime: 1, parent: null },
+      ];
     },
     rollback: async (_vmid, name) => {
       calls.push(`rollback(${name})`);
@@ -193,18 +207,17 @@ describe('power verbs', () => {
         state.status = 'stopped';
       },
     };
-    let settled = false;
-    const pending = pveEnsureRunning(binding(slow), { sleep: async () => {} }).then(() => {
-      settled = true;
+    // It comes up during the second wait, so returning any earlier would be
+    // returning while it still read `stopped`.
+    let waits = 0;
+    await pveEnsureRunning(binding(slow), {
+      sleep: async () => {
+        waits += 1;
+        if (waits === 2) state.status = 'running';
+      },
     });
-
-    // Let the poll loop turn over while the guest is still down.
-    await Promise.resolve();
-    expect(settled).toBe(false);
-
-    state.status = 'running';
-    await pending;
-    expect(settled).toBe(true);
+    expect(waits).toBe(2);
+    expect(state.status).toBe('running');
   });
 
   it('gives up at once on a guest that vanished, rather than polling to the bound', async () => {
@@ -252,10 +265,81 @@ describe('power verbs', () => {
     expect(err!.message).toContain('5000ms');
   });
 
+  it('resumes a paused guest rather than issuing a start PVE rejects', async () => {
+    const { client, calls } = fakeClient({ status: 'paused' });
+    await pveEnsureRunning(binding(client));
+    expect(calls).toEqual(['resume']);
+  });
+
+  it('waits through a listing that still says paused after the resume', async () => {
+    // The pool listing lags the power state by a status-daemon cycle.
+    const { client, state } = fakeClient({ status: 'paused' });
+    let polls = 0;
+    const lagging: PveClient = {
+      ...client,
+      resume: async () => {},
+      guestStatus: async () => {
+        polls += 1;
+        if (polls === 3) state.status = 'running';
+        return state.status;
+      },
+    };
+    await pveEnsureRunning(binding(lagging), { sleep: async () => {} });
+    expect(polls).toBe(3);
+  });
+
   it('does not stop what is already stopped', async () => {
     const { client, calls } = fakeClient({ status: 'stopped' });
     expect(await pveStop(binding(client))).toBe('stopped');
     expect(calls).toEqual([]);
+  });
+
+  it('hard-stops a paused guest, which cannot take an ACPI shutdown', async () => {
+    const { client, calls } = fakeClient({ status: 'paused' });
+    const said: string[] = [];
+    expect(await pveStop(binding(client), { report: (m) => void said.push(m) })).toBe('stopped');
+    expect(calls).toEqual(['stop(force)']);
+    expect(said.join('\n')).toContain('paused');
+  });
+
+  it('still shuts a running guest down gracefully', async () => {
+    const { client, calls } = fakeClient({ status: 'running' });
+    await pveStop(binding(client));
+    expect(calls).toEqual(['stop']);
+  });
+
+  it('refuses to act on a status it cannot interpret', async () => {
+    for (const verb of [
+      (b: PveBinding) => pveEnsureRunning(b),
+      (b: PveBinding) => pveStop(b),
+      (b: PveBinding) => pveDestroy(b),
+    ]) {
+      const { client, calls } = fakeClient({ status: 'unknown' });
+      const err = await verb(binding(client)).then(
+        () => null,
+        (e: unknown) => e as Error
+      );
+      expect(err).toBeInstanceOf(PveGuestStateError);
+      expect(err!.message).toContain('qm status 9000');
+      expect(calls).toEqual([]);
+    }
+  });
+
+  it('will not bounce a wedged guest on ensure, and points at recover', async () => {
+    const { client, calls } = fakeClient({ status: 'internal-error' });
+    const err = await pveEnsureRunning(binding(client)).then(
+      () => null,
+      (e: unknown) => e as Error
+    );
+    expect(err).toBeInstanceOf(PveGuestStateError);
+    expect(err!.message).toContain('vm:recover deviceRemote');
+    expect(calls).toEqual([]);
+  });
+
+  it('stops a paused guest before destroying it', async () => {
+    const { client, calls } = fakeClient({ status: 'paused' });
+    await pveDestroy(binding(client));
+    expect(calls).toEqual(['stop(force)', 'destroy']);
   });
 
   it('stops a running guest before destroying it', async () => {
@@ -269,11 +353,68 @@ describe('power verbs', () => {
       status: 'stopped',
       snapshots: [{ name: POST_PROVISION_SNAPSHOT, description: '', snaptime: 1, parent: null }],
     });
-    await pveSealSnapshot(binding(client), 'contract applied');
+    await pveSealSnapshot(binding(client), { baselineHash: SHA_A });
     expect(calls).toEqual([
       `deleteSnapshot(${POST_PROVISION_SNAPSHOT})`,
       `snapshot(${POST_PROVISION_SNAPSHOT})`,
     ]);
+  });
+});
+
+describe('the baseline claim on the provisioning snapshot', () => {
+  const snapshotOf = (description: string): PveSnapshot[] => [
+    { name: POST_PROVISION_SNAPSHOT, description, snaptime: 1, parent: null },
+  ];
+
+  it('seals the full hash in a field, and reads it back as a comparison', async () => {
+    const { client, state } = fakeClient({ status: 'running' });
+    await pveSealSnapshot(binding(client), { baselineHash: SHA_A });
+    expect(state.snapshots[0]!.description).toContain(`podkit-baseline-hash=${SHA_A}`);
+    expect(snapshotHashVerdict(state.snapshots, SHA_A)).toEqual({ verdict: 'match' });
+    expect(snapshotHashVerdict(state.snapshots, SHA_B)).toEqual({ verdict: 'drifted' });
+  });
+
+  it('refuses to seal something that is not a full hash', async () => {
+    const { client, calls } = fakeClient({ status: 'running' });
+    await expect(
+      pveSealSnapshot(binding(client), { baselineHash: SHA_A.slice(0, 12) })
+    ).rejects.toBeInstanceOf(PveBaselineHashFormatError);
+    expect(calls).toEqual([]);
+  });
+
+  it('reads a snapshot sealed without a hash as unknown, never as drift', async () => {
+    const { client, state } = fakeClient({ status: 'running' });
+    await pveSealSnapshot(binding(client), { baselineHash: null });
+    const verdict = snapshotHashVerdict(state.snapshots, SHA_A);
+    expect(verdict.verdict).toBe('unknown');
+    expect(verdict).toHaveProperty('because', expect.stringContaining('without a baseline hash'));
+  });
+
+  it('reads the old prose description as unknown, and says how to replace it', () => {
+    const verdict = snapshotHashVerdict(snapshotOf('podkit baseline 73a79d889b39'), SHA_A);
+    expect(verdict.verdict).toBe('unknown');
+    expect(verdict).toHaveProperty(
+      'because',
+      expect.stringContaining('podkit baseline 73a79d889b39')
+    );
+    expect(verdict).toHaveProperty('because', expect.stringContaining('harness:seal'));
+  });
+
+  it('is unknown when there is no snapshot, or nothing to compare against', () => {
+    expect(snapshotHashVerdict([], SHA_A).verdict).toBe('unknown');
+    expect(
+      snapshotHashVerdict(snapshotOf(`podkit-baseline-hash=${SHA_A}`), undefined).verdict
+    ).toBe('unknown');
+  });
+
+  it('names a disagreement between the claim and the guest, and only a disagreement', () => {
+    const claiming = snapshotOf(`podkit provisioning snapshot; podkit-baseline-hash=${SHA_A}`);
+    expect(baselineDisagreement(claiming, SHA_A)).toBeNull();
+    expect(baselineDisagreement(claiming, SHA_B)).toContain(SHA_B.slice(0, 12));
+    expect(baselineDisagreement(claiming, '')).toContain('holds nothing');
+    // Nothing claimed is nothing to disagree with.
+    expect(baselineDisagreement(snapshotOf('podkit-baseline-hash=none'), SHA_B)).toBeNull();
+    expect(baselineDisagreement([], SHA_B)).toBeNull();
   });
 });
 
@@ -387,6 +528,36 @@ describe('pveRecover', () => {
     expect(result.strategy.action).toBe('recreate');
     expect(calls).toEqual(['stop(force)', 'destroy', 'createGuest', 'start', 'guestAddresses']);
     expect(ran).toEqual(['provision', 'reseal']);
+  });
+
+  it('hard-stops a paused guest before rolling it back', async () => {
+    // PVE's own rollback also stops a paused guest; the stop is this verb's
+    // contract, not a side effect it relies on.
+    const { client, calls } = fakeClient({ status: 'paused', snapshots: sealed });
+    const result = await pveRecover(binding(client), { templateHash: { verdict: 'match' } });
+    expect(result.strategy.action).toBe('rollback');
+    expect(calls).toEqual([
+      'stop(force)',
+      `rollback(${POST_PROVISION_SNAPSHOT})`,
+      'start',
+      'guestAddresses',
+    ]);
+  });
+
+  it('hard-stops a paused guest before destroying it for a recreate', async () => {
+    const { client, calls } = fakeClient({ status: 'paused', snapshots: sealed });
+    await pveRecover(binding(client), { templateHash: { verdict: 'drifted' } });
+    expect(calls).toEqual(['stop(force)', 'destroy', 'createGuest', 'start', 'guestAddresses']);
+  });
+
+  it('refuses to recover a guest whose status it cannot interpret', async () => {
+    const { client, calls } = fakeClient({ status: 'unknown', snapshots: sealed });
+    const err = await pveRecover(binding(client), { templateHash: { verdict: 'match' } }).then(
+      () => null,
+      (e: unknown) => e as Error
+    );
+    expect(err).toBeInstanceOf(PveGuestStateError);
+    expect(calls).toEqual([]);
   });
 
   it('recreates a guest that is gone, without trying to stop it', async () => {

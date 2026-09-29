@@ -3,9 +3,10 @@ id: TASK-528
 title: >-
   vm:up cannot start a paused guest — every lifecycle path treats PVE status as
   running/stopped/missing
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-25 17:25'
+updated_date: '2026-09-29 21:34'
 labels:
   - testing
   - infrastructure
@@ -17,6 +18,16 @@ references:
   - test-packages/substrate/src/pve/lifecycle.ts
   - test-packages/lima/src/cli-ssh.ts
   - docs/environments/device-substrate-proxmox.md
+modified_files:
+  - test-packages/substrate/src/pve/client.ts
+  - test-packages/substrate/src/pve/client.test.ts
+  - test-packages/substrate/src/pve/lifecycle.ts
+  - test-packages/substrate/src/pve/lifecycle.test.ts
+  - test-packages/substrate/src/index.ts
+  - test-packages/lima/src/cli-ssh.ts
+  - test-packages/lima/src/cli-ssh.test.ts
+  - docs/environments/device-substrate-proxmox.md
+  - docs/architecture/testing/vm-testing.md
 priority: medium
 type: bug
 ordinal: 298000
@@ -57,12 +68,42 @@ Lima substrates are unaffected: this is the PVE/ssh branch only.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 `PveGuestStatus` names the states PVE can actually report, and the `(string & {})` escape hatch no longer lets an unhandled state type-check silently
-- [ ] #2 The client exposes `resume`, and `pveEnsureRunning` resumes a paused guest rather than issuing a start PVE will reject
-- [ ] #3 `waitForRunning` reaches `running` from a paused start, not just from a stopped one
-- [ ] #4 `pveRecover` against a paused guest is measured and given a defined verdict, rather than inheriting the non-running -> 'stopped' collapse at lifecycle.ts:331-333
-- [ ] #5 `stopSubstrate` stops a paused guest instead of no-opping on it
-- [ ] #6 A unit test pins each transition from `paused` (ensure, recover, stop) against a scripted PVE client, so the state cannot regress to unhandled
-- [ ] #7 Exercised against the real remote substrate from a genuinely paused start, and the result recorded
-- [ ] #8 Lima substrates are unaffected
+- [x] #1 `PveGuestStatus` names the states PVE can actually report, and the `(string & {})` escape hatch no longer lets an unhandled state type-check silently
+- [x] #2 The client exposes `resume`, and `pveEnsureRunning` resumes a paused guest rather than issuing a start PVE will reject
+- [x] #3 `waitForRunning` reaches `running` from a paused start, not just from a stopped one
+- [x] #4 `pveRecover` against a paused guest is measured and given a defined verdict, rather than inheriting the non-running -> 'stopped' collapse at lifecycle.ts:331-333
+- [x] #5 `stopSubstrate` stops a paused guest instead of no-opping on it
+- [x] #6 A unit test pins each transition from `paused` (ensure, recover, stop) against a scripted PVE client, so the state cannot regress to unhandled
+- [x] #7 Exercised against the real remote substrate from a genuinely paused start, and the result recorded
+- [x] #8 Lima substrates are unaffected
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Close `PveGuestStatus` to the states the pool listing is measured/known to report, parse the raw string in the client (unrecognised -> 'unknown', raw kept on PveGuest.rawStatus).
+2. One exhaustive classification (`guestPower`: executing / halted / wedged / off / absent / unknown) that every lifecycle verb switches on, with a `never` default so a new status cannot type-check unhandled.
+3. `client.resume`; ensure resumes a halted guest; waitForRunning keeps polling through off/halted (the pool listing lags the power state).
+4. stop/destroy/recover hard-stop a halted or wedged guest (it cannot take an ACPI shutdown); unknown is refused before any mutation.
+5. Unit tests per transition from `paused` against the scripted client; live run from a genuinely paused start.
+<!-- SECTION:PLAN:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+**`PveGuestStatus` is a closed union and every power verb branches on one exhaustive mapping.** The client parses the pool listing's `status` into `running | stopped | paused | suspended | prelaunch | io-error | internal-error | guest-panicked | unknown` (plus `missing`); anything else parses as `unknown`. `guestPower()` maps that to executing / halted / wedged / off / absent / unknown with a `never` default, so a new status fails to compile until each verb handles it. Only `paused` is *measured* (PVE 9.1.4: pool listing says `paused`; `status/current` says `status: running, qmpstatus: paused`); the other named states are QMP run states a single-node substrate can plausibly reach, and the comment says so.
+
+**Per verb.** `client.resume` added. `pveEnsureRunning`: halted → resume; wedged → refused, pointing at `vm:recover` (bouncing it would bury the crash); unknown → refused with the `qm status --verbose` to run. `waitForRunning` polls through off *and* halted, because the listing trails a resume exactly as it trails a start. `pveStop`: halted/wedged → hard stop with a reported reason (a paused guest cannot answer ACPI). `pveDestroy`: stops any live process first. `pveRecover`: refuses unknown before mutating; hard-stops a halted/wedged guest before rollback. One `readPower(binding, verb)` does the unknown refusal for all four.
+
+**AC #4 — measured before the fix.** Old `vm:recover` on a paused guest *succeeded*: it skipped its own stop (status was not `running`), and PVE's rollback stopped the guest itself. The recreate branch had no such cover — `pveDestroy` would not have stopped it. Defined verdict now: a paused guest is `halted`; the hash verdict comes from the snapshot claim (TASK-527) since the link cannot be read; either branch hard-stops first.
+
+**AC #7 — live, deviceRemote (VMID 9000), from a genuinely paused start (`POST status/suspend`).**
+- Old code: `vm:up` → `PVE task … finished as 'VM 9000 already running'`, exit 1. `vm:down` → `is paused`, no-op.
+- New: `vm:up` → `resuming VMID 9000, which is paused` → running in ~2s, ssh OK. `vm:down` → `VMID 9000 is paused and cannot take an ACPI shutdown; stopping it hard` → stopped. `vm:recover` → hard stop + rollback, ssh back in ~21s.
+
+Lima code is untouched (AC #8).
+
+**Also changed:** `does not return while the guest still reports stopped` flipped status after one microtask, so it broke when `readPower` added an await hop (hung out the real 60s bound). Rewritten to flip inside the injected `sleep` — same contract, no timing dependence.
+
+**Noted, not changed:** `pveStop` reports `stopped` when the stop task finishes; the pool listing trails that by a few seconds, so an immediate `vm:status` can still say `running`. Pre-existing.
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -139,7 +139,8 @@ Two consequences a test author has to know:
   `test-packages/substrate/src/link-ready.ts`.
 - **A guest that did not answer has not told you anything about its disk.**
   `recover` chooses between rolling back and rebuilding on a sealed baseline
-  hash, and that hash is read over the link. A stopped guest and a guest
+  hash. Where the provisioning snapshot does not carry one (below), that hash is
+  read over the link. A stopped guest and a guest
   carrying no seal both used to read as one empty string, so switching a box off
   was enough to have it destroyed. `TemplateHashVerdict` now separates `absent`
   (the guest answered; nothing is sealed) from `unknown` (no comparison was
@@ -155,10 +156,26 @@ Two consequences a test author has to know:
   inputs span packages that depend on `@podkit/lima`, so the CLI cannot compute
   the hash it compares against. `test-packages/device-testing/scripts/vm-recover.ts`
   composes it and passes `--expect-hash`; that is the only reason one `vm:*`
-  script does not point straight at `podkit-vm`. Sealing the hash somewhere the
-  hypervisor could read — a guest-agent-readable location, or snapshot
-  metadata — would remove the link from this decision entirely, and is the
-  obvious next move if the fallback proves too blunt.
+  script does not point straight at `podkit-vm`.
+- **The snapshot carries its own claim, and it wins for recover.** Both
+  sealing paths write the full hash into the `podkit-provisioned` description
+  as `podkit-baseline-hash=<sha256>` (or `=none`) through one formatter in
+  `@podkit/substrate`, so `recover` compares a stopped or paused guest over the
+  API with no link at all. The claim is what the sealing command *wrote*, not a
+  measurement — a hand-run `qm snapshot` can make it lie — so each source keeps
+  its own job: the snapshot's claim decides `recover`, because it describes the
+  restore point a rollback restores; the in-guest seal is what `vm:doctor`
+  verifies, because it describes the disk that is running. Where both are
+  readable and differ, `recover` and `vm:doctor` each report it rather than
+  quietly preferring one.
+  A snapshot with no field, or `=none`, is `unknown` with its own reason —
+  never drift.
+- **Every power verb branches on one exhaustive mapping.** `PveGuestStatus` is
+  a closed union and `guestPower()` maps it to executing / halted / wedged /
+  off / absent / unknown with a `never` default, so a status added to the union
+  fails to compile until each verb says what it does with it. A status PVE
+  reports that the union does not name parses as `unknown`, and no verb acts on
+  `unknown`.
 
 ### `deviceHarness`
 

@@ -10,6 +10,7 @@ import {
   getVm,
   POST_PROVISION_SNAPSHOT,
   SubstrateLinkError,
+  type PveReportedStatus,
   type SshVmDefinition,
   type SubstrateLink,
 } from '@podkit/substrate';
@@ -97,7 +98,7 @@ function linkThatRefusesTheProbe(sealed: string): SubstrateLink {
  * asked for its sealed hash, and a fixture frozen at one status would hide the
  * difference this file exists to pin.
  */
-function poolAt(status: 'running' | 'stopped') {
+function poolAt(status: PveReportedStatus) {
   return {
     members: [{ vmid: 9000, name: 'podkit-substrate', node: 'rae', status, type: 'qemu' }],
   };
@@ -106,7 +107,7 @@ function poolAt(status: 'running' | 'stopped') {
 const POOL = poolAt('stopped');
 
 /** The API routes a recovery touches, whichever branch it takes. */
-function recoverRoutes(status: 'running' | 'stopped', snapshots: unknown[]) {
+function recoverRoutes(status: PveReportedStatus, snapshots: unknown[]) {
   return {
     'GET /pools/podkit': poolAt(status),
     'GET /nodes/rae/qemu/9000/snapshot': snapshots,
@@ -120,19 +121,44 @@ function recoverRoutes(status: 'running' | 'stopped', snapshots: unknown[]) {
 
 const SEALED_SNAPSHOT = [{ name: POST_PROVISION_SNAPSHOT, description: '', snaptime: 1 }];
 
+const SHA_A = 'a'.repeat(64);
+const SHA_B = 'b'.repeat(64);
+
+/** The provisioning snapshot as `harness:seal` describes it. */
+function claimingSnapshot(claim: string) {
+  return [
+    {
+      name: POST_PROVISION_SNAPSHOT,
+      description: `podkit provisioning snapshot; podkit-baseline-hash=${claim}`,
+      snaptime: 1,
+    },
+  ];
+}
+
+/** Routes a recreate additionally needs. */
+const RECREATE_ROUTES = {
+  'DELETE /nodes/rae/qemu/9000': 'UPID:rae:1',
+  'GET /nodes': [{ node: 'rae' }],
+  'POST /nodes/rae/qemu': 'UPID:rae:1',
+  'PUT /nodes/rae/qemu/9000/config': 'UPID:rae:1',
+  'PUT /nodes/rae/qemu/9000/resize': 'UPID:rae:1',
+};
+
 /** A `fetch` answering a route table, as in the client's own tests. */
 function scriptedFetch(routes: Record<string, unknown>) {
   const calls: string[] = [];
+  const bodies: Record<string, string> = {};
   const fetchFn = (async (input: unknown, init?: RequestInit) => {
     const url = new URL(String(input));
     const method = init?.method ?? 'GET';
     const path = url.pathname.replace('/api2/json', '');
     calls.push(`${method} ${path}`);
+    if (typeof init?.body === 'string') bodies[`${method} ${path}`] = init.body;
     const key = `${method} ${path}`;
     if (!(key in routes)) return new Response('{"data":null}', { status: 501, statusText: key });
     return new Response(JSON.stringify({ data: routes[key] }), { status: 200 });
   }) as unknown as typeof fetch;
-  return { fetchFn, calls };
+  return { fetchFn, calls, bodies };
 }
 
 const TASK_OK = {
@@ -251,6 +277,54 @@ describe('with a token configured', () => {
     expect(cap.stdout()).toContain('is running');
   });
 
+  it('resumes a paused guest rather than issuing a start PVE rejects', async () => {
+    const cap = captureIo();
+    const pool = poolAt('paused');
+    const { fetchFn, calls } = scriptedFetch({
+      'GET /pools/podkit': pool,
+      'POST /nodes/rae/qemu/9000/status/resume': 'UPID:rae:1',
+      ...TASK_OK,
+    });
+    const resumingFetch = (async (input: unknown, init?: RequestInit) => {
+      const response = await (fetchFn as (i: unknown, x?: RequestInit) => Promise<Response>)(
+        input,
+        init
+      );
+      if (String(input).includes('/status/resume')) pool.members[0]!.status = 'running';
+      return response;
+    }) as unknown as typeof fetch;
+
+    const code = await runSshSubstrateVerb('ensure', REMOTE, [], {
+      io: cap.io,
+      env: TOKEN_ENV,
+      linkFor: () => fakeLink(),
+      client: { fetchFn: resumingFetch, sleep: async () => {} },
+    });
+    expect(code).toBe(0);
+    expect(calls).toContain('POST /nodes/rae/qemu/9000/status/resume');
+    expect(calls).not.toContain('POST /nodes/rae/qemu/9000/status/start');
+    expect(cap.stdout()).toContain('is running');
+  });
+
+  it('stops a paused guest hard, since it cannot take an ACPI shutdown', async () => {
+    const cap = captureIo();
+    const { fetchFn, calls } = scriptedFetch({
+      'GET /pools/podkit': poolAt('paused'),
+      'POST /nodes/rae/qemu/9000/status/stop': 'UPID:rae:1',
+      ...TASK_OK,
+    });
+    const code = await runSshSubstrateVerb('stop', REMOTE, [], {
+      io: cap.io,
+      env: TOKEN_ENV,
+      linkFor: () => fakeLink(),
+      client: { fetchFn, sleep: async () => {} },
+    });
+    expect(code).toBe(0);
+    expect(calls).toContain('POST /nodes/rae/qemu/9000/status/stop');
+    expect(calls).not.toContain('POST /nodes/rae/qemu/9000/status/shutdown');
+    expect(cap.stdout()).toContain('is stopped');
+  });
+
   it('refuses a non-interactive destroy without --yes', async () => {
     const cap = captureIo();
     const { fetchFn, calls } = scriptedFetch({ 'GET /pools/podkit': POOL });
@@ -265,10 +339,10 @@ describe('with a token configured', () => {
     expect(calls.some((c) => c.startsWith('DELETE'))).toBe(false);
   });
 
-  it('seals the provisioning snapshot under one fixed name', async () => {
+  it('seals the provisioning snapshot under one fixed name, carrying the guest seal', async () => {
     const cap = captureIo();
-    const { fetchFn, calls } = scriptedFetch({
-      'GET /pools/podkit': POOL,
+    const { fetchFn, calls, bodies } = scriptedFetch({
+      'GET /pools/podkit': poolAt('running'),
       'GET /nodes/rae/qemu/9000/snapshot': [],
       'POST /nodes/rae/qemu/9000/snapshot': 'UPID:rae:1',
       ...TASK_OK,
@@ -276,12 +350,38 @@ describe('with a token configured', () => {
     const code = await runSshSubstrateVerb('snapshot', REMOTE, [], {
       io: cap.io,
       env: TOKEN_ENV,
-      linkFor: () => fakeLink(),
+      linkFor: () => fakeLink({ 'baseline-hash': `${SHA_A}\n` }),
       client: { fetchFn, sleep: async () => {} },
     });
     expect(code).toBe(0);
     expect(calls).toContain('POST /nodes/rae/qemu/9000/snapshot');
+    // The same field `harness:seal` writes, so recover reads either the same way.
+    expect(decodeURIComponent(bodies['POST /nodes/rae/qemu/9000/snapshot']!)).toContain(
+      `podkit-baseline-hash=${SHA_A}`
+    );
     expect(cap.stdout()).toContain(POST_PROVISION_SNAPSHOT);
+  });
+
+  it('seals a snapshot with no claim, and says so, when the guest carries no seal', async () => {
+    const cap = captureIo();
+    const { fetchFn, bodies } = scriptedFetch({
+      'GET /pools/podkit': poolAt('running'),
+      'GET /nodes/rae/qemu/9000/snapshot': [],
+      'POST /nodes/rae/qemu/9000/snapshot': 'UPID:rae:1',
+      ...TASK_OK,
+    });
+    const code = await runSshSubstrateVerb('snapshot', REMOTE, [], {
+      io: cap.io,
+      env: TOKEN_ENV,
+      linkFor: () => fakeLink({ 'baseline-hash': '\n' }),
+      client: { fetchFn, sleep: async () => {} },
+    });
+    expect(code).toBe(0);
+    expect(decodeURIComponent(bodies['POST /nodes/rae/qemu/9000/snapshot']!)).toContain(
+      'podkit-baseline-hash=none'
+    );
+    expect(cap.stderr()).toContain('without a baseline hash');
+    expect(cap.stderr()).toContain('harness:seal');
   });
 
   it('rolls back when the sealed hash matches what the caller expects', async () => {
@@ -545,6 +645,113 @@ describe('recover, when the guest cannot be asked what it was sealed with', () =
     // Only the post-restart readiness probe. Nothing asks a guest that is
     // about to be deleted what it was sealed with.
     expect(probes.some((x) => x.includes('baseline-hash'))).toBe(false);
+  });
+});
+
+describe('recover, reading the claim the provisioning snapshot carries', () => {
+  // The snapshot description is readable over the API with the guest off, so a
+  // stopped guest — this substrate's ordinary state — gets a compared verdict.
+
+  it('rolls a stopped guest back on a matching claim, with no link involved', async () => {
+    const cap = captureIo();
+    const probes: string[] = [];
+    const { fetchFn, calls } = scriptedFetch(recoverRoutes('stopped', claimingSnapshot(SHA_A)));
+    const code = await runSshSubstrateVerb('recover', REMOTE, ['--expect-hash', SHA_A], {
+      io: cap.io,
+      env: TOKEN_ENV,
+      linkFor: () => fakeLink({}, true, (x) => void probes.push(x)),
+      client: { fetchFn, sleep: async () => {} },
+    });
+    expect(code).toBe(0);
+    expect(calls).toContain(
+      `POST /nodes/rae/qemu/9000/snapshot/${POST_PROVISION_SNAPSHOT}/rollback`
+    );
+    expect(cap.stdout()).toContain('matches the committed provisioning inputs');
+    expect(probes.some((x) => x.includes('baseline-hash'))).toBe(false);
+  });
+
+  it('recreates a stopped guest whose snapshot claims a different hash', async () => {
+    const cap = captureIo();
+    const probes: string[] = [];
+    const { fetchFn, calls } = scriptedFetch({
+      ...recoverRoutes('stopped', claimingSnapshot(SHA_B)),
+      ...RECREATE_ROUTES,
+    });
+    await runSshSubstrateVerb('recover', REMOTE, ['--expect-hash', SHA_A], {
+      io: cap.io,
+      env: TOKEN_ENV,
+      linkFor: () => fakeLink({}, true, (x) => void probes.push(x)),
+      client: { fetchFn, sleep: async () => {} },
+    });
+    expect(calls).toContain('DELETE /nodes/rae/qemu/9000');
+    expect(cap.stderr()).toContain('stale');
+    expect(probes.some((x) => x.includes('baseline-hash'))).toBe(false);
+  });
+
+  it('reads a snapshot sealed without a hash as unknown, and rolls back rather than calling it drift', async () => {
+    const cap = captureIo();
+    const { fetchFn, calls } = scriptedFetch(recoverRoutes('stopped', claimingSnapshot('none')));
+    const code = await runSshSubstrateVerb('recover', REMOTE, ['--expect-hash', SHA_A], {
+      io: cap.io,
+      env: TOKEN_ENV,
+      linkFor: () => fakeLink(),
+      client: { fetchFn, sleep: async () => {} },
+    });
+    expect(code).toBe(0);
+    expect(calls.some((c) => c.startsWith('DELETE'))).toBe(false);
+    expect(cap.stderr()).toContain('sealed without a baseline hash');
+    expect(cap.stderr()).toContain('is stopped');
+  });
+
+  it('chooses on the snapshot when the guest disagrees, and says they disagree', async () => {
+    // The snapshot is what a rollback restores, so it is the evidence for the
+    // choice. The disk is `vm:doctor`'s to judge; the disagreement is reported.
+    const cap = captureIo();
+    const { fetchFn, calls } = scriptedFetch(recoverRoutes('running', claimingSnapshot(SHA_A)));
+    const code = await runSshSubstrateVerb('recover', REMOTE, ['--expect-hash', SHA_A], {
+      io: cap.io,
+      env: TOKEN_ENV,
+      linkFor: () => fakeLink({ 'baseline-hash': `${SHA_B}\n` }),
+      client: { fetchFn, sleep: async () => {} },
+    });
+    expect(code).toBe(0);
+    expect(calls).toContain(
+      `POST /nodes/rae/qemu/9000/snapshot/${POST_PROVISION_SNAPSHOT}/rollback`
+    );
+    expect(cap.stderr()).toContain('disagree');
+    expect(cap.stderr()).toContain(SHA_A.slice(0, 12));
+    expect(cap.stderr()).toContain(SHA_B.slice(0, 12));
+  });
+
+  it('says nothing about disagreement when the guest agrees with its snapshot', async () => {
+    const cap = captureIo();
+    const { fetchFn } = scriptedFetch(recoverRoutes('running', claimingSnapshot(SHA_A)));
+    await runSshSubstrateVerb('recover', REMOTE, ['--expect-hash', SHA_A], {
+      io: cap.io,
+      env: TOKEN_ENV,
+      linkFor: () => fakeLink({ 'baseline-hash': `${SHA_A}\n` }),
+      client: { fetchFn, sleep: async () => {} },
+    });
+    expect(cap.stderr()).not.toContain('disagree');
+  });
+
+  it('rolls a paused guest back on its snapshot claim, stopping it first', async () => {
+    const cap = captureIo();
+    const { fetchFn, calls } = scriptedFetch(recoverRoutes('paused', claimingSnapshot(SHA_A)));
+    const code = await runSshSubstrateVerb('recover', REMOTE, ['--expect-hash', SHA_A], {
+      io: cap.io,
+      env: TOKEN_ENV,
+      linkFor: () => fakeLink(),
+      client: { fetchFn, sleep: async () => {} },
+    });
+    expect(code).toBe(0);
+    const stop = calls.indexOf('POST /nodes/rae/qemu/9000/status/stop');
+    const rollback = calls.indexOf(
+      `POST /nodes/rae/qemu/9000/snapshot/${POST_PROVISION_SNAPSHOT}/rollback`
+    );
+    expect(stop).toBeGreaterThan(-1);
+    expect(rollback).toBeGreaterThan(stop);
+    expect(cap.stdout()).toContain('matches the committed provisioning inputs');
   });
 });
 

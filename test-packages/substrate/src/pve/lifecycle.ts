@@ -184,6 +184,79 @@ export function pveStatus(binding: PveBinding): Promise<PveGuestStatus> {
   return binding.client.guestStatus(binding.vmid);
 }
 
+/**
+ * What a status means for the power verbs.
+ *
+ * - `executing` — the guest is running.
+ * - `halted` — QEMU is up and the vCPUs are not running; `resume` continues it.
+ *   It cannot take an ACPI shutdown, and PVE rejects `start` on it.
+ * - `wedged` — QEMU is up and the guest is dead. Only a hard stop gets out.
+ * - `off` / `absent` — no process; no guest.
+ * - `unknown` — nothing here can say, so no verb acts on it.
+ */
+export type GuestPower = 'executing' | 'halted' | 'wedged' | 'off' | 'absent' | 'unknown';
+
+/** The one mapping every verb branches on, exhaustive so a new status cannot slip past. */
+export function guestPower(status: PveGuestStatus): GuestPower {
+  switch (status) {
+    case 'running':
+      return 'executing';
+    case 'paused':
+    case 'suspended':
+    case 'prelaunch':
+    case 'io-error':
+      return 'halted';
+    case 'internal-error':
+    case 'guest-panicked':
+      return 'wedged';
+    case 'stopped':
+      return 'off';
+    case 'missing':
+      return 'absent';
+    case 'unknown':
+      return 'unknown';
+    default: {
+      const unhandled: never = status;
+      return unhandled;
+    }
+  }
+}
+
+/** A guest in a state a verb will not act on. */
+export class PveGuestStateError extends Error {
+  readonly vmid: number;
+  readonly status: PveGuestStatus;
+
+  constructor(vmid: number, verb: string, status: PveGuestStatus, advice: string) {
+    super(`VMID ${vmid} reports '${status}', so ${verb} will not act on it. ${advice}`);
+    this.name = 'PveGuestStateError';
+    this.vmid = vmid;
+    this.status = status;
+  }
+}
+
+/** Every power state a verb can act on. */
+type ActionablePower = Exclude<GuestPower, 'unknown'>;
+
+/** Read the guest's power for `verb`, refusing `unknown` before anything is mutated. */
+async function readPower(
+  binding: PveBinding,
+  verb: string
+): Promise<{ status: PveGuestStatus; power: ActionablePower }> {
+  const status = await pveStatus(binding);
+  const power = guestPower(status);
+  if (power === 'unknown') {
+    throw new PveGuestStateError(
+      binding.vmid,
+      verb,
+      status,
+      `Read what PVE means by it on the host with \`qm status ${binding.vmid} --verbose\` ` +
+        `before deciding anything.`
+    );
+  }
+  return { status, power };
+}
+
 /** Progress reporting seam — callers own the terminal. */
 export type ReportFn = (message: string) => void;
 
@@ -243,9 +316,10 @@ const realSleep = (ms: number): Promise<void> => new Promise((resolve) => setTim
  * `running`. Only this wait makes the status a caller reads afterwards
  * describe the box it asked for.
  *
- * `missing` ends the wait immediately: a guest that is not there cannot start,
- * so polling it out to the bound buys a minute of silence for an answer
- * already known.
+ * Polls through `off` and `halted` alike: the pool listing trails the power
+ * state, so a resumed guest reads `paused` for a while just as a started one
+ * reads `stopped`. Anything else ends the wait immediately — a guest that is
+ * gone or dead will not come up by being watched.
  */
 async function waitForRunning(
   binding: PveBinding,
@@ -255,9 +329,13 @@ async function waitForRunning(
   const sleep = opts.sleep ?? realSleep;
   const timeoutMs = opts.timeoutMs ?? START_TIMEOUT_MS;
   const deadline = now() + timeoutMs;
+  const settling = (s: PveGuestStatus): boolean => {
+    const power = guestPower(s);
+    return power === 'off' || power === 'halted';
+  };
 
   let status = await pveStatus(binding);
-  while (status === 'stopped' && now() < deadline) {
+  while (settling(status) && now() < deadline) {
     await sleep(START_POLL_MS);
     status = await pveStatus(binding);
   }
@@ -268,23 +346,51 @@ async function waitForRunning(
 }
 
 /**
- * Create the guest if it does not exist, start it if it is stopped, no-op if it
- * is already running. Returns only once the guest reports `running`.
+ * Create the guest if it does not exist, start it if it is stopped, resume it
+ * if it is halted, no-op if it is already running. Returns only once the guest
+ * reports `running`.
+ *
+ * A wedged guest is refused rather than restarted: bouncing it would bury the
+ * crash that wedged it, and `vm:recover` is the verb that decides what to
+ * restore.
  */
 export async function pveEnsureRunning(
   binding: PveBinding,
   opts: PveEnsureRunningOpts = {}
 ): Promise<void> {
   const report = opts.report ?? noReport;
-  const status = await pveStatus(binding);
-  if (status === 'running') return;
+  const { status, power } = await readPower(binding, 'ensure');
 
-  if (status === 'missing') {
-    report(`creating ${binding.substrate.sshAlias} as VMID ${binding.vmid}`);
-    await createGuest(binding);
+  switch (power) {
+    case 'executing':
+      return;
+    case 'absent':
+      report(`creating ${binding.substrate.sshAlias} as VMID ${binding.vmid}`);
+      await createGuest(binding);
+      report(`starting VMID ${binding.vmid}`);
+      await binding.client.start(binding.vmid);
+      break;
+    case 'off':
+      report(`starting VMID ${binding.vmid}`);
+      await binding.client.start(binding.vmid);
+      break;
+    case 'halted':
+      report(`resuming VMID ${binding.vmid}, which is ${status}`);
+      await binding.client.resume(binding.vmid);
+      break;
+    case 'wedged':
+      throw new PveGuestStateError(
+        binding.vmid,
+        'ensure',
+        status,
+        `QEMU is up but the guest is not. Repair it with ` +
+          `\`bun run vm:recover ${binding.substrate.id}\`.`
+      );
+    default: {
+      const unhandled: never = power;
+      throw new Error(`unhandled power state ${String(unhandled)}`);
+    }
   }
-  report(`starting VMID ${binding.vmid}`);
-  await binding.client.start(binding.vmid);
   await waitForRunning(binding, opts);
 }
 
@@ -322,39 +428,189 @@ async function createGuest(binding: PveBinding): Promise<void> {
   }
 }
 
-/** Stop the guest. No-op when it is already stopped or absent. */
+/** Whether QEMU is up, and so has to be stopped before its disk is replaced. */
+function hasProcess(power: ActionablePower): boolean {
+  return power === 'executing' || power === 'halted' || power === 'wedged';
+}
+
+/**
+ * Stop the guest. No-op when it is already stopped or absent.
+ *
+ * Only an executing guest is offered a graceful shutdown: a halted or wedged
+ * one is not running the code that would answer it, so the shutdown task would
+ * wait out its timeout and fail.
+ */
 export async function pveStop(
   binding: PveBinding,
-  opts: { force?: boolean } = {}
+  opts: { force?: boolean; report?: ReportFn } = {}
 ): Promise<PveGuestStatus> {
-  const status = await pveStatus(binding);
-  if (status !== 'running') return status;
-  await binding.client.stop(binding.vmid, opts);
+  const report = opts.report ?? noReport;
+  const { status, power } = await readPower(binding, 'stop');
+  if (!hasProcess(power)) return status;
+  if (power !== 'executing' && !opts.force) {
+    report(`VMID ${binding.vmid} is ${status} and cannot take an ACPI shutdown; stopping it hard`);
+  }
+  await binding.client.stop(binding.vmid, { force: opts.force || power !== 'executing' });
   return 'stopped';
 }
 
-/** Destroy the guest, stopping it first if it is running. */
+/** Destroy the guest, stopping it first if its process is up. */
 export async function pveDestroy(
   binding: PveBinding,
   opts: { report?: ReportFn } = {}
 ): Promise<void> {
   const report = opts.report ?? noReport;
-  const status = await pveStatus(binding);
-  if (status === 'missing') return;
-  if (status === 'running') {
-    report(`stopping VMID ${binding.vmid} before destroying it`);
+  const { status, power } = await readPower(binding, 'destroy');
+  if (power === 'absent') return;
+  if (hasProcess(power)) {
+    report(`stopping VMID ${binding.vmid} (${status}) before destroying it`);
     await binding.client.stop(binding.vmid, { force: true });
   }
   await binding.client.destroy(binding.vmid);
 }
 
-/** Take (or retake) the provisioning snapshot. */
-export async function pveSealSnapshot(binding: PveBinding, description: string): Promise<void> {
+/** What the provisioning snapshot vouches for. */
+export interface ProvisionSeal {
+  /** The baseline hash sealed in the guest at snapshot time, or `null` for none. */
+  readonly baselineHash: string | null;
+}
+
+/**
+ * The field the provisioning snapshot carries its baseline claim in.
+ *
+ * The snapshot description rather than the guest's own: it binds the claim to
+ * the restore point a rollback would restore, and dies with it.
+ */
+const BASELINE_FIELD = 'podkit-baseline-hash';
+const BASELINE_FIELD_PATTERN = new RegExp(`(?:^|[\\s;])${BASELINE_FIELD}=(\\S+)`);
+const FULL_SHA256 = /^[0-9a-f]{64}$/;
+
+/** Whether `value` is a baseline hash as sealed — a full lowercase sha256. */
+export function isBaselineHash(value: string): boolean {
+  return FULL_SHA256.test(value);
+}
+
+function provisionSnapshotDescription(seal: ProvisionSeal): string {
+  return `podkit provisioning snapshot; ${BASELINE_FIELD}=${seal.baselineHash ?? 'none'}`;
+}
+
+/** A baseline hash that is not one, refused before it reaches the snapshot. */
+export class PveBaselineHashFormatError extends Error {
+  readonly value: string;
+  constructor(value: string) {
+    super(
+      `refusing to seal '${value}' into '${POST_PROVISION_SNAPSHOT}': a baseline hash is 64 ` +
+        `lowercase hex characters, and anything shorter cannot be compared.`
+    );
+    this.name = 'PveBaselineHashFormatError';
+    this.value = value;
+  }
+}
+
+/**
+ * Take (or retake) the provisioning snapshot.
+ *
+ * Takes the claim, not a description, so every caller writes the one format
+ * {@link snapshotHashVerdict} reads.
+ */
+export async function pveSealSnapshot(binding: PveBinding, seal: ProvisionSeal): Promise<void> {
+  if (seal.baselineHash !== null && !isBaselineHash(seal.baselineHash)) {
+    throw new PveBaselineHashFormatError(seal.baselineHash);
+  }
   const existing = await binding.client.listSnapshots(binding.vmid);
   if (existing.some((s) => s.name === POST_PROVISION_SNAPSHOT)) {
     await binding.client.deleteSnapshot(binding.vmid, POST_PROVISION_SNAPSHOT);
   }
-  await binding.client.snapshot(binding.vmid, POST_PROVISION_SNAPSHOT, description);
+  await binding.client.snapshot(
+    binding.vmid,
+    POST_PROVISION_SNAPSHOT,
+    provisionSnapshotDescription(seal)
+  );
+}
+
+/** What a snapshot's description says about the baseline. */
+type BaselineClaim =
+  | { readonly claim: 'hash'; readonly hash: string }
+  /** Sealed by a command that knowingly had no hash to record. */
+  | { readonly claim: 'none' }
+  /** Written by an older podkit, or by hand. */
+  | { readonly claim: 'unrecognised' };
+
+function parseBaselineClaim(description: string): BaselineClaim {
+  const value = BASELINE_FIELD_PATTERN.exec(description)?.[1];
+  if (value === 'none') return { claim: 'none' };
+  if (value !== undefined && isBaselineHash(value)) return { claim: 'hash', hash: value };
+  return { claim: 'unrecognised' };
+}
+
+/** The provisioning snapshot and what its description claims, or `null` if there is none. */
+function provisionClaim(
+  snapshots: readonly PveSnapshot[]
+): { readonly description: string; readonly claim: BaselineClaim } | null {
+  const snapshot = snapshots.find((s) => s.name === POST_PROVISION_SNAPSHOT);
+  return snapshot
+    ? { description: snapshot.description, claim: parseBaselineClaim(snapshot.description) }
+    : null;
+}
+
+/**
+ * Compare the provisioning snapshot's claim against the committed inputs,
+ * using nothing but what the API returns — so it answers for a stopped guest.
+ *
+ * A claim is what the sealing command wrote, not a measurement of the disk: a
+ * hand-run `qm snapshot` can make it lie. It is evidence about the restore
+ * point, which is what recover chooses between; the running disk stays
+ * `vm:doctor`'s to verify. Each way of having no claim is `unknown` with its
+ * own reason, and none of them is drift.
+ */
+export function snapshotHashVerdict(
+  snapshots: readonly PveSnapshot[],
+  expected: string | undefined
+): TemplateHashVerdict {
+  const name = POST_PROVISION_SNAPSHOT;
+  const found = provisionClaim(snapshots);
+  if (!found) {
+    return { verdict: 'unknown', because: `there is no '${name}' snapshot to read a claim from` };
+  }
+  const { claim, description } = found;
+  if (claim.claim === 'none') {
+    return { verdict: 'unknown', because: `'${name}' was sealed without a baseline hash` };
+  }
+  if (claim.claim === 'unrecognised') {
+    return {
+      verdict: 'unknown',
+      because:
+        `'${name}' carries no ${BASELINE_FIELD} field (its description is '${description}'); ` +
+        `re-seal it with \`bun run harness:seal\` to record one`,
+    };
+  }
+  if (!expected) {
+    return {
+      verdict: 'unknown',
+      because: `no expected hash was supplied, so '${name}''s claim had nothing to be compared against`,
+    };
+  }
+  return { verdict: claim.hash === expected ? 'match' : 'drifted' };
+}
+
+/**
+ * How the provisioning snapshot's claim and the guest's own seal differ, or
+ * `null` when they agree or the snapshot claims nothing to hold the seal to.
+ *
+ * Neither side is preferred here: which one a caller acts on is its own
+ * business, and the point of saying so is that neither gets overruled quietly.
+ */
+export function baselineDisagreement(
+  snapshots: readonly PveSnapshot[],
+  guestHash: string
+): string | null {
+  const found = provisionClaim(snapshots);
+  if (found?.claim.claim !== 'hash' || found.claim.hash === guestHash) return null;
+  return (
+    `the provisioning snapshot and the guest disagree: '${POST_PROVISION_SNAPSHOT}' claims ` +
+    `${found.claim.hash.slice(0, 12)}..., the guest's seal holds ` +
+    `${guestHash ? `${guestHash.slice(0, 12)}...` : 'nothing'}`
+  );
 }
 
 /**
@@ -498,7 +754,7 @@ export async function pveRecover(
   opts: PveRecoverOpts
 ): Promise<PveRecoverResult> {
   const report = opts.report ?? noReport;
-  const status = await pveStatus(binding);
+  const { status, power } = await readPower(binding, 'recover');
   const snapshots = status === 'missing' ? [] : await binding.client.listSnapshots(binding.vmid);
   const strategy =
     status === 'missing'
@@ -516,10 +772,11 @@ export async function pveRecover(
   };
 
   if (strategy.action === 'rollback') {
-    // PVE will roll a running guest back, but pulling the disk out from under
-    // a live kernel is not something to do on purpose. Stopping first makes the
-    // operation deterministic, and the disk state is discarded either way.
-    if (status === 'running') await binding.client.stop(binding.vmid, { force: true });
+    // PVE stops a live guest itself before rolling it back — paused included,
+    // measured — but that is its behaviour, not this verb's contract. Stopping
+    // first makes the operation deterministic, and the disk state is discarded
+    // either way.
+    if (hasProcess(power)) await binding.client.stop(binding.vmid, { force: true });
     await binding.client.rollback(binding.vmid, strategy.snapshot);
     await startAndWait();
   } else {

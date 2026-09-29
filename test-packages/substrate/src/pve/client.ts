@@ -46,7 +46,7 @@ export interface PveGuest {
   readonly name: string;
   /** PVE node hosting it — needed by every per-guest endpoint. */
   readonly node: string;
-  readonly status: string;
+  readonly status: PveReportedStatus;
   readonly type: string;
 }
 
@@ -59,8 +59,37 @@ export interface PveSnapshot {
   readonly parent: string | null;
 }
 
+/**
+ * The states the pool listing is known to report for a qemu guest.
+ *
+ * `running`/`stopped` describe the QEMU process. While the process is up but
+ * not executing the guest, the listing reports the QMP run state instead —
+ * `paused` is measured on PVE 9.1; the rest are the QMP states a single-node
+ * substrate can plausibly land in. `unknown` is PVE's own word for a node it
+ * cannot see, and where anything else is folded so it cannot pass unhandled.
+ */
+export const PVE_REPORTED_STATUSES = [
+  'running',
+  'stopped',
+  'paused',
+  'suspended',
+  'prelaunch',
+  'io-error',
+  'internal-error',
+  'guest-panicked',
+  'unknown',
+] as const;
+
+export type PveReportedStatus = (typeof PVE_REPORTED_STATUSES)[number];
+
 /** Lifecycle status, with `missing` for a guest the pool does not contain. */
-export type PveGuestStatus = 'running' | 'stopped' | 'missing' | (string & {});
+export type PveGuestStatus = PveReportedStatus | 'missing';
+
+function parseReportedStatus(raw: string): PveReportedStatus {
+  return (PVE_REPORTED_STATUSES as readonly string[]).includes(raw)
+    ? (raw as PveReportedStatus)
+    : 'unknown';
+}
 
 /** Everything `createGuest` needs that is not already in {@link PveConfig}. */
 export interface CreateGuestSpec {
@@ -116,6 +145,8 @@ export interface PveClient {
   guestStatus(vmid: number): Promise<PveGuestStatus>;
   createGuest(spec: CreateGuestSpec): Promise<void>;
   start(vmid: number): Promise<void>;
+  /** Continue a guest whose QEMU process is up but not executing it. */
+  resume(vmid: number): Promise<void>;
   /** Graceful ACPI shutdown by default; `force` pulls the power. */
   stop(vmid: number, opts?: { force?: boolean }): Promise<void>;
   destroy(vmid: number): Promise<void>;
@@ -255,13 +286,15 @@ export function createPveClient(opts: CreatePveClientOpts): PveClient {
     });
     return (pool.members ?? [])
       .filter((m) => m['type'] === 'qemu')
-      .map((m) => ({
-        vmid: Number(m['vmid']),
-        name: String(m['name'] ?? ''),
-        node: String(m['node'] ?? ''),
-        status: String(m['status'] ?? 'unknown'),
-        type: String(m['type'] ?? ''),
-      }));
+      .map((m) => {
+        return {
+          vmid: Number(m['vmid']),
+          name: String(m['name'] ?? ''),
+          node: String(m['node'] ?? ''),
+          status: parseReportedStatus(String(m['status'] ?? 'unknown')),
+          type: String(m['type'] ?? ''),
+        };
+      });
   }
 
   async function findGuest(vmid: number): Promise<PveGuest | null> {
@@ -365,6 +398,14 @@ export function createPveClient(opts: CreatePveClientOpts): PveClient {
       await requestTask(node, {
         method: 'POST',
         path: `/nodes/${node}/qemu/${vmid}/status/start`,
+      });
+    },
+
+    async resume(vmid) {
+      const node = await nodeFor(vmid);
+      await requestTask(node, {
+        method: 'POST',
+        path: `/nodes/${node}/qemu/${vmid}/status/resume`,
       });
     },
 

@@ -3,9 +3,10 @@ id: TASK-527
 title: >-
   Seal the baseline hash where the hypervisor can read it, so recover rarely has
   to guess
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-24 22:49'
+updated_date: '2026-09-29 21:34'
 labels:
   - testing
   - infrastructure
@@ -19,6 +20,16 @@ references:
   - test-packages/lima/src/cli-ssh.ts
   - docs/architecture/testing/vm-testing.md
   - docs/environments/device-substrate-proxmox.md
+modified_files:
+  - test-packages/substrate/src/pve/lifecycle.ts
+  - test-packages/substrate/src/pve/lifecycle.test.ts
+  - test-packages/substrate/src/index.ts
+  - test-packages/lima/src/cli-ssh.ts
+  - test-packages/lima/src/cli-ssh.test.ts
+  - test-packages/device-testing/scripts/substrate-seal.ts
+  - test-packages/device-testing/scripts/vm-doctor.ts
+  - docs/environments/device-substrate-proxmox.md
+  - docs/architecture/testing/vm-testing.md
 priority: medium
 type: enhancement
 ordinal: 297000
@@ -63,10 +74,42 @@ Lima substrates take no snapshots and are unaffected; this is the ssh/Proxmox br
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The provisioning snapshot carries the full sealed baseline hash in a parseable field, not embedded in prose
-- [ ] #2 `vm:recover` against a stopped guest reaches `match` or `drifted` on hypervisor-readable evidence alone, with no link involved
-- [ ] #3 A snapshot sealed without a hash is distinguishable from one whose hash does not match, and does not read as drift
-- [ ] #4 The two `pveSealSnapshot` call sites cannot write different description formats
-- [ ] #5 The in-guest seal remains what `vm:doctor` verifies; where it and the hypervisor-side hash disagree, that is reported rather than silently resolved
-- [ ] #6 Exercised against the real remote substrate from a stopped start: recover reports a compared verdict rather than `unknown`, and the result recorded
+- [x] #1 The provisioning snapshot carries the full sealed baseline hash in a parseable field, not embedded in prose
+- [x] #2 `vm:recover` against a stopped guest reaches `match` or `drifted` on hypervisor-readable evidence alone, with no link involved
+- [x] #3 A snapshot sealed without a hash is distinguishable from one whose hash does not match, and does not read as drift
+- [x] #4 The two `pveSealSnapshot` call sites cannot write different description formats
+- [x] #5 The in-guest seal remains what `vm:doctor` verifies; where it and the hypervisor-side hash disagree, that is reported rather than silently resolved
+- [x] #6 Exercised against the real remote substrate from a stopped start: recover reports a compared verdict rather than `unknown`, and the result recorded
 <!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. One formatter/parser pair for the provisioning snapshot description: `podkit-baseline-hash=<64 hex>` or `=none`; `pveSealSnapshot` takes `{ baselineHash }` instead of free prose, so the two call sites cannot diverge. Full hash, validated.
+2. `snapshotHashVerdict(snapshots, expected)` in @podkit/substrate: match / drifted from the claim; no snapshot, an explicit `none`, or an unrecognised (legacy prose) description are each `unknown` with their own reason — never drift.
+3. cli-ssh `establishTemplateHash`: the snapshot claim decides where it exists (it describes the restore point a rollback restores); the in-guest read is the fallback where it does not. When both are readable and disagree, report it.
+4. `vm:snapshot` verb reads the in-guest seal over the link and records it; `harness:seal` records the full combined sha.
+5. Live: re-seal deviceRemote, stop it, recover -> compared verdict.
+<!-- SECTION:PLAN:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+**Surface: the snapshot description.** It binds the claim to the restore point a rollback restores, and dies with it; a guest-level field would outlive the snapshot it vouched for. Format, written by one private formatter: `podkit provisioning snapshot; podkit-baseline-hash=<64 hex>` or `=none`. `pveSealSnapshot(binding, { baselineHash })` takes the claim, not prose, so the two call sites cannot diverge (AC #4); a non-full hash throws `PveBaselineHashFormatError` before any snapshot call. Full hash — the 12-char truncation had no recorded reason.
+
+**Reading it.** `snapshotHashVerdict(snapshots, expected)` → match / drifted from the claim; no snapshot, `=none`, and an unrecognised description (the old `podkit baseline 73a79d889b39` prose, deliberately *not* prefix-matched) are each `unknown` with their own reason — never drift (AC #3). `baselineDisagreement(snapshots, guestHash)` names a mismatch and prefers neither side.
+
+**Which wins where (AC #5).** `recover` chooses on the snapshot claim when there is one — it describes what a rollback restores — and falls back to the in-guest seal (the old path) when there is not. `vm:doctor` still verifies the in-guest seal and its verdict is unchanged; both it and `recover` report a disagreement when both sides are readable. Doctor's check is best-effort and only runs with a token configured.
+
+**`vm:snapshot`** reads the guest's seal over the link and records it; with nothing readable it records `=none` and says `harness:seal` is the command that seals and snapshots together.
+
+**AC #6 — live, deviceRemote (VMID 9000).**
+- Before: description `podkit baseline 73a79d889b39`; recover from paused → `unknown` naming the unrecognised description, rolled back.
+- `harness:seal` → `podkit provisioning snapshot; podkit-baseline-hash=73a79d889b39cf61…0825` (round-trips through PVE intact). `vm:snapshot` wrote the identical string.
+- `vm:down`, then `vm:recover` from **stopped** → `rollback: 'podkit-provisioned' matches the committed provisioning inputs`. Compared, not guessed; no link involved in the verdict.
+- Disagreement: overwrote the in-guest seal with `b…b`. `vm:doctor` → drift + `note: the provisioning snapshot and the guest disagree … claims 73a79d889b39…, the guest's seal holds bbbbbbbbbbbb…`. `vm:recover` reported the same, chose the snapshot, rolled back; `vm:doctor` → `baseline OK` afterwards. Guest left stopped.
+
+**Caveat:** a compared verdict needs `--expect-hash`, which `vm-recover.ts` supplies; `podkit-vm recover` invoked directly still reads `unknown`.
+
+`vm:doctor`'s remediation text no longer says "expect a recreate": recover now rolls back when the snapshot's recorded hash still matches.
+<!-- SECTION:FINAL_SUMMARY:END -->

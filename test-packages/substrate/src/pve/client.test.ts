@@ -158,6 +158,34 @@ describe('status', () => {
     });
   });
 
+  it('reports a paused guest as paused — the listing carries the QMP run state', async () => {
+    const { pve } = client({
+      'GET /pools/podkit': {
+        members: [
+          { vmid: 9000, name: 'podkit-substrate', node: 'rae', status: 'paused', type: 'qemu' },
+        ],
+      },
+    });
+    expect(await pve.guestStatus(9000)).toBe('paused');
+  });
+
+  it('reads a state it has no name for as unknown', async () => {
+    const { pve } = client({
+      'GET /pools/podkit': {
+        members: [
+          {
+            vmid: 9000,
+            name: 'podkit-substrate',
+            node: 'rae',
+            status: 'postmigrate',
+            type: 'qemu',
+          },
+        ],
+      },
+    });
+    expect(await pve.guestStatus(9000)).toBe('unknown');
+  });
+
   it('reports a guest outside the pool as missing rather than erroring', async () => {
     const { pve } = client({ 'GET /pools/podkit': POOL_WITH_9000 });
     expect(await pve.guestStatus(9000)).toBe('stopped');
@@ -200,6 +228,20 @@ describe('power verbs', () => {
     const forced = client(routes);
     await forced.pve.stop(9000, { force: true });
     expect(forced.calls.map((c) => c.path)).toContain('/nodes/rae/qemu/9000/status/stop');
+  });
+
+  it('resumes a paused guest rather than starting one PVE already has running', async () => {
+    const { pve, calls } = client({
+      'GET /pools/podkit': POOL_WITH_9000,
+      'POST /nodes/rae/qemu/9000/status/resume': UPID,
+      ...TASK_OK,
+    });
+    await pve.resume(9000);
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual([
+      'GET /pools/podkit',
+      'POST /nodes/rae/qemu/9000/status/resume',
+      'GET /nodes/rae/tasks/UPID%3Arae%3A0001/status',
+    ]);
   });
 
   it('destroys with DELETE on the guest itself', async () => {

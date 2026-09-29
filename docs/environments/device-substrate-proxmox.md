@@ -295,10 +295,11 @@ bun run harness:seal
 ```
 
 That re-runs the doctor, writes the baseline hash into the guest, and — when a
-PVE token is configured — takes the `podkit-provisioned` snapshot. The three are
-one command because they describe one moment: a snapshot without a matching
-sealed hash is a restore point nothing vouches for, so `vm:recover` finds a
-guest that answers and carries no seal, and recreates instead of rolling back.
+PVE token is configured — takes the `podkit-provisioned` snapshot with the same
+hash recorded in its description (`podkit-baseline-hash=<sha256>`). The three
+are one command because they describe one moment. The description is what lets
+`vm:recover` compare a guest that is not running; a snapshot that carries no
+such field is a restore point nothing vouches for, and recover says so.
 
 `bun run vm:doctor` reads that hash before every `test:vm` and reports drift
 when the committed provisioning inputs have moved.
@@ -334,9 +335,9 @@ running everything else you own, and it is only needed while tests are. Start it
 when you need it and stop it when you do not:
 
 ```bash
-bun run vm:up deviceRemote        # create if missing, start if stopped
-bun run vm:down deviceRemote      # graceful shutdown
-bun run vm:status deviceRemote    # running | stopped | missing
+bun run vm:up deviceRemote        # create if missing, start if stopped, resume if paused
+bun run vm:down deviceRemote      # graceful shutdown (hard stop if paused)
+bun run vm:status deviceRemote    # running | stopped | paused | missing | …
 bun run vm:recover deviceRemote   # roll back to the snapshot, or recreate
 ```
 
@@ -345,15 +346,30 @@ before reporting, bounded at five minutes — PVE's start task settles when QEMU
 was launched, not when sshd is up, so anything driven over the link afterwards
 would otherwise race the boot.
 
-It picks between the two branches on the sealed baseline hash, which it reads
-over ssh — so a **stopped** guest, or one whose sshd is wedged, cannot be asked.
-A guest that did not answer has told you nothing about its disk, so with no
-comparison available `recover` **rolls back** to `podkit-provisioned` (which the
-API reports without the link) and prints which side it could not read.
+It picks between the two branches on the hash `podkit-provisioned` claims in
+its description, which the API returns with the guest stopped, paused or
+running — so the ordinary case compares rather than guesses. Where the snapshot
+claims nothing (sealed by an older podkit, by `vm:snapshot` on an unsealed box,
+or by hand) it falls back to the seal on the guest's disk, read over ssh; a
+guest that cannot be asked has told you nothing, so with no comparison
+available `recover` **rolls back** and prints which side it could not read.
 Recreating is reserved for facts: the inputs drifted, the guest answered and
-carries no seal, there is no snapshot, there is no guest. Run `bun run
-vm:doctor` afterwards to confirm the box it restored is current. The reasoning
-is in [vm-testing.md](../architecture/testing/vm-testing.md).
+carries no seal, there is no snapshot, there is no guest. When the snapshot's
+claim and the guest's seal are both readable and differ, recover chooses on the
+snapshot — that is what a rollback restores — and says they disagree;
+`vm:doctor` notes the same disagreement while judging the disk. Run `bun run
+vm:doctor` afterwards to confirm the box it restored is current. The
+reasoning is in [vm-testing.md](../architecture/testing/vm-testing.md).
+
+A snapshot sealed before the description carried a field reads as `unknown`
+until it is re-sealed: `bun run vm:up deviceRemote && bun run harness:seal`.
+
+**A paused guest is a state PVE reaches on its own** — a storage error, a
+snapshot with RAM, a host suspend — so the verbs handle it rather than treating
+it as exotic. `vm:up` resumes it, `vm:down` stops it hard (a paused guest cannot
+answer an ACPI shutdown), and `vm:recover` stops it before rolling back or
+destroying. A status the lifecycle has no name for is refused with the `qm
+status` to run, rather than acted on.
 
 When you know the guest is beyond repair, ask for the rebuild outright:
 
@@ -376,7 +392,7 @@ running — that is an observation, not a guess.
 Two verbs exist only for an `ssh` substrate:
 
 ```bash
-bun run vm:snapshot deviceRemote          # retake the provisioning snapshot
+bun run vm:snapshot deviceRemote          # retake the provisioning snapshot, recording the guest's seal
 bun run vm:unlock deviceRemote [--force]  # report or break the run lock
 ```
 

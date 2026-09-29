@@ -4,9 +4,9 @@
  * baseline hash into the guest, and — where the provisioner supports it — take
  * the provisioning snapshot.
  *
- * All three describe the same moment, which is why they are one command. A
- * snapshot without a matching sealed hash is a restore point nothing vouches
- * for, so `vm:recover` reads the seal as absent and recreates instead.
+ * All three describe the same moment, which is why they are one command. The
+ * snapshot carries the hash it was sealed with, so `vm:recover` can compare a
+ * guest that is not running.
  *
  * The Lima harness seals as the last step of `harness:setup`; this is the same
  * step for a substrate this repo did not create.
@@ -61,7 +61,7 @@ async function main(): Promise<number> {
     return 0;
   }
 
-  await pveSealSnapshot(resolved.binding, `podkit baseline ${combinedSha.slice(0, 12)}`);
+  await pveSealSnapshot(resolved.binding, { baselineHash: combinedSha });
   process.stdout.write(
     `[harness:seal] took provisioning snapshot '${POST_PROVISION_SNAPSHOT}' on VMID ` +
       `${resolved.binding.vmid}.\n`
