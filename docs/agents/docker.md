@@ -102,15 +102,15 @@ the synthesized iPod, mounts, auto-syncs, and ejects on both detection lanes
 (interrupt mid-sync → drain, exit 0, completed tracks preserved) and **Apprise
 notification** delivery to a mock endpoint on the VM host (`--network host`).
 
-### Running the loopback-fat CLI e2e locally (VM-free)
+### Running the loopback-fat CLI e2e locally
 
-The shipped image, run as a `--privileged` container on the **host** Docker
-daemon, driving the **podkit CLI** against a real loopback FAT block device
-(`losetup` + `mkfs.vfat` inside the container — no VM). It owns the `device add`
+The shipped image, run as a `--privileged` container **inside the device
+substrate**, driving the **podkit CLI** against a real loopback FAT block device
+(`losetup` + `mkfs.vfat` inside the container). It owns the `device add`
 `--no-verify` (trust-disk) verification tier and hard-error-on-generic:
 
 ```bash
-bun run test:e2e:docker-loopback --filter @podkit/e2e-tests
+bun run test:e2e:docker-loopback
 ```
 
 - **CLI surface, not the daemon.** The daemon poller is USB-gated (excludes
@@ -118,23 +118,34 @@ bun run test:e2e:docker-loopback --filter @podkit/e2e-tests
   loopback can never drive daemon detection. Daemon steady-state e2e lives in
   the `vm-docker-image` · `usb-synth` stage above (task-474). The CLI, being
   transport-agnostic, works off a mounted iPod filesystem via on-disk identity.
-- Requires **docker** (a privileged container for `losetup`/`mkfs.vfat`) and the
-  musl binaries (turbo dep `@podkit/device-testing#build:musl-binary`; if run
-  ad-hoc and missing, build with
-  `bunx turbo run build:musl-binary --filter @podkit/device-testing`).
+- **Why the substrate.** `--privileged` plus 64 loop-device `mknod`s is not
+  something to ask of a developer's host, and an unprivileged Linux dev box
+  cannot grant it at all (ADR-028 §4). It needs no gadget and no installed
+  binaries — only the substrate's kernel and its container runtime.
+- **Runtime: `podman`, from the substrate contract** (`substrate-contract.sh`),
+  so it exists on a Lima and a remote substrate alike. A substrate provisioned
+  before podman joined the contract fails `vm:doctor`'s drift check; re-apply the
+  contract (`bun run harness:setup` on Lima, `device-substrate-proxmox.md` §5
+  then `bun run harness:seal` on a remote box).
+- **Image provenance.** Built in the substrate by `ensurePodkitImageInVm` from
+  the production Dockerfile and the **musl** binaries for the substrate's
+  architecture (turbo dep `@podkit/device-testing#build:musl-binary`), rebuilt
+  on every run.
 - The shipped alpine image lacks `mkfs.vfat`; the harness `apk add`s
   `dosfstools`/`util-linux` in the ephemeral container (fixture scaffolding, does
   not touch the binary under test).
-- Cheap and VM-free (~12s), but still excluded from the default e2e run via the
-  `docker-loopback/` surface-dir exclusion — it needs Docker.
+- Loop devices attached inside a container outlive it. The harness sweeps its
+  own — by container label and by backing-file prefix `/tmp/podkit-loopback-` —
+  before starting and after stopping, so a crashed run does not exhaust them.
+- Excluded from `test:vm` via the `vm-docker-loopback/` surface-dir exclusion.
 
 ### Gating against the real GHA-built image (`:rc`)
 
-Both e2e stages above default to building the image **locally** (in-VM for
-`docker-dist`, on the host daemon for `docker-loopback`) — fast, but not the
-literal artifact CI ships. To gate against the real image instead, set
-`PODKIT_DOCKER_DIST_IMAGE` to a registry tag and both stages **pull** it rather
-than building. The one-command way to do this across every surface is
+Both e2e stages above default to building the image **locally**, inside the
+substrate (with `nerdctl` for `docker-dist`, `podman` for `docker-loopback`) —
+fast, but not the literal artifact CI ships. To gate against the real image
+instead, set `PODKIT_DOCKER_DIST_IMAGE` to a registry tag and both stages
+**pull** it rather than building. The one-command way to do this across every surface is
 `bun run quality:rc`, which discovers the release-candidate build and pulls
 `:rc` for you (see docs/agents/testing.md → "The two quality mirrors"). To drive just
 the docker surfaces manually:
@@ -143,12 +154,11 @@ the docker surfaces manually:
 # Verify the next release's real image end-to-end before cutting it.
 export PODKIT_DOCKER_DIST_IMAGE=ghcr.io/jvgomg/podkit:rc
 bun run test:e2e:docker-dist                          # E2E · vm-docker-image · usb-synth
-bun run test:e2e:docker-loopback --filter @podkit/e2e-tests  # E2E · host-docker-image · loopback-fat
+bun run test:e2e:docker-loopback                      # E2E · vm-docker-image · loopback-fat
 ```
 
-- One env var drives both surfaces (`ensurePodkitImageInVm` /
-  `ensurePodkitImageOnHost`): unset → local build; set → `nerdctl pull` (VM) /
-  `docker pull` (host) that tag. `ghcr.io/jvgomg/podkit` is a **public**
+- One env var drives both surfaces (`ensurePodkitImageInVm`): unset → local
+  build; set → `nerdctl pull` / `podman pull` of that tag in the substrate. `ghcr.io/jvgomg/podkit` is a **public**
   package, so the pull is anonymous — no `docker login` / token needed.
 - The `:rc` tag is produced by `.github/workflows/verify-release.yml` when the
   open "Version Packages" PR (the changesets version bump) runs its verification

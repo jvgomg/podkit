@@ -180,8 +180,8 @@ async function main() {
   }
   // `--exclude-path` drops any file whose full path contains the given
   // substring — the path-based mirror of the positional include filters
-  // below. Used to gate Surface subdirectories (e.g. `docker-source/`,
-  // `docker-loopback/`) out of the default run without touching filenames.
+  // below. Used to gate Surface subdirectories (e.g. `docker-source/`) out of
+  // the default run without touching filenames.
   if (args.excludePaths.length > 0) {
     files = files.filter((f) => !args.excludePaths.some((p) => f.includes(p)));
   }

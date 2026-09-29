@@ -23,7 +23,7 @@ export interface StartContainerOptions {
    * as real root. Set this whenever the container writes into a bind-mounted
    * host directory the test later has to delete — see the `--user` block in
    * {@link startContainer}. Leave it off for containers that genuinely need
-   * root inside (the docker-loopback harness `mknod`s loop devices).
+   * root inside.
    */
   runAsHostUser?: boolean;
 }

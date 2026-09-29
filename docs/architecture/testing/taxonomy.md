@@ -131,7 +131,7 @@ call the interesting ones out.
 
 > **The `Where` column reflects the surface-by-directory layout**
 > ([ADR-025](../../adr/adr-025-canonical-test-taxonomy.md)). The
-> the `docker-source/`, `vm-docker/`, and `docker-loopback/` directories all
+> `docker-source/`, `vm-docker/`, and `vm-docker-loopback/` directories all
 > now exist.
 
 | Runtime | Source | Device | Where | Depth |
@@ -139,9 +139,9 @@ call the interesting ones out.
 | `host-binary` | `local-dir` | `dir` | `e2e-tests/` feature dirs (`commands/`, `features/`, `workflows/`, …) | E2E |
 | `host-binary` | `docker-sidecar` | `dir` | `e2e-tests/src/docker-source/` | E2E |
 | `host-docker-image` | `local-dir` | `none` | `packages/podkit-docker/test/image-smoke.sh` | E2E |
-| `host-docker-image` | `local-dir` | `loopback-fat` | `e2e-tests/src/docker-loopback/` — **CLI** device ops (trust-disk verification, hard-error-on-generic — task-450) | E2E |
 | `vm-binary` | `local-dir` | `usb-synth` | `e2e-vm-tests/` (root) + `device-testing/src/vm/` (harness self-tests) — reached over a `SubstrateLink`, so the same files run against a Lima VM or a remote Debian box | E2E |
 | `vm-docker-image` | `local-dir` | `usb-synth` | `e2e-vm-tests/src/vm-docker/` | E2E |
+| `vm-docker-image` | `local-dir` | `loopback-fat` | `e2e-vm-tests/src/vm-docker-loopback/` — **CLI** device ops (trust-disk verification, hard-error-on-generic — task-450), in a `--privileged` container of the substrate contract's runtime, `podman` | E2E |
 
 Also classified here (not device E2E surfaces):
 
@@ -166,6 +166,12 @@ Also classified here (not device E2E surfaces):
   is a **CLI** device surface (task-450), not a daemon one — the CLI is
   transport-agnostic and operates on a mounted iPod filesystem via on-disk
   identity, so it needs no USB.
+- **`host-docker-image` · `loopback-fat` is empty by decision.** The cell
+  needs `--privileged` and 64 loop-device `mknod`s, which is why
+  [ADR-028](../../adr/adr-028-substrate-agnostic-device-harness.md) §4 moves
+  it onto the substrate; the same image and assertions run there as
+  `vm-docker-image` · `loopback-fat` (task-517). On macOS that trades Docker
+  Desktop for the Lima substrate the VM suites already need.
 
 Record a new gap here whenever you notice one; delete the note when a
 cell fills.
@@ -189,8 +195,8 @@ foldered off.
 
 | Package | Default surface (root) | Non-default surfaces (subdirs) |
 |---|---|---|
-| `test-packages/e2e-tests` | `host-binary` · `local-dir` · `dir` | `docker-source/`, `docker-loopback/` *(the latter still planned — task-450)* |
-| `test-packages/e2e-vm-tests` | `vm-binary` · `local-dir` · `usb-synth` | `vm-docker/` |
+| `test-packages/e2e-tests` | `host-binary` · `local-dir` · `dir` | `docker-source/` |
+| `test-packages/e2e-vm-tests` | `vm-binary` · `local-dir` · `usb-synth` | `vm-docker/`, `vm-docker-loopback/` |
 
 > **Not a surface directory:** `test-packages/e2e-tests/src/docker/`
 > holds container-lifecycle **helpers** (`container-manager.ts`,
@@ -204,22 +210,21 @@ from its path — no need to open the file.
 The mechanics differ by runner but the semantics are identical:
 
 - **VM (`e2e-vm-tests`)** — bun natively globs paths, so `test:vm`
-  excludes `**/vm-docker/**` and `test:e2e:docker-dist` selects
-  `src/vm-docker/`.
+  excludes `**/vm-docker/**` and `**/vm-docker-loopback/**`, and
+  `test:e2e:docker-dist` / `test:e2e:docker-loopback` select their own
+  directory.
 - **Host (`e2e-tests`)** — the custom `gpod-tests-parallel` runner walks
   the tree and matches `--pattern` / `--exclude` against the **basename
   only**, so it grew a directory-aware `--exclude-path <substr>` flag
   (and honours a positional path substring for inclusion). `test:e2e`
-  excludes `docker-source/` and `docker-loopback/`; `test:e2e:docker`
+  excludes `docker-source/`; `test:e2e:docker`
   selects `docker-source/`. The `bun test`-based variants
   (`test:e2e:serial`, `test:e2e:real`) gate the same directories via
   bun's own `--path-ignore-patterns`.
 
 Because host gating is now purely directory-based, the moved
 `docker-source/` files are bare `*.test.ts` (the redundant `.docker`
-token was dropped). The `docker-loopback/` exclusion is wired into the
-default host gate ahead of task-450, so that task only has to drop files
-into the directory.
+token was dropped).
 
 > **Known inconsistency (pre-existing):** `e2e-tests` marks E2E by
 > *package membership* (its files are bare `*.test.ts`, gated by the
@@ -248,13 +253,16 @@ grep -cE "docker run" packages/podkit-docker/test/image-smoke.sh
 
 # Host E2E, default surface (excludes the non-default surface dirs)
 find test-packages/e2e-tests/src -name '*.test.ts' \
-  -not -path '*/docker-source/*' -not -path '*/docker-loopback/*'
+  -not -path '*/docker-source/*' -not -path '*/docker/*'
 
 # Host E2E, docker-sidecar source
 find test-packages/e2e-tests/src/docker-source -name '*.test.ts'
 
-# VM E2E, vm-docker-image
+# VM E2E, vm-docker-image · usb-synth
 find test-packages/e2e-vm-tests/src/vm-docker -name '*.test.ts'
+
+# VM E2E, vm-docker-image · loopback-fat
+find test-packages/e2e-vm-tests/src/vm-docker-loopback -name '*.test.ts'
 ```
 
 The host runner can also print its own selection without executing:
@@ -293,7 +301,7 @@ The retired [doc-053](../../../backlog/docs/) "five tiers" and the old
 | doc-053 **Tier 1** (daemon unit) | **Unit** |
 | doc-053 **Tier 2** (entrypoint bats) | **Integration** |
 | doc-053 **Tier 3** (image smoke) | **E2E** · `host-docker-image` · `local-dir` · `none` |
-| doc-053 **Tier 4** (loopback) | **E2E** · `host-docker-image` · `local-dir` · `loopback-fat` |
+| doc-053 **Tier 4** (loopback) | **E2E** · `vm-docker-image` · `local-dir` · `loopback-fat` (was `host-docker-image` until task-517) |
 | doc-053 **Tier 5** (image + USB in VM) | **E2E** · `vm-docker-image` · `local-dir` · `usb-synth` |
 | ADR-016 / vm-testing **"Tier-3"** | **E2E** · `vm-binary` · `local-dir` · `usb-synth` |
 

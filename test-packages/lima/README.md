@@ -491,13 +491,3 @@ bun run test:unit --filter @podkit/lima
   buffered.
 - `src/progress.ts` — the elapsed-time heartbeat primitive. Reporting only; it
   never kills anything.
-- `src/docker-image.ts` — build/pull the podkit Docker image *inside* a VM (no
-  persona or system-state coupling, so it belongs to the substrate). Its bounds
-  follow the same split: a long tail hanging off a series of very short steps.
-
-  | Operation | Instrument | Value | Basis |
-  |-----------|-----------|-------|-------|
-  | `systemctl start`, `mkdir -p`, `chmod +x`, `rm -rf <ctx>`, `nerdctl image inspect` | wall clock | `VM_HOUSEKEEPING_TIMEOUT_MS` = 45s | Measured at 69–310 ms each, including genuinely cold `containerd`/`buildkit` starts at ~110 ms. Sized off the SSH round trip on a loaded host, not the work — same reasoning and same value as the persona daemon units |
-  | `nerdctl system prune -af` | wall clock | `IMAGE_PRUNE_TIMEOUT_MS` = 120s | The one step whose cost scales — with the content store and buildkit cache. Still gentle (unlinking blobs, not moving bytes): 267 ms against a 353 MB image plus its build cache, and the store is capped by the VM's 20 GB disk |
-  | `nerdctl build` | **none** | — | Pulls a base image over the network and writes hundreds of MB of layers; aborting one mid-flight leaves a partial image to reason about |
-  | `nerdctl pull` | **none** | — | A registry fetch over whatever connection the developer is on |

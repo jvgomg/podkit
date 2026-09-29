@@ -300,7 +300,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
     // Resolve the docker-dist image once for the whole suite: build in-VM from
     // the current musl binaries (`force` guarantees a fresh image, not a stale
     // cached tag), or pull the pre-built artifact when the env switch is set.
-    IMAGE = await ensurePodkitImageInVm({ force: true });
+    IMAGE = await ensurePodkitImageInVm({ runtime: 'nerdctl', force: true });
     await deviceHarness.applyState(healthy);
   }, IMAGE_BUILD_TIMEOUT_MS);
 

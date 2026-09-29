@@ -50,7 +50,11 @@ SUBSTRATE_DEBIAN_POINT_RELEASE="12.10"
 #   dosfstools      mkfs.vfat, for synthesising FAT32 backing images
 #   mtools          mcopy/mmd, to seed those images without loop-mounting
 #   e2fsprogs       ext filesystem tooling for backing-image work
-SUBSTRATE_PACKAGES="ffmpeg libgpod4 libgpod-common libglib2.0-0 ca-certificates kmod dosfstools mtools e2fsprogs"
+#   podman          the substrate's container runtime, for the shipped-image
+#                   surfaces. Daemonless and in bookworm's archive; it pulls in
+#                   no -dev or toolchain package. Driven rootful (`sudo podman`)
+#                   because the loopback-fat cell needs `--privileged`.
+SUBSTRATE_PACKAGES="ffmpeg libgpod4 libgpod-common libglib2.0-0 ca-certificates kmod dosfstools mtools e2fsprogs podman"
 
 # Kernel modules that must be loaded. dummy_hcd provides a virtual USB host
 # controller; libcomposite plus the usb_f_* function modules are what the

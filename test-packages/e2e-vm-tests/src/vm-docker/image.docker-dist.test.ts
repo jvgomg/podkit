@@ -67,7 +67,7 @@
  *      the first assertion proves. (`gpod-tool init` writes a classic SysInfo but
  *      no SysInfoExtended; the two agree on the 5G Video, so add verifies.)
  *
- * @see test-packages/device-testing/src/runners/lima-docker-image.ts (buildPodkitImageInVm)
+ * @see test-packages/device-testing/src/runners/shipped-image.ts (buildPodkitImageInVm)
  * @see test-packages/device-testing/src/vm/mount-persona.ts (resolvePersonaDeviceNodes)
  * @see docs/agents/docker.md ("Running the vm-docker-image e2e locally")
  */
@@ -193,7 +193,7 @@ describe('VM: Docker dist image e2e (musl image + synthesized USB iPod)', () => 
     // Resolve the docker-dist image once for the whole suite: build in-VM from
     // the current musl binaries (`force` guarantees a fresh image, not a stale
     // cached tag), or pull the pre-built artifact when the env switch is set.
-    IMAGE = await ensurePodkitImageInVm({ force: true });
+    IMAGE = await ensurePodkitImageInVm({ runtime: 'nerdctl', force: true });
     await deviceHarness.applyState(healthy);
   }, IMAGE_BUILD_TIMEOUT_MS);
 

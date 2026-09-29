@@ -143,12 +143,6 @@
       "inputs": ["src/**"],
       "outputs": []
     },
-    "@podkit/e2e-tests#test:e2e:docker-loopback": {
-      "dependsOn": ["^build", "@podkit/device-testing#build:musl-binary"],
-      "cache": false,
-      "inputs": ["src/**", "package.json"],
-      "outputs": []
-    },
     "typecheck": {
       "dependsOn": ["^build"],
       "inputs": ["src/**", "tsconfig.json"],
@@ -359,6 +353,20 @@
         "package.json",
         "bunfig.toml"
       ],
+      "outputs": []
+    },
+    "@podkit/e2e-vm-tests#test:e2e:docker-loopback": {
+      // Builds the shipped image inside the substrate from the musl binaries,
+      // so it needs those and a substrate whose contract is current (the
+      // contract declares the container runtime) — but not `vm:install`: the
+      // installed glibc binaries are never run by this cell.
+      "dependsOn": [
+        "^build",
+        "@podkit/device-testing#build:musl-binary",
+        "@podkit/device-testing#vm:doctor"
+      ],
+      "cache": false,
+      "inputs": ["src/vm-docker-loopback/**", "package.json", "bunfig.toml"],
       "outputs": []
     },
     "@podkit/e2e-vm-tests#test:e2e:docker-dist": {

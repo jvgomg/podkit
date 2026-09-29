@@ -46,10 +46,7 @@ function probeContainerRuntime(): SurfaceCapability {
   const base: Omit<SurfaceCapability, 'available' | 'reason'> = {
     id: 'container-runtime',
     label: `container runtime (${runtime})`,
-    surfaces: [
-      'host-binary · docker-sidecar · dir',
-      'host-docker-image · local-dir · loopback-fat',
-    ],
+    surfaces: ['host-binary · docker-sidecar · dir'],
   };
 
   const result = spawnSync(runtime, ['version'], { stdio: 'ignore', timeout: 30000 });
@@ -79,7 +76,11 @@ function probeDeviceSubstrate(): SurfaceCapability {
   const base: Omit<SurfaceCapability, 'available' | 'reason'> = {
     id: 'device-substrate',
     label: `device substrate (${instance})`,
-    surfaces: ['vm-binary · local-dir · usb-synth', 'vm-docker-image · local-dir · usb-synth'],
+    surfaces: [
+      'vm-binary · local-dir · usb-synth',
+      'vm-docker-image · local-dir · usb-synth',
+      'vm-docker-image · local-dir · loopback-fat',
+    ],
   };
 
   const result = spawnSync('limactl', ['list', '--format', '{{.Status}}', instance], {

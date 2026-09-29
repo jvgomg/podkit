@@ -1,7 +1,7 @@
 /**
- * E2E · `host-docker-image` · `local-dir` · `loopback-fat` — the shipped image
- * driving the **podkit CLI** against a real loopback FAT block device, VM-free.
- * (doc-053 Tier-4; taxonomy: docs/architecture/testing/taxonomy.md)
+ * E2E · `vm-docker-image` · `local-dir` · `loopback-fat` — the shipped image,
+ * run inside the device substrate, driving the **podkit CLI** against a real
+ * loopback FAT block device. (taxonomy: docs/architecture/testing/taxonomy.md)
  *
  * # Why this is a CLI surface, not a daemon one
  *
@@ -17,7 +17,7 @@
  * # What it owns
  *
  * The `device add` **`--no-verify` (trust-disk)** verification tier against a
- * mounted iPod volume — the case `src/docker-source/device-add.test.ts`
+ * mounted iPod volume — the case `e2e-tests/src/docker-source/device-add.test.ts`
  * documents as blocked "until the harness can mount a synthetic iPod volume" —
  * plus **hard-error-on-generic** (`device add` in detect mode against a generic
  * FAT lacking authoritative identity → refuse, never mutate). The default
@@ -27,20 +27,21 @@
  *
  *   bun run test:e2e:docker-loopback
  *
- * Requires Docker (a `--privileged` container for `losetup`/`mkfs.vfat`) and the
- * musl binaries (turbo dep `@podkit/device-testing#build:musl-binary`; if run
- * ad-hoc and missing, `bunx turbo run build:musl-binary --filter
- * @podkit/device-testing`). Excluded from the default e2e run via the
- * `docker-loopback/` surface-dir exclusion.
+ * Needs a device substrate that satisfies the substrate contract — its
+ * container runtime (`podman`) runs the image `--privileged` for
+ * `losetup`/`mkfs.vfat` — and the musl binaries for the substrate's
+ * architecture (turbo dep `@podkit/device-testing#build:musl-binary`). Kept out
+ * of `test:vm` by the `vm-docker-loopback/` surface-dir exclusion.
  *
  * @tags docker
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 
-import { ensurePodkitImageOnHost } from '../docker/podkit-image.js';
-import { isDockerAvailable } from '../sources/subsonic.js';
+import { ensurePodkitImageInVm, SUBSTRATE_CONTRACT_RUNTIME } from '@podkit/device-testing';
+
 import {
+  requireLoopbackRuntime,
   startLoopbackContainer,
   seedIpodLoopback,
   seedGenericLoopback,
@@ -58,21 +59,23 @@ interface DeviceAddJson {
   verification?: 'verified' | 'trusted-disk' | 'config-only';
 }
 
-// Reassigned in beforeAll: the local build keeps this tag; a pull (when
+// Reassigned in beforeAll: a local build keeps this tag; a pull (when
 // PODKIT_DOCKER_DIST_IMAGE is set) resolves to the pulled registry tag.
 let IMAGE_TAG = 'podkit:loopback-test';
-const BUILD_TIMEOUT_MS = 300_000;
+const BUILD_TIMEOUT_MS = 600_000;
 const CASE_TIMEOUT_MS = 60_000;
 
 let container: LoopbackContainer;
 
 beforeAll(async () => {
-  if (!(await isDockerAvailable())) {
-    throw new Error(
-      'Docker is not available — required for the docker-loopback suite. Start Docker and run `bun run test:e2e:docker-loopback`.'
-    );
-  }
-  IMAGE_TAG = await ensurePodkitImageOnHost({ tag: IMAGE_TAG });
+  await requireLoopbackRuntime();
+  // `force`: an image left by an earlier run would otherwise be reused, and
+  // the cell would test yesterday's binaries.
+  IMAGE_TAG = await ensurePodkitImageInVm({
+    runtime: SUBSTRATE_CONTRACT_RUNTIME,
+    tag: IMAGE_TAG,
+    force: true,
+  });
   container = await startLoopbackContainer(IMAGE_TAG);
 }, BUILD_TIMEOUT_MS);
 

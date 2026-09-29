@@ -7,8 +7,9 @@
 # kicks off a multi-minute Docker image build; the explicit `test:e2e:docker-dist`
 # script re-includes it via `--path-ignore-patterns=`. (`vm-docker` = the shipped
 # Docker distribution image run inside the VM — distinct from `@podkit/e2e-tests`'s
-# `docker-source/`, which only uses Docker to host a source.)
-pathIgnorePatterns = ["**/*.integration.test.ts", "**/*.e2e.test.ts", "**/vm-docker/**"]
+# `docker-source/`, which only uses Docker to host a source.) `src/vm-docker-loopback/`
+# is excluded for the same reason and re-included by `test:e2e:docker-loopback`.
+pathIgnorePatterns = ["**/*.integration.test.ts", "**/*.e2e.test.ts", "**/vm-docker/**", "**/vm-docker-loopback/**"]
 # retry = 0 is repo policy: a test that passes on the second attempt is a bug
 # report, not a pass. See docs/agents/testing.md §Retries for why, and for how to
 # grant an exception if you genuinely need one.

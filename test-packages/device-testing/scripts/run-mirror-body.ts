@@ -12,11 +12,13 @@
  *
  *   Phase 1 — `turbo run qa` (lint, typecheck, build, unit, integration, host
  *             e2e, host-docker source e2e, and the VM suite `test:vm`).
- *   Phase 2 — `turbo run test:e2e:docker-dist test:e2e:docker-loopback` (the two
- *             shipped-image surfaces).
+ *   Phase 2 — `turbo run test:e2e:docker-dist`, then `turbo run
+ *             test:e2e:docker-loopback` (the two shipped-image surfaces).
  *
- * Phase 2 is serialized after phase 1 because `test:vm` and `docker-dist` share
- * the one device substrate and collide if driven concurrently.
+ * Phase 2 is serialized after phase 1, and its two tasks after each other,
+ * because all three suites drive the one device substrate and collide if run
+ * concurrently — the two shipped-image cells both attach loop devices in its
+ * kernel.
  *
  * Before either phase runs, the body reports which surfaces this machine can
  * cover. Suites whose capability is missing skip themselves rather than failing
@@ -47,7 +49,7 @@ const TURBO_WRAPPER = path.resolve(REPO_ROOT, 'test-packages/substrate/scripts/t
 
 /** Phase 1 — the standard quality DAG (includes `test:vm`). */
 const PHASE_1_TASKS = ['qa'];
-/** Phase 2 — the two shipped-image surfaces, serialized after phase 1. */
+/** Phase 2 — the two shipped-image surfaces, run one after the other after phase 1. */
 const PHASE_2_TASKS = ['test:e2e:docker-dist', 'test:e2e:docker-loopback'];
 
 /**
@@ -92,8 +94,10 @@ export async function runMirrorBody(extraArgs: string[] = []): Promise<number> {
   const phase1 = await runTurbo(PHASE_1_TASKS, extraArgs);
   if (phase1 !== 0) return phase1;
 
-  const phase2 = await runTurbo(PHASE_2_TASKS, extraArgs);
-  if (phase2 !== 0) return phase2;
+  for (const task of PHASE_2_TASKS) {
+    const phase2 = await runTurbo([task], extraArgs);
+    if (phase2 !== 0) return phase2;
+  }
 
   if (missing.length > 0) {
     const uncovered = missing.flatMap((capability) => capability.surfaces);

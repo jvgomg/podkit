@@ -3,8 +3,7 @@
  *
  * Owns the pure-Lima mechanics shared across the repo: the `limactl` wrapper,
  * every Lima VM config, idempotent lifecycle primitives, a single cross-process
- * advisory lock, the VM-shaped link adapters, baseline-hash + drift, and the in-VM
- * docker-image build/pull.
+ * advisory lock, the VM-shaped link adapters, and baseline-hash + drift.
  *
  * Two things are deliberately NOT here. Domain concerns (personas,
  * system-states, the FunctionFS daemon-gadget, the runtime factory) stay in
@@ -167,24 +166,6 @@ export type {
   BaselineHashResult,
 } from './baseline-hash.js';
 export { computeBaselineHash, BASELINE_VM_HASH_PATH } from './baseline-hash.js';
-
-// In-VM docker-image build/pull
-export type {
-  BuildPodkitImageInVmOpts,
-  BuildPodkitImageInVmResult,
-  PullPodkitImageInVmOpts,
-  EnsurePodkitImageInVmOpts,
-} from './docker-image.js';
-export {
-  buildPodkitImageInVm,
-  pullPodkitImageInVm,
-  ensurePodkitImageInVm,
-  DEFAULT_PODKIT_IMAGE_TAG,
-  DOCKER_DIST_IMAGE_ENV,
-  BUILD_CONTEXT_VM_DIR,
-  VM_HOUSEKEEPING_TIMEOUT_MS,
-  IMAGE_PRUNE_TIMEOUT_MS,
-} from './docker-image.js';
 
 // The `podkit-vm` CLI itself, for the one caller that has to compose with it
 // rather than shell out: `vm:recover` needs a baseline hash this package

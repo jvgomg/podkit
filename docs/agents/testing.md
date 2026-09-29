@@ -192,9 +192,9 @@ E2E packages are kept out of the global compose by using non-`test` task names �
 
 | Command | Runs what | Where |
 |---|---|---|
-| `bun run test:e2e` | `*.test.ts` outside the surface subdirs (`docker-source/`, `docker-loopback/`) — host CLI subprocess against dummy iPod. | `test-packages/e2e-tests/` only. |
+| `bun run test:e2e` | `*.test.ts` outside the `docker-source/` surface subdir — host CLI subprocess against dummy iPod. | `test-packages/e2e-tests/` only. |
 | `bun run test:e2e:docker` | `src/docker-source/**/*.test.ts` — host CLI subprocess against containerised back-ends. | `test-packages/e2e-tests/` only. |
-| `bun run test:e2e:docker-loopback` | `src/docker-loopback/**/*.test.ts` — shipped image (`--privileged`) driving the CLI against a loopback FAT block device, VM-free. Trust-disk verification + hard-error-on-generic. | `test-packages/e2e-tests/` only. |
+| `bun run test:e2e:docker-loopback` | `src/vm-docker-loopback/**/*.test.ts` — shipped image run `--privileged` (podman) inside the device substrate, driving the CLI against a loopback FAT block device. Trust-disk verification + hard-error-on-generic. | `test-packages/e2e-vm-tests/` only. |
 | `bun run test:vm` | `*.e2e.test.ts` + harness self-tests — Lima VM with `dummy_hcd` + FunctionFS. | `test-packages/e2e-vm-tests/` and `test-packages/device-testing/src/vm/`. |
 
 Note the naming gotcha: `*.e2e.test.ts` files are **not** picked up by `test:e2e`. They run via `test:vm` because they need the VM harness. Only files in `@podkit/e2e-tests` count toward `test:e2e` / `test:e2e:docker`.
@@ -311,10 +311,12 @@ Both commands funnel through **one shared two-phase body**
 drift in which surfaces run:
 
 - **Phase 1** — `turbo run qa` (includes `test:vm`).
-- **Phase 2** — `turbo run test:e2e:docker-dist test:e2e:docker-loopback`.
+- **Phase 2** — `turbo run test:e2e:docker-dist`, then `turbo run
+  test:e2e:docker-loopback`.
 
-The split is deliberate: `qa` already contains `test:vm`, and both `test:vm` and
-`test:e2e:docker-dist` drive the single shared `podkit-device` VM.
+The split is deliberate: `qa` already contains `test:vm`, and `test:vm`,
+`test:e2e:docker-dist` and `test:e2e:docker-loopback` all drive the single
+shared device substrate.
 Running them concurrently collides on the gadget/mount state (a bare-FAT
 `gpod-tool init` fails), so the docker phase must wait for `qa` to release the
 VM. Extra flags pass through to both phases: `bun run quality --force`, or

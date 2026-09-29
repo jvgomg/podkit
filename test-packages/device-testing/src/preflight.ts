@@ -74,6 +74,9 @@ function vmTestsTargeted(): boolean {
   // files, which use a separate preflight.
   if (process.env.npm_lifecycle_event === 'test:vm') return true;
   if (process.env.npm_lifecycle_event === 'test:e2e:docker-dist') return true;
+  // The loopback-fat cell runs the shipped image in the substrate too; its
+  // files live in `vm-docker-loopback/`, which the argv sniff below also catches.
+  if (process.env.npm_lifecycle_event === 'test:e2e:docker-loopback') return true;
   // Match `vm/`, a trailing `/vm` (or bare `vm`) path segment, any `.e2e.`
   // filename, and a `vm-docker` path segment (`bun test src/vm-docker`
   // invoked directly without npm). The trailing-segment variant catches
