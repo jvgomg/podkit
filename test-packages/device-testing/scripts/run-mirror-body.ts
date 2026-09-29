@@ -86,7 +86,7 @@ export const EXIT_INCOMPLETE = 2;
  * still not a pass.
  */
 export async function runMirrorBody(extraArgs: string[] = []): Promise<number> {
-  const capabilities = probeCapabilities();
+  const capabilities = await probeCapabilities();
   const missing = capabilities.filter((capability) => !capability.available);
 
   process.stdout.write(`${formatCapabilityReport(capabilities)}\n\n`);

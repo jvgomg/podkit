@@ -8,11 +8,16 @@
  */
 
 import { describe, it, expect } from 'bun:test';
+import { getVm, SubstrateSelectionError, type VmDefinition } from '@podkit/substrate';
+
 import {
   formatCapabilityReport,
   probeCapabilities,
+  probeDeviceSubstrate,
+  type DeviceSubstrateProbeDeps,
   type SurfaceCapability,
 } from './capabilities.js';
+import { createSubstrateLink, type SubstrateReadiness } from './runners/substrate.js';
 
 const available: SurfaceCapability = {
   id: 'container-runtime',
@@ -50,16 +55,110 @@ describe('formatCapabilityReport', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// The device-substrate probe
+//
+// Injected rather than live: the real probe opens an SSH session, and a unit
+// test that depends on a box being up is a test of the box.
+// ---------------------------------------------------------------------------
+
+/** Deps that select `id` and report it as `readiness`, recording any notice. */
+function selecting(
+  id: string,
+  readiness: SubstrateReadiness
+): DeviceSubstrateProbeDeps & { notices: string[] } {
+  const definition: VmDefinition = getVm(id);
+  const notices: string[] = [];
+  return {
+    notices,
+    notice: (line) => notices.push(line),
+    resolve: (notice) => {
+      notice(`selected ${id}`);
+      return { definition, link: createSubstrateLink(definition) };
+    },
+    probe: async (def) => {
+      expect(def).toBe(definition);
+      return readiness;
+    },
+  };
+}
+
+const VM_SURFACES = [
+  'vm-binary · local-dir · usb-synth',
+  'vm-docker-image · local-dir · usb-synth',
+  'vm-docker-image · local-dir · loopback-fat',
+];
+
+describe('probeDeviceSubstrate', () => {
+  it('reports the selected remote substrate available when it answers', async () => {
+    const capability = await probeDeviceSubstrate(selecting('deviceRemote', 'ready'));
+
+    expect(capability.available).toBe(true);
+    expect(capability.label).toContain('deviceRemote');
+    expect(capability.surfaces).toEqual(VM_SURFACES);
+  });
+
+  it('reports a selected Lima substrate available when it answers', async () => {
+    const capability = await probeDeviceSubstrate(selecting('device', 'ready'));
+    expect(capability.available).toBe(true);
+    expect(capability.label).toContain('device');
+  });
+
+  it('names the link and the way up when the substrate does not answer', async () => {
+    const capability = await probeDeviceSubstrate(selecting('deviceRemote', 'unreachable'));
+
+    expect(capability.available).toBe(false);
+    expect(capability.reason).toContain('podkit-substrate');
+    expect(capability.reason).toContain('bun run vm:up deviceRemote');
+    expect(capability.surfaces).toEqual(VM_SURFACES);
+  });
+
+  it('points an uncreated Lima substrate at first-time setup, not vm:up', async () => {
+    const capability = await probeDeviceSubstrate(selecting('device', 'unreachable'));
+
+    expect(capability.available).toBe(false);
+    expect(capability.reason).toContain('bun run harness:setup');
+    expect(capability.reason).not.toContain('vm:up');
+  });
+
+  it('says a stopped substrate exists but is not running', async () => {
+    const capability = await probeDeviceSubstrate(selecting('device', 'startable'));
+
+    expect(capability.available).toBe(false);
+    expect(capability.reason).toMatch(/not running.*bun run vm:up device/);
+  });
+
+  it('carries the selection error through as the reason rather than throwing', async () => {
+    const capability = await probeDeviceSubstrate({
+      resolve: () => {
+        throw new SubstrateSelectionError('No substrate selected and `limactl` is not on PATH');
+      },
+    });
+
+    expect(capability.available).toBe(false);
+    expect(capability.reason).toContain('No substrate selected');
+    expect(capability.surfaces).toEqual(VM_SURFACES);
+  });
+
+  it("renders the resolver's announcement through the supplied sink", async () => {
+    const deps = selecting('device', 'ready');
+    await probeDeviceSubstrate(deps);
+    expect(deps.notices).toEqual(['selected device']);
+  });
+});
+
 describe('probeCapabilities', () => {
-  it('probes both gate capabilities', () => {
-    const ids = probeCapabilities().map((capability) => capability.id);
+  it('probes both gate capabilities', async () => {
+    const ids = (await probeCapabilities(selecting('deviceRemote', 'ready'))).map(
+      (capability) => capability.id
+    );
     expect(ids).toEqual(['container-runtime', 'device-substrate']);
   });
 
-  it('always explains an unavailable capability', () => {
-    // Whichever way this machine is configured, "unavailable with no reason"
-    // is never an acceptable state — that is the report's whole job.
-    for (const capability of probeCapabilities()) {
+  it('always explains an unavailable capability', async () => {
+    // "Unavailable with no reason" is never an acceptable state — that is the
+    // report's whole job.
+    for (const capability of await probeCapabilities(selecting('deviceRemote', 'unreachable'))) {
       if (!capability.available) {
         expect(capability.reason).toBeTruthy();
         expect(capability.surfaces.length).toBeGreaterThan(0);

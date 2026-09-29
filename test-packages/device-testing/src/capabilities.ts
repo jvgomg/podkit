@@ -12,13 +12,21 @@
  * at all, because it is indistinguishable from a real pass. This module
  * supplies the report; `run-mirror-body.ts` supplies the non-zero exit.
  *
- * Probes are synchronous and cheap — they answer "could this run?", never "did
- * it pass?".
+ * Probes are cheap — they answer "could this run?", never "did it pass?".
  *
  * @module
  */
 
 import { spawnSync } from 'node:child_process';
+
+import { isLimaVm, type SubstrateLink, type VmDefinition } from '@podkit/substrate';
+
+import {
+  probeSubstrate,
+  resolveDeviceSubstrate,
+  type SubstrateNotice,
+  type SubstrateReadiness,
+} from './runners/substrate.js';
 
 /** A capability the gate depends on, and the surfaces it gates. */
 export interface SurfaceCapability {
@@ -36,10 +44,6 @@ export interface SurfaceCapability {
 
 /** Environment variable selecting the container runtime binary. */
 const CONTAINER_RUNTIME_ENV = 'PODKIT_CONTAINER_RUNTIME';
-
-/** Instance name of the device substrate. */
-const DEVICE_SUBSTRATE_ENV = 'PODKIT_DEVICE_SUBSTRATE';
-const DEFAULT_DEVICE_SUBSTRATE = 'podkit-device';
 
 function probeContainerRuntime(): SurfaceCapability {
   const runtime = process.env[CONTAINER_RUNTIME_ENV]?.trim() || 'docker';
@@ -71,49 +75,78 @@ function probeContainerRuntime(): SurfaceCapability {
   return { ...base, available: true };
 }
 
-function probeDeviceSubstrate(): SurfaceCapability {
-  const instance = process.env[DEVICE_SUBSTRATE_ENV]?.trim() || DEFAULT_DEVICE_SUBSTRATE;
+/** The taxonomy cells that run inside the device substrate. */
+const DEVICE_SUBSTRATE_SURFACES = [
+  'vm-binary · local-dir · usb-synth',
+  'vm-docker-image · local-dir · usb-synth',
+  'vm-docker-image · local-dir · loopback-fat',
+];
+
+/** Seams for {@link probeDeviceSubstrate}; production leaves every one unset. */
+export interface DeviceSubstrateProbeDeps {
+  /** Where the selection resolver's announcement goes. */
+  notice?: SubstrateNotice;
+  /** Which substrate this machine drives, and a link to it. */
+  resolve?: (notice: SubstrateNotice) => { definition: VmDefinition; link: SubstrateLink };
+  /** Whether that substrate answers. */
+  probe?: (definition: VmDefinition) => Promise<SubstrateReadiness>;
+}
+
+const gateNotice: SubstrateNotice = (line) => {
+  process.stderr.write(`[quality] ${line}\n`);
+};
+
+/**
+ * Probe the substrate the selection resolver picks — the same one the suites
+ * will drive — rather than assuming a Lima VM. Never throws: an unconfigured
+ * machine is a capability it lacks, and the resolver's error says how to add it.
+ */
+export async function probeDeviceSubstrate(
+  deps: DeviceSubstrateProbeDeps = {}
+): Promise<SurfaceCapability> {
+  const notice = deps.notice ?? gateNotice;
+  const resolve = deps.resolve ?? ((sink) => resolveDeviceSubstrate({ notice: sink }));
+  const probe = deps.probe ?? ((definition) => probeSubstrate(definition));
+
+  let resolved: { definition: VmDefinition; link: SubstrateLink };
+  try {
+    resolved = resolve(notice);
+  } catch (err) {
+    return {
+      id: 'device-substrate',
+      label: 'device substrate',
+      surfaces: DEVICE_SUBSTRATE_SURFACES,
+      available: false,
+      reason: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  const { definition, link } = resolved;
   const base: Omit<SurfaceCapability, 'available' | 'reason'> = {
     id: 'device-substrate',
-    label: `device substrate (${instance})`,
-    surfaces: [
-      'vm-binary · local-dir · usb-synth',
-      'vm-docker-image · local-dir · usb-synth',
-      'vm-docker-image · local-dir · loopback-fat',
-    ],
+    label: `device substrate (${definition.id})`,
+    surfaces: DEVICE_SUBSTRATE_SURFACES,
   };
-
-  const result = spawnSync('limactl', ['list', '--format', '{{.Status}}', instance], {
-    encoding: 'utf8',
-    timeout: 30000,
-  });
-
-  if (result.error) {
-    const missing = (result.error as NodeJS.ErrnoException).code === 'ENOENT';
-    return {
-      ...base,
-      available: false,
-      reason: missing
-        ? "'limactl' is not on $PATH — no substrate provisioner available"
-        : result.error.message,
-    };
+  const readiness = await probe(definition);
+  if (readiness === 'ready') return { ...base, available: true };
+  let reason: string;
+  if (readiness === 'startable') {
+    reason = `exists but is not running — bun run vm:up ${definition.id}`;
+  } else if (isLimaVm(definition)) {
+    // An unreachable Lima substrate is one that was never created, and a bare
+    // instance has no contract, binaries or seal.
+    reason = `${link.description} does not exist — bun run harness:setup`;
+  } else {
+    reason = `not answering over ${link.description} — bun run vm:up ${definition.id}`;
   }
-
-  const status = (result.stdout ?? '').trim();
-  if (status.toLowerCase() !== 'running') {
-    return {
-      ...base,
-      available: false,
-      reason:
-        status.length > 0 ? `instance is '${status}', not running` : 'instance does not exist',
-    };
-  }
-  return { ...base, available: true };
+  return { ...base, available: false, reason };
 }
 
 /** Probe every capability the quality gate depends on. */
-export function probeCapabilities(): SurfaceCapability[] {
-  return [probeContainerRuntime(), probeDeviceSubstrate()];
+export async function probeCapabilities(
+  deps: DeviceSubstrateProbeDeps = {}
+): Promise<SurfaceCapability[]> {
+  return [probeContainerRuntime(), await probeDeviceSubstrate(deps)];
 }
 
 /**
