@@ -233,18 +233,11 @@ export function targetArch(
 /**
  * An environment stand-in that pins {@link TARGET_ARCH_ENV_VAR} to `arch`.
  *
- * For the one caller that resolves artifact paths for an architecture other
- * than the run's own: the build driver, which produces every architecture the
- * run needs rather than the single one it targets (`./required-arches.ts`).
- * Every path resolver already takes an environment and reads the architecture
- * out of it, so pinning the variable is the whole mechanism — no resolver
- * needs a second parameter, and none of them can disagree about which
- * architecture a pass is for.
- *
- * Note what it does NOT override: a `PODKIT_LINUX_MUSL_BINARY`-style explicit
- * path wins over the architecture in every resolver, so an override plus a
- * two-architecture run names one file for both passes. The driver refuses that
- * rather than letting the second pass overwrite the first.
+ * For the build driver, which resolves artifact paths for the architecture
+ * its build host produces. Every path resolver already takes an environment
+ * and reads the architecture out of it, so pinning the variable is the whole
+ * mechanism — no resolver needs a second parameter, and none of them can
+ * disagree about which architecture a build is for.
  */
 export function envForTargetArch(
   arch: TargetArch,

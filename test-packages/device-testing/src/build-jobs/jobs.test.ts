@@ -12,12 +12,7 @@ import { describe, expect, it } from 'bun:test';
 
 import { BUILD_JOB_IDS, repoRoot, stagingDestForJob } from '@podkit/substrate';
 
-import {
-  assertDistinctArtifactPaths,
-  getBuildJob,
-  listBuildJobs,
-  type BuildJobContext,
-} from './jobs.js';
+import { getBuildJob, listBuildJobs, type BuildJobContext } from './jobs.js';
 
 const ctx = (overrides: Partial<BuildJobContext> = {}): BuildJobContext => ({
   arch: 'x64',
@@ -127,38 +122,6 @@ describe('artifacts', () => {
         expect(target).not.toBe(siblingTarget);
       }
     }
-  });
-});
-
-describe('assertDistinctArtifactPaths', () => {
-  it('accepts a single-architecture run', () => {
-    for (const job of listBuildJobs()) {
-      expect(() => assertDistinctArtifactPaths(job, [ctx()])).not.toThrow();
-    }
-  });
-
-  it('accepts a two-architecture run, because the arch is in every filename', () => {
-    for (const job of listBuildJobs()) {
-      expect(() =>
-        assertDistinctArtifactPaths(job, [ctx({ arch: 'x64' }), ctx({ arch: 'arm64' })])
-      ).not.toThrow();
-    }
-  });
-
-  // What an absolute `PODKIT_*_BINARY` override does to a two-architecture
-  // run: both passes collect into one file and the second wins silently.
-  it('refuses two architectures that resolve to the same host path', () => {
-    const job = getBuildJob('muslBinary');
-    const pinned = {
-      ...job,
-      artifacts: () => job.artifacts(ctx({ arch: 'x64' })),
-    };
-    expect(() =>
-      assertDistinctArtifactPaths(pinned, [ctx({ arch: 'x64' }), ctx({ arch: 'arm64' })])
-    ).toThrow(/overwrite the first/);
-    expect(() =>
-      assertDistinctArtifactPaths(pinned, [ctx({ arch: 'x64' }), ctx({ arch: 'arm64' })])
-    ).toThrow(/podkit \(musl\)/);
   });
 });
 

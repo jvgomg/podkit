@@ -284,15 +284,6 @@ export function resolveBuildHostSelection(input: ResolveBuildHostInput): BuildHo
 export interface SelectBuildHostOpts {
   /** The libc this run needs artifacts for. */
   readonly libc: BuildLibc;
-  /**
-   * The architecture this pass needs artifacts for. Defaults to the run's
-   * target architecture.
-   *
-   * Passed explicitly by the build driver, which produces every architecture a
-   * run needs rather than the single one it targets — and each of those
-   * architectures selects its own build host (`./required-arches.ts`).
-   */
-  readonly arch?: TargetArch;
   /** How the selected device substrate is provisioned, when one is in play. */
   readonly substrateProvisioner?: VmProvisioner | undefined;
   /** The process environment. Defaults to the real one. */
@@ -318,7 +309,7 @@ export function selectBuildHost(opts: SelectBuildHostOpts): BuildHostSelection {
     env,
     substrates: opts.substrates ?? listVms(),
     libc: opts.libc,
-    arch: opts.arch ?? targetArch(env),
+    arch: targetArch(env),
     hostArch: hostTargetArch(),
     limactlAvailable: commandOnPath('limactl', env),
     substrateProvisioner: opts.substrateProvisioner,

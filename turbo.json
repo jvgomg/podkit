@@ -366,6 +366,10 @@
         "@podkit/device-testing#vm:doctor"
       ],
       "cache": false,
+      // Uncached, but strict env mode still drops an undeclared variable: the
+      // test would re-read `.env.local` and reach a different substrate (and
+      // architecture) from the one its `vm:doctor` just checked.
+      "env": ["PODKIT_TARGET_ARCH", "PODKIT_SUBSTRATE"],
       "inputs": ["src/vm-docker-loopback/**", "package.json", "bunfig.toml"],
       "outputs": []
     },
@@ -380,6 +384,8 @@
         "@podkit/device-testing#vm:doctor"
       ],
       "cache": false,
+      // Same reason as `test:e2e:docker-loopback` above.
+      "env": ["PODKIT_TARGET_ARCH", "PODKIT_SUBSTRATE"],
       "inputs": [
         "src/**",
         "$TURBO_ROOT$/test-packages/device-testing/src/**",
@@ -499,17 +505,7 @@
         // Same three as `build:linux-prebuild` above, for the same reason.
         "PODKIT_TARGET_ARCH",
         "PODKIT_BUILD_HOST",
-        "PODKIT_SUBSTRATE",
-        // And a fourth the glibc tasks do not need. A musl job produces every
-        // architecture the run needs, which is the target's plus the HOST's
-        // when they differ — `test:e2e:docker-loopback` builds the shipped
-        // image on this machine's Docker. So the set of outputs is a function
-        // of the host too, and without it two dev hosts of different
-        // architectures sharing one substrate hash identically: the
-        // same-architecture host's single-set cache entry replays into the
-        // cross-architecture host's run and the loopback surface finds nothing
-        // it can execute.
-        "PODKIT_HOST_ARCH"
+        "PODKIT_SUBSTRATE"
       ],
       "inputs": [
         "$TURBO_ROOT$/packages/libgpod-node/native/**",
@@ -539,11 +535,10 @@
     "@podkit/device-testing#build:musl-binary": {
       "dependsOn": ["@podkit/device-testing#build:musl-prebuild", "^build"],
       "env": [
-        // Same four as `build:musl-prebuild` above, for the same reasons.
+        // Same three as `build:musl-prebuild` above, for the same reasons.
         "PODKIT_TARGET_ARCH",
         "PODKIT_BUILD_HOST",
-        "PODKIT_SUBSTRATE",
-        "PODKIT_HOST_ARCH"
+        "PODKIT_SUBSTRATE"
       ],
       "inputs": [
         "$TURBO_ROOT$/packages/*/src/**",

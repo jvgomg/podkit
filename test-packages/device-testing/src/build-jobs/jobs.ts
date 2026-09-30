@@ -56,11 +56,10 @@ export interface BuildJobContext {
   /**
    * Architecture the artifacts are for.
    *
-   * Per-*pass*, not per-run: a musl job runs once per architecture the run
-   * needs (`required-arches.ts` in `@podkit/substrate`), so this is the one
-   * value every path in a pass — staging directory, script, artifact
-   * destinations — has to agree on. {@link BuildJob.artifacts} resolves its
-   * host paths through {@link envForTargetArch} for exactly that reason.
+   * The architecture the selected build host produces, and so the one value
+   * every path in a build — staging directory, script, artifact destinations —
+   * has to agree on. {@link BuildJob.artifacts} resolves its host paths through
+   * {@link envForTargetArch} for exactly that reason.
    */
   readonly arch: TargetArch;
   /** Absolute staging directory on the build host. */
@@ -399,52 +398,6 @@ const JOBS: readonly BuildJob[] = [
     ],
   },
 ];
-
-/** Where on the host one artifact lands, whichever kind it is. */
-function artifactDest(artifact: BuildArtifact): string {
-  return artifact.kind === 'file' ? artifact.hostPath : artifact.hostDir;
-}
-
-/**
- * Refuse a multi-architecture run whose passes would write to the same host
- * path.
- *
- * The architecture is in every default filename, so this holds by construction
- * — until a `PODKIT_LINUX_MUSL_BINARY`-style override names one absolute path,
- * which every resolver honours ahead of the architecture. Two passes then
- * collect into one file and the second silently overwrites the first, leaving
- * a correctly-named artifact of the wrong architecture at the path the loopback
- * surface reads. That is precisely the failure this whole area exists to make
- * impossible, so it is an error rather than a warning.
- *
- * Cheap and total: it compares the paths the job itself declares, so a future
- * artifact added without an architecture in its name is caught the first time
- * a cross-architecture run touches it.
- *
- * @throws {Error} naming the colliding path and both architectures.
- */
-export function assertDistinctArtifactPaths(
-  job: BuildJob,
-  contexts: readonly BuildJobContext[]
-): void {
-  const claimedBy = new Map<string, TargetArch>();
-  for (const ctx of contexts) {
-    for (const artifact of job.artifacts(ctx)) {
-      const dest = artifactDest(artifact);
-      const owner = claimedBy.get(dest);
-      if (owner !== undefined && owner !== ctx.arch) {
-        throw new Error(
-          `${job.task} must produce both linux-${owner} and linux-${ctx.arch} artifacts this ` +
-            `run, but ${artifact.label} resolves to ${dest} for both. The second pass would ` +
-            `overwrite the first and leave the wrong architecture under that name. Unset the ` +
-            `PODKIT_*_BINARY override that pins it, or select a substrate of this host's ` +
-            `architecture so only one set is needed.`
-        );
-      }
-      claimedBy.set(dest, ctx.arch);
-    }
-  }
-}
 
 /** Every build job, in declaration order. */
 export function listBuildJobs(): readonly BuildJob[] {

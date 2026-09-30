@@ -168,14 +168,6 @@ export {
   TARGET_ARCH_ENV_VAR,
 } from './target-arch.js';
 
-// Which architectures one run must produce — not just the one it targets
-export type {
-  ArchConsumer,
-  ArchRequirement,
-  ResolveRequiredArchesInput,
-} from './required-arches.js';
-export { resolveRequiredArches, requiredArches, HOST_ARCH_ENV_VAR } from './required-arches.js';
-
 // Artifact-vs-substrate architecture assertion (the transfer-time backstop)
 export type { AssertArtifactArchInput } from './artifact-arch.js';
 export {
