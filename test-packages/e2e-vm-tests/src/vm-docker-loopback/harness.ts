@@ -18,7 +18,7 @@
 import {
   deviceSubstrateLink,
   ipodNano3gBlack,
-  SUBSTRATE_CONTRACT_RUNTIME as LOOPBACK_RUNTIME,
+  SUBSTRATE_CONTRACT_RUNTIME as RUNTIME,
   type SubstrateExecResult,
   type SubstrateLink,
 } from '@podkit/device-testing';
@@ -65,33 +65,14 @@ export interface LoopbackContainer {
  */
 async function sweep(link: SubstrateLink): Promise<void> {
   const script = [
-    `ids=$(sudo ${LOOPBACK_RUNTIME} ps -aq --filter label=${CONTAINER_LABEL})`,
-    `[ -z "$ids" ] || sudo ${LOOPBACK_RUNTIME} rm -f -t 0 $ids >/dev/null`,
+    `ids=$(sudo ${RUNTIME} ps -aq --filter label=${CONTAINER_LABEL})`,
+    `[ -z "$ids" ] || sudo ${RUNTIME} rm -f -t 0 $ids >/dev/null`,
     `sudo losetup -l -n -O NAME,BACK-FILE | awk '$2 ~ "^${IMAGE_PREFIX}" { print $1 }' |`,
     '  while read -r dev; do sudo losetup -d "$dev"; done',
   ].join('\n');
   const result = await link.exec(script, { timeoutMs: CONTAINER_EXEC_TIMEOUT_MS });
   if (result.exitCode !== 0) {
     throw new Error(`loopback harness: sweep failed:\n${result.stderr || result.stdout}`);
-  }
-}
-
-/**
- * Fail with the remedy when the substrate predates the contract's container
- * runtime, rather than with `sudo: podman: command not found` from a build.
- */
-export async function requireLoopbackRuntime(
-  link: SubstrateLink = deviceSubstrateLink()
-): Promise<void> {
-  const probe = await link.exec(['sh', '-c', `command -v ${LOOPBACK_RUNTIME}`], {
-    timeoutMs: CONTAINER_EXEC_TIMEOUT_MS,
-  });
-  if (probe.exitCode !== 0) {
-    throw new Error(
-      `${link.description} has no ${LOOPBACK_RUNTIME}, the substrate contract's container ` +
-        'runtime. Re-apply the contract: `bun run harness:setup` on a Lima substrate, or ' +
-        'docs/environments/device-substrate-proxmox.md §5 on a remote one.'
-    );
   }
 }
 
@@ -111,7 +92,7 @@ export async function startLoopbackContainer(
   const run = await link.exec(
     [
       'sudo',
-      LOOPBACK_RUNTIME,
+      RUNTIME,
       'run',
       '-d',
       '--rm',
@@ -132,7 +113,7 @@ export async function startLoopbackContainer(
   }
   const id = run.stdout.trim();
   const execIn = (script: string, timeoutMs: number) =>
-    link.exec(['sudo', LOOPBACK_RUNTIME, 'exec', id, 'sh', '-c', script], { timeoutMs });
+    link.exec(['sudo', RUNTIME, 'exec', id, 'sh', '-c', script], { timeoutMs });
 
   const container: LoopbackContainer = {
     id,

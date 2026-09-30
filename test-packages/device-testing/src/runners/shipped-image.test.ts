@@ -4,7 +4,7 @@
  * The seam is the {@link SubstrateLink}: every assertion reads what the module
  * asked the link to do, so the same assertions hold whichever provisioner sits
  * behind it. The build itself is exercised end to end by the vm-docker-image
- * suites; here we pin the routing, the per-runtime differences, the context
+ * suites; here we pin the routing, the context
  * layout and the wall-clock bounds.
  */
 
@@ -153,28 +153,15 @@ describe('pullPodkitImageInVm', () => {
   it('pulls with podman directly — it has no daemon to start', async () => {
     const { link, execs } = recordingLink();
 
-    const result = await pullPodkitImageInVm({ tag: TAG, runtime: 'podman', link });
+    const result = await pullPodkitImageInVm({ tag: TAG, link });
 
     expect(result).toEqual({ tag: TAG });
     expect(execs.map((c) => c.argv)).toEqual([['sudo', 'podman', 'pull', TAG]]);
   });
 
-  it('starts containerd, and only containerd, before a nerdctl pull', async () => {
-    const { link, execs } = recordingLink();
-
-    await pullPodkitImageInVm({ tag: TAG, runtime: 'nerdctl', link });
-
-    expect(execs.map((c) => c.argv)).toEqual([
-      ['sudo', 'systemctl', 'start', 'containerd'],
-      ['sudo', 'nerdctl', 'pull', TAG],
-    ]);
-  });
-
   it('rejects an empty tag before touching the substrate', async () => {
     const { link, execs } = recordingLink();
-    await expect(pullPodkitImageInVm({ tag: '   ', runtime: 'podman', link })).rejects.toThrow(
-      /non-empty image tag/
-    );
+    await expect(pullPodkitImageInVm({ tag: '   ', link })).rejects.toThrow(/non-empty image tag/);
     expect(execs).toHaveLength(0);
   });
 
@@ -182,17 +169,8 @@ describe('pullPodkitImageInVm', () => {
     const { link } = recordingLink((argv) =>
       argv.includes('pull') ? fail('manifest unknown') : undefined
     );
-    await expect(pullPodkitImageInVm({ tag: TAG, runtime: 'podman', link })).rejects.toThrow(
+    await expect(pullPodkitImageInVm({ tag: TAG, link })).rejects.toThrow(
       /failed to pull image .*rc.*manifest unknown/s
-    );
-  });
-
-  it('throws when a runtime service will not start', async () => {
-    const { link } = recordingLink((argv) =>
-      argv.includes('systemctl') ? fail('unit not found') : undefined
-    );
-    await expect(pullPodkitImageInVm({ tag: TAG, runtime: 'nerdctl', link })).rejects.toThrow(
-      /failed to start containerd/
     );
   });
 });
@@ -205,7 +183,7 @@ describe('buildPodkitImageInVm', () => {
   it('skips the build when the tag already exists and force is not set', async () => {
     const { link, execs, copies } = recordingLink();
 
-    const result = await buildPodkitImageInVm({ runtime: 'podman', link });
+    const result = await buildPodkitImageInVm({ link });
 
     expect(result).toEqual({ tag: DEFAULT_PODKIT_IMAGE_TAG });
     expect(execs.map((c) => c.argv)).toEqual([
@@ -218,7 +196,7 @@ describe('buildPodkitImageInVm', () => {
     process.env[TARGET_ARCH_ENV_VAR] = 'x86_64';
     const { link, copies } = recordingLink(imageAbsent);
 
-    await buildPodkitImageInVm({ runtime: 'podman', link });
+    await buildPodkitImageInVm({ link });
 
     expect(copies.map((c) => c.guestPath)).toEqual([
       `${BUILD_CONTEXT_VM_DIR}/packages/podkit-docker/Dockerfile`,
@@ -234,7 +212,7 @@ describe('buildPodkitImageInVm', () => {
     process.env[TARGET_ARCH_ENV_VAR] = 'aarch64';
     const { link, execs } = recordingLink(imageAbsent);
 
-    await buildPodkitImageInVm({ runtime: 'podman', tag: 'podkit:x', link });
+    await buildPodkitImageInVm({ tag: 'podkit:x', link });
 
     const build = execWith(execs, 'build');
     expect(build.argv.slice(0, 3)).toEqual(['sudo', 'podman', 'build']);
@@ -249,18 +227,10 @@ describe('buildPodkitImageInVm', () => {
     expect(build.opts.cwd).toBe(BUILD_CONTEXT_VM_DIR);
   });
 
-  it('starts no services for podman, and containerd + buildkit for nerdctl', async () => {
-    const podman = recordingLink(imageAbsent);
-    await buildPodkitImageInVm({ runtime: 'podman', link: podman.link });
-    expect(podman.execs.some((c) => c.argv.includes('systemctl'))).toBe(false);
-
-    const nerdctl = recordingLink(imageAbsent);
-    await buildPodkitImageInVm({ runtime: 'nerdctl', link: nerdctl.link });
-    const started = nerdctl.execs
-      .filter((c) => c.argv.includes('systemctl'))
-      .map((c) => c.argv.at(-1));
-    expect(started).toEqual(['containerd', 'buildkit']);
-    expect(execWith(nerdctl.execs, 'build').argv.slice(0, 3)).toEqual(['sudo', 'nerdctl', 'build']);
+  it('starts no services — podman has no daemon', async () => {
+    const { link, execs } = recordingLink(imageAbsent);
+    await buildPodkitImageInVm({ link });
+    expect(execs.some((c) => c.argv.includes('systemctl'))).toBe(false);
   });
 
   it('refuses to build for an architecture the substrate is not, before staging', async () => {
@@ -269,9 +239,7 @@ describe('buildPodkitImageInVm', () => {
       argv[0] === 'uname' ? ok('x86_64\n') : imageAbsent(argv)
     );
 
-    await expect(buildPodkitImageInVm({ runtime: 'podman', link })).rejects.toThrow(
-      /targets arm64, but .* is x64/
-    );
+    await expect(buildPodkitImageInVm({ link })).rejects.toThrow(/targets arm64, but .* is x64/);
     expect(copies).toHaveLength(0);
     expect(execs.some((c) => c.argv.includes('build'))).toBe(false);
   });
@@ -280,7 +248,7 @@ describe('buildPodkitImageInVm', () => {
     process.env['PODKIT_LINUX_MUSL_BINARY'] = path.join(stubDir, 'absent');
     const { link, execs } = recordingLink(imageAbsent);
 
-    await expect(buildPodkitImageInVm({ runtime: 'podman', force: true, link })).rejects.toThrow(
+    await expect(buildPodkitImageInVm({ force: true, link })).rejects.toThrow(
       /host file not found: .*absent/
     );
     expect(execs.some((c) => c.argv.includes('build'))).toBe(false);
@@ -290,7 +258,7 @@ describe('buildPodkitImageInVm', () => {
     const { link } = recordingLink((argv) =>
       argv.includes('build') ? fail('step 3/9: COPY failed: no such file') : undefined
     );
-    await expect(buildPodkitImageInVm({ runtime: 'podman', force: true, link })).rejects.toThrow(
+    await expect(buildPodkitImageInVm({ force: true, link })).rejects.toThrow(
       /podman build failed .*COPY failed/s
     );
   });
@@ -301,21 +269,35 @@ describe('buildPodkitImageInVm', () => {
 // ---------------------------------------------------------------------------
 
 describe('ensurePodkitImageInVm', () => {
-  it('pulls the override tag with the requested runtime when the switch is set', async () => {
+  it('pulls the override tag when the switch is set', async () => {
     process.env[DOCKER_DIST_IMAGE_ENV] = 'ghcr.io/jvgomg/podkit:rc';
     const { link, execs } = recordingLink();
 
-    const tag = await ensurePodkitImageInVm({ runtime: 'podman', link });
+    const tag = await ensurePodkitImageInVm({ link });
 
     expect(tag).toBe('ghcr.io/jvgomg/podkit:rc');
     expect(execs.at(-1)!.argv).toEqual(['sudo', 'podman', 'pull', 'ghcr.io/jvgomg/podkit:rc']);
+  });
+
+  it('refuses a substrate without podman before building or pulling', async () => {
+    const { link, execs, copies } = recordingLink((argv) =>
+      argv[0] === 'sh' ? fail('', 127) : undefined
+    );
+
+    await expect(ensurePodkitImageInVm({ link })).rejects.toThrow(/has no podman.*harness:setup/s);
+    expect(execs).toHaveLength(1);
+    expect(copies).toHaveLength(0);
+
+    process.env[DOCKER_DIST_IMAGE_ENV] = 'ghcr.io/jvgomg/podkit:rc';
+    await expect(ensurePodkitImageInVm({ link })).rejects.toThrow(/has no podman/);
+    expect(execs.some((c) => c.argv.includes('pull'))).toBe(false);
   });
 
   it('treats a whitespace-only switch as unset and builds', async () => {
     process.env[DOCKER_DIST_IMAGE_ENV] = '   ';
     const { link, execs } = recordingLink();
 
-    const tag = await ensurePodkitImageInVm({ runtime: 'podman', link });
+    const tag = await ensurePodkitImageInVm({ link });
 
     expect(tag).toBe(DEFAULT_PODKIT_IMAGE_TAG);
     expect(execs.some((c) => c.argv.includes('pull'))).toBe(false);
@@ -325,7 +307,6 @@ describe('ensurePodkitImageInVm', () => {
     const { link, execs } = recordingLink(imageAbsent);
 
     const tag = await ensurePodkitImageInVm({
-      runtime: 'podman',
       tag: 'podkit:loopback',
       force: true,
       link,
@@ -346,17 +327,15 @@ describe('ensurePodkitImageInVm', () => {
 // ---------------------------------------------------------------------------
 
 describe('wall-clock bounds', () => {
-  async function recordBuild(runtime: 'podman' | 'nerdctl') {
+  async function recordBuild() {
     const recorded = recordingLink();
-    await buildPodkitImageInVm({ runtime, force: true, link: recorded.link });
+    await buildPodkitImageInVm({ force: true, link: recorded.link });
     return recorded;
   }
 
   it('bounds every short housekeeping step on the round-trip budget', async () => {
-    const { execs } = await recordBuild('nerdctl');
+    const { execs } = await recordBuild();
     for (const fragments of [
-      ['systemctl', 'containerd'],
-      ['systemctl', 'buildkit'],
       ['rm', '-rf'],
       ['chmod', '+x'],
     ]) {
@@ -369,12 +348,12 @@ describe('wall-clock bounds', () => {
 
   it('bounds the image-existence probe', async () => {
     const { link, execs } = recordingLink();
-    await buildPodkitImageInVm({ runtime: 'podman', link });
+    await buildPodkitImageInVm({ link });
     expect(execWith(execs, 'inspect').opts.timeoutMs).toBe(SUBSTRATE_ROUND_TRIP_TIMEOUT_MS);
   });
 
   it('bounds each staged file copy on the shared copy bound', async () => {
-    const { copies } = await recordBuild('podman');
+    const { copies } = await recordBuild();
     expect(copies).toHaveLength(4);
     for (const copy of copies) expect(copy.opts.timeoutMs).toBe(FILE_COPY_TIMEOUT_MS);
   });
@@ -382,19 +361,18 @@ describe('wall-clock bounds', () => {
   // Prune scales with the image store rather than being constant-time, so it
   // carries its own, larger bound.
   it('bounds the prune separately from the housekeeping steps', async () => {
-    const { execs } = await recordBuild('podman');
+    const { execs } = await recordBuild();
     expect(execWith(execs, 'prune').opts.timeoutMs).toBe(IMAGE_PRUNE_TIMEOUT_MS);
     expect(IMAGE_PRUNE_TIMEOUT_MS).toBeGreaterThan(SUBSTRATE_ROUND_TRIP_TIMEOUT_MS);
   });
 
   it('leaves the build and the pull unbounded', async () => {
-    const { execs } = await recordBuild('podman');
+    const { execs } = await recordBuild();
     expect(execWith(execs, 'build').opts.timeoutMs).toBeUndefined();
 
     const pulled = recordingLink();
     await pullPodkitImageInVm({
       tag: 'ghcr.io/jvgomg/podkit:rc',
-      runtime: 'podman',
       link: pulled.link,
     });
     expect(execWith(pulled.execs, 'pull').opts.timeoutMs).toBeUndefined();

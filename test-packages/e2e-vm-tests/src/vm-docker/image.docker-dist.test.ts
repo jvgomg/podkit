@@ -7,7 +7,7 @@
  * end to end: the production `alpine:3.21` (musl) image, built from the same
  * binaries CI ships, runs `device add` → live USB firmware inquiry → SIE write,
  * then a real FLAC→AAC sync, then reads the tracks back — all through
- * `nerdctl run --device …` passthrough of a gadget the harness synthesizes.
+ * `podman run --device …` passthrough of a gadget the harness synthesizes.
  *
  * # Why this lives in `src/vm-docker/` (gated out of the routine VM run)
  *
@@ -80,6 +80,7 @@ import {
   VM_WARM_TIMEOUT_MS,
   DEFAULT_PODKIT_IMAGE_TAG,
   ensurePodkitImageInVm,
+  SUBSTRATE_CONTRACT_RUNTIME as RUNTIME,
   mountPersona,
   unmountAndStop,
   resolvePersonaDeviceNodes,
@@ -100,7 +101,7 @@ import { sq, runContainerJson, assertContainerOk } from './container-helpers.js'
 const IMAGE_BUILD_TIMEOUT_MS = 600_000;
 
 /**
- * Each `nerdctl run` starts a container, and the sync step additionally runs
+ * Each `podman run` starts a container, and the sync step additionally runs
  * two ffmpeg transcodes inside it. Give the container steps a generous budget.
  */
 const CONTAINER_STEP_TIMEOUT_MS = 180_000;
@@ -193,7 +194,7 @@ describe('VM: Docker dist image e2e (musl image + synthesized USB iPod)', () => 
     // Resolve the docker-dist image once for the whole suite: build in-VM from
     // the current musl binaries (`force` guarantees a fresh image, not a stale
     // cached tag), or pull the pre-built artifact when the env switch is set.
-    IMAGE = await ensurePodkitImageInVm({ runtime: 'nerdctl', force: true });
+    IMAGE = await ensurePodkitImageInVm({ force: true });
     await deviceHarness.applyState(healthy);
   }, IMAGE_BUILD_TIMEOUT_MS);
 
@@ -317,7 +318,7 @@ describe('VM: Docker dist image e2e (musl image + synthesized USB iPod)', () => 
 
         // ---- 1) device add: USB inquiry → SIE write + device entry ----------
         const addCmd =
-          `sudo nerdctl run --rm --device ${sq(usbNode)} --device ${sq(blockDevice)} ` +
+          `sudo ${RUNTIME} run --rm --device ${sq(usbNode)} --device ${sq(blockDevice)} ` +
           `-e PUID=0 -e PGID=0 -v ${sq(`${VM_MOUNT_POINT}:/ipod`)} ` +
           `-v ${sq(`${VM_CONFIG_DIR}:/config`)} ` +
           `${sq(IMAGE)} device add -d dockeripod --path /ipod --yes --json`;
@@ -348,7 +349,7 @@ describe('VM: Docker dist image e2e (musl image + synthesized USB iPod)', () => 
           { timeoutMs: VM_WARM_TIMEOUT_MS }
         );
         const syncCmd =
-          `sudo nerdctl run --rm --device ${sq(usbNode)} --device ${sq(blockDevice)} ` +
+          `sudo ${RUNTIME} run --rm --device ${sq(usbNode)} --device ${sq(blockDevice)} ` +
           `-e PUID=0 -e PGID=0 -v ${sq(`${VM_MOUNT_POINT}:/ipod`)} ` +
           `-v ${sq(`${VM_CONFIG_DIR}:/config`)} ` +
           `-v ${sq(`${VM_MUSIC_DIR}:/music:ro`)} ` +
@@ -364,7 +365,7 @@ describe('VM: Docker dist image e2e (musl image + synthesized USB iPod)', () => 
         // ---- 3) device music: read the two synced tracks back ---------------
         // usbNode omitted — read-back needs only the block device.
         const musicCmd =
-          `sudo nerdctl run --rm --device ${sq(blockDevice)} -e PUID=0 -e PGID=0 ` +
+          `sudo ${RUNTIME} run --rm --device ${sq(blockDevice)} -e PUID=0 -e PGID=0 ` +
           `-v ${sq(`${VM_MOUNT_POINT}:/ipod`)} -v ${sq(`${VM_CONFIG_DIR}:/config`)} ` +
           `${sq(IMAGE)} device music -d dockeripod --format json`;
         const music = await runContainerJson(musicCmd, CONTAINER_STEP_TIMEOUT_MS);

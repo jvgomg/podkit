@@ -38,10 +38,9 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 
-import { ensurePodkitImageInVm, SUBSTRATE_CONTRACT_RUNTIME } from '@podkit/device-testing';
+import { ensurePodkitImageInVm } from '@podkit/device-testing';
 
 import {
-  requireLoopbackRuntime,
   startLoopbackContainer,
   seedIpodLoopback,
   seedGenericLoopback,
@@ -68,14 +67,9 @@ const CASE_TIMEOUT_MS = 60_000;
 let container: LoopbackContainer;
 
 beforeAll(async () => {
-  await requireLoopbackRuntime();
   // `force`: an image left by an earlier run would otherwise be reused, and
   // the cell would test yesterday's binaries.
-  IMAGE_TAG = await ensurePodkitImageInVm({
-    runtime: SUBSTRATE_CONTRACT_RUNTIME,
-    tag: IMAGE_TAG,
-    force: true,
-  });
+  IMAGE_TAG = await ensurePodkitImageInVm({ tag: IMAGE_TAG, force: true });
   container = await startLoopbackContainer(IMAGE_TAG);
 }, BUILD_TIMEOUT_MS);
 

@@ -13,18 +13,12 @@
  * architecture, which is the substrate's: the same resolution that decided
  * which musl binaries the build produced, so the two cannot disagree.
  *
- * ## Which runtime
+ * ## Runtime
  *
- * The caller names it:
- *
- *   - `podman` is the substrate contract's runtime (`substrate-contract.sh`),
- *     present on every substrate — {@link SUBSTRATE_CONTRACT_RUNTIME}.
- *     Daemonless, so there is nothing to start.
- *   - `nerdctl` is what Lima installs by default. Only a Lima substrate has it,
- *     and it needs `containerd` (and `buildkit`, to build) started first.
- *
- * An image built by one runtime is invisible to the other, so a surface must
- * build and run with the same one.
+ * Always the substrate contract's, {@link SUBSTRATE_CONTRACT_RUNTIME}
+ * (`substrate-contract.sh`): present on every substrate, and daemonless, so
+ * there is nothing to start. Its image store is the one the surfaces run
+ * from, so they drive the same runtime.
  *
  * Context layout staged in the guest (rooted at {@link BUILD_CONTEXT_VM_DIR}):
  *
@@ -89,33 +83,14 @@ const ENTRYPOINT_REL = 'packages/podkit-docker/entrypoint.sh';
  */
 export const IMAGE_PRUNE_TIMEOUT_MS = 120_000;
 
-// ---------------------------------------------------------------------------
-// Runtimes
-// ---------------------------------------------------------------------------
-
-/** A container runtime the substrate can build and run the shipped image with. */
-export type SubstrateContainerRuntime = 'podman' | 'nerdctl';
-
-/** The runtime `substrate-contract.sh` guarantees on every substrate. */
-export const SUBSTRATE_CONTRACT_RUNTIME: SubstrateContainerRuntime = 'podman';
-
-/** systemd units a runtime needs running, per operation. */
-const RUNTIME_SERVICES: Record<
-  SubstrateContainerRuntime,
-  { build: readonly string[]; pull: readonly string[] }
-> = {
-  podman: { build: [], pull: [] },
-  // The Lima VM ships both units disabled. `buildkit` is build-only.
-  nerdctl: { build: ['containerd', 'buildkit'], pull: ['containerd'] },
-};
+/** The container runtime `substrate-contract.sh` guarantees on every substrate. */
+export const SUBSTRATE_CONTRACT_RUNTIME = 'podman';
 
 // ---------------------------------------------------------------------------
 // Options / result
 // ---------------------------------------------------------------------------
 
 interface ImageOpts {
-  /** The runtime whose image store the image lands in. */
-  runtime: SubstrateContainerRuntime;
   /** Link to the substrate. Defaults to the selected device substrate. */
   link?: SubstrateLink;
 }
@@ -165,12 +140,6 @@ async function housekeep(link: SubstrateLink, argv: string[], what: string): Pro
   if (result.exitCode !== 0) throw guestFailure(`failed to ${what}`, link, result);
 }
 
-async function startServices(link: SubstrateLink, units: readonly string[]): Promise<void> {
-  for (const unit of units) {
-    await housekeep(link, ['sudo', 'systemctl', 'start', unit], `start ${unit}.service`);
-  }
-}
-
 /** Read `.version` from a host package.json; throws with a clear message on failure. */
 async function readPackageVersion(pkgJsonPath: string): Promise<string> {
   let raw: unknown;
@@ -207,13 +176,11 @@ async function stageFile(link: SubstrateLink, hostPath: string, guestDest: strin
  * exercise the current binaries passes `force`.
  */
 export async function buildPodkitImageInVm(
-  opts: BuildPodkitImageInVmOpts
+  opts: BuildPodkitImageInVmOpts = {}
 ): Promise<BuildPodkitImageInVmResult> {
-  const { runtime } = opts;
+  const runtime = SUBSTRATE_CONTRACT_RUNTIME;
   const link = opts.link ?? deviceSubstrateLink();
   const tag = opts.tag ?? DEFAULT_PODKIT_IMAGE_TAG;
-
-  await startServices(link, RUNTIME_SERVICES[runtime].build);
 
   if (!opts.force) {
     const inspect = await link.exec(['sudo', runtime, 'image', 'inspect', tag], {
@@ -324,14 +291,29 @@ export async function pullPodkitImageInVm(
   if (!tag) throw new Error('pullPodkitImageInVm: a non-empty image tag is required');
   const link = opts.link ?? deviceSubstrateLink();
 
-  await startServices(link, RUNTIME_SERVICES[opts.runtime].pull);
-
   // Unbounded, for the same reason as the build: a registry fetch of a
   // multi-hundred-megabyte image over whatever link the developer is on.
-  const pull = await link.exec(['sudo', opts.runtime, 'pull', tag]);
+  const pull = await link.exec(['sudo', SUBSTRATE_CONTRACT_RUNTIME, 'pull', tag]);
   if (pull.exitCode !== 0) throw guestFailure(`failed to pull image ${tag}`, link, pull);
 
   return { tag };
+}
+
+/**
+ * Fail with the remedy when the substrate predates the contract's container
+ * runtime, rather than with `sudo: podman: command not found` mid-build.
+ */
+async function requireContractRuntime(link: SubstrateLink): Promise<void> {
+  const probe = await link.exec(['sh', '-c', `command -v ${SUBSTRATE_CONTRACT_RUNTIME}`], {
+    timeoutMs: SUBSTRATE_ROUND_TRIP_TIMEOUT_MS,
+  });
+  if (probe.exitCode !== 0) {
+    throw new Error(
+      `${link.description} has no ${SUBSTRATE_CONTRACT_RUNTIME}, the substrate contract's ` +
+        'container runtime. Re-apply the contract: `bun run harness:setup` on a Lima ' +
+        'substrate, or docs/environments/device-substrate-proxmox.md §5 on a remote one.'
+    );
+  }
 }
 
 /**
@@ -340,11 +322,12 @@ export async function pullPodkitImageInVm(
  *
  * @returns the tag the container steps must reference.
  */
-export async function ensurePodkitImageInVm(opts: EnsurePodkitImageInVmOpts): Promise<string> {
+export async function ensurePodkitImageInVm(opts: EnsurePodkitImageInVmOpts = {}): Promise<string> {
+  const link = opts.link ?? deviceSubstrateLink();
+  await requireContractRuntime(link);
   const override = process.env[DOCKER_DIST_IMAGE_ENV]?.trim();
   if (override) {
-    return (await pullPodkitImageInVm({ tag: override, runtime: opts.runtime, link: opts.link }))
-      .tag;
+    return (await pullPodkitImageInVm({ tag: override, link })).tag;
   }
-  return (await buildPodkitImageInVm(opts)).tag;
+  return (await buildPodkitImageInVm({ ...opts, link })).tag;
 }

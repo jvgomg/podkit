@@ -68,8 +68,14 @@ images:
 # substrate a drop-in: there is no host filesystem to reproduce.
 mounts: []
 
+# The harness drives only the substrate contract's podman, the one runtime a
+# remote substrate also has.
+containerd:
+  system: false
+  user: false
+
 # Sizing — runs the compiled binaries plus, for the Docker tier, builds and runs
-# the podkit image in-VM (nerdctl/containerd). The disk needs headroom for image
+# the podkit image in-VM (podman). The disk needs headroom for image
 # layers, base-image pulls and build cache; a near-full 6GiB root wedged an
 # unclean-stop boot, so it is sized up here.
 cpus: 2

@@ -4,7 +4,7 @@
  *
  * Both the one-shot CLI flow (`image.docker-dist.test.ts`) and the daemon
  * steady-state flow (`daemon.docker-dist.test.ts`) drive the shipped musl image
- * via `nerdctl run` inside the device-harness VM and parse podkit's `--json`
+ * via `podman run` inside the device substrate and parse podkit's `--json`
  * envelope out of container stdout. The parsing is non-trivial (the entrypoint
  * prints a plain-text banner + device-access probe BEFORE handing off to
  * podkit, so the envelope is never the only thing on stdout), so it lives here
@@ -85,7 +85,7 @@ export async function runContainerJson(
 /**
  * Assert a container step exited 0 and produced a parseable `--json` envelope,
  * surfacing the FULL container stdout/stderr on failure. Without this, a failing
- * `nerdctl run` collapses to a bare `expect(1).toBe(0)` with no clue why the
+ * `podman run` collapses to a bare `expect(1).toBe(0)` with no clue why the
  * container errored — useless for a step whose failure modes live inside the
  * container (device inquiry, transcode, mount).
  */

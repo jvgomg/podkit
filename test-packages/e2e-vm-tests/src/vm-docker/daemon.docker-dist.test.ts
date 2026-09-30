@@ -54,7 +54,7 @@
  *
  * # Detached-container lifecycle (the new part vs. the one-shot sibling)
  *
- * The daemon is long-lived, so it runs DETACHED (`nerdctl run -d`) and its
+ * The daemon is long-lived, so it runs DETACHED (`podman run -d`) and its
  * lifecycle is managed explicitly: start it, POLL for the sync to land (grep the
  * container logs for the per-device completion marker via `waitForDaemonSync`,
  * capped generously since the poll interval is 2s and a two-track sync takes
@@ -86,6 +86,7 @@ import {
   VM_WARM_TIMEOUT_MS,
   DEFAULT_PODKIT_IMAGE_TAG,
   ensurePodkitImageInVm,
+  SUBSTRATE_CONTRACT_RUNTIME as RUNTIME,
   mountPersona,
   unmountAndStop,
   resolvePersonaDeviceNodes,
@@ -194,7 +195,7 @@ async function waitForDaemonLog(
   let logs = '';
   while (Date.now() < deadline) {
     logs = (
-      await deviceHarness.run(`sudo nerdctl logs ${containerName} 2>&1`, {
+      await deviceHarness.run(`sudo ${RUNTIME} logs ${containerName} 2>&1`, {
         timeoutMs: VM_WARM_TIMEOUT_MS,
       })
     ).stdout;
@@ -206,7 +207,7 @@ async function waitForDaemonLog(
 
 async function daemonContainerExitCode(containerName: string): Promise<number> {
   const r = await deviceHarness.run(
-    `sudo nerdctl inspect -f '{{.State.ExitCode}}' ${containerName} 2>/dev/null || echo -1`,
+    `sudo ${RUNTIME} inspect -f '{{.State.ExitCode}}' ${containerName} 2>/dev/null || echo -1`,
     { timeoutMs: VM_WARM_TIMEOUT_MS }
   );
   return Number.parseInt(r.stdout.trim(), 10);
@@ -251,8 +252,8 @@ interface DeviceMusicJson {
 async function removeDaemonContainer(name: string): Promise<void> {
   await deviceHarness
     .run(
-      `sudo nerdctl stop ${name} 2>/dev/null || true; ` +
-        `sudo nerdctl rm ${name} 2>/dev/null || true`,
+      `sudo ${RUNTIME} stop ${name} 2>/dev/null || true; ` +
+        `sudo ${RUNTIME} rm ${name} 2>/dev/null || true`,
       { timeoutMs: VM_WARM_TIMEOUT_MS }
     )
     .catch(() => {});
@@ -279,7 +280,7 @@ async function waitForDaemonSync(
   const deadline = Date.now() + SYNC_WAIT_TIMEOUT_MS;
   let logs = '';
   while (Date.now() < deadline) {
-    const result = await deviceHarness.run(`sudo nerdctl logs ${containerName} 2>&1`, {
+    const result = await deviceHarness.run(`sudo ${RUNTIME} logs ${containerName} 2>&1`, {
       timeoutMs: VM_WARM_TIMEOUT_MS,
     });
     logs = result.stdout;
@@ -300,7 +301,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
     // Resolve the docker-dist image once for the whole suite: build in-VM from
     // the current musl binaries (`force` guarantees a fresh image, not a stale
     // cached tag), or pull the pre-built artifact when the env switch is set.
-    IMAGE = await ensurePodkitImageInVm({ runtime: 'nerdctl', force: true });
+    IMAGE = await ensurePodkitImageInVm({ force: true });
     await deviceHarness.applyState(healthy);
   }, IMAGE_BUILD_TIMEOUT_MS);
 
@@ -318,7 +319,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
   it(
     'shipped image: `run <image> --version` routes to the CLI and exits 0',
     async () => {
-      const result = await deviceHarness.run(`sudo nerdctl run --rm ${sq(IMAGE)} --version`, {
+      const result = await deviceHarness.run(`sudo ${RUNTIME} run --rm ${sq(IMAGE)} --version`, {
         timeoutMs: CONTAINER_STEP_TIMEOUT_MS,
       });
       expect(result.exitCode).toBe(0);
@@ -435,7 +436,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
         // mass-storage lane against the bind-mounted persona FAT; the CLI child
         // reads the path-based config from /config and syncs `/ipod` as an iPod.
         const startCmd =
-          `sudo nerdctl run -d --name ${MASS_STORAGE_DAEMON_CONTAINER} --device ${sq(blockDevice)} ` +
+          `sudo ${RUNTIME} run -d --name ${MASS_STORAGE_DAEMON_CONTAINER} --device ${sq(blockDevice)} ` +
           `-e PUID=0 -e PGID=0 -e PODKIT_POLL_INTERVAL=2 -e PODKIT_MASS_STORAGE_PATHS=/ipod ` +
           `-v ${sq(`${VM_MOUNT_POINT}:/ipod`)} -v ${sq(`${VM_CONFIG_DIR}:/config`)} ` +
           `-v ${sq(`${VM_MUSIC_DIR}:/music:ro`)} ${sq(IMAGE)} daemon`;
@@ -464,7 +465,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
         // present. This proves the daemon's sync actually mutated the device,
         // not just that it logged success.
         const musicCmd =
-          `sudo nerdctl run --rm --device ${sq(blockDevice)} -e PUID=0 -e PGID=0 ` +
+          `sudo ${RUNTIME} run --rm --device ${sq(blockDevice)} -e PUID=0 -e PGID=0 ` +
           `-v ${sq(`${VM_MOUNT_POINT}:/ipod`)} -v ${sq(`${VM_CONFIG_DIR}:/config`)} ` +
           `${sq(IMAGE)} device music -d dockeripod --format json`;
         const music = await runContainerJson(musicCmd, CONTAINER_STEP_TIMEOUT_MS);
@@ -629,7 +630,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
         // blocks even for root.
         const partitionNode = `${blockDevice}1`;
         const startCmd =
-          `sudo nerdctl run -d --name ${LSBLK_DAEMON_CONTAINER} --privileged ` +
+          `sudo ${RUNTIME} run -d --name ${LSBLK_DAEMON_CONTAINER} --privileged ` +
           `--device ${sq(blockDevice)} --device ${sq(partitionNode)} --device ${sq(usbNode)} ` +
           `-e PUID=0 -e PGID=0 -e PODKIT_POLL_INTERVAL=2 ` +
           `-v ${sq(`${VM_CONFIG_DIR}:/config`)} -v ${sq(`${VM_MUSIC_DIR}:/music:ro`)} ` +
@@ -681,7 +682,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
         );
         try {
           const musicCmd =
-            `sudo nerdctl run --rm --device ${sq(blockDevice)} --device ${sq(partitionNode)} ` +
+            `sudo ${RUNTIME} run --rm --device ${sq(blockDevice)} --device ${sq(partitionNode)} ` +
             `-e PUID=0 -e PGID=0 -v ${sq(`${VM_MOUNT_POINT}:/ipod`)} ` +
             `-v ${sq(`${VM_CONFIG_DIR}:/config`)} ${sq(IMAGE)} device music -d laneipod --format json`;
           const music = await runContainerJson(musicCmd, CONTAINER_STEP_TIMEOUT_MS);
@@ -803,7 +804,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
     const startDrainDaemon = async (): Promise<void> => {
       await removeDaemonContainer(DRAIN_DAEMON_CONTAINER);
       const startCmd =
-        `sudo nerdctl run -d --name ${DRAIN_DAEMON_CONTAINER} --privileged --network host ` +
+        `sudo ${RUNTIME} run -d --name ${DRAIN_DAEMON_CONTAINER} --privileged --network host ` +
         `--device ${sq(blockDevice)} --device ${sq(usbNode)} ` +
         `-e PUID=0 -e PGID=0 -e PODKIT_POLL_INTERVAL=2 ` +
         `-e PODKIT_APPRISE_URL=http://127.0.0.1:${APPRISE_PORT}/notify ` +
@@ -926,15 +927,15 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
         expect(matched, `daemon never reached the sync plan. Logs:\n${planLogs}`).toBe(true);
         await deviceHarness.run('sleep 4', { timeoutMs: VM_WARM_TIMEOUT_MS });
 
-        // `nerdctl stop` → SIGTERM (15s grace before SIGKILL). PID 1 is the
+        // `podman stop` → SIGTERM (15s grace before SIGKILL). PID 1 is the
         // daemon (entrypoint `exec podkit-daemon`), so it receives the signal.
-        await deviceHarness.run(`sudo nerdctl stop --time 15 ${DRAIN_DAEMON_CONTAINER}`, {
+        await deviceHarness.run(`sudo ${RUNTIME} stop --time 15 ${DRAIN_DAEMON_CONTAINER}`, {
           timeoutMs: 30_000,
         });
 
         const exit = await daemonContainerExitCode(DRAIN_DAEMON_CONTAINER);
         const logs = (
-          await deviceHarness.run(`sudo nerdctl logs ${DRAIN_DAEMON_CONTAINER} 2>&1 || true`, {
+          await deviceHarness.run(`sudo ${RUNTIME} logs ${DRAIN_DAEMON_CONTAINER} 2>&1 || true`, {
             timeoutMs: VM_WARM_TIMEOUT_MS,
           })
         ).stdout;

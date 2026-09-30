@@ -175,7 +175,6 @@ export type {
   BuildPodkitImageInVmResult,
   PullPodkitImageInVmOpts,
   EnsurePodkitImageInVmOpts,
-  SubstrateContainerRuntime,
 } from './runners/shipped-image.js';
 export {
   buildPodkitImageInVm,

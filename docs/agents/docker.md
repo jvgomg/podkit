@@ -53,13 +53,13 @@ Caveat: those Lima binaries are **glibc**, so the smoke image (`Dockerfile.smoke
 uses a glibc base with `gosu` symlinked as `su-exec`, not the shipped Alpine/musl
 image. It is a representative image for catching CLI/entrypoint drift; full
 Alpine/musl fidelity against a synthesized USB device is the `vm-docker-image`
-surface (Lima VM) — see the [test taxonomy](../architecture/testing/taxonomy.md).
+surface (device substrate) — see the [test taxonomy](../architecture/testing/taxonomy.md).
 
 ### Running the vm-docker-image e2e locally
 
-This stage builds the real Alpine/musl image inside the `podkit-device`
-Lima VM and drives it against a synthesized USB iPod (5G Video persona) with
-`nerdctl run --device` passthrough: `device add` (live USB firmware inquiry →
+This stage builds the real Alpine/musl image inside the device substrate (the
+`podkit-device` Lima VM, or a remote one) and drives it against a synthesized
+USB iPod (5G Video persona) with `podman run --device` passthrough: `device add` (live USB firmware inquiry →
 SysInfoExtended write), a real FLAC→AAC sync, then a read-back — all through the
 shipped image.
 
@@ -142,7 +142,7 @@ bun run test:e2e:docker-loopback
 ### Gating against the real GHA-built image (`:rc`)
 
 Both e2e stages above default to building the image **locally**, inside the
-substrate (with `nerdctl` for `docker-dist`, `podman` for `docker-loopback`) —
+substrate with the contract's `podman` —
 fast, but not the literal artifact CI ships. To gate against the real image
 instead, set `PODKIT_DOCKER_DIST_IMAGE` to a registry tag and both stages
 **pull** it rather than building. The one-command way to do this across every surface is
@@ -158,7 +158,7 @@ bun run test:e2e:docker-loopback                      # E2E · vm-docker-image �
 ```
 
 - One env var drives both surfaces (`ensurePodkitImageInVm`): unset → local
-  build; set → `nerdctl pull` / `podman pull` of that tag in the substrate. `ghcr.io/jvgomg/podkit` is a **public**
+  build; set → `podman pull` of that tag in the substrate. `ghcr.io/jvgomg/podkit` is a **public**
   package, so the pull is anonymous — no `docker login` / token needed.
 - The `:rc` tag is produced by `.github/workflows/verify-release.yml` when the
   open "Version Packages" PR (the changesets version bump) runs its verification
