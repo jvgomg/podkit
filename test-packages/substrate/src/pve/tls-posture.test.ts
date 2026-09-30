@@ -19,39 +19,44 @@ import { repoRoot } from '../paths.js';
 
 const PVE_DIR = path.join('test-packages', 'substrate', 'src', 'pve');
 /** The probe socket, and this file, which necessarily names what it forbids. */
-const ALLOWED = [
-  `./${path.join(PVE_DIR, 'tls.ts')}`,
-  `./${path.join(PVE_DIR, 'tls-posture.test.ts')}`,
-];
+const ALLOWED = [path.join(PVE_DIR, 'tls.ts'), path.join(PVE_DIR, 'tls-posture.test.ts')];
 
-/** Source files only — no build output, no dependencies. */
+/**
+ * Source files only: tracked and untracked, never gitignored. A recursive grep
+ * also walks ignored build and cache trees, which can run to gigabytes.
+ */
 function grepRepo(pattern: string): string[] {
   const result = spawnSync(
-    'grep',
+    'git',
     [
-      '-rn',
-      '--include=*.ts',
-      '--include=*.tsx',
-      '--include=*.js',
-      '--include=*.mjs',
-      '--include=*.cjs',
-      '--include=*.rs',
-      '--include=*.c',
-      '--include=*.sh',
-      '--include=*.yaml',
-      '--include=*.yml',
-      '--include=*.json',
-      '--include=*.toml',
-      '--include=Dockerfile*',
-      '--exclude-dir=node_modules',
-      '--exclude-dir=dist',
-      '--exclude-dir=.git',
+      'grep',
+      '--untracked',
+      '-n',
+      '-I',
       '-E',
       pattern,
-      '.',
+      '--',
+      '*.ts',
+      '*.tsx',
+      '*.js',
+      '*.mjs',
+      '*.cjs',
+      '*.rs',
+      '*.c',
+      '*.sh',
+      '*.yaml',
+      '*.yml',
+      '*.json',
+      '*.toml',
+      '**/Dockerfile*',
+      'Dockerfile*',
     ],
     { cwd: repoRoot(), encoding: 'utf8' }
   );
+  // 1 is "no match"; anything else is git failing, which must not read as clean.
+  if (result.status !== 0 && result.status !== 1) {
+    throw new Error(`git grep failed (${result.status}): ${result.stderr}`);
+  }
   return result.stdout
     .split('\n')
     .filter((line) => line.trim().length > 0)
@@ -60,7 +65,7 @@ function grepRepo(pattern: string): string[] {
 
 describe('TLS posture', () => {
   it('relaxes verification in exactly one place: the credential-free probe', () => {
-    expect(grepRepo('rejectUnauthorized:\\s*false')).toEqual([]);
+    expect(grepRepo('rejectUnauthorized:[[:space:]]*false')).toEqual([]);
   });
 
   it('has no environment escape hatch', () => {
