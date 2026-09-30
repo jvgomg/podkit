@@ -1,10 +1,10 @@
 ---
 id: TASK-517
 title: docker-loopback migration to the device substrate
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-13 21:57'
-updated_date: '2026-09-29 22:04'
+updated_date: '2026-09-30 21:17'
 labels:
   - testing
   - infrastructure
@@ -65,7 +65,7 @@ Until this lands, `docs/architecture/testing/taxonomy.md` says where `docker-loo
 - [x] #1 docker-loopback runs on the device substrate rather than the host container runtime
 - [x] #2 The libc and image provenance of the artifact it exercises is explicit and correct for the substrate's runtime
 - [x] #3 The privileged invocation and the 64 loop-device mknods work under the substrate's container runtime
-- [ ] #4 The macOS path that is green today is still green, or its removal is a deliberate documented decision
+- [x] #4 The macOS path that is green today is still green, or its removal is a deliberate documented decision
 - [x] #5 taxonomy.md is updated to describe where the cell actually runs once it moves
 <!-- AC:END -->
 
@@ -98,6 +98,13 @@ The host-Docker macOS path is removed deliberately and documented in taxonomy.md
 ## Follow-ups
 
 TASK-530 (docker-dist → podman), TASK-531 (retire host-arch musl build; still-stale `required-arches.ts` header, `.env.example`, `vm-build-orchestration.md`), TASK-532 (capability probe is Lima-only, so a remote-substrate run reports this cell uncovered).
+
+## AC #4 — verified on the Mac (2026-09-30)
+
+- `harness:setup` picked up podman (4.3.1) on `podkit-device`. The VM was then recreated with Lima's containerd disabled (TASK-530), so it has **no** nerdctl/containerd.
+- `PODKIT_SUBSTRATE=device bun run test:e2e:docker-loopback`: 3/3 pass. No containers or loop devices left behind.
+- docker-dist on Lima over the limactl SubstrateLink, now on podman: 6/6 pass.
+- On the first attempt the test task ignored the command-line `PODKIT_SUBSTRATE=device`. Turbo's strict env mode dropped it, so the test re-read `.env.local` (`deviceRemote`), while `vm:doctor` had checked Lima. Both shipped-image tasks now declare `PODKIT_SUBSTRATE`/`PODKIT_TARGET_ARCH`. The fix is in TASK-531's commit.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
