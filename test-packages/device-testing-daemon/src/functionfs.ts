@@ -33,7 +33,6 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
 
 import { buildDescriptorsBuffer, buildStringsBuffer } from './descriptors.js';
@@ -49,13 +48,13 @@ import { classifyRequest, getPagePayload, PAGE_SIZE, parseSetupPacket } from './
 // Type values (enum usb_functionfs_event_type in <linux/usb/functionfs.h>):
 // ---------------------------------------------------------------------------
 
-const FFS_EVENT_SIZE = 12;
-const FFS_EVENT_TYPE_OFFSET = 8;
+export const FFS_EVENT_SIZE = 12;
+export const FFS_EVENT_TYPE_OFFSET = 8;
 const FFS_EVENT_BIND = 0;
 const FFS_EVENT_UNBIND = 1;
 const FFS_EVENT_ENABLE = 2;
 const FFS_EVENT_DISABLE = 3;
-const FFS_EVENT_SETUP = 4;
+export const FFS_EVENT_SETUP = 4;
 const FFS_EVENT_SUSPEND = 5;
 const FFS_EVENT_RESUME = 6;
 
@@ -175,34 +174,12 @@ export async function runFunctionFs(opts: FunctionFsOpts): Promise<FunctionFsHan
   };
 
   let running = true;
-  const loop = async (): Promise<void> => {
-    const buf = Buffer.allocUnsafe(PAGE_SIZE + 32);
-    while (running) {
-      let read: fs.promises.FileReadResult<Buffer>;
-      try {
-        read = await ep0.read(buf, 0, buf.byteLength, null);
-      } catch (err) {
-        if (!running) return; // shutdown raced
-        log(`ep0 read error: ${describe(err)}`);
-        return;
-      }
-      if (read.bytesRead === 0) {
-        // FunctionFS closed.
-        return;
-      }
-      // ep0 emits one `struct usb_functionfs_event` per read. The struct
-      // is 12 bytes packed: bytes 0..7 are `union u` (SETUP packet for
-      // SETUP events), byte 8 is `type`, bytes 9..11 are padding.
-      if (read.bytesRead >= FFS_EVENT_SIZE) {
-        const eventType = buf[FFS_EVENT_TYPE_OFFSET]!;
-        handleEvent(eventType, buf, opts, log, ep0, onBind);
-      } else {
-        log(`ignoring ${read.bytesRead}-byte short ep0 read (expected ${FFS_EVENT_SIZE})`);
-      }
-    }
-  };
-
-  const donePromise = loop();
+  const donePromise = serveEp0(ep0, {
+    sysInfoExtendedXml: opts.sysInfoExtendedXml,
+    log,
+    onBind,
+    isRunning: () => running,
+  });
 
   // Bind the gadget AFTER the read loop is live but BEFORE we wait for
   // BIND. The kernel sends the BIND event the moment the UDC write
@@ -271,18 +248,80 @@ function describe(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-function handleEvent(
+/** The two ep0 operations the event loop needs; an open `FileHandle` satisfies it. */
+export interface Ep0 {
+  read(
+    buffer: Buffer,
+    offset: number,
+    length: number,
+    position: null
+  ): Promise<{ bytesRead: number }>;
+  write(data: Uint8Array): Promise<unknown>;
+}
+
+export interface ServeEp0Opts {
+  /** SysInfoExtended XML to serve over the vendor read. */
+  sysInfoExtendedXml: string;
+  log: (message: string) => void;
+  /** Called on every `FUNCTIONFS_BIND` event. */
+  onBind: () => void;
+  /** Polled before each read; the loop ends once it returns false. */
+  isRunning: () => boolean;
+}
+
+/**
+ * Read and answer ep0 events until FunctionFS closes, `isRunning` turns false,
+ * or a read fails for any reason other than a stall.
+ *
+ * Strictly one operation at a time. FunctionFS treats a `read()` on ep0 while
+ * an IN-direction SETUP is pending as userspace asking to STALL it, so a
+ * reply that has not reached the kernel before the next read turns a served
+ * page into a host-side `LIBUSB_TRANSFER_STALL`. The same rule is how an
+ * unrecognised request gets refused: write nothing, and the next read stalls it.
+ */
+export async function serveEp0(ep0: Ep0, opts: ServeEp0Opts): Promise<void> {
+  const { log } = opts;
+  const buf = Buffer.allocUnsafe(PAGE_SIZE + 32);
+  while (opts.isRunning()) {
+    let read: { bytesRead: number };
+    try {
+      read = await ep0.read(buf, 0, buf.byteLength, null);
+    } catch (err) {
+      if (!opts.isRunning()) return; // shutdown raced
+      if ((err as NodeJS.ErrnoException).code === 'EL2HLT') {
+        log('ep0 stalled the pending request');
+        continue;
+      }
+      log(`ep0 read error: ${describe(err)}`);
+      return;
+    }
+    if (read.bytesRead === 0) {
+      // FunctionFS closed.
+      return;
+    }
+    // ep0 emits one `struct usb_functionfs_event` per read. The struct
+    // is 12 bytes packed: bytes 0..7 are `union u` (SETUP packet for
+    // SETUP events), byte 8 is `type`, bytes 9..11 are padding.
+    if (read.bytesRead >= FFS_EVENT_SIZE) {
+      const eventType = buf[FFS_EVENT_TYPE_OFFSET]!;
+      await handleEvent(eventType, buf, opts, ep0);
+    } else {
+      log(`ignoring ${read.bytesRead}-byte short ep0 read (expected ${FFS_EVENT_SIZE})`);
+    }
+  }
+}
+
+async function handleEvent(
   eventType: number,
   buf: Buffer,
-  opts: FunctionFsOpts,
-  log: (m: string) => void,
-  ep0: fsp.FileHandle,
-  onBind: () => void
-): void {
+  opts: ServeEp0Opts,
+  ep0: Ep0
+): Promise<void> {
+  const { log } = opts;
   switch (eventType) {
     case FFS_EVENT_BIND:
       log('event: BIND (descriptors accepted)');
-      onBind();
+      opts.onBind();
       return;
     case FFS_EVENT_UNBIND:
       log('event: UNBIND');
@@ -300,34 +339,30 @@ function handleEvent(
       log('event: RESUME');
       return;
     case FFS_EVENT_SETUP:
-      handleSetup(buf, opts, log, ep0);
+      await handleSetup(buf, opts, ep0);
       return;
     default:
       log(`event: unknown type=${eventType}`);
   }
 }
 
-function handleSetup(
-  buf: Buffer,
-  opts: FunctionFsOpts,
-  log: (m: string) => void,
-  ep0: fsp.FileHandle
-): void {
+async function handleSetup(buf: Buffer, opts: ServeEp0Opts, ep0: Ep0): Promise<void> {
+  const { log } = opts;
   // SETUP packet lives in bytes 0..7 of the event struct (`union u.setup`).
   const setup = parseSetupPacket(new Uint8Array(buf.buffer, buf.byteOffset, 8));
   const classified = classifyRequest(setup);
   if (classified.kind !== 'sysinfo-extended') {
+    // No reply: the loop's next read is what stalls it (see serveEp0).
     log(`unhandled request: ${classified.reason}`);
-    // Writing zero bytes on a vendor read is interpreted by the host as a
-    // short read / stall depending on the kernel version. The proper
-    // response is FUNCTIONFS_IOCTL_STALL via ioctl, which Bun cannot issue
-    // directly — TODO follow-up.
     return;
   }
   const { bytes } = getPagePayload(opts.sysInfoExtendedXml, classified.page, classified.maxLength);
-  // Fire-and-await with error swallow; the loop must not abort on a write
-  // failure (kernel may have already torn down the transfer).
-  void ep0.write(bytes).catch((err) => {
+  // A failed write is logged, not thrown: the host may already have abandoned
+  // the transfer, and the loop must keep serving the next one.
+  try {
+    await ep0.write(bytes);
+    log(`served page ${classified.page} (${bytes.byteLength} bytes)`);
+  } catch (err) {
     log(`ep0 write failed for page ${classified.page}: ${describe(err)}`);
-  });
+  }
 }
