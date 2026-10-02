@@ -317,6 +317,10 @@ describe('VM: Docker dist image e2e (musl image + synthesized USB iPod)', () => 
         );
 
         // ---- 1) device add: USB inquiry → SIE write + device entry ----------
+        // The guest clock, not the host's: the journal window below is read in it.
+        const addStartedAt = (
+          await deviceHarness.run(`date '+%Y-%m-%d %H:%M:%S'`, { timeoutMs: VM_WARM_TIMEOUT_MS })
+        ).stdout.trim();
         const addCmd =
           `sudo ${RUNTIME} run --rm --device ${sq(usbNode)} --device ${sq(blockDevice)} ` +
           `-e PUID=0 -e PGID=0 -v ${sq(`${VM_MOUNT_POINT}:/ipod`)} ` +
@@ -335,7 +339,20 @@ describe('VM: Docker dist image e2e (musl image + synthesized USB iPod)', () => 
           `[ -f ${sq(siePath)} ] && wc -c < ${sq(siePath)} || echo MISSING`,
           { timeoutMs: VM_WARM_TIMEOUT_MS }
         );
-        expect(stat.stdout.trim()).not.toBe('MISSING');
+        if (stat.stdout.trim() === 'MISSING') {
+          // `add` still exits 0 when the inquiry fails, so its own output and the
+          // gadget's journal are the only record of why.
+          const journal = await deviceHarness.run(
+            `sudo journalctl --no-pager -u ${sq(`dummy-hcd-daemon@${PERSONA.id}.service`)} ` +
+              `--since ${sq(addStartedAt)} 2>&1 | tail -n 40`,
+            { timeoutMs: VM_WARM_TIMEOUT_MS }
+          );
+          throw new Error(
+            'device add exited 0 but wrote no SysInfoExtended\n' +
+              `--- add stdout ---\n${add.stdout}\n--- add stderr ---\n${add.stderr}\n` +
+              `--- persona daemon journal since ${addStartedAt} ---\n${journal.stdout}`
+          );
+        }
         const bytes = Number.parseInt(stat.stdout.trim(), 10);
         expect(Number.isNaN(bytes)).toBe(false);
         expect(bytes).toBeGreaterThan(1024);

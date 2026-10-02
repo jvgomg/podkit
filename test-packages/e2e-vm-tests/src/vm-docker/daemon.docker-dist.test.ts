@@ -46,7 +46,7 @@
  * # SIGTERM graceful-drain + Apprise (orchestrator behaviors)
  *
  * A third `describe` proves the daemon's shutdown + notification paths on the
- * iPod lsblk lane: a 60-track sync interrupted mid-flight by SIGTERM drains
+ * iPod lsblk lane: a long sync interrupted mid-flight by SIGTERM drains
  * gracefully (SIGINT forwarded to the CLI child, container exits 0, the
  * checkpointed completed tracks survive), and a completed sync delivers a
  * "sync complete" Apprise notification to a mock endpoint on the VM host
@@ -712,9 +712,10 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
   // mount — a SIGTERM then exercises
   // the real mount → sync → SIGINT-drain → eject unwind. `--privileged` +
   // `--device` (block + USB) + a device-LESS config (path-based fallback) match
-  // the lane. A 60-track FLAC set makes the sync run several seconds so a SIGTERM
-  // lands MID-sync; the engine checkpoints the iTunesDB every 10 completed
-  // tracks, so a drained interrupt preserves the completed subset.
+  // the lane. The drain case syncs a large FLAC set so a SIGTERM lands MID-sync;
+  // the engine checkpoints the iTunesDB every 10 completed tracks, so a drained
+  // interrupt preserves the completed subset. The Apprise case syncs a small set
+  // to completion.
   //
   // `--network host` lets the daemon reach the mock Apprise endpoint on the VM
   // host (127.0.0.1). Each `it` re-inits the device DB first, so it is
@@ -728,12 +729,16 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
     const VM_MOUNT_POINT = '/mnt/podkit-daemon-dockerdist-drain';
     const VM_CONFIG_DIR = '/tmp/podkit-daemon-dockerdist-drain-config';
     const VM_MUSIC_DIR = '/tmp/podkit-daemon-dockerdist-drain-music';
-    // 120 tracks (not the minimum needed) so the sync stays in-flight across a
-    // wide range of machine speeds: the interrupt below must land AFTER ≥1
-    // checkpoint (10 tracks) but BEFORE the sync finishes. A larger set widens
-    // the upper-margin (a fast host can't finish 120 in the dwell window); the
-    // dwell widens the lower-margin (a slow host still completes ≥10).
+    const VM_APPRISE_MUSIC_DIR = '/tmp/podkit-daemon-dockerdist-apprise-music';
+    // 120 tracks (not the minimum needed) so the sync is still in flight when
+    // the interrupt lands: it fires once a checkpoint's worth have landed, and a
+    // large set keeps a fast host from finishing before the signal arrives.
     const TRACK_COUNT = 120;
+    /** The engine checkpoints the iTunesDB every 10 completed tracks. */
+    const MIN_PRESERVED_TRACKS = 10;
+    // The Apprise case needs a sync to *finish*, not to be interrupted, so it
+    // gets its own small set.
+    const APPRISE_TRACK_COUNT = 3;
 
     // Device-less config: the iPod lane auto-mounts the detected device and syncs
     // it by mount path (unregistered → path-based fallback, global settings).
@@ -801,14 +806,14 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
      * block + USB nodes make lsblk enumerate the device and `/sys` carry the
      * Apple vendor id; `--network host` lets it reach the mock Apprise endpoint.
      */
-    const startDrainDaemon = async (): Promise<void> => {
+    const startLaneDaemon = async (musicDir: string): Promise<void> => {
       await removeDaemonContainer(DRAIN_DAEMON_CONTAINER);
       const startCmd =
         `sudo ${RUNTIME} run -d --name ${DRAIN_DAEMON_CONTAINER} --privileged --network host ` +
         `--device ${sq(blockDevice)} --device ${sq(usbNode)} ` +
         `-e PUID=0 -e PGID=0 -e PODKIT_POLL_INTERVAL=2 ` +
         `-e PODKIT_APPRISE_URL=http://127.0.0.1:${APPRISE_PORT}/notify ` +
-        `-v ${sq(`${VM_CONFIG_DIR}:/config`)} -v ${sq(`${VM_MUSIC_DIR}:/music:ro`)} ` +
+        `-v ${sq(`${VM_CONFIG_DIR}:/config`)} -v ${sq(`${musicDir}:/music:ro`)} ` +
         `${sq(IMAGE)} daemon`;
       const start = await deviceHarness.run(startCmd, { timeoutMs: CONTAINER_STEP_TIMEOUT_MS });
       if (start.exitCode !== 0) {
@@ -816,6 +821,27 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
           `daemon start failed (exit=${start.exitCode}): ${start.stderr || start.stdout}`
         );
       }
+    };
+
+    /**
+     * Poll the files under iPod_Control/Music inside the running daemon
+     * container until at least `target` exist or the sync budget runs out.
+     * Returns the last count seen.
+     */
+    const waitForLandedTracks = async (daemonMount: string, target: number): Promise<number> => {
+      const deadline = Date.now() + SYNC_WAIT_TIMEOUT_MS;
+      let count = 0;
+      while (Date.now() < deadline) {
+        const r = await deviceHarness.run(
+          `sudo ${RUNTIME} exec ${DRAIN_DAEMON_CONTAINER} ` +
+            `sh -c ${sq(`find ${daemonMount}/iPod_Control/Music -type f 2>/dev/null | wc -l`)}`,
+          { timeoutMs: VM_WARM_TIMEOUT_MS }
+        );
+        count = Number.parseInt(r.stdout.trim(), 10) || 0;
+        if (count >= target) return count;
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+      return count;
     };
 
     /** Mount the backing read-only and count files under iPod_Control/Music. */
@@ -843,16 +869,20 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
           `mkdir -p ${VM_CONFIG_DIR} && printf '%s' ${sq(DRAIN_MUSIC_CONFIG)} > ${VM_CONFIG_DIR}/config.toml`,
           { timeoutMs: VM_WARM_TIMEOUT_MS }
         );
-        // 60 short FLACs so the sync runs long enough to interrupt mid-flight.
+        const genFlacs = (dir: string, count: number): string =>
+          [
+            `mkdir -p ${sq(dir)}`,
+            `for i in $(seq 1 ${count}); do`,
+            '  f=$((300 + i * 20));',
+            `  ffmpeg -y -f lavfi -i "sine=frequency=$f:sample_rate=44100:duration=4" ` +
+              `-metadata artist=DaemonDrain -metadata album=DaemonDrain -metadata title="Track $i" -metadata track=$i ` +
+              `-c:a flac ${sq(dir)}/track-$i.flac >/dev/null 2>&1;`,
+            'done',
+          ].join('\n');
         const genScript = [
           'set -eu',
-          `mkdir -p ${sq(VM_MUSIC_DIR)}`,
-          `for i in $(seq 1 ${TRACK_COUNT}); do`,
-          '  f=$((300 + i * 20));',
-          `  ffmpeg -y -f lavfi -i "sine=frequency=$f:sample_rate=44100:duration=4" ` +
-            `-metadata artist=DaemonDrain -metadata album=DaemonDrain -metadata title="Track $i" -metadata track=$i ` +
-            `-c:a flac ${sq(VM_MUSIC_DIR)}/track-$i.flac >/dev/null 2>&1;`,
-          'done',
+          genFlacs(VM_MUSIC_DIR, TRACK_COUNT),
+          genFlacs(VM_APPRISE_MUSIC_DIR, APPRISE_TRACK_COUNT),
         ].join('\n');
         const gen = await deviceHarness.run(`bash -c ${sq(genScript)}`, { timeoutMs: 180_000 });
         if (gen.exitCode !== 0) {
@@ -866,9 +896,12 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
         await removeDaemonContainer(DRAIN_DAEMON_CONTAINER);
         await stopMockApprise();
         await deviceHarness
-          .run(`rm -rf ${VM_CONFIG_DIR} ${VM_MUSIC_DIR} 2>/dev/null || true`, {
-            timeoutMs: VM_WARM_TIMEOUT_MS,
-          })
+          .run(
+            `rm -rf ${VM_CONFIG_DIR} ${VM_MUSIC_DIR} ${VM_APPRISE_MUSIC_DIR} 2>/dev/null || true`,
+            {
+              timeoutMs: VM_WARM_TIMEOUT_MS,
+            }
+          )
           .catch(() => {});
         await unmountAndStop({ personaId: PERSONA.id, mountPoint: VM_MOUNT_POINT });
         throw err;
@@ -879,9 +912,12 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
       await removeDaemonContainer(DRAIN_DAEMON_CONTAINER);
       await stopMockApprise();
       await deviceHarness
-        .run(`rm -rf ${VM_CONFIG_DIR} ${VM_MUSIC_DIR} 2>/dev/null || true`, {
-          timeoutMs: VM_WARM_TIMEOUT_MS,
-        })
+        .run(
+          `rm -rf ${VM_CONFIG_DIR} ${VM_MUSIC_DIR} ${VM_APPRISE_MUSIC_DIR} 2>/dev/null || true`,
+          {
+            timeoutMs: VM_WARM_TIMEOUT_MS,
+          }
+        )
         .catch(() => {});
       await unmountAndStop({ personaId: PERSONA.id, mountPoint: VM_MOUNT_POINT });
     }, VM_COLD_TIMEOUT_MS);
@@ -892,19 +928,19 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
         await removeDaemonContainer(DRAIN_DAEMON_CONTAINER);
         await reinitDevice();
         await deviceHarness.run(`rm -f ${APPRISE_CAPTURE}`, { timeoutMs: VM_WARM_TIMEOUT_MS });
-        await startDrainDaemon();
+        await startLaneDaemon(VM_APPRISE_MUSIC_DIR);
 
-        const { matched, logs } = await waitForDaemonLog(
-          DRAIN_DAEMON_CONTAINER,
-          /Sync cycle completed successfully for sda/
-        );
-        expect(matched, `daemon never completed a sync. Logs:\n${logs}`).toBe(true);
+        // The whole-disk persona is logged under its kernel name, which depends
+        // on how many SCSI disks the substrate already has.
+        const diskName = blockDevice.replace(/^\/dev\//, '');
+        const { synced, logs } = await waitForDaemonSync(DRAIN_DAEMON_CONTAINER, diskName);
+        expect(synced, `daemon never completed a sync of ${diskName}. Logs:\n${logs}`).toBe(true);
 
         const capture = await readAppriseCapture();
         expect(capture, `no Apprise notification captured. Logs:\n${logs}`).toMatch(
           /sync complete/i
         );
-        expect(capture).toContain(`${TRACK_COUNT} tracks added`);
+        expect(capture).toContain(`${APPRISE_TRACK_COUNT} tracks added`);
 
         await removeDaemonContainer(DRAIN_DAEMON_CONTAINER);
       },
@@ -916,16 +952,22 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
       async () => {
         await removeDaemonContainer(DRAIN_DAEMON_CONTAINER);
         await reinitDevice();
-        await startDrainDaemon();
+        await startLaneDaemon(VM_MUSIC_DIR);
 
-        // Wait for the REAL sync to start, then dwell so a couple of checkpoint
-        // saves land (engine checkpoints every 10 completed tracks), then SIGTERM.
+        // Wait for the REAL sync to start, then for a checkpoint's worth of
+        // tracks to land, then SIGTERM. Progress is read through the daemon's
+        // own mount: a fixed dwell measures the substrate's transcode speed.
         const { matched, logs: planLogs } = await waitForDaemonLog(
           DRAIN_DAEMON_CONTAINER,
           /Sync plan/
         );
         expect(matched, `daemon never reached the sync plan. Logs:\n${planLogs}`).toBe(true);
-        await deviceHarness.run('sleep 4', { timeoutMs: VM_WARM_TIMEOUT_MS });
+        const daemonMount = `/tmp/podkit-${blockDevice.replace(/^\/dev\//, '')}`;
+        const landed = await waitForLandedTracks(daemonMount, MIN_PRESERVED_TRACKS + 2);
+        expect(
+          landed,
+          `fewer than ${MIN_PRESERVED_TRACKS + 2} tracks landed in ${SYNC_WAIT_TIMEOUT_MS}ms`
+        ).toBeGreaterThanOrEqual(MIN_PRESERVED_TRACKS + 2);
 
         // `podman stop` → SIGTERM (15s grace before SIGKILL). PID 1 is the
         // daemon (entrypoint `exec podkit-daemon`), so it receives the signal.
@@ -949,7 +991,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
         // checkpointed subset — a non-empty partial (the device is bind-mounted,
         // so the host mount reflects the container's writes directly).
         const tracks = await countMusicFiles();
-        expect(tracks).toBeGreaterThanOrEqual(10);
+        expect(tracks).toBeGreaterThanOrEqual(MIN_PRESERVED_TRACKS);
         expect(tracks).toBeLessThan(TRACK_COUNT);
 
         await removeDaemonContainer(DRAIN_DAEMON_CONTAINER);
