@@ -89,8 +89,7 @@ export async function writeOwnership(path: string, identity: PidFileEntry): Prom
  * Read `path` and parse it as a {@link PidFileEntry}.
  *
  * Returns `null` when the file is missing, unparseable, or the JSON shape
- * is not `{ pid: number, startTimeMs: number }`. Callers treat `null` as
- * "no live owner" and proceed to take over the lock / reap the dir.
+ * is not `{ pid: number, startTimeMs: number }`.
  */
 export async function readOwnership(path: string): Promise<PidFileEntry | null> {
   let raw: string;
@@ -120,29 +119,47 @@ export async function readOwnership(path: string): Promise<PidFileEntry | null> 
 // =============================================================================
 
 /**
- * `kill(pid, 0)` + start-time tuple match. Returns `false` on any
- * platform error so callers reliably take over the lock.
+ * What a probe can honestly say about a recorded owner.
  *
- * Compares the recorded `startTimeMs` against the actual process's start
- * time within a ±2s tolerance, defending against PID reuse on long-uptime
- * hosts.
+ * - `alive` — the PID exists and its start time matches the record.
+ * - `dead` — no process holds the PID. The only verdict that proves death.
+ * - `unknown` — the PID exists but cannot be tied to the record: its start
+ *   time disagrees or could not be read, or it cannot be signalled (EPERM).
+ *   PID reuse lands here, and so does a live owner the probe misjudges.
+ *
+ * A live owner can probe `unknown` — wall-clock steps, suspend, slow or
+ * failing `ps`. The causes and their reachability per platform are in
+ * `docs/architecture/sync/planning.md` §6.
+ *
+ * Consumers must decide what `unknown` costs them — see {@link isAlive} for
+ * the lock's answer and `transcode-tmp-walker.ts` for the walker's.
  */
-export async function isAlive(entry: PidFileEntry): Promise<boolean> {
+export type Liveness = 'alive' | 'dead' | 'unknown';
+
+/**
+ * Probe `entry` with `kill(pid, 0)` plus a ±2s start-time match, the latter
+ * guarding against PID reuse on long-uptime hosts.
+ */
+export async function probeLiveness(entry: PidFileEntry): Promise<Liveness> {
   try {
     process.kill(entry.pid, 0);
-  } catch {
-    // ESRCH (no such process) or EPERM (process exists but we can't signal it).
-    // EPERM still implies a live process — but on a host where we can't even
-    // signal it, treating it as alive would let a foreign-uid process pin the
-    // lock forever. The safer call is to treat both as "not ours; not alive
-    // from our point of view" and let the caller take over.
-    return false;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'ESRCH' ? 'dead' : 'unknown';
   }
-
-  // Process exists. Confirm start-time matches to defend against PID reuse.
   const actualStartMs = await readProcessStartTimeMs(entry.pid);
-  if (actualStartMs === null) return false;
-  return Math.abs(actualStartMs - entry.startTimeMs) <= 2_000;
+  if (actualStartMs === null) return 'unknown';
+  return Math.abs(actualStartMs - entry.startTimeMs) <= 2_000 ? 'alive' : 'unknown';
+}
+
+/**
+ * `true` only for a {@link probeLiveness} verdict of `alive`.
+ *
+ * Right for the sync lock, where a misjudged live holder costs contention
+ * (see `docs/architecture/sync/planning.md` §6). Do not use it where acting
+ * on a false "dead" destroys the owner's work.
+ */
+export async function isAlive(entry: PidFileEntry): Promise<boolean> {
+  return (await probeLiveness(entry)) === 'alive';
 }
 
 /**
@@ -151,9 +168,8 @@ export async function isAlive(entry: PidFileEntry): Promise<boolean> {
  * Returns `null` on any error — unsupported platform, parse failure, race
  * with process exit. Linux reads `/proc/<pid>/stat` field 22 (`starttime`
  * in clock ticks since boot) and `/proc/stat`'s `btime`. macOS shells out
- * to `ps -o lstart= -p <pid>` once — not in a hot path. Other platforms
- * (Windows) are unsupported today; we return `null` and the caller treats
- * the entry as dead.
+ * to `ps -o etime= -p <pid>` once — not in a hot path. Other platforms
+ * (Windows) are unsupported today and return `null`.
  */
 async function readProcessStartTimeMs(pid: number): Promise<number | null> {
   if (process.platform === 'linux') {
@@ -199,14 +215,9 @@ async function readLinuxStartTime(pid: number): Promise<number | null> {
   const btimeSeconds = Number.parseInt(btimeMatch[1]!, 10);
   if (!Number.isFinite(btimeSeconds)) return null;
 
-  // sysconf(_SC_CLK_TCK) is conventionally 100 on Linux; node doesn't expose
-  // sysconf directly. 100Hz has been the kernel default for decades and is
-  // the value libgpod / pidfd consumers also assume.
-  //
-  // If the kernel runs HZ≠100, the computed start time can be off by a
-  // multiplicative factor, potentially exceeding the ±2s tolerance. Effect:
-  // a live process's lock is treated as stale and reclaimed — never the
-  // reverse — so the failure mode is contention, not corruption.
+  // `starttime` is in USER_HZ, which the kernel fixes at 100 for userspace on
+  // every arch podkit ships for, independent of CONFIG_HZ. Node exposes no
+  // sysconf to confirm it.
   const clkTck = 100;
   return (btimeSeconds + startTimeTicks / clkTck) * 1_000;
 }

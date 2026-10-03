@@ -8,9 +8,10 @@
  *
  * Host-scoped (`scope: 'system'`): no device is needed. Repair is
  * safe-by-design because the walker only returns directories whose
- * `.owner` PID is dead (or whose `.owner` is missing). Live siblings —
- * including the current Node process's own active scratch dirs — keep
- * their `.owner` live so the walker skips them.
+ * `.owner` PID no longer exists, or whose `.owner` is missing or
+ * unverifiable and nothing in them has been touched for a grace window.
+ * Live siblings — including the current Node process's own active scratch
+ * dirs — keep their `.owner` live so the walker skips them.
  */
 
 import { tmpdir } from 'node:os';

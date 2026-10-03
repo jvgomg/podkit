@@ -72,12 +72,13 @@ async function makeAbandonedTranscodeDir(
 ): Promise<void> {
   const dir = join(hostTmp, `podkit-transcode-${uuid}`);
   await mkdir(dir, { recursive: true });
+  // No `.owner` written → walker treats as abandoned once nothing in it has
+  // been touched for the ownerless grace window.
+  const old = new Date(Date.now() - 24 * 60 * 60 * 1000);
   for (const [name, content] of Object.entries(files)) {
     await writeFile(join(dir, name), content);
+    await utimes(join(dir, name), old, old);
   }
-  // No `.owner` written → walker treats as abandoned...
-  // ...once it has aged out of the ownerless grace window.
-  const old = new Date(Date.now() - 24 * 60 * 60 * 1000);
   await utimes(dir, old, old);
 }
 
@@ -113,7 +114,7 @@ async function makeLiveTranscodeDir(
   for (const [name, content] of Object.entries(files)) {
     await writeFile(join(dir, name), content);
   }
-  // Use our own PID + start time so the walker's isAlive probe returns true.
+  // Use our own PID + start time so the walker's liveness probe says alive.
   await writeOwnership(join(dir, '.owner'), {
     pid: process.pid,
     startTimeMs: Date.now() - Math.floor(process.uptime() * 1000),

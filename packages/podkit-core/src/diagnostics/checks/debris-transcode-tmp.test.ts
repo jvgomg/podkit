@@ -10,12 +10,13 @@
  *   `mkdir` and its `writeOwnership`)
  * - malformed `.owner` → same two cases as missing
  * - `.owner` PID is dead → reap immediately (SIGKILLed prior process)
- * - `.owner` start-time mismatch → reap (PID reuse guard)
+ * - `.owner` PID live but unverifiable (start-time mismatch) → reap only once
+ *   nothing in the dir has been touched for the grace window
  * - `.owner` is the live current process → skip (sibling protection)
  */
 
 import { describe, it, expect } from 'bun:test';
-import { mkdtemp, mkdir, rm, utimes, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readdir, rm, utimes, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -54,12 +55,20 @@ async function makeTranscodeDir(
 }
 
 /**
- * Push a directory's mtime back so it reads as debris rather than as a
- * sibling mid-setup. A day is far outside any plausible grace window.
+ * Push the mtime of a directory and everything in it back so it reads as
+ * debris rather than as live work. A day is far outside any grace window.
  */
 async function ageOut(dir: string): Promise<void> {
   const old = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  for (const entry of await readdir(dir, { recursive: true })) {
+    await utimes(join(dir, entry), old, old);
+  }
   await utimes(dir, old, old);
+}
+
+/** A live PID paired with a start time it cannot have — probes as `unknown`. */
+function unverifiableOwner() {
+  return { pid: process.pid, startTimeMs: 1_000_000 };
 }
 
 // ── Walker ───────────────────────────────────────────────────────────────────
@@ -158,19 +167,40 @@ describe('walkAbandonedTranscodeDirs', () => {
     });
   });
 
-  it('reaps dirs whose .owner PID is reused (start time mismatch)', async () => {
+  it('reaps an aged dir whose .owner PID is reused (start time mismatch)', async () => {
     await withFakeTmp(async (root) => {
       const dir = await makeTranscodeDir(root, 'reused', { 'output.m4a': 'partial' });
-      // Claim the current process's PID but with a start time from way
-      // back — the liveness probe sees the PID is alive but the start time
-      // doesn't match, so it must treat the owner as dead.
-      await writeOwnership(join(dir, '.owner'), {
-        pid: process.pid,
-        startTimeMs: 1_000_000, // ~1970
-      });
+      await writeOwnership(join(dir, '.owner'), unverifiableOwner());
+      await ageOut(dir);
       const result = await walkAbandonedTranscodeDirs(root);
       expect(result).toHaveLength(1);
       expect(result[0]!.path).toBe(dir);
+    });
+  });
+
+  // A start-time mismatch is what PID reuse looks like, but it is also what a
+  // live owner looks like after a wall-clock step or a slow `ps` probe. Reaping
+  // on it would delete a running sync's output directory — so activity, not
+  // the probe, has to prove the owner gone.
+  it('SKIPS a fresh dir whose live .owner PID cannot be verified', async () => {
+    await withFakeTmp(async (root) => {
+      const dir = await makeTranscodeDir(root, 'skewed', { 'wip.m4a': 'still writing' });
+      await writeOwnership(join(dir, '.owner'), unverifiableOwner());
+      const result = await walkAbandonedTranscodeDirs(root);
+      expect(result).toEqual([]);
+    });
+  });
+
+  it('SKIPS an unverifiable-owner dir while a file inside it is still being written', async () => {
+    // One long transcode writes into an existing file without touching the
+    // directory entry, so the directory's own mtime goes stale mid-run.
+    await withFakeTmp(async (root) => {
+      const dir = await makeTranscodeDir(root, 'long-transcode', { 'wip.m4a': 'early' });
+      await writeOwnership(join(dir, '.owner'), unverifiableOwner());
+      await ageOut(dir);
+      await writeFile(join(dir, 'wip.m4a'), 'early and later');
+      const result = await walkAbandonedTranscodeDirs(root);
+      expect(result).toEqual([]);
     });
   });
 

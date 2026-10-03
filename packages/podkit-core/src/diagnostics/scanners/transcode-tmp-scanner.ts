@@ -2,9 +2,9 @@
  * Scanner registration for abandoned transcode scratch directories.
  *
  * Walks `os.tmpdir()` for `podkit-transcode-<uuid>/` directories whose
- * `.owner` is missing or points at a dead PID (see
- * `transcode-tmp-walker.ts` for the rationale). Live siblings are skipped
- * by construction — their `.owner` PID is live.
+ * `.owner` points at a PID that no longer exists, or that is missing or
+ * unverifiable on a dir that has gone quiet (see `transcode-tmp-walker.ts`
+ * for the rationale). Live siblings are skipped by construction.
  *
  * Host-scoped (`applicableTo: ['host']`) — runs without a device attached.
  * The doctor `debris-transcode-tmp` check uses the same walker directly.

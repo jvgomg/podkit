@@ -8,24 +8,28 @@
  * **Concurrency safety via `.owner`.** Each live scratch dir contains an
  * `.owner` file written by the pipeline immediately after `mkdir` with
  * a `{pid, startTimeMs}` tuple. The walker probes the owner via
- * {@link isAlive} (kernel `kill(pid, 0)` + start-time tuple match guards
- * against PID reuse). Live owner → skip. Dead owner → reap.
+ * {@link probeLiveness} (kernel `kill(pid, 0)` + start-time tuple match
+ * guards against PID reuse). Live owner → skip. Owner PID gone → reap.
  *
- * **The ownerless grace window.** `.owner` cannot be created in
- * the same syscall as the `mkdir` that precedes it, so every live scratch
- * dir passes through a window in which it exists with no owner marker.
- * Treating that as debris deleted the output directory of a running sync,
- * and every transcode after it failed with FFmpeg exit 254 (ENOENT) — the
- * whole sync at once, `bytesTransferred: 0`. It only ever bit under load,
- * where the gap between the two operations stretches from microseconds to
- * whatever the event loop takes to come back.
+ * **Reaping is irreversible here, so only proof of death counts.** A false
+ * "dead" deletes a running sync's output directory and fails every transcode
+ * after it, so unlike the sync lock the walker never acts on an ambiguous
+ * verdict (see `docs/architecture/sync/planning.md` §6). The two ambiguous
+ * cases wait for inactivity instead:
  *
- * A missing `.owner` is only legitimate on debris — pre-`.owner` leftovers
- * or a crash — and debris is by definition not brand new. So age is what
- * separates the two: an ownerless dir is left alone until it has gone
- * {@link OWNERLESS_GRACE_MS} without being touched. A dead *owner* is
- * unambiguous and is still reaped on sight, so a SIGKILLed session's
- * leftovers are cleared by the very next sync as before.
+ * - *No `.owner`.* It cannot be created in the same syscall as the `mkdir`
+ *   before it, so every live scratch dir passes through a window with no
+ *   marker; under load that gap stretches to whatever the event loop takes.
+ *   Left alone until untouched for {@link OWNERLESS_GRACE_MS}.
+ * - *Owner `unknown`.* The PID exists but cannot be tied to the record — PID
+ *   reuse, or a live owner the probe misjudged. Left alone until untouched
+ *   for {@link UNVERIFIED_OWNER_GRACE_MS}.
+ *
+ * "Touched" is the newest mtime anywhere in the dir, not the dir's own: a
+ * long transcode grows one file without changing the directory entry.
+ *
+ * Only a missing PID is unambiguous, and that is the SIGKILL case — so a
+ * killed session's leftovers are still cleared by the very next sync.
  *
  * This replaces the previous mtime-based session-start floor. A daemon's
  * own prior cycle is now correctly detected as dead when its `.owner`
@@ -37,7 +41,7 @@
 
 import { readdir, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { isAlive, readOwnership } from '../../lib/pid-file.js';
+import { probeLiveness, readOwnership } from '../../lib/pid-file.js';
 
 /** Name pattern emitted by the music pipeline. */
 const TRANSCODE_DIR_PREFIX = 'podkit-transcode-';
@@ -56,6 +60,16 @@ const OWNER_FILE = '.owner';
  */
 const OWNERLESS_GRACE_MS = 60_000;
 
+/**
+ * How long a dir whose owner probes `unknown` is left alone after its last
+ * write before it counts as debris.
+ *
+ * Has to outlast the longest stretch a live sync goes without writing to its
+ * scratch dir — a transcode queue stalled behind a slow device copy — rather
+ * than one scheduling gap, so it is far wider than the ownerless window.
+ */
+const UNVERIFIED_OWNER_GRACE_MS = 60 * 60_000;
+
 export interface AbandonedTranscodeDir {
   /** Absolute directory path. */
   path: string;
@@ -65,7 +79,9 @@ export interface AbandonedTranscodeDir {
 
 /**
  * Walk `tmpDir` and return every `podkit-transcode-<uuid>/` directory
- * whose `.owner` is missing, malformed, or points at a dead process.
+ * whose `.owner` points at a PID that no longer exists, or whose `.owner`
+ * is missing, malformed or unverifiable and nothing in it has been touched
+ * for the matching grace window.
  *
  * Dirs whose `.owner` points at a live process are always skipped — that
  * includes both the current Node process's own active dirs and any
@@ -89,56 +105,64 @@ export async function walkAbandonedTranscodeDirs(tmpDir: string): Promise<Abando
 
     const full = join(tmpDir, entry.name);
     // Cheap exists-check before the owner probe so a deleted dir doesn't
-    // throw through the bytes accounting. The mtime it returns is also what
-    // decides the ownerless case below.
-    let stats;
+    // throw through the bytes accounting.
+    let dirMtimeMs;
     try {
-      stats = await stat(full);
+      dirMtimeMs = (await stat(full)).mtimeMs;
     } catch {
       continue;
     }
 
     const owner = await readOwnership(join(full, OWNER_FILE));
-    // Missing or malformed `.owner` → either pre-`.owner` legacy debris, a
-    // crash before the write, or a sibling still setting itself up. Only the
-    // first two are ours to delete, and only they can be old.
-    if (owner === null) {
-      if (Date.now() - stats.mtimeMs < OWNERLESS_GRACE_MS) continue;
-      abandoned.push({ path: full, bytes: await dirSize(full) });
-      continue;
+    // A missing PID is the one verdict that proves the owner gone; every
+    // other non-live answer has to be confirmed by inactivity.
+    let requiredQuietMs: number | 'none' = OWNERLESS_GRACE_MS;
+    if (owner !== null) {
+      const liveness = await probeLiveness(owner);
+      if (liveness === 'alive') continue;
+      requiredQuietMs = liveness === 'dead' ? 'none' : UNVERIFIED_OWNER_GRACE_MS;
     }
-    // Live owner → never touch.
-    if (await isAlive(owner)) continue;
-    // Dead owner → reap.
-    abandoned.push({ path: full, bytes: await dirSize(full) });
+
+    const { bytes, newestMtimeMs } = await dirStats(full);
+    const lastTouchedMs = Math.max(dirMtimeMs, newestMtimeMs);
+    if (requiredQuietMs !== 'none' && Date.now() - lastTouchedMs < requiredQuietMs) continue;
+    abandoned.push({ path: full, bytes });
   }
 
   return abandoned;
 }
 
-/** Recursive byte-size sum for a directory, tolerant of races. */
-async function dirSize(dir: string): Promise<number> {
-  let total = 0;
+/**
+ * Recursive byte-size sum and newest file/subdir mtime for a directory,
+ * tolerant of races.
+ */
+async function dirStats(dir: string): Promise<{ bytes: number; newestMtimeMs: number }> {
+  let bytes = 0;
+  let newestMtimeMs = 0;
   let entries;
   try {
     entries = await readdir(dir, { withFileTypes: true });
   } catch {
-    return 0;
+    return { bytes, newestMtimeMs };
   }
   for (const entry of entries) {
     const full = join(dir, entry.name);
     try {
       if (entry.isFile()) {
         const s = await stat(full);
-        total += s.size;
+        bytes += s.size;
+        newestMtimeMs = Math.max(newestMtimeMs, s.mtimeMs);
       } else if (entry.isDirectory()) {
-        total += await dirSize(full);
+        const s = await stat(full);
+        const sub = await dirStats(full);
+        bytes += sub.bytes;
+        newestMtimeMs = Math.max(newestMtimeMs, s.mtimeMs, sub.newestMtimeMs);
       }
     } catch {
       // File vanished mid-walk; ignore.
     }
   }
-  return total;
+  return { bytes, newestMtimeMs };
 }
 
 /**

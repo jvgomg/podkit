@@ -19,7 +19,7 @@
  *    scratch directories under `os.tmpdir()`. Sibling-process protection
  *    is enforced by the `.owner` PID-liveness probe in the walker (see
  *    `transcode-tmp-walker.ts`) — a live owner's dir is never returned,
- *    a dead-or-missing-owner dir is.
+ *    and one whose owner is merely unverifiable only once it has gone quiet.
  *
  * Phantom manifest entries (manifest rows whose backing file vanished)
  * are surfaced for mass-storage devices alongside debris — the same FS

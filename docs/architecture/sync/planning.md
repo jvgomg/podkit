@@ -349,12 +349,41 @@ interface PidFileEntry { pid: number; startTimeMs: number; }
 The `startTimeMs` guards against PID reuse on long-uptime hosts: a probe
 that finds `kill(pid, 0)` succeeding cross-checks the actual process's
 start time (Linux `/proc/<pid>/stat` field 22 over `/proc/stat:btime`;
-macOS `ps -o etime= -p <pid>`), and treats a ±2s mismatch as "dead".
+macOS `ps -o etime= -p <pid>`) within ±2s.
 We use `etime` (elapsed time) rather than `lstart` (absolute) because the
 latter requires parsing a localized date string that is sensitive to the
 host's `TZ` setting.
-On unsupported platforms or any probe error, `isAlive` returns `false`
-so callers reclaim cleanly rather than pinning forever.
+
+`probeLiveness` answers in three values, because only one of them is proof:
+
+- `alive` — PID exists, start time matches.
+- `dead` — `kill(pid, 0)` is `ESRCH`. No process holds the PID.
+- `unknown` — the PID exists but cannot be tied to the record: start-time
+  mismatch, unreadable start time, or `EPERM`. PID reuse lands here — and
+  so does a **live** owner the probe misjudges.
+
+How a live owner ends up `unknown`, on the platforms podkit ships for
+(Linux glibc/musl x64/arm64, macOS):
+
+| Cause | Linux | macOS |
+|---|---|---|
+| Wall-clock step between write and probe. `/proc/stat`'s `btime` is re-derived from the realtime clock, so the probed start time moves with the step and the record does not. | **Reachable** — chrony's boot-time `makestep`, a VM guest resyncing after its host sleeps. | Not reachable — `etime` is `now − p_starttime`, both wall-clock, so a step cancels out. |
+| Suspend before the record is written. `getOwnIdentity` subtracts `process.uptime()`, a monotonic clock that stops during suspend, while the probe side counts it. | **Reachable** for an identity computed after a suspend in the same process — `acquireLock` computes it fresh. Not for `.owner`: the pipeline caches it at module load. | Same. |
+| Probe latency. `etime` truncates to whole seconds and `Date.now()` is read after `ps` exits; both push the probed start time later. | n/a | **Reachable** on a saturated host. |
+| Unreadable start time. | Race with exit only (truly dead); `hidepid` hides other uids, not our own. | **Reachable** — `ps` itself can fail to spawn under load. |
+| `EPERM`. | Another uid's process; only on a shared `/tmp`. | Not reachable — tmpdir is per-user. |
+| `clkTck`. `/proc` start time is in `USER_HZ`, which is 100 for userspace on x64 and arm64 whatever `CONFIG_HZ` is. | Not reachable. | n/a |
+
+A live owner in another PID namespace reads `dead`, not `unknown`; podkit
+never shares a scratch tmpdir across namespaces.
+
+The two consumers below pay very differently for misreading `unknown` as
+dead, so each decides for itself:
+
+| Consumer | `unknown` treated as | Cost of a live owner misjudged |
+|---|---|---|
+| Sync lock (`isAlive`) | dead → take over | Contention. `LockHandle.release()` re-reads ownership, so the loser never unlinks the winner's file. Treating `unknown` as alive would let a PID-reused or foreign-uid entry pin the lock forever. |
+| Transcode-tmp walker | not yet dead → wait for inactivity | Would be `rm -rf` of a running sync's output dir — every remaining transcode fails. So the walker never acts on `unknown` alone. |
 
 Two operations: `acquireLock` (kernel-atomic `open(path, 'wx')` — fall
 through to liveness-probe-then-takeover on EEXIST, single retry, never
@@ -467,13 +496,24 @@ using a module-level cached `getOwnIdentity()`. The walker
 reads `.owner` for every candidate dir under `os.tmpdir()` and decides:
 
 - live owner → skip (current process OR sibling podkit process).
-- dead owner → reap (SIGKILLed prior process).
-- missing/malformed `.owner`, dir untouched for longer than
+- owner PID gone (`dead`) → reap on sight (SIGKILLed prior process).
+- owner `unknown`, nothing in the dir touched for longer than
+  `UNVERIFIED_OWNER_GRACE_MS` (1h) → reap (owner died and its PID was
+  reused); otherwise skip (possibly a live owner the probe misjudged).
+- missing/malformed `.owner`, nothing touched for longer than
   `OWNERLESS_GRACE_MS` (60s) → reap (legacy pre-`.owner` debris OR a
   crash between `mkdir` and the ownership write).
-- missing/malformed `.owner`, dir freshly touched → skip.
+- missing/malformed `.owner`, freshly touched → skip.
 
-The last rule is the fix for TASK-501. `.owner` cannot be created in the
+"Touched" means the newest mtime anywhere in the dir: a long transcode
+grows one file without changing the directory's own mtime. The `unknown`
+window is wider than the ownerless one because it has to outlast a live
+sync's longest quiet stretch (a transcode queue stalled behind a slow
+device copy), not one scheduling gap. Its cost is that debris whose PID
+was reused lingers until quiet — and on a host that has wrapped PIDs, it
+long since is.
+
+The ownerless rule is the fix for TASK-501. `.owner` cannot be created in the
 same syscall as the `mkdir` before it, so a live scratch dir always
 passes through a window with no owner marker. That window was originally
 dismissed as leaking "only an empty dir, harmless" — but the dir is the
@@ -484,10 +524,12 @@ gap between the two operations stretches from microseconds to whatever
 the event loop takes to come back.
 
 Age is what separates the two cases: a missing `.owner` is legitimate
-only on debris, and debris is never brand new. A dead *owner* is
+only on debris, and debris is never brand new. A missing *PID* is
 unambiguous and is still reaped on sight, so SIGKILL leftovers are
 cleared by the very next sync and the daemon behaviour below is
-unaffected.
+unaffected. The `unknown` rule closes the remaining route to the same
+corruption (TASK-503): a valid marker naming a live owner that the probe
+misreports.
 
 This replaces the previous mtime-based `SESSION_START_MS` floor, which
 was correct for one-shot CLI invocations but missed the daemon's own
@@ -496,7 +538,7 @@ creation, so the walker incorrectly treated them as "live sibling
 work"). The `.owner` probe is sibling-safe by construction and
 daemon-correct in the same primitive.
 
-Cross-references: TASK-402 + TASK-404 + TASK-501.
+Cross-references: TASK-402 + TASK-404 + TASK-501 + TASK-503.
 
 ## 7. Open work
 

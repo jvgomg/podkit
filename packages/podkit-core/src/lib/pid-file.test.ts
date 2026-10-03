@@ -20,6 +20,7 @@ import {
   LockHeldError,
   LockContestedError,
   LockUnavailableError,
+  probeLiveness,
   readOwnership,
   writeOwnership,
 } from './pid-file.js';
@@ -160,6 +161,33 @@ describe('isAlive', () => {
     } finally {
       child.kill();
     }
+  });
+});
+
+// ── probeLiveness ────────────────────────────────────────────────────────────
+
+// `isAlive` collapses every non-alive answer into `false`. The walker cannot
+// afford that: only a missing PID proves death, while a start-time mismatch or
+// an unsignalable PID is also what a live owner looks like after a clock step.
+describe('probeLiveness', () => {
+  it("reports 'alive' for the current process", async () => {
+    expect(await probeLiveness(getOwnIdentity())).toBe('alive');
+  });
+
+  it("reports 'dead' only when no process holds the PID", async () => {
+    expect(await probeLiveness({ pid: 999_999, startTimeMs: Date.now() })).toBe('dead');
+  });
+
+  it("reports 'unknown' for a live PID whose start time disagrees", async () => {
+    // PID reuse and a wall-clock step between write and probe look identical.
+    const entry = { pid: process.pid, startTimeMs: Date.now() - 10 * 60 * 60 * 1000 };
+    expect(await probeLiveness(entry)).toBe('unknown');
+  });
+
+  it("reports 'unknown' for a PID that exists but cannot be signalled", async () => {
+    // PID 1 is always present. Unprivileged, `kill(1, 0)` is EPERM; as root it
+    // succeeds and the bogus start time disagrees. Either way, not 'dead'.
+    expect(await probeLiveness({ pid: 1, startTimeMs: 1_000_000 })).toBe('unknown');
   });
 });
 
