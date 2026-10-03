@@ -21,7 +21,7 @@ test-packages/device-testing-daemon/
 ├── README.md               # you are here
 ├── dummy-hcd-daemon@.service   # systemd instance template
 ├── scripts/
-│   └── build.sh            # bun build --compile invocation
+│   └── build.ts            # bun build --compile invocation
 ├── src/
 │   ├── main.ts             # entry — argv → sidecar → gadget → ep0 loop
 │   ├── cli.ts              # tiny zero-dep argv parser
@@ -110,7 +110,7 @@ FunctionFS but skip mass storage.
 From the repo root:
 
 ```bash
-bun run --filter @podkit/device-testing-daemon build              # auto-detect target
+bun run --filter @podkit/device-testing-daemon build              # the run's target arch
 bun run --filter @podkit/device-testing-daemon build:linux-x64    # explicit
 bun run --filter @podkit/device-testing-daemon build:linux-arm64
 ```
@@ -118,17 +118,17 @@ bun run --filter @podkit/device-testing-daemon build:linux-arm64
 Or directly:
 
 ```bash
-bash test-packages/device-testing-daemon/scripts/build.sh
-bash test-packages/device-testing-daemon/scripts/build.sh linux-x64
-bash test-packages/device-testing-daemon/scripts/build.sh all
+bun test-packages/device-testing-daemon/scripts/build.ts
+bun test-packages/device-testing-daemon/scripts/build.ts linux-x64
+bun test-packages/device-testing-daemon/scripts/build.ts all
 ```
 
 Output: `test-packages/device-testing-daemon/dist/dummy-hcd-daemon-linux-{x64,arm64}`.
 
-The build script invokes `bun build --compile --target=bun-linux-<arch>`.
-Bun supports cross-compiling from macOS to Linux, so the same script
-works on a dev mac without needing to drop into the builder VM. CI uses
-the builder VM via the turbo task `@podkit/device-testing-daemon#build`.
+With no target named, the build is for `PODKIT_TARGET_ARCH` (the substrate's
+architecture, which the repo's turbo wrapper sets), falling back to the host's.
+It invokes `bun build --compile --target=bun-linux-<arch>`; Bun cross-compiles
+from macOS to Linux, so no builder VM is needed.
 
 ## Deploying into the test VM
 

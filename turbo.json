@@ -447,12 +447,12 @@
     "@podkit/device-testing-daemon#build": {
       "dependsOn": ["^build"],
       // Produces a Linux binary, so the target architecture is part of what it
-      // produced — `scripts/build.sh` picks its `bun --compile --target` from
+      // produced — `scripts/build.ts` picks its `bun --compile --target` from
       // it. The filename carries the arch, so the outputs are distinct; the
       // cache key has to carry it too, or a replayed arm64 binary lands in an
       // amd64 run and fails with `exec format error` at first use.
       "env": ["PODKIT_TARGET_ARCH"],
-      "inputs": ["src/**", "scripts/build.sh", "package.json", "tsconfig.json"],
+      "inputs": ["src/**", "scripts/build.ts", "package.json", "tsconfig.json"],
       "outputs": ["dist/dummy-hcd-daemon-linux-*"]
     },
     "@podkit/device-testing#build:linux-binary": {

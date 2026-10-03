@@ -288,6 +288,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@podkit/device-testing": "workspace:*",
+        "@podkit/substrate": "workspace:*",
       },
       "devDependencies": {
         "@types/bun": "^1.4.2",
