@@ -188,6 +188,14 @@ The presenter (`music-presenter.ts`) reads this channel alongside `toUpdate`:
 Because no operation is produced, a suppressed or report-only track is a stable
 no-op: every dry-run reports it, and a real sync does nothing to it (idempotent).
 
+A source-down track can still reach `toUpdate` for an unrelated reason. Pass 1.4
+(`postProcessSourceDownReports`) reports it there too, as long as its audio is
+kept: a metadata-only update rewrites tags in place, and `artwork-added` is
+planned as an artwork-only `upgrade-artwork` (`planUpdate`) rather than a file
+replacement, which would otherwise re-copy the worse source over the device
+audio. Any other file-replacement reason re-derives the audio and is not
+reported as kept.
+
 ---
 
 ## 3. Why `lossless-boundary` is suppressed when transcoding is active

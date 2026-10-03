@@ -61,7 +61,7 @@ If a track's source is re-ripped at a **lower** bitrate than the copy already on
 - The dry-run/summary shows a per-collection **"Source-down suppressed"** count; run with `-v` to list each affected track with its device-vs-source bitrates.
 - `sync --json` lists each one in the collection's `qualityChanges[]` array with `reason: "source-down-suppressed"` and `reEncodes: false`, counted under `updateBreakdown["quality-change-suppressed"]`.
 
-Suppressed tracks are never queued for re-transfer — a stable no-op across repeated syncs.
+Suppressed tracks are never queued for re-transfer — a stable no-op across repeated syncs. If the re-ripped source also gains artwork the device copy lacks, podkit adds the artwork to the existing device track and keeps its audio.
 
 ### Below-cap report (raised cap)
 

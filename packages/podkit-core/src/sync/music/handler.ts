@@ -664,17 +664,14 @@ export class MusicHandler implements ContentTypeHandler<
 
   /**
    * Pass 1.4: Surface `source-down-suppressed` for tracks already headed to
-   * `toUpdate` for a metadata-only reason.
+   * `toUpdate` whose device audio is kept.
    *
    * The preset pass reports source-down only for tracks it leaves in `existing`.
-   * A track that ALSO has an in-place metadata change is moved to `toUpdate` by
-   * the match loop, so its source-down would otherwise go unreported. A
-   * metadata-correction rewrites tags in place — it is NOT a file replacement — so
-   * the device audio is kept and the safety guarantee holds; this only adds the
-   * missing visibility line. A track being re-derived from the source (any
-   * file-replacement upgrade — artwork, force-transcode, codec/preset change) is
-   * skipped: its audio is replaced, so "kept the better copy" would not describe
-   * the outcome.
+   * A track that also has an in-place metadata change, or an `artwork-added`
+   * planned artwork-only (see {@link plansArtworkOnlyAdd}), is moved to
+   * `toUpdate` by the match loop, so its source-down would otherwise go
+   * unreported. Any other file-replacement upgrade re-derives the audio from the
+   * source, so "kept the better copy" would not describe the outcome.
    */
   private postProcessSourceDownReports(diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack>): void {
     const shouldCheckPreset =
@@ -682,26 +679,51 @@ export class MusicHandler implements ContentTypeHandler<
       (this.config.isAlacPreset || this.config.presetBitrate);
     if (!shouldCheckPreset) return;
 
-    const presetBitrate = this.config.presetBitrate ?? 0;
-
     for (const update of diff.toUpdate) {
-      if (isSourceLossless(update.source)) continue;
-      // Only when the audio is kept in place — a file replacement re-derives it
-      // from the (worse) source, so a "kept the better copy" report would not hold.
-      if (update.reasons.some((reason) => isFileReplacementUpgrade(reason))) continue;
-      const change = classifySourceBound(
-        update.source,
-        update.device,
-        presetBitrate,
-        this.config.reductionTolerance
-      );
-      if (!change || change.reEncodes || change.reason !== 'source-down-suppressed') continue;
+      const replacesFile =
+        update.reasons.some((reason) => isFileReplacementUpgrade(reason)) &&
+        !this.plansArtworkOnlyAdd(update.source, update.device, update.reasons);
+      if (replacesFile) continue;
+      const change = this.detectSourceDown(update.source, update.device);
+      if (!change) continue;
       (diff.reportOnlyQualityChanges ??= []).push({
         source: update.source,
         device: update.device,
         qualityChange: change,
       });
     }
+  }
+
+  /**
+   * The `source-down-suppressed` change when a lossy source has been replaced by
+   * a meaningfully worse copy than the device's recorded one, else null.
+   */
+  private detectSourceDown(source: CollectionTrack, device: DeviceTrack): QualityChange | null {
+    if (isSourceLossless(source)) return null;
+    const change = classifySourceBound(
+      source,
+      device,
+      this.config.presetBitrate ?? 0,
+      this.config.reductionTolerance
+    );
+    if (!change || change.reEncodes || change.reason !== 'source-down-suppressed') return null;
+    return change;
+  }
+
+  /**
+   * Whether an `artwork-added` update is planned artwork-only. It normally
+   * re-derives the file from the source, which on a source-down track would
+   * silently replace the better device audio with the worse source — so the
+   * artwork is written onto the existing device track instead. Ungated by
+   * config: the downgrade happens whatever the preset.
+   */
+  private plansArtworkOnlyAdd(
+    source: CollectionTrack,
+    device: DeviceTrack,
+    reasons: UpdateReason[]
+  ): boolean {
+    const primaryReason = reasons.find((reason) => reason !== 'sync-tag-write');
+    return primaryReason === 'artwork-added' && this.detectSourceDown(source, device) !== null;
   }
 
   /**
@@ -1264,6 +1286,11 @@ export class MusicHandler implements ContentTypeHandler<
     // or removal, but don't replace the audio file — route as upgrade-artwork
     if (primaryReason === 'artwork-updated' || primaryReason === 'artwork-removed') {
       ops.push(this.factory.createArtworkUpgrade(source, device, primaryReason as UpgradeReason));
+      return ops;
+    }
+
+    if (this.plansArtworkOnlyAdd(source, device, nonSyncTagReasons)) {
+      ops.push(this.factory.createArtworkUpgrade(source, device, 'artwork-added'));
       return ops;
     }
 

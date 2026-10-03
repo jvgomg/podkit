@@ -133,6 +133,7 @@ function createMockDeviceTrack(
     update: (fields: Record<string, unknown>) => DeviceTrack;
     artworkSink: DeviceTrack['artworkSink'];
     hasArtwork: boolean;
+    syncTag: DeviceTrack['syncTag'];
   }> = {}
 ): DeviceTrack {
   const track: DeviceTrack = {
@@ -148,7 +149,7 @@ function createMockDeviceTrack(
     hasArtwork: options.hasArtwork ?? false,
     hasFile: true,
     compilation: false,
-    syncTag: null,
+    syncTag: options.syncTag ?? null,
     // Default sink: 'database' (iPod). Tests that exercise the embedded /
     // sidecar / noop dispatch override via options.artworkSink.
     artworkSink: options.artworkSink ?? 'database',
@@ -3466,6 +3467,68 @@ describe('artwork during upgrade operations', () => {
 
     // No new track added — upgrade reuses existing database entry
     expect(db.addTrack).not.toHaveBeenCalled();
+  });
+
+  it('artwork-only artwork-added upgrade writes artwork and keeps the device audio', async () => {
+    const bytes = Buffer.from('cover-bytes');
+    const existingTrack = createDeviceTrack('Artist', 'Song', 'Album', {
+      filePath: 'Music/EXISTING.mp3',
+      hasArtwork: false,
+      syncTag: { quality: 'copy', bitrate: 256 },
+      update: (_fields: Record<string, unknown>) => existingTrack,
+    });
+
+    let captured: Buffer | null = null;
+    db.setTrackArtwork = mock(async (_track: DeviceTrack, data: Buffer) => {
+      captured = data;
+    });
+    const replaceTrackFile = mock(() => existingTrack);
+    (db as any).replaceTrackFile = replaceTrackFile;
+    db.getTracks.mockReturnValue([existingTrack]);
+
+    const adapter: CollectionAdapter<CollectionTrack, TrackFilter> = {
+      name: 'fake',
+      adapterType: 'directory',
+      connect: async () => undefined,
+      disconnect: async () => undefined,
+      getItems: async () => [],
+      getFilteredItems: async () => [],
+      getFileAccess: (track) => ({ type: 'path', path: track.filePath }) as FileAccess,
+      getArtwork: async () => bytes,
+    };
+
+    const plan: SyncPlan = {
+      ...createEmptyPlan(),
+      operations: [
+        {
+          type: 'upgrade-artwork',
+          source: createCollectionTrack('Artist', 'Song', 'Album', 'mp3', {
+            bitrate: 128,
+            hasArtwork: true,
+          }),
+          target: existingTrack,
+          reason: 'artwork-added',
+        },
+      ],
+    };
+
+    const executor = new MusicPipeline(createDependencies(db, transcoder));
+    for await (const _p of executor.execute(plan, {
+      artwork: true,
+      adapter,
+      syncTagConfig: {},
+    })) {
+      // consume
+    }
+
+    expect(replaceTrackFile).not.toHaveBeenCalled();
+    expect(transcoder.transcode).not.toHaveBeenCalled();
+    expect(db.addTrack).not.toHaveBeenCalled();
+    expect((captured as unknown as Buffer).equals(bytes)).toBe(true);
+    // Only the artwork hash is merged into the tag; the recorded bitrate stays.
+    const tagUpdates = db.writeSyncTag.mock.calls.map(([, update]) => update);
+    expect(tagUpdates).toHaveLength(1);
+    expect(Object.keys(tagUpdates[0] as object)).toEqual(['artworkHash']);
   });
 
   it('upgrade with no preset does not transfer significantly large bytes', async () => {

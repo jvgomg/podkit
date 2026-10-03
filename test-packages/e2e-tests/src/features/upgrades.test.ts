@@ -19,7 +19,7 @@ import { describe, it, expect } from 'bun:test';
 import { mkdtemp, rm, copyFile, writeFile, readdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { execSync } from 'node:child_process';
 import { ensureFixturesExist, requireFFmpeg, requireMetaflac } from '@podkit/e2e-shared';
 import { runCliJson } from '../helpers/cli-runner';
@@ -641,7 +641,7 @@ function generateMp3AtBitrate(
   outputPath: string,
   metadata: { title: string; artist: string; album: string },
   bitrateKbps: number,
-  options: { content?: 'tone' | 'noise' } = {}
+  options: { content?: 'tone' | 'noise'; coverPath?: string } = {}
 ): void {
   // CBR MP3 hits its nominal bitrate whatever the content, so the default tone
   // is fine for every test that only reads the *source* bitrate back. Pass
@@ -657,8 +657,11 @@ function generateMp3AtBitrate(
     options.content === 'noise'
       ? 'anoisesrc=color=pink:sample_rate=44100:duration=2:amplitude=0.8:seed=500'
       : 'sine=frequency=440:sample_rate=44100:duration=2';
+  const cover = options.coverPath
+    ? `-i "${options.coverPath}" -map 0:a -map 1:v -c:v copy -disposition:v attached_pic -id3v2_version 3 `
+    : '';
   execSync(
-    `ffmpeg -f lavfi -i "${input}" -ac 2 ` +
+    `ffmpeg -f lavfi -i "${input}" ${cover}-ac 2 ` +
       `-metadata title="${metadata.title}" ` +
       `-metadata artist="${metadata.artist}" ` +
       `-metadata album="${metadata.album}" ` +
@@ -1198,6 +1201,79 @@ describe('self-healing sync: source-down suppression (degraded source)', () => {
         const filesAfter = await findIpodMusicFiles(target.path);
         expect(filesAfter.filter((f) => f.endsWith('.mp3'))).toHaveLength(1);
         expect(filesAfter.filter((f) => f.endsWith('.m4a'))).toHaveLength(0);
+      } finally {
+        await rm(collectionDir, { recursive: true, force: true });
+        await rm(configDir, { recursive: true, force: true });
+      }
+    });
+  }, 180000);
+
+  it('adds artwork in place, keeping the better audio, when the degraded source gains artwork', async () => {
+    requireFFmpeg();
+    await withTarget(async (target) => {
+      const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
+      const collectionDir = await mkdtemp(join(tmpdir(), 'podkit-source-down-art-'));
+
+      try {
+        const trackMeta = {
+          title: 'Degraded With Art',
+          artist: 'Source Artist',
+          album: 'Source Album',
+        };
+        const coverPath = join(
+          dirname(getTrackPath(Tracks.HARMONY.album, Tracks.HARMONY.filename)),
+          'cover.jpg'
+        );
+        const syncArgs = ['sync', '--device', target.path, '--quality', 'high', '--json'];
+
+        // Step 1: a 192 kbps MP3 with no artwork, copied as-is and recorded at 192.
+        generateMp3AtBitrate(join(collectionDir, 'track.mp3'), trackMeta, 192);
+        const configPath = await createConfigFile(configDir, { source: collectionDir });
+        const { result: result1 } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          ...syncArgs,
+        ]);
+        expect(result1.exitCode).toBe(0);
+        const [before] = await target.getTracks();
+        expect(before!.hasArtwork).toBe(false);
+
+        // Step 2: re-rip LOWER (96 kbps), now with embedded artwork.
+        generateMp3AtBitrate(join(collectionDir, 'track.mp3'), trackMeta, 96, { coverPath });
+
+        // Step 3: the artwork is planned, and the source-down is still reported.
+        const { json: dryJson } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          ...syncArgs,
+          '--dry-run',
+        ]);
+        expect(dryJson?.plan?.tracksToUpdate ?? 0).toBe(1);
+        expect(dryJson?.plan?.updateBreakdown?.['quality-change-suppressed'] ?? 0).toBe(1);
+
+        // Step 4: real sync — artwork lands, the device audio is the original copy.
+        const { json: realJson } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          ...syncArgs,
+        ]);
+        expect(realJson?.result?.completed).toBe(1);
+        const [after] = await target.getTracks();
+        expect(after!.hasArtwork).toBe(true);
+        expect(after!.bitrate).toBe(before!.bitrate);
+        const files = await findIpodMusicFiles(target.path);
+        expect(files.filter((f) => f.endsWith('.mp3'))).toHaveLength(1);
+        expect(files.filter((f) => f.endsWith('.m4a'))).toHaveLength(0);
+
+        // Step 5: converged — nothing left to do, the source-down still reported.
+        const { json: againJson } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          ...syncArgs,
+          '--dry-run',
+        ]);
+        expect(againJson?.plan?.tracksToUpdate ?? 0).toBe(0);
+        expect(againJson?.plan?.updateBreakdown?.['quality-change-suppressed'] ?? 0).toBe(1);
       } finally {
         await rm(collectionDir, { recursive: true, force: true });
         await rm(configDir, { recursive: true, force: true });

@@ -209,8 +209,8 @@ export class MusicTransferOps {
    * Preserves the database entry (play counts, ratings, playlist membership)
    * while swapping the audio file and updating technical metadata.
    *
-   * For `artwork-updated` upgrades, the audio file is NOT replaced — only the
-   * artwork is re-extracted from the source and transferred to the iPod.
+   * For `upgrade-artwork` operations the audio file is NOT replaced — artwork is
+   * removed, or re-extracted from the source and written to the existing track.
    */
   private async transferUpgradeToIpod(
     prepared: PreparedFile,
@@ -253,10 +253,11 @@ export class MusicTransferOps {
       return { bytesTransferred: 0, track: foundTrack };
     }
 
-    // artwork-updated: skip audio file transfer, only re-extract and update artwork + sync tag
-    if (operation.reason === 'artwork-updated') {
+    // Artwork-only (artwork-updated, or artwork-added kept off the audio): skip the
+    // audio file transfer, only re-extract and write artwork + sync tag
+    if (operation.type === 'upgrade-artwork') {
       if (!ctx.artworkEnabled) {
-        // artwork-updated with artwork disabled is a no-op — skip silently
+        // artwork with artwork disabled is a no-op — skip silently
         return { bytesTransferred: 0, track: foundTrack };
       }
       const extractedHash = await this.artwork.transferArtwork(

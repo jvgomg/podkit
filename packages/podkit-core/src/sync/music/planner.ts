@@ -418,8 +418,8 @@ export function calculateMusicOperationSize(operation: MusicOperation): number {
       return estimateCopySize(operation.source);
     }
     case 'upgrade-artwork': {
-      // artwork-updated only transfers artwork bytes (~200KB), not the whole track
-      if (operation.reason === 'artwork-updated') {
+      // artwork-updated/-added only transfer artwork bytes (~200KB), not the whole track
+      if (operation.reason === 'artwork-updated' || operation.reason === 'artwork-added') {
         return 200 * 1024;
       }
       // artwork-removed is metadata-only (no file transfer)

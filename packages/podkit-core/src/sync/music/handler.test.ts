@@ -1227,15 +1227,21 @@ describe('MusicHandler', () => {
       });
     });
 
-    test('source-down + a file-replacement update (artwork) -> NOT reported (audio re-derived)', () => {
-      // When the update re-derives the file from the source (a file replacement),
-      // the device audio is NOT kept, so a "kept the better copy" report would
-      // misrepresent the outcome — it is deliberately skipped.
+    test('source-down + a concurrent artwork-added -> artwork added in place, audio kept, reported', () => {
+      // A re-encode/re-copy from the worse source would silently downgrade the
+      // device audio, so the artwork is written onto the existing device track
+      // instead — and the kept copy is reported like any other source-down.
       const h = createMusicHandler(makeConfig({ quality: 'low' }));
-      const source = makeCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 128 });
+      const source = makeCollectionTrack({
+        fileType: 'mp3',
+        lossless: false,
+        bitrate: 128,
+        hasArtwork: true,
+      });
       const device = makeDeviceTrack({
         filetype: 'MPEG audio file',
         bitrate: 256,
+        hasArtwork: false,
         syncTag:
           parseSyncTag('[podkit:v1 quality=copy transferMode=fast codec=mp3 bitrate=256]') ??
           undefined,
@@ -1249,7 +1255,65 @@ describe('MusicHandler', () => {
 
       h.postProcessDiff(diff);
 
-      expect(diff.reportOnlyQualityChanges ?? []).toHaveLength(0);
+      const reports = diff.reportOnlyQualityChanges ?? [];
+      expect(reports).toHaveLength(1);
+      expect(reports[0]!.qualityChange).toMatchObject({
+        reason: 'source-down-suppressed',
+        reEncodes: false,
+      });
+
+      const update = diff.toUpdate[0]!;
+      const ops = h.planUpdate(update.source, update.device, update.reasons, update.changes);
+      expect(ops).toEqual([
+        { type: 'upgrade-artwork', source, target: device, reason: 'artwork-added' },
+      ]);
+    });
+
+    test('artwork-added on a track whose source is not down still replaces the file', () => {
+      const h = createMusicHandler(makeConfig({ quality: 'low' }));
+      const source = makeCollectionTrack({
+        fileType: 'mp3',
+        lossless: false,
+        bitrate: 256,
+        hasArtwork: true,
+      });
+      const device = makeDeviceTrack({
+        filetype: 'MPEG audio file',
+        bitrate: 256,
+        hasArtwork: false,
+        syncTag:
+          parseSyncTag('[podkit:v1 quality=copy transferMode=fast codec=mp3 bitrate=256]') ??
+          undefined,
+      });
+
+      const ops = h.planUpdate(source, device, ['artwork-added']);
+
+      expect(ops).toHaveLength(1);
+      expect(ops[0]!.type).toBe('upgrade-direct-copy');
+    });
+
+    test('artwork-added leading other reasons on a source-down track is planned artwork-only', () => {
+      const h = createMusicHandler(makeConfig({ quality: 'low' }));
+      const source = makeCollectionTrack({
+        fileType: 'mp3',
+        lossless: false,
+        bitrate: 128,
+        hasArtwork: true,
+      });
+      const device = makeDeviceTrack({
+        filetype: 'MPEG audio file',
+        bitrate: 256,
+        hasArtwork: false,
+        syncTag:
+          parseSyncTag('[podkit:v1 quality=copy transferMode=fast codec=mp3 bitrate=256]') ??
+          undefined,
+      });
+
+      const ops = h.planUpdate(source, device, ['artwork-added', 'metadata-correction']);
+
+      expect(ops).toEqual([
+        { type: 'upgrade-artwork', source, target: device, reason: 'artwork-added' },
+      ]);
     });
 
     test('previously-reduced track below a raised cap -> reported below-cap, kept in existing', () => {

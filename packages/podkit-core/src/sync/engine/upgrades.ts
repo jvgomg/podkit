@@ -883,7 +883,8 @@ export function isEmpty(value: unknown): boolean {
  *   `quality-change` reason — it carries `reEncodes:false` and is routed off the
  *   file-replacement path by the handler, so any `quality-change` reason that
  *   reaches here is always a file replacement.
- * - artwork-added: file with embedded artwork
+ * - artwork-added: file with embedded artwork (the music handler plans it
+ *   artwork-only instead when the source is down, so the device audio is kept)
  * - preset-upgrade / preset-downgrade: VIDEO preset re-transcode (audio uses
  *   quality-change; video keeps these reasons)
  *
