@@ -6,7 +6,7 @@ title: >-
 status: Done
 assignee: []
 created_date: '2026-09-13 21:57'
-updated_date: '2026-10-03 15:39'
+updated_date: '2026-10-03 17:11'
 labels:
   - testing
   - flaky
@@ -76,6 +76,8 @@ The loop-device script fails ~2/40 with the production error; the in-place scrip
 Concurrency (AC #2): with no loop device, two builds of one persona share nothing but the final `mv` target; both write identical bytes and `mv` is atomic, so concurrent synthesis needs no serialisation. Stated on the build-script comment.
 
 Not in scope, noted: `packages/virtual-ipod-server/src/image.ts` / `mount.ts` use `losetup --partscan` then mount `${loop}p1`, and could hit the same p1 flap at mount time. It has not been observed failing.
+
+Remote substrate (deviceRemote, x86_64), 3 forced `test:vm` runs after breaking a stale-looking lock held by james@otto since 11:53Z. Runs 1 (11m43s) and 3 (16m28s) were fully green, 39+194 pass. Run 2 (25m30s) had 6 e2e-vm failures: discovery, doctor, SystemState and one save-failure cell. All trace to the substrate not answering over ssh (`ssh podkit-substrate timed out after 60000ms`, a failed `sudo chmod` on apply-state.sh, 10s/30s timeouts). None is a synthesis failure; every partitioned-persona synthesis passed in all six runs across both substrates.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
@@ -91,10 +93,10 @@ Tests:
 
 Evidence:
 - Deliberate repro (BLKRRPART loop): old script 2/40 failures, new script 0/40.
-- 3 forced `test:vm` runs on the Lima `device` substrate, both suites in parallel: no synthesis failure in any run.
-- Runs 1 and 3 were fully green. Run 2 failed one save-failure-matrix cell on a 10s sync timeout, which is unrelated and filed as TASK-534.
+- 6 forced `test:vm` runs with both suites in parallel, 3 on Lima `device` (arm64) and 3 on the remote substrate (x86_64): zero synthesis failures.
+- 4 of the 6 runs were fully green.
+- Lima run 2 failed one cell on a 10s sync timeout (TASK-534).
+- Remote run 2 had 6 failures, all because the substrate stopped answering over ssh for part of the run.
 
-AC #3 is left unchecked: test:vm was not green in all three runs. The one red was TASK-534, not this bug.
-
-The remote substrate was not exercised; it was locked by another run on otto.
+AC #3 is left unchecked: test:vm was not green in every run. None of the reds was this bug.
 <!-- SECTION:FINAL_SUMMARY:END -->
