@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { DeviceManager } from '@podkit/core';
 import { runDeviceAdd, type DeviceAddDeps } from './device.js';
+import type { DeviceAddSuccess } from './device/output-types.js';
 import { BufferExitCodeSink, OutputContext } from '../output/index.js';
 import type {
   IpodIdentityAssessment,
@@ -1522,6 +1523,103 @@ const VERIFY_NANO_2G: IpodModel = {
   checksumType: 'none',
   source: 'usb',
 };
+
+describe('runDeviceAdd: SysInfoExtended outcome in --json', () => {
+  let tempDir: string;
+  let tempConfig: string;
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'device-add-sie-'));
+    tempConfig = join(tempDir, 'config.toml');
+  });
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  async function addWith(
+    firmwareInquiry: 'present' | 'missing',
+    write: () => SysInfoExtendedResult,
+    flags: { verify?: boolean } = {}
+  ): Promise<DeviceAddSuccess> {
+    const ctx = makeContext({ device: 'nano2g', json: true, configPath: tempConfig });
+    const { out, stdout } = makeOut(true);
+    let written = false;
+    const deps: DeviceAddDeps = {
+      getDeviceManager: () =>
+        fakeManager({
+          isSupported: true,
+          scan: async (opts) =>
+            opts?.kinds?.includes('ipod')
+              ? [
+                  {
+                    identifier: 'disk6s2',
+                    volumeName: 'PARTY IPOD',
+                    volumeUuid: 'NANO-2G-UUID',
+                    storage: { sizeBytes: 4_000_000_000 },
+                    isMounted: true,
+                    mountPoint: '/Volumes/PARTY IPOD',
+                  } as Awaited<ReturnType<DeviceManager['scan']>>[number],
+                ]
+              : [],
+        }),
+      // Re-assess after a successful write sees the store present.
+      assessIdentity: async () =>
+        makeNano2GAssessment({ firmwareInquiry: written ? 'present' : firmwareInquiry }),
+      ensureSysInfoExtended: async () => {
+        const result = write();
+        written = result.present;
+        return result;
+      },
+      ipodDatabase: FAKE_IPOD_DB,
+    };
+    await runAdd(ctx, { type: 'ipod', yes: true, ...flags }, out, deps);
+    return stdout.json<DeviceAddSuccess>();
+  }
+
+  it('reports a failed live read, and why, instead of passing it off silently', async () => {
+    const result = await addWith('missing', () => ({
+      present: false,
+      source: 'unavailable',
+      identity: {},
+      error: 'USB: controlTransfer failed on page 0: LIBUSB_TRANSFER_STALL',
+    }));
+    expect(result.success).toBe(true);
+    expect(result.sysInfoExtended).toBe('failed');
+    // The model resolved, so the only warning is the failed read itself.
+    expect(result.warnings).toEqual([
+      'Failed to read SysInfoExtended from USB: USB: controlTransfer failed on page 0: LIBUSB_TRANSFER_STALL',
+    ]);
+  });
+
+  it('reports a SysInfoExtended the add wrote', async () => {
+    const result = await addWith('missing', () => ({
+      present: true,
+      source: 'usb-read',
+      identity: { firewireGuid: '000A27001A0647CB' },
+    }));
+    expect(result.sysInfoExtended).toBe('written');
+    expect(result.warnings).toBeUndefined();
+  });
+
+  it('reports a SysInfoExtended that was neither on the device nor read (--no-verify)', async () => {
+    const result = await addWith(
+      'missing',
+      () => {
+        throw new Error('--no-verify must not read from the device');
+      },
+      { verify: false }
+    );
+    expect(result.sysInfoExtended).toBe('unavailable');
+  });
+
+  it('reports a SysInfoExtended already on the device', async () => {
+    const result = await addWith('present', () => {
+      throw new Error('must not re-read a SysInfoExtended that is already present');
+    });
+    expect(result.sysInfoExtended).toBe('present');
+  });
+});
 
 describe('runDeviceAdd: verify-tier cross-check (doc-045)', () => {
   let mount: string;

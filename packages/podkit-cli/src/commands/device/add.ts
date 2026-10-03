@@ -382,6 +382,7 @@ export async function runDeviceAdd(
   let recordUnsupported = false;
   let firmwareWritten = false;
   let firmwarePrompted = false;
+  let sysInfoWriteError: string | undefined;
   let sieReEntered = false;
 
   // Known-unsupported generation/kind: surface the canonical refusal copy + an
@@ -448,9 +449,9 @@ export async function runDeviceAdd(
 
     if (outcome.kind === 'prompt-write-sie') {
       if (sieReEntered) {
-        // Defensive: a second prompt-write-sie must not loop. Treat as
-        // proceed-with-warning (the write was already attempted once).
-        emitOutcomeWarning(out, 'partial-identity');
+        // The write was already attempted (and its failure warned about); a
+        // second prompt-write-sie must not loop.
+        if (!view.hasIdentity) emitOutcomeWarning(out, 'partial-identity');
         break;
       }
       const firmwareResult = await offerFirmwareInquiry({
@@ -469,6 +470,7 @@ export async function runDeviceAdd(
       if (!firmwareResult.proceed) return;
       assessment = firmwareResult.assessment;
       firmwareWritten = firmwareWritten || firmwareResult.firmwareWritten;
+      sysInfoWriteError = firmwareResult.sysInfoWriteError;
       firmwarePrompted = true;
       sieReEntered = true;
       // Re-assess view + state, re-enter M4 once.
@@ -490,6 +492,7 @@ export async function runDeviceAdd(
     recordUnsupported,
     firmwareWritten,
     firmwarePrompted,
+    sysInfoWriteError,
     IpodDatabase,
     confirmFn,
     name,
@@ -1043,6 +1046,8 @@ async function finishIpodAdd(args: {
   firmwareWritten: boolean;
   /** True when the firmware/add prompt already fired in the outcome loop. */
   firmwarePrompted: boolean;
+  /** Set when the live SysInfoExtended read was attempted and failed. */
+  sysInfoWriteError?: string;
   IpodDatabase: IpodDatabaseLike;
   confirmFn: (msg: string) => Promise<boolean>;
   name: string;
@@ -1194,6 +1199,8 @@ async function finishIpodAdd(args: {
       configPath: result.configPath,
       isDefault: isFirstDevice,
       verification: req.tier === 'verify' ? 'verified' : 'trusted-disk',
+      sysInfoExtended: sysInfoExtendedOutcome(firmwareWritten, args.sysInfoWriteError, assessment),
+      ...(out.warnings.length > 0 ? { warnings: [...out.warnings] } : {}),
     },
     () =>
       printIpodDeviceAddSuccess(out, {
@@ -1205,6 +1212,16 @@ async function finishIpodAdd(args: {
         initialized,
       })
   );
+}
+
+function sysInfoExtendedOutcome(
+  written: boolean,
+  writeError: string | undefined,
+  assessment: IpodIdentityAssessment | null
+): NonNullable<DeviceAddSuccess['sysInfoExtended']> {
+  if (written) return 'written';
+  if (writeError !== undefined) return 'failed';
+  return assessment?.firmwareInquiry === 'present' ? 'present' : 'unavailable';
 }
 
 /**
@@ -1253,13 +1270,11 @@ async function teachDatabaseItsIdentity(args: {
   } catch (err) {
     // Non-fatal: the add itself still stands. Say so rather than staying
     // silent — the user should know a write was attempted and did not land.
-    if (out.isText) {
-      const message = err instanceof Error ? err.message : String(err);
-      out.warn(
-        `Could not record the device model in the iPod's SysInfo (${message}). ` +
-          'Run `podkit doctor --repair sysinfo-modelnum-missing` to retry.'
-      );
-    }
+    const message = err instanceof Error ? err.message : String(err);
+    out.warn(
+      `Could not record the device model in the iPod's SysInfo (${message}). ` +
+        'Run `podkit doctor --repair sysinfo-modelnum-missing` to retry.'
+    );
   }
 }
 
@@ -1271,10 +1286,9 @@ function emitOutcomeWarning(
   out: OutputContext,
   warning: 'partial-identity' | 'path-only-no-uuid' | 'empty-identity-forced'
 ): void {
-  if (!out.isText) return;
   if (warning === 'partial-identity') {
     out.warn(
-      'Unable to determine device model from disk — no SysInfoExtended or classic SysInfo. ' +
+      'Unable to determine the device model from its SysInfo or USB identity. ' +
         'Proceeding with USB identity only; some operations may behave conservatively. ' +
         'Retry with the device re-mounted or re-plugged.'
     );

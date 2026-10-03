@@ -382,3 +382,33 @@ describe('OutputContext.progress / clearProgress', () => {
     });
   });
 });
+
+describe('OutputContext.warnings', () => {
+  function makeOut(mode: 'json' | 'text', err: string[]): OutputContext {
+    return new OutputContext({
+      mode,
+      quiet: false,
+      verbose: 0,
+      color: false,
+      tips: false,
+      tty: false,
+      stderr: { write: (chunk: string) => void err.push(chunk) },
+    });
+  }
+
+  it('records a warning in JSON mode without writing it to stderr', () => {
+    const err: string[] = [];
+    const out = makeOut('json', err);
+    out.warn('the live read failed');
+    expect(out.warnings).toEqual(['the live read failed']);
+    expect(err).toEqual([]);
+  });
+
+  it('records a warning it also prints in text mode', () => {
+    const err: string[] = [];
+    const out = makeOut('text', err);
+    out.warn('the live read failed');
+    expect(out.warnings).toEqual(['the live read failed']);
+    expect(err.join('')).toContain('Warning: the live read failed');
+  });
+});

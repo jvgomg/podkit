@@ -120,6 +120,8 @@ const FLOW_TIMEOUT_MS = CONTAINER_STEP_TIMEOUT_MS * 3;
 interface AddSuccessJson {
   success: boolean;
   verification?: 'verified' | 'trusted-disk' | 'config-only';
+  sysInfoExtended?: 'present' | 'written' | 'failed' | 'unavailable';
+  warnings?: string[];
 }
 
 interface SyncOutputJson {
@@ -332,28 +334,29 @@ describe('VM: Docker dist image e2e (musl image + synthesized USB iPod)', () => 
         const addJson = add.parsed as AddSuccessJson;
         expect(addJson.success).toBe(true);
         expect(addJson.verification).toBe('verified');
-
-        // Prove the USB-inquiry SIE write: absent pre-add (wiped above), now a
-        // non-trivial plist (>1 KiB).
-        const siePath = `${VM_MOUNT_POINT}/iPod_Control/Device/SysInfoExtended`;
-        const stat = await deviceHarness.run(
-          `[ -f ${sq(siePath)} ] && wc -c < ${sq(siePath)} || echo MISSING`,
-          { timeoutMs: VM_WARM_TIMEOUT_MS }
-        );
-        if (stat.stdout.trim() === 'MISSING') {
-          // `add` still exits 0 when the inquiry fails, so its own output and the
-          // gadget's journal are the only record of why.
+        // The live USB read is the point of this cell. `add` exits 0 when it
+        // fails, so its warnings and the gadget's journal are the record of why.
+        if (addJson.sysInfoExtended !== 'written') {
           const journal = await deviceHarness.run(
             `sudo journalctl --no-pager -u ${sq(`dummy-hcd-daemon@${PERSONA.id}.service`)} ` +
               `--since ${sq(addStartedAt)} 2>&1 | tail -n 40`,
             { timeoutMs: VM_WARM_TIMEOUT_MS }
           );
           throw new Error(
-            'device add exited 0 but wrote no SysInfoExtended\n' +
-              `--- add stdout ---\n${add.stdout}\n--- add stderr ---\n${add.stderr}\n` +
+            `device add reported sysInfoExtended=${addJson.sysInfoExtended ?? '(absent)'}\n` +
+              `--- add warnings ---\n${(addJson.warnings ?? []).join('\n')}\n` +
               `--- persona daemon journal since ${addStartedAt} ---\n${journal.stdout}`
           );
         }
+
+        // ...and it landed where the sync will read it: absent pre-add (wiped
+        // above), now a non-trivial plist (>1 KiB).
+        const siePath = `${VM_MOUNT_POINT}/iPod_Control/Device/SysInfoExtended`;
+        const stat = await deviceHarness.run(
+          `[ -f ${sq(siePath)} ] && wc -c < ${sq(siePath)} || echo MISSING`,
+          { timeoutMs: VM_WARM_TIMEOUT_MS }
+        );
+        expect(stat.stdout.trim()).not.toBe('MISSING');
         const bytes = Number.parseInt(stat.stdout.trim(), 10);
         expect(Number.isNaN(bytes)).toBe(false);
         expect(bytes).toBeGreaterThan(1024);

@@ -101,12 +101,22 @@ export interface DeviceAddSuccess {
   configPath?: string;
   isDefault?: boolean;
   /**
-   * Which verification tier ran (doc-045). `verified` = full live SCSI
-   * cross-check + SysInfo (default); `trusted-disk` = `--no-verify` (on-disk
-   * SysInfo trusted, no live check); `config-only` = `--no-validate` (pure
-   * config write, no device read).
+   * Which verification tier ran (doc-045). `verified` = on-disk SysInfo
+   * cross-checked against the live device (default); `trusted-disk` =
+   * `--no-verify` (on-disk SysInfo trusted, no live check); `config-only` =
+   * `--no-validate` (pure config write, no device read). The tier, not its
+   * result: see `sysInfoExtended` for whether the live identity read landed.
    */
   verification?: 'verified' | 'trusted-disk' | 'config-only';
+  /**
+   * iPod only. `present` = already on the device; `written` = read from the
+   * device and written by this add; `failed` = the live read was attempted and
+   * failed (the reason is in `warnings`); `unavailable` = absent and not read
+   * this run (no USB correlation, `--no-verify`, or an unsupported device).
+   */
+  sysInfoExtended?: 'present' | 'written' | 'failed' | 'unavailable';
+  /** Every warning the add raised, which `--json` keeps off stderr. */
+  warnings?: string[];
 }
 
 export type DeviceAddErrorOutput = CliErrorOutput & { code: DeviceErrorCode };

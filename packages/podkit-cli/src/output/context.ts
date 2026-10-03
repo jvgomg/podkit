@@ -247,10 +247,21 @@ export class OutputContext {
     // In JSON mode, errors should be included in the JSON output instead
   }
 
+  private readonly recordedWarnings: string[] = [];
+
   /**
-   * Print a warning message (text mode only, uses stderr)
+   * Every message passed to {@link warn}, in order and in either mode, so a
+   * command can carry them in its JSON envelope where stderr stays silent.
+   */
+  get warnings(): readonly string[] {
+    return this.recordedWarnings;
+  }
+
+  /**
+   * Record a warning; in text mode (unless quiet) also print it to stderr.
    */
   warn(message: string): void {
+    this.recordedWarnings.push(message);
     if (this.isText && !this.quiet) {
       this.err.write(`Warning: ${message}\n`);
     }

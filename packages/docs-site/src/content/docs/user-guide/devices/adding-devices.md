@@ -207,6 +207,15 @@ podkit device add -d echo --no-validate --type echo-mini --volume-uuid WXYZ-9012
 
 JSON output from `device add --format json` includes a `verification` field reporting which tier ran: `"verified"`, `"trusted-disk"`, or `"config-only"`.
 
+When an iPod is added by reading the device (anything but `--no-validate`), it also reports what happened to `SysInfoExtended` in `sysInfoExtended`:
+
+- `"present"`: it was already on the device.
+- `"written"`: it was read live from the device and written.
+- `"failed"`: the live read was attempted and failed.
+- `"unavailable"`: it was absent and not read this run.
+
+The add still succeeds when the read fails, so check this field when your script depends on the file. Any warnings the add raised, including why a read failed, are listed in `warnings`. In text mode they go to stderr instead.
+
 ### Docker SCSI gap
 
 :::caution[Known limitation]

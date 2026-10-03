@@ -62,6 +62,8 @@ export type FirmwareInquiryResult =
       assessment: IpodIdentityAssessment | null;
       /** Whether SysInfoExtended was actually written by this call. */
       firmwareWritten: boolean;
+      /** Why the read was attempted and failed; absent when not attempted. */
+      sysInfoWriteError?: string;
     };
 
 export async function offerFirmwareInquiry(
@@ -91,6 +93,7 @@ export async function offerFirmwareInquiry(
   }
 
   let firmwareWritten = false;
+  let sysInfoWriteError: string | undefined;
   if (offer && assessment) {
     const runInquiry = args.deps?.runInquiry ?? ensureSysInfoExtendedAndReassess;
     const r = await runInquiry(mountPoint, assessment, {
@@ -99,11 +102,17 @@ export async function offerFirmwareInquiry(
     });
     assessment = r.assessment;
     firmwareWritten = r.firmwareWritten;
-    if (r.sysInfoWriteError && out.isText) {
-      out.warn(`Failed to read SysInfoExtended from USB: ${r.sysInfoWriteError}`);
+    sysInfoWriteError = r.sysInfoWriteError;
+    if (sysInfoWriteError) {
+      out.warn(`Failed to read SysInfoExtended from USB: ${sysInfoWriteError}`);
       out.print('  Run `podkit doctor --repair sysinfo-extended` to retry.');
     }
   }
 
-  return { proceed: true, assessment, firmwareWritten };
+  return {
+    proceed: true,
+    assessment,
+    firmwareWritten,
+    ...(sysInfoWriteError !== undefined ? { sysInfoWriteError } : {}),
+  };
 }
