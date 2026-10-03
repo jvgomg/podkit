@@ -798,6 +798,7 @@ System-scope checks (host environment) and database-health checks (per-device st
 
 | Check | Description | Repair |
 |-------|-------------|--------|
+| FFmpeg | Verifies FFmpeg is installed and runs; podkit cannot transcode without it | _(informational)_ |
 | Codec Encoders | Probes FFmpeg encoder availability against your codec preference stack | _(informational)_ |
 | Video Encoder (H.264) | Probes FFmpeg `libx264` availability for video transcoding | _(informational)_ |
 | iPod Firmware Inquiry Methods | Probes SCSI/USB transports used to read firmware-derived identity (`iPodDriver.kext`, `sg`, libusb) | _(informational)_ |
@@ -817,6 +818,7 @@ System-scope checks (host environment) and database-health checks (per-device st
 
 | Check | Description | Repair |
 |-------|-------------|--------|
+| FFmpeg | Verifies FFmpeg is installed and runs; podkit cannot transcode without it | _(informational)_ |
 | Codec Encoders | Probes FFmpeg encoder availability against your codec preference stack | _(informational)_ |
 | Video Encoder (H.264) | Probes FFmpeg `libx264` availability for video transcoding | _(informational)_ |
 | udev Rule (Linux SCSI + USB Access) | Detects the podkit udev rule for unprivileged USB access on Linux | `--repair udev-rule` |

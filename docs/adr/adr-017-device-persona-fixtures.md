@@ -323,7 +323,7 @@ Five to six states ship as the bootstrap set:
 | ID | Purpose |
 |----|---------|
 | `healthy` | All system tools present; baseline |
-| `no-ffmpeg` | FFmpeg uninstalled; doctor codec-encoders check fails |
+| `no-ffmpeg` | FFmpeg uninstalled; doctor `ffmpeg` check fails (encoder checks skip) |
 | `no-libgpod` | libgpod runtime missing; readiness reports failure |
 | `no-udev` | podkit udev rule missing; doctor udev-rule check fails |
 | `no-sg-perms` | `/dev/sg*` not readable by the test user; SCSI probe fails |

@@ -9,19 +9,11 @@
  * check is designed to catch).
  */
 
-import type { SubprocessRunner } from '@podkit/device-types';
+import type { SubprocessRunner, SubprocessRunResult } from '@podkit/device-types';
 import { defaultSubprocessRunner } from '@podkit/device-types';
+import { DEFAULT_FFMPEG } from '../../transcode/ffmpeg.js';
+import { FFMPEG_MISSING_SKIP } from './ffmpeg.js';
 import type { DiagnosticCheck, CheckResult, DiagnosticContext } from '../types.js';
-
-const FFMPEG = process.env['FFMPEG_PATH'] ?? 'ffmpeg';
-
-async function ffmpegEncoders(subprocess: SubprocessRunner): Promise<string> {
-  const result = await subprocess.run(FFMPEG, ['-encoders']);
-  if (result.exitCode !== 0) {
-    throw new Error(`ffmpeg -encoders exited ${result.exitCode}`);
-  }
-  return result.stdout;
-}
 
 /**
  * Pure check logic — accepts an injected subprocess runner and platform string
@@ -32,16 +24,23 @@ export async function checkVideoEncoderForRunner(
   subprocess: SubprocessRunner = defaultSubprocessRunner,
   platform: NodeJS.Platform = process.platform
 ): Promise<CheckResult> {
-  let encoders: string;
+  let result: SubprocessRunResult;
   try {
-    encoders = await ffmpegEncoders(subprocess);
+    result = await subprocess.run(DEFAULT_FFMPEG, ['-encoders']);
   } catch {
+    // Same spawn failure the `ffmpeg` check fails on.
+    return FFMPEG_MISSING_SKIP;
+  }
+
+  if (result.exitCode !== 0) {
     return {
-      status: 'skip',
-      summary: 'FFmpeg not available (see FFmpeg check)',
+      status: 'warn',
+      summary: `Encoder detection failed: \`ffmpeg -encoders\` exited ${result.exitCode}`,
       repairable: false,
+      details: { exitCode: result.exitCode, stderr: result.stderr.trim(), platform },
     };
   }
+  const encoders = result.stdout;
 
   const hasLibx264 = encoders.includes('libx264');
   const hasVideoToolbox = encoders.includes('h264_videotoolbox');

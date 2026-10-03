@@ -15,12 +15,13 @@ Connect and mount your iPod, then run:
 podkit doctor
 ```
 
-podkit runs three groups of checks: **System** (host environment — FFmpeg encoders, Linux udev rule, iPod inquiry transports (iPod only)), **Device Readiness** (USB, partition, filesystem, mount, SysInfo, database), and **Database Health** (artwork integrity, orphans, SysInfo consistency):
+podkit runs three groups of checks: **System** (host environment — FFmpeg and its encoders, Linux udev rule, iPod inquiry transports (iPod only)), **Device Readiness** (USB, partition, filesystem, mount, SysInfo, database), and **Database Health** (artwork integrity, orphans, SysInfo consistency):
 
 ```
 podkit doctor — checking iPod at /Volumes/TERAPOD
 
 System
+  ✓ FFmpeg                         FFmpeg 7.1.1
   ✓ Codec Encoders                 aac (libfdk_aac, fallback aac), libmp3lame, alac
   ✓ Video Encoder (H.264)          libx264 available
   ✓ iPod Firmware Inquiry Methods  iPodDriver.kext present
@@ -53,6 +54,7 @@ If problems are detected, doctor tells you what's wrong and how to fix it. Devic
 
 | Check | What it detects | Severity |
 |-------|----------------|----------|
+| **FFmpeg** | FFmpeg is not installed (or will not run) — podkit cannot transcode without it. The encoder checks below are skipped until it is fixed | Failure |
 | **Codec Encoders** | Missing FFmpeg encoders for codecs in your [preference stack](/user-guide/transcoding/codec-preferences) | Warning |
 | **Video Encoder (H.264)** | Missing FFmpeg `libx264` for video transcoding | Warning |
 | **iPod Firmware Inquiry Methods** | SCSI/USB transport availability for iPod firmware identity reads (`iPodDriver.kext` on macOS, `sg` + libusb on Linux) | Warning |
@@ -72,6 +74,7 @@ If problems are detected, doctor tells you what's wrong and how to fix it. Devic
 
 | Check | What it detects | Severity |
 |-------|----------------|----------|
+| **FFmpeg** | FFmpeg is not installed (or will not run) — podkit cannot transcode without it. The encoder checks below are skipped until it is fixed | Failure |
 | **Codec Encoders** | Missing FFmpeg encoders for codecs in your [preference stack](/user-guide/transcoding/codec-preferences) | Warning |
 | **Video Encoder (H.264)** | Missing FFmpeg `libx264` for video transcoding | Warning |
 | **udev Rule (Linux SCSI + USB Access)** | Missing podkit udev rule granting unprivileged USB access on Linux | Warning (Linux only) |

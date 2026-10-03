@@ -54,6 +54,7 @@ const EXPECTED_IDS = [
  * "missing check" diff if you forget).
  */
 const KNOWN_SYSTEM_CHECK_IDS = new Set<string>([
+  'ffmpeg',
   'codec-encoders',
   'inquiry-methods',
   'video-encoder',

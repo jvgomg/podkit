@@ -8,6 +8,7 @@
  * change to the aggregation rules cannot silently rewrite these.
  *
  * Checks under test:
+ *   - ffmpeg          (FFmpeg binary presence — owns the missing-ffmpeg signal)
  *   - inquiry-methods (SCSI + USB transport availability)
  *   - codec-encoders (FFmpeg audio encoder coverage)
  *   - video-encoder  (H.264 encoder coverage)
@@ -25,7 +26,13 @@ import { describe, it, expect } from 'bun:test';
 // ── Checks under test ─────────────────────────────────────────────────────────
 
 import { checkInquiryMethods, inquiryMethodsCheck, type ProbeFn } from './inquiry-methods.js';
-import { checkEncoderAvailability, codecEncodersCheck } from './codec-encoders.js';
+import {
+  checkCodecEncoders,
+  checkEncoderAvailability,
+  codecEncodersCheck,
+} from './codec-encoders.js';
+import { checkFfmpegForRunner, ffmpegCheck } from './ffmpeg.js';
+import { FFmpegNotFoundError, TranscodeError } from '../../transcode/ffmpeg.js';
 import { debrisTranscodeTmpCheck } from './debris-transcode-tmp.js';
 import { checkVideoEncoderForRunner, videoEncoderCheck } from './video-encoder.js';
 import {
@@ -49,14 +56,6 @@ import type {
 } from '@podkit/device-types';
 import type { TranscoderCapabilities } from '../../transcode/types.js';
 import type { TranscodeTargetCodec } from '../../transcode/codecs.js';
-import type { DiagnosticContext } from '../types.js';
-
-// ── Tiny stub ctx for repair-only checks that only consult metadata ─────────
-
-const stubCtx: DiagnosticContext = {
-  mountPoint: '',
-  deviceType: 'ipod',
-};
 
 // ── Fake builders ─────────────────────────────────────────────────────────────
 
@@ -285,6 +284,54 @@ describe('inquiry-methods — host environment matrix', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// FFmpeg — binary presence
+// ─────────────────────────────────────────────────────────────────────────────
+
+const FFMPEG_VERSION_OUTPUT = `ffmpeg version 6.1.1 Copyright (c) 2000-2023 the FFmpeg developers
+built with gcc 12 (Debian 12.2.0-14)
+`;
+
+describe('ffmpeg — host environment matrix', () => {
+  it('pass when `ffmpeg -version` succeeds, reporting the version', async () => {
+    const result = await checkFfmpegForRunner(makeFfmpegRunner(FFMPEG_VERSION_OUTPUT));
+
+    expect(result.status).toBe('pass');
+    expect(result.summary).toBe('FFmpeg 6.1.1');
+    expect(result.repairable).toBe(false);
+    expect(result.details?.['version']).toBe('6.1.1');
+  });
+
+  // The no-ffmpeg SystemState. FFmpeg is a runtime dependency, so its absence
+  // must reach the exit code — this check is where it does.
+  it('SystemState `no-ffmpeg` → fail with install advice', async () => {
+    const result = await checkFfmpegForRunner(makeFfmpegRunner(null));
+
+    expect(result.status).toBe('fail');
+    expect(result.summary).toBe('FFmpeg not found');
+    expect(result.repairable).toBe(false);
+    const advice = (result.details?.['repairAdvice'] ?? '') as string;
+    expect(advice).toContain('brew install ffmpeg');
+    expect(advice).toContain('apt install ffmpeg');
+    expect(advice).toContain('apk add ffmpeg');
+  });
+
+  it('fail when `ffmpeg -version` exits non-zero (binary present but broken)', async () => {
+    const result = await checkFfmpegForRunner(makeFfmpegRunner('', 127));
+
+    expect(result.status).toBe('fail');
+    expect(result.summary).toBe('FFmpeg failed to run (`ffmpeg -version` exited 127)');
+    expect(result.details?.['exitCode']).toBe(127);
+  });
+
+  it('pass with unknown version when the banner is unrecognised', async () => {
+    const result = await checkFfmpegForRunner(makeFfmpegRunner('something else\n'));
+
+    expect(result.status).toBe('pass');
+    expect(result.summary).toBe('FFmpeg (version unknown)');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Codec encoders — FFmpeg audio encoder coverage
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -335,26 +382,28 @@ describe('codec-encoders — host environment matrix', () => {
     expect(result.repairable).toBe(false);
   });
 
-  // When ffmpeg itself isn't on PATH, the registered check returns `skip`
-  // (not `fail` — the dedicated ffmpeg check owns the hard signal).
-  //
-  // The no-ffmpeg SystemState fixture records `codec-encoders: fail`, which
-  // looks like a contradiction but is not: that fixture describes the
-  // *aggregate* expectation across several checks, and the hard failure it
-  // predicts comes from the FFmpeg-presence check this one chains to. What
-  // is pinned here is the single check's own verdict.
-  it('ffmpeg not on PATH → registered check returns skip referencing the FFmpeg check', async () => {
-    const result = await codecEncodersCheck.check(stubCtx);
+  // The `ffmpeg` check owns the missing-binary signal, so this one skips
+  // rather than reporting the same root cause a second time.
+  it('ffmpeg not found → skip referencing the FFmpeg check', async () => {
+    const result = await checkCodecEncoders(async () => {
+      throw new FFmpegNotFoundError('ffmpeg not found');
+    });
 
-    // The check spawns ffmpeg internally; in CI environments where ffmpeg is
-    // available this can pass — we only assert the skip path when ffmpeg is
-    // missing (status === 'skip'). When present, just check the contract
-    // shape. This keeps the test stable across hosts.
-    expect(['pass', 'warn', 'skip']).toContain(result.status);
-    if (result.status === 'skip') {
-      expect(result.summary).toContain('FFmpeg not available');
-      expect(result.repairable).toBe(false);
-    }
+    expect(result.status).toBe('skip');
+    expect(result.summary).toBe('FFmpeg not available (see FFmpeg check)');
+    expect(result.repairable).toBe(false);
+  });
+
+  // FFmpeg runs but encoder detection fails: the `ffmpeg` check passes, so a
+  // skip here would leave the problem reported nowhere.
+  it('ffmpeg present but encoder detection fails → warn, not skip', async () => {
+    const result = await checkCodecEncoders(async () => {
+      throw new TranscodeError('No AAC encoder available');
+    });
+
+    expect(result.status).toBe('warn');
+    expect(result.summary).toContain('No AAC encoder available');
+    expect(result.repairable).toBe(false);
   });
 });
 
@@ -418,7 +467,18 @@ describe('video-encoder — host environment matrix', () => {
     expect(result.summary).toContain('No H.264 encoder available');
   });
 
-  // FFmpeg missing → skip (the no-ffmpeg SystemState)
+  // `ffmpeg -version` can pass while `-encoders` fails; skipping would leave
+  // the failure reported nowhere.
+  it('warn when `ffmpeg -encoders` exits non-zero', async () => {
+    const runner = makeFfmpegRunner('', 1);
+    const result = await checkVideoEncoderForRunner(runner, 'linux');
+
+    expect(result.status).toBe('warn');
+    expect(result.summary).toBe('Encoder detection failed: `ffmpeg -encoders` exited 1');
+    expect(result.repairable).toBe(false);
+  });
+
+  // FFmpeg missing → skip; the `ffmpeg` check carries the failure.
   it('SystemState `no-ffmpeg` produces skip referencing the FFmpeg check', async () => {
     const runner = makeFfmpegRunner(null);
     const result = await checkVideoEncoderForRunner(runner, 'linux');
@@ -631,6 +691,7 @@ ACTION=="add", SUBSYSTEM=="scsi_generic", ATTRS{idVendor}=="05ac"
 
 describe('every system-scope check declares scope: "system"', () => {
   const SYSTEM_SCOPE_CHECKS = [
+    ffmpegCheck,
     inquiryMethodsCheck,
     codecEncodersCheck,
     videoEncoderCheck,

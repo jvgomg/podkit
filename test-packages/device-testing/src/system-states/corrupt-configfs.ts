@@ -33,6 +33,10 @@ export const corruptConfigfs: SystemState = {
     overallStatus: 'healthy',
     checks: [
       {
+        id: 'ffmpeg',
+        status: 'pass',
+      },
+      {
         id: 'codec-encoders',
         status: 'pass',
         summary: 'All 5 codec encoders available',

@@ -7,7 +7,7 @@
  * what the user expects.
  */
 
-import { createFFmpegTranscoder } from '../../transcode/ffmpeg.js';
+import { createFFmpegTranscoder, FFmpegNotFoundError } from '../../transcode/ffmpeg.js';
 import {
   DEFAULT_LOSSY_STACK,
   DEFAULT_LOSSLESS_STACK,
@@ -15,6 +15,7 @@ import {
 } from '../../transcode/codecs.js';
 import type { TranscodeTargetCodec } from '../../transcode/codecs.js';
 import type { TranscoderCapabilities } from '../../transcode/types.js';
+import { FFMPEG_MISSING_SKIP } from './ffmpeg.js';
 import type { DiagnosticCheck, CheckResult, DiagnosticContext } from '../types.js';
 
 /** Human-readable names for FFmpeg encoder libraries */
@@ -135,6 +136,33 @@ export function checkEncoderAvailability(
   };
 }
 
+/**
+ * Detect capabilities and check them. Only a missing binary skips — the
+ * `ffmpeg` check reports that. Any other detection failure happens with the
+ * `ffmpeg` check passing, so it must surface here.
+ */
+export async function checkCodecEncoders(
+  detect: () => Promise<TranscoderCapabilities>
+): Promise<CheckResult> {
+  let capabilities: TranscoderCapabilities;
+  try {
+    capabilities = await detect();
+  } catch (err) {
+    if (err instanceof FFmpegNotFoundError) {
+      return FFMPEG_MISSING_SKIP;
+    }
+    const message = err instanceof Error ? err.message : String(err);
+    return {
+      status: 'warn',
+      summary: `Encoder detection failed: ${message}`,
+      repairable: false,
+      details: { error: message },
+    };
+  }
+
+  return checkEncoderAvailability(capabilities);
+}
+
 export const codecEncodersCheck: DiagnosticCheck = {
   id: 'codec-encoders',
   name: 'Codec Encoders',
@@ -142,20 +170,6 @@ export const codecEncodersCheck: DiagnosticCheck = {
   scope: 'system',
 
   async check(_ctx: DiagnosticContext): Promise<CheckResult> {
-    // Detect FFmpeg capabilities
-    let capabilities: TranscoderCapabilities;
-    try {
-      const transcoder = createFFmpegTranscoder();
-      capabilities = await transcoder.detect();
-    } catch {
-      // FFmpeg not available — the ffmpeg check handles that, skip here
-      return {
-        status: 'skip',
-        summary: 'FFmpeg not available (see FFmpeg check)',
-        repairable: false,
-      };
-    }
-
-    return checkEncoderAvailability(capabilities);
+    return checkCodecEncoders(() => createFFmpegTranscoder().detect());
   },
 };

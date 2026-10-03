@@ -25,6 +25,7 @@ import { codecEncodersCheck } from './codec-encoders.js';
 import { debrisFilesIpodCheck } from './debris-files-ipod.js';
 import { debrisFilesMassStorageCheck } from './debris-files-mass-storage.js';
 import { debrisTranscodeTmpCheck } from './debris-transcode-tmp.js';
+import { ffmpegCheck } from './ffmpeg.js';
 import { inquiryMethodsCheck } from './inquiry-methods.js';
 import { orphanFilesCheck } from './orphans.js';
 import { orphanFilesMassStorageCheck } from './orphans-mass-storage.js';
@@ -50,6 +51,11 @@ interface Expectation {
 // new check lands, add it here AND it'll get the metadata assertions below.
 const EXPECTATIONS: ReadonlyArray<Expectation> = [
   // System-scope
+  {
+    check: ffmpegCheck,
+    scope: 'system',
+    applicableTo: ['ipod', 'mass-storage'],
+  },
   {
     check: codecEncodersCheck,
     scope: 'system',

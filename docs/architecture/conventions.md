@@ -351,7 +351,40 @@ optional fields with defaults do not).
 
 ---
 
-## 11. References
+## 13. Doctor `skip` means "not applicable", never "someone else's problem"
+
+Doctor is healthy (exit `0`) iff every check finishes `pass` or `skip`; any
+`warn` or `fail` exits `2` (full table in
+[agents/testing.md §"Doctor exit-code & overall-health semantics"](../agents/testing.md)).
+`skip` is therefore invisible at the exit code, and a check may return it
+only when one of these holds:
+
+1. **The question does not apply here.** Wrong platform (`udev-rule` on
+   macOS), nothing to inspect (no iPod database, no content paths
+   configured), nothing live to compare against.
+2. **A prerequisite is missing and another check reports it.** The
+   prerequisite must have its own check that returns `warn`/`fail` for the
+   same condition, and the skip summary names it — e.g. `codec-encoders` and
+   `video-encoder` skip with "FFmpeg not available (see FFmpeg check)"
+   because the `ffmpeg` check fails. The root cause is reported once, by
+   its owner.
+
+Anything else is a finding and must be `warn` or `fail`. In particular,
+a check must not skip on an absent prerequisite that nothing else reports,
+and a dependent check's skip must be keyed on exactly the condition its
+owner reports: if `ffmpeg -version` succeeds but `ffmpeg -encoders` fails,
+the encoder checks `warn` — the `ffmpeg` check passed, so a skip would
+leave the failure reported nowhere.
+
+Choosing between `warn` and `fail`: `fail` when podkit cannot do the job
+the check guards (no FFmpeg, no H.264 encoder, corrupt artwork offsets);
+`warn` when it can but degraded or with residue to clean up (a missing
+optional encoder, orphan files). Both exit `2`; the split is for the human
+reading the report.
+
+---
+
+## 14. References
 
 - [sync/error-handling](./sync/error-handling.md) — the working example of
   these conventions applied to the sync engine.

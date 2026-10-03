@@ -1,19 +1,12 @@
 /**
  * `no-ffmpeg` system state — FFmpeg binary is not installed.
  *
- * The host has no `ffmpeg` on PATH. There is no standalone `ffmpeg`
- * presence check in the doctor registry: the `codec-encoders` and
- * `video-encoder` checks both detect FFmpeg via internal probes and
- * return `status: 'skip'` (with a "FFmpeg not available" summary) when
- * the binary isn't usable. Doctor's `healthy` bit counts `skip` as
- * healthy (a skipped check is not an issue), so with no warn/fail check
- * present the system-scope report is healthy and exits 0 — output
- * identical to `healthy`. The missing-ffmpeg condition is therefore NOT
- * visible at the system-scope doctor exit code today; it surfaces only in
- * the codec/video check summaries. (Whether ffmpeg-absent should warn
- * rather than skip is a separate doctor-semantics question, tracked in the
- * backlog.)
+ * The host has no `ffmpeg` on PATH. The `ffmpeg` check fails — FFmpeg is
+ * podkit's runtime dependency — so system-scope doctor exits 2. The
+ * `codec-encoders` and `video-encoder` checks probe the same binary and
+ * `skip`, pointing at the `ffmpeg` check, so the root cause is reported once.
  *
+ * @see docs/architecture/conventions.md §13 (doctor `skip` semantics)
  * @see docs/adr/adr-017-device-persona-fixtures.md §"SystemState schema"
  * @see test-packages/e2e-vm-tests/src/system-state-cross-check.e2e.test.ts
  * @module
@@ -33,16 +26,15 @@ export const noFfmpeg: SystemState = {
   configfs: 'mounted',
 
   expectedDoctorSystemOutput: {
-    // `healthy`: `skip` counts as healthy and inquiry-methods passes
-    // USB-first, so no check is warn/fail. Missing ffmpeg is not visible
-    // at the system-scope exit code today (see module comment).
-    overallStatus: 'healthy',
+    overallStatus: 'fail',
     checks: [
       {
+        id: 'ffmpeg',
+        status: 'fail',
+        summary: 'FFmpeg not found',
+      },
+      {
         id: 'codec-encoders',
-        // The check catches the FFmpeg probe failure and returns `skip`,
-        // not `fail`. No standalone "ffmpeg" check exists — the absent
-        // tool is signalled via the skip+summary on the encoder checks.
         status: 'skip',
         summary: 'FFmpeg not available (see FFmpeg check)',
       },
@@ -69,5 +61,5 @@ export const noFfmpeg: SystemState = {
     ],
   },
 
-  expectedExitCode: 0,
+  expectedExitCode: 2,
 };

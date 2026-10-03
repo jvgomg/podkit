@@ -153,6 +153,13 @@ sets `healthy = false` and flips the exit code to `2`. We picked this over
 4. Easier to relax later (warn → healthy) than to tighten (would surprise
    scripts that today rely on warn = unhealthy).
 
+**`skip` is invisible at the exit code, so it is reserved.** A check
+skips only when its question does not apply, or when a prerequisite is
+missing *and another check reports it* (the encoder checks skip when
+FFmpeg is absent because the `ffmpeg` check fails). Everything else is
+`warn` or `fail`. The full rule, and how to pick between `warn` and
+`fail`, is [conventions.md §13](../architecture/conventions.md#13-doctor-skip-means-not-applicable-never-someone-elses-problem).
+
 This decision applies consistently across the three doctor invocation
 modes: legacy `--scope all`, `--scope system` (system checks only;
 [TASK-333](../../backlog/tasks/)), and `--scope device`. `--no-system` is

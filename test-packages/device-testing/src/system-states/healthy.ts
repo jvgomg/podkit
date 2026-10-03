@@ -38,6 +38,11 @@ export const healthy: SystemState = {
     overallStatus: 'healthy',
     checks: [
       {
+        id: 'ffmpeg',
+        // No summary pinned: it carries the host's FFmpeg version.
+        status: 'pass',
+      },
+      {
         id: 'codec-encoders',
         status: 'pass',
         summary: 'All 5 codec encoders available',

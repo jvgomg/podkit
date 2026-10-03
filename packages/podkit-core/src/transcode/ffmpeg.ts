@@ -60,7 +60,7 @@ const ENCODER_PRIORITY = ['aac_at', 'libfdk_aac', 'aac'] as const;
 /**
  * Default FFmpeg binary name
  */
-const DEFAULT_FFMPEG = 'ffmpeg';
+export const DEFAULT_FFMPEG = 'ffmpeg';
 
 /**
  * Default FFprobe binary name

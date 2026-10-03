@@ -60,9 +60,9 @@ export interface SystemState {
       id: string;
       /**
        * Status the check should report. `skip` is a real outcome for
-       * checks whose dependency probe fails — e.g. `codec-encoders` /
-       * `video-encoder` skip when FFmpeg is missing because the upstream
-       * "FFmpeg" probe failure leaves nothing to inspect.
+       * checks whose prerequisite another check reports — e.g.
+       * `codec-encoders` / `video-encoder` skip when FFmpeg is missing
+       * because the `ffmpeg` check fails for it.
        */
       status: 'pass' | 'warn' | 'fail' | 'skip';
       summary?: string;

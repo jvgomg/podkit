@@ -40,8 +40,8 @@ doesn't emit it directly).
 
 | ID | What apply-state.sh does | What doctor sees |
 |----|---------|---------|
-| `healthy` | All tools present, podkit udev rule installed | `inquiry-methods=warn` (no /dev/sg* nodes in the harness VM), all other checks pass. Exit 2. |
-| `no-ffmpeg` | Removes ffmpeg | `codec-encoders` + `video-encoder` `skip` with "FFmpeg not available". Exit 2. |
+| `healthy` | All tools present, podkit udev rule installed | Every check passes (`inquiry-methods` passes USB-first with no /dev/sg* nodes). Exit 0. |
+| `no-ffmpeg` | Removes ffmpeg | `ffmpeg` `fail`; `codec-encoders` + `video-encoder` `skip` pointing at it. Exit 2. |
 | `no-libgpod` | Removes libgpod runtime packages | Indistinguishable from `healthy` (libgpod is statically linked into podkit; no doctor check observes the dynamic runtime). |
 | `no-udev` | Stashes libgpod's `/lib/udev/rules.d/*libgpod*` files | Indistinguishable from `healthy` (doctor's `udev-rule` check tracks the podkit-owned `91-podkit-ipod.rules`, which apply-state leaves in place). |
 | `no-sg-perms` | Removes the sg-perms udev rule + chmod 0600 any /dev/sg* nodes | Indistinguishable from `healthy` (no physical /dev/sg* nodes exist on the harness VM, so there is nothing for the perms change to bite). |

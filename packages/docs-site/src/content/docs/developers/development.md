@@ -78,7 +78,7 @@ bun run --filter @podkit/test-fixtures check-ffmpeg
 ```
 
 :::note
-This pin is for contributors only. FFmpeg is a *runtime dependency* of podkit — end users install it through their own package manager, and podkit resolves it from `PATH` (or `$FFMPEG_PATH`). Nothing about the mise pin ships to users.
+This pin is for contributors only. FFmpeg is a *runtime dependency* of podkit — end users install it through their own package manager, and podkit resolves it from `PATH`. Nothing about the mise pin ships to users.
 :::
 
 #### Homebrew alternative
