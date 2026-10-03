@@ -1,10 +1,10 @@
 ---
 id: TASK-530
 title: Move docker-dist onto the substrate contract's container runtime (podman)
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-09-29 21:55'
-updated_date: '2026-09-30 21:17'
+updated_date: '2026-10-03 11:52'
 labels:
   - testing
   - infrastructure
@@ -48,7 +48,7 @@ Watch for Podman/nerdctl differences on the flags these tests use: `--device`, `
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 docker-dist builds, pulls and runs the image with the contract runtime rather than nerdctl
-- [ ] #2 test:e2e:docker-dist passes on the remote substrate
+- [x] #2 test:e2e:docker-dist passes on the remote substrate
 - [x] #3 test:e2e:docker-dist still passes on a Lima substrate
 - [x] #4 Nothing in the harness depends on nerdctl, or what still does is named and justified
 <!-- AC:END -->
@@ -81,4 +81,12 @@ A podman-vs-nerdctl A/B is impossible there because the remote never had nerdctl
 **Latent risk (not a failure today)**
 - Both cells now share podman's image store.
 - `buildPodkitImageInVm` runs `system prune -af`, so whichever cell builds second removes the other's image. Both force-build in `beforeAll`, so this is fine sequentially; running the two cells concurrently would break.
+
+## AC #2 — remote: met (via TASK-533)
+
+- `test:e2e:docker-dist` passed 5/5 on `deviceRemote` (30/30 tests), driven from an amd64 Linux host, with podman as the runtime.
+- Neither earlier remote failure was a podman problem:
+  - USB inquiry STALL: a read/write race in the persona daemon's ep0 loop (`fix(device-testing-daemon): land each ep0 reply before reading again`).
+  - Apprise wait: the test matched `sda`, but the persona enumerates as `sdb` on the remote (`test(docker-dist): stop tuning the daemon cells to one substrate's disk and speed`).
+- The latent risk recorded above still stands: both shipped-image cells share podman's image store, and `system prune -af` means they must not run concurrently.
 <!-- SECTION:NOTES:END -->
