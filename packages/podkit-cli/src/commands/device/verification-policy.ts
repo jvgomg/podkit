@@ -89,6 +89,12 @@ export interface DeviceStateView {
   readonly crossCheck: 'pass' | 'mismatch' | 'skipped';
   /** Detail string for a `mismatch` (e.g. the diagnostic summary). */
   readonly crossCheckDetail?: string;
+  /**
+   * This add already offered to write the identity store from the live
+   * device. A store still `missing` is one it could not fill: offering again
+   * would loop, and must not stop the later checks from running.
+   */
+  readonly identityStoreWriteAttempted?: boolean;
 }
 
 import type { VerificationTier, DeviceClaim } from './resolve-add-request.js';
@@ -188,7 +194,8 @@ function isIdentityFullyEmptyView(
  *      `empty-identity-forced`).
  *   5. trust-disk + identity store missing/unwritable + required →
  *      `error-missing-sysinfo`.
- *   6. verify + identity store missing → `prompt-write-sie`.
+ *   6. verify + identity store missing → `prompt-write-sie`, unless this add
+ *      already offered it (`identityStoreWriteAttempted`).
  *   7. verify + cross-check mismatch → `error-mismatch`.
  *   8. unsupported reason → `prompt-unsupported`.
  *   9. partial identity (no model anchor) → warn `partial-identity`.
@@ -250,7 +257,12 @@ export function decideAddOutcome(
   }
 
   // 6. verify + identity store missing → offer to write it.
-  if (tier === 'verify' && assessment && assessment.identityStore === 'missing') {
+  if (
+    tier === 'verify' &&
+    assessment &&
+    assessment.identityStore === 'missing' &&
+    !deviceState.identityStoreWriteAttempted
+  ) {
     return { kind: 'prompt-write-sie', mountPoint: path ?? '' };
   }
 

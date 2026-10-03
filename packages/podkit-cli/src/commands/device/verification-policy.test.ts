@@ -254,6 +254,49 @@ const ROWS: Row[] = [
     expected: { kind: 'proceed' },
   },
 
+  // --- verify: the live write was attempted and failed ---------------------
+  // The store is still `missing`, but asking again would loop; the remaining
+  // checks must still run against what the add does know.
+  {
+    name: 'verify + write failed + cross-check mismatch → error-mismatch',
+    tier: 'verify',
+    claim: CLAIM_DECLARED,
+    assessment: assess({ identityStore: 'missing' }),
+    state: state({
+      identityStoreWriteAttempted: true,
+      crossCheck: 'mismatch',
+      crossCheckDetail: 'd',
+    }),
+    expected: { kind: 'error-mismatch', detail: 'd' },
+  },
+  {
+    name: 'verify + write failed + cross-check pass → proceed',
+    tier: 'verify',
+    claim: CLAIM_DECLARED,
+    assessment: assess({ identityStore: 'missing' }),
+    state: state({ identityStoreWriteAttempted: true }),
+    expected: { kind: 'proceed' },
+  },
+  {
+    name: 'verify + undeclared + USB-only identity + write failed → warn partial-identity (not empty)',
+    tier: 'verify',
+    claim: CLAIM_UNDECLARED,
+    assessment: assess({ hasIdentity: false, identityStore: 'missing' }),
+    state: state({ identityStoreWriteAttempted: true }),
+    expected: { kind: 'proceed-with-warning', warning: 'partial-identity' },
+  },
+  {
+    name: 'verify + write failed + unsupported → prompt-unsupported',
+    tier: 'verify',
+    claim: CLAIM_DECLARED,
+    assessment: assess({
+      identityStore: 'missing',
+      unsupportedReason: { kind: 'k', headline: 'h' },
+    }),
+    state: state({ identityStoreWriteAttempted: true }),
+    expected: { kind: 'prompt-unsupported', reason: { kind: 'k', headline: 'h' } },
+  },
+
   // --- verify: cross-check mismatch ----------------------------------------
   {
     name: 'verify + present store + cross-check mismatch → error-mismatch',

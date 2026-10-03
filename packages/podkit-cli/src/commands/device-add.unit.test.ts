@@ -1716,6 +1716,108 @@ describe('runDeviceAdd: verify-tier cross-check (doc-045)', () => {
     expect(err.code).toBe('IDENTITY_MISMATCH');
     expect(err.error).toContain('podkit doctor --repair sysinfo-modelnum-mismatch');
   });
+
+  describe('when the live SysInfoExtended read fails', () => {
+    const STALL = 'USB: controlTransfer failed on page 0: LIBUSB_TRANSFER_STALL';
+
+    function depsFor(assessment: IpodIdentityAssessment): DeviceAddDeps {
+      return {
+        platform: 'darwin',
+        getDeviceManager: () =>
+          fakeManager({
+            isSupported: true,
+            locate: async (target) =>
+              'path' in target
+                ? ({
+                    identifier: 'disk6s2',
+                    volumeName: 'TERAPOD',
+                    volumeUuid: 'REAL-UUID',
+                    storage: { sizeBytes: 4_000_000_000, filesystem: 'hfsplus' },
+                    isMounted: true,
+                    mountPoint: mount,
+                  } as Awaited<ReturnType<DeviceManager['locate']>>)
+                : null,
+          }),
+        assessIdentity: async () => assessment,
+        ensureSysInfoExtended: async () =>
+          ({
+            present: false,
+            source: 'unavailable',
+            identity: {},
+            error: STALL,
+          }) as SysInfoExtendedResult,
+        ipodDatabase: FAKE_IPOD_DB,
+      };
+    }
+
+    it('still refuses a classic SysInfo that disagrees with the live device', async () => {
+      // MA147 is a 5th-generation iPod; the live USB product is a nano 2G.
+      const { mkdir } = await import('node:fs/promises');
+      await mkdir(join(mount, 'iPod_Control', 'Device'), { recursive: true });
+      await writeFile(join(mount, 'iPod_Control', 'Device', 'SysInfo'), 'ModelNumStr: MA147\n');
+
+      const ctx = makeContext({ device: 'terapod', configPath: tempConfig });
+      const { out, stdout, exitCode } = makeOut(true);
+      await runAdd(
+        ctx,
+        { type: 'ipod', path: mount, yes: true },
+        out,
+        depsFor({
+          ...makeAssessment('YM7275YSVQH'),
+          firmwareInquiry: 'missing',
+          sysInfoModelNumber: 'MA147',
+        })
+      );
+
+      expect(exitCode.get()).toBe(1);
+      expect(stdout.json<AddOutputError>().code).toBe('IDENTITY_MISMATCH');
+    });
+
+    it('runs the remaining checks when a reported write still leaves no store', async () => {
+      const ctx = makeContext({ device: 'terapod', configPath: tempConfig });
+      const { out, stdout, exitCode } = makeOut(true);
+      await runAdd(ctx, { path: mount, yes: true }, out, {
+        ...depsFor({
+          ...makeAssessment('YM7275YSVQH'),
+          model: null,
+          capabilities: null,
+          firmwareInquiry: 'missing',
+        }),
+        ensureSysInfoExtended: async () =>
+          ({ present: true, source: 'usb-read', identity: {} }) as SysInfoExtendedResult,
+      });
+
+      expect(exitCode.get()).toBeUndefined();
+      expect(stdout.json<DeviceAddSuccess>().warnings).toEqual([
+        expect.stringContaining('Unable to determine the device model'),
+      ]);
+    });
+
+    it('proceeds on the USB identity alone, warning that the model is unknown', async () => {
+      const ctx = makeContext({ device: 'terapod', configPath: tempConfig });
+      const { out, stdout, exitCode } = makeOut(true);
+      await runAdd(
+        ctx,
+        { path: mount, yes: true },
+        out,
+        depsFor({
+          ...makeAssessment('YM7275YSVQH'),
+          model: null,
+          capabilities: null,
+          firmwareInquiry: 'missing',
+        })
+      );
+
+      expect(exitCode.get()).toBeUndefined();
+      const result = stdout.json<DeviceAddSuccess>();
+      expect(result.success).toBe(true);
+      expect(result.sysInfoExtended).toBe('failed');
+      expect(result.warnings).toEqual([
+        `Failed to read SysInfoExtended from USB: ${STALL}`,
+        expect.stringContaining('Unable to determine the device model'),
+      ]);
+    });
+  });
 });
 
 describe('runDeviceAdd: trust-disk tier (--no-verify, doc-045)', () => {

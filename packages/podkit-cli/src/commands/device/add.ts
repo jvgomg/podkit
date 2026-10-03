@@ -383,7 +383,6 @@ export async function runDeviceAdd(
   let firmwareWritten = false;
   let firmwarePrompted = false;
   let sysInfoWriteError: string | undefined;
-  let sieReEntered = false;
 
   // Known-unsupported generation/kind: surface the canonical refusal copy + an
   // explicit confirm (user story 22) up front — every tier that *reads* the
@@ -413,7 +412,7 @@ export async function runDeviceAdd(
       ? await runVerifyCrossCheck(ipod.mountPoint, assessment)
       : { crossCheck: 'skipped' as const };
 
-  const stateView: DeviceStateView = {
+  let stateView: DeviceStateView = {
     ...baseStateView,
     crossCheck: crossCheck.crossCheck,
     ...(crossCheck.detail !== undefined ? { crossCheckDetail: crossCheck.detail } : {}),
@@ -421,9 +420,8 @@ export async function runDeviceAdd(
 
   let outcome = decideAddOutcome(req.tier, req.claim, view, stateView, req.force);
 
-  // The outcome loop runs at most twice: the second pass only happens after a
-  // successful prompt-write-sie re-assess, and a second prompt-write-sie is
-  // collapsed to proceed-with-warning so it can never loop.
+  // The outcome loop runs at most twice: prompt-write-sie re-decides once,
+  // with `identityStoreWriteAttempted` set so it cannot be offered again.
   // eslint-disable-next-line no-constant-condition
   while (true) {
     if (outcome.kind === 'proceed') break;
@@ -448,12 +446,6 @@ export async function runDeviceAdd(
     }
 
     if (outcome.kind === 'prompt-write-sie') {
-      if (sieReEntered) {
-        // The write was already attempted (and its failure warned about); a
-        // second prompt-write-sie must not loop.
-        if (!view.hasIdentity) emitOutcomeWarning(out, 'partial-identity');
-        break;
-      }
       const firmwareResult = await offerFirmwareInquiry({
         assessment,
         autoConfirm: req.autoConfirm,
@@ -472,9 +464,10 @@ export async function runDeviceAdd(
       firmwareWritten = firmwareWritten || firmwareResult.firmwareWritten;
       sysInfoWriteError = firmwareResult.sysInfoWriteError;
       firmwarePrompted = true;
-      sieReEntered = true;
-      // Re-assess view + state, re-enter M4 once.
+      // Re-assess view + state, re-enter M4 once. A store still `missing`
+      // now is one this add could not fill; M4 runs the checks after it.
       view = ipodAssessmentToView(assessment ?? emptyIpodAssessment(), userTypeOpt);
+      stateView = { ...stateView, identityStoreWriteAttempted: true };
       outcome = decideAddOutcome(req.tier, req.claim, view, stateView, req.force);
       continue;
     }
