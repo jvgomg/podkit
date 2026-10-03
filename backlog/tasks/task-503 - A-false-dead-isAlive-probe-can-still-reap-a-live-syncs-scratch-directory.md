@@ -1,9 +1,10 @@
 ---
 id: TASK-503
 title: A false-dead isAlive probe can still reap a live sync's scratch directory
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-09 19:41'
+updated_date: '2026-10-03 22:10'
 labels:
   - sync
   - correctness
@@ -14,6 +15,17 @@ references:
   - packages/podkit-core/src/lib/pid-file.ts
   - packages/podkit-core/src/diagnostics/scanners/transcode-tmp-walker.ts
   - docs/architecture/sync/planning.md
+modified_files:
+  - packages/podkit-core/src/lib/pid-file.ts
+  - packages/podkit-core/src/lib/pid-file.test.ts
+  - packages/podkit-core/src/diagnostics/scanners/transcode-tmp-walker.ts
+  - packages/podkit-core/src/diagnostics/checks/debris-transcode-tmp.test.ts
+  - packages/podkit-core/src/diagnostics/checks/debris-transcode-tmp.ts
+  - packages/podkit-core/src/diagnostics/scanners/transcode-tmp-scanner.ts
+  - packages/podkit-core/src/sync/engine/pre-sync-sweep.ts
+  - packages/podkit-core/src/sync/engine/pre-sync-sweep.test.ts
+  - docs/architecture/sync/planning.md
+  - .changeset/transcode-tmp-unverifiable-owner.md
 priority: medium
 type: bug
 ordinal: 282000
@@ -56,9 +68,33 @@ Every task-501 occurrence is explained by the missing-marker window, which is fi
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The conditions under which `isAlive` returns false for a live process are enumerated and each is judged reachable or not on the platforms podkit supports
-- [ ] #2 A decision is recorded on whether the transcode-tmp walker should trust a dead-owner verdict as readily as it does today, given that acting on it deletes a live process's output directory
+- [x] #1 The conditions under which `isAlive` returns false for a live process are enumerated and each is judged reachable or not on the platforms podkit supports
+- [x] #2 A decision is recorded on whether the transcode-tmp walker should trust a dead-owner verdict as readily as it does today, given that acting on it deletes a live process's output directory
 - [ ] #3 If the verdict is kept, the reasoning is written where a reader of `pid-file.ts` or the walker will find it, rather than only in this task
-- [ ] #4 If it is changed, a test pins the new behaviour — including that a genuinely dead owner's debris is still reclaimed rather than accumulating
-- [ ] #5 The distinction between the two consumers is documented: the same false negative costs the lock contention and costs the walker a live directory
+- [x] #4 If it is changed, a test pins the new behaviour — including that a genuinely dead owner's debris is still reclaimed rather than accumulating
+- [x] #5 The distinction between the two consumers is documented: the same false negative costs the lock contention and costs the walker a live directory
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Changed the verdict (AC#3 is n/a — the verdict was not kept).
+
+- `pid-file.ts`: new `probeLiveness` → `alive | dead | unknown`. Only `kill(pid,0)` ESRCH is `dead`. Start-time mismatch, unreadable start time and EPERM are `unknown`. `isAlive` stays `=== 'alive'` for the lock, where a misjudged live holder costs contention.
+- Walker: `alive` → skip. `dead` → reap on sight, so SIGKILL debris is still cleared by the next sync. `unknown` → reap only after nothing in the dir has been touched for 1h (`UNVERIFIED_OWNER_GRACE_MS`). Missing `.owner` → 60s, as before. "Touched" is now the newest mtime across the whole tree, because a long transcode grows a file without changing the dir's own mtime.
+- AC#1: per-platform reachability table in docs/architecture/sync/planning.md §6, linked from `Liveness`. Reachable:
+  - Linux wall-clock step (btime re-derived from realtime).
+  - Suspend before an identity is computed (`process.uptime` is monotonic) — the lock only, because `.owner` identity is cached at module load.
+  - macOS `ps` latency and truncation, and `ps` failing under load.
+  - Not reachable: clkTck (USER_HZ=100) and macOS clock steps.
+- AC#5: two-consumer table in planning.md §6.
+- Tests:
+  - `probeLiveness` returns `dead`, `unknown` (mismatch) and `unknown` (pid 1).
+  - Walker skips a fresh unknown-owner dir.
+  - Walker skips an aged dir with a freshly written file.
+  - Walker reaps an aged dir whose PID was reused.
+  - Existing tests still show a fresh dead-PID dir is reaped immediately.
+- Patch changeset for podkit and @podkit/core.
+
+Commit c85a2a26.
+<!-- SECTION:FINAL_SUMMARY:END -->
