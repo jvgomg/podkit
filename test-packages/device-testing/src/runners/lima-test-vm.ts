@@ -53,6 +53,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import {
+  assertDummyHcdDaemonCurrent,
   guestCommandError,
   shellQuote,
   type SubstrateLink,
@@ -575,10 +576,12 @@ export function createDeviceHarness(opts: CreateDeviceHarnessOpts = {}): TestRun
       const gpodToolPath = resolveGpodToolBinary();
       await transferGpodTool({ link: link(), binaryPath: gpodToolPath });
 
-      // 4. Transfer the dummy-hcd-daemon — best-effort. Persona tests need
-      //    it; doctor-only tests don't.
+      // 4. Transfer the dummy-hcd-daemon — best-effort when absent (persona
+      //    tests need it; doctor-only tests don't), but never a stale one: it
+      //    would install cleanly and fail inside every persona test.
       const daemonPath = resolveDummyHcdDaemonBinary();
       if (fs.existsSync(daemonPath)) {
+        assertDummyHcdDaemonCurrent(daemonPath);
         try {
           await transferBinary({
             link: link(),

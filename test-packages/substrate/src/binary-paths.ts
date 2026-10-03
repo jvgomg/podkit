@@ -30,6 +30,7 @@
 
 import * as path from 'node:path';
 import { repoRoot } from './paths.js';
+import { assertArtifactInputsCurrent } from './artifact-inputs.js';
 import { targetArch } from './target-arch.js';
 
 /**
@@ -153,6 +154,27 @@ export function resolveDefaultDummyHcdDaemonBinary(env: NodeJS.ProcessEnv = proc
     'dist',
     `dummy-hcd-daemon-linux-${arch}`
   );
+}
+
+/**
+ * Refuse a dummy-hcd-daemon built from sources that have since changed, or
+ * with no record of what it was built from. An explicit
+ * `PODKIT_DUMMY_HCD_DAEMON_BINARY` is the caller's own artifact and is trusted.
+ *
+ * @throws {StaleArtifactError}
+ */
+export function assertDummyHcdDaemonCurrent(
+  binaryPath: string,
+  env: NodeJS.ProcessEnv = process.env
+): void {
+  if (env['PODKIT_DUMMY_HCD_DAEMON_BINARY']) return;
+  assertArtifactInputsCurrent({
+    artifactPath: binaryPath,
+    root: repoRoot(),
+    rebuildHint:
+      'Rebuild it with `bun test-packages/substrate/scripts/turbo.ts run ' +
+      '@podkit/device-testing-daemon#build`',
+  });
 }
 
 /**

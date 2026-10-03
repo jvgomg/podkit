@@ -34,7 +34,11 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { isSubstrateLinkError } from '@podkit/substrate';
+import {
+  assertDummyHcdDaemonCurrent,
+  isSubstrateLinkError,
+  StaleArtifactError,
+} from '@podkit/substrate';
 
 import { ensureSubstrateReady, resolveDeviceSubstrate } from '../src/runners/substrate.js';
 import {
@@ -65,7 +69,7 @@ interface Summary {
   vmName: string;
   podkitSha: string;
   podkitDebugSha: string | null;
-  daemonSha: string | null;
+  daemonSha: string;
   gpodToolSha: string;
   unitSha: string;
 }
@@ -162,28 +166,35 @@ async function main(): Promise<number> {
       `sha256=${gpodResult.hostSha256.slice(0, 12)}...)\n`
   );
 
-  // 3. dummy-hcd-daemon — best-effort. Persona tests need it; doctor-only
-  //    tests don't. Match the harness.ts and lima-test-vm.ts policy.
+  // 3. dummy-hcd-daemon — REQUIRED, and must be built from the current
+  //    sources: a stale one is the right arch and name, installs cleanly and
+  //    then behaves like old code inside every persona test.
   const daemonPath = resolveDefaultDummyHcdDaemonBinary();
-  let daemonSha: string | null = null;
-  if (fs.existsSync(daemonPath)) {
-    const daemonResult = await transferBinary({
-      link,
-      binaryPath: daemonPath,
-      vmPath: DEFAULT_DUMMY_HCD_DAEMON_VM_PATH,
-    });
-    daemonSha = daemonResult.hostSha256;
-    process.stdout.write(
-      `[vm:install] dummy-hcd-daemon → ${vmName}:${DEFAULT_DUMMY_HCD_DAEMON_VM_PATH}` +
-        ` (${daemonResult.skipped ? 'skipped — sha256 matches' : 'installed'}; ` +
-        `sha256=${daemonResult.hostSha256.slice(0, 12)}...)\n`
+  if (!fs.existsSync(daemonPath)) {
+    process.stderr.write(
+      `[vm:install] dummy-hcd-daemon binary not found at ${daemonPath}.\n` +
+        `[vm:install] The dependent build task should have produced it.\n`
     );
-  } else {
-    process.stdout.write(
-      `[vm:install] dummy-hcd-daemon binary missing at ${daemonPath} — ` +
-        `skipping (build via \`bunx turbo run @podkit/device-testing-daemon#build\`).\n`
-    );
+    return 1;
   }
+  try {
+    assertDummyHcdDaemonCurrent(daemonPath);
+  } catch (err) {
+    if (!(err instanceof StaleArtifactError)) throw err;
+    process.stderr.write(`[vm:install] ${err.message}\n`);
+    return 1;
+  }
+  const daemonResult = await transferBinary({
+    link,
+    binaryPath: daemonPath,
+    vmPath: DEFAULT_DUMMY_HCD_DAEMON_VM_PATH,
+  });
+  const daemonSha = daemonResult.hostSha256;
+  process.stdout.write(
+    `[vm:install] dummy-hcd-daemon → ${vmName}:${DEFAULT_DUMMY_HCD_DAEMON_VM_PATH}` +
+      ` (${daemonResult.skipped ? 'skipped — sha256 matches' : 'installed'}; ` +
+      `sha256=${daemonResult.hostSha256.slice(0, 12)}...)\n`
+  );
 
   // 4. systemd unit — always run; helper sha256-skips when already current.
   const unitResult = await transferSystemdUnit({

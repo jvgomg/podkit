@@ -21,7 +21,9 @@ import {
   resolveDefaultDaemonLinuxMuslBinary,
   resolveDefaultDummyHcdDaemonBinary,
   resolveDefaultGpodToolBinary,
+  assertDummyHcdDaemonCurrent,
 } from './binary-paths.js';
+import { StaleArtifactError } from './artifact-inputs.js';
 import { hostTargetArch, TargetArchError } from './target-arch.js';
 
 const HOST_ARCH = hostTargetArch();
@@ -128,5 +130,21 @@ describe('binary path resolvers — foreign target architecture', () => {
         PODKIT_LINUX_BINARY: '/downloads/podkit',
       })
     ).toBe('/downloads/podkit');
+  });
+});
+
+describe('assertDummyHcdDaemonCurrent', () => {
+  it('refuses a daemon with no build-inputs stamp', () => {
+    expect(() =>
+      assertDummyHcdDaemonCurrent('/nonexistent/dummy-hcd-daemon-linux-x64', {})
+    ).toThrow(StaleArtifactError);
+  });
+
+  it('trusts an explicit PODKIT_DUMMY_HCD_DAEMON_BINARY', () => {
+    expect(() =>
+      assertDummyHcdDaemonCurrent('/downloads/daemon', {
+        PODKIT_DUMMY_HCD_DAEMON_BINARY: '/downloads/daemon',
+      })
+    ).not.toThrow();
   });
 });

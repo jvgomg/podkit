@@ -9,14 +9,16 @@
  *   bun scripts/build.ts all            # both
  * ```
  *
- * Output: `dist/dummy-hcd-daemon-linux-<arch>`. Bun cross-compiles from macOS,
- * so no builder VM is needed.
+ * Output: `dist/dummy-hcd-daemon-linux-<arch>`, plus a `.inputs.json` stamp of
+ * every file bundled into it, which the installers check before shipping it.
+ * Bun cross-compiles from macOS, so no builder VM is needed.
  */
 
-import { chmodSync, mkdirSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
-import { envWithRepoDotfile } from '@podkit/substrate';
+import { envWithRepoDotfile, repoRoot, stampArtifactInputs } from '@podkit/substrate';
 
 import { resolveBuildTargets } from '../src/build-targets.js';
 
@@ -37,14 +39,42 @@ try {
 }
 
 mkdirSync(outDir, { recursive: true });
-for (const target of targets) {
-  const outfile = path.join(outDir, `dummy-hcd-daemon-${target}`);
-  console.log(`==> bun build --compile --target=bun-${target} → ${outfile}`);
-  const build = Bun.spawnSync(
-    ['bun', 'build', '--compile', `--target=bun-${target}`, entry, '--outfile', outfile],
-    { stdout: 'inherit', stderr: 'inherit' }
-  );
-  if (build.exitCode !== 0) process.exit(build.exitCode ?? 1);
-  chmodSync(outfile, 0o755);
+const metaDir = mkdtempSync(path.join(tmpdir(), 'dummy-hcd-daemon-'));
+const metafile = path.join(metaDir, 'meta.json');
+try {
+  for (const target of targets) {
+    const outfile = path.join(outDir, `dummy-hcd-daemon-${target}`);
+    console.log(`==> bun build --compile --target=bun-${target} → ${outfile}`);
+    const build = Bun.spawnSync(
+      [
+        'bun',
+        'build',
+        '--compile',
+        `--target=bun-${target}`,
+        entry,
+        '--outfile',
+        outfile,
+        `--metafile=${metafile}`,
+      ],
+      { cwd: daemonDir, stdout: 'inherit', stderr: 'inherit' }
+    );
+    if (build.exitCode !== 0) {
+      process.exitCode = build.exitCode ?? 1;
+      break;
+    }
+    chmodSync(outfile, 0o755);
+
+    // Metafile input paths are relative to the build's cwd.
+    const { inputs } = JSON.parse(readFileSync(metafile, 'utf8')) as {
+      inputs: Record<string, unknown>;
+    };
+    stampArtifactInputs({
+      artifactPath: outfile,
+      inputs: Object.keys(inputs).map((p) => path.resolve(daemonDir, p)),
+      root: repoRoot(),
+    });
+  }
+} finally {
+  rmSync(metaDir, { recursive: true, force: true });
 }
-console.log('OK: build complete.');
+if (!process.exitCode) console.log('OK: build complete.');

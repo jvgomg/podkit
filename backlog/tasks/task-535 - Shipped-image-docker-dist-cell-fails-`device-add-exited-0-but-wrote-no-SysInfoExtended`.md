@@ -6,7 +6,7 @@ title: >-
 status: Done
 assignee: []
 created_date: '2026-10-03 18:54'
-updated_date: '2026-10-03 19:32'
+updated_date: '2026-10-03 20:04'
 labels:
   - testing
   - docker
@@ -78,6 +78,12 @@ Not a code regression and not a flake. The deciding variable is the build host.
 ## Not done here, worth a follow-up
 - `vm-install.ts` ships whatever file sits at `dist/dummy-hcd-daemon-linux-<arch>`. It does no freshness check against `src/**`, and it skips a missing binary as best-effort. A build path that bypasses the turbo wrapper (and so `PODKIT_TARGET_ARCH`) can still leave a stale artifact to ship.
 - DRAFT-023 (`--json` hides the inquiry-failure warning and still reports `verified`) is real. It is what made this look like a silent pass. It is now confirmed independently of its premise.
+
+## Follow-ups landed
+- **Stale daemon guard.** `scripts/build.ts` writes `<binary>.inputs.json`: the sha256 of every file Bun's `--metafile` says it bundled. Every install path refuses a daemon whose stamp is missing or corrupt, or whose inputs have changed since the build (`StaleArtifactError`). The paths are `vm-install.ts`, `harness.ts install`, `transfer-binary.ts` and `deviceHarness.prepare()`. `vm-install` now also treats a missing daemon as fatal. An explicit `PODKIT_DUMMY_HCD_DAEMON_BINARY` is trusted.
+- **JSON-hidden failure (DRAFT-023, now TASK-538).** Closed.
+
+Validation on deviceRemote: docker-dist 6/6. `test:vm` passed 39 + 194 on its re-run. The first run lost one cell to an scp exit 1 against the substrate, the link flakiness TASK-518 also recorded.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

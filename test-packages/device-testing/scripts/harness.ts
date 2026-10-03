@@ -31,7 +31,13 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
 import { createVmProvisioningRunner, ensureRunning, getVm } from '@podkit/lima';
-import { primeTargetArchFromSubstrate, shellQuote, type SubstrateLink } from '@podkit/substrate';
+import {
+  assertDummyHcdDaemonCurrent,
+  primeTargetArchFromSubstrate,
+  shellQuote,
+  StaleArtifactError,
+  type SubstrateLink,
+} from '@podkit/substrate';
 
 import { createSubstrateLink } from '../src/runners/substrate.js';
 import { sealBaselineHash as sealBaseline } from '../src/baseline-seal.js';
@@ -320,13 +326,20 @@ async function cmdInstall(): Promise<number> {
     );
   }
 
-  // 3. dummy-hcd-daemon — also fatal if missing (the build step claimed
-  //    success so the binary should be on disk).
+  // 3. dummy-hcd-daemon — fatal if missing (the build step claimed success
+  //    so the binary should be on disk) or built from since-changed sources.
   const daemonPath = resolveDefaultDummyHcdDaemonBinary();
   if (!fs.existsSync(daemonPath)) {
     console.error(
       `[harness:install] dummy-hcd-daemon binary not found at ${daemonPath}. Turbo claimed success but the artefact is missing.`
     );
+    return 1;
+  }
+  try {
+    assertDummyHcdDaemonCurrent(daemonPath);
+  } catch (err) {
+    if (!(err instanceof StaleArtifactError)) throw err;
+    console.error(`[harness:install] ${err.message}`);
     return 1;
   }
   console.log(

@@ -176,6 +176,18 @@ export {
   ArtifactArchMismatchError,
 } from './artifact-arch.js';
 
+// Artifact-vs-current-sources assertion (the stale-`dist/` backstop)
+export type {
+  AssertArtifactInputsCurrentInput,
+  StampArtifactInputsInput,
+} from './artifact-inputs.js';
+export {
+  artifactInputsStampPath,
+  assertArtifactInputsCurrent,
+  stampArtifactInputs,
+  StaleArtifactError,
+} from './artifact-inputs.js';
+
 // Host-side artifact path resolvers
 export {
   resolveDefaultPodkitBinary,
@@ -185,6 +197,7 @@ export {
   resolveDefaultPodkitDebugMuslBinary,
   resolveDefaultDaemonLinuxMuslBinary,
   resolveDefaultDummyHcdDaemonBinary,
+  assertDummyHcdDaemonCurrent,
   resolveDefaultGpodToolBinary,
 } from './binary-paths.js';
 

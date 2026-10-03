@@ -27,6 +27,9 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { assertDummyHcdDaemonCurrent } from '@podkit/substrate';
+
 import { transferBinary } from '../src/runners/lima-test-vm-binary.js';
 import { resolveDeviceSubstrate } from '../src/runners/substrate.js';
 import {
@@ -83,6 +86,7 @@ async function main(): Promise<void> {
 
   const daemonPath = resolveDefaultDummyHcdDaemonBinary();
   if (fs.existsSync(daemonPath)) {
+    assertDummyHcdDaemonCurrent(daemonPath);
     console.log(`==> transferring dummy-hcd-daemon to ${vmName}...`);
     console.log(`    host: ${daemonPath}`);
     const daemonResult = await transferBinary({

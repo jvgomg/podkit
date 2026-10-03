@@ -36,6 +36,11 @@ import { parseSidecar } from '../personas/sidecar.js';
 import type { DevicePersona } from '../personas/types.js';
 import type { SubprocessRunner, SubprocessRunOpts, SubprocessRunResult } from '../subprocess.js';
 import { createLimactlLink, deviceVm } from '@podkit/lima';
+import {
+  StaleArtifactError,
+  artifactInputsStampPath,
+  stampArtifactInputs,
+} from '@podkit/substrate';
 
 // ---------------------------------------------------------------------------
 // Substrate link over a scripted runner
@@ -171,6 +176,7 @@ beforeEach(() => {
 
   daemonBinary = path.join(tmpRoot, 'dummy-hcd-daemon');
   fs.writeFileSync(daemonBinary, fakeElf('fake-daemon-binary'));
+  stampArtifactInputs({ artifactPath: daemonBinary, inputs: [], root: tmpRoot });
 
   daemonUnit = path.join(tmpRoot, 'dummy-hcd-daemon@.service');
   const unitBytes = Buffer.from('[Unit]\nDescription=fake-systemd-unit\n');
@@ -438,6 +444,36 @@ describe('runtime.prepare', () => {
         c.args.join(' ').includes(DEFAULT_DUMMY_HCD_DAEMON_VM_PATH)
     );
     expect(daemonProbe).toBeDefined();
+  });
+
+  it('refuses a dummy-hcd-daemon with no record of the sources it was built from', async () => {
+    fs.rmSync(artifactInputsStampPath(daemonBinary));
+    const { runner, calls } = makeScriptedRunner([
+      listJsonRunning(),
+      probedBinary(podkitSha),
+      probedBinary(gpodToolSha),
+    ]);
+
+    const runtime = createDeviceHarness({
+      substrate: deviceVm(),
+      subprocess: runner,
+      resolvePodkitBinary: () => podkitBinary,
+      resolveDummyHcdDaemonBinary: () => daemonBinary,
+      resolveDummyHcdDaemonUnit: () => daemonUnit,
+      resolveGpodToolBinary: () => gpodToolBinary,
+      personas: [],
+    });
+
+    let caught: unknown;
+    try {
+      await runtime.prepare();
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(StaleArtifactError);
+    expect(calls.some((c) => c.args.join(' ').includes(DEFAULT_DUMMY_HCD_DAEMON_VM_PATH))).toBe(
+      false
+    );
   });
 
   it('fails loudly when the gpod-tool binary is missing (required dependency)', async () => {
