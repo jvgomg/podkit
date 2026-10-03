@@ -164,6 +164,18 @@ describe('guest scripts', () => {
     }
   });
 
+  // Both libcs' prebuilds are in a binary job's stage, so compile.sh must be
+  // told which one to embed rather than infer it from a probe of the host.
+  it('declares its libc to compile.sh before compiling', () => {
+    for (const id of ['glibcBinary', 'muslBinary'] as const) {
+      const job = getBuildJob(id);
+      const script = job.script(ctx());
+      const declared = script.indexOf(`export PODKIT_TARGET_LIBC=${job.libc}\n`);
+      expect(declared).toBeGreaterThanOrEqual(0);
+      expect(declared).toBeLessThan(script.indexOf('podkit-cli/scripts/compile.sh'));
+    }
+  });
+
   // The daemon is a poller with no `--version` fast-exit path; running it to
   // "verify" it would hang the build forever.
   it('never executes the daemon binary it just compiled', () => {

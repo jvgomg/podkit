@@ -25,8 +25,70 @@
 # cheapest host-libc probe available in a plain shell. Shared by both the
 # libgpod prebuild selection below and the `usb` prebuild selection in
 # compile.sh (which sources this file), so the two never drift apart.
+#
+# Captured whole, never piped into `grep -q`: musl's ldd writes line by line,
+# so under compile.sh's pipefail an early-exiting reader can SIGPIPE it.
 host_is_musl() {
-  ldd /bin/sh 2>/dev/null | grep -q musl
+  case "$(ldd /bin/sh 2>/dev/null)" in
+    *musl*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Print the libc this Linux build targets: `musl` or `glibc`.
+#
+# A build job declares it through PODKIT_TARGET_LIBC; a bare `bun run compile`
+# falls back to the probe. A declaration the probe contradicts fails: bun's
+# compile runtime is the host's, so a musl binary cannot come off a glibc host
+# whatever the binding is.
+target_libc() {
+  local probed=glibc
+  if host_is_musl; then probed=musl; fi
+  case "${PODKIT_TARGET_LIBC:-}" in
+    '') echo "$probed" ;;
+    musl | glibc)
+      if [ "$PODKIT_TARGET_LIBC" != "$probed" ]; then
+        echo "ERROR: PODKIT_TARGET_LIBC=$PODKIT_TARGET_LIBC, but this host's libc is $probed." >&2
+        return 1
+      fi
+      echo "$probed"
+      ;;
+    *)
+      echo "ERROR: PODKIT_TARGET_LIBC must be 'musl' or 'glibc', not '$PODKIT_TARGET_LIBC'." >&2
+      return 1
+      ;;
+  esac
+}
+
+# Fail unless a Linux .node links against the given libc.
+#
+# A .node is an ET_DYN with no PT_INTERP, so its libc is the DT_NEEDED entry:
+# libc.musl-{arch}.so.1 for musl, libc.so.6 for glibc. Either one alone runs
+# only on its own libc — the other fails at dlopen, mid-sync, on a user's box.
+assert_binding_libc() {
+  local node="$1" libc="$2" dynamic
+  if ! command -v readelf >/dev/null 2>&1; then
+    echo "ERROR: readelf (binutils) is required to verify the libc of $node." >&2
+    return 1
+  fi
+  if ! dynamic=$(readelf -d "$node" 2>&1); then
+    echo "ERROR: readelf could not read $node:" >&2
+    echo "$dynamic" >&2
+    return 1
+  fi
+  local want reject
+  if [ "$libc" = musl ]; then
+    want='Shared library: [libc.musl-'
+    reject='Shared library: [libc.so.6]'
+  else
+    want='Shared library: [libc.so.6]'
+    reject='Shared library: [libc.musl-'
+  fi
+  if [[ "$dynamic" == *"$reject"* || "$dynamic" != *"$want"* ]]; then
+    echo "ERROR: $node is not a $libc binding. Its NEEDED entries:" >&2
+    grep NEEDED <<<"$dynamic" >&2 || echo "  (none)" >&2
+    return 1
+  fi
 }
 
 # Resolve the prebuild directory to search, based on host platform + libc.
@@ -36,7 +98,13 @@ gpod_prebuild_dir() {
   local base="$libgpod_dir/prebuilds/${platform}-${arch}"
 
   # Only Linux splits musl vs glibc.
-  if [ "$platform" = "linux" ] && host_is_musl; then
+  if [ "$platform" != "linux" ]; then
+    echo "$base"
+    return
+  fi
+  local libc
+  libc=$(target_libc) || return 1
+  if [ "$libc" = musl ]; then
     echo "${base}-musl"
   else
     echo "$base"

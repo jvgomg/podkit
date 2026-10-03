@@ -65,7 +65,8 @@ if [ "$(uname)" != "Linux" ]; then
   exit 1
 fi
 
-if ! ldd /bin/sh 2>/dev/null | grep -q musl; then
+# Captured whole, not piped: see host_is_musl in select-gpod-prebuild.sh.
+if [[ "$(ldd /bin/sh 2>/dev/null)" != *musl* ]]; then
   echo "ERROR: did not detect musl libc; this script is for musl/Alpine only." >&2
   echo "       The glibc/Debian path is tools/prebuild/build-linux-glibc.sh." >&2
   exit 1

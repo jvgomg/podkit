@@ -79,12 +79,12 @@ ARCH=$(bun -e 'console.log(process.arch)')
 # Prebuildify names the file after the package (e.g., @podkit+libgpod-node.node),
 # so we find any .node file in the platform directory rather than hardcoding.
 #
-# The prebuild directory is chosen by the HOST's libc (musl vs glibc), never
+# The prebuild directory is chosen by the target libc (musl vs glibc), never
 # "first directory that exists wins" — a glibc builder can carry a stray
 # linux-{arch}-musl dir, and embedding that musl .node yields a binary that
 # fails at dlopen with `libc.musl-{arch}.so.1: cannot open shared object file`.
 # See select-gpod-prebuild.sh for the full rationale; the `usb` prebuild below
-# is selected by the same host-libc probe.
+# follows the same target libc.
 # shellcheck source-path=SCRIPTDIR
 # shellcheck source=select-gpod-prebuild.sh
 source "$CLI_DIR/scripts/select-gpod-prebuild.sh"
@@ -107,6 +107,13 @@ else
   exit 1
 fi
 
+# A wrong-libc binding otherwise fails only at dlopen, on a user's machine.
+if [ "$PLATFORM" = "linux" ]; then
+  TARGET_LIBC=$(target_libc)
+  assert_binding_libc "$STAGED" "$TARGET_LIBC"
+  echo "Verified binding links $TARGET_LIBC"
+fi
+
 # Stage the matching `usb` npm prebuild. The package ships per-platform .node
 # files under node_modules/usb/prebuilds/; node-gyp-build picks the right one
 # at runtime, but that lookup fails inside a compiled binary — so we copy the
@@ -124,7 +131,7 @@ case "$PLATFORM" in
     if [ "$ARCH" = "arm64" ]; then
       USB_PREBUILD="$USB_PKG_DIR/prebuilds/linux-arm64/node.napi.armv8.node"
     else
-      if host_is_musl; then USB_VARIANT=musl; else USB_VARIANT=glibc; fi
+      USB_VARIANT="$TARGET_LIBC"
       USB_PREBUILD="$USB_PKG_DIR/prebuilds/linux-${ARCH}/node.napi.${USB_VARIANT}.node"
     fi
     ;;

@@ -195,15 +195,18 @@ const TS_BUILD =
   '--filter=!@podkit/ipod-web --filter=!@podkit/demo';
 
 /**
- * The shared `compile.sh` + daemon block, identical for glibc and musl.
+ * The shared `compile.sh` + daemon block, identical for glibc and musl but for
+ * the libc it declares.
  *
- * `compile.sh` already selects the `${platform}-${arch}-musl` prebuild first
- * where one exists, and the daemon's own `bun run compile` needs no change
- * either — which is why the two binary jobs differ in their staging and their
- * output filenames and in nothing else.
+ * Both libcs' prebuilds ride along in the stage, so `compile.sh` is told which
+ * one this job is for rather than left to infer it: it cross-checks the
+ * declaration against the build host and refuses to embed a binding that links
+ * the other libc.
  */
-function compileBinaries(): string {
+function compileBinaries(libc: BuildLibc): string {
   return `
+export PODKIT_TARGET_LIBC=${libc}
+
 echo "==> building TS packages..."
 ${TS_BUILD}
 
@@ -283,7 +286,7 @@ const JOBS: readonly BuildJob[] = [
     stageSrc: (root) => root,
     // prebuilds/ is deliberately NOT excluded: the glibc `.node` the prebuild
     // job produced must ride along for compile.sh to embed it.
-    script: (ctx) => [preamble(ctx, ''), BUN_INSTALL, compileBinaries()].join('\n'),
+    script: (ctx) => [preamble(ctx, ''), BUN_INSTALL, compileBinaries('glibc')].join('\n'),
     artifacts: (ctx) => [
       {
         kind: 'file',
@@ -369,7 +372,7 @@ const JOBS: readonly BuildJob[] = [
     libc: 'musl',
     task: '@podkit/device-testing#build:musl-binary',
     stageSrc: (root) => root,
-    script: (ctx) => [preamble(ctx, '-musl'), BUN_INSTALL, compileBinaries()].join('\n'),
+    script: (ctx) => [preamble(ctx, '-musl'), BUN_INSTALL, compileBinaries('musl')].join('\n'),
     artifacts: (ctx) => [
       {
         kind: 'file',

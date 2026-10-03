@@ -67,6 +67,25 @@ EOF
   [ "$output" = "${LIBGPOD}/prebuilds/darwin-arm64" ]
 }
 
+# ── host_is_musl under compile.sh's shell options ────────────────────────────
+
+@test "REGRESSION: musl probe survives pipefail when ldd writes after the musl line" {
+  # musl's ldd prints one line per write. compile.sh runs with pipefail, so a
+  # reader that stops at the first match leaves ldd to die of SIGPIPE on the
+  # next line, and the probe reports glibc on a musl host.
+  cat > "$STUBS/ldd" <<'EOF'
+#!/usr/bin/env bash
+echo "/lib/ld-musl-x86_64.so.1 (0x7f0000000000)"
+sleep 0.2
+echo "libc.musl-x86_64.so.1 => /lib/ld-musl-x86_64.so.1 (0x7f0000000000)"
+EOF
+  chmod +x "$STUBS/ldd"
+  set -o pipefail
+  run host_is_musl
+  set +o pipefail
+  [ "$status" -eq 0 ]
+}
+
 # ── Regression: both dirs present, glibc host must NOT pick musl ──────────────
 
 @test "REGRESSION: glibc host with a stray musl dir present selects the glibc .node" {
@@ -110,4 +129,105 @@ EOF
   run find_gpod_prebuild "${BATS_TEST_TMPDIR}/empty"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
+}
+
+# ── target_libc: declared target vs host probe ───────────────────────────────
+
+@test "target_libc follows the host probe when nothing is declared" {
+  LDD_LIBC=musl run target_libc
+  [ "$status" -eq 0 ]
+  [ "$output" = "musl" ]
+  LDD_LIBC=glibc run target_libc
+  [ "$status" -eq 0 ]
+  [ "$output" = "glibc" ]
+}
+
+@test "target_libc accepts a declaration the host agrees with" {
+  LDD_LIBC=musl PODKIT_TARGET_LIBC=musl run target_libc
+  [ "$status" -eq 0 ]
+  [ "$output" = "musl" ]
+}
+
+@test "target_libc refuses a declaration the host contradicts" {
+  LDD_LIBC=glibc PODKIT_TARGET_LIBC=musl run target_libc
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"PODKIT_TARGET_LIBC=musl"* ]]
+  [[ "$output" == *"glibc"* ]]
+}
+
+@test "target_libc refuses an unknown declaration" {
+  PODKIT_TARGET_LIBC=uclibc run target_libc
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"uclibc"* ]]
+}
+
+# ── assert_binding_libc: the embedded .node's DT_NEEDED libc ─────────────────
+
+# Fake `readelf -d` printing the NEEDED entries named in READELF_NEEDED.
+stub_readelf() {
+  cat > "$STUBS/readelf" <<'EOF2'
+#!/usr/bin/env bash
+echo "Dynamic section at offset 0x9a5c38 contains 30 entries:"
+echo "  Tag        Type                         Name/Value"
+for lib in $READELF_NEEDED; do
+  echo " 0x0000000000000001 (NEEDED)             Shared library: [$lib]"
+done
+echo " 0x000000000000000e (SONAME)             Library soname: [gpod_binding.node]"
+EOF2
+  chmod +x "$STUBS/readelf"
+}
+
+@test "assert_binding_libc passes a musl binding for a musl target" {
+  stub_readelf
+  READELF_NEEDED="libstdc++.so.6 libgcc_s.so.1 libc.musl-x86_64.so.1" \
+    run assert_binding_libc "$LIBGPOD/prebuilds/linux-x64-musl/gpod_binding.node" musl
+  [ "$status" -eq 0 ]
+}
+
+@test "REGRESSION: assert_binding_libc rejects a glibc binding for a musl target" {
+  stub_readelf
+  READELF_NEEDED="libm.so.6 libstdc++.so.6 libgcc_s.so.1 libc.so.6" \
+    run assert_binding_libc "$LIBGPOD/prebuilds/linux-x64/gpod_binding.node" musl
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"libc.so.6"* ]]
+  [[ "$output" == *"linux-x64/gpod_binding.node"* ]]
+}
+
+@test "assert_binding_libc passes a glibc binding for a glibc target" {
+  stub_readelf
+  READELF_NEEDED="libm.so.6 libstdc++.so.6 libgcc_s.so.1 libc.so.6" \
+    run assert_binding_libc "$LIBGPOD/prebuilds/linux-x64/gpod_binding.node" glibc
+  [ "$status" -eq 0 ]
+}
+
+@test "assert_binding_libc rejects a musl binding for a glibc target" {
+  stub_readelf
+  READELF_NEEDED="libstdc++.so.6 libgcc_s.so.1 libc.musl-x86_64.so.1" \
+    run assert_binding_libc "$LIBGPOD/prebuilds/linux-x64-musl/gpod_binding.node" glibc
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"libc.musl"* ]]
+}
+
+@test "assert_binding_libc rejects a binding that names no libc at all" {
+  stub_readelf
+  READELF_NEEDED="libstdc++.so.6" \
+    run assert_binding_libc "$LIBGPOD/prebuilds/linux-x64/gpod_binding.node" glibc
+  [ "$status" -ne 0 ]
+}
+
+@test "assert_binding_libc fails when readelf is unavailable" {
+  # A guard that silently skips is no guard. PATH is narrowed to the stubs dir
+  # plus the coreutils the helper needs, none of which carry a readelf.
+  PATH="$STUBS:/bin:/usr/bin"
+  if command -v readelf >/dev/null 2>&1; then skip "host carries a system readelf"; fi
+  run assert_binding_libc "$LIBGPOD/prebuilds/linux-x64/gpod_binding.node" glibc
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"readelf"* ]]
+}
+
+@test "gpod_prebuild_dir follows the declared target and refuses a contradicted one" {
+  LDD_LIBC=musl PODKIT_TARGET_LIBC=musl run gpod_prebuild_dir linux x64 "$LIBGPOD"
+  [ "$output" = "${LIBGPOD}/prebuilds/linux-x64-musl" ]
+  LDD_LIBC=glibc PODKIT_TARGET_LIBC=musl run gpod_prebuild_dir linux x64 "$LIBGPOD"
+  [ "$status" -ne 0 ]
 }
