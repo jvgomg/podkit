@@ -296,8 +296,8 @@ export interface MassStorageBackingFileRecipe {
    * real MBR/FAT32 iPod (e.g. the captured 5G Video) presents on a host, and is
    * what exercises the daemon poller's partition branch (and the CLI's
    * partition-suffix stripping). Synthesised deterministically in-VM via a
-   * fixed-signature MBR (`sfdisk label-id`) + a loop device + `mkfs.vfat
-   * --invariant` on the partition node.
+   * fixed-signature MBR (`sfdisk label-id`) + `mkfs.vfat --invariant`
+   * at the partition's offset in the image file.
    */
   partitioned?: boolean;
 }

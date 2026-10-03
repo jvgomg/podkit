@@ -25,8 +25,8 @@ stripping.
 The backing image is built in-VM by
 `runners/lima-test-vm-backing-files.ts` when `synthesis.partitioned` is set: a
 fixed-signature `dos` MBR (via `sfdisk label-id`) with one FAT32-LBA partition
-starting at LBA 2048, formatted with `mkfs.vfat --invariant` through a
-`losetup --partscan` loop device so the mkfs targets the partition node. The
+starting at LBA 2048, formatted with `mkfs.vfat --invariant --offset 2048
+-h 2048` directly in the image file (no loop device). The
 result is byte-deterministic across runs (verified: two builds hash
 identically), matching the reproducibility contract of the whole-disk path.
 

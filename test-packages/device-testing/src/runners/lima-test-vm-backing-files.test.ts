@@ -513,12 +513,9 @@ describe('ensureBackingFile', () => {
     ).rejects.toThrow(/non-sha256/);
   });
 
-  it('waits for the partscan partition node before formatting it', async () => {
-    // `losetup --partscan` asks the kernel to scan the table; udev creates
-    // `${LOOP}p1` asynchronously afterwards. Formatting straight away races it,
-    // and loses under load: `mkfs.vfat: unable to open /dev/loop0p1: No such
-    // file or directory`. The wait must be bounded and must fail naming the
-    // node, not spin.
+  it('formats the partition inside the image file, never through a loop device', async () => {
+    // A partscan loop's `p1` node flaps under udev's watch rescan. `-h` must
+    // match the offset, or the boot sector differs.
     const { runner, calls } = makeScriptedRunner([ok(sizeLine(64))]);
     await ensureBackingFile({
       link: linkTo('podkit-device', runner),
@@ -530,12 +527,11 @@ describe('ensureBackingFile', () => {
       }),
     });
     const buildScript = calls[0]!.args.join(' ');
-    const waitAt = buildScript.indexOf('${LOOP}p1" ]');
-    const mkfsAt = buildScript.indexOf('mkfs.vfat');
-    expect(waitAt).toBeGreaterThan(-1);
-    // Ordering is the whole point: a wait after the format is decoration.
-    expect(waitAt).toBeLessThan(mkfsAt);
-    expect(buildScript).toContain('never appeared');
+    expect(buildScript).not.toContain('losetup');
+    expect(buildScript).not.toContain('/dev/loop');
+    expect(buildScript).toContain(
+      `mkfs.vfat --invariant -F 32 -n 'ECHO_MINI' --offset 2048 -h 2048 -I "$TMP"`
+    );
   });
 
   it('does not discard sfdisk or mkfs stderr on the partitioned path', async () => {

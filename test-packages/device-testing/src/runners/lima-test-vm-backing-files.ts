@@ -298,8 +298,8 @@ export async function ensureBackingFile(
   const seedEntries = resolveSeedEntries(opts.persona);
 
   // Partitioned FAT32: an MBR-wrapped single FAT32 partition (not whole-disk).
-  // This takes a dedicated in-VM build path (loop device + sfdisk + mkfs on the
-  // partition node) and does not support `initialContent` seeding — the mtools
+  // This takes a dedicated in-VM build path (sfdisk + mkfs at the partition
+  // offset) and does not support `initialContent` seeding — the mtools
   // path targets a bare FAT image, not a partition offset. The only consumer
   // (the daemon lsblk-lane test) seeds via gpod-tool after mounting, so this
   // restriction costs nothing today.
@@ -655,6 +655,9 @@ async function synthesiseHfsplusBackingFile(
  */
 const PARTITIONED_MBR_DISK_ID = '0x1204d15c';
 
+/** First 512-byte sector of the single partition in a partitioned image (1 MiB aligned). */
+const PARTITION_START_SECTOR = 2048;
+
 /**
  * Wrap a stderr-noisy build command so its output is discarded on success but
  * reported on failure.
@@ -698,11 +701,10 @@ interface SynthesisePartitionedFat32Opts {
  *
  * On-disk shape: a `dos` MBR with a fixed disk signature and one partition of
  * type `0x0C` (W95 FAT32 LBA) starting at LBA 2048 (1 MiB alignment). The
- * partition is formatted with `mkfs.vfat --invariant` (deterministic) via a
- * `losetup --partscan` loop device so the mkfs targets the partition node, not
- * the whole disk. When the mass-storage gadget serves this image, the guest
- * kernel presents `/dev/sd<x>` (disk) + `/dev/sd<x>1` (`type: "part"`, vfat) —
- * the real MBR/FAT32 iPod shape.
+ * partition is formatted with `mkfs.vfat --invariant` (deterministic) directly
+ * at its byte offset in the image file. When the mass-storage gadget serves
+ * this image, the guest kernel presents `/dev/sd<x>` (disk) + `/dev/sd<x>1`
+ * (`type: "part"`, vfat) — the real MBR/FAT32 iPod shape.
  *
  * Determinism: `truncate` (fixed size) + `sfdisk label-id` (fixed disk id) +
  * `mkfs.vfat --invariant -n <label>` (fixed volume id + timestamps) give a
@@ -710,9 +712,9 @@ interface SynthesisePartitionedFat32Opts {
  * rebuild a reset rather than a source of drift (verified: two builds hash
  * identically).
  *
- * The whole build runs under one `sudo sh -c` with `set -e`, and the loop
- * device is detached on every path via a `trap` so a mid-build failure never
- * leaks a `/dev/loop*` attachment.
+ * No loop device: udev's `watch` on `loop*` re-reads a partscan loop's table
+ * when losetup closes it, briefly removing `p1`, so a mkfs aimed at that node
+ * fails intermittently. Formatting at the offset yields the same bytes.
  */
 async function synthesisePartitionedFat32BackingFile(
   opts: SynthesisePartitionedFat32Opts
@@ -729,38 +731,30 @@ async function synthesisePartitionedFat32BackingFile(
     : null;
 
   // Build script. `$$`-suffixed scratch path avoids the concurrent-prepare
-  // race documented on the whole-disk path. The `trap` detaches the loop on
-  // any exit so a failed mkfs cannot leak an attachment.
+  // race documented on the whole-disk path. Two builds of one persona share
+  // only the final `mv` target, and both write identical bytes, so concurrent
+  // synthesis is safe.
   const buildScript = [
     'set -e',
     `sudo mkdir -p ${shellQuote(BACKING_FILES_VM_DIR)}`,
     `TMP=${shellQuote(`${opts.vmPath}.tmp.`)}$$`,
     'sudo rm -f "$TMP"',
     `sudo truncate -s ${opts.sizeMiB}M "$TMP"`,
-    // Deterministic MBR: fixed disk id + one FAT32-LBA partition at LBA 2048.
+    // Deterministic MBR: fixed disk id + one FAT32-LBA partition.
     loudOnFailure(
-      `printf 'label: dos\\nlabel-id: ${PARTITIONED_MBR_DISK_ID}\\n\\n2048,,c\\n' | sudo sfdisk "$TMP"`,
+      `printf 'label: dos\\nlabel-id: ${PARTITIONED_MBR_DISK_ID}\\n\\n${PARTITION_START_SECTOR},,c\\n' | sudo sfdisk "$TMP"`,
       'sfdisk'
     ),
-    // Attach a partscan loop so ${LOOP}p1 exists; detach on any exit.
-    'LOOP=$(sudo losetup --find --show --partscan "$TMP")',
-    'trap \'sudo losetup -d "$LOOP" 2>/dev/null || true\' EXIT',
-    // `losetup --partscan` asks the kernel to read the table; udev then creates
-    // `${LOOP}p1` asynchronously. Formatting immediately races that, and loses
-    // on a loaded host — `mkfs.vfat: unable to open /dev/loop0p1: No such file
-    // or directory`, which is a `beforeAll` failure and so is not something a
-    // test-level retry would ever have covered. A bounded wait at the step that
-    // is actually nondeterministic is the fix; see docs/agents/testing.md
-    // §Retries. 10s is ~100x the observed creation lag.
-    `i=0; while [ ! -e "${'$'}{LOOP}p1" ]; do i=$((i+1)); ` +
-      `[ "$i" -gt 100 ] && { echo "partition node ${'$'}{LOOP}p1 never appeared after 10s" >&2; exit 1; }; ` +
-      `sleep 0.1; done`,
+    // Format the partition in place: `--offset` places the filesystem at the
+    // partition's first sector and `-h` records it as hidden sectors, exactly
+    // as mkfs derives it from a partition device. Without a block count the
+    // filesystem runs to end of file, which is right only because the one
+    // partition fills the rest of the disk.
     loudOnFailure(
-      `sudo mkfs.vfat --invariant -F 32 -n ${shellQuote(opts.label)} -I "${'$'}{LOOP}p1"`,
+      `sudo mkfs.vfat --invariant -F 32 -n ${shellQuote(opts.label)} ` +
+        `--offset ${PARTITION_START_SECTOR} -h ${PARTITION_START_SECTOR} -I "$TMP"`,
       'mkfs.vfat'
     ),
-    'sudo losetup -d "$LOOP"',
-    'trap - EXIT',
     `sudo mv "$TMP" ${shellQuote(opts.vmPath)}`,
     ...buildReportCommands({ vmPath: opts.vmPath, computeSha256: opts.computeSha256 }),
   ].join('; ');

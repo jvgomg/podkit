@@ -25,6 +25,8 @@
  * tripwire for mtools (`mkfs.vfat --invariant` alone is not enough; mtools
  * would otherwise embed a current-time directory timestamp).
  *
+ * A final suite pins the partitioned (MBR + FAT32) image to a fixed digest, so
+ * its bytes, not merely its validity as FAT32, are held constant.
  */
 
 import { createHash } from 'node:crypto';
@@ -35,7 +37,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 
 import { deviceHarness } from '../runners/lima-test-vm.js';
 import { ensureBackingFile, personasRoot } from '../runners/lima-test-vm-backing-files.js';
-import { echoMiniPopulated, ipodVideo5gCorruptDb } from '../personas/index.js';
+import { echoMiniPopulated, ipod5gVideoMbrPart, ipodVideo5gCorruptDb } from '../personas/index.js';
 import type { DevicePersona } from '../personas/types.js';
 import { VM_COLD_TIMEOUT_MS, VM_WARM_TIMEOUT_MS } from './vm-runtime-setup.js';
 
@@ -192,6 +194,29 @@ describe('VM: initialContent seeding for FAT32 backing files', () => {
       });
       expect(second.sha256).toBe(first.sha256);
       expect(second.sha256).not.toBeNull();
+    },
+    VM_WARM_TIMEOUT_MS * 3
+  );
+});
+
+describe('VM: partitioned FAT32 backing file', () => {
+  beforeAll(async () => {
+    await deviceHarness.prepare();
+  }, VM_COLD_TIMEOUT_MS);
+
+  afterAll(async () => {
+    await deviceHarness.teardown();
+  }, VM_COLD_TIMEOUT_MS);
+
+  it(
+    'builds a byte-identical partitioned image',
+    async () => {
+      // Equal to mkfs.vfat run on the kernel's partition node for this table,
+      // which the guest presents as a vfat `part`.
+      const result = await ensureBackingFile({ persona: ipod5gVideoMbrPart, computeSha256: true });
+      expect(result.sha256).toBe(
+        'a851ac3b0a4b45e5818972632d3ba8d17377aa88d90b1fbbe1f161d6f4b4e23c'
+      );
     },
     VM_WARM_TIMEOUT_MS * 3
   );
