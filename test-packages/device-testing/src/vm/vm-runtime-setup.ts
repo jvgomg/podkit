@@ -41,6 +41,7 @@ import type { DevicePersona } from '../personas/types.js';
 import { personas as defaultRegistry } from '../personas/index.js';
 import type { SystemState, SystemStateId } from '../system-states/types.js';
 import { healthy } from '../system-states/healthy.js';
+import { SUBSTRATE_ROUND_TRIP_TIMEOUT_MS } from '../runners/substrate.js';
 
 // ---------------------------------------------------------------------------
 // Starter persona list
@@ -214,3 +215,13 @@ export const VM_WARM_TIMEOUT_MS = 10_000;
  * Target: under 60s end-to-end.
  */
 export const VM_COLD_TIMEOUT_MS = 60_000;
+
+/**
+ * Bound for one in-VM command that does real work over a test fixture: a
+ * `podkit sync` or its dry run, or an ffmpeg build of a source track.
+ *
+ * On an idle `podkit-device` the save-failure matrix's syncs take 0.2–1.5s;
+ * parallel VM suites on a busy host stretch one past 10s. The bound is one
+ * busy-host round trip plus 15s of work, ten times the slowest idle sync.
+ */
+export const VM_WORK_TIMEOUT_MS = SUBSTRATE_ROUND_TRIP_TIMEOUT_MS + 15_000;

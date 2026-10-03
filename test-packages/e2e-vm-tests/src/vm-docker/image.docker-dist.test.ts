@@ -78,6 +78,7 @@ import {
   deviceHarness,
   VM_COLD_TIMEOUT_MS,
   VM_WARM_TIMEOUT_MS,
+  VM_WORK_TIMEOUT_MS,
   DEFAULT_PODKIT_IMAGE_TAG,
   ensurePodkitImageInVm,
   SUBSTRATE_CONTRACT_RUNTIME as RUNTIME,
@@ -254,7 +255,7 @@ describe('VM: Docker dist image e2e (musl image + synthesized USB iPod)', () => 
           makeFlac('track-02.flac', 660, 'Docker Dist Track Two', 2),
         ].join('\n');
         const gen = await deviceHarness.run(`bash -c ${sq(genScript)}`, {
-          timeoutMs: VM_WARM_TIMEOUT_MS,
+          timeoutMs: VM_WORK_TIMEOUT_MS,
         });
         if (gen.exitCode !== 0) {
           throw new Error(
@@ -270,7 +271,7 @@ describe('VM: Docker dist image e2e (musl image + synthesized USB iPod)', () => 
         await unmountAndStop({ personaId: PERSONA.id, mountPoint: VM_MOUNT_POINT });
         throw err;
       }
-    }, VM_COLD_TIMEOUT_MS);
+    }, VM_COLD_TIMEOUT_MS + VM_WORK_TIMEOUT_MS);
 
     afterAll(async () => {
       await deviceHarness

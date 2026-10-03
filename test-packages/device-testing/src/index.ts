@@ -264,6 +264,7 @@ export {
   formatPersonaSkipWarning,
   VM_WARM_TIMEOUT_MS,
   VM_COLD_TIMEOUT_MS,
+  VM_WORK_TIMEOUT_MS,
 } from './vm/vm-runtime-setup.js';
 
 export type { WithPersonaOpts, CliInvocation } from './vm/persona-fixture.js';

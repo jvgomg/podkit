@@ -47,6 +47,7 @@ import {
   deviceHarness,
   VM_COLD_TIMEOUT_MS,
   VM_WARM_TIMEOUT_MS,
+  VM_WORK_TIMEOUT_MS,
   healthy,
   echoMini,
   startDaemonForPersona,
@@ -85,9 +86,10 @@ function sq(value: string): string {
 // ---------------------------------------------------------------------------
 
 async function runVm(
-  command: string
+  command: string,
+  timeoutMs: number = VM_WARM_TIMEOUT_MS
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
-  return deviceHarness.run(command, { timeoutMs: VM_WARM_TIMEOUT_MS });
+  return deviceHarness.run(command, { timeoutMs });
 }
 
 async function runVmRoot(
@@ -176,7 +178,7 @@ for n in 01 02; do
     ${sq(`${VM_SOURCE_DIR}/${ARTIST}/${ALBUM}/`)}"$n Track $n.mp3" >/dev/null 2>&1
 done
 `;
-  const r = await runVm(`bash -c ${sq(script)}`);
+  const r = await runVm(`bash -c ${sq(script)}`, VM_WORK_TIMEOUT_MS);
   if (r.exitCode !== 0) {
     throw new Error(`stageMp3Source failed (exit=${r.exitCode}): ${r.stderr.slice(0, 400)}`);
   }
@@ -199,7 +201,7 @@ ffmpeg -y -f lavfi -i 'sine=frequency=440:sample_rate=44100:duration=4' \\
   -c:a flac \\
   ${sq(`${VM_SOURCE_DIR}/${ARTIST}/${ALBUM}/01 Track 01.flac`)} >/dev/null 2>&1
 `;
-  const r = await runVm(`bash -c ${sq(script)}`);
+  const r = await runVm(`bash -c ${sq(script)}`, VM_WORK_TIMEOUT_MS);
   if (r.exitCode !== 0) {
     throw new Error(`stageFlacSource failed (exit=${r.exitCode}): ${r.stderr.slice(0, 400)}`);
   }
@@ -340,11 +342,17 @@ interface SyncOutput {
 }
 
 async function runSyncDryRun(): Promise<SyncOutput> {
-  return runVm(`/usr/local/bin/podkit --config ${VM_CONFIG_PATH} sync -d ${DEVICE_NAME} --dry-run`);
+  return runVm(
+    `/usr/local/bin/podkit --config ${VM_CONFIG_PATH} sync -d ${DEVICE_NAME} --dry-run`,
+    VM_WORK_TIMEOUT_MS
+  );
 }
 
 async function runSync(): Promise<SyncOutput> {
-  return runVm(`/usr/local/bin/podkit --config ${VM_CONFIG_PATH} sync -d ${DEVICE_NAME}`);
+  return runVm(
+    `/usr/local/bin/podkit --config ${VM_CONFIG_PATH} sync -d ${DEVICE_NAME}`,
+    VM_WORK_TIMEOUT_MS
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -489,7 +497,7 @@ describe('VM: pre-sync sweep SIGKILL round-trip', () => {
       );
       expect(parseInt(finalCount.stdout.trim(), 10)).toBe(2);
     },
-    VM_COLD_TIMEOUT_MS
+    VM_COLD_TIMEOUT_MS + 3 * VM_WORK_TIMEOUT_MS
   );
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -578,7 +586,7 @@ music = "default"
       // is cheaper than re-mounting.)
       await runVmRoot(`rm -f ${sq(plantedTmp)}`);
     },
-    VM_COLD_TIMEOUT_MS
+    VM_COLD_TIMEOUT_MS + VM_WORK_TIMEOUT_MS
   );
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -637,7 +645,7 @@ music = "default"
       // time `podkit sync` exits, no transcode dirs should be left.
       expect(parseInt(orphanCount.stdout.trim(), 10)).toBe(0);
     },
-    VM_COLD_TIMEOUT_MS
+    VM_COLD_TIMEOUT_MS + 3 * VM_WORK_TIMEOUT_MS
   );
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -697,6 +705,6 @@ music = "default"
         await runVm('rm -rf /tmp/podkit-transcode-* 2>/dev/null || true').catch(() => {});
       }
     },
-    VM_COLD_TIMEOUT_MS
+    VM_COLD_TIMEOUT_MS + 2 * VM_WORK_TIMEOUT_MS
   );
 });

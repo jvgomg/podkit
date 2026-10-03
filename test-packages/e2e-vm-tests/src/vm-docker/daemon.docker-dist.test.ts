@@ -84,6 +84,7 @@ import {
   deviceHarness,
   VM_COLD_TIMEOUT_MS,
   VM_WARM_TIMEOUT_MS,
+  VM_WORK_TIMEOUT_MS,
   DEFAULT_PODKIT_IMAGE_TAG,
   ensurePodkitImageInVm,
   SUBSTRATE_CONTRACT_RUNTIME as RUNTIME,
@@ -391,7 +392,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
           makeFlac('track-02.flac', 660, 'Daemon Dist Track Two', 2),
         ].join('\n');
         const gen = await deviceHarness.run(`bash -c ${sq(genScript)}`, {
-          timeoutMs: VM_WARM_TIMEOUT_MS,
+          timeoutMs: VM_WORK_TIMEOUT_MS,
         });
         if (gen.exitCode !== 0) {
           throw new Error(
@@ -410,7 +411,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
         await unmountAndStop({ personaId: PERSONA.id, mountPoint: VM_MOUNT_POINT });
         throw err;
       }
-    }, VM_COLD_TIMEOUT_MS);
+    }, VM_COLD_TIMEOUT_MS + VM_WORK_TIMEOUT_MS);
 
     afterAll(async () => {
       // Remove the detached daemon container FIRST — it holds a reference to the
@@ -588,7 +589,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
           makeFlac('track-02.flac', 660, 'Daemon Lsblk Track Two', 2),
         ].join('\n');
         const gen = await deviceHarness.run(`bash -c ${sq(genScript)}`, {
-          timeoutMs: VM_WARM_TIMEOUT_MS,
+          timeoutMs: VM_WORK_TIMEOUT_MS,
         });
         if (gen.exitCode !== 0) {
           throw new Error(
@@ -605,7 +606,7 @@ describe('VM: Docker dist image e2e (bundled daemon steady-state sync)', () => {
         await unmountAndStop({ personaId: PERSONA.id, mountPoint: VM_MOUNT_POINT });
         throw err;
       }
-    }, VM_COLD_TIMEOUT_MS);
+    }, VM_COLD_TIMEOUT_MS + VM_WORK_TIMEOUT_MS);
 
     afterAll(async () => {
       await removeDaemonContainer(LSBLK_DAEMON_CONTAINER);

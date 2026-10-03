@@ -43,6 +43,7 @@ import {
   deviceHarness,
   VM_COLD_TIMEOUT_MS,
   VM_WARM_TIMEOUT_MS,
+  VM_WORK_TIMEOUT_MS,
   deviceMountNearFull,
   DEVICE_MOUNT_NEAR_FULL_PATH,
   deviceMountFitsEstimateFailedSweep,
@@ -186,11 +187,10 @@ function sq(value: string): string {
 }
 
 async function runScript(
-  body: string
+  body: string,
+  timeoutMs: number = VM_WARM_TIMEOUT_MS
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
-  const result = await deviceHarness.run(`bash -c ${sq(body)}`, {
-    timeoutMs: VM_WARM_TIMEOUT_MS,
-  });
+  const result = await deviceHarness.run(`bash -c ${sq(body)}`, { timeoutMs });
   return { exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr };
 }
 
@@ -346,7 +346,7 @@ ffmpeg -y -f lavfi -i 'sine=frequency=${seed.frequency}:sample_rate=44100:durati
   ${sq(outputPath)} >/dev/null 2>&1
 `;
   }
-  const r = await runScript(script);
+  const r = await runScript(script, VM_WORK_TIMEOUT_MS);
   if (r.exitCode !== 0) {
     throw new Error(
       `writeSourceTrack(${saveFailCellKey(cell)}, ${seed.title}) failed (exit=${r.exitCode}): ` +
@@ -757,7 +757,7 @@ async function runSync(cell: SaveFailCell): Promise<{
   const cfg = configPathFor(cell);
   const name = deviceNameFor(cell);
   const cmd = `/usr/local/bin/podkit --config ${sq(cfg)} sync -d ${sq(name)} -vv`;
-  const result = await deviceHarness.run(cmd, { timeoutMs: VM_WARM_TIMEOUT_MS });
+  const result = await deviceHarness.run(cmd, { timeoutMs: VM_WORK_TIMEOUT_MS });
   return { stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode };
 }
 
@@ -765,7 +765,7 @@ async function runDryRun(cell: SaveFailCell): Promise<{ json: SyncJsonShape; exi
   const cfg = configPathFor(cell);
   const name = deviceNameFor(cell);
   const cmd = `/usr/local/bin/podkit --config ${sq(cfg)} sync -d ${sq(name)} --dry-run --json`;
-  const result = await deviceHarness.run(cmd, { timeoutMs: VM_WARM_TIMEOUT_MS });
+  const result = await deviceHarness.run(cmd, { timeoutMs: VM_WORK_TIMEOUT_MS });
   let json: SyncJsonShape = {};
   try {
     json = JSON.parse(result.stdout) as SyncJsonShape;
@@ -1112,13 +1112,12 @@ function isCanonicalCell(cell: SaveFailCell): boolean {
 // The observation `beforeAll` runs every non-skipped cell sequentially against
 // the one shared VM mount (cells mutate that mount, so they can't parallelise).
 // Its budget must cover VM setup plus N sequential cell observations, so it is
-// derived from the matrix size — one warm-op budget per cell on top of the cold
+// derived from the matrix size — one work-op budget per cell on top of the cold
 // baseline — rather than a fixed cold timeout that silently wedges as cells are
-// added. Per-cell VM ops are individually bounded by VM_WARM_TIMEOUT_MS and
-// caught per cell, so a genuine single-cell hang still surfaces as an error,
-// never as this aggregate hook timeout.
+// added. Each per-cell VM op carries its own bound and is caught per cell, so a
+// single-cell hang surfaces as that cell's error, not as this hook's timeout.
 const OBSERVE_ALL_CELLS_TIMEOUT_MS =
-  VM_COLD_TIMEOUT_MS + SAVE_FAIL_CELLS.length * VM_WARM_TIMEOUT_MS;
+  VM_COLD_TIMEOUT_MS + SAVE_FAIL_CELLS.length * VM_WORK_TIMEOUT_MS;
 
 describe('VM: save-failure matrix', () => {
   const resultsByCell = new Map<string, SaveFailObserved>();
