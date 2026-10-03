@@ -3,10 +3,10 @@ id: TASK-536
 title: >-
   Musl podkit binary intermittently embeds a glibc-linked libgpod binding
   (`fcntl64: symbol not found`)
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-03 18:54'
-updated_date: '2026-10-03 21:28'
+updated_date: '2026-10-03 21:57'
 labels:
   - build
   - docker
@@ -53,7 +53,7 @@ Suspects: a shared path on the builder or host that one build writes and the oth
 <!-- AC:BEGIN -->
 - [x] #1 The race or shared path is identified and reproduced deliberately
 - [x] #2 The musl build verifies that the binding it embeds references no glibc-only symbols, and fails the build if it does
-- [ ] #3 Repeated forced docker-dist runs show no `Error relocating` at runtime
+- [x] #3 Repeated forced docker-dist runs show no `Error relocating` at runtime
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -76,4 +76,30 @@ Guard: compile.sh now runs `assert_binding_libc` on the staged binding. The chec
 CI was not touched. Its readelf `| grep -q` checks run under Actions' default `bash -e` (no pipefail) or Alpine `sh -e`, so they are not exposed. CI's musl `bun run compile` *was* exposed, because compile.sh sets pipefail itself, so shipped musl/Docker binaries could have been affected. That is why there is a changeset.
 
 AC#3 is still open: it needs repeated forced `test:e2e:docker-dist` runs on the remote substrate.
+
+AC#3 verification (2026-10-03):
+
+**Three forced `bun run test:e2e:docker-dist --force` runs on builderRemote and the remote substrate.** Each ran 24 of 24 tasks and the docker-dist tests went 6 pass, 0 fail. No run logged `Error relocating` at runtime or `fcntl64`. The only `Error relocating` lines come from the musl prebuild's own `ldd "$PREBUILD" || true` diagnostic, which lists unresolved `napi_*` symbols on a bare `.node` and is expected. Every run logged `Verified binding links glibc` twice and `Verified binding links musl` twice (production and debug).
+
+**Root cause confirmed under real load.** During run 1, 30k iterations of the old and new probe ran in the builder's `podkit-musl-builder:local` container. The old probe returned false 1592 times in 30,000; the new one returned false 0 times. Almost all of the old failures fell while the builds loaded the builder (load average about 2.3 to 2.8), where the rate was about 14 to 16%. compile.sh probes more than once per musl compile, so a 1-in-3 bad-run rate fits.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+The musl podkit binary sometimes embedded the glibc libgpod binding. The cause was `host_is_musl` (`ldd /bin/sh | grep -q musl`) running under compile.sh's pipefail. musl's ldd writes each line separately, so grep could exit and SIGPIPE ldd. Under builder load the probe then reported glibc about 15% of the time, and the glibc prebuild already sitting in the stage got embedded.
+
+Fix:
+- The probe now captures ldd's output before matching it.
+- Build jobs declare PODKIT_TARGET_LIBC, which is cross-checked against the probe.
+- compile.sh refuses any binding whose readelf DT_NEEDED libc doesn't match the target.
+- The same probe fix went into build-linux-musl.sh.
+- A patch changeset was added for `podkit`, because CI's musl release compile was exposed too.
+
+Verification:
+- New bats tests: 21 total.
+- New jobs.test case.
+- The guard was checked against the real prebuilds in alpine and debian containers.
+- The probe was stress-tested in the real builder's musl container: old 1592 of 30k false, new 0.
+- Three forced docker-dist runs all passed with no runtime relocation errors.
+<!-- SECTION:FINAL_SUMMARY:END -->
