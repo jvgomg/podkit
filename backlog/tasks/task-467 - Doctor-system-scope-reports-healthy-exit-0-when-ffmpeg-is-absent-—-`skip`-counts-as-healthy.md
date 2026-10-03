@@ -3,9 +3,10 @@ id: TASK-467
 title: >-
   Doctor system-scope reports healthy (exit 0) when ffmpeg is absent — `skip`
   counts as healthy
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-07-12 17:07'
+updated_date: '2026-10-03 22:35'
 labels:
   - diagnostics
   - doctor
@@ -31,7 +32,19 @@ Decision needed: should ffmpeg-absent surface as `warn` (a host that cannot tran
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Decide skip-vs-warn for the ffmpeg-absent codec-encoders/video-encoder checks, with documented rationale (conventions.md or an ADR note)
-- [ ] #2 If changed to warn: update the checks AND the no-ffmpeg SystemState fixture (overallStatus->warn, expectedExitCode->2) + any golden expectations
-- [ ] #3 Doctor exit-code semantics for skip-vs-warn documented so future checks pick the right status deliberately
+- [x] #1 Decide skip-vs-warn for the ffmpeg-absent codec-encoders/video-encoder checks, with documented rationale (conventions.md or an ADR note)
+- [x] #2 If changed to warn: update the checks AND the no-ffmpeg SystemState fixture (overallStatus->warn, expectedExitCode->2) + any golden expectations
+- [x] #3 Doctor exit-code semantics for skip-vs-warn documented so future checks pick the right status deliberately
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Decision (with user): neither skip nor warn on the encoder checks — add a dedicated system-scope `ffmpeg` check that **fails** when `ffmpeg -version` cannot spawn or exits non-zero (FFmpeg is the runtime dependency). `codec-encoders` / `video-encoder` keep `skip` on a missing binary via a shared `FFMPEG_MISSING_SKIP` owned by the ffmpeg check; they now `warn` when FFmpeg runs but encoder detection fails (otherwise that failure would be reported nowhere). video-encoder probes the same `ffmpeg` binary as the transcoder (dropped its lone `FFMPEG_PATH` read).
+
+Rule documented in docs/architecture/conventions.md §13 (skip = not applicable, or prerequisite reported by another check; warn vs fail guidance), cross-linked from docs/agents/testing.md exit-code section.
+
+Fixtures: `ffmpeg: pass` added to all 9 SystemStates + healthy golden; `no-ffmpeg` → overallStatus fail, exit 2. KNOWN_SYSTEM_CHECK_IDS, scope-matrix, system-scope-matrix updated. Docs-site doctor + cli-commands pages, ADR-017 state table, system-states README updated. Changeset: podkit + @podkit/core minor.
+
+Not run: VM cross-check (`test:vm`) — the no-ffmpeg fixture expectation is unverified against a live VM.
+<!-- SECTION:FINAL_SUMMARY:END -->
