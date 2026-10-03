@@ -1,6 +1,6 @@
 {
   "name": "@podkit/devices-ipod",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "iPod generation tables, USB ID lookup, and model identification for podkit",
   "type": "module",
   "main": "./dist/index.js",
