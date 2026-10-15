@@ -18,7 +18,7 @@ references:
     backlog/docs/doc-060 -
     Portable-device-substrate-—-contract-provisioners-and-arch-decoupled-builds.md
   - docs/adr/adr-028-substrate-agnostic-device-harness.md
-  - CONTEXT.md
+  - GLOSSARY.md
 priority: high
 type: enhancement
 ordinal: 272500

@@ -21,7 +21,7 @@ podkit requires the following dependencies for development:
 | **gdk-pixbuf** | Image handling for album artwork | Prebuild library |
 | **pkg-config** | Locates the prebuild libraries at compile time | Prebuild tool |
 
-These kinds are defined in [`CONTEXT.md`](https://github.com/jvgomg/podkit/blob/main/CONTEXT.md). The short version: a *prebuild library* is statically linked into a native artifact and absent from the shipped result; a *prebuild tool* produces that artifact but is linked into nothing; a *runtime dependency* is shelled out to at run time and no prebuilt artifact ever removes it.
+These kinds are defined in [`GLOSSARY.md`](https://github.com/jvgomg/podkit/blob/main/GLOSSARY.md). The short version: a *prebuild library* is statically linked into a native artifact and absent from the shipped result; a *prebuild tool* produces that artifact but is linked into nothing; a *runtime dependency* is shelled out to at run time and no prebuilt artifact ever removes it.
 
 :::note
 End users do **not** need libgpod, GLib, or other native libraries installed. Released versions of podkit ship prebuilt native binaries with all native dependencies statically linked. These development dependencies are only needed when modifying native code or building from a git checkout.

@@ -61,7 +61,7 @@ Mirror TASK-493's split: the agent lands the repo half, the PVE-console steps st
 4. **Registry** (AC#4): `SshVmDefinition` gains a declared `targetArch`; a `builderRemote` entry carries `sshAlias` + `targetArch` + `archRelevance: glibc`. Existing "no hostname" test covers the negative.
 5. **Agreement tests**: builder contract's Debian pin vs `debian-image.ts`; its apt list vs `podkit-builder-glibc.yaml`.
 6. **Playbook** `docs/environments/builder-proxmox.md` (AC#7): qm recipe, the shared cloud-init template, start-for-a-build / stop-after.
-7. CONTEXT.md gains a **Builder** term; `.env.example` gains the builder selection note.
+7. GLOSSARY.md gains a **Builder** term; `.env.example` gains the builder selection note.
 
 Deliberately NOT done here: the build-driver refactor that runs `compile.sh` on a builder reached over `SubstrateLink`. That is TASK-514 half 2, which its own notes already record as depending on this task.
 <!-- SECTION:PLAN:END -->

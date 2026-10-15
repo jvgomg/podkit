@@ -5,7 +5,7 @@ name: Substrate Conformance (backstop)
 # machine nobody in this project owns, or has the contract quietly become
 # "whatever one maintainer's box happens to be"?
 #
-# **This is a backstop, not the gate** (CONTEXT.md, "Backstop"). It is judged on
+# **This is a backstop, not the gate** (GLOSSARY.md, "Backstop"). It is judged on
 # what it stops from escaping, never on being the place work gets verified —
 # ci.yml is the test backstop, `bun run quality` is the gate, and neither of
 # them depends on this workflow. It is deliberately absent from ci.yml's

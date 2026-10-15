@@ -32,7 +32,7 @@ Run `provision-substrate.sh` followed by `substrate-doctor.sh` on a standard Lin
 
 Also exercise the doctor's **negative** assertions: a runner with a toolchain installed must fail the check, and must fail it by naming the offending package rather than reporting a generic error. A doctor whose failure path is never exercised is a doctor that passes everything.
 
-Note this is a **backstop**, in the sense CONTEXT.md defines: it is judged on what it stops from escaping, never on being the place work gets verified. Running the USB-synthesis cells on CI stays open — ADR-028 leaves it open deliberately and this task does not decide it.
+Note this is a **backstop**, in the sense GLOSSARY.md defines: it is judged on what it stops from escaping, never on being the place work gets verified. Running the USB-synthesis cells on CI stays open — ADR-028 leaves it open deliberately and this task does not decide it.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

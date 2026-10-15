@@ -60,7 +60,7 @@ subject and is presupposed, not re-argued, here.
 A substrate is any SSH-reachable Debian host that passes `substrate-doctor.sh`.
 Proxmox is the reference recipe. A libvirt guest, a cloud VM, a spare box, a
 Lima VM and a GitHub Actions runner are all first-class if they pass. Lima is
-demoted from "the substrate" to "one provisioner", exactly as CONTEXT.md
+demoted from "the substrate" to "one provisioner", exactly as GLOSSARY.md
 already defines the vocabulary.
 
 Three portable Debian bash files own the whole contract —

@@ -103,7 +103,7 @@ points here run from a package directory, and Bun's own auto-load is
 cwd-relative — and a variable already exported into the environment always beats
 the file, so CI can select a substrate with no dotfile at all. See
 [ADR-028](../../adr/adr-028-substrate-agnostic-device-harness.md) §1 and
-[ADR-029](../../adr/adr-029-portable-device-substrate.md) §2, and `CONTEXT.md`
+[ADR-029](../../adr/adr-029-portable-device-substrate.md) §2, and `GLOSSARY.md`
 §"Test environments" for the vocabulary.
 
 Two consequences a test author has to know:

@@ -20,7 +20,7 @@ references:
   - tools/prebuild/build-linux-glibc.sh
   - TASK-100
   - TASK-101
-  - CONTEXT.md
+  - GLOSSARY.md
 priority: medium
 type: feature
 ordinal: 269000
@@ -33,7 +33,7 @@ ordinal: 269000
 
 Let a fresh clone build and test podkit **without any prebuild library or prebuild tool installed** — no `libgpod-dev`, no `libglib2.0-dev`, no `pkg-config` — by consuming prebuilt native artifacts in the monorepo's own development loop.
 
-See [CONTEXT.md](../../CONTEXT.md) for the *prebuild library* / *prebuild tool* / *prebuild* vocabulary this task is written in.
+See [GLOSSARY.md](../../GLOSSARY.md) for the *prebuild library* / *prebuild tool* / *prebuild* vocabulary this task is written in.
 
 ## Why this is not TASK-101
 

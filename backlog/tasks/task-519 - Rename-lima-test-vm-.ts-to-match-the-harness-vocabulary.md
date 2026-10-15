@@ -12,7 +12,7 @@ milestone: m-20
 dependencies:
   - TASK-494
 references:
-  - CONTEXT.md
+  - GLOSSARY.md
   - docs/adr/adr-028-substrate-agnostic-device-harness.md
 priority: low
 type: chore
@@ -26,12 +26,12 @@ TASK-494 renamed the singleton away from `limaTestVmRunner` — a name saying "L
 
 Left undone deliberately. No acceptance criterion asked for it, TASK-494's diff was already 63 files, and a file rename churns import specifiers across every VM test for no semantic gain — bundled into that change it would have buried the parts a reviewer needed to see.
 
-Worth doing on its own, where the diff is legible as pure motion. Use the vocabulary CONTEXT.md already defines (substrate, harness) and mind the recorded "runner" overload.
+Worth doing on its own, where the diff is legible as pure motion. Use the vocabulary GLOSSARY.md already defines (substrate, harness) and mind the recorded "runner" overload.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The runner file names carry no Lima-specific vocabulary, and do not reintroduce the 'runner' overload CONTEXT.md records
+- [ ] #1 The runner file names carry no Lima-specific vocabulary, and do not reintroduce the 'runner' overload GLOSSARY.md records
 - [ ] #2 The change is pure motion — no behaviour, no logic, no test assertions altered
 - [ ] #3 test:vm is green
 <!-- AC:END -->

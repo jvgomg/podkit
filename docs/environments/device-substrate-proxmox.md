@@ -10,7 +10,7 @@ Every step is idempotent.
 A substrate is not "a Proxmox VM". It is any SSH-reachable Debian box that
 passes `substrate-doctor.sh`; Proxmox is the reference recipe and a Lima VM on
 macOS is another. See [ADR-028](../adr/adr-028-substrate-agnostic-device-harness.md)
-and [CONTEXT.md](../../CONTEXT.md) §Test environments.
+and [GLOSSARY.md](../../GLOSSARY.md) §Test environments.
 
 ---
 

@@ -11,7 +11,7 @@
  *
  * The word is deliberately not *transport*: in podkit that already means how
  * the product reaches an iPod's firmware (USB vs SCSI), and both meanings would
- * otherwise appear in the same test files. See `CONTEXT.md` §"Test
+ * otherwise appear in the same test files. See `GLOSSARY.md` §"Test
  * environments".
  *
  * ## Why link failure is a throw and guest failure is a return

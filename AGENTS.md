@@ -135,7 +135,7 @@ podkit device music --format json       # List music on device
 | util-linux | Pre-installed | N/A | `lsblk` | Linux device manager |
 | Lima | N/A | `brew install lima` | N/A | Cross-platform testing |
 
-Dependency *kinds* are defined in [CONTEXT.md](CONTEXT.md). A **prebuild library** is statically linked into a native artifact and absent from the shipped result; a **prebuild tool** produces that artifact but is linked into nothing; a **runtime dependency** is shelled out to at run time and no prebuilt artifact removes it.
+Dependency *kinds* are defined in [GLOSSARY.md](GLOSSARY.md). A **prebuild library** is statically linked into a native artifact and absent from the shipped result; a **prebuild tool** produces that artifact but is linked into nothing; a **runtime dependency** is shelled out to at run time and no prebuilt artifact removes it.
 
 FFmpeg is pinned in `mise.toml` (`"conda:ffmpeg"`) because `@podkit/test-fixtures` asserts on a specific encoder set that stock Homebrew FFmpeg does not satisfy. Prefer `mise install` over a system FFmpeg when developing.
 

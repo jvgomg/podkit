@@ -21,7 +21,7 @@
  * Every call is routed through the injected `SubprocessRunner` so the adapters
  * stay unit-testable with scripted `limactl` outputs.
  *
- * The file was called `transport.ts`. `CONTEXT.md` reserves that word for how
+ * The file was called `transport.ts`. `GLOSSARY.md` reserves that word for how
  * the PRODUCT reaches an iPod's firmware (USB vs SCSI), and once these three
  * became adapters over the link, a file named for the reserved word was the
  * confusion the glossary warns about.
