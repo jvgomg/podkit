@@ -14,7 +14,7 @@ repo has no separate "local" provisioner for that case on purpose: `ssh` names
 how a box is reached and says nothing about where it is, so localhost is the
 same entry, the same link and the same contract rather than a fourth code path. See
 [ADR-029](../adr/adr-029-portable-device-substrate.md) §4 and
-[CONTEXT.md](../../CONTEXT.md) §Test environments.
+[GLOSSARY.md](../../GLOSSARY.md) §Test environments.
 
 This is the sibling of [device-substrate-proxmox.md](./device-substrate-proxmox.md),
 and the two documents are deliberately parallel: the substrate answers *where do

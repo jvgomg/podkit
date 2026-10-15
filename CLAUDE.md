@@ -12,7 +12,7 @@ The five canonical triage roles, applied as Backlog.md labels under their defaul
 
 ### Domain docs
 
-Single-context: one root `CONTEXT.md`, ADRs in `docs/adr/`. See `docs/agents/domain.md`.
+Single-context: one root `GLOSSARY.md`, ADRs in `docs/adr/`. See `docs/agents/domain.md`.
 
 ## graphify
 

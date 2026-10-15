@@ -9,7 +9,7 @@ plus cloud-init on a hypervisor, or a human who installed Debian on a spare box.
 This package owns what is true regardless of which one you have; `@podkit/lima`
 is one provisioner and depends on this package. The dependency never points the
 other way, and that is the point — see [ADR-029](../../docs/adr/adr-029-portable-device-substrate.md)
-§1 and the vocabulary in [CONTEXT.md](../../CONTEXT.md) §"Test environments".
+§1 and the vocabulary in [GLOSSARY.md](../../GLOSSARY.md) §"Test environments".
 
 It is deliberately dependency-free. Packages that bundle into single-file
 binaries import it, so nothing here may be heavy and nothing here may resolve a

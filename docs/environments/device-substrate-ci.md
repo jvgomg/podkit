@@ -20,13 +20,13 @@ assertions anything performs.
 A substrate is not "a Proxmox VM" and not "a CI runner". It is any SSH-reachable
 Debian box that passes `substrate-doctor.sh`. See
 [ADR-028](../adr/adr-028-substrate-agnostic-device-harness.md) and
-[CONTEXT.md](../../CONTEXT.md) §Test environments.
+[GLOSSARY.md](../../GLOSSARY.md) §Test environments.
 
 ---
 
 ## What this is for — and what it is not
 
-This is a **backstop** in the sense [CONTEXT.md](../../CONTEXT.md) defines: it is
+This is a **backstop** in the sense [GLOSSARY.md](../../GLOSSARY.md) defines: it is
 judged on what it stops from escaping, never on being the place work gets
 verified. Specifically, it stops the substrate contract from quietly becoming
 "whatever one maintainer's box happens to be", which is the failure mode a

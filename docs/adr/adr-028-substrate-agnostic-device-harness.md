@@ -16,7 +16,7 @@ Linux dispatch it promised, and revises part of
 [ADR-027](./adr-027-lima-vm-substrate-consolidation.md): `@podkit/lima` remains
 the owner of Lima orchestration, but stops being the only way to reach a
 substrate. Neither ADR's physical builder/test/device VM separation is touched.
-Vocabulary is recorded in [CONTEXT.md](../../CONTEXT.md) §Test environments.
+Vocabulary is recorded in [GLOSSARY.md](../../GLOSSARY.md) §Test environments.
 
 ## Context
 
@@ -183,7 +183,7 @@ open rather than decided here.
 ### 7. Vocabulary
 
 **Substrate**, **provisioner**, **substrate link**, **harness** — defined in
-[CONTEXT.md](../../CONTEXT.md). Notably the interface is *not* called a
+[GLOSSARY.md](../../GLOSSARY.md). Notably the interface is *not* called a
 transport: that word already denotes how podkit reaches an iPod's firmware
 (USB vs SCSI), 53 times in `packages/`, and both meanings would otherwise appear
 in files like `inquiry-usb-transport-down.e2e.test.ts`.
@@ -246,7 +246,7 @@ Mac, amd64 Linux and substrate), so artifact caches must key on architecture;
 **Deferred.** `usb-synth` on CI. PVE API lifecycle automation. A second
 concurrent substrate to remove the phase-2 serialisation in `run-mirror-body.ts`.
 Renaming the pre-existing `SubprocessRunner`/`registerRunner` overload — recorded
-in CONTEXT.md instead.
+in GLOSSARY.md instead.
 
 **Assumption verified (2026-09-07).** Rootless Podman 5.4.2 runs the real
 digest-pinned Navidrome workload on the unprivileged LXC. The absence of

@@ -18,7 +18,7 @@ references:
   - docs/adr/adr-028-substrate-agnostic-device-harness.md
   - docs/adr/adr-027-lima-vm-substrate-consolidation.md
   - docs/architecture/testing/taxonomy.md
-  - CONTEXT.md
+  - GLOSSARY.md
   - >-
     backlog/docs/doc-060 -
     Portable-device-substrate-—-contract-provisioners-and-arch-decoupled-builds.md
@@ -54,7 +54,7 @@ Introduce `SubstrateLink` — `exec(cmd)`, `copyIn(host, guest)`, `spawn(cmd) �
 **Known awkward spots:**
 
 1. **Exit-code conflation, 4 sites** (`lima-test-vm-binary.ts:168`, `lima-test-vm-systemd.ts:160`, `lima-test-vm.ts:249`, `lima-test-vm-backing-files.ts:472`). `limactl shell` returns the guest's exit code, so transport and guest failure are indistinguishable; the comments there assert a distinction the code cannot make. Per ADR-028 §2, `exec()` must throw distinctly on link failure — this is what makes "substrate unreachable → skip" separable from "guest command failed → fail". Also `preflight.ts:135` renders a message about being "reachable to limactl but SSH is refusing", which is meaningless for direct SSH.
-2. **The module-scope singleton.** `lima-test-vm.ts:622` constructs `limaTestVmRunner` at import time with no options, and 29 files import it by name. Select the implementation by env var inside the factory rather than threading a runtime through 29 files — but **rename it**: a name saying "Lima" for something that may be an SSH connection to Proxmox is how the next reader gets misled. Do not pick another "runner" name (see CONTEXT.md §Test environments, known overload).
+2. **The module-scope singleton.** `lima-test-vm.ts:622` constructs `limaTestVmRunner` at import time with no options, and 29 files import it by name. Select the implementation by env var inside the factory rather than threading a runtime through 29 files — but **rename it**: a name saying "Lima" for something that may be an SSH connection to Proxmox is how the next reader gets misled. Do not pick another "runner" name (see GLOSSARY.md §Test environments, known overload).
 3. **One background process the interface must express.** `e2e-vm-tests/src/pre-sync-sweep.e2e.test.ts:281` raw-`spawn`s `limactl` to hold a handle on a long-lived guest process, then SIGKILLs it, relying on limactl's SIGHUP-on-teardown. SSH differs — this is why `spawn` is on the interface. The test already has `killPodkitDebugInVm` (`:299`) as a workaround.
 4. **`getVm(vmName) → VmDefinition`** at `lima-test-vm.ts:514` passes a Lima-only shape (`yamlPath`, `category`, `archRelevance`) to `ensureRunning`. An SSH substrate has no YAML; `isAvailable()`/`prepare()` need to dispatch on the provisioner.
 5. **`stdin` is not actually unavailable.** `harness.ts:422` notes limactl cannot pipe stdin, forcing a `printf` → `/tmp` → `sudo install` dance at every transfer. SSH can do stdin — don't inherit the constraint needlessly.

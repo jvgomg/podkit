@@ -3,13 +3,13 @@
 How the engineering skills should consume this repo's domain documentation when
 exploring the codebase.
 
-This repo is **single-context**: one root `CONTEXT.md`, one ADR directory. It is a
+This repo is **single-context**: one root `GLOSSARY.md`, one ADR directory. It is a
 monorepo (`packages/*`, `test-packages/*`), but per-package subsystem knowledge already
-lives in `docs/architecture/`, so there is deliberately no `CONTEXT-MAP.md`.
+lives in `docs/architecture/`, so there is deliberately no `GLOSSARY-MAP.md`.
 
 ## Before exploring, read these
 
-- **`CONTEXT.md`** at the repo root — the domain glossary.
+- **`GLOSSARY.md`** at the repo root — the domain glossary.
 - **`docs/adr/`** — read ADRs that touch the area you're about to work in. Files are
   named `adr-NNN-<slug>.md`; `docs/adr/index.md` is the register.
 - **`docs/architecture/`** — settled descriptions of how each subsystem is put
@@ -24,7 +24,7 @@ suggest creating them upfront. The `/domain-modeling` skill (reached via
 `/grill-with-docs` and `/improve-codebase-architecture`) creates them lazily when terms
 or decisions actually get resolved.
 
-`CONTEXT.md` does not exist yet — that's expected.
+`GLOSSARY.md` does not exist yet — that's expected.
 
 ## How the doc layers relate
 
@@ -44,7 +44,7 @@ it is published:
 
 ```
 /
-├── CONTEXT.md                      ← domain glossary (created lazily)
+├── GLOSSARY.md                     ← domain glossary (created lazily)
 ├── docs/
 │   ├── agents/                     ← per-subsystem agent guides + skill config
 │   ├── adr/                        ← decision log, frozen at decision time
@@ -65,7 +65,7 @@ working in that area. Alongside them sit this file, `issue-tracker.md` and
 ## Use the glossary's vocabulary
 
 When your output names a domain concept (in a ticket title, a refactor proposal, a
-hypothesis, a test name), use the term as defined in `CONTEXT.md`. Don't drift to
+hypothesis, a test name), use the term as defined in `GLOSSARY.md`. Don't drift to
 synonyms the glossary explicitly avoids.
 
 If the concept you need isn't in the glossary yet, that's a signal: either you're

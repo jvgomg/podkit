@@ -113,4 +113,4 @@ The repo declares the **role**; your machine declares which box fills it. See
 
 - [ADR-029](../adr/adr-029-portable-device-substrate.md) — a substrate is an executable contract, not a VM; builder as a role
 - [ADR-028](../adr/adr-028-substrate-agnostic-device-harness.md) — the substrate-agnostic harness this rests on
-- [CONTEXT.md](../../CONTEXT.md) §Test environments — the vocabulary (substrate, provisioner, builder, harness)
+- [GLOSSARY.md](../../GLOSSARY.md) §Test environments — the vocabulary (substrate, provisioner, builder, harness)

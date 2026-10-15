@@ -12,7 +12,7 @@
  *
  * `@podkit/lima` is one provisioner and depends on this package; nothing here
  * may depend on it. The direction is the point — see ADR-029 §1, and the
- * vocabulary in `CONTEXT.md` §"Test environments".
+ * vocabulary in `GLOSSARY.md` §"Test environments".
  *
  * Depends only on `@podkit/device-types` — the dependency root the
  * `SubprocessRunner` seam lives in. It is imported by packages that bundle into

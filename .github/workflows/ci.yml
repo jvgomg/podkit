@@ -80,7 +80,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # libgpod is a prebuild library (CONTEXT.md): node-gyp and gpod-tool link
+      # libgpod is a prebuild library (GLOSSARY.md): node-gyp and gpod-tool link
       # against it, and nothing needs it at run time. noble/universe carries
       # libgpod-dev 0.8.3-19.1ubuntu4, so unlike build-platform.yml and
       # prebuild.yml there is no static build to do here — those build it from
@@ -150,7 +150,7 @@ jobs:
       # Load-bearing, not defensive polish. docker/availability.ts uses
       # describe.skipIf, so a missing container runtime yields a GREEN run with
       # all 8 docker-source files skipped — a backstop that can silently test
-      # nothing is worse than no backstop (CONTEXT.md, "Backstop").
+      # nothing is worse than no backstop (GLOSSARY.md, "Backstop").
       #
       # docs/agents/testing.md's rule is "throw for a broken checkout, skip for
       # absent infrastructure". On a runner the infrastructure is guaranteed, so

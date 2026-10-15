@@ -19,7 +19,7 @@
 # `bun run harness:setup` copies those in and runs them post-boot. A Proxmox
 # substrate reached over ssh runs the identical three files. Lima is a
 # provisioner here, not the substrate — its entire output is an SSH-reachable
-# Debian box (see ADR-028 and CONTEXT.md §Test environments).
+# Debian box (see ADR-028 and GLOSSARY.md §Test environments).
 #
 # Provisioning runs post-boot rather than from a `provision:` block because
 # Lima's provision entries take an inline `script` or inline `content` and

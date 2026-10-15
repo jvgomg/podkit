@@ -144,7 +144,7 @@ The nine failures are **not** the build path and are filed as **TASK-523**: the 
 - **Declined: per-provisioner capability data on the registry entry** to collapse the three `isLimaVm`/`isSshVm` cascades. The repo's own `createSubstrateLink` defends the exhaustive-switch pattern for the same discriminator, and the three sites ask genuinely different questions (capability, lifecycle, filesystem convention).
 - **Declined: a `BuildRun` type** for the `(ctx, selection, link)` trio. A fair Data Clump reading, and the same argument TASK-520 used to decline bundling `(arch, libc)`: a shape guessed ahead of its only caller.
 
-Also taken from the review: `transport.ts` → `link-adapters.ts` (CONTEXT.md reserves "transport" for how the *product* reaches an iPod's firmware, and the file is now unambiguously link code); `FILE_COPY_TIMEOUT_MS` moved beside the link interface rather than restated in the driver; the six copies of the "non-zero exit → link failure or guest refusal" ladder collapsed into one `settleLinkResult` taking the per-link classifier; the in-flight artifact name dot-prefixed so a run killed mid-copy cannot strand a file matching the task's own output glob.
+Also taken from the review: `transport.ts` → `link-adapters.ts` (GLOSSARY.md reserves "transport" for how the *product* reaches an iPod's firmware, and the file is now unambiguously link code); `FILE_COPY_TIMEOUT_MS` moved beside the link interface rather than restated in the driver; the six copies of the "non-zero exit → link failure or guest refusal" ladder collapsed into one `settleLinkResult` taking the per-link classifier; the in-flight artifact name dot-prefixed so a run killed mid-copy cannot strand a file matching the task's own output glob.
 
 ### Residual risk
 
