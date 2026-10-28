@@ -228,11 +228,11 @@ describe('identify', () => {
       expect(model!.unsupportedReason!.headline).toContain('unverified on hardware');
     });
 
-    test('nano 6G (0x120d) returns unsupportedReason (iTunesDB format)', () => {
+    test('nano 6G (0x120d) returns unsupportedReason (writes not supported)', () => {
       const model = identify({ from: 'usb', productId: '0x120d' });
       expect(model).toBeDefined();
       expect(model!.generationId).toBe('nano_6g');
-      expect(model!.unsupportedReason!.headline).toContain('iTunesDB format');
+      expect(model!.unsupportedReason!.headline).toContain('writing its library is not supported');
     });
 
     test('supported devices do NOT have unsupportedReason', () => {

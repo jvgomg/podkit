@@ -89,7 +89,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.STATIC_DEPS_DIR }}
-          key: static-deps-${{ matrix.platform }}-${{ matrix.arch }}-${{ hashFiles('tools/prebuild/build-static-deps.sh') }}
+          key: static-deps-${{ matrix.platform }}-${{ matrix.arch }}-${{ hashFiles('tools/prebuild/**') }}
 
       # Install build toolchain (only when building prebuilds from scratch)
 
@@ -250,7 +250,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.STATIC_DEPS_DIR }}
-          key: static-deps-linux-x64-${{ hashFiles('tools/prebuild/build-static-deps.sh') }}
+          key: static-deps-linux-x64-${{ hashFiles('tools/prebuild/**') }}
 
       - name: Install Alpine build deps (full)
         if: steps.prebuild-cache.outputs.cache-hit != 'true' && steps.static-cache.outputs.cache-hit != 'true'
@@ -448,7 +448,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: static-deps
-          key: static-deps-linux-arm64-${{ hashFiles('tools/prebuild/build-static-deps.sh') }}
+          key: static-deps-linux-arm64-${{ hashFiles('tools/prebuild/**') }}
 
       - name: Build prebuild in Alpine
         if: steps.prebuild-cache.outputs.cache-hit != 'true'
@@ -685,7 +685,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.STATIC_DEPS_DIR }}
-          key: static-deps-linux-${{ matrix.arch }}-gnu-${{ hashFiles('tools/prebuild/build-static-deps.sh', 'tools/prebuild/build-linux-glibc.sh') }}
+          key: static-deps-linux-${{ matrix.arch }}-gnu-${{ hashFiles('tools/prebuild/**') }}
 
       # Full build toolchain. ubuntu:20.04 ships meson/ninja/cmake too old for
       # recent glib/gdk-pixbuf/libxml2, so those come from pip, not apt.

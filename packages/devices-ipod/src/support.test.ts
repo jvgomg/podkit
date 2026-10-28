@@ -42,9 +42,6 @@ describe('resolveGenerationSupport', () => {
   });
 
   it('reports nano 7g as read-only, hardware-verified', () => {
-    // Promoted from `none`/`inferred`: read on real hardware (1,414 tracks,
-    // `device archive` succeeded). The write refusal is hashAB signing, not
-    // an absent libgpod table entry as previously claimed.
     const support = resolveGenerationSupport('nano_7g');
     expect(support.access).toBe('read-only');
     expect(support.verified).toBe('hardware');

@@ -88,7 +88,7 @@ describe('classifyAsIpod — unsupported iPod-family devices', () => {
     const result = classifyAsIpod({ vendorId: '05ac', productId: '120d' });
     expect(result).not.toBeNull();
     expect(result!.supported).toBe(false);
-    expect(result!.unsupportedReason?.headline).toContain('iTunesDB format');
+    expect(result!.unsupportedReason?.headline).toContain('writing its library is not supported');
   });
 
   it('classifies iPod nano 7G as unsupported (0x05ac:0x1267)', () => {

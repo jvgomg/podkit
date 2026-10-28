@@ -1,0 +1,1017 @@
+--- a/src/itdb_hashAB.c
++++ b/src/itdb_hashAB.c
+@@ -37,35 +37,9 @@
+ #include "db-itunes-parser.h"
+ #include "itdb_private.h"
+ 
+-typedef void (*calcHashAB_t)(unsigned char target[57], const unsigned char sha1[20], const unsigned char uuid[20], const unsigned char rnd_bytes[23]);
+-static calcHashAB_t calc_hashAB = NULL;
+-
+-static gboolean load_libhashab()
+-{
+-	gchar *path;
+-	GModule *handle;
+-
+-	if (!g_module_supported()) {
+-		return FALSE;
+-	}
+-	path = g_module_build_path(LIBGPOD_BLOB_DIR, "hashab");
+-	handle = g_module_open(path, G_MODULE_BIND_LAZY);
+-	g_free(path);
+-	if (!handle) {
+-		return FALSE;
+-	}
+-
+-	if (!g_module_symbol(handle, "calcHashAB", (void**)&calc_hashAB)) {
+-		g_module_close(handle);
+-		g_warning("symbol 'calcHashAB' not found");
+-		return FALSE;
+-	}
+-	g_module_make_resident(handle);
+-
+-	printf("***** hashAB support successfully loaded *****\n");
+-
+-	return TRUE;
+-}
++/* The vendored signer's symbols are renamed in src/Makefile.am. */
++#define calcHashAB itdb_hashab_calcHashAB
++#include "nano_hashab/calcHashAB.h"
+ 
+ static void itdb_hashAB_compute_itunesdb_sha1 (unsigned char *itdb_data, 
+ 					       gsize itdb_len,
+@@ -111,16 +85,26 @@ gboolean itdb_hashAB_compute_hash_for_sha1 (const Itdb_Device *device,
+     unsigned char uuid[20];
+     unsigned char rndpart[23] = "ABCDEFGHIJKLMNOPQRSTUVW";
+ 
+-    if (calc_hashAB == NULL) {
+-	if (!load_libhashab()) {
+-	    g_set_error (error, 0, -1, "Unsupported checksum type");
+-	    return FALSE;
+-	}
++    const char *guid = itdb_device_get_firewire_id(device);
++    guint i;
++
++    /* The open signer accepts eight-byte Nano GUIDs, not iOS UUIDs. */
++    if (guid != NULL && (g_str_has_prefix(guid, "0x") || g_str_has_prefix(guid, "0X")))
++        guid += 2;
++    if (guid == NULL || strlen(guid) != 16) {
++        g_set_error(error, 0, -1, "HashAB requires an eight-byte Nano GUID");
++        return FALSE;
++    }
++    for (i = 0; i < 16; i++) {
++        if (!g_ascii_isxdigit(guid[i])) {
++            g_set_error(error, 0, -1, "Invalid hexadecimal Nano GUID");
++            return FALSE;
++        }
+     }
+ 
+     if (!itdb_device_get_hex_uuid(device, uuid)) return FALSE;
+ 
+-    calc_hashAB(signature, sha1, uuid, rndpart);
++    calcHashAB(signature, sha1, uuid, rndpart);
+ 
+     return TRUE;
+ }
+--- a/src/itdb_device.c
++++ b/src/itdb_device.c
+@@ -1413,6 +1413,16 @@ itdb_device_supports_sqlite_db (const Itdb_Device *device)
+     }
+ }
+ 
++/* iPod nano 6G/7G: the firmware browses the HashAB-signed SQLite library
++   and expects it in the layout iTunes writes */
++G_GNUC_INTERNAL gboolean
++itdb_device_is_hashab_nano (const Itdb_Device *device)
++{
++    return itdb_device_supports_sqlite_db (device)
++	&& !itdb_device_is_iphone_family (device)
++	&& itdb_device_get_checksum_type (device) == ITDB_CHECKSUM_HASHAB;
++}
++
+ G_GNUC_INTERNAL gboolean
+ itdb_device_supports_compressed_itunesdb (const Itdb_Device *device)
+ {
+--- a/src/itdb_device.h
++++ b/src/itdb_device.h
+@@ -176,6 +176,7 @@ G_GNUC_INTERNAL const char *itdb_device_get_firewire_id (const Itdb_Device *devi
+ G_GNUC_INTERNAL gboolean itdb_device_supports_sparse_artwork (const Itdb_Device *device);
+ G_GNUC_INTERNAL gboolean itdb_device_supports_compressed_itunesdb (const Itdb_Device *device);
+ G_GNUC_INTERNAL gboolean itdb_device_supports_sqlite_db (const Itdb_Device *device);
++G_GNUC_INTERNAL gboolean itdb_device_is_hashab_nano (const Itdb_Device *device);
+ G_GNUC_INTERNAL gboolean itdb_device_get_storage_info (Itdb_Device *device, guint64 *capacity, guint64 *free);
+ G_GNUC_INTERNAL gboolean itdb_device_write_checksum (Itdb_Device *device,
+ 						     unsigned char *itdb_data,
+--- a/src/itdb_itunesdb.c
++++ b/src/itdb_itunesdb.c
+@@ -2269,6 +2269,8 @@ static glong get_playlist (FImport *fimp, guint mhsd_type, glong mhyp_seek)
+   plitem->sortorder = get32lint (cts, mhyp_seek+44);
+   if (header_len >= 0x6C) {
+       plitem->priv->mhsd5_type = get16lint (cts, mhyp_seek+0x50);
++      plitem->priv->distinguished_kind = get16lint (cts, mhyp_seek+0x52);
++      plitem->priv->unk_0x54 = get32lint (cts, mhyp_seek+0x54);
+   }
+ 
+   mhod_seek = mhyp_seek + header_len;
+@@ -4640,7 +4642,12 @@ static void mk_mhod (FExport *fexp, MHODData *mhod)
+ 	      g_return_if_fail (splr);
+ 	      ft = itdb_splr_get_field_type (splr);
+ /*	      printf ("%p: field: %d ft: %d\n", splr, splr->field, ft);*/
+-	      itdb_splr_validate (splr);
++	      /* the nano 6G/7G Rentals category has a rule libgpod cannot
++		 classify; it is written as read */
++	      if (!(itdb_device_is_hashab_nano (fexp->itdb->device)
++		    && splr->field == ITDB_SPLFIELD_VIDEO_KIND
++		    && splr->action == ITDB_SPLACTION_BINARY_UNKNOWN1))
++		  itdb_splr_validate (splr);
+ 	      put32bint (cts, splr->field);
+ 	      put32bint (cts, splr->action);
+ 	      put32_n0 (cts, 11);          /* unknown              */	      
+@@ -5529,13 +5536,20 @@ static gboolean write_playlist (FExport *fexp,
+         put32_n0 (cts, 8);            /* ?                         */
+         /* +0x50 */
+         put16lint (cts, pl->priv->mhsd5_type);
+-        put16lint (cts, pl->priv->mhsd5_type); /* same as 0x50 ? */
+-        /* +0x54 */
+-        if ((pl->priv->mhsd5_type == ITDB_PLAYLIST_MHSD5_MOVIE_RENTALS)
+-             || (pl->priv->mhsd5_type == ITDB_PLAYLIST_MHSD5_RINGTONES)){
+-            put32lint (cts, 1); /* unknown, 1 for Movie rentals + Ringtones */
++        if (itdb_device_is_hashab_nano (fexp->itdb->device)) {
++            /* +0x52 is the category kind, which is not +0x50 for Videos */
++            put16lint (cts, pl->priv->distinguished_kind);
++            /* +0x54 */
++            put32lint (cts, pl->priv->unk_0x54);
+         } else {
+-            put32lint (cts, 0); /* 0 otherwise */
++            put16lint (cts, pl->priv->mhsd5_type); /* same as 0x50 ? */
++            /* +0x54 */
++            if ((pl->priv->mhsd5_type == ITDB_PLAYLIST_MHSD5_MOVIE_RENTALS)
++                 || (pl->priv->mhsd5_type == ITDB_PLAYLIST_MHSD5_RINGTONES)){
++                put32lint (cts, 1); /* unknown, 1 for Movie rentals + Ringtones */
++            } else {
++                put32lint (cts, 0); /* 0 otherwise */
++            }
+         }
+         put32_n0 (cts, 5); /* ? */
+ 
+@@ -5991,6 +6005,8 @@ static gboolean itdb_write_file_internal (Itdb_iTunesDB *itdb,
+     g_return_val_if_fail (itdb->device, FALSE);
+     g_return_val_if_fail (filename || itdb->filename, FALSE);
+ 
++    itdb_playlist_add_missing_categories (itdb);
++
+     if (!filename) filename = itdb->filename;
+ 
+     /* set endianess flag */
+@@ -8254,6 +8270,28 @@ G_GNUC_INTERNAL GByteArray *itdb_chapterdata_build_chapter_blob(Itdb_Chapterdata
+     return chapter_blob;
+ }
+ 
++/* The SLst payload of mhod 51 (without the mhod header), which the SQLite
++   library stores as container.smart_criteria */
++G_GNUC_INTERNAL GByteArray *itdb_splrules_build_blob (Itdb_iTunesDB *itdb,
++						     Itdb_SPLRules *splrules)
++{
++    FExport fexp = { 0 };
++    MHODData mhod = { 0 };
++    GByteArray *blob;
++
++    fexp.itdb = itdb;
++    fexp.wcontents = wcontents_new ("");
++    mhod.valid = TRUE;
++    mhod.type = MHOD_ID_SPLRULES;
++    mhod.data.splrules = splrules;
++    mk_mhod (&fexp, &mhod);
++    blob = g_byte_array_sized_new (fexp.wcontents->pos - 24);
++    g_byte_array_append (blob, (guint8 *)fexp.wcontents->contents + 24,
++			 fexp.wcontents->pos - 24);
++    wcontents_free (fexp.wcontents);
++    return blob;
++}
++
+ 
+ /*------------------------------------------------------------------*\
+  *                                                                  *
+--- a/src/itdb_playlist.c
++++ b/src/itdb_playlist.c
+@@ -1355,6 +1355,74 @@ void itdb_playlist_add_mhsd5_playlist (Itdb_iTunesDB *itdb, Itdb_Playlist *pl,
+     itdb_playlist_add_internal (itdb, pl, pos, &itdb->priv->mhsd5_playlists);
+ }
+ 
++/* The hidden smart playlists in mhsd type 5 that an iPod nano 6G/7G
++   firmware browses as Music, Videos, ... (iTunes' rules: the first selects
++   media kinds, the second excludes some) */
++static const struct {
++    guint16 kind;	/* mhyp +0x52 */
++    Itdb_Playlist_Mhsd5_Type mhsd5_type;
++    guint32 sortorder;
++    const gchar *name;
++    guint64 mask1;
++    guint32 action2;
++    guint64 mask2;
++} categories[] = {
++    {4, ITDB_PLAYLIST_MHSD5_MUSIC, 5, "Music", 0x1021B1,
++     ITDB_SPLACTION_NOT_BINARY_AND, 0x208004},
++    {1, ITDB_PLAYLIST_MHSD5_NONE, 1, "Videos", 0x000C42,
++     ITDB_SPLACTION_NOT_BINARY_AND, 0x20A004},
++    {2, ITDB_PLAYLIST_MHSD5_MOVIES, 1, "Movies", 0x000402,
++     ITDB_SPLACTION_NOT_BINARY_AND, 0x20A004},
++    {3, ITDB_PLAYLIST_MHSD5_TV_SHOWS, 1, "TV Shows", 0x000040,
++     ITDB_SPLACTION_NOT_BINARY_AND, 0x20A004},
++    {5, ITDB_PLAYLIST_MHSD5_AUDIOBOOKS, 1, "Audiobooks", 0x000008,
++     ITDB_SPLACTION_NOT_BINARY_AND, 0x20A004},
++    {7, ITDB_PLAYLIST_MHSD5_MOVIE_RENTALS, 1, "Rentals", 0x000042,
++     ITDB_SPLACTION_BINARY_UNKNOWN1, 0x008000},
++};
++
++/* Add the categories a nano 6G/7G library lacks, e.g. a new one. */
++G_GNUC_INTERNAL void itdb_playlist_add_missing_categories (Itdb_iTunesDB *itdb)
++{
++    guint i, j;
++
++    if (!itdb_device_is_hashab_nano (itdb->device))
++	return;
++    for (i = 0; i < G_N_ELEMENTS (categories); i++) {
++	Itdb_Playlist *pl;
++	GList *gl;
++
++	for (gl = itdb->priv->mhsd5_playlists; gl; gl = gl->next) {
++	    pl = gl->data;
++	    if (pl->priv->distinguished_kind == categories[i].kind)
++		break;
++	}
++	if (gl)
++	    continue;
++	pl = itdb_playlist_new (categories[i].name, FALSE);
++	pl->is_spl = TRUE;
++	pl->sortorder = categories[i].sortorder;
++	pl->splpref.liveupdate = TRUE;
++	pl->splpref.checkrules = TRUE;
++	pl->splpref.limittype = ITDB_LIMITTYPE_SONGS;
++	pl->splpref.limitsort = ITDB_LIMITSORT_RANDOM;
++	pl->splpref.limitvalue = 25;
++	pl->splrules.unk004 = 0x00010001;
++	pl->splrules.match_operator = ITDB_SPLMATCH_AND;
++	for (j = 0; j < 2; j++) {
++	    Itdb_SPLRule *splr = g_new0 (Itdb_SPLRule, 1);
++	    splr->field = ITDB_SPLFIELD_VIDEO_KIND;
++	    splr->action = j ? categories[i].action2 : ITDB_SPLACTION_BINARY_AND;
++	    splr->fromvalue = splr->tovalue = j ? categories[i].mask2 : categories[i].mask1;
++	    splr->fromunits = splr->tounits = 1;
++	    pl->splrules.rules = g_list_append (pl->splrules.rules, splr);
++	}
++	pl->priv->mhsd5_type = categories[i].mhsd5_type;
++	pl->priv->distinguished_kind = categories[i].kind;
++	itdb_playlist_add_mhsd5_playlist (itdb, pl, -1);
++    }
++}
++
+ /**
+  * itdb_playlist_add:
+  * @itdb:   an #Itdb_iTunesDB
+--- a/src/itdb_private.h
++++ b/src/itdb_private.h
+@@ -210,11 +210,18 @@ struct _Itdb_Track_Private {
+ 
+ struct _Itdb_Playlist_Private {
+     Itdb_Playlist_Mhsd5_Type mhsd5_type;
++    /* mhyp +0x52 and +0x54 of a dataset 5 playlist. +0x52 is the SQLite
++       container.distinguished_kind, which differs from +0x50 for Videos. */
++    guint16 distinguished_kind;
++    guint32 unk_0x54;
+ };
+ 
+ G_GNUC_INTERNAL void itdb_playlist_add_mhsd5_playlist(Itdb_iTunesDB *itdb,
+                                                       Itdb_Playlist *pl,
+                                                       gint32 pos);
++G_GNUC_INTERNAL void itdb_playlist_add_missing_categories (Itdb_iTunesDB *itdb);
++G_GNUC_INTERNAL GByteArray *itdb_splrules_build_blob (Itdb_iTunesDB *itdb,
++						     Itdb_SPLRules *splrules);
+ G_GNUC_INTERNAL gboolean itdb_spl_action_known (ItdbSPLAction action);
+ G_GNUC_INTERNAL void itdb_splr_free (Itdb_SPLRule *splr);
+ G_GNUC_INTERNAL const gchar *itdb_photodb_get_mountpoint (Itdb_PhotoDB *photodb);
+--- a/src/itdb_sqlite_queries.h
++++ b/src/itdb_sqlite_queries.h
+@@ -77,6 +77,22 @@ static const char Library_create[] =
+ 	"END;" \
+ 	"COMMIT;";
+ 
++/** columns iTunes' 'Library.itdb' has in addition, for iPod nano 6G/7G;
++ *  the device's post-process commands add is_home_video */
++static const char Library_nano_columns[] =
++	"ALTER TABLE item ADD COLUMN is_tone INTEGER DEFAULT 0;" \
++	"ALTER TABLE item ADD COLUMN is_book INTEGER DEFAULT 0;" \
++	"ALTER TABLE item ADD COLUMN is_itunes_u INTEGER DEFAULT 0;" \
++	"ALTER TABLE item ADD COLUMN is_digital_booklet INTEGER DEFAULT 0;" \
++	"ALTER TABLE item ADD COLUMN chosen_by_auto_fill INTEGER DEFAULT 0;" \
++	"ALTER TABLE item ADD COLUMN collection_description TEXT;" \
++	"ALTER TABLE item ADD COLUMN copyright TEXT;" \
++	"ALTER TABLE avformat_info ADD COLUMN channels INTEGER DEFAULT 0;" \
++	"ALTER TABLE video_info ADD COLUMN is_hd INTEGER;" \
++	"ALTER TABLE store_info ADD COLUMN xid TEXT;" \
++	"ALTER TABLE store_info ADD COLUMN flavor TEXT;" \
++	"ALTER TABLE container ADD COLUMN smart_evaluation_order INTEGER;";
++
+ /** creation statement for 'Locations.itdb' */
+ static const char Locations_create[] =
+ 	"BEGIN TRANSACTION;" \
+--- a/src/itdb_sqlite.c
++++ b/src/itdb_sqlite.c
+@@ -180,6 +180,25 @@ static void destroy_key_orders(GHashTable **orders)
+     g_free(orders);
+ }
+ 
++/* iPod nano 6G/7G: the dataset 5 playlists that are the firmware's
++   categories, stored as hidden smart containers */
++static GList *category_containers(Itdb_iTunesDB *itdb)
++{
++    GList *categories = NULL;
++    GList *gl;
++
++    if (!itdb_device_is_hashab_nano(itdb->device))
++	return NULL;
++    for (gl = itdb->priv->mhsd5_playlists; gl; gl = gl->next) {
++	Itdb_Playlist *pl = gl->data;
++	guint16 kind = pl->priv->distinguished_kind;
++	/* Videos 1, Movies 2, TV Shows 3, Music 4, Audiobooks 5, Rentals 7 */
++	if (kind < 8 && ((1 << kind) & 0xBE))
++	    categories = g_list_append(categories, pl);
++    }
++    return categories;
++}
++
+ static int mk_Dynamic(Itdb_iTunesDB *itdb, const char *outpath)
+ {
+     int res = -1;
+@@ -190,6 +209,8 @@ static int mk_Dynamic(Itdb_iTunesDB *itdb, const char *outpath)
+     struct stat fst;
+     int idx = 0;
+     GList *gl = NULL;
++    GList *containers = NULL;
++    gboolean nano = itdb_device_is_hashab_nano(itdb->device);
+ 
+     dbf = g_build_filename(outpath, "Dynamic.itdb", NULL);
+     printf("[%s] Processing '%s'\n", __func__, dbf);
+@@ -227,7 +248,11 @@ static int mk_Dynamic(Itdb_iTunesDB *itdb, const char *outpath)
+ 	goto leave;
+     }
+ 
+-    sqlite3_exec(db, "BEGIN;", NULL, NULL, NULL);
++    if (SQLITE_OK != sqlite3_exec(db, "BEGIN;", NULL, NULL, NULL) && nano) {
++	fprintf(stderr, "[%s] BEGIN failed: %s\n", __func__, sqlite3_errmsg(db));
++	res = -1;
++	goto leave;
++    }
+ 
+     if (itdb->tracks) {
+ 	printf("[%s] - processing %d tracks\n", __func__, g_list_length(itdb->tracks));
+@@ -277,6 +302,8 @@ static int mk_Dynamic(Itdb_iTunesDB *itdb, const char *outpath)
+ 		/* expected result */
+ 	    } else {
+ 		fprintf(stderr, "[%s] 1 sqlite3_step returned %d\n", __func__, res);
++		if (nano)
++		    goto leave;
+ 	    }
+ 	}
+ 	if (stmt) {
+@@ -293,8 +320,9 @@ static int mk_Dynamic(Itdb_iTunesDB *itdb, const char *outpath)
+ 	    goto leave;
+     }
+ 
+-    printf("[%s] - processing %d playlists\n", __func__, g_list_length(itdb->playlists));
+-    for (gl = itdb->playlists; gl; gl = gl->next) {
++    containers = g_list_concat(g_list_copy(itdb->playlists), category_containers(itdb));
++    printf("[%s] - processing %d playlists\n", __func__, g_list_length(containers));
++    for (gl = containers; gl; gl = gl->next) {
+ 	Itdb_Playlist *pl = (Itdb_Playlist*)gl->data;
+ 
+ 	res = sqlite3_reset(stmt);
+@@ -333,19 +361,24 @@ static int mk_Dynamic(Itdb_iTunesDB *itdb, const char *outpath)
+ 	    /* expected result */
+ 	} else {
+ 	    fprintf(stderr, "[%s] 2 sqlite3_step returned %d\n", __func__, res);
++	    if (nano)
++		goto leave;
+ 	}
+     }
+ 
+-    sqlite3_exec(db, "COMMIT;", NULL, NULL, NULL);
+-
+-    if (stmt) {
+-	sqlite3_finalize(stmt);
+-	stmt = NULL;
++    if (SQLITE_OK != sqlite3_exec(db, "COMMIT;", NULL, NULL, NULL) && nano) {
++	fprintf(stderr, "[%s] COMMIT failed: %s\n", __func__, sqlite3_errmsg(db));
++	res = -1;
++	goto leave;
+     }
+ 
+     res = 0;
+     printf("[%s] done.\n", __func__);
+ leave:
++    g_list_free(containers);
++    if (stmt) {
++	sqlite3_finalize(stmt);
++    }
+     if (db) {
+ 	sqlite3_close(db);
+     }
+@@ -363,6 +396,7 @@ static int mk_Extras(Itdb_iTunesDB *itdb, const char *outpath)
+     sqlite3 *db = NULL;
+     sqlite3_stmt *stmt_chapter = NULL;
+     char *errmsg = NULL;
++    gboolean nano = itdb_device_is_hashab_nano(itdb->device);
+     struct stat fst;
+     GList *gl = NULL;
+ 
+@@ -399,7 +433,11 @@ static int mk_Extras(Itdb_iTunesDB *itdb, const char *outpath)
+ 	}
+     }
+ 
+-    sqlite3_exec(db, "BEGIN;", NULL, NULL, NULL);
++    if (SQLITE_OK != sqlite3_exec(db, "BEGIN;", NULL, NULL, NULL) && nano) {
++	fprintf(stderr, "[%s] BEGIN failed: %s\n", __func__, sqlite3_errmsg(db));
++	res = -1;
++	goto leave;
++    }
+     if (SQLITE_OK != sqlite3_prepare_v2(db, "INSERT INTO \"chapter\" VALUES(?,?);", -1, &stmt_chapter, NULL)) {
+ 	fprintf(stderr, "[%s] sqlite3_prepare error: %s\n", __func__, sqlite3_errmsg(db));
+ 	goto leave;
+@@ -450,9 +488,15 @@ static int mk_Extras(Itdb_iTunesDB *itdb, const char *outpath)
+ 		fprintf(stderr, "[%s] 8 sqlite3_step returned %d\n", __func__, res);
+ 	    }
+ 	    g_byte_array_free(chapter_blob, TRUE);
++	    if (res != SQLITE_DONE && nano)
++		goto leave;
+ 	}
+     }
+-    sqlite3_exec(db, "COMMIT;", NULL, NULL, NULL);
++    if (SQLITE_OK != sqlite3_exec(db, "COMMIT;", NULL, NULL, NULL) && nano) {
++	fprintf(stderr, "[%s] COMMIT failed: %s\n", __func__, sqlite3_errmsg(db));
++	res = -1;
++	goto leave;
++    }
+ 
+     res = 0;
+     printf("[%s] done.\n", __func__);
+@@ -510,6 +554,12 @@ static int mk_Genius(Itdb_iTunesDB *itdb, const char *outpath)
+ 	    goto leave;
+ 	}
+     }
++    /* iTunes' schema level of Genius.itdb on nano 6G/7G */
++    if (itdb_device_is_hashab_nano(itdb->device)
++	&& SQLITE_OK != sqlite3_exec(db, "PRAGMA user_version = 2;", NULL, NULL, NULL)) {
++	fprintf(stderr, "[%s] could not set user_version: %s\n", __func__, sqlite3_errmsg(db));
++	goto leave;
++    }
+ 
+     sqlite3_exec(db, "BEGIN;", NULL, NULL, NULL);
+ 
+@@ -606,15 +656,19 @@ static int mk_Library(Itdb_iTunesDB *itdb,
+     sqlite3_stmt *stmt_artist = NULL;
+     sqlite3_stmt *stmt_composer = NULL;
+     sqlite3_stmt *stmt_video_info = NULL;
++    sqlite3_stmt *stmt_category = NULL;
+     char *errmsg = NULL;
+     struct stat fst;
+     GList *gl = NULL;
++    GList *categories = category_containers(itdb);
+     Itdb_Playlist *dev_playlist = NULL;
+     int idx = 0;
+     int pos = 0;
+     GHashTable *genre_map = NULL;
+     GHashTable **orders = NULL;
+     guint32 genre_index;
++    guint32 master_types = 0;
++    gboolean nano = itdb_device_is_hashab_nano(itdb->device);
+     printf("library_persistent_id = 0x%016"G_GINT64_MODIFIER"x\n", itdb->priv->pid);
+ 
+     dbf = g_build_filename(outpath, "Library.itdb", NULL);
+@@ -652,8 +706,16 @@ static int mk_Library(Itdb_iTunesDB *itdb,
+ 	}
+ 	goto leave;
+     }
++    if (nano && SQLITE_OK != sqlite3_exec(db, Library_nano_columns, NULL, NULL, NULL)) {
++	fprintf(stderr, "[%s] could not add columns: %s\n", __func__, sqlite3_errmsg(db));
++	goto leave;
++    }
+ 
+-    sqlite3_exec(db, "BEGIN;", NULL, NULL, NULL);
++    if (SQLITE_OK != sqlite3_exec(db, "BEGIN;", NULL, NULL, NULL) && nano) {
++	fprintf(stderr, "[%s] BEGIN failed: %s\n", __func__, sqlite3_errmsg(db));
++	res = -1;
++	goto leave;
++    }
+ 
+     fprintf(stderr, "[%s] compiling SQL statements\n", __func__);
+     if (SQLITE_OK != sqlite3_prepare_v2(db, "INSERT INTO \"version_info\" VALUES(?,?,?,?,?,?,?);", -1, &stmt_version_info, NULL)) {
+@@ -665,7 +727,17 @@ static int mk_Library(Itdb_iTunesDB *itdb,
+ 	goto leave;
+     }
+     if (SQLITE_OK != sqlite3_prepare_v2(db, "INSERT INTO \"container\" "
+-	    "VALUES(?,?,?,?,:name,?,?,?,?,?,?,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL);", -1, &stmt_container, NULL)) {
++	    "(pid,distinguished_kind,date_created,date_modified,name,name_order,parent_pid,media_kinds,"
++	    "workout_template_id,is_hidden,smart_is_folder) VALUES(?,?,?,?,:name,?,?,?,?,?,?);", -1, &stmt_container, NULL)) {
++	fprintf(stderr, "[%s] sqlite3_prepare error: %s\n", __func__, sqlite3_errmsg(db));
++	goto leave;
++    }
++    if (categories && SQLITE_OK != sqlite3_prepare_v2(db, "INSERT INTO \"container\" "
++	    "(pid,distinguished_kind,date_created,date_modified,name,name_order,parent_pid,media_kinds,"
++	    "workout_template_id,is_hidden,smart_is_folder,smart_is_dynamic,smart_is_filtered,smart_is_genius,"
++	    "smart_enabled_only,smart_is_limited,smart_limit_kind,smart_limit_order,smart_evaluation_order,"
++	    "smart_limit_value,smart_reverse_limit_order,smart_criteria) "
++	    "VALUES(?,?,?,?,?,?,0,?,0,1,0,?,?,0,?,?,2,?,7,?,?,?);", -1, &stmt_category, NULL)) {
+ 	fprintf(stderr, "[%s] sqlite3_prepare error: %s\n", __func__, sqlite3_errmsg(db));
+ 	goto leave;
+     }
+@@ -688,7 +760,10 @@ static int mk_Library(Itdb_iTunesDB *itdb,
+ 	fprintf(stderr, "[%s] sqlite3_prepare error: %s\n", __func__, sqlite3_errmsg(db));
+ 	goto leave;
+     }
+-    if (SQLITE_OK != sqlite3_prepare_v2(db, "INSERT INTO \"avformat_info\" VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?);", -1, &stmt_avformat_info, NULL)) {
++    if (SQLITE_OK != sqlite3_prepare_v2(db, "INSERT INTO \"avformat_info\" "
++	    "(item_pid,sub_id,audio_format,bit_rate,sample_rate,duration,gapless_heuristic_info,gapless_encoding_delay,"
++	    "gapless_encoding_drain,gapless_last_frame_resynch,analysis_inhibit_flags,audio_fingerprint,"
++	    "volume_normalization_energy) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?);", -1, &stmt_avformat_info, NULL)) {
+ 	fprintf(stderr, "[%s] sqlite3_prepare error: %s\n", __func__, sqlite3_errmsg(db));
+ 	goto leave;
+     }
+@@ -708,7 +783,12 @@ static int mk_Library(Itdb_iTunesDB *itdb,
+ 	fprintf(stderr, "[%s] sqlite3_prepare error: %s\n", __func__, sqlite3_errmsg(db));
+ 	goto leave;
+     }
+-    if (SQLITE_OK != sqlite3_prepare_v2(db, "INSERT INTO \"video_info\" VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);", -1, &stmt_video_info, NULL)) {
++    if (SQLITE_OK != sqlite3_prepare_v2(db, "INSERT INTO \"video_info\" "
++	    "(item_pid,has_alternate_audio,has_subtitles,characteristics_valid,has_closed_captions,is_self_contained,"
++	    "is_compressed,is_anamorphic,season_number,audio_language,audio_track_index,audio_track_id,"
++	    "subtitle_language,subtitle_track_index,subtitle_track_id,series_name,sort_series_name,episode_id,"
++	    "episode_sort_id,network_name,extended_content_rating,movie_info) "
++	    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);", -1, &stmt_video_info, NULL)) {
+ 	fprintf(stderr, "[%s] sqlite3_prepare error: %s\n", __func__, sqlite3_errmsg(db));
+ 	goto leave;
+     }
+@@ -721,9 +801,10 @@ static int mk_Library(Itdb_iTunesDB *itdb,
+     /* major */
+     /* FIXME: the versioning scheme needs to be updated in libgpod using */
+     /* major+minor version, this is a workaround */
+-    sqlite3_bind_int(stmt_version_info, ++idx, (itdb->version >= 0x28) ? 2 : 1);
++    /* nano 6G/7G: what iTunes writes (1.117), whatever the iTunesDB version */
++    sqlite3_bind_int(stmt_version_info, ++idx, (nano || itdb->version < 0x28) ? 1 : 2);
+     /* minor */
+-    sqlite3_bind_int(stmt_version_info, ++idx, itdb->version);
++    sqlite3_bind_int(stmt_version_info, ++idx, nano ? 117 : itdb->version);
+     /* compatibility */
+     /* This has an unknown meaning. use 0. */
+     sqlite3_bind_int(stmt_version_info, ++idx, 0);
+@@ -740,6 +821,8 @@ static int mk_Library(Itdb_iTunesDB *itdb,
+ 	/* expected result */
+     } else {
+ 	fprintf(stderr, "[%s] 2 sqlite3_step returned %d\n", __func__, res);
++	if (nano)
++	    goto leave;
+     }
+ 
+     printf("[%s] - inserting into \"genre_map\"\n", __func__);
+@@ -809,10 +892,15 @@ static int mk_Library(Itdb_iTunesDB *itdb,
+ 		/* expected result */
+ 	    } else {
+ 		fprintf(stderr, "[%s] 8 sqlite3_step returned %d\n", __func__, res);
++		if (nano)
++		    goto leave;
+ 	    }
+ 
+ 	    types |= track->mediatype;
+ 	}
++	if (pl->type == 1) {
++	    master_types = types;
++	}
+ 
+ 	printf("[%s] - inserting playlist '%s' into \"container\"\n", __func__, pl->name);
+ 	res = sqlite3_reset(stmt_container);
+@@ -863,6 +951,48 @@ static int mk_Library(Itdb_iTunesDB *itdb,
+ 	    /* expected result */
+ 	} else {
+ 	    fprintf(stderr, "[%s] 4 sqlite3_step returned %d\n", __func__, res);
++	    if (nano)
++		goto leave;
++	}
++    }
++
++    /* the firmware evaluates the categories' rules itself: no members */
++    for (gl = categories; gl; gl = gl->next) {
++	Itdb_Playlist *pl = gl->data;
++	Itdb_SPLPref *pref = &pl->splpref;
++	GByteArray *criteria = itdb_splrules_build_blob(itdb, &pl->splrules);
++
++	printf("[%s] - inserting category '%s' into \"container\"\n", __func__, pl->name);
++	sqlite3_reset(stmt_category);
++	idx = 0;
++	sqlite3_bind_int64(stmt_category, ++idx, pl->id);
++	sqlite3_bind_int(stmt_category, ++idx, pl->priv->distinguished_kind);
++	/* date_created, date_modified */
++	sqlite3_bind_int(stmt_category, ++idx, timeconv(pl->timestamp));
++	sqlite3_bind_int(stmt_category, ++idx, timeconv(pl->timestamp));
++	sqlite3_bind_text(stmt_category, ++idx, pl->name, -1, SQLITE_STATIC);
++	/* name_order */
++	sqlite3_bind_int(stmt_category, ++idx, pos++);
++	/* media_kinds: iTunes gives Music (4) the master's */
++	sqlite3_bind_int(stmt_category, ++idx, (pl->priv->distinguished_kind == 4) ? master_types : 0);
++	/* smart_is_dynamic, smart_is_filtered */
++	sqlite3_bind_int(stmt_category, ++idx, pref->liveupdate ? 1 : 0);
++	sqlite3_bind_int(stmt_category, ++idx, pref->checkrules ? 1 : 0);
++	/* smart_enabled_only, smart_is_limited */
++	sqlite3_bind_int(stmt_category, ++idx, pref->matchcheckedonly ? 1 : 0);
++	sqlite3_bind_int(stmt_category, ++idx, pref->checklimits ? 1 : 0);
++	/* smart_limit_order, smart_limit_value, smart_reverse_limit_order */
++	sqlite3_bind_int(stmt_category, ++idx, pref->limitsort & 0xff);
++	sqlite3_bind_int(stmt_category, ++idx, pref->limitvalue);
++	sqlite3_bind_int(stmt_category, ++idx, (pref->limitsort & 0x80000000) ? 1 : 0);
++	/* smart_criteria */
++	sqlite3_bind_blob(stmt_category, ++idx, criteria->data, criteria->len, SQLITE_TRANSIENT);
++	g_byte_array_free(criteria, TRUE);
++
++	res = sqlite3_step(stmt_category);
++	if (res != SQLITE_DONE) {
++	    fprintf(stderr, "[%s] category sqlite3_step returned %d\n", __func__, res);
++	    goto leave;
+ 	}
+     }
+ 
+@@ -911,6 +1041,8 @@ static int mk_Library(Itdb_iTunesDB *itdb,
+ 	/* expected result */
+     } else {
+ 	fprintf(stderr, "[%s] 3 sqlite3_step returned %d\n", __func__, res);
++	if (nano)
++	    goto leave;
+     }
+ 
+     /* for each track: */
+@@ -1088,6 +1220,8 @@ static int mk_Library(Itdb_iTunesDB *itdb,
+ 	    /* expected result */
+ 	} else {
+ 	    fprintf(stderr, "[%s] 5 sqlite3_step returned %d: %s\n", __func__, res, sqlite3_errmsg(db));
++	    if (nano)
++		goto leave;
+ 	}
+ 
+ 	/* printf("[%s] -- inserting into \"avformat_info\"\n", __func__); */
+@@ -1144,6 +1278,8 @@ static int mk_Library(Itdb_iTunesDB *itdb,
+ 	    /* expected result */
+ 	} else {
+ 	    fprintf(stderr, "[%s] 7 sqlite3_step returned %d\n", __func__, res);
++	    if (nano)
++		goto leave;
+ 	}
+ 
+ 	/* this is done by a trigger, so we don't need to do this :-D */
+@@ -1191,6 +1327,8 @@ static int mk_Library(Itdb_iTunesDB *itdb,
+ 		/* expected result */
+ 	    } else {
+ 		fprintf(stderr, "[%s] 8 sqlite3_step returned %d\n", __func__, res);
++		if (nano)
++		    goto leave;
+ 	    }
+ 	}
+ 
+@@ -1227,6 +1365,8 @@ static int mk_Library(Itdb_iTunesDB *itdb,
+ 		/* expected result */
+ 	    } else {
+ 		fprintf(stderr, "[%s] 8 sqlite3_step returned %d\n", __func__, res);
++		if (nano)
++		    goto leave;
+ 	    }
+ 	}
+ 
+@@ -1252,6 +1392,8 @@ static int mk_Library(Itdb_iTunesDB *itdb,
+ 		/* expected result */
+ 	    } else {
+ 		fprintf(stderr, "[%s] 8 sqlite3_step returned %d\n", __func__, res);
++		if (nano)
++		    goto leave;
+ 	    }
+ 	}
+ 	/* if it's a movie, music video or tv show */
+@@ -1314,13 +1456,19 @@ static int mk_Library(Itdb_iTunesDB *itdb,
+ 		/* expected result */
+ 	    } else {
+ 		fprintf(stderr, "[%s] 8 sqlite3_step returned %d\n", __func__, res);
++		if (nano)
++		    goto leave;
+ 	    }
+ 	}
+     }
+ 
+     sqlite3_exec(db, "UPDATE album SET artwork_item_pid = (SELECT item.pid FROM item WHERE item.artwork_cache_id != 0 AND item.album_pid = album.pid LIMIT 1);", NULL, NULL, NULL);
+ 
+-    sqlite3_exec(db, "COMMIT;", NULL, NULL, NULL);
++    if (SQLITE_OK != sqlite3_exec(db, "COMMIT;", NULL, NULL, NULL) && nano) {
++	fprintf(stderr, "[%s] COMMIT failed: %s\n", __func__, sqlite3_errmsg(db));
++	res = -1;
++	goto leave;
++    }
+ 
+     res = 0;
+     printf("[%s] done.\n", __func__);
+@@ -1365,6 +1513,10 @@ leave:
+     if (stmt_video_info) {
+ 	sqlite3_finalize(stmt_video_info);
+     }
++    if (stmt_category) {
++	sqlite3_finalize(stmt_category);
++    }
++    g_list_free(categories);
+     if (genre_map) {
+ 	g_hash_table_destroy(genre_map);
+     }
+@@ -1385,6 +1537,7 @@ static int mk_Locations(Itdb_iTunesDB *itdb, const char *outpath, const char *uu
+     sqlite3_stmt *stmt = NULL;
+     char *errmsg = NULL;
+     int idx = 0;
++    gboolean nano = itdb_device_is_hashab_nano(itdb->device);
+ 
+     dbf = g_build_filename(outpath, "Locations.itdb", NULL);
+     printf("[%s] Processing '%s'\n", __func__, dbf);
+@@ -1415,7 +1568,11 @@ static int mk_Locations(Itdb_iTunesDB *itdb, const char *outpath, const char *uu
+ 	goto leave;
+     }
+ 
+-    sqlite3_exec(db, "BEGIN;", NULL, NULL, NULL);
++    if (SQLITE_OK != sqlite3_exec(db, "BEGIN;", NULL, NULL, NULL) && nano) {
++	fprintf(stderr, "[%s] BEGIN failed: %s\n", __func__, sqlite3_errmsg(db));
++	res = -1;
++	goto leave;
++    }
+ 
+     if (SQLITE_OK != sqlite3_prepare_v2(db, "INSERT INTO \"base_location\" (id, path) VALUES (?,?);", -1, &stmt, NULL)) {
+ 	fprintf(stderr, "[%s] sqlite3_prepare error: %s\n", __func__, sqlite3_errmsg(db));
+@@ -1438,6 +1595,8 @@ static int mk_Locations(Itdb_iTunesDB *itdb, const char *outpath, const char *uu
+ 	/* expected result */
+     } else {
+ 	fprintf(stderr, "[%s] sqlite3_step returned %d\n", __func__, res);
++	if (nano)
++	    goto leave;
+     }
+ 
+     if (itdb_device_is_iphone_family(itdb->device)) {
+@@ -1489,7 +1648,6 @@ static int mk_Locations(Itdb_iTunesDB *itdb, const char *outpath, const char *uu
+ 	    int i = 0;
+ 	    int cnt = 0;
+ 	    int pos = 0;
+-	    int res;
+ 
+ 	    if (!track->ipod_path) {
+ 		continue;
+@@ -1556,12 +1714,18 @@ static int mk_Locations(Itdb_iTunesDB *itdb, const char *outpath, const char *uu
+ 		free(ipod_path);
+ 		ipod_path = NULL;
+ 	    }
++	    if (res != SQLITE_DONE && nano)
++		goto leave;
+ 	}
+     } else {
+ 	printf("[%s] No tracks available, none written.\n", __func__);
+     }
+ 
+-    sqlite3_exec(db, "COMMIT;", NULL, NULL, NULL);
++    if (SQLITE_OK != sqlite3_exec(db, "COMMIT;", NULL, NULL, NULL) && nano) {
++	fprintf(stderr, "[%s] COMMIT failed: %s\n", __func__, sqlite3_errmsg(db));
++	res = -1;
++	goto leave;
++    }
+ 
+     res = 0;
+     printf("[%s] done.\n", __func__);
+@@ -1752,7 +1916,28 @@ static void sqlite_func_iphone_sort_section(sqlite3_context *context, int argc,
+ 	sqlite3_result_int(context, res);
+ }
+ 
+-static void run_post_process_commands(Itdb_iTunesDB *itdb, const char *outpath, const char *uuid)
++/* Set 25 adds two columns a second time: libgpod's item_stats has
++   rental_expired already, and AddGenreMapCompilationCount is listed
++   twice. Only the repeats are skipped. */
++static gboolean is_repeated_column(sqlite3 *db, const char *key, gboolean genre_count_added)
++{
++    sqlite3_stmt *stmt = NULL;
++    gboolean present;
++
++    if (strcmp(key, "AddGenreMapCompilationCount") == 0)
++	return genre_count_added;
++    if (strcmp(key, "CreateRentalExpiredColumn") != 0)
++	return FALSE;
++    present = sqlite3_prepare_v2(db, "SELECT rental_expired FROM item_stats;", -1, &stmt, NULL) == SQLITE_OK;
++    sqlite3_finalize(stmt);
++    return present;
++}
++
++/* iPod nano 6G/7G need the commands to reach the schema level their
++   firmware expects: there a missing or failing command fails the write,
++   other devices only log it. */
++static int run_post_process_commands(Itdb_iTunesDB *itdb, const char *outpath, const char *uuid,
++				     GError **error)
+ {
+     plist_t plist_node = NULL;
+     plist_t ppc_dict = NULL;
+@@ -1760,6 +1945,8 @@ static void run_post_process_commands(Itdb_iTunesDB *itdb, const char *outpath,
+     const gchar *otherdbs[] = {"Dynamic.itdb", "Extras.itdb", "Genius.itdb", "Locations.itdb", NULL};
+     int res;
+     sqlite3 *db = NULL;
++    gboolean nano = itdb_device_is_hashab_nano(itdb->device);
++    gchar *failure = NULL;
+ 
+ #ifdef HAVE_LIBIMOBILEDEVICE
+     if (itdb_device_is_iphone_family(itdb->device)) {
+@@ -1846,7 +2033,9 @@ static void run_post_process_commands(Itdb_iTunesDB *itdb, const char *outpath,
+ 		plist_dict_next_item(curnode, iter, &key, &subnode);
+ 		while (subnode) {
+ 		    unsigned long int intval = strtoul(key, NULL, 0);
+-		    if ((intval > 0) && (intval > maxver)) {
++		    /* nano 6G/7G: set 25 fits libgpod's schema plus
++		       Library_nano_columns and raises it to iTunes' level 26 */
++		    if (nano ? (intval == 25) : ((intval > 0) && (intval > maxver))) {
+ 			user_ver_cmds = subnode;
+ 			maxver = intval;
+ 		    }
+@@ -1874,6 +2063,7 @@ static void run_post_process_commands(Itdb_iTunesDB *itdb, const char *outpath,
+ 		    	gchar *attach_str = NULL;
+ 			char *errmsg = NULL;
+ 			guint32 i = 0, cnt = 0, ok_cnt = 0;
++			gboolean genre_count_added = FALSE;
+ 
+ 			plist_dict_new_iter(sql_cmds, &iter);
+ 			if (iter) {
+@@ -1900,6 +2090,7 @@ static void run_post_process_commands(Itdb_iTunesDB *itdb, const char *outpath,
+ 
+ 			if (SQLITE_OK != sqlite3_open((const char*)dbf, &db)) {
+ 			    fprintf(stderr, "Error opening database '%s': %s\n", dbf, sqlite3_errmsg(db));
++			    failure = g_strdup_printf("cannot open '%s'", dbf);
+ 			    g_free(dbf);
+ 			    goto leave;
+ 			}
+@@ -1910,12 +2101,14 @@ static void run_post_process_commands(Itdb_iTunesDB *itdb, const char *outpath,
+ 			while (otherdbs[i]) {
+ 			    errmsg = NULL;
+ 			    dbf = g_build_filename(outpath, otherdbs[i], NULL);
+-			    attach_str = g_strdup_printf("ATTACH DATABASE '%s' AS '%s';", dbf, otherdbs[i]);
++			    attach_str = sqlite3_mprintf("ATTACH DATABASE %Q AS %Q;", dbf, otherdbs[i]);
+ 			    g_free(dbf);
+ 			    res = sqlite3_exec(db, attach_str, NULL, NULL, &errmsg);
+-			    g_free(attach_str);
++			    sqlite3_free(attach_str);
+ 			    if (res != SQLITE_OK) {
+ 				printf("[%s] WARNING: Could not attach database '%s': %s\n", __func__, otherdbs[i], errmsg);
++				if (!failure)
++				    failure = g_strdup_printf("cannot attach '%s': %s", otherdbs[i], errmsg);
+ 			    }
+ 			    if (errmsg) {
+ 				free(errmsg);
+@@ -1930,28 +2123,39 @@ static void run_post_process_commands(Itdb_iTunesDB *itdb, const char *outpath,
+ 			cnt = plist_array_get_size(user_ver_cmds);
+ 			printf("[%s] Running %d post process commands now\n", __func__, cnt);
+ 
+-			sqlite3_exec(db, "BEGIN;", NULL, NULL, NULL);
+-			for (i=0; i<cnt; i++) {
++			if (SQLITE_OK != sqlite3_exec(db, "BEGIN;", NULL, NULL, NULL) && nano && !failure)
++			    failure = g_strdup_printf("BEGIN failed: %s", sqlite3_errmsg(db));
++			for (i=0; i<cnt && !(nano && failure); i++) {
+ 			    subnode = plist_array_get_item(user_ver_cmds, i);
+ 			    plist_get_string_val(subnode, &key);
+ 			    if (key) {
+ 				val = g_hash_table_lookup(sqlcmd_map, key);
+-				if (val) {
++				if (val && nano && is_repeated_column(db, key, genre_count_added)) {
++				    ok_cnt++;
++				} else if (val) {
+ 				    char *errmsg = NULL; 
+ 				    if (SQLITE_OK == sqlite3_exec(db, val, NULL, NULL, &errmsg)) {
+ 				        /*printf("[%s] executing '%s': OK", __func__, key);*/
+ 					ok_cnt++;
++					if (strcmp(key, "AddGenreMapCompilationCount") == 0)
++					    genre_count_added = TRUE;
+ 				    } else {
+ 					printf("[%s] ERROR when executing '%s': %s\n", __func__, key, errmsg);
++					if (!failure)
++					    failure = g_strdup_printf("'%s' failed: %s", key, errmsg);
+ 				    }
+ 				    if (errmsg) {
+ 					sqlite3_free(errmsg);
+ 				    }
+ 				} else {
+ 				    printf("[%s] value for '%s' not found in hashmap!\n", __func__, key);
++				    if (!failure)
++					failure = g_strdup_printf("'%s' is missing", key);
+ 				}
+ 				free(key);
+ 				key = NULL;
++			    } else if (!failure) {
++				failure = g_strdup_printf("command %u is not a name", i);
+ 			    }
+ 			}
+ 			g_hash_table_foreach(sqlcmd_map, free_key_val_strings, NULL);
+@@ -1959,19 +2163,28 @@ static void run_post_process_commands(Itdb_iTunesDB *itdb, const char *outpath,
+ 
+ 			printf("[%s] %d out of %d post process commands successfully executed\n", __func__, ok_cnt, cnt);
+ 			/* TODO perhaps we want to roll back when an error has occured ? */
+-			sqlite3_exec(db, "COMMIT;", NULL, NULL, NULL);
++			if (nano && failure) {
++			    sqlite3_exec(db, "ROLLBACK;", NULL, NULL, NULL);
++			} else if (SQLITE_OK != sqlite3_exec(db, "COMMIT;", NULL, NULL, NULL) && !failure) {
++			    failure = g_strdup_printf("COMMIT failed: %s", sqlite3_errmsg(db));
++			}
+ 		    } else {
+ 			printf("[%s]: Error: could not create hash table!\n", __func__);
+ 		    }
+ 		} else {
+ 		    printf("[%s]: Error fetching commands array\n", __func__);
++		    failure = g_strdup("no command list");
+ 		}
+ 	    } else {
+ 		printf("[%s]: Error fetching user version command set\n", __func__);
++		failure = g_strdup(nano ? "no command set 25" : "no command set");
+ 	    }
+ 	} else {
+ 	    printf("[%s]: Error fetching post process commands from device!\n", __func__);
++	    failure = g_strdup("malformed command list");
+ 	}
++    } else {
++	failure = g_strdup("none listed by the device");
+     }
+    
+     printf("[%s] done.\n", __func__);
+@@ -1983,7 +2196,14 @@ leave:
+     if (plist_node) {
+ 	plist_free(plist_node);
+     }
+-
++    res = 0;
++    if (nano && failure) {
++	g_set_error(error, ITDB_ERROR, ITDB_ERROR_SQLITE,
++		    "SQLite post-process commands: %s", failure);
++	res = -1;
++    }
++    g_free(failure);
++    return res;
+ }
+ 
+ static int cbk_calc_sha1_one_block(FILE *f, unsigned char sha1[20])
+@@ -2167,7 +2387,9 @@ static int build_itdb_files(Itdb_iTunesDB *itdb,
+ 	return -1;
+     }
+ 
+-    run_post_process_commands(itdb, outpath, uuid);
++    if (run_post_process_commands(itdb, outpath, uuid, error) != 0) {
++	return -1;
++    }
+ 
+     if (!mk_Locations_cbk(itdb, outpath)) {
+ 	g_set_error (error, ITDB_ERROR, ITDB_ERROR_SQLITE,
+--- a/src/Makefile.am
++++ b/src/Makefile.am
+@@ -31,6 +31,33 @@ libgpod_la_CFLAGS =
+ libgpod_la_LDFLAGS = -version-info $(LIBGPOD_SO_VERSION) -no-undefined
+ libgpod_la_CPPFLAGS = -DLIBGPOD_BLOB_DIR=\"$(LIBGPOD_BLOB_DIR)\"
+ 
++# The vendored HashAB signer for the iPod nano 6G/7G relies on wrapping signed
++# arithmetic. Its global symbols are renamed and hidden, so that they neither
++# clash with other code linked with libgpod nor become part of its interface.
++noinst_LTLIBRARIES = libnanohashab.la
++libnanohashab_la_SOURCES =		\
++	nano_hashab/calcHashAB.c	\
++	nano_hashab/cipher.c		\
++	nano_hashab/cipher_tables.c	\
++	nano_hashab/edonr.c		\
++	nano_hashab/expand.c		\
++	nano_hashab/hash.c		\
++	nano_hashab/reduce.c
++libnanohashab_la_CFLAGS = -fwrapv -fvisibility=hidden
++libnanohashab_la_CPPFLAGS =					\
++	-DcalcHashAB=itdb_hashab_calcHashAB			\
++	-DEdonR256Compress=itdb_hashab_EdonR256Compress		\
++	-DEdonR256Init=itdb_hashab_EdonR256Init			\
++	-Dexpand=itdb_hashab_expand				\
++	-Dhash=itdb_hashab_hash					\
++	-Dreduce=itdb_hashab_reduce				\
++	-Dstage1_cipher=itdb_hashab_stage1_cipher		\
++	-Dstage1_initial_chain=itdb_hashab_stage1_initial_chain	\
++	-Dstage1_profile=itdb_hashab_stage1_profile		\
++	-Dstage2_cipher=itdb_hashab_stage2_cipher		\
++	-Dstage2_profile=itdb_hashab_stage2_profile
++libgpod_la_LIBADD = libnanohashab.la
++
+ libgpodincludebase = $(includedir)/gpod-1.0
+ libgpodincludedir = $(libgpodincludebase)/gpod
+ libgpodinclude_HEADERS = itdb.h
+@@ -51,6 +78,15 @@ noinst_HEADERS = 		\
+ 	itdb_zlib.h		\
+ 	pixmaps.h		\
+ 	rijndael.h
++noinst_HEADERS +=		\
++	nano_hashab/byteorder.h		\
++	nano_hashab/calcHashAB.h	\
++	nano_hashab/cipher.h		\
++	nano_hashab/cipher_tables.h	\
++	nano_hashab/edonr.h		\
++	nano_hashab/expand.h		\
++	nano_hashab/hash.h		\
++	nano_hashab/reduce.h
+ 
+ INCLUDES=$(LIBGPOD_CFLAGS)
+ LIBS=$(LIBGPOD_LIBS) $(Z_LIBS) -lm
