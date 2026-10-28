@@ -10,6 +10,8 @@
  */
 
 import { describe, it, expect } from 'bun:test';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   IpodDatabase,
@@ -61,6 +63,39 @@ describe('IpodDatabase', () => {
         expect((error as IpodError).code).toBe('NOT_FOUND');
         expect((error as IpodError).message).toContain(path);
       }
+    });
+  });
+
+  describe('hasDatabase()', () => {
+    async function withDatabaseFiles(names: string[], check: (mount: string) => Promise<void>) {
+      const mount = await mkdtemp(join(tmpdir(), 'podkit-hasdb-'));
+      try {
+        await mkdir(join(mount, 'iPod_Control', 'iTunes'), { recursive: true });
+        for (const name of names) {
+          await writeFile(join(mount, 'iPod_Control', 'iTunes', name), '');
+        }
+        await check(mount);
+      } finally {
+        await rm(mount, { recursive: true, force: true });
+      }
+    }
+
+    it('recognises a library that only has the compressed iTunesCDB', async () => {
+      await withDatabaseFiles(['iTunesCDB'], async (mount) => {
+        expect(await IpodDatabase.hasDatabase(mount)).toBe(true);
+      });
+    });
+
+    it('recognises a plain iTunesDB', async () => {
+      await withDatabaseFiles(['iTunesDB'], async (mount) => {
+        expect(await IpodDatabase.hasDatabase(mount)).toBe(true);
+      });
+    });
+
+    it('reports a blank device', async () => {
+      await withDatabaseFiles([], async (mount) => {
+        expect(await IpodDatabase.hasDatabase(mount)).toBe(false);
+      });
     });
   });
 

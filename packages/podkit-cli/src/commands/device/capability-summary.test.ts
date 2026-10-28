@@ -264,16 +264,16 @@ describe('confirmUnsupportedDeviceAdd', () => {
   ): IpodIdentityAssessment {
     return {
       model: {
-        displayName: 'iPod nano (7th Generation)',
-        generationId: 'nano_7g',
+        displayName: 'iPod nano (6th Generation)',
+        generationId: 'nano_6g',
         family: 'iPod nano',
-        ordinal: 7,
+        ordinal: 6,
         checksumType: 'hashAB',
         source: 'usb',
         unsupportedReason: {
           kind: 'unsupported-device',
           headline:
-            'iPod nano (7th Generation) is not supported by podkit (this generation cannot sync).',
+            'iPod nano (6th Generation) is not supported by podkit (this generation cannot sync).',
           docsUrl: 'https://jvgomg.github.io/podkit/devices/supported-devices',
         },
         ...overrides,
@@ -337,7 +337,7 @@ describe('confirmUnsupportedDeviceAdd', () => {
     expect(decision).toBe('add-anyway');
     expect(calls).toBe(0);
     // Canonical message is rendered to stderr (warn) regardless of autoConfirm.
-    expect(stderr.text()).toContain('iPod nano (7th Generation) is not supported');
+    expect(stderr.text()).toContain('iPod nano (6th Generation) is not supported');
   });
 
   it('returns "cancelled" when user declines the prompt', async () => {

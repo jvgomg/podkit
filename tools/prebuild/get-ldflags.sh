@@ -37,7 +37,7 @@ if [ -n "$STATIC_DEPS_DIR" ]; then
     add_static "${STATIC_DEPS_DIR}/lib/libpng16.a" ""
     add_static "${STATIC_DEPS_DIR}/lib/libjpeg.a" ""
     add_static "${STATIC_DEPS_DIR}/lib/libtiff.a" ""
-    LIBS="$LIBS -liconv -lz -lm -lresolv -framework Foundation -framework CoreFoundation -framework AppKit -framework Carbon -framework IOKit -framework Security"
+    LIBS="$LIBS -lsqlite3 -lxml2 -liconv -lz -lm -lresolv -framework Foundation -framework CoreFoundation -framework AppKit -framework Carbon -framework IOKit -framework Security"
   else
     # Linux: statically link everything — all .a files built with -fPIC
     # Glib libraries may be in lib/ or lib/{arch}-linux-gnu/ depending on meson
@@ -58,6 +58,9 @@ if [ -n "$STATIC_DEPS_DIR" ]; then
       fi
     }
 
+    # The archives depend on each other (libtiff on libjpeg, for example);
+    # a group lets the linker resolve them whatever their order.
+    LIBS="-Wl,--start-group"
     add_static "${STATIC_DEPS_DIR}/lib/libgpod.a" ""
     add_static "${STATIC_DEPS_DIR}/lib/libgdk_pixbuf-2.0.a" ""
     add_static_multiarch "libgio-2.0.a"
@@ -74,7 +77,7 @@ if [ -n "$STATIC_DEPS_DIR" ]; then
     add_static "${STATIC_DEPS_DIR}/lib/libjpeg.a" ""
     add_static "${STATIC_DEPS_DIR}/lib/libtiff.a" ""
     add_static "${STATIC_DEPS_DIR}/lib/libz.a" ""
-    LIBS="$LIBS -lm -lpthread -ldl"
+    LIBS="$LIBS -Wl,--end-group -lm -lpthread -ldl"
 
     # glibc has a separate libresolv; musl includes the resolver in libc
     if ldd /bin/sh 2>/dev/null | grep -q musl; then

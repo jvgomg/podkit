@@ -14,7 +14,7 @@
  * Both ranges map to the same generations. DFU/WTF mode IDs (0x1223, 0x1224, etc.)
  * are intentionally excluded -- those are recovery-mode endpoints, not disk-mode devices.
  *
- * Devices that podkit cannot sync (e.g. nano 6G, nano 7G, all Touch generations)
+ * Devices that podkit cannot sync (e.g. nano 6G, all Touch generations)
  * are still listed here for identification purposes. The access tier lives on
  * `IpodGeneration.support` (see `tables/generations.ts`) and the canonical
  * PID-keyed reason map is `tables/unsupported.ts`.
