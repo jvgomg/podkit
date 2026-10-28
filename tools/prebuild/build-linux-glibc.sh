@@ -85,7 +85,7 @@ esac
 # ---------------------------------------------------------------------------
 if [ "$SKIP_STATIC_DEPS" = "1" ]; then
   log "SKIP_STATIC_DEPS=1; assuming $STATIC_DEPS_DIR is already populated."
-elif [ -f "$STATIC_DEPS_DIR/lib/libgpod.a" ] \
+elif bash "$SCRIPT_DIR/prepare-libgpod-nano.sh" --check "$STATIC_DEPS_DIR" \
    && [ -f "$STATIC_DEPS_DIR/lib/libgdk_pixbuf-2.0.a" ]; then
   log "static deps cached at $STATIC_DEPS_DIR — skipping build-static-deps.sh"
 else

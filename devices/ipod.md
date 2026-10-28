@@ -293,8 +293,8 @@ iPod_Control/
 | Generation | Reason |
 |------------|--------|
 | Shuffle 3-4G | Buttonless; writing their iTunesSD playback database is unverified on hardware |
-| Nano 6G | Writes an iTunesDB format libgpod cannot produce; read is untested |
-| Nano 7G | Reads and archives cleanly (hardware-confirmed); writing needs the hashAB signature libgpod cannot produce without an external blob podkit doesn't ship |
+| Nano 6G | Reads and archives (hardware-confirmed); syncing is not supported yet |
+| Nano 7G | Reads and archives cleanly (hardware-confirmed); the firmware shows no music for a library libgpod writes |
 | Touch (all) | iOS protocol + cryptographic iTunesDB signing |
 | iPhone (all) | iOS protocol + cryptographic iTunesDB signing |
 | iPad | iOS protocol + cryptographic iTunesDB signing |
@@ -348,3 +348,8 @@ Fully implemented in podkit. Key implementation files:
 - **Video handler:** `packages/podkit-core/src/sync/handlers/video-handler.ts`
 - **Generation metadata:** `packages/podkit-core/src/ipod/generation.ts`
 - **Model identification:** `packages/podkit-core/src/device/ipod-models.ts`
+
+## Nano 6G/7G signing
+
+The nano 6th and 7th generation sign `iTunesCDB` and `Locations.itdb.cbk` with hashAB, which podkit's libgpod builds compute ([ADR-030](../docs/adr/adr-030-native-nano-hashab.md); checks in `tools/nano7/`).
+On a nano 7G the firmware shows no music for a library libgpod writes, so both generations stay read-only.

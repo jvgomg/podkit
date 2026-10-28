@@ -1,0 +1,126 @@
+--- a/src/itdb_hashAB.c
++++ b/src/itdb_hashAB.c
+@@ -37,35 +37,9 @@
+ #include "db-itunes-parser.h"
+ #include "itdb_private.h"
+ 
+-typedef void (*calcHashAB_t)(unsigned char target[57], const unsigned char sha1[20], const unsigned char uuid[20], const unsigned char rnd_bytes[23]);
+-static calcHashAB_t calc_hashAB = NULL;
+-
+-static gboolean load_libhashab()
+-{
+-	gchar *path;
+-	GModule *handle;
+-
+-	if (!g_module_supported()) {
+-		return FALSE;
+-	}
+-	path = g_module_build_path(LIBGPOD_BLOB_DIR, "hashab");
+-	handle = g_module_open(path, G_MODULE_BIND_LAZY);
+-	g_free(path);
+-	if (!handle) {
+-		return FALSE;
+-	}
+-
+-	if (!g_module_symbol(handle, "calcHashAB", (void**)&calc_hashAB)) {
+-		g_module_close(handle);
+-		g_warning("symbol 'calcHashAB' not found");
+-		return FALSE;
+-	}
+-	g_module_make_resident(handle);
+-
+-	printf("***** hashAB support successfully loaded *****\n");
+-
+-	return TRUE;
+-}
++/* The vendored signer's symbols are renamed in src/Makefile.am. */
++#define calcHashAB itdb_hashab_calcHashAB
++#include "nano_hashab/calcHashAB.h"
+ 
+ static void itdb_hashAB_compute_itunesdb_sha1 (unsigned char *itdb_data, 
+ 					       gsize itdb_len,
+@@ -111,16 +85,26 @@ gboolean itdb_hashAB_compute_hash_for_sha1 (const Itdb_Device *device,
+     unsigned char uuid[20];
+     unsigned char rndpart[23] = "ABCDEFGHIJKLMNOPQRSTUVW";
+ 
+-    if (calc_hashAB == NULL) {
+-	if (!load_libhashab()) {
+-	    g_set_error (error, 0, -1, "Unsupported checksum type");
+-	    return FALSE;
+-	}
++    const char *guid = itdb_device_get_firewire_id(device);
++    guint i;
++
++    /* The open signer accepts eight-byte Nano GUIDs, not iOS UUIDs. */
++    if (guid != NULL && (g_str_has_prefix(guid, "0x") || g_str_has_prefix(guid, "0X")))
++        guid += 2;
++    if (guid == NULL || strlen(guid) != 16) {
++        g_set_error(error, 0, -1, "HashAB requires an eight-byte Nano GUID");
++        return FALSE;
++    }
++    for (i = 0; i < 16; i++) {
++        if (!g_ascii_isxdigit(guid[i])) {
++            g_set_error(error, 0, -1, "Invalid hexadecimal Nano GUID");
++            return FALSE;
++        }
+     }
+ 
+     if (!itdb_device_get_hex_uuid(device, uuid)) return FALSE;
+ 
+-    calc_hashAB(signature, sha1, uuid, rndpart);
++    calcHashAB(signature, sha1, uuid, rndpart);
+ 
+     return TRUE;
+ }
+--- a/src/Makefile.am
++++ b/src/Makefile.am
+@@ -31,6 +31,33 @@ libgpod_la_CFLAGS =
+ libgpod_la_LDFLAGS = -version-info $(LIBGPOD_SO_VERSION) -no-undefined
+ libgpod_la_CPPFLAGS = -DLIBGPOD_BLOB_DIR=\"$(LIBGPOD_BLOB_DIR)\"
+ 
++# The vendored HashAB signer for the iPod nano 6G/7G relies on wrapping signed
++# arithmetic. Its global symbols are renamed and hidden, so that they neither
++# clash with other code linked with libgpod nor become part of its interface.
++noinst_LTLIBRARIES = libnanohashab.la
++libnanohashab_la_SOURCES =		\
++	nano_hashab/calcHashAB.c	\
++	nano_hashab/cipher.c		\
++	nano_hashab/cipher_tables.c	\
++	nano_hashab/edonr.c		\
++	nano_hashab/expand.c		\
++	nano_hashab/hash.c		\
++	nano_hashab/reduce.c
++libnanohashab_la_CFLAGS = -fwrapv -fvisibility=hidden
++libnanohashab_la_CPPFLAGS =					\
++	-DcalcHashAB=itdb_hashab_calcHashAB			\
++	-DEdonR256Compress=itdb_hashab_EdonR256Compress		\
++	-DEdonR256Init=itdb_hashab_EdonR256Init			\
++	-Dexpand=itdb_hashab_expand				\
++	-Dhash=itdb_hashab_hash					\
++	-Dreduce=itdb_hashab_reduce				\
++	-Dstage1_cipher=itdb_hashab_stage1_cipher		\
++	-Dstage1_initial_chain=itdb_hashab_stage1_initial_chain	\
++	-Dstage1_profile=itdb_hashab_stage1_profile		\
++	-Dstage2_cipher=itdb_hashab_stage2_cipher		\
++	-Dstage2_profile=itdb_hashab_stage2_profile
++libgpod_la_LIBADD = libnanohashab.la
++
+ libgpodincludebase = $(includedir)/gpod-1.0
+ libgpodincludedir = $(libgpodincludebase)/gpod
+ libgpodinclude_HEADERS = itdb.h
+@@ -51,6 +78,15 @@ noinst_HEADERS = 		\
+ 	itdb_zlib.h		\
+ 	pixmaps.h		\
+ 	rijndael.h
++noinst_HEADERS +=		\
++	nano_hashab/byteorder.h		\
++	nano_hashab/calcHashAB.h	\
++	nano_hashab/cipher.h		\
++	nano_hashab/cipher_tables.h	\
++	nano_hashab/edonr.h		\
++	nano_hashab/expand.h		\
++	nano_hashab/hash.h		\
++	nano_hashab/reduce.h
+ 
+ INCLUDES=$(LIBGPOD_CFLAGS)
+ LIBS=$(LIBGPOD_LIBS) $(Z_LIBS) -lm

@@ -15,7 +15,7 @@
  * libgpod equivalent. Generations that map to libgpod's `unknown` (nano 7G,
  * touch 5G–7G) are sourced exclusively from this table for capability data.
  * Their `support.access` differs by generation: nano 7G is `read-only`
- * (hardware-confirmed readable; hashAB signing unavailable), touch 5G–7G
+ * (hardware-confirmed readable; library writes not supported yet), touch 5G–7G
  * carry `support.access: 'none'` (no disk mode at all).
  *
  * @module
@@ -190,13 +190,13 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     family: 'iPod nano',
     ordinal: 6,
     checksumType: 'hashAB',
-    // Multi-touch nano with no video playback hardware. Write is a format
-    // libgpod cannot produce. Read is confirmed on hardware: a 16GB nano 6G
-    // (serial DCYGLUGVDDW4) listed and archived 259 tracks cleanly.
+    // Multi-touch nano with no video playback hardware. Read is confirmed on
+    // hardware (259 tracks listed and archived). It signs with hashAB like the
+    // nano 7G (ADR-030); its writes are covered only by synthetic tests.
     support: {
       access: 'read-only',
       verified: 'hardware',
-      note: 'Reads and archives (259 tracks confirmed on hardware); writing needs an iTunesDB format libgpod cannot produce.',
+      note: 'Reads and archives (259 tracks confirmed on hardware); syncing is not supported yet.',
     },
     supportsAlac: false,
     supportsVideo: false,
@@ -207,17 +207,13 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     family: 'iPod nano',
     ordinal: 7,
     checksumType: 'hashAB',
-    // Hardware-confirmed readable: podkit read 1,414 tracks off a real
-    // nano 7G (serial DCYN83SFF0GQ) via libgpod's classic iTunesCDB parser,
-    // and `device archive` succeeded. The write refusal is hashAB signing —
-    // libgpod only computes it via an external `hashab` blob loaded through
-    // `LIBGPOD_BLOB_DIR` (itdb_hashAB.c:43-68) and fails closed without it;
-    // podkit ships no such blob. Not a libgpod-table gap, as previously
-    // claimed here.
+    // Read on real hardware through libgpod's iTunesCDB parser (1,414 tracks,
+    // `device archive` succeeded). Its databases are signed (ADR-030), but the
+    // firmware shows no music for a library libgpod writes, so writes stay refused.
     support: {
       access: 'read-only',
       verified: 'hardware',
-      note: 'Reads iTunesDB (1,414 tracks confirmed) and archives cleanly; writing needs the hashAB signature libgpod cannot produce without an external blob podkit does not ship.',
+      note: 'Reads iTunesDB (1,414 tracks confirmed) and archives cleanly; the firmware shows no music for a library libgpod writes, so syncing is not supported yet.',
     },
     supportsAlac: true,
     supportsVideo: true,
