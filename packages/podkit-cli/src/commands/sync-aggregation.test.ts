@@ -494,3 +494,55 @@ describe('report-only quality changes in dry-run JSON', () => {
     expect(stdout.text).toContain('--force-transcode');
   });
 });
+
+describe('music dry-run quality line', () => {
+  class BufferSink implements OutputSink {
+    chunks: string[] = [];
+    write(chunk: string): boolean {
+      this.chunks.push(chunk);
+      return true;
+    }
+    get text(): string {
+      return this.chunks.join('');
+    }
+  }
+
+  function renderQualityLine(config: MusicContentConfig): string {
+    const stdout = new BufferSink();
+    const out = new OutputContext({
+      mode: 'text',
+      quiet: false,
+      verbose: 0,
+      color: false,
+      tips: false,
+      tty: false,
+      stdout,
+      stderr: new BufferSink(),
+    });
+    const ctx = createMusicDryRunCtx([]);
+    new MusicPresenter().renderDryRunText(
+      out,
+      '/music',
+      '/ipod',
+      ctx.diff as never,
+      ctx.plan as never,
+      ctx.summary as never,
+      null,
+      true,
+      false,
+      config,
+      ctx.core as never,
+      []
+    );
+    return stdout.text.split('\n').find((line) => line.startsWith('Quality:')) ?? '';
+  }
+
+  it('names a custom bitrate next to the preset', () => {
+    const config = { ...makeMusicContentConfig('low'), effectiveCustomBitrate: 96 };
+    expect(renderQualityLine(config)).toBe('Quality: low (custom bitrate 96 kbps)');
+  });
+
+  it('shows the bare preset without a custom bitrate', () => {
+    expect(renderQualityLine(makeMusicContentConfig('low'))).toBe('Quality: low');
+  });
+});

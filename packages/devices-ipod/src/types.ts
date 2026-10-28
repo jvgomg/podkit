@@ -104,11 +104,8 @@ export interface IpodGeneration {
    * Notable non-`syncable` generations:
    * - shuffle_3g/4g: `read-only` — readable iTunesDB, but writing their
    *   `bdhs` iTunesSD has never been confirmed on hardware.
-   * - nano_6g: `read-only` — write is a format libgpod cannot produce; read
-   *   is untested (non-destructive, so permitted).
-   * - nano_7g: `read-only` — reads its iTunesDB fine (hardware-confirmed);
-   *   write is refused because libgpod's hashAB signing needs an external
-   *   blob podkit doesn't ship.
+   * - nano_6g: `read-only` — reads and archives (hardware-confirmed);
+   *   its library writes are covered only by synthetic tests.
    * - touch/iPhone/iPad, not-in-libgpod: `none` — no mountable database or a
    *   protocol podkit cannot speak.
    */

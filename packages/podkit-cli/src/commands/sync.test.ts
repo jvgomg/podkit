@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { formatDuration, renderProgressBar, syncCommand } from './sync.js';
+import { formatDuration, parseCustomBitrate, renderProgressBar, syncCommand } from './sync.js';
 import { formatBytes } from './display-utils.js';
 
 describe('sync command', () => {
@@ -59,6 +59,18 @@ describe('sync command', () => {
       expect(toleranceOption?.attributeName()).toBe('bitrateTolerance');
       expect(toleranceOption?.required).toBe(true);
       expect(toleranceOption?.defaultValue).toBeUndefined();
+    });
+
+    it('has --custom-bitrate value option bounded like the customBitrate config key', () => {
+      const option = syncCommand.options.find((opt) => opt.long === '--custom-bitrate');
+      expect(option?.attributeName()).toBe('customBitrate');
+      expect(option?.defaultValue).toBeUndefined();
+      expect(parseCustomBitrate('96')).toBe(96);
+      expect(parseCustomBitrate('64')).toBe(64);
+      expect(parseCustomBitrate('320')).toBe(320);
+      for (const bad of ['63', '321', '96.5', 'abc', '']) {
+        expect(() => parseCustomBitrate(bad)).toThrow('between 64 and 320');
+      }
     });
 
     it('no longer has the removed --bitrate-sync option', () => {

@@ -237,6 +237,8 @@ archiving work fine.
 | Filesystem | Confirms readability | Device also carries `iTunes Library.itlp`, the SQLite database the firmware plays from — separate from the libgpod-readable `iTunesCDB`. |
 | Sync (write) | **Genuinely refused** | Not a false refusal this time: `checksumType: 'hashAB'`, and libgpod does not implement hashAB signing. `itdb_hashAB.c:43-68` (`load_libhashab`) `g_module_open`s an external `hashab` blob from `LIBGPOD_BLOB_DIR` and fails closed when the symbol is absent. podkit ships no such blob (not referenced by `tools/prebuild/*.sh` or `tools/libgpod-macos/build.sh`, none installed). An unsigned database is rejected by the firmware. |
 
+The hashAB part of this refusal is superseded by [ADR-030](adr/adr-030-native-nano-hashab.md).
+
 **Why this unit matters:** the prior `access: 'none'` entry for nano 7G was
 itself wrong — it read "not in libgpod's `ipod_info_table`" as "no mountable
 database," but the two are unrelated. libgpod's classic iTunesCDB reader works

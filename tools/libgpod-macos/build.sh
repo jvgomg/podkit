@@ -136,6 +136,8 @@ extract_and_patch() {
     log_info "  Adding --without-libusb opt-out (podkit reads SysInfoExtended via @podkit/ipod-firmware)..."
     "$SCRIPT_DIR/../prebuild/disable-libgpod-libusb.sh" configure.ac
 
+    bash "$SCRIPT_DIR/../prebuild/prepare-libgpod-nano.sh" "$BUILD_DIR/$LIBGPOD_DIR"
+
     log_info "Patching complete"
 }
 

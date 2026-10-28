@@ -193,7 +193,13 @@ export function buildTranscodePreset(
     bitrateKbps:
       preset.bitrateOverride ?? getCodecPresetBitrate(preset.targetCodec, preset.name) ?? 256,
     encoding: encodingMode ?? 'vbr',
-    quality: getCodecVbrQuality(preset.targetCodec, preset.name),
+    // A numeric target (custom bitrate, reduction target) must reach the
+    // encoder: LAME's -q:a is a quality index with no bitrate bound, so MP3
+    // drops it and encodes at an average bitrate instead.
+    quality:
+      preset.bitrateOverride !== undefined && preset.targetCodec === 'mp3'
+        ? undefined
+        : getCodecVbrQuality(preset.targetCodec, preset.name),
   };
   return config;
 }

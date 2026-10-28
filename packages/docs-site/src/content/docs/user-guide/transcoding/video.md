@@ -60,16 +60,30 @@ All videos are transcoded to iPod-compatible format:
 | Max Video Bitrate | ~768 kbps |
 | Audio | AAC-LC, up to 128 kbps |
 
+### iPod Nano (7th Gen)
+
+| Setting | Value |
+|---------|-------|
+| Max Resolution | 432x240 |
+| Video Profile | H.264 Baseline Profile, level 3.0 |
+| Max Video Bitrate | ~1 Mbps |
+| Max Frame Rate | 30 fps |
+| Audio | AAC-LC, up to 128 kbps |
+
+432x240 is podkit's encoding choice for the 240x432 screen held sideways, not a playback limit: the Nano 7 decodes up to 720x576, but a larger frame would be scaled down on the device and only cost space, so a larger file is re-encoded rather than copied. Video is fitted with its aspect ratio kept (a 16:9 film becomes 426x240, a 4:3 one 320x240). The bitrates are the 320x240 tiers scaled by the extra pixels (about 1.35 times). The Nano 6 has no video playback.
+
 ## Quality and Resolution
 
 Quality settings affect bitrate, not resolution. Resolution is always matched to device capabilities:
 
-| Preset | iPod Classic (640x480) | iPod Video (320x240) |
-|--------|------------------------|----------------------|
-| max | 640x480 @ 2500 kbps | 320x240 @ 768 kbps |
-| high | 640x480 @ 2000 kbps | 320x240 @ 600 kbps |
-| medium | 640x480 @ 1500 kbps | 320x240 @ 400 kbps |
-| low | 640x480 @ 1000 kbps | 320x240 @ 300 kbps |
+| Preset | iPod Classic (640x480) | iPod Video (320x240) | iPod Nano 7 (432x240) |
+|--------|------------------------|----------------------|-----------------------|
+| max | 640x480 @ 2500 kbps | 320x240 @ 768 kbps | 432x240 @ 1000 kbps |
+| high | 640x480 @ 2000 kbps | 320x240 @ 600 kbps | 432x240 @ 800 kbps |
+| medium | 640x480 @ 1500 kbps | 320x240 @ 400 kbps | 432x240 @ 550 kbps |
+| low | 640x480 @ 1000 kbps | 320x240 @ 300 kbps | 432x240 @ 400 kbps |
+
+Audio in a video uses 128 kbps for `max` and `high` and 96 kbps for `medium` and `low` on the 320x240 and 432x240 profiles.
 
 ## File Size Estimates
 

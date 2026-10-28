@@ -128,6 +128,12 @@ function resolveDisplayQuality(config: MusicContentConfig): string {
   return config.effectiveQuality;
 }
 
+function formatQualityLine(config: MusicContentConfig): string {
+  const quality = resolveDisplayQuality(config);
+  if (config.effectiveCustomBitrate === undefined || quality === 'lossless') return quality;
+  return `${quality} (custom bitrate ${config.effectiveCustomBitrate} kbps)`;
+}
+
 /**
  * Find the lossless codec that will be used for transcoding (first device-supported
  * non-source entry in the lossless preference stack).
@@ -444,7 +450,7 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
     out.newline();
     out.print(`Source: ${sourcePath}`);
     out.print(`Device: ${devicePath}`);
-    out.print(`Quality: ${resolveDisplayQuality(config)}`);
+    out.print(`Quality: ${formatQualityLine(config)}`);
     const transformsDisplay = formatTransformsConfig(config.effectiveTransforms);
     if (transformsDisplay) {
       out.print(`Transforms: ${transformsDisplay}`);

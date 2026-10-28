@@ -490,6 +490,7 @@ export {
   getDeviceProfile,
   getDefaultDeviceProfile,
   getDeviceProfileByGeneration,
+  getDeviceProfileByIpodGeneration,
   getDeviceProfileNames,
   getPresetSettings,
   getPresetSettingsWithFallback,

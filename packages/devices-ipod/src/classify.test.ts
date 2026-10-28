@@ -88,14 +88,14 @@ describe('classifyAsIpod — unsupported iPod-family devices', () => {
     const result = classifyAsIpod({ vendorId: '05ac', productId: '120d' });
     expect(result).not.toBeNull();
     expect(result!.supported).toBe(false);
-    expect(result!.unsupportedReason?.headline).toContain('iTunesDB format');
+    expect(result!.unsupportedReason?.headline).toContain('not verified on hardware');
   });
 
-  it('classifies iPod nano 7G as unsupported (0x05ac:0x1267)', () => {
+  it('classifies iPod nano 7G as supported (0x05ac:0x1267)', () => {
     const result = classifyAsIpod({ vendorId: '05ac', productId: '1267' });
     expect(result).not.toBeNull();
-    expect(result!.supported).toBe(false);
-    expect(result!.unsupportedReason?.headline).toMatch(/nano 7th gen/i);
+    expect(result!.supported).toBe(true);
+    expect(result!.unsupportedReason).toBeUndefined();
   });
 
   it('classifies iPod touch 5G as unsupported via known table (0x05ac:0x12aa)', () => {

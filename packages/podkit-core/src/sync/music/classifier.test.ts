@@ -3,6 +3,10 @@ import { MusicTrackClassifier, classifierFromConfig } from './classifier.js';
 import type { ClassifierContext } from './classifier.js';
 import { resolveReductionAxis } from '../engine/lossy-reduction.js';
 import { makeMockCollectionTrack } from '../../test-utils/tracks.js';
+import { resolveMusicConfig } from './config.js';
+import { expectedSyncTagFromClassification } from './handler.js';
+import type { FFmpegTranscoder } from '../../transcode/ffmpeg.js';
+import type { DeviceCapabilities } from '@podkit/device-types';
 
 // =============================================================================
 // Test Fixtures
@@ -765,5 +769,64 @@ describe('MusicTrackClassifier', () => {
       expect(result.deviceNative).toBe(true);
       expect(result.action).toEqual({ type: 'direct-copy' });
     });
+  });
+});
+
+describe('custom bitrate as the lossy cap (resolveMusicConfig → classifier)', () => {
+  const capabilities: DeviceCapabilities = {
+    artworkSources: ['database'],
+    artworkMaxResolution: 240,
+    supportedAudioCodecs: ['aac', 'mp3', 'alac', 'wav', 'aiff'],
+    supportsVideo: true,
+    audioNormalization: 'soundcheck',
+    supportsAlbumArtistBrowsing: false,
+  };
+
+  function classify(reduce: 'always' | 'never', track: Parameters<typeof makeTrack>[0]) {
+    const resolved = resolveMusicConfig({
+      quality: 'low',
+      customBitrate: 96,
+      reduce,
+      capabilities,
+      transcoder: {} as FFmpegTranscoder,
+    });
+    expect(resolved.presetBitrate).toBe(96);
+    const ctx = classifierFromConfig(resolved);
+    const classification = new MusicTrackClassifier(ctx).classify(makeTrack(track));
+    return {
+      action: classification.action,
+      tag: expectedSyncTagFromClassification(classification, {
+        customBitrate: 96,
+        resolvedLossyCodec: ctx.resolvedLossyCodec,
+      }),
+    };
+  }
+
+  const mp3 = (bitrate: number) => ({
+    fileType: 'mp3' as const,
+    filePath: `/music/${bitrate}.mp3`,
+    codec: 'mp3',
+    lossless: false,
+    bitrate,
+  });
+
+  test('FLAC → AAC at 96 kbps, recorded in the sync tag', () => {
+    const { action, tag } = classify('never', {});
+    expect(action).toMatchObject({ type: 'transcode', preset: { bitrateOverride: 96 } });
+    expect(tag?.bitrate).toBe(96);
+  });
+
+  test('MP3 192 under convert → reduced to AAC 96, recorded in the sync tag', () => {
+    const { action, tag } = classify('always', mp3(192));
+    expect(action).toEqual({ type: 'transcode', preset: { name: 'low', bitrateOverride: 96 } });
+    expect(tag).toMatchObject({ quality: 'low', bitrate: 96 });
+  });
+
+  test('MP3 112 under convert stays a copy: within the 25% tolerance of 96', () => {
+    expect(classify('always', mp3(112)).action).toEqual({ type: 'direct-copy' });
+  });
+
+  test('MP3 192 under preserve stays a copy: the cap alone never re-encodes', () => {
+    expect(classify('never', mp3(192)).action).toEqual({ type: 'direct-copy' });
   });
 });

@@ -215,12 +215,11 @@ describe('resolveIpodModel — libgpodGeneration axis', () => {
     // 'unknown' is skipped by the reverse-index (it's in LIBGPOD_FALLBACK_DISPLAY_NAMES,
     // but the index IS built from the forward mapping entries — 'unknown' IS in
     // the index pointing to nano_7g (first entry). Test actual behaviour.
-    // The lookup returns nano_7g (unsupported).
+    // The lookup returns nano_7g.
     if (model !== null) {
       expect(model.generationId).toBe('nano_7g');
-      expect(model.unsupportedReason).toBeDefined();
     }
-    // Both null and a valid unsupported model are acceptable for 'unknown'.
+    // Both null and a nano_7g model are acceptable for 'unknown'.
   });
 });
 
@@ -331,14 +330,11 @@ describe('resolveIpodModel — cascade priority', () => {
 // =============================================================================
 
 describe('resolveIpodModel — unsupported generations', () => {
-  it('returns a model with unsupportedReason for nano_7g (familyId 18)', () => {
+  it('returns a syncable model for nano_7g (familyId 18)', () => {
     const model = resolveIpodModel({ familyId: 18 });
     expect(model).not.toBeNull();
     expect(model!.generationId).toBe('nano_7g');
-    expect(model!.unsupportedReason).toBeDefined();
-    expect(model!.unsupportedReason!.headline).toMatch(/nano.*7/i);
-    expect(model!.unsupportedReason!.kind).toBe('unsupported-device');
-    expect(model!.unsupportedReason!.docsUrl).toContain('supported-devices');
+    expect(model!.unsupportedReason).toBeUndefined();
   });
 
   it('returns a model with unsupportedReason for nano_6g via libgpod axis', () => {

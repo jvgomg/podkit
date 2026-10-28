@@ -572,8 +572,10 @@ export function buildOpusArgs(
 /**
  * Build FFmpeg command arguments for MP3 encoding.
  *
- * MP3 uses libmp3lame. VBR uses `-q:a` quality scale (0=best, 9=worst).
- * CBR uses `-b:a` with target bitrate.
+ * MP3 uses libmp3lame. VBR with a preset quality uses the `-q:a` scale
+ * (0=best, 9=worst); VBR without one — a numeric target — uses LAME's average
+ * bitrate mode (`-abr 1 -b:a`), which holds the target as an average, not as a
+ * hard ceiling. CBR uses `-b:a`.
  *
  * @param input - Input file path
  * @param output - Output file path
@@ -593,10 +595,10 @@ export function buildMp3Args(
 
   // Quality settings based on encoding mode
   if (config.encoding === 'vbr' && config.quality !== undefined) {
-    // VBR mode — use -q:a (LAME VBR quality: 0=best, 9=worst)
     args.push('-q:a', String(config.quality));
+  } else if (config.encoding === 'vbr') {
+    args.push('-abr', '1', '-b:a', `${config.bitrateKbps}k`);
   } else {
-    // CBR mode
     args.push('-b:a', `${config.bitrateKbps}k`);
   }
 

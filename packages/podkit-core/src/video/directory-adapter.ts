@@ -97,6 +97,18 @@ export interface CollectionVideo {
 
   /** Duration in seconds */
   duration: number;
+
+  /** H.264 profile, when probed (e.g. 'baseline', 'main', 'high') */
+  videoProfile?: string | null;
+
+  /** H.264 level, when probed (e.g. '3.0') */
+  videoLevel?: string | null;
+
+  /** Video bitrate in kbps, when probed */
+  videoBitrate?: number;
+
+  /** Frame rate in fps, when probed */
+  frameRate?: number;
 }
 
 /**
@@ -403,6 +415,10 @@ export class VideoDirectoryAdapter implements CollectionAdapter<CollectionVideo,
       width: analysis.width,
       height: analysis.height,
       duration: analysis.duration,
+      videoProfile: analysis.videoProfile,
+      videoLevel: analysis.videoLevel,
+      videoBitrate: analysis.videoBitrate,
+      frameRate: analysis.frameRate,
     };
 
     return video;

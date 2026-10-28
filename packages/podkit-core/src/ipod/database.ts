@@ -229,16 +229,20 @@ export class IpodDatabase implements IpodDatabaseInternal, PlaylistDatabaseInter
    * Checks if an iPod database exists at the given mount point.
    *
    * @param mountPoint - Path to check for iPod database
-   * @returns true if an iTunesDB exists at the path
+   * @returns true if an iTunesDB or a compressed iTunesCDB exists at the path
    */
   static async hasDatabase(mountPoint: string): Promise<boolean> {
-    try {
-      const itunesDbPath = `${mountPoint}/iPod_Control/iTunes/iTunesDB`;
-      await fs.promises.access(itunesDbPath);
-      return true;
-    } catch {
-      return false;
+    // Nano 6/7 libraries written by Apple software carry only iTunesCDB,
+    // which libgpod parses in preference to iTunesDB.
+    for (const name of ['iTunesCDB', 'iTunesDB']) {
+      try {
+        await fs.promises.access(`${mountPoint}/iPod_Control/iTunes/${name}`);
+        return true;
+      } catch {
+        // try the next name
+      }
     }
+    return false;
   }
 
   /**
