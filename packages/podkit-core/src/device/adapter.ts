@@ -38,6 +38,11 @@ export interface DeviceTrackInput {
   composer?: string;
   comment?: string;
   grouping?: string;
+  sortTitle?: string;
+  sortArtist?: string;
+  sortAlbum?: string;
+  sortAlbumArtist?: string;
+  sortComposer?: string;
   trackNumber?: number;
   totalTracks?: number;
   discNumber?: number;
@@ -149,11 +154,28 @@ export interface DeviceTrack {
   readonly genre?: string;
   readonly composer?: string;
   readonly comment?: string;
+  readonly grouping?: string;
+  readonly sortTitle?: string;
+  readonly sortArtist?: string;
+  readonly sortAlbum?: string;
+  readonly sortAlbumArtist?: string;
+  readonly sortComposer?: string;
 
   // Track/disc info
   readonly trackNumber?: number;
+  readonly totalTracks?: number;
   readonly discNumber?: number;
+  readonly totalDiscs?: number;
   readonly year?: number;
+
+  /**
+   * Whether this device persists composer, grouping, track/disc totals and
+   * the sort fields, so the sync compares and updates them. Unset devices
+   * (mass-storage, whose tracks do not read these fields back) are never
+   * flagged for them, which would otherwise re-fire on every sync.
+   * Per-device like {@link artworkSink}.
+   */
+  readonly storesExtendedTags?: boolean;
 
   // Technical info (used by differ/planner for format decisions)
   readonly duration: number;

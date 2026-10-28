@@ -129,6 +129,7 @@ podkit sync [options]
 | `--encoding <mode>` | Encoding mode: `vbr` (default) or `cbr` |
 | `--bitrate-reduce <mode>` | Lossy reduction mode for this run: `auto` (default), `always`, or `never`. Overrides the device's [`[bitrate].reduce`](/reference/config-file#lossy-reduction) setting. `auto` follows the transfer mode (`optimized` converts; `fast`/`portable` preserve). `always` reduces all over-cap device-native lossy sources. `never` preserves all device-native lossy sources regardless of cap. |
 | `--bitrate-tolerance <fraction>` | Source-proximity tolerance for lossy reduction on this run (e.g. `0.25` means reduce only when source exceeds cap by more than 25%). Overrides the device's [`[bitrate].tolerance`](/reference/config-file#lossy-reduction) setting. |
+| `--custom-bitrate <kbps>` | Lossy audio bitrate for this run, 64-320 kbps, replacing the preset's bitrate as the cap. Overrides the [`customBitrate`](/reference/config-file#global-settings) setting. See [Custom Bitrate](/user-guide/transcoding/audio#custom-bitrate). |
 | `--transfer-mode <mode>` | Transfer mode: `fast` (default), `optimized`, or `portable`. Controls whether extra file data is preserved or stripped during sync |
 | `--force-transfer-mode` | Re-process all tracks when changing transfer mode |
 | `--filter <pattern>` | Only sync tracks matching pattern |

@@ -12,6 +12,8 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
   ensureFixturesExist,
+  generateMiniFlac,
+  generateMiniMp3,
   getMultiFormatFixturesDir,
   getMultiFormatEmbeddedFixturesDir,
   requireFFmpeg,
@@ -262,6 +264,104 @@ describe('DirectoryAdapter — AIFF multi-format fixture', () => {
     expect(aiff!.artist).toBe(SCENARIO_ARTISTS.embedded);
     expect(aiff!.album).toBe('Lossless Collection (Embedded)');
     expect(aiff!.hasArtwork).toBe(true);
+  });
+});
+
+describe('DirectoryAdapter — composer, grouping, totals and sort tags', () => {
+  let dir: string;
+  const common = {
+    composer: 'Johann Sebastian Bach',
+    grouping: 'Cantatas',
+    album_artist: 'The Ensemble',
+    disc: '1/2',
+    track: '3/12',
+  };
+
+  beforeAll(async () => {
+    dir = join(tmpdir(), `podkit-tags-${Date.now()}`);
+    await mkdir(dir, { recursive: true });
+    generateMiniFlac(dir, {
+      filename: 'tags.flac',
+      title: 'The Wall',
+      artist: 'The Band',
+      tags: {
+        ...common,
+        TRACKTOTAL: '12',
+        DISCTOTAL: '2',
+        TITLESORT: 'Wall, The',
+        ARTISTSORT: 'Band, The',
+        ALBUMSORT: 'Album, The',
+        ALBUMARTISTSORT: 'Ensemble, The',
+        COMPOSERSORT: 'Bach, Johann Sebastian',
+      },
+    });
+    // ffmpeg's ID3v2.4 writer maps these three sort keys to TSOT/TSOP/TSOA.
+    generateMiniMp3(dir, {
+      filename: 'tags.mp3',
+      title: 'The Wall',
+      artist: 'The Band',
+      tags: {
+        ...common,
+        'title-sort': 'Wall, The',
+        'artist-sort': 'Band, The',
+        'album-sort': 'Album, The',
+      },
+    });
+    generateMiniMp3(dir, { filename: 'plain.mp3' });
+  });
+
+  afterAll(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  async function track(name: string) {
+    const tracks = await new DirectoryAdapter({ path: dir }).getItems();
+    return tracks.find((t) => t.filePath.endsWith(name))!;
+  }
+
+  const extendedFields = (t: Awaited<ReturnType<typeof track>>) => ({
+    composer: t.composer,
+    grouping: t.grouping,
+    totalTracks: t.totalTracks,
+    totalDiscs: t.totalDiscs,
+    sortTitle: t.sortTitle,
+    sortArtist: t.sortArtist,
+    sortAlbum: t.sortAlbum,
+    sortAlbumArtist: t.sortAlbumArtist,
+    sortComposer: t.sortComposer,
+  });
+
+  it('reads every extended field from FLAC Vorbis comments', async () => {
+    expect(extendedFields(await track('tags.flac'))).toEqual({
+      composer: 'Johann Sebastian Bach',
+      grouping: 'Cantatas',
+      totalTracks: 12,
+      totalDiscs: 2,
+      sortTitle: 'Wall, The',
+      sortArtist: 'Band, The',
+      sortAlbum: 'Album, The',
+      sortAlbumArtist: 'Ensemble, The',
+      sortComposer: 'Bach, Johann Sebastian',
+    });
+  });
+
+  it('reads composer, grouping, totals and title/artist/album sort from ID3v2.4', async () => {
+    expect(extendedFields(await track('tags.mp3'))).toEqual({
+      composer: 'Johann Sebastian Bach',
+      grouping: 'Cantatas',
+      totalTracks: 12,
+      totalDiscs: 2,
+      sortTitle: 'Wall, The',
+      sortArtist: 'Band, The',
+      sortAlbum: 'Album, The',
+      sortAlbumArtist: undefined,
+      sortComposer: undefined,
+    });
+  });
+
+  it('leaves every extended field unset on an untagged file', async () => {
+    const values = Object.values(extendedFields(await track('plain.mp3')));
+    expect(values.every((v) => v === undefined)).toBe(true);
   });
 });
 

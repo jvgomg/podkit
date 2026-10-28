@@ -46,6 +46,16 @@ export interface TrackInput {
   comment?: string;
   /** Grouping (for organizing tracks) */
   grouping?: string;
+  /** Title used for sorting (e.g. "Wall, The") */
+  sortTitle?: string;
+  /** Artist used for sorting */
+  sortArtist?: string;
+  /** Album used for sorting */
+  sortAlbum?: string;
+  /** Album artist used for sorting */
+  sortAlbumArtist?: string;
+  /** Composer used for sorting */
+  sortComposer?: string;
 
   // Track/disc info
   /** Track number on disc */
@@ -139,6 +149,16 @@ export interface TrackFields {
   comment?: string;
   /** Grouping */
   grouping?: string;
+  /** Title used for sorting (e.g. "Wall, The") */
+  sortTitle?: string;
+  /** Artist used for sorting */
+  sortArtist?: string;
+  /** Album used for sorting */
+  sortAlbum?: string;
+  /** Album artist used for sorting */
+  sortAlbumArtist?: string;
+  /** Composer used for sorting */
+  sortComposer?: string;
   /** Track number on disc */
   trackNumber?: number;
   /** Total number of tracks on disc */
@@ -239,6 +259,16 @@ export interface IpodTrack extends DeviceTrack {
   readonly comment?: string;
   /** Grouping */
   readonly grouping?: string;
+  /** Title used for sorting */
+  readonly sortTitle?: string;
+  /** Artist used for sorting */
+  readonly sortArtist?: string;
+  /** Album used for sorting */
+  readonly sortAlbum?: string;
+  /** Album artist used for sorting */
+  readonly sortAlbumArtist?: string;
+  /** Composer used for sorting */
+  readonly sortComposer?: string;
 
   // Track/disc info
   /** Track number on disc */

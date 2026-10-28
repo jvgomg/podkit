@@ -39,6 +39,9 @@ podkit sync --quality low
 
 # Set unified quality, but override audio specifically
 podkit sync --quality medium --audio-quality high
+
+# A bitrate below the presets, for this run only
+podkit sync --custom-bitrate 96
 ```
 
 ### Config File
@@ -48,7 +51,32 @@ podkit sync --quality medium --audio-quality high
 quality = "high"          # Unified quality for audio and video
 audioQuality = "high"     # Audio-specific override: max | high | medium | low
 encoding = "vbr"          # Encoding mode: vbr (default) or cbr
+customBitrate = 96        # Optional: replaces the preset's bitrate (64-320 kbps)
 ```
+
+## Custom Bitrate
+
+The presets stop at `low` (~128 kbps). To fit more music on a small player, set `customBitrate` to the AAC bitrate you want, in kbps (64-320). It works globally, per device, through `PODKIT_CUSTOM_BITRATE`, or for one run with `--custom-bitrate`:
+
+```toml
+[devices.nano]
+quality = "low"
+customBitrate = 96
+
+[devices.nano.bitrate]
+reduce = "always"   # also re-encode MP3/AAC sources above the cap
+```
+
+`customBitrate` replaces the preset's bitrate everywhere the preset's bitrate would apply, so it is the cap for every lossy target (for MP3 output it is the target average of LAME's ABR mode, which can briefly run above it; see [Encoder Mapping](/reference/quality-presets#encoder-mapping)):
+
+- **Lossless sources** (FLAC, WAV, ALAC) are transcoded to AAC at the custom bitrate. With `max` on a device that plays ALAC, lossless sources still become ALAC and the custom bitrate only applies to lossy targets.
+- **Incompatible lossy sources** (OGG, Opus) are transcoded at no more than the custom bitrate.
+- **MP3 and AAC sources** follow the [reduction axis](#bitrate-cap-enforcement-for-lossy-sources), as with any cap. Under `reduce = "always"` (or `auto` with `transferMode = "optimized"`), a source more than the tolerance above the cap is re-encoded to AAC at the custom bitrate: at 96 kbps and the default tolerance of 0.25, a 192 kbps MP3 is reduced and a 112 kbps MP3 is copied. Under `never` (or `auto` with `fast`/`portable`, the default) MP3 and AAC files are copied untouched, so setting a custom bitrate alone never re-encodes them.
+- **The bitrate is recorded in each track's sync tag**, so changing it later is detected like a preset change: lossless-source tracks are re-transcoded at the new bitrate, and lossy sources follow the [cap rules](#bitrate-cap-enforcement-for-lossy-sources) (reduced tracks above a lowered cap are re-encoded under `convert`; below a raised cap they are reported, and `--force-transcode` lifts them).
+
+`sync --dry-run` shows it on the quality line, e.g. `Quality: low (custom bitrate 96 kbps)`.
+
+Low bitrates are where the AAC encoders differ most. On macOS podkit uses Apple's AudioToolbox encoder (`aac_at`), which holds up well at 96 kbps and is the one to use. FFmpeg's native `aac` encoder, the only one on a stock Linux FFmpeg, is noticeably weaker at low bitrates; if you sync from Linux, prefer 128 kbps or more, or use an FFmpeg built with `libfdk_aac`. See [AAC Encoders](#aac-encoders).
 
 ## Example Scenarios
 

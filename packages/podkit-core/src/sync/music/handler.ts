@@ -19,9 +19,11 @@ import {
   isFileReplacementUpgrade,
   isSourceLossless,
   metadataValuesDiffer,
+  metadataCorrectionFields,
   classifyDeviceBound,
   classifySourceBound,
 } from '../engine/upgrades.js';
+import { EXTENDED_TAG_FIELDS } from '../../adapters/interface.js';
 import type { QualityChange, QualityChangeDirection, QualityTarget } from '../engine/upgrades.js';
 import { normalizationToDb } from '../../metadata/normalization.js';
 import {
@@ -60,6 +62,7 @@ import type {
   UnifiedSyncDiff,
 } from '../engine/content-type.js';
 import { partitionExisting, sweepAllExisting, formatDryRunFromPlan } from '../engine/diff-utils.js';
+import type { PartitionUpdateEntry } from '../engine/diff-utils.js';
 import type { MusicSyncConfig, ResolvedMusicConfig } from './config.js';
 import { resolveMusicConfig } from './config.js';
 import { MusicTrackClassifier, classifierFromConfig } from './classifier.js';
@@ -154,6 +157,24 @@ function buildMusicMetadataChanges(
   return changes;
 }
 
+/** Metadata-only reasons a file replacement applies as well (it writes the source's metadata). */
+const REPLACEMENT_CARRIES: ReadonlySet<UpdateReason> = new Set<UpdateReason>([
+  'metadata-correction',
+  'normalization-update',
+]);
+
+/** Change fields a metadata update can carry alongside an artwork-only operation. */
+const RIDE_ALONG_FIELDS: ReadonlySet<MetadataChange['field']> = new Set([
+  'genre',
+  'year',
+  'trackNumber',
+  'discNumber',
+  'albumArtist',
+  'compilation',
+  'normalization',
+  ...EXTENDED_TAG_FIELDS,
+]);
+
 /**
  * Convert a CollectionTrack to a CollisionCheckInput (shared fields only).
  */
@@ -165,6 +186,7 @@ function toCollisionInput(source: CollectionTrack): Omit<CollisionCheckInput, 'f
     album: source.album,
     trackNumber: source.trackNumber,
     discNumber: source.discNumber,
+    totalDiscs: source.totalDiscs,
     year: source.year,
   };
 }
@@ -244,13 +266,23 @@ export class MusicHandler implements ContentTypeHandler<
     if (matchInfo) {
       const hasTransform = this.generateMatchKey(source) !== this.applyTransformKey(source);
       if (hasTransform) {
+        // A metadata correction or Sound Check update pending on the same
+        // track rides along with the transform's metadata update.
+        const withCorrection = (reason: UpdateReason): UpdateReason[] => [
+          reason,
+          ...detectUpgrades(source, device).filter(
+            (r) =>
+              r === 'metadata-correction' ||
+              (r === 'normalization-update' && this.config.audioNormalization !== 'none')
+          ),
+        ];
         if (!matchInfo.matchedByTransformKey && this.config.transformsEnabled) {
           // iPod has original metadata, transforms are enabled -> apply
-          return ['transform-apply'];
+          return withCorrection('transform-apply');
         }
         if (matchInfo.matchedByTransformKey && !this.config.transformsEnabled) {
           // iPod has transformed metadata, transforms are disabled -> remove
-          return ['transform-remove'];
+          return withCorrection('transform-remove');
         }
       }
     }
@@ -402,27 +434,35 @@ export class MusicHandler implements ContentTypeHandler<
         }
       }
 
-      if (update.changes && update.changes.length > 0) continue; // already populated
+      if (!update.changes?.length) {
+        if (reason === 'transform-apply') {
+          // Build changes from device metadata → transformed source metadata
+          const transformedSource = this.transformSourceForAdd(update.source);
+          update.changes = buildMusicMetadataChanges(update.device, transformedSource);
+        } else if (reason === 'transform-remove') {
+          // Build changes from device metadata → original source metadata
+          update.changes = buildMusicMetadataChanges(update.device, update.source);
+        }
+      }
 
-      if (reason === 'transform-apply') {
-        // Build changes from device metadata → transformed source metadata
-        const transformedSource = this.transformSourceForAdd(update.source);
-        update.changes = buildMusicMetadataChanges(update.device, transformedSource);
-      } else if (reason === 'transform-remove') {
-        // Build changes from device metadata → original source metadata
-        update.changes = buildMusicMetadataChanges(update.device, update.source);
-      } else if (reason === 'metadata-correction') {
-        // Build changes for metadata fields that differ
-        const changes: MetadataChange[] = [];
-        const metadataFields = [
-          'genre',
-          'year',
-          'trackNumber',
-          'discNumber',
-          'albumArtist',
-          'compilation',
-        ] as const;
-        for (const field of metadataFields) {
+      // Sound Check and metadata corrections ride along with whichever reason
+      // leads, so a track with several pending updates converges in one sync.
+      const changes = [...(update.changes ?? [])];
+      const has = (field: string) => changes.some((c) => c.field === field);
+      if (update.reasons.includes('normalization-update') && !has('normalization')) {
+        changes.push({
+          field: 'normalization',
+          from: update.device.normalization
+            ? `${normalizationToDb(update.device.normalization)?.toFixed(1)} dB`
+            : 'absent',
+          to: update.source.normalization
+            ? `${normalizationToDb(update.source.normalization)?.toFixed(1)} dB`
+            : 'absent',
+        });
+      }
+      if (update.reasons.includes('metadata-correction')) {
+        for (const field of metadataCorrectionFields(update.source, update.device)) {
+          if (has(field)) continue;
           const sourceValue = update.source[field as keyof CollectionTrack];
           const ipodValue = update.device[field as keyof DeviceTrack];
           if (metadataValuesDiffer(field, sourceValue, ipodValue)) {
@@ -433,20 +473,8 @@ export class MusicHandler implements ContentTypeHandler<
             });
           }
         }
-        update.changes = changes;
-      } else if (reason === 'normalization-update') {
-        update.changes = [
-          {
-            field: 'normalization',
-            from: update.device.normalization
-              ? `${normalizationToDb(update.device.normalization)?.toFixed(1)} dB`
-              : 'absent',
-            to: update.source.normalization
-              ? `${normalizationToDb(update.source.normalization)?.toFixed(1)} dB`
-              : 'absent',
-          },
-        ];
       }
+      update.changes = changes;
     }
   }
 
@@ -476,7 +504,14 @@ export class MusicHandler implements ContentTypeHandler<
     const presetBitrate = this.config.presetBitrate ?? 0;
     const target = qualityTargetFromConfig(this.config);
 
-    partitionExisting(diff, (match) => {
+    const decide = (
+      match: { source: CollectionTrack; device: DeviceTrack },
+      report: (entry: {
+        source: CollectionTrack;
+        device: DeviceTrack;
+        qualityChange: QualityChange;
+      }) => void
+    ): PartitionUpdateEntry | null => {
       // Lossy sources take the down-only cap-reduction path. The classifier would
       // route a compatible/device-native lossy source to a COPY, but a convert
       // over-cap move must re-encode DOWN to the cap — so the classifier's routing
@@ -496,7 +531,7 @@ export class MusicHandler implements ContentTypeHandler<
           this.config.reductionTolerance
         );
         if (sourceChange && !sourceChange.reEncodes) {
-          (diff.reportOnlyQualityChanges ??= []).push({
+          report({
             source: match.source,
             device: match.device,
             qualityChange: sourceChange,
@@ -553,7 +588,7 @@ export class MusicHandler implements ContentTypeHandler<
               },
             };
           }
-          (diff.reportOnlyQualityChanges ??= []).push({
+          report({
             source: match.source,
             device: match.device,
             qualityChange: change,
@@ -565,7 +600,7 @@ export class MusicHandler implements ContentTypeHandler<
         // copy in `existing` and creates NO operation, so it never inflates
         // tracksToUpdate.
         if (!change.reEncodes) {
-          (diff.reportOnlyQualityChanges ??= []).push({
+          report({
             source: match.source,
             device: match.device,
             qualityChange: change,
@@ -620,7 +655,7 @@ export class MusicHandler implements ContentTypeHandler<
       // moves and preconditions (encoding/lossless boundary) always carry
       // `reEncodes: true` and fall through to the re-encode path below.
       if (!change.reEncodes) {
-        (diff.reportOnlyQualityChanges ??= []).push({
+        report({
           source: match.source,
           device: match.device,
           qualityChange: change,
@@ -659,7 +694,27 @@ export class MusicHandler implements ContentTypeHandler<
           ];
 
       return { reasons: ['quality-change'], changes, qualityChange: change };
-    });
+    };
+
+    partitionExisting(diff, (match) =>
+      decide(match, (r) => (diff.reportOnlyQualityChanges ??= []).push(r))
+    );
+
+    // A match already headed to toUpdate for an in-place metadata or Sound
+    // Check change can also need a re-encode (a lowered cap or a custom
+    // bitrate). The replacement writes the source's metadata too, so the
+    // correction rides along with it instead of hiding the re-encode until the
+    // next sync (a core field the source no longer has is still cleared by the
+    // next sync's correction). Report-only outcomes for these tracks are
+    // surfaced by postProcessSourceDownReports.
+    for (const update of diff.toUpdate) {
+      if (!update.reasons.every((r) => REPLACEMENT_CARRIES.has(r))) continue;
+      const entry = decide(update, () => {});
+      if (!entry) continue;
+      update.reasons = [...entry.reasons, ...update.reasons];
+      update.qualityChange = entry.qualityChange;
+      update.changes = [...(entry.changes ?? []), ...(update.changes ?? [])];
+    }
   }
 
   /**
@@ -1169,12 +1224,7 @@ export class MusicHandler implements ContentTypeHandler<
         'title',
         'artist',
         'album',
-        'albumArtist',
-        'genre',
-        'year',
-        'trackNumber',
-        'discNumber',
-        'compilation',
+        ...metadataCorrectionFields(source, device),
       ] as const;
 
       for (const field of allFields) {
@@ -1286,12 +1336,12 @@ export class MusicHandler implements ContentTypeHandler<
     // or removal, but don't replace the audio file — route as upgrade-artwork
     if (primaryReason === 'artwork-updated' || primaryReason === 'artwork-removed') {
       ops.push(this.factory.createArtworkUpgrade(source, device, primaryReason as UpgradeReason));
-      return ops;
+      return this.withRideAlongMetadata(ops, source, device, nonSyncTagReasons, changes);
     }
 
     if (this.plansArtworkOnlyAdd(source, device, nonSyncTagReasons)) {
       ops.push(this.factory.createArtworkUpgrade(source, device, 'artwork-added'));
-      return ops;
+      return this.withRideAlongMetadata(ops, source, device, nonSyncTagReasons, changes);
     }
 
     // File-replacement upgrades take priority over path-mismatch. If both are
@@ -1324,6 +1374,28 @@ export class MusicHandler implements ContentTypeHandler<
     // Metadata-only updates — populate metadata from changes
     // Include source reference so the pipeline can access raw ReplayGain values
     ops.push(this.factory.createMetadataUpdate(device, changes ?? [], source));
+    return ops;
+  }
+
+  /**
+   * An artwork-only operation leaves the database entry alone, so Sound Check
+   * and metadata corrections pending on the same track follow it as a
+   * metadata update instead of waiting for the next sync.
+   */
+  private withRideAlongMetadata(
+    ops: MusicOperation[],
+    source: CollectionTrack,
+    device: DeviceTrack,
+    reasons: UpdateReason[],
+    changes: MetadataChange[] | undefined
+  ): MusicOperation[] {
+    if (!reasons.includes('metadata-correction') && !reasons.includes('normalization-update')) {
+      return ops;
+    }
+    const metadataChanges = (changes ?? []).filter((c) => RIDE_ALONG_FIELDS.has(c.field));
+    if (metadataChanges.length > 0) {
+      ops.push(this.factory.createMetadataUpdate(device, metadataChanges, source));
+    }
     return ops;
   }
 

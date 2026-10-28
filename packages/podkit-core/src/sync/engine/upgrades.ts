@@ -10,7 +10,8 @@
  * @module
  */
 
-import type { CollectionTrack } from '../../adapters/interface.js';
+import type { CollectionTrack, ExtendedTagField } from '../../adapters/interface.js';
+import { EXTENDED_TAG_FIELDS } from '../../adapters/interface.js';
 import type { EncodingMode } from '../../transcode/types.js';
 import { QUALITY_PRESETS } from '../../transcode/types.js';
 import type { TranscodeTargetCodec } from '../../transcode/codecs.js';
@@ -36,6 +37,38 @@ const METADATA_CORRECTION_FIELDS = [
   'albumArtist',
   'compilation',
 ] as const;
+
+type MetadataCorrectionField = (typeof METADATA_CORRECTION_FIELDS)[number] | ExtendedTagField;
+
+/**
+ * Extended fields the source reports authoritatively for this track; only
+ * these are compared, written and cleared on a device that stores them.
+ */
+export function reportedExtendedFields(source: CollectionTrack): readonly ExtendedTagField[] {
+  const unreported = source.unreportedTagFields;
+  return unreported?.length
+    ? EXTENDED_TAG_FIELDS.filter((f) => !unreported.includes(f))
+    : EXTENDED_TAG_FIELDS;
+}
+
+/** The value that clears an extended field on the device: 0 for totals, '' otherwise. */
+export function clearedExtendedValue(field: ExtendedTagField): '' | 0 {
+  return field === 'totalTracks' || field === 'totalDiscs' ? 0 : '';
+}
+
+/**
+ * The metadata fields a source correction is detected and written for:
+ * extended fields only on devices that persist them
+ * (`DeviceTrack.storesExtendedTags`) and only where the source reports them.
+ */
+export function metadataCorrectionFields(
+  source: CollectionTrack,
+  device: DeviceTrack
+): readonly MetadataCorrectionField[] {
+  return device.storesExtendedTags
+    ? [...METADATA_CORRECTION_FIELDS, ...reportedExtendedFields(source)]
+    : METADATA_CORRECTION_FIELDS;
+}
 
 /**
  * iPod filetype strings that indicate lossless formats.
@@ -800,7 +833,7 @@ export function detectUpgrades(source: CollectionTrack, ipod: DeviceTrack): Upgr
   }
 
   // Metadata correction: check non-matching metadata fields
-  for (const field of METADATA_CORRECTION_FIELDS) {
+  for (const field of metadataCorrectionFields(source, ipod)) {
     const sourceValue = source[field as keyof CollectionTrack];
     const ipodValue = ipod[field as keyof DeviceTrack];
 
@@ -839,6 +872,12 @@ export function metadataValuesDiffer(
   // One empty, one not -> difference
   if (isEmpty(sourceValue) || isEmpty(ipodValue)) {
     return true;
+  }
+
+  // The extended fields are written verbatim and nothing else rewrites them,
+  // so a case-only fix (e.g. a sort name) is a real change.
+  if ((EXTENDED_TAG_FIELDS as readonly string[]).includes(field)) {
+    return sourceValue !== ipodValue;
   }
 
   // For strings, case-insensitive comparison

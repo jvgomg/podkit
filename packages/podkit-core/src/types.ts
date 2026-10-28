@@ -39,6 +39,15 @@ export interface TrackMetadata {
   trackNumber?: number;
   discNumber?: number;
   compilation?: boolean;
+  composer?: string;
+  grouping?: string;
+  totalTracks?: number;
+  totalDiscs?: number;
+  sortTitle?: string;
+  sortArtist?: string;
+  sortAlbum?: string;
+  sortAlbumArtist?: string;
+  sortComposer?: string;
   duration?: number; // milliseconds
   /**
    * Source bitrate in kbps. Carried on metadata-only updates so the

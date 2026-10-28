@@ -103,6 +103,26 @@ describe('DirectoryAdapter', () => {
   });
 
   describe('getItems', () => {
+    it('joins a multi-value composer tag and drops blank tag values', async () => {
+      mockGlob.mockImplementation(async () => ['/music/song.mp3']);
+      mockParseFile.mockImplementation(async () => ({
+        common: {
+          title: 'Song',
+          composer: ['John Lennon', ' ', 'Paul McCartney'],
+          grouping: '',
+          titlesort: '',
+          track: { no: 1, of: null },
+        },
+        format: {},
+      }));
+
+      const [track] = await newAdapter({ path: '/music' }).getItems();
+      expect(track!.composer).toBe('John Lennon, Paul McCartney');
+      expect(track!.grouping).toBeUndefined();
+      expect(track!.sortTitle).toBeUndefined();
+      expect(track!.totalTracks).toBeUndefined();
+    });
+
     it('returns empty array for empty directory', async () => {
       mockGlob.mockImplementation(async () => []);
 

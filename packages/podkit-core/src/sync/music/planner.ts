@@ -360,6 +360,21 @@ export function changesToMetadata(changes: MetadataChange[]): Partial<TrackMetad
       case 'compilation':
         metadata.compilation = change.to === 'true';
         break;
+      case 'composer':
+      case 'grouping':
+      case 'sortTitle':
+      case 'sortArtist':
+      case 'sortAlbum':
+      case 'sortAlbumArtist':
+      case 'sortComposer':
+        // '' clears the field on the device
+        metadata[change.field] = change.to;
+        break;
+      case 'totalTracks':
+      case 'totalDiscs':
+        // 0 clears the field on the device (stored as 0, read back as unset)
+        metadata[change.field] = change.to ? Number(change.to) : 0;
+        break;
       case 'bitrate':
         // Numeric field: propagate when the change carries a parseable value.
         // The `--force-sync-tags` baseline backfill uses this to populate a

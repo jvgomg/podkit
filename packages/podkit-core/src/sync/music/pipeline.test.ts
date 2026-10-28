@@ -490,6 +490,38 @@ describe('MusicPipeline - basic execution', () => {
     expect(trackInput.compilation).toBe(true);
   });
 
+  it('passes composer, grouping, totals and sort fields to addTrack', async () => {
+    const tags = {
+      composer: 'Bach',
+      grouping: 'Cantatas',
+      totalTracks: 12,
+      totalDiscs: 2,
+      sortTitle: 'Wall, The',
+      sortArtist: 'Band, The',
+      sortAlbum: 'Album, The',
+      sortAlbumArtist: 'Ensemble, The',
+      sortComposer: 'Bach, J. S.',
+    };
+    const executor = new MusicPipeline(deps);
+    const plan: SyncPlan = {
+      operations: [
+        {
+          type: 'add-direct-copy',
+          source: createCollectionTrack('Artist', 'Song', 'Album', 'mp3', tags),
+        },
+      ],
+      estimatedTime: 1,
+      estimatedSize: 5000000,
+      warnings: [],
+    };
+
+    for await (const _p of executor.execute(plan)) {
+      // iterate
+    }
+
+    expect(mockAdapter.addTrack.mock.calls[0]![0]).toMatchObject(tags);
+  });
+
   // Initial-add bitrate baseline: when a lossy source carries a bitrate,
   // the copy executor MUST persist it on the iPod track. Without this,
   // `detectUpgrades`'s `source.bitrate && ipod.bitrate` quality-upgrade gate
@@ -2061,6 +2093,41 @@ describe('MusicPipeline - update-metadata operations', () => {
     expect(mockAdapter.save.mock.calls.length).toBe(0); // ADR-019: engine owns save now
   });
 
+  it('writes extended tag fields, including cleared ones, to the device', async () => {
+    let updateFields: Record<string, unknown> | null = null;
+    const deviceTrack = createMockDeviceTrack('Artist', 'Song', 'Album', 'Music/EXT.m4a', {
+      update: (fields: Record<string, unknown>) => {
+        updateFields = fields;
+        return deviceTrack;
+      },
+    });
+    mockAdapter = createMockDeviceAdapter([deviceTrack]);
+    const executor = new MusicPipeline(createDependencies(mockAdapter, mockTranscoder));
+    const metadata = {
+      composer: 'Bach',
+      grouping: '',
+      totalTracks: 12,
+      totalDiscs: 0,
+      sortTitle: 'Wall, The',
+      sortArtist: 'Band, The',
+      sortAlbum: '',
+      sortAlbumArtist: 'Ensemble, The',
+      sortComposer: 'Bach, J. S.',
+    };
+    const plan: SyncPlan = {
+      operations: [{ type: 'update-metadata', track: deviceTrack, metadata }],
+      estimatedTime: 0.01,
+      estimatedSize: 0,
+      warnings: [],
+    };
+
+    for await (const _p of executor.execute(plan)) {
+      // iterate
+    }
+
+    expect(updateFields).toMatchObject(metadata);
+  });
+
   it('finds track by filePath for update', async () => {
     let foundByPath = false;
     const deviceTrack = createMockDeviceTrack(
@@ -2508,6 +2575,48 @@ describe('upgrade operations - execution', () => {
     // Should report upgrading phase
     const upgradeProgress = progress.find((p) => p.phase === 'upgrading');
     expect(upgradeProgress).toBeDefined();
+  });
+
+  it('a file replacement clears extended fields the source reports but no longer has', async () => {
+    const existingTrack = Object.assign(
+      createDeviceTrack('Artist', 'Song', 'Album', { filePath: 'Music/EXISTING.m4a' }),
+      {
+        storesExtendedTags: true,
+        composer: 'Bach',
+        totalTracks: 12,
+        sortArtist: 'Artist, The',
+        grouping: 'Kept',
+      }
+    );
+    db.getTracks.mockReturnValue([existingTrack]);
+    const plan: SyncPlan = {
+      ...createEmptyPlan(),
+      operations: [
+        {
+          type: 'upgrade-transcode',
+          source: createCollectionTrack('Artist', 'Song', 'Album', 'flac', {
+            lossless: true,
+            sortArtist: 'Artist (The)',
+            unreportedTagFields: ['grouping'],
+          }),
+          target: existingTrack,
+          reason: 'quality-change',
+          preset: { name: 'high' },
+        },
+      ],
+    };
+
+    for await (const _p of new MusicPipeline(createDependencies(db, transcoder)).execute(plan, {
+      artwork: false,
+    })) {
+      // iterate
+    }
+
+    const fields = db.updateTrack.mock.calls
+      .map((call) => call[1] as Record<string, unknown>)
+      .find((f) => 'filetype' in f)!;
+    expect(fields).toMatchObject({ composer: '', totalTracks: 0, sortArtist: 'Artist (The)' });
+    expect(fields).not.toHaveProperty('grouping');
   });
 
   it('executes upgrade without preset (copy-based quality-change)', async () => {

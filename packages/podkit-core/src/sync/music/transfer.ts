@@ -25,6 +25,8 @@ import type { SyncTagData } from '../../metadata/sync-tags.js';
 import type { CollectionTrack } from '../../adapters/interface.js';
 import type { DeviceAdapter, DeviceTrack, DeviceTrackInput } from '../../device/adapter.js';
 import type { SyncOperation } from '../engine/types.js';
+import { EXTENDED_TAG_FIELDS } from '../../adapters/interface.js';
+import { clearedExtendedValue, reportedExtendedFields } from '../engine/upgrades.js';
 import type { ExecutionContext } from './execution-context.js';
 import type { MusicArtworkManager } from './artwork.js';
 import type { PreparedFile, MusicUpgradeOperationType } from './pipeline-types.js';
@@ -46,6 +48,15 @@ function toDeviceTrackInput(track: CollectionTrack): DeviceTrackInput {
     trackNumber: track.trackNumber,
     discNumber: track.discNumber,
     compilation: track.compilation,
+    composer: track.composer,
+    grouping: track.grouping,
+    totalTracks: track.totalTracks,
+    totalDiscs: track.totalDiscs,
+    sortTitle: track.sortTitle,
+    sortArtist: track.sortArtist,
+    sortAlbum: track.sortAlbum,
+    sortAlbumArtist: track.sortAlbumArtist,
+    sortComposer: track.sortComposer,
     duration: track.duration,
     bitrate: track.bitrate,
     normalization: track.normalization,
@@ -317,6 +328,18 @@ export class MusicTransferOps {
     if (source.discNumber !== undefined) updateFields.discNumber = source.discNumber;
     if (source.albumArtist !== undefined) updateFields.albumArtist = source.albumArtist;
     if (source.compilation !== undefined) updateFields.compilation = source.compilation;
+    // Only devices that store the extended fields get them, and fields the
+    // source reports but no longer has are cleared, so the replacement leaves
+    // nothing stale. Elsewhere (mass-storage) the replacement file carries
+    // the source's own tags.
+    if (foundTrack.storesExtendedTags) {
+      const reported = reportedExtendedFields(source);
+      for (const field of EXTENDED_TAG_FIELDS) {
+        const value =
+          source[field] ?? (reported.includes(field) ? clearedExtendedValue(field) : undefined);
+        if (value !== undefined) (updateFields as Record<string, unknown>)[field] = value;
+      }
+    }
 
     // Request ReplayGain tag writes for transcoded/optimized-copy upgrades.
     // Direct-copy upgrades preserve source file tags — no write needed.

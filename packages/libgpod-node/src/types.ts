@@ -241,6 +241,18 @@ export interface Track {
   /** Grouping */
   grouping: string | null;
 
+  // Sort overrides: when set, the firmware sorts by these instead of the plain field
+  /** Title used for sorting */
+  sortTitle: string | null;
+  /** Artist used for sorting */
+  sortArtist: string | null;
+  /** Album used for sorting */
+  sortAlbum: string | null;
+  /** Album artist used for sorting */
+  sortAlbumArtist: string | null;
+  /** Composer used for sorting */
+  sortComposer: string | null;
+
   // Track info
   /** Track number on disc */
   trackNumber: number;
@@ -349,6 +361,17 @@ export interface TrackInput {
   comment?: string;
   /** Grouping */
   grouping?: string;
+
+  /** Title used for sorting */
+  sortTitle?: string;
+  /** Artist used for sorting */
+  sortArtist?: string;
+  /** Album used for sorting */
+  sortAlbum?: string;
+  /** Album artist used for sorting */
+  sortAlbumArtist?: string;
+  /** Composer used for sorting */
+  sortComposer?: string;
 
   /** Track number */
   trackNumber?: number;

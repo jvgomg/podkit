@@ -65,6 +65,12 @@ Napi::Value DatabaseWrapper::AddTrack(const Napi::CallbackInfo& info) {
     track->comment = GetOptionalString(input, "comment");
     track->grouping = GetOptionalString(input, "grouping");
 
+    track->sort_title = GetOptionalString(input, "sortTitle");
+    track->sort_artist = GetOptionalString(input, "sortArtist");
+    track->sort_album = GetOptionalString(input, "sortAlbum");
+    track->sort_albumartist = GetOptionalString(input, "sortAlbumArtist");
+    track->sort_composer = GetOptionalString(input, "sortComposer");
+
     track->track_nr = GetOptionalInt32(input, "trackNumber", 0);
     track->tracks = GetOptionalInt32(input, "totalTracks", 0);
     track->cd_nr = GetOptionalInt32(input, "discNumber", 0);
@@ -390,6 +396,26 @@ Napi::Value DatabaseWrapper::UpdateTrack(const Napi::CallbackInfo& info) {
     if (fields.Has("grouping")) {
         g_free(track->grouping);
         track->grouping = ValueToGchar(fields.Get("grouping"));
+    }
+    if (fields.Has("sortTitle")) {
+        g_free(track->sort_title);
+        track->sort_title = ValueToGchar(fields.Get("sortTitle"));
+    }
+    if (fields.Has("sortArtist")) {
+        g_free(track->sort_artist);
+        track->sort_artist = ValueToGchar(fields.Get("sortArtist"));
+    }
+    if (fields.Has("sortAlbum")) {
+        g_free(track->sort_album);
+        track->sort_album = ValueToGchar(fields.Get("sortAlbum"));
+    }
+    if (fields.Has("sortAlbumArtist")) {
+        g_free(track->sort_albumartist);
+        track->sort_albumartist = ValueToGchar(fields.Get("sortAlbumArtist"));
+    }
+    if (fields.Has("sortComposer")) {
+        g_free(track->sort_composer);
+        track->sort_composer = ValueToGchar(fields.Get("sortComposer"));
     }
 
     // Update numeric fields

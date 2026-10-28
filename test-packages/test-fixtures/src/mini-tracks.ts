@@ -34,6 +34,11 @@ export interface MiniTrackOptions {
    * matters.
    */
   comment?: string;
+  /**
+   * Further tags as ffmpeg `-metadata` key/value pairs, written as given
+   * (e.g. `composer`, `grouping`, `TITLESORT`). Container mapping is ffmpeg's.
+   */
+  tags?: Record<string, string>;
   /** Duration in seconds. Defaults to 1. */
   durationSeconds?: number;
   /** Sine frequency in Hz. Defaults to 440. */
@@ -53,6 +58,9 @@ function metadataArgs(opts: MiniTrackOptions): string[] {
   const args = ['-metadata', `title=${title}`, '-metadata', `artist=${artist}`];
   if (opts.comment !== undefined) {
     args.push('-metadata', `comment=${opts.comment}`);
+  }
+  for (const [key, value] of Object.entries(opts.tags ?? {})) {
+    args.push('-metadata', `${key}=${value}`);
   }
   return args;
 }

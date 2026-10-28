@@ -113,6 +113,20 @@ const LOSSLESS_CODECS = new Set([
 ]);
 
 /**
+ * Join a multi-value tag (e.g. two ID3 TCOM entries) into the single string
+ * the iPod stores.
+ */
+function joinTagValues(values: string[] | undefined): string | undefined {
+  const parts = values?.map((v) => v.trim()).filter((v) => v.length > 0) ?? [];
+  return parts.length > 0 ? parts.join(', ') : undefined;
+}
+
+/** A text tag, unset when blank. */
+function tagText(value: string | undefined): string | undefined {
+  return value?.trim() ? value : undefined;
+}
+
+/**
  * Determine if a codec is lossless
  */
 function isLosslessCodec(codec: string | undefined, fileType: AudioFileType): boolean {
@@ -347,6 +361,15 @@ export class DirectoryAdapter implements CollectionAdapter<CollectionTrack, Trac
       discNumber: common.disk?.no ?? undefined,
       compilation: common.compilation ?? undefined,
       duration: format.duration ? Math.floor(format.duration * 1000) : undefined,
+      composer: joinTagValues(common.composer),
+      grouping: tagText(common.grouping),
+      totalTracks: common.track?.of ?? undefined,
+      totalDiscs: common.disk?.of ?? undefined,
+      sortTitle: tagText(common.titlesort),
+      sortArtist: tagText(common.artistsort),
+      sortAlbum: tagText(common.albumsort),
+      sortAlbumArtist: tagText(common.albumartistsort),
+      sortComposer: tagText(common.composersort),
 
       // File info
       filePath,

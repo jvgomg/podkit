@@ -11,6 +11,8 @@ import * as path from 'node:path';
 import { tmpdir } from 'node:os';
 
 import { MassStorageAdapter, MassStorageTrack } from './mass-storage-adapter.js';
+import { createMusicHandler } from '../sync/music/handler.js';
+import { makeMockCollectionTrack } from '../test-utils/tracks.js';
 import type { MetadataReader } from './mass-storage-adapter.js';
 import type { TagFields, TagWriter } from './mass-storage-tag-writer.js';
 import { CopyError } from './mass-storage-tag-writer.js';
@@ -890,6 +892,36 @@ describe('MassStorageAdapter', () => {
       expect(collisions).toHaveLength(1);
       expect(collisions[0]!.path).toBe('Music/Artist/Album/01 - Song.flac');
       expect(collisions[0]!.description).toBe('Artist - Song');
+    });
+
+    test('a multi-disc add is checked at the disc folder the add will use', async () => {
+      createFakeAudioFile(mountPoint, 'Music/Artist/Album (disc 1)/01 - Song.flac');
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({
+          '01 - Song.flac': { title: 'Song', artist: 'Artist', album: 'Album', trackNumber: 1 },
+        }),
+      });
+      const source = makeMockCollectionTrack({
+        title: 'Song',
+        artist: 'Artist',
+        album: 'Album',
+        trackNumber: 1,
+        discNumber: 1,
+        totalDiscs: 2,
+        fileType: 'flac',
+        filePath: '/music/01 - Song.flac',
+      });
+      const handler = createMusicHandler({ quality: 'high', transcoder: {} as never });
+      const inputs = handler.getCollisionCheckInputs({
+        operations: [{ type: 'add-direct-copy', source }],
+        estimatedTime: 0,
+        estimatedSize: 0,
+        warnings: [],
+      });
+
+      expect(adapter.checkAddCollisions(inputs).map((c) => c.path)).toEqual([
+        'Music/Artist/Album (disc 1)/01 - Song.flac',
+      ]);
     });
 
     test('does not flag managed files as collisions', async () => {

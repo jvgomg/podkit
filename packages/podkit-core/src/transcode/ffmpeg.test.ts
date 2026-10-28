@@ -1017,6 +1017,13 @@ describe('buildMp3Args', () => {
     expect(args).not.toContain('-b:a');
   });
 
+  it('generates average-bitrate args for VBR with a numeric target and no preset quality', () => {
+    const config: EncoderConfig = { codec: 'mp3', bitrateKbps: 96, encoding: 'vbr' };
+    const args = buildMp3Args(input, output, config);
+    expect(args.join(' ')).toContain('-abr 1 -b:a 96k');
+    expect(args).not.toContain('-q:a');
+  });
+
   it('generates CBR args with -b:a bitrate', () => {
     const config: EncoderConfig = { codec: 'mp3', bitrateKbps: 256, encoding: 'cbr' };
     const args = buildMp3Args(input, output, config);

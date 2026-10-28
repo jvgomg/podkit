@@ -50,11 +50,11 @@ describe('determineLevel() — unsupported short-circuit', () => {
     expect(result4g.unsupported?.kind).toBe('unsupported-device');
   });
 
-  it('returns unsupported for nano 7G PIDs (read-only: hashAB signing unavailable)', () => {
-    const result = determineLevel([], { vendorId: '05ac', productId: '120e' });
+  it('returns unsupported for nano 6G PIDs (read-only: writes unverified on hardware)', () => {
+    const result = determineLevel([], { vendorId: '05ac', productId: '120d' });
     expect(result.level).toBe('unsupported');
     expect(result.unsupported?.kind).toBe('unsupported-device');
-    expect(result.unsupported?.headline).toContain('nano 7th gen');
+    expect(result.unsupported?.headline).toContain('nano 6th gen');
   });
 
   it('returns unsupported for iOS-range PIDs without explicit table entry', () => {

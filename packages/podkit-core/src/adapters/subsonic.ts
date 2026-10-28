@@ -8,6 +8,7 @@
 import SubsonicAPI from 'subsonic-api';
 import type { Child, AlbumWithSongsID3 } from 'subsonic-api';
 import type { CollectionAdapter, CollectionTrack, FileAccess } from './interface.js';
+import { EXTENDED_TAG_FIELDS } from './interface.js';
 import type { TrackFilter, AudioFileType } from '../types.js';
 import type { Warning } from '../sync/engine/types.js';
 import type { AudioNormalization } from '../metadata/normalization.js';
@@ -776,6 +777,9 @@ export class SubsonicAdapter implements CollectionAdapter<CollectionTrack, Track
       trackNumber: song.track,
       discNumber: song.discNumber,
       compilation: album?.isCompilation ?? undefined,
+      // Composer, grouping, totals and sort names are not mapped from the
+      // server, so sync leaves the device's values for them alone.
+      unreportedTagFields: EXTENDED_TAG_FIELDS,
       // Subsonic duration is in seconds, convert to milliseconds
       duration: song.duration !== undefined ? song.duration * 1000 : undefined,
 

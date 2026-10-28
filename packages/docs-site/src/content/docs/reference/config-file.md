@@ -110,7 +110,7 @@ These apply to all devices unless overridden at the device level.
 | `videoQuality` | string | - | Video-specific quality override: `max`, `high`, `medium`, `low`. Overrides `quality` for video. |
 | `encoding` | string | `"vbr"` | Encoding mode for lossy transcoding: `vbr` (variable bitrate) or `cbr` (constant bitrate). VBR produces better quality per MB; CBR produces predictable file sizes and more reliable preset change detection. Applies to whichever codec the [preference stack](/user-guide/transcoding/codec-preferences) resolves. |
 | `transferMode` | string | `"fast"` | Transfer mode controlling how extra file data (e.g. embedded artwork) is handled, and — for iPod — whether on-disk file tags are kept in sync with the iTunesDB. See [Transfer Mode](#transfer-mode) below. |
-| `customBitrate` | integer | - | Override the preset's target bitrate (64-320 kbps). Ignored when `max` resolves to ALAC. |
+| `customBitrate` | integer | - | Replace the preset's bitrate with this value (64-320 kbps). It is the cap for every lossy target, including [lossy reduction](#lossy-reduction) of MP3/AAC sources. Ignored for lossless sources when `max` resolves to ALAC. CLI: `--custom-bitrate`. See [Custom Bitrate](/user-guide/transcoding/audio#custom-bitrate). |
 | `[bitrate].tolerance` | number | `0.25` | Source-proximity tolerance for lossy reduction on the add path (fraction of the cap). Reduce only when `source > cap × (1 + tolerance)`. Applies only when the reduction axis is `convert`. See [Lossy Reduction](#lossy-reduction). |
 | `artwork` | boolean | `true` | Include album artwork during sync |
 | `checkArtwork` | boolean | `false` | Detect artwork changes between syncs (added, removed, or replaced). For Subsonic sources, adds one HTTP request per unique album during scanning. Consider using the `--check-artwork` CLI flag for periodic checks instead of enabling permanently on large libraries. |
@@ -362,7 +362,7 @@ quality = "max"               # Use --device <path> to specify mount point
 | `videoQuality` | string | no | global `videoQuality` | Video-specific quality override for this device |
 | `encoding` | string | no | global `encoding` | Encoding mode override: `vbr` or `cbr` |
 | `transferMode` | string | no | global `transferMode` | Transfer mode override: `fast`, `optimized`, or `portable`. See [Transfer Mode](#transfer-mode) for the device-specific contract (file-tag writes differ between iPod and mass-storage). |
-| `customBitrate` | integer | no | global `customBitrate` | Override the preset's target bitrate for this device |
+| `customBitrate` | integer | no | global `customBitrate` | Replace the preset's bitrate for this device (64-320 kbps) |
 | `bitrate` | table | no | global `[bitrate]` | Lossy reduction block (`[devices.<name>.bitrate]`). See [Lossy Reduction](#lossy-reduction). |
 | `artwork` | boolean | no | global `artwork` | Artwork override for this device |
 | `checkArtwork` | boolean | no | global `checkArtwork` | Detect changed artwork for this device |

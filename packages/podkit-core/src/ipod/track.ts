@@ -89,6 +89,11 @@ export class IpodTrackImpl implements IpodTrack {
   readonly composer?: string;
   readonly comment?: string;
   readonly grouping?: string;
+  readonly sortTitle?: string;
+  readonly sortArtist?: string;
+  readonly sortAlbum?: string;
+  readonly sortAlbumArtist?: string;
+  readonly sortComposer?: string;
   readonly trackNumber?: number;
   readonly totalTracks?: number;
   readonly discNumber?: number;
@@ -134,6 +139,9 @@ export class IpodTrackImpl implements IpodTrack {
    */
   readonly artworkSink = 'database' as const;
 
+  /** The iTunesDB stores composer, grouping, totals and sort fields. */
+  readonly storesExtendedTags = true as const;
+
   // Video-specific fields
   readonly tvShow?: string;
   readonly tvEpisode?: string;
@@ -162,6 +170,11 @@ export class IpodTrackImpl implements IpodTrack {
     this.composer = data.composer ?? undefined;
     this.comment = data.comment ?? undefined;
     this.grouping = data.grouping ?? undefined;
+    this.sortTitle = data.sortTitle ?? undefined;
+    this.sortArtist = data.sortArtist ?? undefined;
+    this.sortAlbum = data.sortAlbum ?? undefined;
+    this.sortAlbumArtist = data.sortAlbumArtist ?? undefined;
+    this.sortComposer = data.sortComposer ?? undefined;
 
     // Track/disc info (0 values become undefined for optional fields)
     this.trackNumber = data.trackNumber || undefined;

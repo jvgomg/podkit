@@ -20,6 +20,24 @@ export type FileAccess =
   | { type: 'stream'; getStream: () => Promise<ReadableStream | Readable>; size?: number };
 
 /**
+ * Tag fields beyond the core set that a source may or may not be able to
+ * report. The comment field is not among them: podkit keeps it for the sync tag.
+ */
+export const EXTENDED_TAG_FIELDS = [
+  'composer',
+  'grouping',
+  'totalTracks',
+  'totalDiscs',
+  'sortTitle',
+  'sortArtist',
+  'sortAlbum',
+  'sortAlbumArtist',
+  'sortComposer',
+] as const;
+
+export type ExtendedTagField = (typeof EXTENDED_TAG_FIELDS)[number];
+
+/**
  * A track from a collection source
  */
 export interface CollectionTrack {
@@ -42,6 +60,27 @@ export interface CollectionTrack {
   discNumber?: number;
   compilation?: boolean;
   duration?: number; // milliseconds
+  composer?: string;
+  grouping?: string;
+  totalTracks?: number;
+  totalDiscs?: number;
+
+  // Sort overrides (e.g. "Beatles, The"); absent means sort by the plain field
+  sortTitle?: string;
+  sortArtist?: string;
+  sortAlbum?: string;
+  sortAlbumArtist?: string;
+  sortComposer?: string;
+
+  /**
+   * Extended fields this source cannot report for this track (e.g. totals
+   * on Subsonic, or an OpenSubsonic field a plain Subsonic server omits).
+   * An unset listed field means "unknown", not "empty": sync neither
+   * compares nor clears it. Fields not listed are authoritative, so unset
+   * means the tag is absent and the device value is cleared. Omitted: all
+   * fields are authoritative (file tags).
+   */
+  unreportedTagFields?: readonly ExtendedTagField[];
 
   // File info
   filePath: string;
