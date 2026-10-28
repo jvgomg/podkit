@@ -138,6 +138,13 @@ Napi::Object TrackToObject(Napi::Env env, const Itdb_Track* track) {
     obj.Set("comment", GcharToValue(env, track->comment));
     obj.Set("grouping", GcharToValue(env, track->grouping));
 
+    // Sort overrides (NULL: the firmware sorts by the plain field)
+    obj.Set("sortTitle", GcharToValue(env, track->sort_title));
+    obj.Set("sortArtist", GcharToValue(env, track->sort_artist));
+    obj.Set("sortAlbum", GcharToValue(env, track->sort_album));
+    obj.Set("sortAlbumArtist", GcharToValue(env, track->sort_albumartist));
+    obj.Set("sortComposer", GcharToValue(env, track->sort_composer));
+
     // Track info
     obj.Set("trackNumber", Napi::Number::New(env, track->track_nr));
     obj.Set("totalTracks", Napi::Number::New(env, track->tracks));

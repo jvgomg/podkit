@@ -1627,8 +1627,12 @@ export function getDeviceProfileByGeneration(_generation: string) {
   return getDeviceProfile('ipod-classic');
 }
 
+export function getDeviceProfileByIpodGeneration(_generationId: string) {
+  return getDeviceProfile('ipod-classic');
+}
+
 export function getDeviceProfileNames(): string[] {
-  return ['ipod-classic', 'ipod-video-5g', 'ipod-nano-3g'];
+  return ['ipod-classic', 'ipod-video-5g', 'ipod-nano-3g', 'ipod-nano-7g'];
 }
 
 export function getPresetSettings(_preset: string) {

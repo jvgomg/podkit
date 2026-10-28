@@ -16,12 +16,15 @@ import {
   generateMiniFlac,
   generateMiniM4a,
   generateMiniMp3,
+  generateMiniMp3WithId3Frames,
+  generateMiniMp3WithId3v23,
   generateMiniOggOpus,
   generateMiniOggVorbis,
   requireFFmpeg,
 } from '@podkit/test-fixtures';
 import { PODKIT_TEMP_SUFFIX } from '../utils/atomic-fs.js';
 import { TagLibTagWriter, type TagFields } from './mass-storage-tag-writer.js';
+import { DirectoryAdapter } from '../adapters/directory.js';
 
 requireFFmpeg();
 
@@ -100,6 +103,23 @@ function generateTestImage(width = 100, height = 100): Buffer {
     { stdio: ['pipe', 'pipe', 'pipe'] }
   );
   return Buffer.from(result);
+}
+
+/** The nine extended fields as music-metadata reads them; empty values as undefined. */
+function extendedOf(metadata: mm.IAudioMetadata) {
+  const c = metadata.common;
+  const text = (v: string | undefined) => v || undefined;
+  return {
+    composer: c.composer?.length ? c.composer : undefined,
+    grouping: text(c.grouping),
+    totalTracks: c.track.of || undefined,
+    totalDiscs: c.disk.of || undefined,
+    titlesort: text(c.titlesort),
+    artistsort: text(c.artistsort),
+    albumsort: text(c.albumsort),
+    albumartistsort: text(c.albumartistsort),
+    composersort: text(c.composersort),
+  };
 }
 
 /** Read the comment tag from an audio file using music-metadata */
@@ -221,6 +241,15 @@ describe('TagLibTagWriter', () => {
       discNumber: 2,
       compilation: true,
       comment: '[podkit:v1 quality=high]',
+      composer: 'Clara Schumann',
+      grouping: 'Lieder',
+      totalTracks: 12,
+      totalDiscs: 3,
+      sortTitle: 'Title, New',
+      sortArtist: 'Artist, New',
+      sortAlbum: 'Album, New',
+      sortAlbumArtist: 'Album Artist, New',
+      sortComposer: 'Schumann, Clara',
     };
 
     function assertAllFields(metadata: mm.IAudioMetadata): void {
@@ -233,6 +262,17 @@ describe('TagLibTagWriter', () => {
       expect(metadata.common.track.no).toBe(7);
       expect(metadata.common.disk.no).toBe(2);
       expect(metadata.common.compilation).toBe(true);
+      expect(extendedOf(metadata)).toEqual({
+        composer: ['Clara Schumann'],
+        grouping: 'Lieder',
+        totalTracks: 12,
+        totalDiscs: 3,
+        titlesort: 'Title, New',
+        artistsort: 'Artist, New',
+        albumsort: 'Album, New',
+        albumartistsort: 'Album Artist, New',
+        composersort: 'Schumann, Clara',
+      });
     }
 
     test('FLAC: round-trips every supported field', async () => {
@@ -279,6 +319,168 @@ describe('TagLibTagWriter', () => {
       assertAllFields(metadata);
       expect(await readComment(filePath)).toBe(fullFields.comment);
     });
+  });
+
+  describe('writeTags — clearing extended fields', () => {
+    const set: TagFields = {
+      composer: 'Clara Schumann',
+      grouping: 'Lieder',
+      totalTracks: 12,
+      totalDiscs: 3,
+      sortTitle: 'T, x',
+      sortArtist: 'A, x',
+      sortAlbum: 'B, x',
+      sortAlbumArtist: 'C, x',
+      sortComposer: 'D, x',
+    };
+    const cleared: TagFields = {
+      composer: '',
+      grouping: '',
+      totalTracks: 0,
+      totalDiscs: 0,
+      sortTitle: '',
+      sortArtist: '',
+      sortAlbum: '',
+      sortAlbumArtist: '',
+      sortComposer: '',
+    };
+    const generators: Array<[string, (dir: string, name: string) => string]> = [
+      ['FLAC', (d, n) => generateFlac(d, `${n}.flac`)],
+      ['MP3', (d, n) => generateMp3(d, `${n}.mp3`)],
+      ['M4A', (d, n) => generateM4a(d, `${n}.m4a`)],
+      ['OGG', (d, n) => generateOgg(d, `${n}.ogg`)],
+    ];
+    for (const [format, generate] of generators) {
+      test(`${format}: '' and 0 remove the tags`, async () => {
+        const filePath = generate(tempDir, 'clear');
+        await writer.writeTags(filePath, set);
+        await writer.writeTags(filePath, cleared);
+        const metadata = await mm.parseFile(filePath, { skipCovers: true });
+        expect(extendedOf(metadata)).toEqual({
+          composer: undefined,
+          grouping: undefined,
+          totalTracks: undefined,
+          totalDiscs: undefined,
+          titlesort: undefined,
+          artistsort: undefined,
+          albumsort: undefined,
+          albumartistsort: undefined,
+          composersort: undefined,
+        });
+      });
+    }
+  });
+
+  describe('writeTags — multi-value composers', () => {
+    for (const [format, generate] of [
+      ['FLAC', (d: string) => generateFlac(d, 'composers.flac')],
+      ['MP3', (d: string) => generateMp3(d, 'composers.mp3')],
+    ] as const) {
+      test(`${format}: separate composer values stay separate`, async () => {
+        const filePath = generate(tempDir);
+        await writer.writeTags(filePath, {
+          composer: 'John Lennon, Paul McCartney',
+          composers: ['John Lennon', 'Paul McCartney'],
+        });
+        const metadata = await mm.parseFile(filePath, { skipCovers: true });
+        expect(metadata.common.composer).toEqual(['John Lennon', 'Paul McCartney']);
+      });
+    }
+  });
+
+  describe('writeTags — iTunes ID3v2.3 frames', () => {
+    const itunesV23: Array<[string, string]> = [
+      ['TIT2', 'Title'],
+      ['TPE1', 'Artist'],
+      ['TALB', 'Album'],
+      ['TIT1', 'Mass in B minor'],
+      ['GRP1', 'Kyrie'],
+      ['TSOT', 'Title, x'],
+      ['TSOP', 'Artist, x'],
+      ['TSOA', 'Album, x'],
+      ['TSO2', 'Album Artist, x'],
+      ['TSOC', 'Composer, x'],
+    ];
+    const native = async (filePath: string) => {
+      const metadata = await mm.parseFile(filePath, { skipCovers: true });
+      const frames = metadata.native['ID3v2.3'] ?? [];
+      return Object.fromEntries(frames.map((f) => [f.id, f.value]));
+    };
+
+    test('an unrelated change keeps all five sort frames and both grouping frames', async () => {
+      const filePath = generateMiniMp3WithId3v23(tempDir, 'v23.mp3', itunesV23);
+      await writer.writeTags(filePath, { album: 'Changed', comment: '[podkit:v1 quality=copy]' });
+      await writer.writePicture(filePath, generateTestImage(8, 8));
+
+      expect(await native(filePath)).toMatchObject({
+        TALB: 'Changed',
+        TIT1: 'Mass in B minor',
+        GRP1: 'Kyrie',
+        TSOT: 'Title, x',
+        TSOP: 'Artist, x',
+        TSOA: 'Album, x',
+        TSO2: 'Album Artist, x',
+        TSOC: 'Composer, x',
+      });
+    });
+
+    test('sort and grouping updates stay in the v2.3 frames; the work title is untouched', async () => {
+      const filePath = generateMiniMp3WithId3v23(tempDir, 'v23-update.mp3', itunesV23);
+      await writer.writeTags(filePath, { sortTitle: 'Title, y', grouping: 'Gloria' });
+
+      const frames = await native(filePath);
+      expect(frames).toMatchObject({ TSOT: 'Title, y', GRP1: 'Gloria', TIT1: 'Mass in B minor' });
+      expect(frames.TSOP).toBe('Artist, x');
+    });
+
+    test('clearing removes the sort frames, empties GRP1 and keeps the work title', async () => {
+      const filePath = generateMiniMp3WithId3v23(tempDir, 'v23-clear.mp3', itunesV23);
+      await writer.writeTags(filePath, {
+        grouping: '',
+        sortTitle: '',
+        sortArtist: '',
+        sortAlbum: '',
+        sortAlbumArtist: '',
+        sortComposer: '',
+      });
+
+      const frames = await native(filePath);
+      for (const id of ['TSOT', 'TSOP', 'TSOA', 'TSO2', 'TSOC']) {
+        expect([id, frames[id]]).toEqual([id, undefined]);
+      }
+      expect(frames.GRP1).toBe('');
+      expect(frames.TIT1).toBe('Mass in B minor');
+    });
+
+    for (const version of [3, 4] as const) {
+      test(`ID3v2.${version}: clear, reread, regroup — the work title is never grouping and never overwritten`, async () => {
+        const filePath = generateMiniMp3WithId3Frames(
+          tempDir,
+          `work-v2${version}.mp3`,
+          [
+            ['TIT2', 'Kyrie eleison'],
+            ['TIT1', 'Mass in B minor'],
+            ['GRP1', 'Kyrie'],
+          ],
+          version
+        );
+        const groupingOf = async () =>
+          (await new DirectoryAdapter({ path: tempDir }).getItems()).find((t) =>
+            t.filePath.endsWith(`work-v2${version}.mp3`)
+          )?.grouping;
+        const workTitle = async () =>
+          (await mm.parseFile(filePath)).native[`ID3v2.${version}`]?.find((f) => f.id === 'TIT1')
+            ?.value;
+
+        await writer.writeTags(filePath, { grouping: '' });
+        expect(await groupingOf()).toBeUndefined();
+        expect(await workTitle()).toBe('Mass in B minor');
+
+        await writer.writeTags(filePath, { grouping: 'Gloria' });
+        expect(await groupingOf()).toBe('Gloria');
+        expect(await workTitle()).toBe('Mass in B minor');
+      });
+    }
   });
 
   describe('writeTags — partial updates and edge cases', () => {

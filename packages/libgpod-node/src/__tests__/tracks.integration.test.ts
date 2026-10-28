@@ -282,6 +282,39 @@ describe('libgpod-node track updates (updateTrack)', () => {
     });
   });
 
+  it('persists sort fields through add, update, save and reopen', async () => {
+    await withTestIpod(async (ipod) => {
+      const db = Database.openSync(ipod.path);
+      const handle = db.addTrack({
+        title: 'The Title',
+        sortTitle: 'Title, The',
+        sortArtist: 'Band, The',
+        sortAlbum: 'Album, The',
+        sortAlbumArtist: 'Artist, The',
+      });
+      db.updateTrack(handle, { sortComposer: 'Bach, Johann Sebastian', sortAlbum: '' });
+      db.saveSync();
+      db.close();
+
+      const reopened = Database.openSync(ipod.path);
+      const track = reopened.getTrack(reopened.getTracks()[0]!);
+      expect({
+        sortTitle: track.sortTitle,
+        sortArtist: track.sortArtist,
+        sortAlbum: track.sortAlbum,
+        sortAlbumArtist: track.sortAlbumArtist,
+        sortComposer: track.sortComposer,
+      }).toEqual({
+        sortTitle: 'Title, The',
+        sortArtist: 'Band, The',
+        sortAlbum: null,
+        sortAlbumArtist: 'Artist, The',
+        sortComposer: 'Bach, Johann Sebastian',
+      });
+      reopened.close();
+    });
+  });
+
   it('can update all numeric fields', async () => {
     await withTestIpod(async (ipod) => {
       const db = Database.openSync(ipod.path);

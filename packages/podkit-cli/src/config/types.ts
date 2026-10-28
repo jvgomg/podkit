@@ -145,6 +145,12 @@ export interface MusicCollectionConfig {
    * library. Rejected at parse time on a directory collection.
    */
   playlist?: string;
+  /**
+   * Use the server's sort names as sort tags (optional, subsonic-only,
+   * default false). Only for servers that report real sort tags; otherwise
+   * sort fields are left alone.
+   */
+  serverSortNames?: boolean;
 }
 
 /**
@@ -580,6 +586,7 @@ export interface ConfigFileMusicCollection {
   username?: string;
   password?: string;
   playlist?: string;
+  serverSortNames?: unknown;
 }
 
 /**

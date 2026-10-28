@@ -805,6 +805,18 @@ function parseMusicCollections(
       );
     }
 
+    if (rawCollection.serverSortNames !== undefined) {
+      if (collectionType !== 'subsonic') {
+        throw new Error(
+          `"serverSortNames" is only valid for subsonic collections, but [music.${name}] is a directory collection. ` +
+            `Remove "serverSortNames" or set type = "subsonic".`
+        );
+      }
+      if (typeof rawCollection.serverSortNames !== 'boolean') {
+        throw new Error(`Invalid "serverSortNames" in [music.${name}]: must be true or false.`);
+      }
+    }
+
     if (collectionType === 'directory') {
       if (typeof rawCollection.path !== 'string') {
         throw new Error(
@@ -842,6 +854,9 @@ function parseMusicCollections(
         username: rawCollection.username,
         password: rawCollection.password, // Optional - can also use env var
         playlist: rawCollection.playlist, // Optional - subsonic-only scope
+        ...(rawCollection.serverSortNames !== undefined && {
+          serverSortNames: rawCollection.serverSortNames as boolean,
+        }),
       };
     }
     hasAnyCollection = true;

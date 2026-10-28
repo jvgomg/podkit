@@ -18,7 +18,7 @@ podkit settings can be overridden via environment variables. These take preceden
 | `PODKIT_ENCODING` | Encoding mode: `vbr` or `cbr` (overrides config file `encoding`) |
 | `PODKIT_TRANSFER_MODE` | Transfer mode: `fast`, `optimized`, or `portable`. Controls whether extra file data is preserved or stripped (overrides config file `transferMode`) |
 | `PODKIT_FORCE_TRANSFER_MODE` | Force re-processing of all tracks when changing transfer mode (`true`/`false`) |
-| `PODKIT_CUSTOM_BITRATE` | Override target bitrate for AAC encoding, 64-320 kbps (overrides config file `customBitrate`) |
+| `PODKIT_CUSTOM_BITRATE` | Replace the preset's bitrate for lossy encoding, 64-320 kbps (overrides config file `customBitrate`; `--custom-bitrate` overrides this) |
 | `PODKIT_BITRATE_REDUCE` | Lossy reduction mode: `auto`, `always`, or `never` (overrides config file `[bitrate].reduce`) |
 | `PODKIT_BITRATE_TOLERANCE` | Source-proximity tolerance for lossy reduction, as a fraction of the cap (e.g. `0.25`; overrides config file `[bitrate].tolerance`) |
 | `PODKIT_FORCE_TRANSCODE` | Force re-transcoding of all lossless-source tracks (`true`/`false`) |

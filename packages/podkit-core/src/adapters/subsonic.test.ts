@@ -9,6 +9,8 @@ import { SubsonicAdapter, SubsonicConnectionError } from './subsonic.js';
 import type { SubsonicAdapterConfig } from './subsonic.js';
 import { PlaylistNotFoundError, AmbiguousPlaylistError } from './subsonic/playlist.js';
 import type { CollectionTrack } from './interface.js';
+import { EXTENDED_TAG_FIELDS } from './interface.js';
+import { buildTagFieldsFromInput } from '../device/mass-storage-tag-writer.js';
 import type { Child, AlbumWithSongsID3 } from 'subsonic-api';
 import { replayGainToSoundcheck } from '../metadata/normalization.js';
 import { hashArtwork } from '../artwork/hash.js';
@@ -304,6 +306,166 @@ describe('SubsonicAdapter Sound Check (ReplayGain)', () => {
     });
 
     expect(track.normalization?.soundcheckValue).toBe(1000);
+  });
+});
+
+describe('SubsonicAdapter OpenSubsonic composer, grouping and sort names', () => {
+  async function mapSong(
+    song: Partial<Child> & { groupings?: string[] },
+    album?: Partial<AlbumWithSongsID3> | null,
+    config: Partial<SubsonicAdapterConfig> = {}
+  ): Promise<CollectionTrack> {
+    const fullSong: Child = {
+      id: 's',
+      isDir: false,
+      title: 'The Wall',
+      artist: 'The Band',
+      ...song,
+    };
+    const fullAlbum: AlbumWithSongsID3 | undefined =
+      album === null
+        ? undefined
+        : {
+            id: 'a',
+            name: 'The Album',
+            artist: 'The Ensemble',
+            songCount: 1,
+            duration: 1,
+            created: new Date('2024-01-01T00:00:00Z'),
+            ...album,
+          };
+    return await (createTestAdapter(config) as any)['mapSongToTrack'](fullSong, fullAlbum);
+  }
+  const artist = (name: string, sortName?: string) => ({ id: name, name, albumCount: 1, sortName });
+  const SORTS = [
+    'sortTitle',
+    'sortArtist',
+    'sortAlbum',
+    'sortAlbumArtist',
+    'sortComposer',
+  ] as const;
+  const optIn = { serverSortNames: true };
+
+  it('maps displayComposer and groupings', async () => {
+    const track = await mapSong({
+      displayComposer: 'Johann Sebastian Bach',
+      groupings: ['Cantatas', ' ', 'Sacred'],
+    });
+    expect([track.composer, track.grouping]).toEqual(['Johann Sebastian Bach', 'Cantatas, Sacred']);
+    expect(track.unreportedTagFields).not.toContain('composer');
+    expect(track.unreportedTagFields).not.toContain('grouping');
+  });
+
+  it('keeps separate composer credits apart in file tags', async () => {
+    const track = await mapSong({
+      displayComposer: 'John Lennon, Paul McCartney',
+      contributors: [
+        { role: 'composer', artist: artist('John Lennon') },
+        { role: 'composer', artist: artist('Paul McCartney') },
+        { role: 'producer', artist: artist('George Martin') },
+      ],
+    });
+    expect(track.composer).toBe('John Lennon, Paul McCartney');
+    expect(buildTagFieldsFromInput(track)).toMatchObject({
+      composer: 'John Lennon, Paul McCartney',
+      composers: ['John Lennon', 'Paul McCartney'],
+    });
+  });
+
+  it('reports a supported empty composer or grouping, so the device field is cleared', async () => {
+    const track = await mapSong({ displayComposer: '', groupings: [] });
+    expect([track.composer, track.grouping]).toEqual([undefined, undefined]);
+    expect(track.unreportedTagFields).not.toContain('composer');
+    expect(track.unreportedTagFields).not.toContain('grouping');
+  });
+
+  it('leaves every extended field unreported on a plain Subsonic server', async () => {
+    const track = await mapSong({});
+    expect(track.unreportedTagFields).toEqual([...EXTENDED_TAG_FIELDS]);
+  });
+
+  // Derived ordering keys, as a server may report them instead of sort tags.
+  const derivedKeys = {
+    title: 'Aria',
+    sortName: 'aria',
+    artists: [artist('Johann Sebastian Bach', 'bach')],
+    albumArtists: [artist('Røyksopp', 'royksopp')],
+    contributors: [{ role: 'composer', artist: artist('Los Lobos', 'lobos') }],
+  };
+
+  it('leaves server sort names unreported by default, whatever they look like', async () => {
+    const track = await mapSong(derivedKeys, { name: 'The Café', sortName: 'cafe' });
+    for (const field of SORTS) expect([field, track[field]]).toEqual([field, undefined]);
+    expect(track.unreportedTagFields).toEqual(expect.arrayContaining([...SORTS]));
+  });
+
+  it('by default neither writes nor clears folder-synced sorts, on two syncs', async () => {
+    const track = await mapSong(derivedKeys, { name: 'The Café', sortName: 'cafe' });
+    // The device as an earlier folder sync left it: same core fields, plus sorts.
+    const folderSynced = {
+      ...track,
+      storesExtendedTags: true,
+      sortTitle: 'Aria',
+      sortArtist: 'Bach, Johann Sebastian',
+      sortAlbum: 'Café, The',
+      sortAlbumArtist: 'Röyksopp',
+      sortComposer: 'Lobos, Los',
+    } as unknown as DeviceTrack;
+    expect(detectUpgrades(track, folderSynced)).toEqual([]);
+    const again = await mapSong(derivedKeys, { name: 'The Café', sortName: 'cafe' });
+    expect(detectUpgrades(again, folderSynced)).toEqual([]);
+  });
+
+  it('with serverSortNames, uses sort names as given, the plain name included', async () => {
+    const track = await mapSong(
+      {
+        sortName: 'Wall, The',
+        artists: [artist('The Band', 'Band, The')],
+        albumArtists: [artist('Bach', 'Bach')],
+        contributors: [{ role: 'composer', artist: artist('Hildegard', 'Bingen, Hildegard von') }],
+      },
+      { sortName: 'Album, The' },
+      optIn
+    );
+    expect(SORTS.map((f) => track[f])).toEqual([
+      'Wall, The',
+      'Band, The',
+      'Album, The',
+      'Bach',
+      'Bingen, Hildegard von',
+    ]);
+    expect(track.unreportedTagFields).toEqual([
+      'composer',
+      'grouping',
+      'totalTracks',
+      'totalDiscs',
+    ]);
+  });
+
+  it('with serverSortNames, an absent sort name is unreported and a blank one clears', async () => {
+    const track = await mapSong({ sortName: '', artists: [] }, null, optIn);
+    expect(track.unreportedTagFields).not.toContain('sortTitle');
+    expect(track.unreportedTagFields).not.toContain('sortArtist');
+    // No album enrichment (playlist entries): the album sort is unknown.
+    expect(track.unreportedTagFields).toContain('sortAlbum');
+    expect([track.sortTitle, track.sortArtist]).toEqual([undefined, undefined]);
+  });
+
+  it('with serverSortNames, several credited artists or composers leave the sort unreported', async () => {
+    const track = await mapSong(
+      {
+        artists: [artist('A', 'A, x'), artist('B', 'B, x')],
+        contributors: [
+          { role: 'composer', artist: artist('C', 'C, x') },
+          { role: 'composer', artist: artist('D', 'D, x') },
+        ],
+      },
+      {},
+      optIn
+    );
+    expect(track.unreportedTagFields).toEqual(
+      expect.arrayContaining(['sortArtist', 'sortComposer'])
+    );
   });
 });
 

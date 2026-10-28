@@ -209,15 +209,15 @@ describe('runSync: validation + deps seam', () => {
           ...real,
           assessIpodIdentity: async () => ({
             model: {
-              displayName: 'iPod nano (7th Generation)',
-              generationId: 'nano_7g',
+              displayName: 'iPod nano (6th Generation)',
+              generationId: 'nano_6g',
               family: 'iPod nano',
-              ordinal: 7,
+              ordinal: 6,
               checksumType: 'hashAB',
               source: 'usb',
               unsupportedReason: {
                 kind: 'unsupported-device',
-                headline: 'iPod nano (7th Generation) is not supported by podkit.',
+                headline: 'iPod nano (6th Generation) is not supported by podkit.',
                 docsUrl: 'https://jvgomg.github.io/podkit/devices/supported-devices',
               },
             },
@@ -242,10 +242,10 @@ describe('runSync: validation + deps seam', () => {
     expect(exitCode.get()).toBe(1);
     const err = stdout.json<ErrJson>();
     expect(err.code).toBe(SyncErrorCodes.DEVICE_UNSUPPORTED);
-    expect(err.error).toContain('iPod nano (7th Generation) is not supported');
+    expect(err.error).toContain('iPod nano (6th Generation) is not supported');
     // Error wording must surface the unsupported-device reason without
     // mentioning libgpod; the latter is an internal detail and would
-    // confuse end users running into this on an iPod nano 7g.
+    // confuse end users running into this on an iPod nano 6g.
     expect(err.error.toLowerCase()).not.toContain('libgpod');
     // No track plan generated.
     expect(openedDevice).toBe(false);

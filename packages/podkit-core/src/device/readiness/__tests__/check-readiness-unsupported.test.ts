@@ -172,15 +172,15 @@ describe('checkReadiness() — post-sysinfo unsupported short-circuit (block-onl
   });
 
   it('short-circuits to unsupported when sysinfo identifies an unsupported model, even without USB classification', async () => {
-    // D476 = iPod nano 16GB Yellow (7th Generation) — nano_7g has supported:false
-    // in the generations table. `identify({ from: 'sysinfo', modelNumStr: 'D476' })`
+    // C526 = iPod nano 16GB Silver (6th Generation) — nano_6g has supported:false
+    // in the generations table. `identify({ from: 'sysinfo', modelNumStr: 'C526' })`
     // sets `unsupportedReason` on the returned IpodModel.
     //
     // The block is mounted with a valid iPod_Control directory and a SysInfo
     // file naming this model. No `usb` field — simulates the doctor fallback
     // path (`ipodFromBlock`). The pipeline must short-circuit after sysinfo
     // instead of opening the database.
-    writeDeviceFiles({ SysInfo: 'ModelNumStr: D476\nVisibleBuildID: 1.0.4\n' });
+    writeDeviceFiles({ SysInfo: 'ModelNumStr: C526\nVisibleBuildID: 1.2\n' });
 
     const result = await checkReadiness({
       device: {
@@ -188,8 +188,8 @@ describe('checkReadiness() — post-sysinfo unsupported short-circuit (block-onl
         matchedBy: 'block-only',
         block: {
           identifier: 'disk9s2',
-          volumeName: 'NANO7G',
-          volumeUuid: 'NANO-7G-UUID',
+          volumeName: 'NANO6G',
+          volumeUuid: 'NANO-6G-UUID',
           storage: { sizeBytes: 16_000_000_000 },
           isMounted: true,
           mountPoint,
@@ -202,7 +202,7 @@ describe('checkReadiness() — post-sysinfo unsupported short-circuit (block-onl
     expect(result.unsupported?.headline).toContain('nano');
     // deviceModel must be populated (identifies the refused generation)
     expect(result.deviceModel).toBeDefined();
-    expect(result.deviceModel?.generationId).toBe('nano_7g');
+    expect(result.deviceModel?.generationId).toBe('nano_6g');
     // The database stage must be present but SKIPPED — the pipeline short-circuits
     // after sysinfo and appends skip rows for remaining stages (same pattern as
     // the USB-arm short-circuit). The database must NOT have run (status 'fail'

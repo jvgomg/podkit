@@ -25,6 +25,8 @@ export {
   generateMiniFlac,
   generateMiniM4a,
   generateMiniMp3,
+  generateMiniMp3WithId3Frames,
+  generateMiniMp3WithId3v23,
   generateMiniOggOpus,
   generateMiniOggVorbis,
   type MiniTrackOptions,

@@ -12,11 +12,16 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
   ensureFixturesExist,
+  generateMiniFlac,
+  generateMiniM4a,
+  generateMiniMp3,
+  generateMiniMp3WithId3v23,
   getMultiFormatFixturesDir,
   getMultiFormatEmbeddedFixturesDir,
   requireFFmpeg,
   SCENARIO_ARTISTS,
 } from '@podkit/test-fixtures';
+import { File as TagFile, Id3v2Settings } from 'node-taglib-sharp';
 import { DirectoryAdapter } from './directory.js';
 
 requireFFmpeg();
@@ -263,6 +268,250 @@ describe('DirectoryAdapter — AIFF multi-format fixture', () => {
     expect(aiff!.album).toBe('Lossless Collection (Embedded)');
     expect(aiff!.hasArtwork).toBe(true);
   });
+});
+
+describe('DirectoryAdapter — composer, grouping, totals and sort tags', () => {
+  let dir: string;
+  const common = {
+    composer: 'Johann Sebastian Bach',
+    grouping: 'Cantatas',
+    album_artist: 'The Ensemble',
+    disc: '1/2',
+    track: '3/12',
+  };
+
+  beforeAll(async () => {
+    dir = join(tmpdir(), `podkit-tags-${Date.now()}`);
+    await mkdir(dir, { recursive: true });
+    generateMiniFlac(dir, {
+      filename: 'tags.flac',
+      title: 'The Wall',
+      artist: 'The Band',
+      tags: {
+        ...common,
+        TRACKTOTAL: '12',
+        DISCTOTAL: '2',
+        TITLESORT: 'Wall, The',
+        ARTISTSORT: 'Band, The',
+        ALBUMSORT: 'Album, The',
+        ALBUMARTISTSORT: 'Ensemble, The',
+        COMPOSERSORT: 'Bach, Johann Sebastian',
+      },
+    });
+    // ffmpeg's ID3v2.4 writer maps these three sort keys to TSOT/TSOP/TSOA.
+    generateMiniMp3(dir, {
+      filename: 'tags.mp3',
+      title: 'The Wall',
+      artist: 'The Band',
+      tags: {
+        ...common,
+        'title-sort': 'Wall, The',
+        'artist-sort': 'Band, The',
+        'album-sort': 'Album, The',
+      },
+    });
+    generateMiniMp3(dir, { filename: 'plain.mp3' });
+  });
+
+  afterAll(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  async function track(name: string) {
+    const tracks = await new DirectoryAdapter({ path: dir }).getItems();
+    return tracks.find((t) => t.filePath.endsWith(name))!;
+  }
+
+  const extendedFields = (t: Awaited<ReturnType<typeof track>>) => ({
+    composer: t.composer,
+    grouping: t.grouping,
+    totalTracks: t.totalTracks,
+    totalDiscs: t.totalDiscs,
+    sortTitle: t.sortTitle,
+    sortArtist: t.sortArtist,
+    sortAlbum: t.sortAlbum,
+    sortAlbumArtist: t.sortAlbumArtist,
+    sortComposer: t.sortComposer,
+  });
+
+  it('reads every extended field from FLAC Vorbis comments', async () => {
+    expect(extendedFields(await track('tags.flac'))).toEqual({
+      composer: 'Johann Sebastian Bach',
+      grouping: 'Cantatas',
+      totalTracks: 12,
+      totalDiscs: 2,
+      sortTitle: 'Wall, The',
+      sortArtist: 'Band, The',
+      sortAlbum: 'Album, The',
+      sortAlbumArtist: 'Ensemble, The',
+      sortComposer: 'Bach, Johann Sebastian',
+    });
+  });
+
+  it('reads composer, grouping, totals and title/artist/album sort from ID3v2.4', async () => {
+    expect(extendedFields(await track('tags.mp3'))).toEqual({
+      composer: 'Johann Sebastian Bach',
+      grouping: 'Cantatas',
+      totalTracks: 12,
+      totalDiscs: 2,
+      sortTitle: 'Wall, The',
+      sortArtist: 'Band, The',
+      sortAlbum: 'Album, The',
+      sortAlbumArtist: undefined,
+      sortComposer: undefined,
+    });
+  });
+
+  it('leaves every extended field unset on an untagged file', async () => {
+    const values = Object.values(extendedFields(await track('plain.mp3')));
+    expect(values.every((v) => v === undefined)).toBe(true);
+  });
+});
+
+// Synthetic ID3v2.3, ID3v2.4 and MP4 files, read back through the adapter's
+// own reader. ID3v2.4 and MP4 are tagged with node-taglib-sharp (ffmpeg's
+// muxers cannot write TSO2/TSOC or every MP4 sort atom). ID3v2.3 is written
+// byte by byte the way iTunes does it, with the TSOT/TSOP/TSOA sort frames
+// that ID3v2.3 itself lacks and taglib therefore drops.
+
+describe('DirectoryAdapter — extended tags in ID3v2.3, ID3v2.4 and MP4', () => {
+  let dir: string;
+
+  const full = {
+    composers: ['Jóhann Sebastián Bäch', '久石 譲'],
+    grouping: 'Kantaten · 聖歌',
+    track: 3,
+    trackCount: 12,
+    disc: 1,
+    discCount: 2,
+    titleSort: 'Wäll, The',
+    performersSort: ['Bänd, The'],
+    albumSort: 'Älbum, The',
+    albumArtistsSort: ['Ensemble, The'],
+    composersSort: ['Bäch, Jóhann Sebastián'],
+  };
+  const expectedFull = {
+    composer: 'Jóhann Sebastián Bäch, 久石 譲',
+    grouping: 'Kantaten · 聖歌',
+    totalTracks: 12,
+    totalDiscs: 2,
+    sortTitle: 'Wäll, The',
+    sortArtist: 'Bänd, The',
+    sortAlbum: 'Älbum, The',
+    sortAlbumArtist: 'Ensemble, The',
+    sortComposer: 'Bäch, Jóhann Sebastián',
+  };
+  // Blank values a tagger can leave behind; they must read as unset.
+  const blank = {
+    composers: [' '],
+    grouping: ' ',
+    titleSort: ' ',
+    performersSort: [' '],
+    albumSort: ' ',
+    albumArtistsSort: [' '],
+    composersSort: [' '],
+  };
+
+  function tag(file: string, fields: Record<string, unknown>, id3Version?: 3 | 4) {
+    const previous = [Id3v2Settings.defaultVersion, Id3v2Settings.forceDefaultVersion] as const;
+    if (id3Version) {
+      Id3v2Settings.defaultVersion = id3Version;
+      Id3v2Settings.forceDefaultVersion = true;
+    }
+    try {
+      const f = TagFile.createFromPath(file);
+      Object.assign(f.tag, { title: 'The Wäll', performers: ['The Bänd'], album: 'The Älbum' });
+      Object.assign(f.tag, fields);
+      f.save();
+      f.dispose();
+    } finally {
+      [Id3v2Settings.defaultVersion, Id3v2Settings.forceDefaultVersion] = previous;
+    }
+  }
+
+  beforeAll(async () => {
+    dir = join(tmpdir(), `podkit-tag-fixtures-${Date.now()}`);
+    await mkdir(dir, { recursive: true });
+    for (const [name, fields] of [
+      ['full', full],
+      ['blank', blank],
+    ] as const) {
+      tag(generateMiniMp3(dir, { filename: `${name}-v24.mp3` }), fields, 4);
+      tag(generateMiniM4a(dir, { filename: `${name}.m4a` }), fields);
+    }
+    const base: Array<[string, string]> = [
+      ['TIT2', 'The Wäll'],
+      ['TPE1', 'The Bänd'],
+      ['TALB', 'The Älbum'],
+    ];
+    generateMiniMp3WithId3v23(dir, 'full-v23.mp3', [
+      ...base,
+      ['TCOM', full.composers.join('/')],
+      ['TIT1', full.grouping],
+      ['TRCK', '3/12'],
+      ['TPOS', '1/2'],
+      ['TSOT', full.titleSort],
+      ['TSOP', full.performersSort[0]!],
+      ['TSOA', full.albumSort],
+      ['TSO2', full.albumArtistsSort[0]!],
+      ['TSOC', full.composersSort[0]!],
+    ]);
+    generateMiniMp3WithId3v23(dir, 'blank-v23.mp3', [
+      ...base,
+      ...(['TCOM', 'TIT1', 'TSOT', 'TSOP', 'TSOA', 'TSO2', 'TSOC'].map((id) => [id, ' ']) as Array<
+        [string, string]
+      >),
+    ]);
+  });
+
+  afterAll(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  async function extended(name: string) {
+    const tracks = await new DirectoryAdapter({ path: dir }).getItems();
+    const t = tracks.find((x) => x.filePath.endsWith(name))!;
+    return {
+      composer: t.composer,
+      grouping: t.grouping,
+      totalTracks: t.totalTracks,
+      totalDiscs: t.totalDiscs,
+      sortTitle: t.sortTitle,
+      sortArtist: t.sortArtist,
+      sortAlbum: t.sortAlbum,
+      sortAlbumArtist: t.sortAlbumArtist,
+      sortComposer: t.sortComposer,
+    };
+  }
+
+  for (const name of ['full-v23.mp3', 'full-v24.mp3']) {
+    it(`reads all nine fields, Unicode intact, from ${name}`, async () => {
+      expect(await extended(name)).toEqual(expectedFull);
+    });
+  }
+
+  it('reads all nine fields from MP4, where several composers share one ©wrt atom', async () => {
+    expect(await extended('full.m4a')).toEqual({
+      ...expectedFull,
+      composer: 'Jóhann Sebastián Bäch; 久石 譲',
+    });
+  });
+
+  it('reads grouping from an iTunes GRP1 frame, not the TIT1 work title', async () => {
+    generateMiniMp3WithId3v23(dir, 'grp1-v23.mp3', [
+      ['TIT2', 'Grouped'],
+      ['TIT1', 'Mass in B minor'],
+      ['GRP1', 'Kyrie'],
+    ]);
+    expect((await extended('grp1-v23.mp3')).grouping).toBe('Kyrie');
+  });
+
+  for (const name of ['blank-v23.mp3', 'blank-v24.mp3', 'blank.m4a']) {
+    it(`reads blank values as unset from ${name}`, async () => {
+      const values = await extended(name);
+      expect(Object.values(values).every((v) => v === undefined)).toBe(true);
+    });
+  }
 });
 
 // The large-collection performance test moved to

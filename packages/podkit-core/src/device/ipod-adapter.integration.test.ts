@@ -794,6 +794,58 @@ describe('IpodDeviceAdapter normalization round-trip', () => {
     }
   });
 
+  it('iPod portable: extended tag changes and clears reach the file on disk', async () => {
+    const testIpod = await createTestIpod();
+    try {
+      const db = await IpodDatabase.open(testIpod.path);
+      try {
+        const adapter = new IpodDeviceAdapter(db, capsForGeneration('classic_7g'));
+        const added = adapter.addTrack({
+          title: 'Portable Tags',
+          artist: 'The Band',
+          album: 'Album',
+          composer: 'Clara Schumann',
+          grouping: 'Lieder',
+          totalTracks: 12,
+          sortArtist: 'Band, The',
+          sortComposer: 'Schumann, Clara',
+          transferMode: 'portable',
+        });
+        added.copyFile(mp3Path);
+        await adapter.save();
+
+        const track = adapter.getTracks()[0]!;
+        adapter.updateTrack(track, {
+          grouping: '',
+          totalTracks: 0,
+          sortArtist: 'Band (The)',
+          transferMode: 'portable',
+        });
+        await adapter.save();
+
+        const filePath = join(testIpod.path, track.filePath.replace(/^:/, '').replaceAll(':', '/'));
+        const { common } = await mm.parseFile(filePath, { skipCovers: true });
+        expect({
+          composer: common.composer,
+          grouping: common.grouping || undefined,
+          totalTracks: common.track.of || undefined,
+          artistsort: common.artistsort,
+          composersort: common.composersort,
+        }).toEqual({
+          composer: ['Clara Schumann'],
+          grouping: undefined,
+          totalTracks: undefined,
+          artistsort: 'Band (The)',
+          composersort: 'Schumann, Clara',
+        });
+      } finally {
+        db.close();
+      }
+    } finally {
+      await testIpod.cleanup();
+    }
+  });
+
   it('iPod portable: multiple updates to one track coalesce into a single writeTags call', async () => {
     const testIpod = await createTestIpod();
     try {

@@ -39,7 +39,8 @@ path = "/path/to/your/music"
 podkit extracts the following metadata from audio files:
 
 - **Core fields:** title, artist, album (required for matching)
-- **Extended fields:** album artist, genre, year, track number, disc number, composer
+- **Extended fields:** album artist, genre, year, track number and total tracks, disc number and total discs, composer, grouping, compilation
+- **Sort fields:** sort title, sort artist, sort album, sort album artist, sort composer (e.g. `TITLESORT`/`ARTISTSORT` in FLAC, `TSOT`/`TSOP`/`TSOA`/`TSO2`/`TSOC` in MP3)
 - **Technical info:** duration, bitrate, sample rate, file size
 - **Identifiers:** MusicBrainz IDs, AcoustID (for future use)
 

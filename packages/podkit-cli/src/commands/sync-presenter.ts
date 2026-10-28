@@ -130,6 +130,12 @@ export interface VideoContentConfig {
   effectiveVideoTransforms: VideoTransformsConfig;
   effectiveTransferMode: TransferMode | undefined;
   forceMetadata: boolean;
+  /**
+   * podkit generation id from the identity cascade (`OpenDeviceResult.ipodModel`).
+   * Picks the video profile ahead of libgpod's generation, which is `unknown`
+   * for devices libgpod's tables miss (Nano 7).
+   */
+  ipodGenerationId?: string;
 }
 
 /**

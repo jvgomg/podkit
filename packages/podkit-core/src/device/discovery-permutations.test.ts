@@ -76,11 +76,10 @@ const IPOD_NANO_4G: EnumeratedUsbDevice = {
   productId: '1263',
 };
 
-/** ipod-nano-7g-space-gray persona — unsupported nano 7G (hashAB / no libgpod entry). */
-const IPOD_NANO_7G: EnumeratedUsbDevice = {
+/** nano 6G — unsupported for sync (read-only generation). */
+const IPOD_NANO_6G: EnumeratedUsbDevice = {
   vendorId: '05ac',
-  productId: '1267',
-  serialNumber: 'DCYN72R8FJQ1',
+  productId: '1266',
 };
 
 /** ipod-mini-2g-pink persona — supported mini (mini_1g via PID 0x1205). */
@@ -253,13 +252,13 @@ describe('multiple iPod descriptors classified in stable order', () => {
   it('mixed supported / unsupported iPods preserved in input order', () => {
     const enumerated: EnumeratedUsbDevice[] = [
       IPOD_NANO_4G, // supported
-      IPOD_NANO_7G, // unsupported (nano_7g)
+      IPOD_NANO_6G, // unsupported (nano_6g)
       IPOD_MINI, // supported
       IPOD_TOUCH_5G, // unsupported (iOS-range)
     ];
     const classified = classifyUsbDevices(enumerated);
     expect(classified).toHaveLength(4);
-    expect(classified.map((c) => c.device.productId)).toEqual(['1263', '1267', '1205', '12aa']);
+    expect(classified.map((c) => c.device.productId)).toEqual(['1263', '1266', '1205', '12aa']);
     expect(classified[0]!.kind === 'ipod' && classified[0]!.supported).toBe(true);
     expect(classified[1]!.kind === 'ipod' && classified[1]!.supported).toBe(false);
     expect(classified[2]!.kind === 'ipod' && classified[2]!.supported).toBe(true);
@@ -349,10 +348,10 @@ describe('missing serialNumber is omitted (not "" / not null)', () => {
 // ---------------------------------------------------------------------------
 
 describe('realistic mixed-bus snapshot', () => {
-  it('classifies a representative mix: 5G + unsupported nano 7G + Sony + Echo Mini + Cruzer + Apple unknown', () => {
+  it('classifies a representative mix: 5G + unsupported nano 6G + Sony + Echo Mini + Cruzer + Apple unknown', () => {
     const enumerated: EnumeratedUsbDevice[] = [
       IPOD_VIDEO_5G, // → supported iPod
-      IPOD_NANO_7G, // → unsupported iPod
+      IPOD_NANO_6G, // → unsupported iPod
       SONY_WALKMAN, // → kind=unsupported (vendor-recognised)
       ECHO_MINI, // → kind=mass-storage
       SANDISK_CRUZER, // → kind=unsupported (vendor-recognised, no preset)

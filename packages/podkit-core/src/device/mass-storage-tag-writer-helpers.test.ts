@@ -17,6 +17,28 @@ describe('buildTagFieldsFromInput', () => {
     expect(buildTagFieldsFromInput({})).toEqual({});
   });
 
+  test('copies the extended fields', () => {
+    const extended = {
+      composer: 'C',
+      grouping: 'G',
+      totalTracks: 12,
+      totalDiscs: 2,
+      sortTitle: 'ST',
+      sortArtist: 'SA',
+      sortAlbum: 'SB',
+      sortAlbumArtist: 'SAA',
+      sortComposer: 'SC',
+    };
+    expect(buildTagFieldsFromInput({ title: 'T', ...extended })).toEqual({
+      title: 'T',
+      ...extended,
+    });
+    expect(buildTagFieldsFromInput({ composer: 'A, B', composers: ['A', 'B'] })).toEqual({
+      composer: 'A, B',
+      composers: ['A', 'B'],
+    });
+  });
+
   test('copies every supplied textual field', () => {
     expect(
       buildTagFieldsFromInput({
@@ -70,6 +92,15 @@ describe('diffTagFields', () => {
     expect(diffTagFields({ title: 'T' }, { title: undefined, artist: 'A' })).toEqual({
       artist: 'A',
     });
+  });
+
+  test('carries changed and cleared extended fields, and skips clears of unset tags', () => {
+    expect(
+      diffTagFields(
+        { composer: 'Bach', sortArtist: 'Band, The', totalTracks: 12 },
+        { composer: 'Bach', sortArtist: '', totalTracks: 10, grouping: '', totalDiscs: 0 }
+      )
+    ).toEqual({ sortArtist: '', totalTracks: 10 });
   });
 
   test('handles boolean compilation toggle off explicitly', () => {

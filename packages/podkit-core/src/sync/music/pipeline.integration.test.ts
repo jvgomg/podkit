@@ -19,7 +19,8 @@ import { describe, expect, it, beforeAll, afterAll } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
+import * as mm from 'music-metadata';
 import { requireFFmpeg, requireGpodTool } from '@podkit/test-fixtures';
 import { requireLibgpodNode } from '@podkit/libgpod-node';
 import {
@@ -290,6 +291,75 @@ describe('SyncExecutor integration', () => {
           expect(tracks).toHaveLength(1);
           expect(tracks[0]!.title).toBe('Test Song');
           expect(tracks[0]!.artist).toBe('Test Artist');
+        } finally {
+          db.close();
+        }
+      } finally {
+        await testIpod.cleanup();
+      }
+    });
+  });
+
+  describe('portable add', () => {
+    it('clears a field the source reports as empty and keeps an unreported one', async () => {
+      const testIpod = await createTestIpod();
+      try {
+        // An MP3 carrying a composer and a grouping tag of its own.
+        const tagged = join(testDir, 'portable-stale.mp3');
+        execFileSync('ffmpeg', [
+          '-v',
+          'error',
+          '-y',
+          '-f',
+          'lavfi',
+          '-i',
+          'sine=frequency=440:duration=1',
+          '-c:a',
+          'libmp3lame',
+          '-b:a',
+          '128k',
+          '-metadata',
+          'composer=Stale Composer',
+          '-metadata',
+          'grouping=Kept Grouping',
+          tagged,
+        ]);
+
+        const db = await IpodDatabase.open(testIpod.path);
+        try {
+          const device = new IpodDeviceAdapter(db, capsForGeneration('classic_7g'));
+          // The source reports composer (empty) but not grouping.
+          const source: CollectionTrack = {
+            ...createCollectionTrack('Test Artist', 'Stale', 'Test Album', tagged, 'mp3'),
+            unreportedTagFields: ['grouping'],
+          };
+          const plan: SyncPlan = {
+            operations: [{ type: 'add-direct-copy', source }],
+            estimatedTime: 1,
+            estimatedSize: 50000,
+            warnings: [],
+          };
+
+          const result = await runMusicPlan(
+            plan,
+            { device, transcoder },
+            {
+              transferMode: 'portable',
+            }
+          );
+          expect(result.failed).toBe(0);
+          await device.save();
+
+          const track = db.getTracks()[0]!;
+          const filePath = join(
+            testIpod.path,
+            track.filePath.replace(/^:/, '').replaceAll(':', '/')
+          );
+          const { common } = await mm.parseFile(filePath, { skipCovers: true });
+          expect({ composer: common.composer, grouping: common.grouping }).toEqual({
+            composer: undefined,
+            grouping: 'Kept Grouping',
+          });
         } finally {
           db.close();
         }

@@ -15,6 +15,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { requireEncoder } from './encoder-guard.js';
 
@@ -34,6 +35,11 @@ export interface MiniTrackOptions {
    * matters.
    */
   comment?: string;
+  /**
+   * Further tags as ffmpeg `-metadata` key/value pairs, written as given
+   * (e.g. `composer`, `grouping`, `TITLESORT`). Container mapping is ffmpeg's.
+   */
+  tags?: Record<string, string>;
   /** Duration in seconds. Defaults to 1. */
   durationSeconds?: number;
   /** Sine frequency in Hz. Defaults to 440. */
@@ -53,6 +59,9 @@ function metadataArgs(opts: MiniTrackOptions): string[] {
   const args = ['-metadata', `title=${title}`, '-metadata', `artist=${artist}`];
   if (opts.comment !== undefined) {
     args.push('-metadata', `comment=${opts.comment}`);
+  }
+  for (const [key, value] of Object.entries(opts.tags ?? {})) {
+    args.push('-metadata', `${key}=${value}`);
   }
   return args;
 }
@@ -153,4 +162,73 @@ export function generateMiniOggOpus(dir: string, opts: MiniTrackOptions): string
     outPath,
   ]);
   return outPath;
+}
+
+/**
+ * Generate an MP3 carrying a hand-built ID3v2 tag (version 3 or 4) with
+ * exactly the given text frames (UTF-16), in order. Taggers cannot produce
+ * some real-world tags: iTunes writes the v2.4-only TSOT/TSOP/TSOA sort
+ * frames and its GRP1 grouping frame into v2.3, which taglib and ffmpeg drop.
+ */
+export function generateMiniMp3WithId3Frames(
+  dir: string,
+  filename: string,
+  frames: Array<[id: string, text: string]>,
+  version: 3 | 4 = 3
+): string {
+  requireEncoder('libmp3lame');
+  const outPath = join(dir, filename);
+  runFfmpeg([
+    ...sineInputArgs({ filename }, 44100),
+    '-c:a',
+    'libmp3lame',
+    '-write_id3v2',
+    '0',
+    '-write_xing',
+    '0',
+    outPath,
+  ]);
+  // v2.4 frame sizes are synchsafe; v2.3 ones plain big-endian.
+  const size = (n: number) =>
+    version === 4
+      ? Buffer.from([(n >> 21) & 0x7f, (n >> 14) & 0x7f, (n >> 7) & 0x7f, n & 0x7f])
+      : Buffer.from([(n >>> 24) & 0xff, (n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff]);
+  const body = Buffer.concat(
+    frames.map(([id, text]) => {
+      const content = Buffer.concat([
+        Buffer.from([0x01, 0xff, 0xfe]),
+        Buffer.from(text, 'utf16le'),
+      ]);
+      return Buffer.concat([
+        Buffer.from(id, 'latin1'),
+        size(content.length),
+        Buffer.alloc(2),
+        content,
+      ]);
+    })
+  );
+  const n = body.length;
+  const header = Buffer.from([
+    0x49,
+    0x44,
+    0x33,
+    version,
+    0x00,
+    0x00,
+    (n >> 21) & 0x7f,
+    (n >> 14) & 0x7f,
+    (n >> 7) & 0x7f,
+    n & 0x7f,
+  ]);
+  writeFileSync(outPath, Buffer.concat([header, body, readFileSync(outPath)]));
+  return outPath;
+}
+
+/** {@link generateMiniMp3WithId3Frames} with an ID3v2.3 tag. */
+export function generateMiniMp3WithId3v23(
+  dir: string,
+  filename: string,
+  frames: Array<[id: string, text: string]>
+): string {
+  return generateMiniMp3WithId3Frames(dir, filename, frames, 3);
 }

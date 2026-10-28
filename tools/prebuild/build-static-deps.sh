@@ -130,7 +130,7 @@ if [ "$OS" = "Darwin" ]; then
   build_gdk_pixbuf_static "$PKG_PATHS" "" "$LINK_ARGS"
 
   # 3. Build libgpod as static — use Homebrew for headers (like tools/libgpod-macos/build.sh)
-  if [ ! -f "$STATIC_DEPS_DIR/lib/libgpod.a" ]; then
+  if ! bash "$SCRIPT_DIR/prepare-libgpod-nano.sh" --check "$STATIC_DEPS_DIR"; then
     log "Building libgpod from source (static)..."
     cd "$WORK_DIR"
 
@@ -173,6 +173,7 @@ if [ "$OS" = "Darwin" ]; then
     # podkit never calls itdb_read_sysinfo_extended_from_usb (USB SysInfoExtended
     # reads live in @podkit/ipod-firmware), so keep libusb out of libgpod entirely.
     "$REPO_ROOT/tools/prebuild/disable-libgpod-libusb.sh" configure.ac
+    bash "$SCRIPT_DIR/prepare-libgpod-nano.sh" "$PWD"
 
     # Use Homebrew pkg-config paths — same as tools/libgpod-macos/build.sh
     LIBPLIST_PREFIX="$(brew --prefix libplist)"
@@ -191,6 +192,7 @@ if [ "$OS" = "Darwin" ]; then
     make -C src -j"$NPROC"
     make -C src install
     make install-pkgconfigDATA
+    bash "$SCRIPT_DIR/prepare-libgpod-nano.sh" --stamp "$STATIC_DEPS_DIR"
   else
     log "libgpod already built, skipping"
   fi
@@ -497,7 +499,7 @@ elif [ "$OS" = "Linux" ]; then
   # -----------------------------------------------------------------------
   # Phase 5: libgpod (needs glib, gdk-pixbuf, libplist, libxml2, sqlite3)
   # -----------------------------------------------------------------------
-  if [ ! -f "$STATIC_DEPS_DIR/lib/libgpod.a" ]; then
+  if ! bash "$SCRIPT_DIR/prepare-libgpod-nano.sh" --check "$STATIC_DEPS_DIR"; then
     log "Building libgpod from source (static, -fPIC)..."
     cd "$WORK_DIR"
 
@@ -540,6 +542,7 @@ elif [ "$OS" = "Linux" ]; then
     # podkit never calls itdb_read_sysinfo_extended_from_usb (USB SysInfoExtended
     # reads live in @podkit/ipod-firmware), so keep libusb out of libgpod entirely.
     "$REPO_ROOT/tools/prebuild/disable-libgpod-libusb.sh" configure.ac
+    bash "$SCRIPT_DIR/prepare-libgpod-nano.sh" "$PWD"
 
     # Point pkg-config at our static deps so configure finds glib, gdk-pixbuf, libplist
     export PKG_CONFIG_PATH="$STATIC_PKG_PATH"
@@ -563,6 +566,7 @@ elif [ "$OS" = "Linux" ]; then
     make -C src install
     # Install pkgconfig file and top-level headers (not installed by src/ target)
     make install-pkgconfigDATA
+    bash "$SCRIPT_DIR/prepare-libgpod-nano.sh" --stamp "$STATIC_DEPS_DIR"
   else
     log "libgpod already built, skipping"
   fi

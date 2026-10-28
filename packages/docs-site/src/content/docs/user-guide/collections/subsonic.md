@@ -199,6 +199,29 @@ Classic Subsonic and Airsonic servers do not expose ReplayGain data. Tracks sync
 
 See [Sound Check](/user-guide/syncing/sound-check) for more details.
 
+## Composer, Grouping and Sort Names
+
+OpenSubsonic servers report composer and grouping, which podkit writes to iPods (see [Music Syncing](/user-guide/syncing/music#metadata)). Composers the server credits separately stay separate values in portable file tags. A field the server does not report is left as it is on the iPod; a field it reports as empty clears the iPod value.
+
+Sort names are different: a server can report its own ordering key as the sort name instead of your sort tags. Such a key (for example `cafe` for "The Café") cannot be told apart from a real sort tag, so by default podkit neither writes nor clears the iPod's sort fields from a Subsonic source; sort fields synced from a folder collection stay as they are.
+
+If your server reports your real sort tags (check its settings; some servers make this an option), opt in per collection:
+
+```toml
+[music.navidrome]
+type = "subsonic"
+url = "https://your-server.example.com"
+username = "your-username"
+serverSortNames = true
+```
+
+With `serverSortNames = true` podkit uses each sort name exactly as the server reports it, even when it equals the plain name:
+
+- A **blank** sort name clears the iPod's sort field.
+- An **absent** sort name (the server omits the field) leaves the iPod's sort field as it is.
+- The artist, album artist and composer sorts come from the credited artist or composer. An **empty** list of credits clears the iPod's sort field; **several** credits leave it as it is, since there is no single sort name to use.
+- Tracks from a playlist come without their album, so the album sort is left as it is for them.
+
 ## Artwork
 
 Album artwork embedded in audio files is automatically transferred to your device during sync.

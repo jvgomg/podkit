@@ -11,9 +11,21 @@
 
 import * as fs from 'node:fs';
 
-import { ByteVector, File as TagFile, Picture, PictureType, SeekOrigin } from 'node-taglib-sharp';
+import {
+  ByteVector,
+  File as TagFile,
+  Id3v2FrameIdentifier,
+  Id3v2Tag,
+  Id3v2TextInformationFrame,
+  Picture,
+  PictureType,
+  SeekOrigin,
+  StringType,
+  TagTypes,
+} from 'node-taglib-sharp';
 import type { IFileAbstraction, IStream } from 'node-taglib-sharp';
 
+import { EXTENDED_TAG_FIELDS } from '../adapters/interface.js';
 import { atomicWriteFileWithSync } from '../utils/atomic-fs.js';
 import { CategorizedSyncError, errnoOf } from '../sync/engine/errors.js';
 import type { ErrorCause } from '../sync/engine/types.js';
@@ -384,6 +396,17 @@ export interface TagFields {
   discNumber?: number;
   compilation?: boolean;
   comment?: string;
+  composer?: string;
+  /** Separate composer values to write instead of the joined `composer`. */
+  composers?: readonly string[];
+  grouping?: string;
+  totalTracks?: number;
+  totalDiscs?: number;
+  sortTitle?: string;
+  sortArtist?: string;
+  sortAlbum?: string;
+  sortAlbumArtist?: string;
+  sortComposer?: string;
   replayGain?: ReplayGainFields;
 }
 
@@ -399,7 +422,21 @@ interface TagFieldsSource {
   discNumber?: number;
   compilation?: boolean;
   comment?: string;
+  composer?: string;
+  /** Separate composer values to write instead of the joined `composer`. */
+  composers?: readonly string[];
+  grouping?: string;
+  totalTracks?: number;
+  totalDiscs?: number;
+  sortTitle?: string;
+  sortArtist?: string;
+  sortAlbum?: string;
+  sortAlbumArtist?: string;
+  sortComposer?: string;
 }
+
+/** '' and 0 clear an extended tag; unset on the current side reads the same. */
+const isClearedTag = (v: unknown): boolean => v === undefined || v === '' || v === 0;
 
 /**
  * Project a TagFields-compatible source object (e.g. a `DeviceTrackInput`)
@@ -419,6 +456,10 @@ export function buildTagFieldsFromInput(source: TagFieldsSource): TagFields {
   if (source.discNumber !== undefined) out.discNumber = source.discNumber;
   if (source.compilation !== undefined) out.compilation = source.compilation;
   if (source.comment !== undefined) out.comment = source.comment;
+  for (const field of EXTENDED_TAG_FIELDS) {
+    if (source[field] !== undefined) (out as Record<string, unknown>)[field] = source[field];
+  }
+  if (out.composer && source.composers) out.composers = source.composers;
   return out;
 }
 
@@ -460,7 +501,92 @@ export function diffTagFields(current: TagFieldsSource, fields: TagFieldsSource)
   if (fields.comment !== undefined && fields.comment !== current.comment) {
     out.comment = fields.comment;
   }
+  for (const field of EXTENDED_TAG_FIELDS) {
+    const next = fields[field];
+    if (next === undefined) continue;
+    const prev = current[field];
+    const unchanged = isClearedTag(next) ? isClearedTag(prev) : next === prev;
+    if (!unchanged) (out as Record<string, unknown>)[field] = next;
+  }
+  if (out.composer && fields.composers) out.composers = fields.composers;
   return out;
+}
+
+/** Write the extended fields; '' and 0 remove the tag. */
+function applyExtendedTags(file: TagFile, fields: TagFields): void {
+  const tag = file.tag;
+  const list = (v: string) => (v ? [v] : []);
+  if (fields.composer !== undefined) {
+    tag.composers =
+      fields.composer && fields.composers ? [...fields.composers] : list(fields.composer);
+  }
+  if (fields.grouping !== undefined && !writeGrp1Grouping(file, fields.grouping)) {
+    tag.grouping = fields.grouping;
+  }
+  if (fields.totalTracks !== undefined) tag.trackCount = fields.totalTracks;
+  if (fields.totalDiscs !== undefined) tag.discCount = fields.totalDiscs;
+  if (fields.sortTitle !== undefined) tag.titleSort = fields.sortTitle;
+  if (fields.sortArtist !== undefined) tag.performersSort = list(fields.sortArtist);
+  if (fields.sortAlbum !== undefined) tag.albumSort = fields.sortAlbum;
+  if (fields.sortAlbumArtist !== undefined) tag.albumArtistsSort = list(fields.sortAlbumArtist);
+  if (fields.sortComposer !== undefined) tag.composersSort = list(fields.sortComposer);
+}
+
+/**
+ * Frame ids taglib knows only for ID3v2.4 but iTunes also writes into v2.3
+ * tags (TSO2/TSOC have v2.3 names in taglib already), plus iTunes' GRP1
+ * grouping frame, which taglib does not know at all. Identifiers with a
+ * v2.3 name let these frames survive a v2.3 render.
+ */
+const ITUNES_V23_IDS = new Map(
+  ['TSOT', 'TSOP', 'TSOA', 'GRP1'].map((id) => [
+    id,
+    new Id3v2FrameIdentifier(id, id, undefined as unknown as string),
+  ])
+);
+
+function id3v2Of(file: TagFile): Id3v2Tag | undefined {
+  return (file.getTag(TagTypes.Id3v2, false) as Id3v2Tag | undefined) ?? undefined;
+}
+
+function textFrame(id: string, text: string): Id3v2TextInformationFrame {
+  const frame = Id3v2TextInformationFrame.fromIdentifier(ITUNES_V23_IDS.get(id)!, StringType.UTF16);
+  frame.text = [text];
+  return frame;
+}
+
+/**
+ * iTunes keeps grouping in GRP1 (and the work title in TIT1). When the tag
+ * already has a GRP1 frame, grouping is written there and TIT1 is left
+ * alone. A cleared grouping keeps an empty GRP1 frame: without it the
+ * reader would fall back to TIT1 and a later grouping edit would land in
+ * TIT1, overwriting the work title. Returns false when there is no GRP1
+ * frame to write.
+ */
+function writeGrp1Grouping(file: TagFile, grouping: string): boolean {
+  const id3 = id3v2Of(file);
+  const existing = id3?.frames.filter((f) => f.frameId.toString() === 'GRP1') ?? [];
+  if (!id3 || existing.length === 0) return false;
+  for (const frame of existing) id3.removeFrame(frame);
+  id3.addFrame(textFrame('GRP1', grouping));
+  return true;
+}
+
+/**
+ * taglib renders TSOT/TSOP/TSOA only for ID3v2.4, so saving a v2.3 tag
+ * would drop the title, artist and album sort frames iTunes writes there,
+ * whatever field was changed. Re-identify them with v2.3 names first.
+ */
+function keepItunesV23Frames(file: TagFile): void {
+  const id3 = id3v2Of(file);
+  if (!id3 || id3.version !== 3) return;
+  // replaceFrame mutates the live frame list, so iterate a copy.
+  for (const frame of id3.frames.slice()) {
+    const id = frame.frameId.toString();
+    if (id === 'GRP1' || !ITUNES_V23_IDS.has(id)) continue;
+    const text = (frame as Id3v2TextInformationFrame).text ?? [];
+    id3.replaceFrame(frame, textFrame(id, text.join('/')));
+  }
 }
 
 /**
@@ -517,6 +643,7 @@ export class TagLibTagWriter implements TagWriter {
       if (fields.discNumber !== undefined) tag.disc = fields.discNumber;
       if (fields.compilation !== undefined) tag.isCompilation = fields.compilation;
       if (fields.comment !== undefined) tag.comment = fields.comment;
+      applyExtendedTags(file, fields);
       if (fields.replayGain !== undefined) {
         const rg = fields.replayGain;
         tag.replayGainTrackGain = rg.trackGain;
@@ -524,6 +651,7 @@ export class TagLibTagWriter implements TagWriter {
         if (rg.albumGain !== undefined) tag.replayGainAlbumGain = rg.albumGain;
         if (rg.albumPeak !== undefined) tag.replayGainAlbumPeak = rg.albumPeak;
       }
+      keepItunesV23Frames(file);
       file.save();
     } finally {
       file.dispose();
@@ -539,6 +667,7 @@ export class TagLibTagWriter implements TagWriter {
       const picture = Picture.fromData(ByteVector.fromByteArray(imageData));
       picture.type = PictureType.FrontCover;
       file.tag.pictures = [picture];
+      keepItunesV23Frames(file);
       file.save();
     } finally {
       file.dispose();

@@ -110,7 +110,7 @@ These apply to all devices unless overridden at the device level.
 | `videoQuality` | string | - | Video-specific quality override: `max`, `high`, `medium`, `low`. Overrides `quality` for video. |
 | `encoding` | string | `"vbr"` | Encoding mode for lossy transcoding: `vbr` (variable bitrate) or `cbr` (constant bitrate). VBR produces better quality per MB; CBR produces predictable file sizes and more reliable preset change detection. Applies to whichever codec the [preference stack](/user-guide/transcoding/codec-preferences) resolves. |
 | `transferMode` | string | `"fast"` | Transfer mode controlling how extra file data (e.g. embedded artwork) is handled, and — for iPod — whether on-disk file tags are kept in sync with the iTunesDB. See [Transfer Mode](#transfer-mode) below. |
-| `customBitrate` | integer | - | Override the preset's target bitrate (64-320 kbps). Ignored when `max` resolves to ALAC. |
+| `customBitrate` | integer | - | Replace the preset's bitrate with this value (64-320 kbps). It is the cap for every lossy target, including [lossy reduction](#lossy-reduction) of MP3/AAC sources. Ignored for lossless sources when `max` resolves to ALAC. CLI: `--custom-bitrate`. See [Custom Bitrate](/user-guide/transcoding/audio#custom-bitrate). |
 | `[bitrate].tolerance` | number | `0.25` | Source-proximity tolerance for lossy reduction on the add path (fraction of the cap). Reduce only when `source > cap × (1 + tolerance)`. Applies only when the reduction axis is `convert`. See [Lossy Reduction](#lossy-reduction). |
 | `artwork` | boolean | `true` | Include album artwork during sync |
 | `checkArtwork` | boolean | `false` | Detect artwork changes between syncs (added, removed, or replaced). For Subsonic sources, adds one HTTP request per unique album during scanning. Consider using the `--check-artwork` CLI flag for periodic checks instead of enabling permanently on large libraries. |
@@ -143,7 +143,10 @@ Why iPod portable is a separate case: the iPod's firmware plays from
 the iTunesDB and never looks at file tags during playback, but a user
 who copies files off the device (recovery, ripping back to a library)
 needs the file to be self-describing. `portable` opts into that extra
-write at the cost of a small per-track tag-write.
+write at the cost of a small per-track tag-write. The file tags carry
+the same fields as the iTunesDB, including composer, grouping,
+track/disc totals and the sort fields; a field cleared at the source is
+removed from the file too.
 
 After upgrading from a podkit version that did not write file tags,
 the first sync on an existing mass-storage device will likely show a
@@ -296,6 +299,7 @@ path = "/cache/path"
 | `password` | string | no | - | Subsonic password (can also use env var) |
 | `path` | string | yes | - | Local cache path for downloaded files |
 | `playlist` | string | no | - | Sync only this named server playlist instead of the whole library. The name must match exactly one playlist on the server — the sync aborts before transferring anything if the name is not found or is ambiguous. Only valid on `subsonic` collections; setting it on a directory collection is a config error. See [Playlist-Scoped Collections](/user-guide/collections/subsonic#playlist-scoped-collections). |
+| `serverSortNames` | boolean | no | `false` | Use the server's sort names as the iPod's sort fields. Only for servers that report your real sort tags; by default podkit neither writes nor clears sort fields from a Subsonic source. Only valid on `subsonic` collections. See [Composer, Grouping and Sort Names](/user-guide/collections/subsonic#composer-grouping-and-sort-names). |
 
 The password can be provided via the config file, or through environment variables (see [Environment Variables](/reference/environment-variables)).
 
@@ -362,7 +366,7 @@ quality = "max"               # Use --device <path> to specify mount point
 | `videoQuality` | string | no | global `videoQuality` | Video-specific quality override for this device |
 | `encoding` | string | no | global `encoding` | Encoding mode override: `vbr` or `cbr` |
 | `transferMode` | string | no | global `transferMode` | Transfer mode override: `fast`, `optimized`, or `portable`. See [Transfer Mode](#transfer-mode) for the device-specific contract (file-tag writes differ between iPod and mass-storage). |
-| `customBitrate` | integer | no | global `customBitrate` | Override the preset's target bitrate for this device |
+| `customBitrate` | integer | no | global `customBitrate` | Replace the preset's bitrate for this device (64-320 kbps) |
 | `bitrate` | table | no | global `[bitrate]` | Lossy reduction block (`[devices.<name>.bitrate]`). See [Lossy Reduction](#lossy-reduction). |
 | `artwork` | boolean | no | global `artwork` | Artwork override for this device |
 | `checkArtwork` | boolean | no | global `checkArtwork` | Detect changed artwork for this device |

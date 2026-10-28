@@ -48,8 +48,11 @@ For a 4-minute song:
 | **high** | ~256 kbps | ~7.5 MB |
 | **medium** | ~192 kbps | ~5.6 MB |
 | **low** | ~128 kbps | ~3.8 MB |
+| `customBitrate = 96` | ~96 kbps | ~2.9 MB |
 
 VBR file sizes vary based on content complexity. CBR sizes are exact.
+
+For a bitrate below `low`, see [Custom Bitrate](/user-guide/transcoding/audio#custom-bitrate).
 
 ### VBR vs CBR
 
@@ -69,6 +72,7 @@ podkit picks the best AAC encoder your FFmpeg offers -- `aac_at` (macOS AudioToo
 | high (and max AAC fallback) | 256k | 5 | 256k |
 | medium | 192k | 4 | 192k |
 | low | 128k | 3 | 128k |
+| `customBitrate = 96` | 96k | 2 | 96k |
 
 When `max` resolves to ALAC (on capable devices with lossless sources), the ALAC encoder is used instead. When `max` falls back to AAC, it uses the same encoder settings as `high`.
 
@@ -81,6 +85,9 @@ Notes:
   podkit used to map the target onto the nearest point of this encoder's quality scale (`-q:a`) instead. That scale is not a bitrate axis, so the mapping was only as good as the material it was calibrated on, and nearest-point rounding went upward as readily as downward — a 256 kbps preset could produce 305 kbps on demanding tracks.
 
   One limit remains: 64 kbps is the lowest rate this encoder offers for stereo, so a target below that cannot be honoured on macOS.
+
+- MP3 output (when the [codec preference](/user-guide/transcoding/codec-preferences) resolves to MP3) uses LAME's `-q:a` quality scale for a plain preset. When a numeric cap applies — a `customBitrate` or a lossy reduction target — podkit switches LAME to average-bitrate mode (`-abr 1 -b:a`) with that bitrate as the target average, because `-q:a` has no bitrate bound; the sync tag records the target as the track's bitrate. ABR holds the average, so short passages can run above it. `encoding = "cbr"` uses `-b:a` as before.
+- Below 128 kbps the encoders differ most in quality. `aac_at` is the best of the three there; FFmpeg's native `aac` is clearly weaker at 96 kbps, so a low custom bitrate is best encoded on macOS or with `libfdk_aac`.
 
 ## Video Presets
 
@@ -95,12 +102,14 @@ Notes:
 
 ### Bitrate by Device and Preset
 
-| Preset | iPod Classic (640x480) | iPod Video (320x240) |
-|--------|------------------------|----------------------|
-| max | 640x480 @ 2500 kbps | 320x240 @ 768 kbps |
-| high | 640x480 @ 2000 kbps | 320x240 @ 600 kbps |
-| medium | 640x480 @ 1500 kbps | 320x240 @ 400 kbps |
-| low | 640x480 @ 1000 kbps | 320x240 @ 300 kbps |
+| Preset | iPod Classic (640x480) | iPod Video / Nano 3-5 (320x240) | iPod Nano 7 (432x240) |
+|--------|------------------------|---------------------------------|-----------------------|
+| max | 640x480 @ 2500 kbps | 320x240 @ 768 kbps | 432x240 @ 1000 kbps |
+| high | 640x480 @ 2000 kbps | 320x240 @ 600 kbps | 432x240 @ 800 kbps |
+| medium | 640x480 @ 1500 kbps | 320x240 @ 400 kbps | 432x240 @ 550 kbps |
+| low | 640x480 @ 1000 kbps | 320x240 @ 300 kbps | 432x240 @ 400 kbps |
+
+The resolution is the largest frame that fits the device's screen with the source's aspect ratio kept; the table shows the full-screen case. For the Nano 7 tiers see [Video Transcoding](/user-guide/transcoding/video#ipod-nano-7th-gen).
 
 ### File Size Estimates
 

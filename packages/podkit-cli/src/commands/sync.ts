@@ -134,6 +134,7 @@ interface SyncOptions {
   encoding?: string;
   bitrateReduce?: string;
   bitrateTolerance?: number;
+  customBitrate?: number;
   transferMode?: string;
   filter?: string;
   artwork?: boolean;
@@ -277,6 +278,32 @@ function collectTypes(value: string, previous: string[]): string[] {
   return [...previous, ...value.split(',').map((v) => v.trim().toLowerCase())];
 }
 
+/**
+ * Video quality for a sync: `--video-quality` → `--quality` → the configured
+ * device → global chain (`resolved`, null until capabilities are known) →
+ * `high`.
+ */
+function resolveEffectiveVideoQuality(
+  options: Pick<SyncOptions, 'videoQuality' | 'quality'>,
+  resolved: VideoQualityPreset | null
+): VideoQualityPreset {
+  return (
+    (options.videoQuality as VideoQualityPreset | undefined) ??
+    (options.quality as VideoQualityPreset | undefined) ??
+    resolved ??
+    'high'
+  );
+}
+
+/** Same range as the `customBitrate` config key. */
+export function parseCustomBitrate(value: string): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 64 || parsed > 320) {
+    throw new InvalidArgumentError('Must be an integer between 64 and 320 (kbps).');
+  }
+  return parsed;
+}
+
 const syncTypeOption = new Option(
   '-t, --type <type>',
   'sync type (repeatable, comma-separated, default: all)'
@@ -325,6 +352,12 @@ export const syncCommand = new Command('sync')
       }
       return parsed;
     })
+  )
+  .addOption(
+    new Option(
+      '--custom-bitrate <kbps>',
+      'lossy audio bitrate in kbps (64-320) that replaces the preset bitrate as the cap — overrides config for this run'
+    ).argParser(parseCustomBitrate)
   )
   .addOption(
     new Option(
@@ -551,11 +584,7 @@ export async function runSync(
         : options.quality
           ? (options.quality as QualityPreset)
           : resolved.audio.value,
-      videoQuality: options.videoQuality
-        ? (options.videoQuality as VideoQualityPreset)
-        : options.quality
-          ? (options.quality as VideoQualityPreset)
-          : (resolved.video.value ?? ('high' as VideoQualityPreset)),
+      videoQuality: resolveEffectiveVideoQuality(options, resolved.video.value),
       artwork: options.artwork !== undefined ? options.artwork : (resolved.artwork.value ?? true),
       skipUpgrades:
         options.skipUpgrades !== undefined ? options.skipUpgrades : resolved.skipUpgrades.value,
@@ -565,7 +594,7 @@ export async function runSync(
       transferMode: options.transferMode
         ? (options.transferMode as import('@podkit/core').TransferMode)
         : resolved.transferMode.value,
-      customBitrate: resolved.customBitrate.value,
+      customBitrate: options.customBitrate ?? resolved.customBitrate.value,
       // `--bitrate-reduce` / `--bitrate-tolerance` override the resolved
       // device → global → default chain for this run only. Neither flag has a
       // Commander default, so an unpassed flag is absent here and the resolved
@@ -917,6 +946,16 @@ export async function runSync(
   const deviceSupportsAlac = openResult.deviceSupportsAlac;
   const deviceCapabilities = openResult.capabilities;
 
+  // deriveSettings resolves before the device is open, and the video chain
+  // needs its capabilities (unknown capabilities resolve to no quality), so
+  // configured quality would always fall through to `high`. Resolve it again
+  // now; the CLI flags keep their precedence.
+  effectiveVideoQuality = resolveEffectiveVideoQuality(
+    options,
+    resolveDeviceSettings(config, '', deviceConfig ?? {}, deviceCapabilities, false, false).video
+      .value
+  );
+
   // ----- Acquire per-device sync lock -----
   //
   // Dry-run is read-only by design — it inspects state without writing
@@ -1266,6 +1305,7 @@ export async function runSync(
           effectiveVideoTransforms,
           effectiveTransferMode,
           forceMetadata: options.forceMetadata ?? false,
+          ipodGenerationId: openResult.ipodModel?.generationId,
         };
 
         // allowEmptyPlaylist is intentionally omitted: video collections cannot

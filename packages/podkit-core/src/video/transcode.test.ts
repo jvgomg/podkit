@@ -206,6 +206,7 @@ describe('buildVideoTranscodeArgs', () => {
       expect(args).toContain('h264_videotoolbox');
       expect(args).toContain('-profile:v');
       expect(args).toContain('main');
+      expect(args.join(' ')).toContain(`-level ${hardwareSettings.videoLevel}`);
       expect(args).toContain('-b:v');
       expect(args).toContain('2000k');
 

@@ -1314,6 +1314,7 @@ export async function runRepair(
       dryRun,
       verbose,
       out,
+      ...(deps.assessIpodIdentity ? { deps: { assessIpodIdentity: deps.assessIpodIdentity } } : {}),
     });
   } finally {
     for (const adapter of adapters) {

@@ -795,6 +795,48 @@ playlist = "Workout"
         });
       });
 
+      it('parses serverSortNames on a subsonic collection and keeps it through a merge', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[music.nav]
+type = "subsonic"
+url = "https://music.example.com"
+username = "james"
+serverSortNames = true
+`)
+        );
+
+        const result = loadConfigFile(configPath);
+        expect(result?.music?.nav?.serverSortNames).toBe(true);
+        const merged = mergeConfigs(result!, { quality: 'low' });
+        expect(merged.music?.nav?.serverSortNames).toBe(true);
+      });
+
+      it('rejects serverSortNames on a directory collection and non-boolean values', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`\n[music.local]\npath = "/music"\nserverSortNames = true\n`)
+        );
+        expect(() => loadConfigFile(configPath)).toThrow(
+          /"serverSortNames" is only valid for subsonic/
+        );
+
+        fs.writeFileSync(
+          configPath,
+          v(`
+[music.nav]
+type = "subsonic"
+url = "https://music.example.com"
+username = "james"
+serverSortNames = "yes"
+`)
+        );
+        expect(() => loadConfigFile(configPath)).toThrow(/must be true or false/);
+      });
+
       it('rejects playlist on a directory collection', () => {
         const configPath = path.join(tempDir, 'config.toml');
         fs.writeFileSync(

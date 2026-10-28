@@ -9,9 +9,13 @@ import {
   getDeviceProfile,
   getDefaultDeviceProfile,
   getDeviceProfileNames,
+  getDeviceProfileByGeneration,
+  getDeviceProfileByIpodGeneration,
   getPresetSettings,
   getPresetSettingsWithFallback,
 } from './types.js';
+import { GENERATIONS } from '@podkit/devices-ipod';
+import { calculateEffectiveSettings } from './quality.js';
 import type {
   VideoQualityPreset,
   VideoDeviceProfile,
@@ -133,7 +137,79 @@ describe('video/types', () => {
       expect(names).toContain('ipod-classic');
       expect(names).toContain('ipod-video-5g');
       expect(names).toContain('ipod-nano-3g');
-      expect(names).toHaveLength(3);
+      expect(names).toContain('ipod-nano-7g');
+      expect(names).toHaveLength(4);
+    });
+  });
+
+  describe('getDeviceProfileByIpodGeneration', () => {
+    it('selects the Nano 7G profile for nano_7g', () => {
+      expect(getDeviceProfileByIpodGeneration('nano_7g')?.name).toBe('ipod-nano-7g');
+    });
+
+    it('covers every video-capable generation podkit can open, and nothing else', () => {
+      for (const gen of Object.values(GENERATIONS)) {
+        const expected = gen.supportsVideo && gen.support.access !== 'none';
+        expect([gen.id, getDeviceProfileByIpodGeneration(gen.id) !== undefined]).toEqual([
+          gen.id,
+          expected,
+        ]);
+      }
+    });
+
+    it('agrees with the libgpod mapping for generations libgpod knows', () => {
+      const pairs: Array<[string, string]> = [
+        ['video_5g', 'video_1'],
+        ['video_5_5g', 'video_2'],
+        ['classic_6g', 'classic_1'],
+        ['classic_7g', 'classic_3'],
+        ['nano_3g', 'nano_3'],
+        ['nano_5g', 'nano_5'],
+      ];
+      for (const [podkitId, libgpodId] of pairs) {
+        expect(getDeviceProfileByIpodGeneration(podkitId)?.name).toBe(
+          getDeviceProfileByGeneration(libgpodId).name
+        );
+      }
+    });
+  });
+
+  describe('Nano 7G effective settings', () => {
+    const source = (width: number, height: number): VideoSourceAnalysis => ({
+      filePath: '/x.mkv',
+      container: 'mkv',
+      videoCodec: 'h264',
+      videoProfile: 'high',
+      videoLevel: '4.1',
+      width,
+      height,
+      videoBitrate: 8000,
+      frameRate: 60,
+      audioCodec: 'ac3',
+      audioBitrate: 384,
+      audioChannels: 6,
+      audioSampleRate: 48000,
+      duration: 60,
+      hasVideoStream: true,
+      hasAudioStream: true,
+    });
+    const nano7 = DEVICE_PROFILES['ipod-nano-7g']!;
+
+    it('fits 16:9 into 432x240 with even dimensions, Baseline 3.0, 30 fps', () => {
+      const s = calculateEffectiveSettings(source(1920, 1080), 'high', nano7);
+      expect([s.targetWidth, s.targetHeight]).toEqual([426, 240]);
+      expect(s.videoProfile).toBe('baseline');
+      expect(s.videoLevel).toBe('3.0');
+      expect(s.frameRate).toBe(30);
+      expect(s.targetVideoBitrate).toBe(800);
+    });
+
+    it('fits 4:3 by height and 2.39:1 by width', () => {
+      const fourThree = calculateEffectiveSettings(source(1440, 1080), 'max', nano7);
+      expect([fourThree.targetWidth, fourThree.targetHeight]).toEqual([320, 240]);
+      const scope = calculateEffectiveSettings(source(1920, 804), 'low', nano7);
+      expect([scope.targetWidth, scope.targetHeight]).toEqual([432, 180]);
+      expect(scope.targetVideoBitrate).toBe(400);
     });
   });
 

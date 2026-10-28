@@ -188,6 +188,8 @@ export function buildVideoTranscodeArgs(
       'h264_videotoolbox',
       '-profile:v',
       mapProfileForVideoToolbox(settings.videoProfile),
+      '-level',
+      settings.videoLevel,
       '-b:v',
       `${settings.targetVideoBitrate}k`
     );

@@ -70,8 +70,8 @@ is the fallback on USB *transport* error
 | iPod nano 1G–2G | **no (2G does not respond; 1G untested)** | **yes** | SCSI (host only) |
 | iPod nano 3G | **yes** (first USB-capable) | untested | USB |
 | iPod nano 4G–5G | **yes** | yes | USB |
-| iPod nano 6G | yes (inquiry) | yes | Inquiry works but the generation is **read-only** (iTunesDB format podkit cannot write) |
-| iPod nano 7G | yes (inquiry) | yes | Inquiry works; the generation is **read-only**, hardware-confirmed (hashAB signing unavailable — libgpod needs an external blob podkit doesn't ship — but reads and archives cleanly) |
+| iPod nano 6G | yes (inquiry) | yes | Inquiry works but the generation is **read-only**, hardware-confirmed (reads and archives; its library writes are covered only by synthetic tests) |
+| iPod nano 7G | yes (inquiry) | yes | USB |
 | iPod shuffle 1G–2G | no | **yes** | SCSI (host only) |
 | iPod shuffle 3G–4G | yes | yes | Inquiry works but sync is **refused** (bdhs iTunesSD write unverified; read-only tier) |
 | iPod touch / iPhone / iPad | no | no | No disk mode at all — out of scope |

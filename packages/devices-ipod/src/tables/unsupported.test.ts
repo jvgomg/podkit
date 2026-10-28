@@ -36,12 +36,9 @@ describe('lookupUnsupportedReason — nano 6G / 7G', () => {
     expect(lookupUnsupportedReason('1266')).toContain('nano 6th gen');
   });
 
-  test('0x120e iPod nano 7G (0x120x range)', () => {
-    expect(lookupUnsupportedReason('120e')).toContain('nano 7th gen');
-  });
-
-  test('0x1267 iPod nano 7G (0x126x range)', () => {
-    expect(lookupUnsupportedReason('1267')).toContain('nano 7th gen');
+  test('iPod nano 7G is not listed (syncable)', () => {
+    expect(lookupUnsupportedReason('120e')).toBeNull();
+    expect(lookupUnsupportedReason('1267')).toBeNull();
   });
 });
 

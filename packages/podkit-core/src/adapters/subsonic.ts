@@ -6,8 +6,14 @@
  */
 
 import SubsonicAPI from 'subsonic-api';
-import type { Child, AlbumWithSongsID3 } from 'subsonic-api';
-import type { CollectionAdapter, CollectionTrack, FileAccess } from './interface.js';
+import type { Child, AlbumWithSongsID3, ArtistID3 } from 'subsonic-api';
+import type {
+  CollectionAdapter,
+  CollectionTrack,
+  ExtendedTagField,
+  FileAccess,
+} from './interface.js';
+import { EXTENDED_TAG_FIELDS } from './interface.js';
 import type { TrackFilter, AudioFileType } from '../types.js';
 import type { Warning } from '../sync/engine/types.js';
 import type { AudioNormalization } from '../metadata/normalization.js';
@@ -34,6 +40,12 @@ export interface SubsonicAdapterConfig {
    * a missing or ambiguous name aborts before any transfer.
    */
   playlist?: string;
+  /**
+   * Use the server's `sortName` values as sort tags. Off by default: a server
+   * may report a derived ordering key there, so without the opt-in sort
+   * fields are neither written nor cleared.
+   */
+  serverSortNames?: boolean;
 }
 
 /**
@@ -251,6 +263,101 @@ function getCodec(suffix: string | undefined, contentType: string | undefined): 
   return undefined;
 }
 
+/** A field's value and whether the server reported it at all. */
+interface Reported<T> {
+  value: T | undefined;
+  reported: boolean;
+}
+
+/**
+ * A server sort name as a sort override, used only when the collection opts
+ * in (`serverSortNames`): servers may report a derived ordering key there
+ * instead of the file's sort tag, which cannot be told apart from a real
+ * tag. `undefined` is unreported; a blank value is a reported empty;
+ * anything else, even the plain name, is the tag.
+ */
+function sortOverride(sortName: string | undefined): Reported<string> {
+  if (sortName === undefined) return { value: undefined, reported: false };
+  return { value: sortName.trim() ? sortName : undefined, reported: true };
+}
+
+/**
+ * Sort override of the single credited artist. No credited artists is a
+ * reported empty value; several artists have no one sort key, so the field
+ * is left unreported rather than cleared.
+ */
+function soleArtistSortOverride(artists: ArtistID3[] | undefined): Reported<string> {
+  if (artists === undefined) return { value: undefined, reported: false };
+  if (artists.length === 0) return { value: undefined, reported: true };
+  if (artists.length > 1) return { value: undefined, reported: false };
+  return sortOverride(artists[0]!.sortName);
+}
+
+/** OpenSubsonic `Child.groupings`, newer than the subsonic-api types. */
+type OpenSubsonicChild = Child & { groupings?: string[] };
+
+/**
+ * Sort override of the single credited composer. Same rules as for artists:
+ * none is a reported empty value, several leave the field unreported.
+ */
+function soleComposerSortOverride(song: Child): Reported<string> {
+  if (song.contributors === undefined) return { value: undefined, reported: false };
+  const composers = song.contributors.filter((c) => c.role === 'composer' && c.artist);
+  return soleArtistSortOverride(composers.map((c) => c.artist!));
+}
+
+/**
+ * Extended tag fields from the OpenSubsonic additions to `Child`. A plain
+ * Subsonic server omits them, and the API has no track/disc totals, so
+ * those fields are listed in `unreportedTagFields` and never cleared on
+ * the device.
+ */
+function openSubsonicTags(
+  song: OpenSubsonicChild,
+  album: AlbumWithSongsID3 | undefined,
+  serverSortNames: boolean
+): Pick<CollectionTrack, ExtendedTagField | 'composers' | 'unreportedTagFields'> {
+  const fields: Partial<Record<ExtendedTagField, Reported<string | number>>> = {
+    composer: {
+      value: song.displayComposer?.trim() || undefined,
+      reported: song.displayComposer !== undefined,
+    },
+    grouping: {
+      value:
+        song.groupings
+          ?.map((g) => g.trim())
+          .filter(Boolean)
+          .join(', ') || undefined,
+      reported: song.groupings !== undefined,
+    },
+    ...(serverSortNames && {
+      sortTitle: sortOverride(song.sortName),
+      sortArtist: soleArtistSortOverride(song.artists),
+      // Without album enrichment (playlist entries) the album fields are unknown.
+      sortAlbum: album ? sortOverride(album.sortName) : { value: undefined, reported: false },
+      sortAlbumArtist: soleArtistSortOverride(song.albumArtists ?? album?.artists),
+      sortComposer: soleComposerSortOverride(song),
+    }),
+  };
+  const out: Pick<CollectionTrack, ExtendedTagField | 'composers' | 'unreportedTagFields'> = {};
+  const unreported: ExtendedTagField[] = [];
+  for (const field of EXTENDED_TAG_FIELDS) {
+    const f = fields[field];
+    if (!f?.reported) unreported.push(field);
+    else if (f.value !== undefined) (out as Record<string, unknown>)[field] = f.value;
+  }
+  out.unreportedTagFields = unreported;
+  // Separate composer credits, so file tags keep them apart.
+  const composers = new Set(
+    song.contributors
+      ?.filter((c) => c.role === 'composer')
+      .map((c) => c.artist?.name?.trim())
+      .filter((name): name is string => Boolean(name))
+  );
+  if (out.composer && composers.size > 1) out.composers = [...composers];
+  return out;
+}
+
 /**
  * Adapter for reading tracks from Subsonic-compatible servers
  *
@@ -294,6 +401,9 @@ export class SubsonicAdapter implements CollectionAdapter<CollectionTrack, Track
    */
   private playlistName: string | undefined;
 
+  /** See {@link SubsonicAdapterConfig.serverSortNames}. */
+  private readonly serverSortNames: boolean;
+
   /**
    * Tracks resolved from {@link playlistName} during connect(). Null until
    * resolved (or when no playlist is configured). Distinct from {@link tracks},
@@ -331,6 +441,7 @@ export class SubsonicAdapter implements CollectionAdapter<CollectionTrack, Track
     this.config = config;
     this.checkArtwork = config.checkArtwork ?? false;
     this.playlistName = config.playlist;
+    this.serverSortNames = config.serverSortNames ?? false;
     this.api = new SubsonicAPI({
       url: config.url,
       auth: {
@@ -776,6 +887,7 @@ export class SubsonicAdapter implements CollectionAdapter<CollectionTrack, Track
       trackNumber: song.track,
       discNumber: song.discNumber,
       compilation: album?.isCompilation ?? undefined,
+      ...openSubsonicTags(song, album, this.serverSortNames),
       // Subsonic duration is in seconds, convert to milliseconds
       duration: song.duration !== undefined ? song.duration * 1000 : undefined,
 

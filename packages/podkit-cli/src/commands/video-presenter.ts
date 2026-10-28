@@ -112,7 +112,10 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, Dev
     let deviceProfile;
     if (typeof device.getIpodDatabase === 'function') {
       const ipodDevice = device.getIpodDatabase().getInfo().device;
-      deviceProfile = core.getDeviceProfileByGeneration(ipodDevice.generation);
+      deviceProfile =
+        (config.ipodGenerationId
+          ? core.getDeviceProfileByIpodGeneration(config.ipodGenerationId)
+          : undefined) ?? core.getDeviceProfileByGeneration(ipodDevice.generation);
     } else {
       deviceProfile = core.getDefaultDeviceProfile();
     }

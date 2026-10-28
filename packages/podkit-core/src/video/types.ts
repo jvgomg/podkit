@@ -25,6 +25,7 @@
  * | iPod Classic | 640x480 | Main 3.1 |
  * | iPod Video 5G | 320x240 | Baseline 3.0 |
  * | iPod Nano 3G-5G | 320x240 | Baseline 3.0 |
+ * | iPod Nano 7G | 432x240 | Baseline 3.0 |
  */
 
 // =============================================================================
@@ -40,10 +41,9 @@
  *
  * @see DEVICE_PROFILES below for the full profile spec.
  */
-const LIBGPOD_GENERATION_TO_VIDEO_PROFILE: Record<
-  string,
-  'ipod-video-5g' | 'ipod-classic' | 'ipod-nano-3g'
-> = {
+type VideoProfileName = 'ipod-video-5g' | 'ipod-classic' | 'ipod-nano-3g' | 'ipod-nano-7g';
+
+const LIBGPOD_GENERATION_TO_VIDEO_PROFILE: Record<string, VideoProfileName> = {
   // iPod Video 5G/5.5G
   video_1: 'ipod-video-5g',
   video_2: 'ipod-video-5g',
@@ -72,11 +72,27 @@ const LIBGPOD_GENERATION_TO_VIDEO_PROFILE: Record<
  * Get the video device profile name for a libgpod generation string.
  * Returns `undefined` for generations that don't support video.
  */
-function getVideoProfile(
-  generation: string
-): 'ipod-video-5g' | 'ipod-classic' | 'ipod-nano-3g' | undefined {
+function getVideoProfile(generation: string): VideoProfileName | undefined {
   return LIBGPOD_GENERATION_TO_VIDEO_PROFILE[generation];
 }
+
+/**
+ * Maps podkit's own generation ids (`IpodGenerationId`) to video profiles.
+ *
+ * Needed alongside the libgpod map because libgpod reports `unknown` for
+ * generations its tables miss — the Nano 7 among them — and an unknown
+ * libgpod generation falls back to the iPod Classic profile.
+ */
+const IPOD_GENERATION_TO_VIDEO_PROFILE: Record<string, VideoProfileName> = {
+  video_5g: 'ipod-video-5g',
+  video_5_5g: 'ipod-video-5g',
+  classic_6g: 'ipod-classic',
+  classic_7g: 'ipod-classic',
+  nano_3g: 'ipod-nano-3g',
+  nano_4g: 'ipod-nano-3g',
+  nano_5g: 'ipod-nano-3g',
+  nano_7g: 'ipod-nano-7g',
+};
 
 // =============================================================================
 // Quality Presets
@@ -174,6 +190,11 @@ export interface VideoDeviceProfile {
  * - iPod Classic: 640x480, Main profile, level 3.1
  * - iPod Video 5G: 320x240, Baseline profile, level 3.0
  * - iPod Nano 3G-5G: 320x240, Baseline profile, level 3.0
+ * - iPod Nano 7G: 432x240 (the 240x432 portrait screen, landscape), Baseline
+ *   profile, level 3.0. 432x240 is an encoding choice, not the decoder's
+ *   limit: the firmware decodes up to 720x576 (SysInfoExtended). As the
+ *   compatibility check uses maxWidth/maxHeight, a larger file the device
+ *   could play is still re-encoded to the screen size, which saves space.
  */
 export const DEVICE_PROFILES: Record<string, VideoDeviceProfile> = {
   'ipod-classic': {
@@ -220,6 +241,21 @@ export const DEVICE_PROFILES: Record<string, VideoDeviceProfile> = {
     maxFrameRate: 30,
     supportsVideo: true,
   },
+
+  'ipod-nano-7g': {
+    name: 'ipod-nano-7g',
+    displayName: 'iPod Nano (7th Gen)',
+    maxWidth: 432,
+    maxHeight: 240,
+    maxVideoBitrate: 1000,
+    maxAudioBitrate: 128,
+    videoCodec: 'h264',
+    videoProfile: 'baseline',
+    videoLevel: '3.0',
+    audioCodec: 'aac',
+    maxFrameRate: 30,
+    supportsVideo: true,
+  },
 } as const;
 
 /**
@@ -256,6 +292,21 @@ export function getDeviceProfileByGeneration(generation: string): VideoDevicePro
 
   // Default to ipod-classic for unknown generations
   return DEVICE_PROFILES['ipod-classic']!;
+}
+
+/**
+ * Get the video device profile for a podkit generation id (`nano_7g`,
+ * `classic_6g`, ...) as resolved by the identity cascade.
+ *
+ * @returns The profile, or `undefined` when the generation has no video
+ *   profile (or is not a known id) — callers then fall back to
+ *   {@link getDeviceProfileByGeneration} with libgpod's view.
+ */
+export function getDeviceProfileByIpodGeneration(
+  generationId: string
+): VideoDeviceProfile | undefined {
+  const profileName = IPOD_GENERATION_TO_VIDEO_PROFILE[generationId];
+  return profileName ? DEVICE_PROFILES[profileName] : undefined;
 }
 
 /**
@@ -450,6 +501,16 @@ export const VIDEO_PRESET_SETTINGS: Record<
     high: { videoBitrate: 600, audioBitrate: 128, crf: 23 },
     medium: { videoBitrate: 400, audioBitrate: 96, crf: 26 },
     low: { videoBitrate: 300, audioBitrate: 96, crf: 28 },
+  },
+
+  // iPod Nano 7th Gen (432x240, Baseline profile). 432x240 is 1.35x the
+  // pixels of 320x240, so each tier is the 320x240 tier scaled by that and
+  // rounded; CRF and audio follow the 320x240 tiers.
+  'ipod-nano-7g': {
+    max: { videoBitrate: 1000, audioBitrate: 128, crf: 20 },
+    high: { videoBitrate: 800, audioBitrate: 128, crf: 23 },
+    medium: { videoBitrate: 550, audioBitrate: 96, crf: 26 },
+    low: { videoBitrate: 400, audioBitrate: 96, crf: 28 },
   },
 } as const;
 

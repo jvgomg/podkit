@@ -28,7 +28,7 @@ podkit recognizes several types of improvements:
 | **Artwork updated** | Album artwork changed in source (requires `--check-artwork`) | Metadata updated (no file transfer) |
 | **Artwork removed** | Artwork removed from source files | Artwork removed from iPod |
 | **Sound Check update** | ReplayGain tags added to collection | Metadata updated (no file transfer) |
-| **Metadata correction** | Genre, year, or track numbers fixed | Metadata updated (no file transfer) |
+| **Metadata correction** | Genre, year, track/disc numbers, album artist or compilation fixed; on iPods also composer, grouping, track/disc totals and sort fields | Metadata updated (no file transfer) |
 
 File-replacement upgrades (format, quality, preset, artwork added) require transferring a new audio file to the iPod. Metadata-only updates (artwork updated, artwork removed, Sound Check, metadata corrections) are instant since they only touch the iPod database.
 

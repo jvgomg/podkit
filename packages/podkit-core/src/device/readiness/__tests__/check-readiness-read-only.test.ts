@@ -1,7 +1,7 @@
 /**
  * `checkReadiness()` on a read-only generation.
  *
- * A `read-only` generation (shuffle 3G/4G, nano 6G/7G) refuses writes but
+ * A `read-only` generation (shuffle 3G/4G, nano 6G) refuses writes but
  * reads its `iTunesDB` fine. The cascade's unsupported short-circuit is
  * therefore intent-dependent: a write caller (sync, init) is refused up
  * front, while a read caller (doctor's diagnostics) runs the whole cascade
@@ -24,8 +24,8 @@ import type { IpodClassification } from '@podkit/devices-ipod';
 import { classifyAsIpod } from '@podkit/devices-ipod';
 import type { EnumeratedUsbDevice } from '../../usb-enumeration.js';
 
-/** nano 7G — `read-only`: libgpod parses its database, hashAB signing is unavailable. */
-const NANO_7G_PID = '120e';
+/** nano 6G — `read-only`: libgpod parses its database, writes are unverified on hardware. */
+const NANO_6G_PID = '120d';
 /** iPod touch 5G — `none`: no disk mode at all. */
 const TOUCH_5G_PID = '12aa';
 
@@ -66,11 +66,11 @@ describe('checkReadiness() — read-only generations', () => {
   beforeEach(() => {
     mountPoint = fs.mkdtempSync(path.join(os.tmpdir(), 'podkit-readiness-read-only-'));
     // Minimal iPod layout so the mount stage passes and the cascade can
-    // reach sysinfo / database. D476 = iPod nano (7th generation).
+    // reach sysinfo / database. C526 = iPod nano (6th generation).
     const deviceDir = path.join(mountPoint, 'iPod_Control', 'Device');
     fs.mkdirSync(deviceDir, { recursive: true });
     fs.mkdirSync(path.join(mountPoint, 'iPod_Control', 'Music'), { recursive: true });
-    fs.writeFileSync(path.join(deviceDir, 'SysInfo'), 'ModelNumStr: D476\n', 'utf-8');
+    fs.writeFileSync(path.join(deviceDir, 'SysInfo'), 'ModelNumStr: C526\n', 'utf-8');
   });
 
   afterEach(() => {
@@ -79,7 +79,7 @@ describe('checkReadiness() — read-only generations', () => {
 
   it('runs the whole cascade for a read intent instead of refusing up front', async () => {
     const result = await checkReadiness({
-      device: makeArm(mountPoint, classify(NANO_7G_PID)),
+      device: makeArm(mountPoint, classify(NANO_6G_PID)),
       requiredAccess: 'read',
     });
 
@@ -95,13 +95,13 @@ describe('checkReadiness() — read-only generations', () => {
     expect(byStage.get('database')?.status).not.toBe('skip');
     // The read-only tier is still discoverable by the caller — the model
     // carries the rejection reason even though the cascade continued.
-    expect(result.usbModel?.generationId).toBe('nano_7g');
-    expect(result.usbModel?.unsupportedReason?.headline).toContain('nano 7th gen');
+    expect(result.usbModel?.generationId).toBe('nano_6g');
+    expect(result.usbModel?.unsupportedReason?.headline).toContain('nano 6th gen');
   });
 
   it('refuses a read-only generation for a write intent (the default)', async () => {
     const result = await checkReadiness({
-      device: makeArm(mountPoint, classify(NANO_7G_PID)),
+      device: makeArm(mountPoint, classify(NANO_6G_PID)),
     });
 
     expect(result.level).toBe('unsupported');
@@ -131,7 +131,7 @@ describe('checkReadiness() — read-only generations', () => {
       requiredAccess: 'read',
     });
 
-    expect(result.deviceModel?.generationId).toBe('nano_7g');
+    expect(result.deviceModel?.generationId).toBe('nano_6g');
     expect(result.level).not.toBe('unsupported');
     const byStage = new Map(result.stages.map((s) => [s.stage, s]));
     // The database stage ran for real: no libgpod-parsable database exists in

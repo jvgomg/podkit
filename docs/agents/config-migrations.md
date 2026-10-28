@@ -24,6 +24,7 @@ continue to work; no migration or version bump was needed.
 | Field | Scope | Type | Default | Purpose |
 |-------|-------|------|---------|---------|
 | `playlist` | `[music.<name>]` block (subsonic only) | `string` | absent (= full-library) | Constrains a subsonic collection to a single named server playlist. Parse-time error if set on a directory collection. |
+| `serverSortNames` | `[music.<name>]` block (subsonic only) | `boolean` | `false` | Use the server's `sortName` values as sort tags. Parse-time error on a directory collection or a non-boolean value. |
 | `allowEmptyPlaylist` | global `[defaults]` / top-level | `boolean` | `false` | When `true`, a headless sync against a playlist-scoped collection that resolves to zero tracks proceeds instead of aborting non-zero. Env override: `PODKIT_ALLOW_EMPTY_PLAYLIST`. |
 
 **IMPORTANT — three-place rule.** When adding any new config field, three

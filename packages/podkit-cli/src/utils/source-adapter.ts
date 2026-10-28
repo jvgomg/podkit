@@ -145,6 +145,7 @@ function createSubsonicAdapterFromConfig(
     // Playlist-scope: when set, the adapter resolves+validates this named
     // server playlist at connect() and syncs only its tracks.
     playlist: config.playlist,
+    serverSortNames: config.serverSortNames,
   });
 }
 

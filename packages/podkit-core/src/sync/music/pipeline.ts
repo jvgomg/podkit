@@ -83,6 +83,7 @@ import type {
   ExecuteResult as ExecuteResultFromTypes,
 } from '../engine/types.js';
 import type { DeviceAdapter, DeviceTrackMetadata } from '../../device/adapter.js';
+import { EXTENDED_TAG_FIELDS } from '../../adapters/interface.js';
 import { isOggExtension } from '../../audio/containers.js';
 import { MusicArtworkManager } from './artwork.js';
 import { MusicTransferOps } from './transfer.js';
@@ -1311,6 +1312,13 @@ export class MusicPipeline implements SyncExecutor {
     }
     if (metadata.compilation !== undefined) {
       updateFields.compilation = metadata.compilation;
+    }
+    for (const field of EXTENDED_TAG_FIELDS) {
+      const value = metadata[field];
+      if (value !== undefined) (updateFields as Record<string, unknown>)[field] = value;
+    }
+    if (updateFields.composer && operation.source?.composers) {
+      updateFields.composers = operation.source.composers;
     }
     if (metadata.normalization !== undefined) {
       updateFields.normalization = metadata.normalization;

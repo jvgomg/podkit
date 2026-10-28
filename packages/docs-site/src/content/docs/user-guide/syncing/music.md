@@ -27,9 +27,17 @@ The target codec is chosen automatically based on your [codec preference stack](
 podkit preserves all standard metadata through syncing and transcoding:
 
 - **Core fields:** Title, artist, album, album artist
-- **Track info:** Track number, disc number, year, genre, composer
+- **Track info:** Track number and total tracks, disc number and total discs, year, genre, composer, grouping, compilation
+- **Sort fields:** Sort title, artist, album, album artist and composer, so an iPod lists "The Beatles" under B when your files say so
 - **Technical info:** Duration, bitrate, sample rate
 - **Album artwork:** Embedded artwork is synced to the device (see [Artwork](/user-guide/syncing/artwork))
+
+Composer, grouping, the totals and the sort fields are written to iPods, which keep them in the device database; a change to any of them in your files updates the device on the next sync without copying the file again. Mass-storage devices read tags from the files themselves, so for them podkit does not compare these fields.
+
+Limitations:
+
+- **The comment field is podkit's.** podkit stores its sync tag in the iPod comment field and does not copy your files' comments onto the iPod.
+- **Subsonic sources** provide composer and grouping only when the server implements the OpenSubsonic extensions; track/disc totals are not part of the API. A field the server does not report is left as it is on the iPod. Sort names from a Subsonic server are used only with the collection's `serverSortNames` opt-in; see [Composer, Grouping and Sort Names](/user-guide/collections/subsonic#composer-grouping-and-sort-names).
 
 ### Track Matching
 

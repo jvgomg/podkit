@@ -21,6 +21,8 @@ import {
   FFmpegNotFoundError,
   TranscodeError,
 } from './ffmpeg.js';
+import type { EncoderConfig } from './ffmpeg.js';
+import { buildTranscodePreset } from '../sync/music/pipeline-display.js';
 import type { TranscodeProgress } from './types.js';
 import { AAC_PRESETS } from './types.js';
 
@@ -826,6 +828,18 @@ describe('quality preset bitrate ceiling', () => {
     await transcoder.transcode(hardSource, highPath, 'high');
 
     expect(await streamBitrateKbps(highPath)).toBeGreaterThan(await streamBitrateKbps(lowPath));
+  });
+
+  it('targets an MP3 average: a 96 kbps override encodes at about 96 kbps', async () => {
+    const config = buildTranscodePreset(
+      { name: 'high', targetCodec: 'mp3', bitrateOverride: 96 },
+      'vbr'
+    );
+    const outputPath = join(ceilingDir, 'ceiling-mp3-96.mp3');
+    await transcoder.transcode(hardSource, outputPath, config as EncoderConfig);
+
+    // LAME's ABR tracks the average closely on noise; 5% covers frame padding.
+    expect(await streamBitrateKbps(outputPath)).toBeLessThanOrEqual(Math.round(96 * 1.05));
   });
 
   it('honours a planner-reduced target below the preset cap', async () => {
