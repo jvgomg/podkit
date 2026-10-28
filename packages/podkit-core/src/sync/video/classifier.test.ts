@@ -17,6 +17,7 @@ function makeCollectionVideo(overrides: Partial<CollectionVideo> = {}): Collecti
     year: 2024,
     container: 'mkv',
     videoCodec: 'h264',
+    videoLevel: '3.0',
     audioCodec: 'aac',
     width: 1920,
     height: 1080,

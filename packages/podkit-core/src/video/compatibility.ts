@@ -118,28 +118,32 @@ export function isCompatibleVideoCodec(
     return false;
   }
 
-  // Check profile compatibility
+  // Check profile compatibility: Baseline plays on every iPod, Main only on
+  // Main devices, and any other profile (High, High 10, Extended, ...) is
+  // transcoded
   if (profile) {
     const normalizedProfile = profile.toLowerCase();
 
-    // High profile is not compatible with any iPod
-    if (normalizedProfile === 'high') {
-      return false;
-    }
-
-    // Baseline is compatible with all devices
-    if (normalizedProfile === 'baseline') {
+    if (normalizedProfile === 'baseline' || normalizedProfile === 'constrained baseline') {
       return true;
     }
 
-    // Main profile is only compatible with devices that support main
     if (normalizedProfile === 'main') {
       return device.videoProfile === 'main';
     }
+
+    return false;
   }
 
   // If no profile info, assume compatible (will be verified during playback)
   return true;
+}
+
+/** H.264 level ('3', '3.0', '3.1') as a comparable number, or undefined. */
+function parseH264Level(level: string | null | undefined): number | undefined {
+  if (!level) return undefined;
+  const value = Number.parseFloat(level);
+  return Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
 /**
@@ -263,6 +267,18 @@ export function checkVideoCompatibility(
       !isCompatibleVideoCodec(analysis.videoCodec, analysis.videoProfile, device)
     ) {
       reasons.push(`Incompatible video profile: ${analysis.videoProfile}`);
+    }
+
+    // A level above the device's cannot be decoded; an unknown one cannot be
+    // shown to be within it, so it is transcoded rather than copied.
+    const level = parseH264Level(analysis.videoLevel);
+    const deviceLevel = parseH264Level(device.videoLevel)!;
+    if (level === undefined) {
+      reasons.push('Unknown H.264 level');
+    } else if (level > deviceLevel) {
+      reasons.push(
+        `H.264 level exceeds device maximum: ${analysis.videoLevel} > ${device.videoLevel}`
+      );
     }
   }
 

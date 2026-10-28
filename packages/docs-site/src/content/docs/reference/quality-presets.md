@@ -95,12 +95,14 @@ Notes:
 
 ### Bitrate by Device and Preset
 
-| Preset | iPod Classic (640x480) | iPod Video (320x240) |
-|--------|------------------------|----------------------|
-| max | 640x480 @ 2500 kbps | 320x240 @ 768 kbps |
-| high | 640x480 @ 2000 kbps | 320x240 @ 600 kbps |
-| medium | 640x480 @ 1500 kbps | 320x240 @ 400 kbps |
-| low | 640x480 @ 1000 kbps | 320x240 @ 300 kbps |
+| Preset | iPod Classic (640x480) | iPod Video / Nano 3-5 (320x240) | iPod Nano 7 (432x240) |
+|--------|------------------------|---------------------------------|-----------------------|
+| max | 640x480 @ 2500 kbps | 320x240 @ 768 kbps | 432x240 @ 1000 kbps |
+| high | 640x480 @ 2000 kbps | 320x240 @ 600 kbps | 432x240 @ 800 kbps |
+| medium | 640x480 @ 1500 kbps | 320x240 @ 400 kbps | 432x240 @ 550 kbps |
+| low | 640x480 @ 1000 kbps | 320x240 @ 300 kbps | 432x240 @ 400 kbps |
+
+The resolution is the largest frame that fits the device's screen with the source's aspect ratio kept; the table shows the full-screen case. For the Nano 7 tiers see [Video Transcoding](/user-guide/transcoding/video#ipod-nano-7th-gen).
 
 ### File Size Estimates
 

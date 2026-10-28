@@ -32,7 +32,7 @@ Mass-storage DAPs (Echo Mini, Rockbox, generic) do not support video sync. If yo
 | WebM | `.webm` | VP8/VP9 transcoded to H.264 |
 | WMV | `.wmv` | Windows Media |
 
-All videos are transcoded to iPod-compatible M4V (H.264 video, AAC audio). Files that are already compatible are copied directly without re-encoding. See [Video Transcoding](/user-guide/transcoding/video) for quality presets and device profiles.
+All videos are transcoded to iPod-compatible M4V (H.264 video, AAC audio). Files that are already compatible are copied directly without re-encoding: H.264 in a profile and **level** the device decodes (a file whose level is unknown is transcoded), within the device's resolution, bitrate and frame rate, with AAC audio. See [Video Transcoding](/user-guide/transcoding/video) for quality presets and device profiles.
 
 ## Supported Content Types
 

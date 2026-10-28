@@ -275,6 +275,7 @@ describe('runRepair — refusal short-circuits IpodDatabase.open', () => {
 
   it('still calls IpodDatabase.open when the device is supported', async () => {
     let openCalls = 0;
+    let assessCalls = 0;
     const check = makeFakeCheck();
 
     const fakeIpodDatabase = {
@@ -300,12 +301,17 @@ describe('runRepair — refusal short-circuits IpodDatabase.open', () => {
       { music: {} } as ReturnType<typeof import('../context.js').getContext>['config'],
       {
         loadCore: async () => fakeCore as unknown as typeof import('@podkit/core'),
-        assessIpodIdentity: async () =>
-          ({
+        assessIpodIdentity: async () => {
+          assessCalls++;
+          return {
             model: { unsupportedReason: undefined },
-          }) as unknown as IpodIdentityAssessment,
+          } as unknown as IpodIdentityAssessment;
+        },
       }
     );
     expect(openCalls).toBe(1);
+    // Both refusal checks (before the open and inside the repair pipeline)
+    // use the injected assessor, so neither reads real hardware.
+    expect(assessCalls).toBe(2);
   });
 });

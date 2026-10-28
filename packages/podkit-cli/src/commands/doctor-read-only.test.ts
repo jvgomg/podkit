@@ -1,7 +1,7 @@
 /**
  * `podkit doctor` on a read-only device.
  *
- * A read-only generation (shuffle 3G/4G, nano 6G/7G) is readable: podkit
+ * A read-only generation (shuffle 3G/4G, nano 6G) is readable: podkit
  * lists its tracks and archives it. Diagnosing it is a read too, so doctor
  * runs its whole read-only surface — host checks, the readiness cascade, and
  * the database-health checks — and reports what it finds.
@@ -56,10 +56,10 @@ interface FakeStage {
   details?: Record<string, unknown>;
 }
 
-const NANO_7G_REASON = {
+const NANO_6G_REASON = {
   kind: 'unsupported-device' as const,
   headline:
-    'iPod nano 7th gen can be read and archived, but not synced: writing needs the hashAB signature.',
+    'iPod nano 6th gen can be read and archived, but not synced: its library writes are not verified on hardware.',
   docsUrl: 'https://jvgomg.github.io/podkit/devices/supported-devices/',
 };
 
@@ -224,7 +224,7 @@ function makeFakeCore(opts: FakeCoreOptions): unknown {
         usbModel: {
           generationId: opts.generationId,
           displayName: 'Test iPod',
-          ...(opts.generationId === 'nano_7g' ? { unsupportedReason: NANO_7G_REASON } : {}),
+          ...(opts.generationId === 'nano_6g' ? { unsupportedReason: NANO_6G_REASON } : {}),
         },
       };
     },
@@ -301,10 +301,10 @@ describe('doctor on a read-only device', () => {
     let seen: string | undefined = 'never-called';
     const { out } = makeOut('json');
     await runDoctor(
-      makeContext('nano7g'),
+      makeContext('nano6g'),
       out,
       makeFakeCore({
-        generationId: 'nano_7g',
+        generationId: 'nano_6g',
         captureRequiredAccess: (requiredAccess) => {
           seen = requiredAccess;
         },
@@ -317,10 +317,10 @@ describe('doctor on a read-only device', () => {
   it('runs its checks and reports the device healthy instead of refusing', async () => {
     const { out, stdout, exitCode } = makeOut('json');
     await runDoctor(
-      makeContext('nano7g'),
+      makeContext('nano6g'),
       out,
       makeFakeCore({
-        generationId: 'nano_7g',
+        generationId: 'nano_6g',
         checks: [
           check({ id: 'codec-encoders', status: 'pass', scope: 'system' }),
           check({ id: 'artwork-rebuild', status: 'pass' }),
@@ -344,28 +344,28 @@ describe('doctor on a read-only device', () => {
 
   it('marks the access tier in the JSON envelope', async () => {
     const { out, stdout } = makeOut('json');
-    await runDoctor(makeContext('nano7g'), out, makeFakeCore({ generationId: 'nano_7g' }));
+    await runDoctor(makeContext('nano6g'), out, makeFakeCore({ generationId: 'nano_6g' }));
 
     expect(stdout.json<DoctorJsonOutput>().access).toBe('read-only');
   });
 
   it('announces the tier and why no repairs are offered', async () => {
     const { out, stdout } = makeOut('text');
-    await runDoctor(makeContext('nano7g'), out, makeFakeCore({ generationId: 'nano_7g' }));
+    await runDoctor(makeContext('nano6g'), out, makeFakeCore({ generationId: 'nano_6g' }));
 
     const text = stdout.text();
     expect(text).toContain('Read-only device');
-    expect(text).toContain(NANO_7G_REASON.headline);
+    expect(text).toContain(NANO_6G_REASON.headline);
     expect(text).toContain('podkit device archive');
   });
 
   it('reports a repairable finding but withholds the repair command', async () => {
     const { out, stdout, stderr, exitCode } = makeOut('text');
     await runDoctor(
-      makeContext('nano7g'),
+      makeContext('nano6g'),
       out,
       makeFakeCore({
-        generationId: 'nano_7g',
+        generationId: 'nano_6g',
         checks: [
           check({
             id: 'artwork-rebuild',
@@ -393,9 +393,9 @@ describe('doctor on a read-only device', () => {
   it('withholds readiness-stage fixes that write to the device', async () => {
     const { out, stdout, stderr } = makeOut('text');
     await runDoctor(
-      makeContext('nano7g'),
+      makeContext('nano6g'),
       out,
-      makeFakeCore({ generationId: 'nano_7g', stages: SYSINFO_WARNS })
+      makeFakeCore({ generationId: 'nano_6g', stages: SYSINFO_WARNS })
     );
 
     const text = `${stdout.text()}\n${stderr.text()}`;
@@ -408,11 +408,11 @@ describe('doctor on a read-only device', () => {
 
 describe('doctor --repair on a read-only device', () => {
   it('is refused before any device handle is opened', async () => {
-    // D476 = iPod nano (7th generation) — a real read-only generation, so
+    // C526 = iPod nano (6th generation) — a real read-only generation, so
     // the refusal is pinned to the access tier rather than to a hand-written
     // reason string.
-    const model = identify({ from: 'sysinfo', modelNumStr: 'D476' });
-    expect(model?.generationId).toBe('nano_7g');
+    const model = identify({ from: 'sysinfo', modelNumStr: 'C526' });
+    expect(model?.generationId).toBe('nano_6g');
 
     let opened = false;
     let repaired = false;
@@ -447,7 +447,7 @@ describe('doctor --repair on a read-only device', () => {
       repairableCheck as unknown as Parameters<typeof runRepair>[1],
       {},
       out,
-      makeContext('nano7g').config,
+      makeContext('nano6g').config,
       // No `assessIpodIdentity` override — the refusal must come from the
       // core surface the production path uses.
       { loadCore: async () => core as unknown as typeof import('@podkit/core') }

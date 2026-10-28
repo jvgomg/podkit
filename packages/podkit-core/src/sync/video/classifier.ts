@@ -62,12 +62,12 @@ function toSourceAnalysis(video: CollectionVideo): VideoSourceAnalysis {
     filePath: video.filePath,
     container: video.container,
     videoCodec: video.videoCodec,
-    videoProfile: null, // Not available in CollectionVideo
-    videoLevel: null,
+    videoProfile: video.videoProfile ?? null,
+    videoLevel: video.videoLevel ?? null,
     width: video.width,
     height: video.height,
-    videoBitrate: 0, // Not available in CollectionVideo
-    frameRate: 0, // Not available in CollectionVideo
+    videoBitrate: video.videoBitrate ?? 0,
+    frameRate: video.frameRate ?? 0,
     audioCodec: video.audioCodec,
     audioBitrate: 0,
     audioChannels: 2, // Assume stereo

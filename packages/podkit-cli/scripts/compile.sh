@@ -172,4 +172,12 @@ PODKIT_COMPILE_VERSION="$VERSION" \
 PODKIT_COMPILE_DEV_HOOKS="$DEV_HOOKS_DEFINE" \
 bun scripts/compile-build.ts
 
+# Bun can leave the linker's ad-hoc signature in place after appending the
+# payload; arm64 macOS then SIGKILLs the binary on launch (exit 137).
+if [ "$PLATFORM" = "darwin" ] && ! codesign --verify "$OUTFILE" 2>/dev/null; then
+  codesign --force --sign - "$OUTFILE"
+  codesign --verify "$OUTFILE"
+  echo "Re-signed ad hoc: $OUTFILE"
+fi
+
 echo "Compiled: $OUTFILE (v$VERSION, $BUILD_LABEL)"

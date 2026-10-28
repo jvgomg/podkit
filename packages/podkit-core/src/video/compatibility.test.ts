@@ -50,6 +50,7 @@ describe('video/compatibility helpers', () => {
     it('returns true for H.264 baseline on all devices', () => {
       expect(isCompatibleVideoCodec('h264', 'baseline', ipodClassic)).toBe(true);
       expect(isCompatibleVideoCodec('h264', 'baseline', ipodVideo5g)).toBe(true);
+      expect(isCompatibleVideoCodec('h264', 'Constrained Baseline', ipodVideo5g)).toBe(true);
     });
 
     it('returns true for H.264 main on devices that support main profile', () => {
@@ -60,9 +61,11 @@ describe('video/compatibility helpers', () => {
       expect(isCompatibleVideoCodec('h264', 'main', ipodVideo5g)).toBe(false);
     });
 
-    it('returns false for H.264 high profile on all devices', () => {
-      expect(isCompatibleVideoCodec('h264', 'high', ipodClassic)).toBe(false);
-      expect(isCompatibleVideoCodec('h264', 'high', ipodVideo5g)).toBe(false);
+    it('returns false for High-family and other unsupported profiles on all devices', () => {
+      for (const profile of ['high', 'High 10', 'High 4:4:4 Predictive', 'Extended']) {
+        expect(isCompatibleVideoCodec('h264', profile, ipodClassic)).toBe(false);
+        expect(isCompatibleVideoCodec('h264', profile, ipodVideo5g)).toBe(false);
+      }
     });
 
     it('returns true for H.264 with no profile info (assume compatible)', () => {
@@ -159,6 +162,7 @@ describe('video/compatibility passthrough', () => {
       container: 'mp4',
       videoCodec: 'h264',
       videoProfile: 'baseline',
+      videoLevel: '3.0',
       width: 320,
       height: 240,
       videoBitrate: 600,
@@ -169,6 +173,36 @@ describe('video/compatibility passthrough', () => {
 
     expect(result.status).toBe('passthrough');
     expect(result.reasons).toHaveLength(0);
+  });
+
+  it('transcode: H.264 level above the device maximum', () => {
+    const analysis = createAnalysis({
+      videoProfile: 'baseline',
+      videoLevel: '4.0',
+      width: 320,
+      height: 240,
+      videoBitrate: 600,
+    });
+
+    const result = checkVideoCompatibility(analysis, ipodVideo5g);
+
+    expect(result.status).toBe('transcode');
+    expect(result.reasons).toEqual(['H.264 level exceeds device maximum: 4.0 > 3.0']);
+  });
+
+  it('transcode: unknown H.264 level', () => {
+    const analysis = createAnalysis({
+      videoProfile: 'baseline',
+      videoLevel: null,
+      width: 320,
+      height: 240,
+      videoBitrate: 600,
+    });
+
+    const result = checkVideoCompatibility(analysis, ipodVideo5g);
+
+    expect(result.status).toBe('transcode');
+    expect(result.reasons).toEqual(['Unknown H.264 level']);
   });
 
   it('passthrough: video without audio stream', () => {

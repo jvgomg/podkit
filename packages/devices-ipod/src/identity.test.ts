@@ -155,22 +155,22 @@ describe('identify', () => {
   });
 
   describe('unsupportedReason — unsupported generations', () => {
-    test('nano 7G via USB PID 0x120e returns unsupportedReason', () => {
-      const model = identify({ from: 'usb', productId: '0x120e' });
+    test('nano 6G via USB PID 0x1266 returns unsupportedReason', () => {
+      const model = identify({ from: 'usb', productId: '0x1266' });
       expect(model).toBeDefined();
-      expect(model!.generationId).toBe('nano_7g');
-      expect(model!.unsupportedReason).toBeDefined();
-      expect(model!.unsupportedReason!.headline).toMatch(/nano 7th gen/i);
+      expect(model!.generationId).toBe('nano_6g');
+      expect(model!.unsupportedReason!.headline).toMatch(/nano 6th gen/i);
       // touch_* gets 'ios-device'; everything else gets 'unsupported-device'.
       expect(model!.unsupportedReason!.kind).toBe('unsupported-device');
       expect(model!.unsupportedReason!.docsUrl).toContain('supported-devices');
     });
 
-    test('nano 7G via USB PID 0x1267 returns unsupportedReason', () => {
-      const model = identify({ from: 'usb', productId: '0x1267' });
-      expect(model).toBeDefined();
-      expect(model!.generationId).toBe('nano_7g');
-      expect(model!.unsupportedReason).toBeDefined();
+    test('nano 7G via either USB PID is syncable', () => {
+      for (const productId of ['0x120e', '0x1267']) {
+        const model = identify({ from: 'usb', productId });
+        expect(model!.generationId).toBe('nano_7g');
+        expect(model!.unsupportedReason).toBeUndefined();
+      }
     });
 
     test('iPod touch 1G returns unsupportedReason (proprietary protocol)', () => {
@@ -228,11 +228,11 @@ describe('identify', () => {
       expect(model!.unsupportedReason!.headline).toContain('unverified on hardware');
     });
 
-    test('nano 6G (0x120d) returns unsupportedReason (iTunesDB format)', () => {
+    test('nano 6G (0x120d) returns unsupportedReason (writes not verified)', () => {
       const model = identify({ from: 'usb', productId: '0x120d' });
       expect(model).toBeDefined();
       expect(model!.generationId).toBe('nano_6g');
-      expect(model!.unsupportedReason!.headline).toContain('iTunesDB format');
+      expect(model!.unsupportedReason!.headline).toContain('not verified on hardware');
     });
 
     test('supported devices do NOT have unsupportedReason', () => {
