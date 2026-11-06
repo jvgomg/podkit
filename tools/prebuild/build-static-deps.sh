@@ -533,6 +533,12 @@ elif [ "$OS" = "Linux" ]; then
     tar -xjf "$LIBGPOD_TARBALL"
     cd "libgpod-${LIBGPOD_VERSION}"
 
+    # ithumb_writer reads its write offset with ftell right after fopen("ab"). C leaves
+    # that position implementation-defined and musl reports 0, so thumbnails appended
+    # after the first save get recorded at the offsets of the existing ones.
+    sed -i 's/writer->cur_offset = ftell (writer->f);/fseek (writer->f, 0, SEEK_END); &/' src/ithumb-writer.c
+    grep -q 'fseek (writer->f, 0, SEEK_END); writer->cur_offset' src/ithumb-writer.c
+
     curl -sL -o callout.patch "https://raw.githubusercontent.com/macports/macports-ports/master/multimedia/libgpod/files/patch-tools-generic-callout.c.diff"
     curl -sL -o libplist.patch "https://raw.githubusercontent.com/pld-linux/libgpod/master/libgpod-libplist.patch"
     patch -p0 < callout.patch
